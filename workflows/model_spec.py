@@ -10,7 +10,7 @@ import re
 import yaml
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -1380,3 +1380,121 @@ def get_runtime_model_spec(
 
     model_spec = MODEL_SPECS[selected_spec.model_id]
     return model_spec, resolved_impl, resolved_engine
+
+
+# --- Backport of the catalog resolver from main (b28c54b5, #5027) -----------
+# tt-shield's determine_server_type.py (main, since early Sep 2026) resolves
+# the dispatched model through ``resolve_model_spec`` loaded from THIS file of
+# the checked-out tt-inference-server ref. This branch predates the resolver,
+# so without the backport every CI dispatch dies in determine-server-type
+# ("resolve_model_spec not found in model_spec.py", run 34131114576). Verbatim
+# from main except for this note; the legacy get_runtime_model_spec above is
+# untouched and still serves run.py on this branch.
+
+
+def model_spec_leaf_identity(spec: ModelSpec) -> Tuple[str, str, str, str]:
+    """Return the exact identity of one expanded catalog leaf."""
+    return (
+        spec.hf_model_repo,
+        spec.device_type.to_string(),
+        spec.inference_engine,
+        spec.impl.impl_id,
+    )
+
+
+def resolve_model_spec(
+    specs: Iterable[ModelSpec],
+    *,
+    model: str,
+    device: Union[str, DeviceTypes],
+    engine: Optional[Union[str, InferenceEngine]] = None,
+    impl: Optional[str] = None,
+    catalog_name: str = "catalog",
+) -> ModelSpec:
+    """Resolve one model request from an explicit set of expanded specs."""
+    if not isinstance(model, str) or not model:
+        raise ValueError(
+            f"Model selector must be a non-empty string for {catalog_name}"
+        )
+    model_name = Path(model).name
+    try:
+        device_type = (
+            device
+            if isinstance(device, DeviceTypes)
+            else DeviceTypes.from_string(device)
+        )
+    except (AttributeError, ValueError) as exc:
+        raise ValueError(f"Invalid device {device!r} for {catalog_name}") from exc
+
+    try:
+        engine_value = (
+            engine.value
+            if isinstance(engine, InferenceEngine)
+            else InferenceEngine.from_string(engine).value
+            if engine
+            else None
+        )
+    except (AttributeError, KeyError, ValueError) as exc:
+        raise ValueError(
+            f"Invalid inference engine {engine!r} for {catalog_name}"
+        ) from exc
+
+    spec_list = list(specs)
+    if "/" in model:
+        model_specs = [spec for spec in spec_list if spec.hf_model_repo == model]
+    else:
+        model_specs = [spec for spec in spec_list if spec.model_name == model_name]
+        hf_repos = sorted({spec.hf_model_repo for spec in model_specs})
+        if len(hf_repos) > 1:
+            raise ValueError(
+                f"Model basename {model_name!r} is ambiguous in {catalog_name}; "
+                f"matching Hugging Face repositories: {hf_repos!r}; "
+                "use the full Hugging Face repository"
+            )
+
+    candidates = [
+        spec
+        for spec in model_specs
+        if spec.device_type == device_type
+        and (engine_value is None or spec.inference_engine == engine_value)
+        and (impl is None or spec.impl.impl_name == impl)
+    ]
+    query = (
+        f"model={model_name!r}, device={device_type.to_string()!r}, "
+        f"engine={engine_value!r}, impl={impl!r}"
+    )
+    if not candidates:
+        raise ValueError(f"No model spec matches {query} in {catalog_name}")
+
+    default_specs = [spec for spec in candidates if spec.device_model_spec.default_impl]
+
+    # Preserve the existing no-engine runtime behavior. Defaults in different
+    # engines are valid and engine inference historically follows catalog order.
+    if engine_value is None:
+        selected_spec = next(iter(default_specs), None)
+        if selected_spec is not None:
+            return selected_spec
+        if impl is not None:
+            return candidates[0]
+        raise ValueError(
+            f"Model {model_name!r} does not have a default impl for "
+            f"device={device_type.to_string()!r} in {catalog_name}; "
+            "pass --impl or --engine"
+        )
+
+    if len(default_specs) == 1:
+        return default_specs[0]
+    if len(default_specs) > 1:
+        identities = sorted(model_spec_leaf_identity(spec) for spec in default_specs)
+        raise ValueError(
+            f"Multiple default implementations match {query} in {catalog_name}: "
+            f"{identities!r}"
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+
+    identities = sorted(model_spec_leaf_identity(spec) for spec in candidates)
+    raise ValueError(
+        f"No unique default implementation matches {query} in {catalog_name}; "
+        f"candidates: {identities!r}"
+    )
