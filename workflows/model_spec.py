@@ -98,10 +98,10 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    hf_model_repo: str, perf_targets_map: Dict[str, float]
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
-    model_data = model_performance_reference.get(model_name, {})
+    model_data = model_performance_reference.get(hf_model_repo, {})
 
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)
@@ -1072,9 +1072,8 @@ class ModelSpecTemplate:
         specs = []
 
         for weight in self.weights:
-            weight_model_name = model_weights_to_model_name(weight)
             template_reference_map = get_perf_reference_map(
-                weight_model_name, self.perf_targets_map
+                weight, self.perf_targets_map
             )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -1093,7 +1092,7 @@ class ModelSpecTemplate:
                 # actually overrides; otherwise this is one map per weight.
                 if device_model_spec.perf_targets_map:
                     perf_reference_map = get_perf_reference_map(
-                        weight_model_name,
+                        weight,
                         {
                             **self.perf_targets_map,
                             **device_model_spec.perf_targets_map,

@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, List, Optional
 
+from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
 
 from ..agentic.swebench import SWEbenchRunConfig, run as run_swebench
@@ -335,10 +336,7 @@ def _agentic_output_dir(
     release_layout: bool = False,
     run_stamp: Optional[str] = None,
 ) -> Path:
-    safe_model_id = model_id.replace("/", "__")
-    # Stamp the per-task folder so a re-run into the same logs dir gets a fresh
-    # folder; the harnesses (harbor job, sweagent output) refuse to start in an
-    # existing one.
+    safe_model_id = slugify_model_id(model_id)
     task_dir = task.task_name if not run_stamp else f"{task.task_name}_{run_stamp}"
     if release_layout:
         # release run: group all agentic results under a single top-level
