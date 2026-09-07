@@ -1,12 +1,5 @@
 # Llama-3.1-8B Tenstorrent Support on BH LoudBox
 
-Supported weights variants for this model implementation are:
-
-- `Llama-3.1-8B`: [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) **(default)** 
-- `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
-
-To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
-
 #### Useful links
 
 - [BH LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
@@ -16,14 +9,9 @@ To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
 `Llama-3.1-8B` is also supported on hardware:
 
 - [WH Galaxy](Llama-3.1-8B_galaxy.md)
-- [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [BH P300](Llama-3.1-8B_p300.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
-- [P100](Llama-3.1-8B_p100.md)
 - [P150](Llama-3.1-8B_p150.md)
-- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
-- [N150](Llama-3.1-8B_n150.md)
-- [N300](Llama-3.1-8B_n300.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on BH LoudBox
 
@@ -41,15 +29,15 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241 \
-  --model meta-llama/Llama-3.1-8B \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-555f240-22be241 \
+  --model meta-llama/Llama-3.1-8B-Instruct \
   --tt-device p150x8
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model meta-llama/Llama-3.1-8B --device p150x8 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --device p150x8 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -57,11 +45,11 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
+| Weights | [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🟡 Functional |
 | Max Batch Size | 256 |
 | Max Context Length | 131072 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
 | tt-metal Commit | `555f240` |
 | vLLM Commit | `22be241` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-555f240-22be241` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-555f240-22be241` |

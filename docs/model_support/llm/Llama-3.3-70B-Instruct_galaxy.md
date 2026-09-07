@@ -1,14 +1,5 @@
 # Llama-3.3-70B-Instruct Tenstorrent Support on WH Galaxy
 
-Supported weights variants for this model implementation are:
-
-- `Llama-3.3-70B-Instruct`: [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) **(default)** 
-- `Llama-3.1-70B`: [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B)
-- `Llama-3.1-70B-Instruct`: [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
-- `DeepSeek-R1-Distill-Llama-70B`: [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B)
-
-To use non-default weights, replace `meta-llama/Llama-3.3-70B-Instruct` in commands below.
-
 #### Useful links
 
 - [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
@@ -18,9 +9,7 @@ To use non-default weights, replace `meta-llama/Llama-3.3-70B-Instruct` in comma
 `Llama-3.3-70B-Instruct` is also supported on hardware:
 
 - [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
-- [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 - [BH QuietBox 2](Llama-3.3-70B-Instruct_p300x2.md)
-- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on WH Galaxy
 
@@ -38,7 +27,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.3-70B-Instruct:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd \
   --model meta-llama/Llama-3.3-70B-Instruct \
   --tt-device galaxy
 ```
@@ -54,14 +43,14 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct), [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B), [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct), [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B) |
+| Weights | [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [llama3-70b-galaxy](https://github.com/tenstorrent/tt-metal/tree/e867533/models/demos/llama3_70b_galaxy) |
-| tt-metal Commit | `e867533` |
-| vLLM Commit | `8f36910` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e867533-8f36910` |
+| Implementation Code | [llama3-70b-galaxy](https://github.com/tenstorrent/tt-metal/tree/65718bb/models/demos/llama3_70b_galaxy) |
+| tt-metal Commit | `65718bb` |
+| vLLM Commit | `409b1cd` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-65718bb-409b1cd` |
 
 ---
 
