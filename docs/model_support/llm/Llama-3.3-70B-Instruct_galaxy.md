@@ -1,5 +1,14 @@
 # Llama-3.3-70B-Instruct Tenstorrent Support on WH Galaxy
 
+Supported weights variants for this model implementation are:
+
+- `Llama-3.3-70B-Instruct`: [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) **(default)** 
+- `Llama-3.1-70B`: [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B)
+- `Llama-3.1-70B-Instruct`: [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct)
+- `DeepSeek-R1-Distill-Llama-70B`: [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B)
+
+To use non-default weights, replace `meta-llama/Llama-3.3-70B-Instruct` in commands below.
+
 #### Useful links
 
 - [WH Galaxy details](https://tenstorrent.com/hardware/galaxy)
@@ -9,7 +18,9 @@
 `Llama-3.3-70B-Instruct` is also supported on hardware:
 
 - [BH LoudBox](Llama-3.3-70B-Instruct_p150x8.md)
+- [BH 4xP150](Llama-3.3-70B-Instruct_p150x4.md)
 - [BH QuietBox 2](Llama-3.3-70B-Instruct_p300x2.md)
+- [WH LoudBox/QuietBox](Llama-3.3-70B-Instruct_t3k.md)
 
 ## Quickstart - Deploy Llama-3.3-70B-Instruct Inference Server on WH Galaxy
 
@@ -43,7 +54,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct) |
+| Weights | [meta-llama/Llama-3.3-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.3-70B-Instruct), [meta-llama/Llama-3.1-70B](https://huggingface.co/meta-llama/Llama-3.1-70B), [meta-llama/Llama-3.1-70B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-70B-Instruct), [deepseek-ai/DeepSeek-R1-Distill-Llama-70B](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Llama-70B) |
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |

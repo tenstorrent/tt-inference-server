@@ -281,7 +281,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.17.0-8c48a10-f52987a
+              tag: 0.12.0-805f43d-a45c614
             resources:
               requests:
                 memory: 300Gi
@@ -450,7 +450,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e0e0500-409b1cd
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 20Gi
@@ -474,7 +474,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e0e0500-409b1cd
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 20Gi
@@ -500,7 +500,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e0e0500-409b1cd
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 20Gi
@@ -526,7 +526,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e0e0500-409b1cd
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 20Gi
@@ -738,7 +738,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 80Gi
@@ -766,7 +766,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 80Gi
@@ -853,7 +853,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-9b67e09-a91b644
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 17Gi
@@ -879,7 +879,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-9b67e09-a91b644
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 17Gi
@@ -907,7 +907,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-9b67e09-a91b644
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 17Gi
@@ -938,7 +938,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 80Gi
@@ -994,7 +994,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 80Gi
@@ -1029,104 +1029,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-13f44c5-0edd242
-            resources:
-              requests:
-                memory: 180Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: MAX_PREFILL_CHUNK_SIZE
-                value: '16'
-              - name: MESH_DEVICE
-                value: T3K
-              - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
-                value: '1'
-              - name: VLLM_CONFIGURE_LOGGING
-                value: '1'
-              - name: VLLM_RPC_TIMEOUT
-                value: '900000'
-              - name: VLLM_TARGET_DEVICE
-                value: tt
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
-      galaxy:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 7200
-            image:
-              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-13f44c5-0edd242
-            resources:
-              requests:
-                memory: 180Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: MAX_PREFILL_CHUNK_SIZE
-                value: '16'
-              - name: MESH_DEVICE
-                value: TG
-              - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_MM_THROTTLE_PERF
-                value: '5'
-              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
-                value: '1'
-              - name: VLLM_CONFIGURE_LOGGING
-                value: '1'
-              - name: VLLM_RPC_TIMEOUT
-                value: '900000'
-              - name: VLLM_TARGET_DEVICE
-                value: tt
-      galaxy_t3k:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 7200
-            image:
-              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-13f44c5-0edd242
-            resources:
-              requests:
-                memory: 180Gi
-            env:
-              - name: ARCH_NAME
-                value: wormhole_b0
-              - name: MAX_PREFILL_CHUNK_SIZE
-                value: '16'
-              - name: MESH_DEVICE
-                value: T3K
-              - name: TORCHDYNAMO_DISABLE
-                value: '1'
-              - name: TT_MESH_GRAPH_DESC_PATH
-                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto
-              - name: TT_MM_THROTTLE_PERF
-                value: '5'
-              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
-                value: '1'
-              - name: VLLM_CONFIGURE_LOGGING
-                value: '1'
-              - name: VLLM_RPC_TIMEOUT
-                value: '900000'
-              - name: VLLM_TARGET_DEVICE
-                value: tt
-              - name: WH_ARCH_YAML
-                value: wormhole_b0_80_arch_eth_dispatch.yaml
-    defaultEngine: vllm
-  Qwen2.5-72B-Instruct:
-    vllm:
-      t3k:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 7200
-            image:
-              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-13f44c5-0edd242
+              tag: 0.3.0-13f44c5-0edd242
             resources:
               requests:
                 memory: 180Gi
@@ -1186,7 +1089,104 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-13f44c5-0edd242
+              tag: 0.3.0-13f44c5-0edd242
+            resources:
+              requests:
+                memory: 180Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MAX_PREFILL_CHUNK_SIZE
+                value: '16'
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto
+              - name: TT_MM_THROTTLE_PERF
+                value: '5'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+    defaultEngine: vllm
+  Qwen2.5-72B-Instruct:
+    vllm:
+      t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 7200
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.3.0-13f44c5-0edd242
+            resources:
+              requests:
+                memory: 180Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MAX_PREFILL_CHUNK_SIZE
+                value: '16'
+              - name: MESH_DEVICE
+                value: T3K
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+              - name: WH_ARCH_YAML
+                value: wormhole_b0_80_arch_eth_dispatch.yaml
+      galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 7200
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.3.0-13f44c5-0edd242
+            resources:
+              requests:
+                memory: 180Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MAX_PREFILL_CHUNK_SIZE
+                value: '16'
+              - name: MESH_DEVICE
+                value: TG
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MM_THROTTLE_PERF
+                value: '5'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      galaxy_t3k:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 7200
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.3.0-13f44c5-0edd242
             resources:
               requests:
                 memory: 180Gi
@@ -1500,7 +1500,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e867533-8f36910
+              tag: 0.9.0-65718bb-409b1cd
             resources:
               requests:
                 memory: 175Gi
@@ -1602,7 +1602,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.16.0-669d59e-3334377
+              tag: 0.10.1-e867533-22be241
             resources:
               requests:
                 memory: 175Gi
@@ -1693,7 +1693,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e867533-8f36910
+              tag: 0.9.0-65718bb-409b1cd
             resources:
               requests:
                 memory: 175Gi
@@ -1795,7 +1795,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.16.0-669d59e-3334377
+              tag: 0.10.1-e867533-22be241
             resources:
               requests:
                 memory: 175Gi
@@ -1856,7 +1856,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e867533-8f36910
+              tag: 0.9.0-65718bb-409b1cd
             resources:
               requests:
                 memory: 175Gi
@@ -1958,7 +1958,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.16.0-669d59e-3334377
+              tag: 0.10.1-e867533-22be241
             resources:
               requests:
                 memory: 175Gi
@@ -2043,7 +2043,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 2Gi
@@ -2069,7 +2069,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 2Gi
@@ -2097,7 +2097,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 2Gi
@@ -2128,7 +2128,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 2Gi
@@ -2154,7 +2154,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 2Gi
@@ -2182,7 +2182,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 2Gi
@@ -2531,7 +2531,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2555,7 +2555,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2581,7 +2581,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2607,7 +2607,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2725,7 +2725,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.19.0-b204341-9bd099c
+              tag: 0.10.1-e867533-22be241
             resources:
               requests:
                 memory: 20Gi
@@ -2749,7 +2749,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.19.0-b204341-9bd099c
+              tag: 0.10.1-e867533-22be241
             resources:
               requests:
                 memory: 20Gi
@@ -2836,7 +2836,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2860,7 +2860,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2886,7 +2886,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -2912,7 +2912,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-25305db-6e67d2d
+              tag: 0.2.0-9b67e09-a91b644
             resources:
               requests:
                 memory: 20Gi
@@ -4672,7 +4672,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.9.0-c180ef7
+              tag: 0.4.0-13f44c5
             probes:
               liveness:
                 path: /tt-liveness
@@ -5283,7 +5283,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.17.0-8c48a10
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 path: /tt-liveness
@@ -5302,7 +5302,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.17.0-8c48a10
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 path: /tt-liveness
@@ -5342,7 +5342,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.17.0-8c48a10
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 path: /tt-liveness
@@ -5429,7 +5429,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.17.0-8c48a10
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 path: /tt-liveness
@@ -5448,7 +5448,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.17.0-8c48a10
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 path: /tt-liveness
@@ -5488,7 +5488,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.17.0-8c48a10
+              tag: 0.11.1-bac8b34
             probes:
               liveness:
                 path: /tt-liveness

@@ -8,7 +8,11 @@
 
 `FLUX.1-dev` is also supported on hardware:
 
+- [WH Galaxy](FLUX.1-dev_galaxy.md)
 - [BH LoudBox](FLUX.1-dev_p150x8.md)
+- [BH 4xP150](FLUX.1-dev_p150x4.md)
+- [BH P300](FLUX.1-dev_p300.md)
+- [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
 
 ## Quickstart - Deploy FLUX.1-dev Inference Server on BH QuietBox 2
 

@@ -1,5 +1,12 @@
 # FLUX.1-dev Tenstorrent Support on BH LoudBox
 
+Supported weights variants for this model implementation are:
+
+- `FLUX.1-dev`: [black-forest-labs/FLUX.1-dev](https://huggingface.co/black-forest-labs/FLUX.1-dev) **(default)** 
+- `FLUX.1-schnell`: [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell)
+
+Weight variants use more than one released configuration; see the configuration table below.
+
 #### Useful links
 
 - [BH LoudBox details](https://tenstorrent.com/hardware/tt-loudbox)
@@ -8,7 +15,11 @@
 
 `FLUX.1-dev` is also supported on hardware:
 
+- [WH Galaxy](FLUX.1-dev_galaxy.md)
+- [BH 4xP150](FLUX.1-dev_p150x4.md)
+- [BH P300](FLUX.1-dev_p300.md)
 - [BH QuietBox 2](FLUX.1-dev_p300x2.md)
+- [WH LoudBox/QuietBox](FLUX.1-dev_t3k.md)
 
 ## Quickstart - Deploy FLUX.1-dev Inference Server on BH LoudBox
 
@@ -33,3 +44,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/555f240/models/tt_transformers) |
 | tt-metal Commit | `555f240` |
 | Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.0-555f240` |
+
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|
+| [black-forest-labs/FLUX.1-schnell](https://huggingface.co/black-forest-labs/FLUX.1-schnell) | `tt-transformers` | 1 | `555f240` | `-` | `ghcr.io/tenstorrent/tt-media-inference-server:0.10.1-555f240` |

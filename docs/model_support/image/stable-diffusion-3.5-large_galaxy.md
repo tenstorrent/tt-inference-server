@@ -6,6 +6,10 @@
 - [Search other image models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`stable-diffusion-3.5-large` is also supported on hardware:
+
+- [WH LoudBox/QuietBox](stable-diffusion-3.5-large_t3k.md)
+
 ## Quickstart - Deploy stable-diffusion-3.5-large Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.

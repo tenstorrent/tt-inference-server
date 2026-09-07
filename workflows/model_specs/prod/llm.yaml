@@ -7,6 +7,29 @@ templates:
 # =============================================================================
 - weights:
     - openai/gpt-oss-120b
+  version: "0.12.0"
+  tt_metal_commit: "805f43d"
+  vllm_commit: "a45c614"
+  impl: gpt_oss
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 16384        # 16 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 134217728        # 128 MB; vLLM default 50 MB is too small for long prefill
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    openai/gpt-oss-120b:
+      reasoning_parser_name: openai_gptoss
+      tool_call_parser_name: openai
+- weights:
+    - openai/gpt-oss-120b
   version: "0.17.0"
   tt_metal_commit: "8c48a10"
   vllm_commit: "f52987a"
@@ -93,6 +116,83 @@ templates:
   vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 40960
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 51000000
+  status: FUNCTIONAL
+  metadata:
+    Qwen/Qwen3-8B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+- weights:
+    - Qwen/Qwen3-8B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 40960
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 65000000
+  status: FUNCTIONAL
+  metadata:
+    Qwen/Qwen3-8B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+- weights:
+    - Qwen/Qwen3-8B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 40960
+      default_impl: true
+  status: FUNCTIONAL
+  metadata:
+    Qwen/Qwen3-8B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+- weights:
+    - Qwen/Qwen3-8B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 40960
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+  status: FUNCTIONAL
+  metadata:
+    Qwen/Qwen3-8B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+- weights:
+    - Qwen/Qwen3-8B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
     - device: GALAXY
       max_concurrency: 128        # 32 * 4
       max_context: 40960
@@ -165,6 +265,51 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 54000000
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3-32B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+- weights:
+    - Qwen/Qwen3-32B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3-32B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+- weights:
+    - Qwen/Qwen3-32B
+  impl: tt_transformers
   system_requirements:
     firmware:
       specifier: ">=18.12.0"
@@ -222,6 +367,71 @@ templates:
       tool_call_parser_name: hermes
 
 - weights:
+    - mistralai/Mistral-7B-Instruct-v0.3
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 32768        # 32 * 1024
+      default_impl: true
+  status: COMPLETE
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+- weights:
+    - mistralai/Mistral-7B-Instruct-v0.3
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 32768        # 32 * 1024
+      default_impl: true
+  status: COMPLETE
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+- weights:
+    - mistralai/Mistral-7B-Instruct-v0.3
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 32768        # 32 * 1024
+      default_impl: true
+  status: COMPLETE
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
+- weights:
+    - Qwen/QwQ-32B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/QwQ-32B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: hermes
+- weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
   version: "0.4.0"
@@ -244,6 +454,129 @@ templates:
     Qwen/QwQ-32B:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: hermes
+- weights:
+    - Qwen/QwQ-32B
+  impl: tt_transformers
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/QwQ-32B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: hermes
+
+- weights:
+    - Qwen/Qwen2.5-72B
+  impl: tt_transformers
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 66000000
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    MAX_PREFILL_CHUNK_SIZE: "16"
+  metadata:
+    Qwen/Qwen2.5-72B:
+      tool_call_parser_name: hermes
+  model_display_name: Qwen2.5-72B
+- weights:
+    - Qwen/Qwen2.5-72B
+  impl: tt_transformers
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 66000000
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    MAX_PREFILL_CHUNK_SIZE: "16"
+  metadata:
+    Qwen/Qwen2.5-72B:
+      tool_call_parser_name: hermes
+  model_display_name: Qwen2.5-72B
+- weights:
+    - Qwen/Qwen2.5-72B
+  impl: tt_transformers
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 40000000
+        fabric_config: FABRIC_1D
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    MAX_PREFILL_CHUNK_SIZE: "16"
+  metadata:
+    Qwen/Qwen2.5-72B:
+      tool_call_parser_name: hermes
+  model_display_name: Qwen2.5-72B
+- weights:
+    - Qwen/Qwen2.5-72B-Instruct
+  impl: tt_transformers
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 66000000
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    MAX_PREFILL_CHUNK_SIZE: "16"
+  metadata:
+    Qwen/Qwen2.5-72B-Instruct:
+      tool_call_parser_name: hermes
+  model_display_name: Qwen2.5-72B
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
@@ -269,6 +602,34 @@ templates:
     Qwen/Qwen2.5-72B-Instruct:
       tool_call_parser_name: hermes
   model_display_name: Qwen2.5-72B
+- weights:
+    - Qwen/Qwen2.5-72B-Instruct
+  impl: tt_transformers
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 40000000
+        fabric_config: FABRIC_1D
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+  status: FUNCTIONAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    MAX_PREFILL_CHUNK_SIZE: "16"
+  metadata:
+    Qwen/Qwen2.5-72B-Instruct:
+      tool_call_parser_name: hermes
+  model_display_name: Qwen2.5-72B
+
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: llama3_70b_galaxy
@@ -304,6 +665,131 @@ templates:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.3-70B-Instruct
 - weights:
+    - meta-llama/Llama-3.1-70B
+  impl: llama3_70b_galaxy
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      vllm_args:
+        data_parallel_size: 4
+      override_tt_config:
+        dispatch_core_axis: col
+        sample_on_device_mode: all
+        fabric_config: FABRIC_1D_RING
+        worker_l1_size: 1344544
+        trace_region_size: 215000000
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: COMPLETE
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-70B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B-Instruct
+  impl: llama3_70b_galaxy
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      vllm_args:
+        data_parallel_size: 4
+      override_tt_config:
+        dispatch_core_axis: col
+        sample_on_device_mode: all
+        fabric_config: FABRIC_1D_RING
+        worker_l1_size: 1344544
+        trace_region_size: 215000000
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: COMPLETE
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  impl: llama3_70b_galaxy
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      vllm_args:
+        data_parallel_size: 4
+      override_tt_config:
+        dispatch_core_axis: col
+        sample_on_device_mode: all
+        fabric_config: FABRIC_1D_RING
+        worker_l1_size: 1344544
+        trace_region_size: 215000000
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: COMPLETE
+  has_builtin_warmup: true
+  metadata:
+    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+  model_display_name: Llama-3.3-70B-Instruct
+
+- weights:
+    - deepseek-ai/DeepSeek-R1-0528
+  impl: deepseek_r1_galaxy
+  version: "0.12.0"
+  tt_metal_commit: 805f43d
+  vllm_commit: a45c614
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 256      # 32 * 8
+      max_context: 2048
+      default_impl: true
+      tensor_cache_timeout: 6400.0
+      vllm_args:
+        max_model_len: "2048"
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    deepseek-ai/DeepSeek-R1-0528:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+- weights:
     - deepseek-ai/DeepSeek-R1-0528
   impl: deepseek_r1_galaxy
   version: "0.12.0"
@@ -333,6 +819,185 @@ templates:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
 - weights:
+    - deepseek-ai/DeepSeek-R1-0528
+  impl: deepseek_r1_galaxy
+  version: "0.12.0"
+  tt_metal_commit: 805f43d
+  vllm_commit: a45c614
+  inference_engine: VLLM
+  device_model_specs:
+    - device: QUAD_GALAXY
+      max_concurrency: 512      # 32 * 16; 32 per DP rank * 16 ranks
+      max_context: 32768
+      default_impl: true
+      vllm_args:
+        data_parallel_size: 16
+        block_size: "32"
+        max_model_len: "2048"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        fabric_reliability_mode: RELAXED_INIT
+        trace_mode: none
+        env_passthrough:
+          - DEEPSEEK_V3_CACHE
+          - DEEPSEEK_V3_HF_MODEL
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    deepseek-ai/DeepSeek-R1-0528:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+
+- weights:
+    - meta-llama/Llama-3.3-70B-Instruct
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=18.8.0"
+      mode: SUGGESTED
+    kmd:
+      specifier: ">=2.2.0"
+      mode: SUGGESTED
+  version: "0.11.1"
+  tt_metal_commit: 750ca54
+  vllm_commit: 38dee8c
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      env_vars:
+        MAX_PREFILL_CHUNK_SIZE: "32"
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.3-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=18.8.0"
+      mode: SUGGESTED
+    kmd:
+      specifier: ">=2.2.0"
+      mode: SUGGESTED
+  version: "0.11.1"
+  tt_metal_commit: 750ca54
+  vllm_commit: 38dee8c
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      env_vars:
+        MAX_PREFILL_CHUNK_SIZE: "32"
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-70B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B-Instruct
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=18.8.0"
+      mode: SUGGESTED
+    kmd:
+      specifier: ">=2.2.0"
+      mode: SUGGESTED
+  version: "0.11.1"
+  tt_metal_commit: 750ca54
+  vllm_commit: 38dee8c
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      env_vars:
+        MAX_PREFILL_CHUNK_SIZE: "32"
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=18.8.0"
+      mode: SUGGESTED
+    kmd:
+      specifier: ">=2.2.0"
+      mode: SUGGESTED
+  version: "0.11.1"
+  tt_metal_commit: 750ca54
+  vllm_commit: 38dee8c
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      env_vars:
+        MAX_PREFILL_CHUNK_SIZE: "32"
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  metadata:
+    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+  model_display_name: Llama-3.3-70B-Instruct
+
+- weights:
+    - meta-llama/Llama-3.3-70B-Instruct
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      system_requirements:
+        firmware:
+          specifier: ">=18.5.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.3.0"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.3-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: tt_transformers
   version: "0.10.0"
@@ -359,6 +1024,171 @@ templates:
     meta-llama/Llama-3.3-70B-Instruct:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      system_requirements:
+        firmware:
+          specifier: ">=18.5.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.3.0"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-70B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 268435456
+      system_requirements:
+        firmware:
+          specifier: ">=18.12.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.4.1"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-70B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B-Instruct
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      system_requirements:
+        firmware:
+          specifier: ">=18.5.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.3.0"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B-Instruct
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 268435456
+      system_requirements:
+        firmware:
+          specifier: ">=18.12.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.4.1"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 30000000
+      system_requirements:
+        firmware:
+          specifier: ">=18.5.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.3.0"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  impl: tt_transformers
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 268435456
+      system_requirements:
+        firmware:
+          specifier: ">=18.12.0"
+          mode: STRICT
+        kmd:
+          specifier: ">=2.4.1"
+          mode: STRICT
+  status: FUNCTIONAL
+  metadata:
+    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+  model_display_name: Llama-3.3-70B-Instruct
+
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: tt_transformers
@@ -394,6 +1224,113 @@ templates:
     meta-llama/Llama-3.3-70B-Instruct:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 402653184        # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289)
+            is over-strict for short, low-repetition prompts decoded near-greedily;
+            presence_penalty=1.2 legitimately produced identical output. Model meets
+            FUNCTIONAL expectations. Tracked in #3888."
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-70B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - meta-llama/Llama-3.1-70B-Instruct
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 402653184        # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289)
+            is over-strict for short, low-repetition prompts decoded near-greedily;
+            presence_penalty=1.2 legitimately produced identical output. Model meets
+            FUNCTIONAL expectations. Tracked in #3888."
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-70B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.3-70B-Instruct
+- weights:
+    - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      override_tt_config:
+        trace_region_size: 402653184        # 384 * 1024 * 1024
+      known_issues:
+        - workflow_type: SPEC_TESTS
+          task_name: test_penalties
+          reason: "test_penalties length-change assertion (server_tests/test_cases/test_vllm_chat_completions.py:289)
+            is over-strict for short, low-repetition prompts decoded near-greedily;
+            presence_penalty=1.2 legitimately produced identical output. Model meets
+            FUNCTIONAL expectations. Tracked in #3888."
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    deepseek-ai/DeepSeek-R1-Distill-Llama-70B:
+      reasoning_parser_name: deepseek_r1
+      tool_call_parser_name: deepseek_v3
+  model_display_name: Llama-3.3-70B-Instruct
+
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: tt_transformers
@@ -525,6 +1462,127 @@ templates:
   model_display_name: Llama-3.3-70B-Instruct
 
 - weights:
+    - meta-llama/Llama-3.2-1B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.2-1B
+- weights:
+    - meta-llama/Llama-3.2-1B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.2-1B
+- weights:
+    - meta-llama/Llama-3.2-1B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.2-1B
+- weights:
+    - meta-llama/Llama-3.2-1B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.2-1B
+- weights:
+    - meta-llama/Llama-3.2-1B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.2-1B
+- weights:
+    - meta-llama/Llama-3.2-1B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.2-1B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.2-1B
+
+- weights:
     - meta-llama/Llama-3.2-3B
   impl: tt_transformers
   version: "0.3.0"
@@ -630,6 +1688,155 @@ templates:
     meta-llama/Llama-3.2-3B-Instruct:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.2-3B
+
+- weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 65536        # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 52000000
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 70000000
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 117000000
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 65536        # 64 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 52000000
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 70000000
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        trace_region_size: 117000000
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: tt_transformers
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+  status: COMPLETE
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
 
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
@@ -674,6 +1881,34 @@ templates:
   model_display_name: Llama-3.1-8B
 
 - weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=18.12.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.4.1"
+      mode: STRICT
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  vllm_commit: 22be241
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 256      # 32 * 8
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      vllm_args:
+        data_parallel_size: 8
+      override_tt_config:
+        sample_on_device_mode: decode_only
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
   system_requirements:
@@ -702,6 +1937,106 @@ templates:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.1-8B
 
+- weights:
+    - meta-llama/Llama-3.1-8B
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      override_tt_config:
+        sample_on_device_mode: decode_only
+        trace_region_size: 155000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the
+            chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
+            Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where
+            the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
+            Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy
+            the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
+            Masked due to other longbench subtasks passing."
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
+  impl: tt_transformers
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300
+      max_concurrency: 32
+      max_context: 131072        # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        sample_on_device_mode: decode_only
+        trace_region_size: 56000000
+      known_issues:
+        - workflow_type: EVALS
+          task_name: meta_ifeval
+          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: meta_gpqa_cot
+          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
+        - workflow_type: EVALS
+          task_name: longbench_code_e
+          reason: "longbench_code_e known issue with longbench code sub-task where the
+            chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
+            Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_fewshot_e
+          reason: "longbench_fewshot_e known issue with longbench code sub-task where
+            the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
+            Masked due to other longbench subtasks passing."
+        - workflow_type: EVALS
+          task_name: longbench_summarization_e
+          reason: "longbench_summarization_e measured score is ~94% which does not satisfy
+            the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
+            Masked due to other longbench subtasks passing."
+  status: FUNCTIONAL
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   version: "0.17.0"
@@ -804,6 +2139,69 @@ templates:
   model_display_name: Llama-3.1-8B
 
 - weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  vllm_commit: 7c6685a
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 128      # 32 * 4
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      vllm_args:
+        data_parallel_size: 4
+      override_tt_config:
+        trace_region_size: 50000000
+        sample_on_device_mode: all
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B
+  impl: tt_transformers
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  vllm_commit: 7c6685a
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      env_vars:
+        trace_region_size: 50000000
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+        TT_MM_THROTTLE_PERF: 5
+      override_tt_config:
+        fabric_config: FABRIC_1D
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+- weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
   version: "0.11.0"
@@ -835,6 +2233,38 @@ templates:
     meta-llama/Llama-3.1-8B-Instruct:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.1-8B
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: tt_transformers
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  vllm_commit: 7c6685a
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY_T3K
+      max_concurrency: 32
+      max_context: 131072      # 128 * 1024
+      default_impl: true
+      env_vars:
+        trace_region_size: 50000000
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+        TT_MM_THROTTLE_PERF: 5
+      override_tt_config:
+        fabric_config: FABRIC_1D
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+  model_display_name: Llama-3.1-8B
+
 - weights:
     - openai/gpt-oss-120b
   version: "0.17.0"

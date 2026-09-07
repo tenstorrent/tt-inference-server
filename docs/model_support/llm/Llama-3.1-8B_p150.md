@@ -12,6 +12,9 @@
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
 - [BH P300](Llama-3.1-8B_p300.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
+- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
+- [N150](Llama-3.1-8B_n150.md)
+- [N300](Llama-3.1-8B_n300.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on p150
 

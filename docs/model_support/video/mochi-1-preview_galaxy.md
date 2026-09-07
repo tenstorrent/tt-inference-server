@@ -6,6 +6,13 @@
 - [Search other video models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`mochi-1-preview` is also supported on hardware:
+
+- [BH LoudBox](mochi-1-preview_p150x8.md)
+- [BH 4xP150](mochi-1-preview_p150x4.md)
+- [BH QuietBox 2](mochi-1-preview_p300x2.md)
+- [WH LoudBox/QuietBox](mochi-1-preview_t3k.md)
+
 ## Quickstart - Deploy mochi-1-preview Inference Server on WH Galaxy
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
