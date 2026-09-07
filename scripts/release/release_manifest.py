@@ -101,11 +101,11 @@ def _entry(
 
 
 def _clean_checks(checks) -> dict | None:
-    """Informational check health with the empty ('none'/absent) values dropped;
-    None if nothing is left."""
+    """Informational check health (accuracy/perf verdicts) with the empty
+    ('none'/absent) values dropped; None if nothing is left."""
     if not checks:
         return None
-    cleaned = {"runs": checks.get("runs")} if checks.get("runs") is not None else {}
+    cleaned = {}
     for family in ("accuracy", "perf"):
         value = checks.get(family)
         if value and value != "none":
