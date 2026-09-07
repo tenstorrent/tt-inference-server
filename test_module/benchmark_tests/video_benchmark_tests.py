@@ -16,7 +16,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.utils import get_num_calls
+from workflow_module.context_helpers import get_num_calls
 
 from report_module.schema import Block
 from report_module.status import TestStatus
@@ -41,10 +41,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
+# Keyed by full HF repo id.
 VIDEO_INFERENCE_STEPS = {
-    "mochi-1-preview": 50,
-    "Wan2.2-T2V-A14B-Diffusers": 40,
-    "Wan2.2-I2V-A14B-Diffusers": 40,
+    "genmo/mochi-1-preview": 50,
+    "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 40,
+    "Wan-AI/Wan2.2-I2V-A14B-Diffusers": 40,
 }
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
@@ -185,7 +186,7 @@ def _run_video_generation_benchmark(
     ctx: MediaContext, num_calls: int
 ) -> list[VideoGenerationTestStatus]:
     logger.info("Running video generation benchmark.")
-    model_name = ctx.model_spec.model_name
+    model_name = ctx.model_spec.hf_model_repo
     inference_steps = VIDEO_INFERENCE_STEPS[model_name]
     logger.info(f"Inference steps: {inference_steps}")
 
@@ -251,7 +252,7 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
-    model_name = ctx.model_spec.model_name
+    model_name = ctx.model_spec.hf_model_repo
     if model_name not in VIDEO_INFERENCE_STEPS:
         raise SkipTest(
             f"video benchmark not implemented for model {model_name!r}; "

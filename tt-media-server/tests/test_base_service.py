@@ -116,12 +116,16 @@ def base_job_service(mock_scheduler, mock_job_manager, mock_settings):
                             # Import inside the patch context
                             from model_services.base_job_service import BaseJobService
 
-                            # Create a concrete implementation
                             class ConcreteJobService(BaseJobService):
                                 pass
 
                             service = ConcreteJobService()
+                            mockStartEvent = Mock()
+                            mockProcessManager = Mock()
+                            mockProcessManager.Event.return_value = mockStartEvent
+                            service._processManager = mockProcessManager
                             service._mock_logger = mock_logger
+                            service._mockStartEvent = mockStartEvent
                             return service
 
 
@@ -727,6 +731,8 @@ class TestJobManagement:
         assert call_kwargs["job_type"] == mock_job_type
         assert call_kwargs["request"] == mock_request
         assert call_kwargs["org_id"] is None
+        assert call_kwargs["start_event"] is base_job_service._mockStartEvent
+        assert mock_request._start_event is base_job_service._mockStartEvent
         assert result == {"job_id": "job_1", "status": "created"}
 
     @pytest.mark.asyncio

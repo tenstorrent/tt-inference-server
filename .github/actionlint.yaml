@@ -2,3 +2,5 @@ self-hosted-runner:
   labels:
     - tt-ubuntu-2204-large-stable
     - tt-ubuntu-2204-xlarge-stable
+    - tt-ubuntu-2204-n150-stable
+    - tt-ubuntu-2204-bh-loudbox-viommu-stable

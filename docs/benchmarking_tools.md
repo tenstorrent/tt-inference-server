@@ -19,16 +19,16 @@ All tools use the same CLI pattern:
 
 ```bash
 # vLLM (default)
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
 
 # GenAI-Perf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools genai
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools genai
 
 # AIPerf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools aiperf
 
 # GuideLLM
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server --tools guidellm
 ```
 
 ## Tool Comparison
@@ -47,7 +47,7 @@ Server-side benchmarking using vLLM's built-in `benchmark_serving.py` script.
 **Metrics provided:**
 - TTFT (mean only)
 - TPOT (mean only)
-- Throughput (decode, prefill, user-level)
+- Throughput (input, output, total, user-level)
 - E2EL (mean only)
 - Request throughput
 
@@ -56,7 +56,9 @@ Server-side benchmarking using vLLM's built-in `benchmark_serving.py` script.
 {
   "mean_ttft_ms": 73.2,
   "mean_tpot_ms": 38.2,
-  "tps_decode_throughput": 26.1,
+  "tps_input_throughput": 73.9,
+  "tps_output_throughput": 26.1,
+  "tps_total_throughput": 100.0,
   "mean_e2el_ms": 4930.4
 }
 ```
@@ -253,7 +255,7 @@ AIPerf also generates detailed raw output in `.workflow_venvs/.venv_benchmarks_a
 Run the reports workflow to generate unified summary tables:
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow reports
+python run.py --model google/gemma-3-4b-it --device n300 --workflow reports
 ```
 
 ### Report Structure
@@ -262,7 +264,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow reports
 
 Stacks all three tools for direct comparison:
 
-| Source | ISL | OSL | Concur | TTFT (ms) | TPOT (ms) | Tput Decode (TPS) |
+| Source | ISL | OSL | Concur | TTFT (ms) | TPOT (ms) | Tput Output (TPS) |
 |--------|-----|-----|--------|-----------|-----------|-------------------|
 | vLLM | 128 | 128 | 1 | 73.2 | 38.2 | 26.1 |
 | aiperf | 128 | 128 | 1 | 93.5 | 40.2 | 25.1 |
@@ -289,7 +291,7 @@ orchestrator against an already-running vLLM-compatible server:
 ```bash
 # CI smoke (~12 runs)
 python run_workflows.py \
-  --model Llama-3.1-8B-Instruct \
+  --model meta-llama/Llama-3.1-8B-Instruct \
   --workflow benchmarks \
   --device gpu \
   --service-port 8000 \
@@ -299,7 +301,7 @@ python run_workflows.py \
 
 # Full validation sweep
 python run_workflows.py \
-  --model Llama-3.1-8B-Instruct \
+  --model meta-llama/Llama-3.1-8B-Instruct \
   --workflow benchmarks \
   --device gpu \
   --service-port 8000 \
@@ -337,11 +339,11 @@ Limit benchmark runs to 2 configurations for quick validation:
 
 ```bash
 # Works for vLLM (default) and AIPerf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
   --docker-server --tools aiperf --limit-samples-mode smoke-test
 
 # Works for GenAI-Perf
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
   --docker-server --tools genai --limit-samples-mode smoke-test
 ```
 
@@ -356,8 +358,9 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
 | **ITL** | Inter-Token Latency - same as TPOT | ms |
 | **E2EL** | End-to-End Latency - total request duration | ms |
 | **Tput User** | User-level throughput (single request) | tokens/sec |
-| **Tput Decode** | Decode throughput (all concurrent requests) | tokens/sec |
-| **Tput Prefill** | Prefill/prompt processing throughput | tokens/sec |
+| **Tput Input** | Input (prefill) token throughput, all concurrent requests | tokens/sec |
+| **Tput Output** | Output (decode) token throughput, all concurrent requests | tokens/sec |
+| **Tput Total** | Input + output token throughput, all concurrent requests | tokens/sec |
 | **Req Tput** | Request throughput | requests/sec |
 
 ### Percentile Statistics (AIPerf only)
@@ -445,7 +448,7 @@ vLLM automatically switches to `openai-chat` for image requests because it uses 
 ### Step 1: Run vLLM Benchmarks (baseline)
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --docker-server
 ```
 
 **Output:**
@@ -456,7 +459,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --docker
 ### Step 2: Run AIPerf Benchmarks
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
 ```
 
 **Note:** Server already running from Step 1, so omit `--docker-server`.
@@ -470,7 +473,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools 
 ### Step 3: Run GenAI-Perf Benchmarks
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools genai
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools genai
 ```
 
 **Output:**
@@ -480,7 +483,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools 
 ### Step 4: Generate Unified Report
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow reports
+python run.py --model google/gemma-3-4b-it --device n300 --workflow reports
 ```
 
 **Output:**
@@ -494,7 +497,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow reports
 
 ### Text Benchmark Comparison (ISL=128, OSL=128, Concurrency=1)
 
-| Source | TTFT (ms) | TPOT (ms) | Tput Decode (TPS) | E2EL (ms) | Req Tput (RPS) |
+| Source | TTFT (ms) | TPOT (ms) | Tput Output (TPS) | E2EL (ms) | Req Tput (RPS) |
 |--------|-----------|-----------|-------------------|-----------|----------------|
 | vLLM | 73.2 | 38.2 | 26.1 | 4930.4 | 0.203 |
 | aiperf | 93.5 | 40.2 | 25.1 | 5180.3 | 0.194 |
@@ -525,7 +528,7 @@ Skip sweep and only run configurations with defined targets:
 
 ```bash
 export ONLY_BENCHMARK_TARGETS=1
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
 ```
 
 ### Override Benchmark Parameters
@@ -534,7 +537,7 @@ Use custom benchmark configurations:
 
 ```bash
 export OVERRIDE_BENCHMARK_TARGETS=/path/to/custom_benchmarks.json
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
 ```
 
 Example `custom_benchmarks.json`:
@@ -592,7 +595,7 @@ If vLLM server is already running and healthy:
 
 ```bash
 # Skip --docker-server to run benchmarks only
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks --tools aiperf
 ```
 
 ### Quick Smoke Test
@@ -600,7 +603,7 @@ python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks --tools 
 Run only 2 benchmarks for rapid validation:
 
 ```bash
-python run.py --model gemma-3-4b-it --device n300 --workflow benchmarks \
+python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks \
   --docker-server --tools aiperf --limit-samples-mode smoke-test
 ```
 

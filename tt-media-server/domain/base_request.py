@@ -10,3 +10,5 @@ from pydantic import BaseModel, PrivateAttr
 
 class BaseRequest(BaseModel, ABC):
     _task_id: str = PrivateAttr(default_factory=lambda: str(uuid4()))
+    # Set by job-type services; device worker signals this on real dispatch.
+    _start_event: object = PrivateAttr(default=None)

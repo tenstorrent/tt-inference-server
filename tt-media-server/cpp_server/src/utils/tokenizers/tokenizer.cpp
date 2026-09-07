@@ -225,6 +225,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "zai-org/GLM-5.2";
     case config::ModelType::DEEPSEEK_V4_PRO:
       return "deepseek-ai/DeepSeek-V4-Pro";
+    case config::ModelType::GEMMA_4_31B_IT:
+      return "google/gemma-4-31B-it";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -247,6 +249,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
     case config::ModelType::MINIMAX_M3:
     case config::ModelType::GLM_5_1:
     case config::ModelType::GLM_5_2:
+    case config::ModelType::GEMMA_4_31B_IT:
       // These load their own model-specific files but currently reuse the
       // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
       // implementation is added.
@@ -422,6 +425,28 @@ const StaticTokenizerInfo& deepseekV4ProInfo() {
   return kInfo;
 }
 
+// IDs verified against the fetched Gemma-4-31B-it tokenizer (added_tokens in
+// tokenizer.json). Gemma 4 does NOT use <think>/</think>: reasoning is emitted
+// in a dedicated channel, `<|channel>thought\n ... <channel|>`, and the
+// template only ever opens the `thought` channel — so the channel delimiters
+// are the think-token pair here. Tool calls are
+// `<|tool_call>call:name{...}<tool_call|>`, handled by the gemma4 tool-call
+// parser on the frontend.
+const StaticTokenizerInfo& gemma431bItInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"google/gemma-4-31B-it",
+      // config.json eos_token_id: [1, 106] = <eos>, <turn|>.
+      // generation_config.json widens it to [1, 106, 50], adding
+      // <|tool_response> (the turn ends when the model hands off to a tool).
+      /*stopTokenIds=*/{106, 50},
+      /*eosTokenId=*/1,  // <eos> (also text_config.eos_token_id)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/100,  // <|channel>
+      /*thinkEndTokenId=*/101,    // <channel|>
+  };
+  return kInfo;
+}
+
 }  // namespace
 
 const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
@@ -446,6 +471,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return glm52Info();
     case config::ModelType::DEEPSEEK_V4_PRO:
       return deepseekV4ProInfo();
+    case config::ModelType::GEMMA_4_31B_IT:
+      return gemma431bItInfo();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +

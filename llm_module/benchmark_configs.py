@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
+from pathlib import Path
 from typing import List, Optional
 
-from .config import LLMRunConfig
+from .config import LLMRunConfig, ServerConnection
 
 logger = logging.getLogger(__name__)
 
@@ -27,19 +29,17 @@ def get_llm_configs(
     text-only, so any param without both ``isl`` and ``osl`` is dropped.
     ``limit_samples_mode`` honours v1's smoke-test selection when set.
     """
-    from reference_config.benchmarking.benchmark_config import (
-        get_benchmark_config,
-        select_smoke_test_benchmark_config,
-    )
-    from workflows.workflow_types import EvalLimitMode
+    from workflow_module.engine_types import EvalLimitMode
+    from workflow_module.target_pack import get_target_pack
 
-    benchmark_config = get_benchmark_config(model_spec)
+    pack = get_target_pack()
+    benchmark_config = pack.benchmark_config(model_spec)
 
     if (
         limit_samples_mode
         and EvalLimitMode.from_string(limit_samples_mode) == EvalLimitMode.SMOKE_TEST
     ):
-        benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
+        benchmark_config = pack.smoke_test_benchmark_config(benchmark_config, device)
 
     configured_devices = {
         dev for task in benchmark_config.tasks for dev in task.param_map
@@ -65,7 +65,24 @@ def get_llm_configs(
         for params in text_params
         if params.targets
     }
+    priority_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.priority
+        for params in text_params
+        if getattr(params, "priority", None)
+    }
+    target_priorities_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.target_priorities
+        for params in text_params
+        if getattr(params, "target_priorities", None)
+    }
+    goodput_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.goodput
+        for params in text_params
+        if getattr(params, "goodput", None)
+    }
 
+    metadata = getattr(model_spec, "metadata", None) or {}
+    output_block_size = int(metadata.get("output_block_size", 1) or 1)
     configs: List[LLMRunConfig] = []
     seen = set()
     for params in text_params:
@@ -73,6 +90,7 @@ def get_llm_configs(
         if key in seen:
             continue
         seen.add(key)
+        shape = (params.isl, params.osl, params.max_concurrency)
         configs.append(
             LLMRunConfig(
                 isl=params.isl,
@@ -84,6 +102,17 @@ def get_llm_configs(
                         (params.isl, params.osl, params.max_concurrency), {}
                     )
                 ),
+                output_block_size=output_block_size,
+                custom_dataset_path=(
+                    Path(
+                        f"speed_bench_prompts_isl-{params.isl}_n-{params.num_prompts}.jsonl"
+                    )
+                    if output_block_size > 1
+                    else None
+                ),
+                priority=priority_by_shape.get(shape),
+                target_priorities=target_priorities_by_shape.get(shape),
+                goodput=goodput_by_shape.get(shape),
             )
         )
 
@@ -96,4 +125,36 @@ def get_llm_configs(
     return configs
 
 
-__all__ = ["get_llm_configs"]
+def ensure_custom_dataset(
+    config: LLMRunConfig,
+    server: ServerConnection,
+    output_dir: Path,
+) -> LLMRunConfig:
+    """Materialize a configured custom dataset and resolve its path."""
+    path = config.custom_dataset_path
+    if path is None:
+        return config
+    resolved = path if path.is_absolute() else output_dir / path
+    if not resolved.exists():
+        from .speed_bench_prompts import write_speed_bench_prompt_file
+
+        try:
+            write_speed_bench_prompt_file(
+                output_path=resolved,
+                model=server.model,
+                target_isl=config.isl,
+                num_prompts=config.num_prompts,
+                trust_remote_code=server.tokenizer_trust_remote_code,
+            )
+        except Exception as build_error:
+            raise RuntimeError(
+                "SPEED-Bench prompt construction failed for "
+                f"{server.model} isl={config.isl}; refusing to run a mislabeled "
+                "random-input benchmark"
+            ) from build_error
+    if resolved != path:
+        return replace(config, custom_dataset_path=resolved)
+    return config
+
+
+__all__ = ["ensure_custom_dataset", "get_llm_configs"]

@@ -18,6 +18,7 @@
 #include "ipc/tts_ipc.hpp"
 #include "runtime/runners/blaze_runner/tts_scheduler_interface.hpp"
 #include "runtime/runners/ipc_runner.hpp"
+#include "runtime/worker/tts_metrics_layout.hpp"
 #include "utils/voice_sample_cache.hpp"
 
 namespace tt::runners::blaze {
@@ -51,11 +52,24 @@ class BlazeTtsRunner : public IRunner {
     uint32_t task_id = 0;
     bool completionPending = false;
     bool audioLastReceived = false;
+    // Which voice path this slot's request took. Latched when the slot is
+    // allocated so per-token metrics can be attributed without re-reading the
+    // (already moved-from) task.
+    tt::worker::tts::VoiceSource voiceSource =
+        tt::worker::tts::VoiceSource::Default;
   };
 
   struct PendingTerminalMessage {
     ipc::tts::TtsAudioChunkMessage message;
     std::optional<uint32_t> slotIdToEvict;
+  };
+
+  /** Worker-side conditioning timings for one in-flight task, accumulated as
+   *  its stages complete and drained onto the task's terminal message. */
+  struct ConditioningTiming {
+    std::chrono::steady_clock::time_point voiceEncodeStart{};
+    uint32_t voiceEncodeUs = 0;
+    uint32_t promptCompileUs = 0;
   };
 
   void run() override;
@@ -78,7 +92,9 @@ class BlazeTtsRunner : public IRunner {
   void handleSchedulerResponse(
       const tts_scheduler::SchedulerResponse& response);
   void handleTokenOutput(const tts_scheduler::TokenOutput& output);
-  void handleAudioOutput(const tts_scheduler::AudioOutput& output);
+  /** Returns the PCM frames the vocoder produced for this chunk, 0 if the
+   *  chunk was dropped or carried no samples. */
+  uint64_t handleAudioOutput(const tts_scheduler::AudioOutput& output);
 
   void handleAllocateAck(const tts_scheduler::SchedulerResponse& response);
   void handleSubmitAck(const tts_scheduler::SchedulerResponse& response);
@@ -110,6 +126,16 @@ class BlazeTtsRunner : public IRunner {
   utils::VoiceSampleCache voiceSampleCache;
   std::unordered_map<uint32_t, ipc::tts::TtsIpcTask> pendingAllocations;
   std::deque<PendingTerminalMessage> pendingTerminalMessages;
+  // Conditioning timings keyed by task_id, written as each stage finishes and
+  // erased in sendFinish(). Every task ends in exactly one sendFinish — that is
+  // also the single point where the timings are handed to the main process — so
+  // the map drains itself and cannot accumulate abandoned entries.
+  std::unordered_map<uint32_t, ConditioningTiming> conditioningByTask;
+  // Distinct slots seen in the current drainAudioOutputs() sweep, which is the
+  // runner's proxy for the batch the vocoder reconstructed together (see
+  // tts_metrics_layout.hpp). Reserved to maxUsers once so the step thread never
+  // allocates; linear search is fine because a batch is small.
+  std::vector<uint32_t> vocodeSweepSlots;
   std::vector<uint32_t> deferredStopSlots;
   std::vector<uint32_t> deferredEvictSlots;
   std::atomic<bool> stopped{false};

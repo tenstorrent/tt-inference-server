@@ -64,7 +64,7 @@ void EmbeddingController::createEmbedding(
   auto request = std::move(*requestOpt);
 
   if (request.model.empty()) {
-    request.model = "BAAI/bge-large-en-v1.5";
+    request.model = tt::config::embeddingEngineConfig().hf_model_id;
   }
 
   uint64_t reqNum = request_counter_.fetch_add(1);

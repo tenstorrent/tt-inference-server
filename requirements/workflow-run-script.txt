@@ -26,7 +26,11 @@ pillow
 requests
 imageio
 imageio-ffmpeg
-transformers==4.57.1
+# Matches the server image pin. SPEED-Bench prompt construction loads the
+# model tokenizer in this venv, and DiffusionGemma's checkpoint is authored
+# for transformers 5.x: its list-valued `extra_special_tokens` crashes 4.x
+# fast-tokenizer init, and the 4.x slow-path fallback fails the same way.
+transformers==5.12.1
 # LLM eval/release run in this venv and mint the server bearer token from
 # --jwt-secret (command_factory._mint_jwt_if_secret), so pyjwt must be here.
 pyjwt

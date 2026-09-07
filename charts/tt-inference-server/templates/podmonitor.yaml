@@ -1,0 +1,25 @@
+{{- $podMonitor := .Values.podMonitor | default dict }}
+{{- if dig "enabled" false $podMonitor }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- /* merge so user labels add to, but never duplicate, the standard label keys. */ -}}
+    {{- $labels := merge (include "tt-inference-server.labels" . | fromYaml) ($podMonitor.labels | default dict) }}
+    {{- toYaml $labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "tt-inference-server.selectorLabels" . | nindent 6 }}
+  podMetricsEndpoints:
+    # /metrics is served on the API port, not a separate one.
+    - port: http
+      {{- with $podMonitor.path }}
+      path: {{ . }}
+      {{- end }}
+      {{- with $podMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+{{- end }}

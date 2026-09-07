@@ -7,11 +7,15 @@ while VLM image/text perf is driven separately by the guidellm ``omni_modal_imag
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
-from llm_module.benchmark_configs import get_llm_configs
-from workflows.model_spec import MODEL_SPECS
+from llm_module.benchmark_configs import ensure_custom_dataset, get_llm_configs
+from llm_module.config import LLMRunConfig, ServerConnection
+from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
+from workflows.utils import get_repo_root_path
 from workflows.workflow_types import ModelType
 
 
@@ -138,6 +142,100 @@ def test_configs_stay_hashable_with_targets_attached():
     assert len({hash(c) for c in configs}) == len(
         {(c.isl, c.osl, c.max_concurrency, c.num_prompts) for c in configs}
     )
+
+
+def test_block_granular_spec_selects_custom_dataset_from_model_spec():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    spec = next(
+        t for t in templates if t.weights == ["google/diffusiongemma-26B-A4B-it"]
+    ).expand_to_specs()[0]
+    configs = get_llm_configs(spec, spec.device_type)
+
+    assert configs
+    for config in configs:
+        assert config.output_block_size == 256
+        assert config.custom_dataset_path == Path(
+            f"speed_bench_prompts_isl-{config.isl}_n-{config.num_prompts}.jsonl"
+        )
+
+
+def test_token_granular_specs_keep_random_dataset():
+    spec, _ = _specs_with_text_targets()[0]
+    for config in get_llm_configs(spec, spec.device_type):
+        assert config.output_block_size == 1
+        assert config.custom_dataset_path is None
+
+
+def _dataset_config(**overrides):
+    values = dict(isl=128, osl=128, max_concurrency=1, num_prompts=8)
+    values.update(overrides)
+    return LLMRunConfig(**values)
+
+
+def test_missing_custom_dataset_path_is_left_alone(tmp_path):
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+    )
+    config = _dataset_config()
+
+    assert ensure_custom_dataset(config, server, tmp_path) is config
+
+
+def test_existing_prompt_file_short_circuits_rebuild(monkeypatch, tmp_path):
+    from llm_module import speed_bench_prompts
+
+    def fail_rebuild(**_kwargs):
+        raise AssertionError("prompt file should be reused, not rebuilt")
+
+    monkeypatch.setattr(
+        speed_bench_prompts, "write_speed_bench_prompt_file", fail_rebuild
+    )
+    prompts_path = tmp_path / "speed_bench_prompts_isl-128_n-8.jsonl"
+    prompts_path.write_text('{"prompt": "existing"}\n')
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+    )
+
+    ensured = ensure_custom_dataset(
+        _dataset_config(custom_dataset_path=Path(prompts_path.name)),
+        server,
+        tmp_path,
+    )
+
+    assert ensured.custom_dataset_path == prompts_path
+
+
+def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tmp_path):
+    from llm_module import speed_bench_prompts
+
+    def fail_prompt_build(**_kwargs):
+        raise OSError("dataset unavailable")
+
+    monkeypatch.setattr(
+        speed_bench_prompts,
+        "write_speed_bench_prompt_file",
+        fail_prompt_build,
+    )
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/diffusiongemma-26B-A4B-it",
+    )
+
+    with pytest.raises(RuntimeError, match="refusing to run a mislabeled"):
+        ensure_custom_dataset(
+            _dataset_config(
+                custom_dataset_path=Path("speed_bench_prompts_isl-128_n-8.jsonl")
+            ),
+            server,
+            tmp_path,
+        )
 
 
 if __name__ == "__main__":

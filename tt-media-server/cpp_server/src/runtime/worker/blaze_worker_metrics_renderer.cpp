@@ -3,11 +3,11 @@
 
 #include "runtime/worker/blaze_worker_metrics_renderer.hpp"
 
-#include <chrono>
 #include <iterator>
 #include <string>
 
 #include "runtime/worker/blaze_metrics_layout.hpp"
+#include "runtime/worker/worker_metrics_clock.hpp"
 
 namespace tt::worker {
 
@@ -33,18 +33,6 @@ constexpr BlazeEventDef BLAZE_EVENTS[] = {
      sp_pipeline::SCRATCH_EV_DEFERRED_SUBMIT_SUPERSEDED},
     {"deferred_evict_latched", sp_pipeline::SCRATCH_EV_DEFERRED_EVICT_LATCHED},
 };
-
-uint64_t nowMs() {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
-}
-
-double ageSeconds(uint64_t lastEpochMs, uint64_t nowEpochMs) {
-  if (lastEpochMs == 0 || lastEpochMs > nowEpochMs) return 0.0;
-  return static_cast<double>(nowEpochMs - lastEpochMs) / 1000.0;
-}
 
 }  // namespace
 

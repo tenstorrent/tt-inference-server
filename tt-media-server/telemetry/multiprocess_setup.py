@@ -20,7 +20,12 @@ parent's ``/metrics`` endpoint.
 
 The bootstrap also wipes the multiprocess directory on parent startup so
 stale ``*.db`` files from previous server runs do not leak into the
-current run's collector output.
+current run's collector output. That wipe makes the directory choice
+load-bearing: ``MultiProcessCollector`` sums every ``*.db`` file in the
+directory it is pointed at, so two servers sharing one directory report
+each other's numbers -- and the second one to start deletes the first
+one's live metrics. The default is therefore namespaced by the port this
+instance serves.
 
 In addition, ``mark_worker_dead(pid)`` should be called from the parent
 whenever a worker subprocess exits (graceful shutdown, restart, kill).
@@ -34,11 +39,44 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Optional
 
 _MULTIPROC_DIR_ENV = "PROMETHEUS_MULTIPROC_DIR"
-_DEFAULT_MULTIPROC_DIR = "/tmp/prometheus_multiproc"
+_DEFAULT_MULTIPROC_DIR_PREFIX = "/tmp/prometheus_multiproc"
+# Matches the ``${SERVICE_PORT:-8000}`` default in run_uvicorn.sh.
+_DEFAULT_PORT = "8000"
+
+
+def _server_port() -> str:
+    """Best-effort port for this server instance, to namespace the default dir.
+
+    Mirrors how the server is actually launched: ``run_uvicorn.sh`` passes
+    ``--port "${SERVICE_PORT:-8000}"`` and ``start_ltx_fast.sh`` uses ``PORT``.
+    argv is scanned last so a bare ``python -m uvicorn ... --port N`` (the
+    usual local invocation) is namespaced too.
+
+    Deliberately dependency-free: this module runs before ``prometheus_client``
+    is imported anywhere, so it must not pull in ``config.settings``.
+    """
+    for env_key in ("SERVICE_PORT", "PORT"):
+        value = os.environ.get(env_key, "").strip()
+        if value.isdigit():
+            return value
+
+    argv = sys.argv
+    for index, arg in enumerate(argv):
+        if arg == "--port" and index + 1 < len(argv):
+            candidate = argv[index + 1].strip()
+            if candidate.isdigit():
+                return candidate
+        elif arg.startswith("--port="):
+            candidate = arg.split("=", 1)[1].strip()
+            if candidate.isdigit():
+                return candidate
+
+    return _DEFAULT_PORT
 
 
 def _bootstrap_multiproc_dir() -> Optional[str]:
@@ -48,7 +86,9 @@ def _bootstrap_multiproc_dir() -> Optional[str]:
     (in which case the env var is unset so prometheus_client falls back
     to single-process mode safely).
     """
-    multiproc_dir = os.environ.get(_MULTIPROC_DIR_ENV, _DEFAULT_MULTIPROC_DIR)
+    multiproc_dir = os.environ.get(_MULTIPROC_DIR_ENV, "").strip()
+    if not multiproc_dir:
+        multiproc_dir = f"{_DEFAULT_MULTIPROC_DIR_PREFIX}_{_server_port()}"
     target = Path(multiproc_dir)
 
     try:

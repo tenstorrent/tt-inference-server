@@ -9,6 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+_orig_config_settings = sys.modules.get("config.settings")
+_orig_telemetry_client = sys.modules.get("telemetry.telemetry_client")
+
 sys.modules["ttnn"] = Mock()
 
 mock_settings = Mock()
@@ -31,6 +34,8 @@ from tt_model_runners.video_runner import (
     _attach_mpi_comm,
     _broadcast_request,
     _create_dit_runner,
+    _EncodeJob,
+    _encoder_loop,
     _is_shutdown,
     _rank,
     _rank0_load_image_prompts,
@@ -40,6 +45,20 @@ from tt_model_runners.video_runner import (
     run_all_ranks,
     video_request_to_generate_request,
 )
+
+# Restore the real modules so that test files collected after this one (e.g.
+# tests/test_video_metrics.py, which asserts on real Prometheus values) do not
+# inherit our Mocks. Same pattern and rationale as tests/test_device_worker.py:
+# the modules under test above already hold their imported references, so the
+# swap only needs to last for the duration of those imports.
+for _module_name, _original_module in {
+    "config.settings": _orig_config_settings,
+    "telemetry.telemetry_client": _orig_telemetry_client,
+}.items():
+    if _original_module is not None:
+        sys.modules[_module_name] = _original_module
+    else:
+        sys.modules.pop(_module_name, None)
 
 
 class TestRank:
@@ -828,6 +847,68 @@ class TestRunInferenceLoop:
         _run_inference_loop(mock_comm, mock_runner, None, None)
 
         mock_runner.run.assert_called_once()
+
+
+class TestEncoderLoop:
+    """The rank-0 encoder thread picks the exporter from the payload type: a
+    ``VideoAudioResult`` (audio runners) muxes video + audio, anything else is a
+    raw frame array encoded video-only. Both paths write exactly one response.
+    """
+
+    def _drain(self, job) -> MagicMock:
+        import queue as _queue
+
+        q: _queue.Queue = _queue.Queue()
+        q.put(job)
+        q.put(None)  # shutdown sentinel
+        output_shm = MagicMock()
+        _encoder_loop(output_shm, q)
+        return output_shm
+
+    def test_video_audio_result_muxes_with_audio(self):
+        import numpy as np
+
+        from utils.video_manager import VideoAudioResult
+
+        frames = np.zeros((2, 4, 4, 3), dtype=np.uint8)
+        audio = np.zeros((2, 100), dtype=np.float32)
+        payload = VideoAudioResult(frames, audio, sampling_rate=16000, fps=25)
+        job = _EncodeJob(task_id="t-audio", frames=payload)
+
+        with patch(
+            "utils.video_manager.VideoManager.export_to_mp4_with_audio",
+            return_value="/tmp/out.mp4",
+        ) as mux, patch("utils.video_manager.VideoManager.export_to_mp4") as plain:
+            output_shm = self._drain(job)
+
+        plain.assert_not_called()
+        mux.assert_called_once()
+        args, kwargs = mux.call_args
+        assert args[0] is frames
+        assert args[1] is audio
+        assert args[2] == 16000
+        assert kwargs["fps"] == 25
+        output_shm.write_response.assert_called_once()
+
+    def test_raw_frames_use_video_only_export(self):
+        import numpy as np
+
+        frames = np.zeros((2, 4, 4, 3), dtype=np.uint8)
+        job = _EncodeJob(task_id="t-plain", frames=frames)
+
+        with patch(
+            "utils.video_manager.VideoManager.export_to_mp4",
+            return_value="/tmp/out.mp4",
+        ) as plain, patch(
+            "utils.video_manager.VideoManager.export_to_mp4_with_audio"
+        ) as mux:
+            output_shm = self._drain(job)
+
+        mux.assert_not_called()
+        plain.assert_called_once()
+        args, _ = plain.call_args
+        assert args[0] is frames
+        output_shm.write_response.assert_called_once()
 
 
 class TestRunAllRanks:

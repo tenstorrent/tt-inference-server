@@ -165,7 +165,8 @@ void LLMPipeline::resolveSession(
               std::move(fullPrompt), /*initialBlocks=*/{},
               [mgr](const std::string& sessionId,
                     const std::vector<tt::utils::BlockHashInfo>& blocks) {
-                mgr->registerPrefixHash(sessionId, blocks);
+                mgr->registerPrefixHash(sessionId, blocks,
+                                        /*clearBeingGenerated=*/true);
               },
               [mgr](const std::string& sessionId) {
                 mgr->closeSession(sessionId);

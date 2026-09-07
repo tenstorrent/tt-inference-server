@@ -9,6 +9,7 @@ import time
 import ttnn
 from domain.image_generate_request import ImageGenerateRequest
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+from telemetry.image_metrics import record_image_run, resolution_of_images
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 
@@ -72,15 +73,37 @@ class ZImageTurboRunner(BaseMetalDeviceRunner):
         request = requests[0]
         seed = int(request.seed or 0)
 
-        t_start = time.time()
+        t_start = time.perf_counter()
         image = self.pipeline.forward(
             prompt=request.prompt,
             steps=DEFAULT_STEPS,
             seed=seed,
         )
-        elapsed = time.time() - t_start
+        elapsed = time.perf_counter() - t_start
 
         self.logger.info(
             f"Device {self.device_id}: Generated in {elapsed:.2f}s  seed={seed}"
         )
+        self._record_image_stage_metrics([image], elapsed)
         return [image]
+
+    def _record_image_stage_metrics(self, images, elapsed):
+        """Export what this runner can see of the image stages.
+
+        forward() is a single opaque call with no stage boundaries, so only the
+        engine total and the fixed step count are knowable. The denoise / VAE /
+        conditioning splits stay absent rather than guessed.
+        """
+        try:
+            resolution, _, _ = resolution_of_images(images)
+            record_image_run(
+                model_type=self.settings.model_runner,
+                device_id=self.device_id,
+                resolution=resolution,
+                sampler="unknown",
+                batch=1,
+                engine_seconds=elapsed,
+                step_count=DEFAULT_STEPS,
+            )
+        except Exception as exc:
+            self.logger.warning(f"Failed to record image stage metrics: {exc}")

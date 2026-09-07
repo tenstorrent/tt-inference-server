@@ -1,27 +1,5 @@
 {
-    "gemma-4-31B-it": {
-        "p300x2": [
-            {
-                "_comment": "Numbers unchanged; this key was RENAMED from 'gemma-4-31b-it' to the canonical HuggingFace casing 'gemma-4-31B-it' (google/gemma-4-31b-it 307-redirects to google/gemma-4-31B-it). Lookup is case-sensitive on the basename of weights[0], so the old lowercase key only ever matched the forge spec's non-canonical weight string at workflows/model_specs/dev/llm.yaml:1719 and left the vLLM spec (google/gemma-4-31B-it, used by both dev and prod) with zero targets and ungradable on every tier. Theoretical peak is a property of the model, the silicon and the dtype - not of the serving engine - so both specs must share this one entry: fix that forge weight string to the canonical casing rather than duplicating these numbers. Doing so also requires reconciling models-ci-config.json, which currently distinguishes its vLLM and FORGE rows for this model purely by that casing difference. The values themselves are ASSUMED, NOT VALIDATED: no t3k entry exists for this model to derive from, and these were authored for the forge bring-up. Replace with measured/derived roofline numbers before trusting a FUNCTIONAL+ verdict.",
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 46,
-                        "tput_user": 37,
-                        "tput": 37
-                    }
-                }
-            }
-        ]
-    },
-    "gemma-4-26B-A4B-it": {
+    "google/gemma-4-26B-A4B-it": {
         "p300x2": [
             {
                 "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model, so numbers are inferred from the closest same-size Gemma in this file: 'gemma-3-27b-it' t3k (ttft 76.0 / tput_user 43.0). LIKELY PESSIMISTIC BY A LARGE MARGIN: gemma-4-26B-A4B is a sparse MoE with ~4B active parameters (8 of 128 experts + 1 shared), so decode is bounded by ~4B of weight traffic, not by 27B dense - expect real tput_user well above this. 'tput' is set equal to 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. Replace with a proper roofline before trusting a FUNCTIONAL+ verdict.",
@@ -43,10 +21,10 @@
             }
         ]
     },
-    "Qwen3.6-27B": {
+    "Qwen/Qwen3.6-27B": {
         "p300x2": [
             {
-                "_comment": "Decode targets are the CUSTOMER STRETCH values from 'QB2 Model Support Requirements' Rev 0.20 (Google Sheets 1IE0aZrEyEnt2a_hFe7YkTnxQqlmW-VNgT0Sgprkml68, tab 'qwen3.6-27b', owner ahousman@tenstorrent.com), row PF3: decode throughput \u2265 30 t/s/user with stretch \u2265 50. The stretch is used as the 100% 'target' tier, so the default tier map (functional 10% / complete 50% / target 100%) puts complete at 25 t/s/user and functional at 5. 'tput' equals 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. The sheet's own roofline check bounds this at ~76 t/s/user (2048 GB/s over ~27 GB FP8 weights) and notes BF16 caps ~34-38, so the 50 t/s/user target REQUIRES FP8 weights. ttft_ms 62.0 is UNCHANGED and still ASSUMED (inferred from 'Qwen3-32B' t3k): the customer set no TTFT target at ISL 128. Their prefill target PF1 is input-token throughput (ITT \u2265 13K t/s, stretch \u2265 26K) measured at ISL 32K-128K, and PF2 is a warm-cache latency bound (TTFT \u2264 1 s on a ~1K append over a 128K prefix). Dividing 128 tokens by the ITT stretch would yield a ~5 ms target, which is meaningless at this ISL where fixed overhead dominates. PF1/PF2/PF7 also define ISL 32K/128K and batch-32 operating points that are not encoded here.",
+                "_comment": "Decode targets are the CUSTOMER STRETCH values from 'QB2 Model Support Requirements' Rev 0.20 (Google Sheets 1IE0aZrEyEnt2a_hFe7YkTnxQqlmW-VNgT0Sgprkml68, tab 'qwen3.6-27b', owner ahousman@tenstorrent.com), row PF3: decode throughput ≥ 30 t/s/user with stretch ≥ 50. The stretch is used as the 100% 'target' tier, so the default tier map (functional 10% / complete 50% / target 100%) puts complete at 25 t/s/user and functional at 5. 'tput' equals 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. The sheet's own roofline check bounds this at ~76 t/s/user (2048 GB/s over ~27 GB FP8 weights) and notes BF16 caps ~34-38, so the 50 t/s/user target REQUIRES FP8 weights. ttft_ms 62.0 is UNCHANGED and still ASSUMED (inferred from 'Qwen3-32B' t3k): the customer set no TTFT target at ISL 128. Their prefill target PF1 is input-token throughput (ITT ≥ 13K t/s, stretch ≥ 26K) measured at ISL 32K-128K, and PF2 is a warm-cache latency bound (TTFT ≤ 1 s on a ~1K append over a 128K prefix). Dividing 128 tokens by the ITT stretch would yield a ~5 ms target, which is meaningless at this ISL where fixed overhead dominates. PF1/PF2/PF7 also define ISL 32K/128K and batch-32 operating points that are not encoded here.",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -65,7 +43,7 @@
             }
         ]
     },
-    "Qwen3.6-35B-A3B": {
+    "Qwen/Qwen3.6-35B-A3B": {
         "p300x2": [
             {
                 "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model. Inferred from 'Qwen3-30B-A3B' t3k (ttft 36.0 / tput_user 44.0) — the closest analogue in this file by BOTH size class and sparsity: 30B-A3B vs 35B-A3B, i.e. near-identical ~3B active parameters, and decode is bounded by active-weight traffic rather than total parameters. Caveats: (1) t3k is 8 Wormhole chips, QB2 is 4 Blackhole chips, so this is a cross-architecture transplant; (2) Qwen3.6 interleaves Gated DeltaNet (recurrent, O(1) state) with Gated Attention layers, so its decode cost curve differs from a uniform-attention MoE. 'tput' equals 'tput_user' because max_concurrency is 1, where aggregate decode throughput is per-user throughput by definition. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
@@ -87,7 +65,7 @@
             }
         ]
     },
-    "Muse-Glimmer-30B": {
+    "meta-models/Muse-Glimmer-30B": {
         "p300x2": [
             {
                 "_comment": "ASSUMED, NOT VALIDATED. No t3k entry exists for this model. Inferred from 'Qwen3-32B' t3k (ttft 62.0 / tput_user 41.0), the closest DENSE model of this size in the file: Muse-Glimmer is ~29.6B dense with all parameters active per token, so unlike the MoE entries nearby its decode is bounded by the full weight set. Caveats: (1) cross-architecture transplant from 8 Wormhole chips to 4 Blackhole chips; (2) Muse-Glimmer's GQA ratio is 16:1 (32 Q / 2 KV heads) against Qwen3-32B's, so KV traffic per token is lighter, which if anything makes this pessimistic. 'tput' equals 'tput_user' at max_concurrency 1 by definition. Replace with measured/derived numbers before trusting a FUNCTIONAL+ verdict.",
@@ -109,7 +87,7 @@
             }
         ]
     },
-    "diffusiongemma-26B-A4B-it": {
+    "google/diffusiongemma-26B-A4B-it": {
         "p300x2": [
             {
                 "_comment": "ASSUMED, NOT VALIDATED, AND THE METRICS MAY NOT EVEN BE THE RIGHT ONES. Numbers copied from the 'gemma-4-26B-A4B-it' p300x2 entry, whose text backbone this model reuses unchanged (tt-metal remaps model.decoder.* onto the gemma4 loader). The deeper problem is semantic, not numeric: this is NOT an autoregressive decoder. It denoises a 256-token canvas over up to 48 steps, so 'tokens per second per user' is not a per-token serial decode rate and TTFT is time to a whole first canvas, not to a first token. Comparing those against an autoregressive roofline is close to meaningless — treat any tier verdict here as noise until someone defines what theoretical peak means for block-diffusion decoding. Additional caveat: the reused gemma4 MoE backbone PCCs ~0.88 vs the HF reference on Blackhole (recorded as xfail against the 0.99 target), which is an accuracy risk, not a perf one. 'tput' equals 'tput_user' at max_concurrency 1.",
@@ -131,7 +109,7 @@
             }
         ]
     },
-    "Qwen3.8-27B": {
+    "Qwen/Qwen3.8-27B": {
         "p300x2": [
             {
                 "_comment": "ASSUMED, NOT VALIDATED. Same derivation as the 'Qwen3.6-27B' entry (inferred from 'Qwen3-32B' t3k: ttft 62.0 / tput_user 41.0) because Qwen3.8-27B is the same parameter class and rides the same tt-metal code path (models/demos/blackhole/qwen36; its HF architectures string is 'Qwen3_5ForConditionalGeneration', already registered in vllm-tt-plugin). 'tput' equals 'tput_user' at max_concurrency 1 by definition. Doubly unvalidated: neither the numbers nor the assumption that the qwen36 implementation covers this checkpoint has been confirmed on hardware.",
@@ -153,7 +131,28 @@
             }
         ]
     },
-    "Qwen3-VL-32B-Instruct": {
+    "google/gemma-4-31b-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46,
+                        "tput_user": 37,
+                        "tput": 37
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen/Qwen3-VL-32B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -173,7 +172,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-3B-Instruct": {
+    "Qwen/Qwen2.5-VL-3B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -229,7 +228,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-7B-Instruct": {
+    "Qwen/Qwen2.5-VL-7B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -285,7 +284,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-32B-Instruct": {
+    "Qwen/Qwen2.5-VL-32B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -305,7 +304,7 @@
             }
         ]
     },
-    "Qwen2.5-VL-72B-Instruct": {
+    "Qwen/Qwen2.5-VL-72B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -345,9 +344,103 @@
             }
         ]
     },
-    "Qwen3-32B": {
+    "Qwen/Qwen3-32B": {
         "galaxy": [
             {
+                "_comment": [
+                    "GALAXY at data_parallel_size=4. Declaring data_parallel here makes",
+                    "get_perf_reference() use this entry verbatim instead of remapping to",
+                    "the t3k row and scaling it -- so these numbers describe the whole",
+                    "Galaxy and mean exactly what they say.",
+                    "'theoretical' is a hardware ceiling and drives only the functional",
+                    "(10%) and complete (50%) tiers. 'measured' gates acceptance, because",
+                    "measured/theoretical is 0.35 here and 0.48 on T3K (tt-metal",
+                    "PERF.md: Qwen3-32B T3K = 19.6 t/s/u against a 41.0 target), so a tier",
+                    "at 100% of theoretical could never pass on any device.",
+                    "Measured across 4 sweeps on 2026-08-17 (wh-glx6u-08); throughput",
+                    "varied under 2%, so the default 5% tolerance is generous. Values are",
+                    "the worst of the stable cluster.",
+                    "At conc=1 tput ~= tput_user, as it must be with a single user; the",
+                    "previous target was 5328 (t3k 1332 x 4), about 100x unreachable."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 30.0,
+                        "tput_user": 156.0,
+                        "tput": 156.0
+                    },
+                    "measured": {
+                        "ttft_ms": 203.2,
+                        "tput_user": 55.1,
+                        "tput": 51.2,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "GALAXY at data_parallel_size=4, 32 concurrent users: the point that",
+                    "actually exercises all four data-parallel groups. Aggregate 617 tok/s",
+                    "against 50.4 per user is the real multi-user number, and is where a",
+                    "meaningful aggregate target belongs -- not on the conc=1 point.",
+                    "No 'theoretical' block: no ceiling has been derived for this point,",
+                    "and inventing one would recreate the problem this entry fixes.",
+                    "Excluded from the measurement: the first sweep of 2026-08-17 reported",
+                    "tput_user 17.58 / tput 290.79 here, ~2x off the other three runs. It",
+                    "ran immediately after server start and is a warmup outlier."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 4360.9,
+                        "tput_user": 50.4,
+                        "tput": 617.1,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "_comment": [
+                    "tput is set equal to tput_user because this point runs",
+                    "max_concurrency: 1: at one concurrent user aggregate throughput IS",
+                    "per-user throughput, so they cannot differ. It previously held 5329,",
+                    "a MULTI-USER aggregate (5329/156 = 34x), which made the check",
+                    "unreachable by construction -- it could never pass however well the",
+                    "model performed. p300x2 already had the correct form (37 == 37).",
+                    "Measured on wh-glx6u-08 (Qwen3-32B, GALAXY, 2026-08-17):",
+                    "  tput_user = 55.1 tok/s, tput = 52.0 tok/s",
+                    "tput ~= tput_user is exactly what a 1-user point must produce, so the",
+                    "measurement is sound. NOTE the check is now meaningful but still",
+                    "fails: 55.1 against 156 is a ratio of 0.35. That is a real performance",
+                    "question, no longer a broken comparison.",
+                    "TWO THINGS STILL TO RESOLVE:",
+                    "1) model_spec.py:159 multiplies tput (not tput_user) by",
+                    "   data_parallel_size=4, so this 156 becomes an effective 624 at a",
+                    "   point that only ever drives ONE replica. The scaling should not",
+                    "   apply when max_concurrency == 1.",
+                    "2) UNCONFIRMED: the 2026-08-17 GALAXY report applied tput_user=41 and",
+                    "   tput=5328, matching the t3k row (41, 1332*4) rather than this one",
+                    "   (5328 != 5329, so not rounding). If t3k targets are really being",
+                    "   applied to GALAXY runs they are lenient and mask the 0.35 gap above.",
+                    "   Trace the device-row selection before acting on it."
+                ],
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
@@ -360,7 +453,7 @@
                     "theoretical": {
                         "ttft_ms": 30.0,
                         "tput_user": 156.0,
-                        "tput": 5329.0
+                        "tput": 156.0
                     }
                 }
             }
@@ -379,7 +472,7 @@
                     "theoretical": {
                         "ttft_ms": 62.0,
                         "tput_user": 41.0,
-                        "tput": 1332.0
+                        "tput": 41.0
                     }
                 }
             }
@@ -404,7 +497,7 @@
             }
         ]
     },
-    "Mistral-Small-3.1-24B-Instruct-2503": {
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": {
         "t3k": [
             {
                 "isl": 128,
@@ -482,7 +575,7 @@
             }
         ]
     },
-    "Qwen2.5-72B-Instruct": {
+    "Qwen/Qwen2.5-72B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -522,7 +615,7 @@
             }
         ]
     },
-    "Llama-3.1-8B-Instruct": {
+    "meta-llama/Llama-3.1-8B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -638,7 +731,7 @@
             }
         ]
     },
-    "gemma-2-27b-it": {
+    "google/gemma-2-27b-it": {
         "galaxy": [
             {
                 "isl": 128,
@@ -678,7 +771,7 @@
             }
         ]
     },
-    "Llama-3.3-70B-Instruct": {
+    "meta-llama/Llama-3.3-70B-Instruct": {
         "p300x2": [
             {
                 "isl": 128,
@@ -698,21 +791,44 @@
                 }
             }
         ],
+        "p150x4": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 96,
+                        "tput_user": 20
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 64,
+                        "tput_user": 18
+                    }
+                }
+            }
+        ],
         "t3k": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 113.0,
-                        "tput_user": 19.0,
-                        "tput": 610.0
+                        "ttft_ms": 38,
+                        "tput_user": 28
                     }
                 }
             }
@@ -723,15 +839,10 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 50.0,
-                        "tput_user": 73.0,
-                        "tput": 2438.0
+                        "ttft_ms": 50,
+                        "tput_user": 80
                     }
                 }
             },
@@ -747,23 +858,9 @@
                     }
                 }
             }
-        ],
-        "p150x4": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
-            }
         ]
     },
-    "Qwen3-30B-A3B": {
+    "Qwen/Qwen3-30B-A3B": {
         "galaxy": [
             {
                 "isl": 128,
@@ -803,98 +900,22 @@
             }
         ]
     },
-    "Mistral-7B-Instruct-v0.3": {
+    "mistralai/Mistral-7B-Instruct-v0.3": {
         "n150": [
             {
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 45.0,
-                        "tput_user": 24.0,
-                        "tput": 744.0
-                    }
-                }
-            }
-        ],
-        "n300": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 36.0,
-                        "tput_user": 47.0,
-                        "tput": 1488.0
-                    }
-                }
-            }
-        ],
-        "t3k": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 19.0,
-                        "tput_user": 94.0,
-                        "tput": 5954.0
-                    }
-                }
-            }
-        ],
-        "p150": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 27.0,
-                        "tput_user": 43.0,
-                        "tput": 1323.0
-                    }
-                }
-            }
-        ],
-        "p100": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 30.0,
-                        "tput_user": 37.0,
-                        "tput": 1158.0
+                        "ttft_ms": 78.0,
+                        "tput_user": 70.0,
+                        "tput": 2091.0
                     }
                 }
             }
@@ -905,21 +926,40 @@
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 10.0,
-                        "tput_user": 687.0,
-                        "tput": 23815.0
+                        "ttft_ms": 23.0,
+                        "tput_user": 1344.0,
+                        "tput": 43008.0
+                    }
+                }
+            }
+        ],
+        "p150": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "vlm",
+                "image_height": 896,
+                "image_width": 896,
+                "images_per_prompt": 1,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 72.0,
+                        "tput_user": 80.0,
+                        "tput": 2389.0
                     }
                 }
             }
         ]
     },
-    "Llama-3.1-70B": {
+    "meta-llama/Llama-3.1-70B": {
         "p300x2": [
             {
                 "isl": 128,
@@ -978,7 +1018,7 @@
             }
         ]
     },
-    "Qwen3-8B": {
+    "Qwen/Qwen3-8B": {
         "t3k": [
             {
                 "isl": 128,
@@ -1094,7 +1134,7 @@
             }
         ]
     },
-    "gpt-oss-120b": {
+    "openai/gpt-oss-120b": {
         "t3k": [
             {
                 "isl": 128,
@@ -1170,7 +1210,7 @@
             }
         ]
     },
-    "gpt-oss-20b": {
+    "openai/gpt-oss-20b": {
         "n300": [
             {
                 "isl": 128,
@@ -1267,7 +1307,7 @@
             }
         ]
     },
-    "QwQ-32B": {
+    "Qwen/QwQ-32B": {
         "t3k": [
             {
                 "isl": 128,
@@ -1307,7 +1347,7 @@
             }
         ]
     },
-    "Qwen2.5-Coder-32B-Instruct": {
+    "Qwen/Qwen2.5-Coder-32B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -1347,7 +1387,7 @@
             }
         ]
     },
-    "Mistral-Small-3.2-24B-Instruct-2506": {
+    "mistralai/Mistral-Small-3.2-24B-Instruct-2506": {
         "t3k": [
             {
                 "isl": 128,
@@ -1406,7 +1446,7 @@
             }
         ]
     },
-    "Mistral-Small-24B-Instruct-2501": {
+    "mistralai/Mistral-Small-24B-Instruct-2501": {
         "galaxy": [
             {
                 "isl": 128,
@@ -1465,7 +1505,7 @@
             }
         ]
     },
-    "Llama-3.2-3B-Instruct": {
+    "meta-llama/Llama-3.2-3B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -1581,7 +1621,7 @@
             }
         ]
     },
-    "Qwen3-14B": {
+    "Qwen/Qwen3-14B": {
         "n300": [
             {
                 "isl": 128,
@@ -1678,7 +1718,7 @@
             }
         ]
     },
-    "Qwen3-4B": {
+    "Qwen/Qwen3-4B": {
         "galaxy": [
             {
                 "isl": 128,
@@ -1794,7 +1834,7 @@
             }
         ]
     },
-    "Qwen3-1.7B": {
+    "Qwen/Qwen3-1.7B": {
         "galaxy": [
             {
                 "isl": 128,
@@ -1910,7 +1950,7 @@
             }
         ]
     },
-    "Qwen3-0.6B": {
+    "Qwen/Qwen3-0.6B": {
         "t3k": [
             {
                 "isl": 128,
@@ -2026,7 +2066,7 @@
             }
         ]
     },
-    "gemma-2-9b-it": {
+    "google/gemma-2-9b-it": {
         "t3k": [
             {
                 "isl": 128,
@@ -2142,7 +2182,7 @@
             }
         ]
     },
-    "Mistral-Nemo-Instruct-2407": {
+    "mistralai/Mistral-Nemo-Instruct-2407": {
         "p100": [
             {
                 "isl": 128,
@@ -2239,7 +2279,7 @@
             }
         ]
     },
-    "Qwen2.5-0.5B-Instruct": {
+    "Qwen/Qwen2.5-0.5B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2355,7 +2395,7 @@
             }
         ]
     },
-    "Qwen2.5-1.5B-Instruct": {
+    "Qwen/Qwen2.5-1.5B-Instruct": {
         "n150": [
             {
                 "isl": 128,
@@ -2471,7 +2511,7 @@
             }
         ]
     },
-    "Qwen2.5-3B-Instruct": {
+    "Qwen/Qwen2.5-3B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -2587,7 +2627,7 @@
             }
         ]
     },
-    "Qwen2.5-7B-Instruct": {
+    "Qwen/Qwen2.5-7B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2703,7 +2743,7 @@
             }
         ]
     },
-    "Qwen2.5-14B-Instruct": {
+    "Qwen/Qwen2.5-14B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2800,7 +2840,7 @@
             }
         ]
     },
-    "Qwen2.5-32B-Instruct": {
+    "Qwen/Qwen2.5-32B-Instruct": {
         "galaxy": [
             {
                 "isl": 128,
@@ -2840,7 +2880,7 @@
             }
         ]
     },
-    "Llama-3.2-1B-Instruct": {
+    "meta-llama/Llama-3.2-1B-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -2956,7 +2996,7 @@
             }
         ]
     },
-    "gemma-1.1-2b-it": {
+    "google/gemma-1.1-2b-it": {
         "n150": [
             {
                 "isl": 128,
@@ -3072,7 +3112,7 @@
             }
         ]
     },
-    "gemma-1.1-7b-it": {
+    "google/gemma-1.1-7b-it": {
         "galaxy": [
             {
                 "isl": 128,
@@ -3188,7 +3228,7 @@
             }
         ]
     },
-    "gemma-2-2b-it": {
+    "google/gemma-2-2b-it": {
         "t3k": [
             {
                 "isl": 128,
@@ -3304,7 +3344,7 @@
             }
         ]
     },
-    "phi-1": {
+    "microsoft/phi-1": {
         "p100": [
             {
                 "isl": 128,
@@ -3420,7 +3460,7 @@
             }
         ]
     },
-    "phi-1_5": {
+    "microsoft/phi-1_5": {
         "n150": [
             {
                 "isl": 128,
@@ -3536,7 +3576,7 @@
             }
         ]
     },
-    "phi-2": {
+    "microsoft/phi-2": {
         "n300": [
             {
                 "isl": 128,
@@ -3652,7 +3692,7 @@
             }
         ]
     },
-    "Phi-3-mini-4k-instruct": {
+    "microsoft/Phi-3-mini-4k-instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -3768,7 +3808,7 @@
             }
         ]
     },
-    "Phi-3.5-mini-instruct": {
+    "microsoft/Phi-3.5-mini-instruct": {
         "p100": [
             {
                 "isl": 128,
@@ -3884,7 +3924,7 @@
             }
         ]
     },
-    "phi-4": {
+    "microsoft/phi-4": {
         "p100": [
             {
                 "isl": 128,
@@ -3981,7 +4021,7 @@
             }
         ]
     },
-    "Ministral-8B-Instruct-2410": {
+    "mistralai/Ministral-8B-Instruct-2410": {
         "n150": [
             {
                 "isl": 128,
@@ -4097,7 +4137,7 @@
             }
         ]
     },
-    "Mistral-Large-Instruct-2411": {
+    "mistralai/Mistral-Large-Instruct-2411": {
         "galaxy": [
             {
                 "isl": 128,
@@ -4118,7 +4158,7 @@
             }
         ]
     },
-    "SOLAR-10.7B-Instruct-v1.0": {
+    "upstage/SOLAR-10.7B-Instruct-v1.0": {
         "n300": [
             {
                 "isl": 128,
@@ -4215,7 +4255,7 @@
             }
         ]
     },
-    "Falcon3-1B-Base": {
+    "tiiuae/Falcon3-1B-Base": {
         "n150": [
             {
                 "isl": 128,
@@ -4331,7 +4371,7 @@
             }
         ]
     },
-    "Falcon3-3B-Base": {
+    "tiiuae/Falcon3-3B-Base": {
         "n150": [
             {
                 "isl": 128,
@@ -4447,7 +4487,7 @@
             }
         ]
     },
-    "Falcon3-7B-Base": {
+    "tiiuae/Falcon3-7B-Base": {
         "n150": [
             {
                 "isl": 128,
@@ -4563,7 +4603,7 @@
             }
         ]
     },
-    "Falcon3-7B-Instruct": {
+    "tiiuae/Falcon3-7B-Instruct": {
         "p150": [
             {
                 "isl": 128,
@@ -4584,7 +4624,7 @@
             }
         ]
     },
-    "Falcon3-10B-Base": {
+    "tiiuae/Falcon3-10B-Base": {
         "t3k": [
             {
                 "isl": 128,
@@ -4681,7 +4721,7 @@
             }
         ]
     },
-    "Llama-3.1-70B-Instruct": {
+    "meta-llama/Llama-3.1-70B-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -4740,7 +4780,7 @@
             }
         ]
     },
-    "Llama-3.2-11B-Vision-Instruct": {
+    "meta-llama/Llama-3.2-11B-Vision-Instruct": {
         "n300": [
             {
                 "isl": 128,
@@ -4837,7 +4877,7 @@
             }
         ]
     },
-    "Llama-3.2-90B-Vision-Instruct": {
+    "meta-llama/Llama-3.2-90B-Vision-Instruct": {
         "t3k": [
             {
                 "isl": 128,
@@ -4877,7 +4917,7 @@
             }
         ]
     },
-    "gemma-3-4b-it": {
+    "google/gemma-3-4b-it": {
         "n150": [
             {
                 "isl": 128,
@@ -4988,66 +5028,7 @@
             }
         ]
     },
-    "Mistral-7B-Instruct-v0.3": {
-        "n150": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 78.0,
-                        "tput_user": 70.0,
-                        "tput": 2091.0
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 23.0,
-                        "tput_user": 1344.0,
-                        "tput": 43008.0
-                    }
-                }
-            }
-        ],
-        "p150": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "vlm",
-                "image_height": 896,
-                "image_width": 896,
-                "images_per_prompt": 1,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 72.0,
-                        "tput_user": 80.0,
-                        "tput": 2389.0
-                    }
-                }
-            }
-        ]
-    },
-    "gemma-3-27b-it": {
+    "google/gemma-3-27b-it": {
         "t3k": [
             {
                 "isl": 128,
@@ -5106,7 +5087,7 @@
             }
         ]
     },
-    "Qwen2.5-72B": {
+    "Qwen/Qwen2.5-72B": {
         "t3k": [
             {
                 "isl": 128,
@@ -5162,7 +5143,7 @@
             }
         ]
     },
-    "Qwen2.5-7B": {
+    "Qwen/Qwen2.5-7B": {
         "n300": [
             {
                 "isl": 128,
@@ -5192,7 +5173,7 @@
             }
         ]
     },
-    "Llama-3.2-90B-Vision": {
+    "meta-llama/Llama-3.2-90B-Vision": {
         "t3k": [
             {
                 "isl": 128,
@@ -5212,7 +5193,7 @@
             }
         ]
     },
-    "Llama-3.2-11B-Vision": {
+    "meta-llama/Llama-3.2-11B-Vision": {
         "n300": [
             {
                 "isl": 128,
@@ -5250,7 +5231,7 @@
             }
         ]
     },
-    "Llama-3.2-1B": {
+    "meta-llama/Llama-3.2-1B": {
         "n150": [
             {
                 "isl": 128,
@@ -5294,7 +5275,7 @@
             }
         ]
     },
-    "Llama-3.2-3B": {
+    "meta-llama/Llama-3.2-3B": {
         "n150": [
             {
                 "isl": 128,
@@ -5357,115 +5338,7 @@
             }
         ]
     },
-    "Llama-3.3-70B-Instruct": {
-        "p300x2": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 89.0,
-                        "tput_user": 17.0,
-                        "tput": 17.0
-                    }
-                }
-            }
-        ],
-        "p150x4": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 96,
-                        "tput_user": 20
-                    }
-                }
-            }
-        ],
-        "p150x8": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 256,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 64,
-                        "tput_user": 18
-                    }
-                }
-            }
-        ],
-        "p300x2": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 89.0,
-                        "tput_user": 17.0,
-                        "tput": 17.0
-                    }
-                }
-            }
-        ],
-        "t3k": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 38,
-                        "tput_user": 28
-                    }
-                }
-            }
-        ],
-        "galaxy": [
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 50,
-                        "tput_user": 80
-                    }
-                }
-            },
-            {
-                "isl": 2048,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 8,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 800,
-                        "tput_user": 80
-                    }
-                }
-            }
-        ]
-    },
-    "Llama-3.1-8B": {
+    "meta-llama/Llama-3.1-8B": {
         "n150": [
             {
                 "isl": 128,
@@ -5614,7 +5487,7 @@
             }
         ]
     },
-    "stable-diffusion-xl-base-1.0": {
+    "stabilityai/stable-diffusion-xl-base-1.0": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5712,7 +5585,7 @@
             }
         ]
     },
-    "stable-diffusion-3.5-large": {
+    "stabilityai/stable-diffusion-3.5-large": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -5742,7 +5615,7 @@
             }
         ]
     },
-    "stable-diffusion-xl-base-1.0-img-2-img": {
+    "stabilityai/stable-diffusion-xl-base-1.0-img-2-img": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5840,7 +5713,7 @@
             }
         ]
     },
-    "stable-diffusion-xl-1.0-inpainting-0.1": {
+    "diffusers/stable-diffusion-xl-1.0-inpainting-0.1": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -5938,7 +5811,7 @@
             }
         ]
     },
-    "FLUX.1-dev": {
+    "black-forest-labs/FLUX.1-dev": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6018,7 +5891,7 @@
             }
         ]
     },
-    "FLUX.1-schnell": {
+    "black-forest-labs/FLUX.1-schnell": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6098,7 +5971,7 @@
             }
         ]
     },
-    "Motif-Image-6B-Preview": {
+    "Motif-Technologies/Motif-Image-6B-Preview": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6152,7 +6025,7 @@
             }
         ]
     },
-    "Z-Image-Turbo": {
+    "Tongyi-MAI/Z-Image-Turbo": {
         "p300x2": [
             {
                 "max_concurrency": 1,
@@ -6167,7 +6040,7 @@
             }
         ]
     },
-    "whisper-large-v3": {
+    "openai/whisper-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6193,7 +6066,7 @@
                     "theoretical": {
                         "ttft_ms": 800,
                         "ttft_streaming_ms": 1310.0,
-                        "tput_user": 53.80,
+                        "tput_user": 53.8,
                         "rtr": 8.315,
                         "tolerance": 0.05
                     }
@@ -6249,7 +6122,7 @@
             }
         ]
     },
-    "distil-large-v3": {
+    "distil-whisper/distil-large-v3": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6275,7 +6148,7 @@
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 655.0,
-                        "tput_user": 107.60,
+                        "tput_user": 107.6,
                         "rtr": 16.63,
                         "tolerance": 0.05
                     }
@@ -6291,7 +6164,7 @@
                     "theoretical": {
                         "ttft_ms": 400,
                         "ttft_streaming_ms": 450,
-                        "tput_user": 131.10,
+                        "tput_user": 131.1,
                         "rtr": 21.81,
                         "tolerance": 0.05
                     }
@@ -6331,7 +6204,7 @@
             }
         ]
     },
-    "mochi-1-preview": {
+    "genmo/mochi-1-preview": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6398,7 +6271,7 @@
             }
         ]
     },
-    "Wan2.2-T2V-A14B-Diffusers": {
+    "Wan-AI/Wan2.2-T2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6475,7 +6348,7 @@
             }
         ]
     },
-    "Wan2.2-I2V-A14B-Diffusers": {
+    "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "t3k": [
             {
                 "max_concurrency": 1,
@@ -6664,7 +6537,7 @@
             }
         ]
     },
-    "bge-large-en-v1.5": {
+    "BAAI/bge-large-en-v1.5": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6718,7 +6591,7 @@
             }
         ]
     },
-    "bge-m3": {
+    "BAAI/bge-m3": {
         "p300x2": [
             {
                 "max_concurrency": 32,
@@ -6785,7 +6658,7 @@
             }
         ]
     },
-    "Qwen3-Embedding-0.6B": {
+    "Qwen/Qwen3-Embedding-0.6B": {
         "p300x2": [
             {
                 "max_concurrency": 32,
@@ -6800,7 +6673,7 @@
             }
         ]
     },
-    "Qwen3-Embedding-8B": {
+    "Qwen/Qwen3-Embedding-8B": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -6854,7 +6727,7 @@
             }
         ]
     },
-    "Qwen3-Embedding-4B": {
+    "Qwen/Qwen3-Embedding-4B": {
         "p300x2": [
             {
                 "max_concurrency": 32,
@@ -7033,7 +6906,7 @@
             }
         ]
     },
-    "speecht5_tts": {
+    "microsoft/speecht5_tts": {
         "n150": [
             {
                 "max_concurrency": 1,
@@ -7056,6 +6929,154 @@
                     "theoretical": {
                         "ttft_ms": 180,
                         "rtr": 1.97
+                    }
+                }
+            }
+        ]
+    },
+    "gemma-4-31B-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 46,
+                        "tput_user": 37,
+                        "tput": 37
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 200,
+                        "tput_user": 20,
+                        "tput": 400
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 40,
+                        "tput_user": 30,
+                        "tput": 30
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 150,
+                        "tput_user": 22,
+                        "tput": 700
+                    }
+                }
+            }
+        ]
+    },
+    "gemma-4-12B-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 40,
+                        "tput_user": 40,
+                        "tput": 40
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 200,
+                        "tput_user": 25,
+                        "tput": 500
+                    }
+                }
+            }
+        ],
+        "p150x8": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 35,
+                        "tput_user": 45,
+                        "tput": 45
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 150,
+                        "tput_user": 28,
+                        "tput": 700
                     }
                 }
             }

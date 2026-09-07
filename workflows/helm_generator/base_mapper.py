@@ -32,8 +32,6 @@ COMMON_OWNED_PATHS: Set[Tuple[str, ...]] = {
     ("image", "repository"),
     ("image", "tag"),
     ("resources", "requests", "memory"),
-    ("probes", "liveness", "initialDelaySeconds"),
-    ("probes", "readiness", "initialDelaySeconds"),
     ("progressDeadlineSeconds",),
     ("env",),
 }
@@ -65,10 +63,6 @@ class HelmValuesMapper(ABC):
         return int(spec.device_model_spec.tensor_cache_timeout) + 1800
 
     @staticmethod
-    def _initial_delay_seconds(spec: ModelSpec) -> int:
-        return int(spec.device_model_spec.tensor_cache_timeout * 2 / 3)
-
-    @staticmethod
     def _requests_memory(spec: ModelSpec) -> Optional[str]:
         if spec.min_ram_gb is None:
             return None
@@ -84,19 +78,12 @@ class HelmValuesMapper(ABC):
 
     def _build_impl_config(self, spec: ModelSpec) -> HelmImplConfig:
         repo, tag = self._split_image(spec.docker_image)
-        initial_delay = self._initial_delay_seconds(spec)
         return HelmImplConfig(
             image=HelmImage(repository=repo, tag=tag),
             progress_deadline_seconds=self._progress_deadline_seconds(spec),
             probes=HelmProbes(
-                liveness=HelmProbe(
-                    initial_delay_seconds=initial_delay,
-                    path=self.liveness_path,
-                ),
-                readiness=HelmProbe(
-                    initial_delay_seconds=initial_delay,
-                    path=self.readiness_path,
-                ),
+                liveness=HelmProbe(path=self.liveness_path),
+                readiness=HelmProbe(path=self.readiness_path),
             ),
             resources=HelmResources(requests_memory=self._requests_memory(spec)),
             env=self._env_list(spec),

@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <memory>
 
+#include "runtime/worker/tts_metrics_layout.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
 
 namespace tt::worker {
@@ -53,10 +54,15 @@ class SingleProcessWorkerMetrics {
    */
   void initialize(int workerId, MetricsLayout layout);
 
-  // ----- sp_pipeline (MetricsLayout::SP_PIPELINE_RUNNER) convenience writers
-  // ---------------
+  // ----- heartbeats (BLAZE_RUNNER and TTS_RUNNER layouts) -------------------
+  // Both layouts reserve a step-epoch and a last-output-epoch cell; the index
+  // is resolved from the layout the worker was initialized with, so the two
+  // conventions stay independent even though they currently coincide.
   void updateStepHeartbeat();
   void updateOutputHeartbeat();
+
+  // ----- sp_pipeline (MetricsLayout::BLAZE_RUNNER) convenience writers
+  // ---------------
   void incrementActiveRequests();
   void decrementActiveRequests();
   void incrementSpPipelineEvent(SpPipelineEvent event);
@@ -81,6 +87,27 @@ class SingleProcessWorkerMetrics {
   void onOutputToken(uint32_t slotId);
   void onTurnComplete(uint32_t slotId, uint32_t accepts, uint32_t rejects);
 
+  // ----- tts (MetricsLayout::TTS_RUNNER) convenience writers ----------------
+  //
+  // onCodecToken — called once per acoustic/codec token emitted by the TTS
+  //                decoder. Bumps the cumulative per-voice-source counter and
+  //                stamps the last-output heartbeat. Hot path: two relaxed
+  //                atomics, no syscalls or allocations. Silently dropped when
+  //                the worker has no shm attached or runs another layout.
+  //
+  // onVocodedAudio — called once per drainAudioOutputs() sweep that produced
+  //                  audio, with the sweep's total PCM frames, its chunk count
+  //                  and the batch bucket derived from how many distinct
+  //                  streams it covered. Bumps both cumulative counters for
+  //                  that bucket and stamps the last-vocode heartbeat.
+  //
+  // publishAudioSampleRate — published once at runner construction so the
+  //                  reader can turn frames into audio seconds.
+  void onCodecToken(tts::VoiceSource source);
+  void onVocodedAudio(tts::BatchBucket bucket, uint64_t frames,
+                      uint64_t chunks);
+  void publishAudioSampleRate(uint32_t sampleRateHz);
+
   // ----- low-level layout-agnostic writers ----------------------------------
   void scratchStoreU64(size_t idx, uint64_t value);
   void scratchAddU64(size_t idx, uint64_t delta);
@@ -89,6 +116,11 @@ class SingleProcessWorkerMetrics {
   SingleProcessWorkerMetrics() = default;
 
   static uint64_t nowMs();
+
+  /** Scratch index of this layout's step / last-output heartbeat cell, or
+   *  SIZE_MAX when the layout publishes no heartbeat. */
+  size_t stepEpochIdx() const;
+  size_t outputEpochIdx() const;
 
   int workerId_{0};
   MetricsLayout layout_{MetricsLayout::UNKNOWN};

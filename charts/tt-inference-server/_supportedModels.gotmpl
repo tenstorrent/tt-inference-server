@@ -16,6 +16,10 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 {{- $values := .Files.Get "values.yaml" | fromYaml -}}
 {{- $labels := dict "vllm" "vLLM" "media" "Media" "forge" "Forge" -}}
 {{- $engineOrder := list "vllm" "media" "forge" -}}
+{{- /* Deployable device shapes: those with a DRA board count, plus the non-TT
+       passthrough devices. Others (e.g. galaxy_t3k) fail at render, so exclude
+       them from the catalogue. */ -}}
+{{- $supported := concat (keys (default (dict) $values.deviceBoardCounts)) (list "gpu" "cpu") -}}
 {{- $groups := dict -}}
 {{- range $name, $cfg := $values.models -}}
   {{- range $engine, $devices := $cfg -}}
@@ -32,12 +36,14 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 
 ### {{ index $labels $engine | default ($engine | title) }}
 
-| Model | Device |
+| Model | Devices |
 |---|---|
 {{- range (index $groups $engine) }}
 {{- $name := .name }}
-{{- range $device, $_ := .devices }}
-| `{{ $name }}` | {{ $device }} |
+{{- $devs := list }}
+{{- range $device, $_ := .devices }}{{- if has $device $supported }}{{- $devs = append $devs $device }}{{- end }}{{- end }}
+{{- if $devs }}
+| `{{ $name }}` | {{ $devs | sortAlpha | join ", " }} |
 {{- end }}
 {{- end }}
 {{- end }}
@@ -47,12 +53,14 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 
 ### {{ index $labels $engine | default ($engine | title) }}
 
-| Model | Device |
+| Model | Devices |
 |---|---|
 {{- range $entries }}
 {{- $name := .name }}
-{{- range $device, $_ := .devices }}
-| `{{ $name }}` | {{ $device }} |
+{{- $devs := list }}
+{{- range $device, $_ := .devices }}{{- if has $device $supported }}{{- $devs = append $devs $device }}{{- end }}{{- end }}
+{{- if $devs }}
+| `{{ $name }}` | {{ $devs | sortAlpha | join ", " }} |
 {{- end }}
 {{- end }}
 {{- end }}

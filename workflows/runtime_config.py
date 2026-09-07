@@ -54,6 +54,10 @@ class RuntimeConfig:
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
+    # Path to the LLM-serving requirements document driving this run, if
+    # any. Carried so dispatched children can re-load the document and rebuild
+    # the same off-catalog spec / eval + benchmark content the parent used.
+    requirements_json: Optional[str] = None
 
     # Workflow control
     tools: str = "vllm"
@@ -93,6 +97,15 @@ class RuntimeConfig:
     # reference_config/agentic_traces (per ModelSpec); these are only the
     # mode selection and ad-hoc overrides. ``agentic_traces`` is the release
     # opt-in (--workflow agentic_traces needs no flag).
+    # Agentic evals (--workflow agentic). ``agentic_benchmark`` selects which
+    # EVALS_AGENTIC task(s) to run (comma-separated aliases / raw task names);
+    # unset runs them all.
+    agentic_benchmark: Optional[str] = None
+
+    # Standard evals (--workflow evals). ``repeat_evals`` runs the evals
+    # workflow N times (drives the engine's generic ``--repeat`` loop).
+    repeat_evals: int = 1
+
     agentic_traces: bool = False
     agentic_traces_mode: str = "full"
     agentic_traces_sources: Optional[str] = None
@@ -107,6 +120,8 @@ class RuntimeConfig:
     host_volume: Optional[str] = None
     host_hf_cache: Optional[str] = None
     host_weights_dir: Optional[str] = None
+    # Label giving custom weights a distinct identity; see derive_custom_weights_spec.
+    custom_weights: Optional[str] = None
     image_user: str = "1000"
 
     # Validation
@@ -158,6 +173,7 @@ class RuntimeConfig:
             override_tt_config=args.override_tt_config,
             vllm_override_args=args.vllm_override_args,
             runtime_model_spec_json=args.runtime_model_spec_json,
+            requirements_json=getattr(args, "requirements_json", None),
             tools=args.tools,
             goodput=getattr(args, "goodput", None),
             disable_trace_capture=args.disable_trace_capture,
@@ -189,6 +205,8 @@ class RuntimeConfig:
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
             ),
+            agentic_benchmark=getattr(args, "agentic_benchmark", None),
+            repeat_evals=getattr(args, "repeat_evals", 1) or 1,
             agentic_traces=getattr(args, "agentic_traces", False),
             agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",
             agentic_traces_sources=getattr(args, "agentic_traces_sources", None),
@@ -201,6 +219,7 @@ class RuntimeConfig:
             host_volume=args.host_volume,
             host_hf_cache=args.host_hf_cache,
             host_weights_dir=args.host_weights_dir,
+            custom_weights=getattr(args, "custom_weights", None),
             image_user=args.image_user,
             skip_system_sw_validation=args.skip_system_sw_validation,
             ci_mode=args.ci_mode,

@@ -9,7 +9,6 @@ from pathlib import Path
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from workflows.workflow_dispatch import can_dispatch_to_engine
-from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
@@ -34,7 +33,27 @@ logger = logging.getLogger("run_log")
 
 
 def _uses_external_runtime_model_spec(runtime_config) -> bool:
-    return bool(runtime_config.runtime_model_spec_json)
+    """Whether the spec came from outside the catalog.
+
+    Both sources describe a model the catalog need not know about: an explicit
+    --runtime-model-spec-json, or a requirements document the spec was
+    synthesized from.
+    """
+    return bool(runtime_config.runtime_model_spec_json) or bool(
+        getattr(runtime_config, "requirements_json", None)
+    )
+
+
+def _has_eval_config(hf_model_repo: str) -> bool:
+    """Whether the active target pack defines evals for ``hf_model_repo``.
+
+    Goes through the pack rather than EVAL_CONFIGS directly so a
+    requirements-driven run is gated on the document's accuracy evals, which
+    is where its eval content comes from.
+    """
+    from workflow_module.target_pack import get_target_pack
+
+    return get_target_pack().eval_config(hf_model_repo) is not None
 
 
 def _swarmone_license_available() -> bool:
@@ -97,9 +116,13 @@ def validate_runtime_args(model_spec, runtime_config):
 
     model_id = model_spec.model_id
 
-    # Built-in catalog runs must resolve to MODEL_SPECS. Explicit
-    # --runtime-model-spec-json runs use that JSON as the source of truth.
-    if model_id not in MODEL_SPECS and not _uses_external_runtime_model_spec(args):
+    # Catalog runs must resolve to MODEL_SPECS; --runtime-model-spec-json and
+    # --custom-weights supply their own spec whose model_id is not in the catalog.
+    if (
+        model_id not in MODEL_SPECS
+        and not _uses_external_runtime_model_spec(args)
+        and not getattr(args, "custom_weights", None)
+    ):
         raise ValueError(
             f"model:={runtime_config.model} does not support device:={runtime_config.device}"
         )
@@ -117,8 +140,8 @@ def validate_runtime_args(model_spec, runtime_config):
     )
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert _has_eval_config(model_spec.hf_model_repo), (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
     if (
         workflow_type == WorkflowType.BENCHMARKS
@@ -203,8 +226,8 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and generated
         # benchmark tasks. A run_*.log file will be made for failed combinations.
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert _has_eval_config(model_spec.hf_model_repo), (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
         if not can_dispatch_to_engine(model_spec, runtime_config):
             get_benchmark_config(model_spec)
@@ -559,15 +582,70 @@ def validate_local_server_paths(args):
             )
 
 
+def validate_custom_weights(model_spec, runtime_config):
+    """Fail fast on --custom-weights misconfiguration (source of bytes only).
+
+    With --host-weights-dir the directory must exist and hold a recognizable
+    weights layout. Without it the label must look like an HF repo id (org/name);
+    Hub access is checked later during host setup.
+    """
+    custom_weights = getattr(runtime_config, "custom_weights", None)
+    if not custom_weights:
+        return
+
+    host_weights_dir = getattr(runtime_config, "host_weights_dir", None)
+    if host_weights_dir:
+        # Local import avoids a circular import with setup_host.
+        from workflows.setup_host import HostSetupManager
+
+        weights_path = Path(host_weights_dir).expanduser().resolve()
+        if not weights_path.exists():
+            raise ValueError(
+                f"⛔ --host-weights-dir path does not exist: {weights_path}"
+            )
+        manager = HostSetupManager(
+            model_spec=model_spec,
+            jwt_secret="",
+            hf_token="",
+            automatic=True,
+            host_weights_dir=str(weights_path),
+        )
+        if not manager.check_model_weights_dir(weights_path):
+            raise ValueError(
+                f"⛔ --host-weights-dir={weights_path} does not contain a recognizable "
+                "model weights layout (weights + tokenizer + params) for "
+                f"--custom-weights '{custom_weights}'. Provide a directory with the "
+                "model's safetensors/pth weights, tokenizer, and config files."
+            )
+        logger.info(
+            f"✅ --custom-weights '{custom_weights}' will load local weights from "
+            f"{weights_path}"
+        )
+    else:
+        if "/" not in custom_weights:
+            raise ValueError(
+                f"⛔ --custom-weights='{custom_weights}' is not paired with "
+                "--host-weights-dir, so it is treated as a HuggingFace repo id and "
+                "must be of the form 'org/name'. Pass --host-weights-dir to load "
+                "custom weights from local disk instead."
+            )
+        logger.info(
+            f"✅ --custom-weights '{custom_weights}' will be downloaded from "
+            f"HuggingFace as repo id '{model_spec.hf_weights_repo}'"
+        )
+
+
 def validate_setup(model_spec, runtime_config, json_fpath):
     """Top-level validation orchestrator called from run.py main().
 
     Runs all pre-flight validation checks in order:
     1. validate_runtime_args - CLI arg consistency and model/workflow support
-    2. validate_local_setup - system software dependencies
-    3. validate_bind_mount_permissions - Docker bind mount UID access (docker-server only)
+    2. validate_custom_weights - --custom-weights source-of-bytes consistency
+    3. validate_local_setup - system software dependencies
+    4. validate_bind_mount_permissions - Docker bind mount UID access (docker-server only)
     """
     validate_runtime_args(model_spec, runtime_config)
+    validate_custom_weights(model_spec, runtime_config)
     validate_local_setup(model_spec, runtime_config, json_fpath)
     if runtime_config.docker_server:
         validate_bind_mount_permissions(runtime_config)

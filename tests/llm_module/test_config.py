@@ -20,6 +20,11 @@ class TestLLMRunConfig:
         with pytest.raises(FrozenInstanceError):
             cfg.isl = 256  # type: ignore[misc]
 
+    def test_defaults_leave_token_granular_random_dataset(self):
+        cfg = LLMRunConfig(isl=128, osl=64, max_concurrency=4, num_prompts=10)
+        assert cfg.output_block_size == 1
+        assert cfg.custom_dataset_path is None
+
 
 class TestServerConnection:
     def test_tokenizer_defaults_to_model(self):

@@ -5,10 +5,12 @@
 
 #include <unistd.h>
 
-#include <chrono>
+#include <cstdint>
 
 #include "config/settings.hpp"
 #include "runtime/worker/blaze_metrics_layout.hpp"
+#include "runtime/worker/tts_metrics_layout.hpp"
+#include "runtime/worker/worker_metrics_clock.hpp"
 #include "runtime/worker/worker_metrics_shm.hpp"
 #include "utils/logger.hpp"
 
@@ -48,13 +50,21 @@ void SingleProcessWorkerMetrics::initialize(int workerId,
   shm_->setLayout(workerId, layout);
   shm_->setPid(workerId, static_cast<int32_t>(getpid()));
 
-  // Seed sp_pipeline timestamps so age starts at ~0 instead of since-epoch.
-  if (layout == MetricsLayout::BLAZE_RUNNER) {
+  // Seed heartbeat timestamps so age starts at ~0 instead of since-epoch.
+  const size_t stepIdx = stepEpochIdx();
+  const size_t outputIdx = outputEpochIdx();
+  if (stepIdx != SIZE_MAX) {
     auto now = nowMs();
-    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_STEP_EPOCH_MS, now);
-    shm_->storeScratch(workerId, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
-                       now);
+    shm_->storeScratch(workerId, stepIdx, now);
+    shm_->storeScratch(workerId, outputIdx, now);
+  }
+  if (layout == MetricsLayout::BLAZE_RUNNER) {
     shm_->storeScratch(workerId, sp_pipeline::SCRATCH_ACTIVE_REQUESTS, 0);
+  }
+  if (layout == MetricsLayout::TTS_RUNNER) {
+    // Same reason as the heartbeats above: the vocode clock is its own cell,
+    // so it needs its own seed or last-vocode age reads as decades.
+    shm_->storeScratch(workerId, tts::SCRATCH_LAST_VOCODE_EPOCH_MS, nowMs());
   }
 
   TT_LOG_INFO(
@@ -64,21 +74,65 @@ void SingleProcessWorkerMetrics::initialize(int workerId,
 }
 
 uint64_t SingleProcessWorkerMetrics::nowMs() {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
+  // Same clock the renderers read these stamps back with.
+  return tt::worker::nowMs();
+}
+
+size_t SingleProcessWorkerMetrics::stepEpochIdx() const {
+  switch (layout_) {
+    case MetricsLayout::BLAZE_RUNNER:
+      return sp_pipeline::SCRATCH_STEP_EPOCH_MS;
+    case MetricsLayout::TTS_RUNNER:
+      return tts::SCRATCH_STEP_EPOCH_MS;
+    default:
+      return SIZE_MAX;
+  }
+}
+
+size_t SingleProcessWorkerMetrics::outputEpochIdx() const {
+  switch (layout_) {
+    case MetricsLayout::BLAZE_RUNNER:
+      return sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS;
+    case MetricsLayout::TTS_RUNNER:
+      return tts::SCRATCH_LAST_OUTPUT_EPOCH_MS;
+    default:
+      return SIZE_MAX;
+  }
 }
 
 void SingleProcessWorkerMetrics::updateStepHeartbeat() {
   if (shm_ == nullptr) return;
-  shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_STEP_EPOCH_MS, nowMs());
+  const size_t idx = stepEpochIdx();
+  if (idx == SIZE_MAX) return;
+  shm_->storeScratch(workerId_, idx, nowMs());
 }
 
 void SingleProcessWorkerMetrics::updateOutputHeartbeat() {
   if (shm_ == nullptr) return;
-  shm_->storeScratch(workerId_, sp_pipeline::SCRATCH_LAST_OUTPUT_EPOCH_MS,
-                     nowMs());
+  const size_t idx = outputEpochIdx();
+  if (idx == SIZE_MAX) return;
+  shm_->storeScratch(workerId_, idx, nowMs());
+}
+
+void SingleProcessWorkerMetrics::onCodecToken(tts::VoiceSource source) {
+  if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
+  shm_->fetchAddScratch(workerId_, tts::codecTokensIdx(source), 1);
+  shm_->storeScratch(workerId_, tts::SCRATCH_LAST_OUTPUT_EPOCH_MS, nowMs());
+}
+
+void SingleProcessWorkerMetrics::onVocodedAudio(tts::BatchBucket bucket,
+                                                uint64_t frames,
+                                                uint64_t chunks) {
+  if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
+  shm_->fetchAddScratch(workerId_, tts::audioFramesIdx(bucket), frames);
+  shm_->fetchAddScratch(workerId_, tts::vocoderChunksIdx(bucket), chunks);
+  shm_->storeScratch(workerId_, tts::SCRATCH_LAST_VOCODE_EPOCH_MS, nowMs());
+}
+
+void SingleProcessWorkerMetrics::publishAudioSampleRate(uint32_t sampleRateHz) {
+  if (shm_ == nullptr || layout_ != MetricsLayout::TTS_RUNNER) return;
+  shm_->storeScratch(workerId_, tts::SCRATCH_AUDIO_SAMPLE_RATE_HZ,
+                     static_cast<uint64_t>(sampleRateHz));
 }
 
 void SingleProcessWorkerMetrics::incrementActiveRequests() {

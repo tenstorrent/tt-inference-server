@@ -26,16 +26,21 @@ def audio_worker_function(
     should_preprocess = settings.allow_audio_preprocessing and is_preprocessing_enabled
 
     # Process audio
-    audio_array, duration = audio_manager.to_audio_array(
-        audio_file_data, should_preprocess
-    )
+    prepared = audio_manager.to_audio_array(audio_file_data, should_preprocess)
+    audio_array = prepared.audio_array
     segments = (
         audio_manager.apply_diarization_with_vad(audio_array, perform_diarization)
         if should_preprocess
         else None
     )
 
-    return (audio_array, duration, segments)
+    return (
+        audio_array,
+        prepared.duration,
+        segments,
+        prepared.source_sample_rate,
+        prepared.source_channels,
+    )
 
 
 class AudioService(BaseService):
@@ -64,6 +69,8 @@ class AudioService(BaseService):
                 audio_array,
                 duration,
                 segments,
+                source_sample_rate,
+                source_channels,
             ) = await self._cpu_workload_handler.execute_task(
                 request.file,
                 request.is_preprocessing_enabled,
@@ -73,6 +80,10 @@ class AudioService(BaseService):
             request._audio_array = audio_array
             request._duration = duration
             request._segments = segments
+            # The submitted operating point, kept for the stage-throughput
+            # labels: the array itself is already mono at the default rate.
+            request._source_sample_rate = source_sample_rate
+            request._source_channels = source_channels
 
             if segments:
                 self.logger.info(
@@ -118,6 +129,13 @@ class AudioService(BaseService):
         ]
 
         new_request._duration = segment["end"] - segment["start"]
+        # A segment inherits the parent's operating point; it is the same audio.
+        new_request._source_sample_rate = getattr(
+            original_request, "_source_sample_rate", None
+        )
+        new_request._source_channels = getattr(
+            original_request, "_source_channels", None
+        )
         new_request.file = None  # Clear file data to save memory
 
         return new_request

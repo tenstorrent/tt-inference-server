@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from reference_config.evals.eval_config import (
     EvalTaskScore,
     ModeReferenceScore,
+    _eval_config_map,
     accept_eval_score,
     resolve_eval_reference,
 )
@@ -105,6 +106,25 @@ def test_full_reference_uses_ratio_check():
     assert accept_eval_score(ref, 72.5, n_total=40) is False
     # 80 / 83.33 = 0.96 >= 0.95 -> PASS
     assert accept_eval_score(ref, 80.0, n_total=40) is True
+
+
+def test_diffusiongemma_gpqa_requires_more_than_67_percent_in_all_modes():
+    tasks = _eval_config_map["google/diffusiongemma-26B-A4B-it"].tasks
+    score = next(
+        task.score for task in tasks if task.task_name == "gpqa_diamond_cot_zeroshot"
+    )
+
+    assert score.gpu_reference_score == 70.0
+    assert score.tolerance == 3 / 70
+
+    full = resolve_eval_reference(score, None)
+    assert accept_eval_score(full, 132 / 198 * 100, n_total=198) is False
+    assert accept_eval_score(full, 133 / 198 * 100, n_total=198) is True
+
+    nightly = resolve_eval_reference(score, EvalLimitMode.CI_NIGHTLY)
+    assert nightly["is_subset_reference"] is False
+    assert accept_eval_score(nightly, 60.0, n_total=10) is False
+    assert accept_eval_score(nightly, 70.0, n_total=10) is True
 
 
 def test_gpqa_subset_passes_sample_aware_but_fails_full():

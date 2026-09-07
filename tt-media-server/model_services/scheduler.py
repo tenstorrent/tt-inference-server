@@ -34,7 +34,8 @@ class Scheduler:
         # Task queue must use a standard queue that can serialize arbitrary objects
         # SharedMemoryChunkQueue is only for result streaming
         self.task_queue = get_task_queue(
-            queue_type=self.settings.queue_for_multiprocessing, size=10000
+            queue_type=self.settings.queue_for_multiprocessing,
+            size=self._get_max_queue_size(),
         )
         self.warmup_signals_queue = Queue(worker_count)
 

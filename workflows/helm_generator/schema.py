@@ -19,14 +19,13 @@ class HelmImage:
 
 @dataclass(frozen=True)
 class HelmProbe:
-    initial_delay_seconds: int
+    # Only the HTTP path is per-model (engine-specific, e.g. /tt-liveness).
+    # Timing is not: the startupProbe owns the compile window and derives its
+    # budget from progressDeadlineSeconds in the Deployment.
     path: Optional[str] = None
 
     def to_yaml_dict(self) -> Dict[str, Any]:
-        out: Dict[str, Any] = {"initialDelaySeconds": self.initial_delay_seconds}
-        if self.path is not None:
-            out["path"] = self.path
-        return out
+        return {"path": self.path} if self.path is not None else {}
 
 
 @dataclass(frozen=True)
@@ -35,10 +34,14 @@ class HelmProbes:
     readiness: HelmProbe
 
     def to_yaml_dict(self) -> Dict[str, Any]:
-        return {
-            "liveness": self.liveness.to_yaml_dict(),
-            "readiness": self.readiness.to_yaml_dict(),
-        }
+        out: Dict[str, Any] = {}
+        liveness = self.liveness.to_yaml_dict()
+        if liveness:
+            out["liveness"] = liveness
+        readiness = self.readiness.to_yaml_dict()
+        if readiness:
+            out["readiness"] = readiness
+        return out
 
 
 @dataclass(frozen=True)
@@ -77,8 +80,10 @@ class HelmImplConfig:
         out: Dict[str, Any] = {
             "progressDeadlineSeconds": self.progress_deadline_seconds,
             "image": self.image.to_yaml_dict(),
-            "probes": self.probes.to_yaml_dict(),
         }
+        probes = self.probes.to_yaml_dict()
+        if probes:
+            out["probes"] = probes
         resources = self.resources.to_yaml_dict()
         if resources is not None:
             out["resources"] = resources

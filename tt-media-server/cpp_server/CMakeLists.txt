@@ -1140,10 +1140,15 @@ if(ENABLE_BLAZE)
         src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
         src/runtime/worker/single_process_worker_metrics.cpp
         src/runtime/worker/worker_metrics_shm.cpp
+        src/metrics/metrics.cpp
     )
-    target_link_libraries(blaze_tts_runner_test PRIVATE llm_runner_lib GTest::gtest_main)
+    # prometheus-cpp: the TTS conditioning metrics assert on ServerMetrics'
+    # rendered exposition text, so this target reaches the metrics registry.
+    target_link_libraries(blaze_tts_runner_test PRIVATE
+        llm_runner_lib prometheus-cpp::core GTest::gtest_main)
     target_include_directories(blaze_tts_runner_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${prometheus-cpp_SOURCE_DIR}/core/include
     )
 
     add_executable(mock_schedulers_test
@@ -1198,6 +1203,15 @@ target_link_libraries(image_generate_request_test PRIVATE
     GTest::gtest_main
 )
 target_include_directories(image_generate_request_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(embedding_codec_test tests/unit/services/embedding_codec_test.cpp)
+target_link_libraries(embedding_codec_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(embedding_codec_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
@@ -1304,11 +1318,11 @@ target_include_directories(worker_manager_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-# LLMService unit test: drives processStreamingRequest in-process.
-# Pulls in the same translation units that the main server links so the
-# real LLMService can be constructed without forking workers.
-add_executable(llm_service_test
-    tests/integration/sessions/llm_service_test.cpp
+# Service-level test sources: the translation units the main server links, so a
+# real service can be constructed in-process. Shared by the LLM and TTS service
+# tests, which differ only by their test-entry .cpp and the MODEL_SERVICE they
+# pin.
+set(SERVICE_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
@@ -1326,6 +1340,8 @@ add_executable(llm_service_test
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1338,6 +1354,12 @@ add_executable(llm_service_test
     src/metrics/metrics.cpp
     src/profiling/tracy.cpp
 )
+
+# LLMService unit test: drives processStreamingRequest in-process.
+add_executable(llm_service_test
+    tests/integration/sessions/llm_service_test.cpp
+    ${SERVICE_TEST_COMMON_SOURCES}
+)
 target_link_libraries(llm_service_test PRIVATE
     llm_runner_lib
     prometheus-cpp::core
@@ -1345,6 +1367,26 @@ target_link_libraries(llm_service_test PRIVATE
     stb_image_write
     GTest::gtest_main)
 target_include_directories(llm_service_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+# TtsService metrics test: drives a real TtsService (MODEL_SERVICE=tts) through
+# generate -> audio-drain -> finishRequest and asserts on the conditioning
+# series ServerMetrics renders. Unlike llm_service_test this one calls
+# TtsService::start(), so WorkerManager re-execs the binary as "--worker N";
+# main() routes that to the stand-in worker subprocess.
+add_executable(tts_service_test
+    tests/integration/services/tts_service_test.cpp
+    ${SERVICE_TEST_COMMON_SOURCES}
+)
+target_link_libraries(tts_service_test PRIVATE
+    llm_runner_lib
+    prometheus-cpp::core
+    pybind11::embed
+    stb_image_write
+    GTest::gtest_main)
+target_include_directories(tts_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
@@ -1376,6 +1418,8 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/utils/conversation_hasher.cpp
     src/utils/service_factory.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
     src/runtime/runners/media_ipc_runner.cpp
     src/runtime/runners/image_ipc_runner.cpp
@@ -1555,9 +1599,19 @@ gtest_discover_tests(prefix_cache_router_test)
 gtest_discover_tests(session_manager_test)
 gtest_discover_tests(worker_manager_test)
 gtest_discover_tests(llm_service_test)
+# tts_service_test opens the TTS IPC queues under their fixed default names and
+# forks a worker subprocess, so it gets one ctest entry (all tests in a single
+# process) and shares the integration lock rather than running concurrently with
+# anything else that boots the stack.
+add_test(NAME TtsServiceMetricsTest COMMAND tts_service_test)
+set_tests_properties(TtsServiceMetricsTest PROPERTIES
+    TIMEOUT 120
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
+gtest_discover_tests(embedding_codec_test)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
@@ -1870,6 +1924,8 @@ set(SOURCES
     src/utils/mapper.cpp
     src/api/embedding_controller.cpp
     src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp
@@ -1899,6 +1955,7 @@ set(SOURCES
     src/runtime/worker/worker_metrics_shm.cpp
     src/runtime/worker/worker_metrics_aggregator.cpp
     src/runtime/worker/blaze_worker_metrics_renderer.cpp
+    src/runtime/worker/tts_worker_metrics_renderer.cpp
     src/dynamo/transport_protocol.cpp
     src/dynamo/llm_mapping.cpp
     src/dynamo/prefill_result_mapping.cpp

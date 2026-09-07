@@ -42,7 +42,9 @@ class BlockMatcher {
 
   static std::optional<Candidate> findSlotToCopyFrom(
       const std::vector<Candidate>& candidates,
-      std::function<uint32_t(const std::string& sessionId)> getCommittedBlocks);
+      std::function<uint32_t(const std::string& sessionId)> getCommittedBlocks,
+      std::function<bool(const std::string& sessionId)> isCopyEligible =
+          nullptr);
 };
 
 }  // namespace tt::domain::prefix_cache

@@ -171,7 +171,8 @@ PrefixCacheRouter::tryAcquireByResponseId(const std::string& previousResponseId,
 
 void PrefixCacheRouter::registerPrefixHash(
     const std::string& sessionId,
-    const std::vector<utils::BlockHashInfo>& blockInfos) {
+    const std::vector<utils::BlockHashInfo>& blockInfos,
+    bool clearBeingGenerated) {
   if (blockInfos.empty()) return;
 
   const uint64_t keyHash = blockInfos.front().hash;
@@ -204,6 +205,12 @@ void PrefixCacheRouter::registerPrefixHash(
       "[PrefixCacheRouter] registerPrefixHash: registered sessionId={} under "
       "keyHash={} with {} remaining blocks",
       sessionId, keyHash, blockInfos.size() - 1);
+
+  if (clearBeingGenerated) {
+    if (auto session = callbacks.getSession(sessionId)) {
+      session->being_generated_ = false;
+    }
+  }
 
   if (slotId != tt::domain::INVALID_SLOT_ID) {
     tt::metrics::ServerMetrics::instance().setSlotBlocks(
@@ -412,7 +419,7 @@ void PrefixCacheRouter::getSlot(
         domain::prefix_cache::BlockMatcher::blocksToTokens(best.matchedBlocks);
     if (bestMatchedTokens >= tt::config::minTokensToCopy()) {
       auto session = callbacks.getSession(best.sessionId);
-      if (session) {
+      if (session && !session->isBeingGenerated()) {
         slotToCopyFrom = session->getSlotId();
         copyMatchedTokens = bestMatchedTokens;
         callbacks.lockSlot(*slotToCopyFrom);
