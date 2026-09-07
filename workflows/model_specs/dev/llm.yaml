@@ -1060,6 +1060,28 @@ templates:
         fabric_config: FABRIC_1D_RING
         worker_l1_size: 1344544
         trace_region_size: 184915840
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: COMPLETE
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3-32B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+
+# Split from the GALAXY entry above only to carry a different status: status is
+# per-template, and Blackhole Galaxy has no derived performance ceiling yet, so
+# it cannot be held to the COMPLETE tier. Everything else mirrors that entry.
+- weights:
+    - Qwen/Qwen3-32B
+  impl: qwen3_32b_galaxy
+  inference_engine: VLLM
+  device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # 8 * 4
       # NOTE: model natively supports 40K but use this to override max_num_batched_tokens
@@ -1091,7 +1113,7 @@ templates:
     kmd:
       specifier: ">=2.1.0"
       mode: STRICT
-  status: COMPLETE
+  status: FUNCTIONAL
   has_builtin_warmup: true
   metadata:
     Qwen/Qwen3-32B:
