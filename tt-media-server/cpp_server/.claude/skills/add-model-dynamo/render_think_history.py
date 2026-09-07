@@ -15,6 +15,7 @@ is a KV row only accumulatedThinkTokens can account for.
 
 Requires jinja2 (no model weights, no tokenizer load — templates only).
 """
+
 import datetime
 import glob
 import json
@@ -41,7 +42,9 @@ def load_template(model_dir):
 
 
 def bos_token(model_dir):
-    tok = json.load(open(os.path.join(model_dir, "tokenizer_config.json"))).get("bos_token")
+    tok = json.load(open(os.path.join(model_dir, "tokenizer_config.json"))).get(
+        "bos_token"
+    )
     return (tok.get("content") if isinstance(tok, dict) else tok) or ""
 
 
@@ -77,14 +80,19 @@ def render(tpl, messages, bos, **kwargs):
     # loopcontrols: some templates (Kimi) use {% break %} inside their history
     # loop, which plain jinja2 rejects.
     env = ImmutableSandboxedEnvironment(
-        trim_blocks=True, lstrip_blocks=True,
-        extensions=["jinja2.ext.loopcontrols"])
+        trim_blocks=True, lstrip_blocks=True, extensions=["jinja2.ext.loopcontrols"]
+    )
     env.globals["raise_exception"] = lambda m: (_ for _ in ()).throw(TemplateError(m))
     env.globals["strftime_now"] = lambda f: datetime.datetime.now().strftime(f)
     env.filters["tojson"] = lambda x, **kw: json.dumps(x)
     return env.from_string(tpl).render(
-        messages=messages, add_generation_prompt=True, bos_token=bos,
-        eos_token="", tools=None, **kwargs)
+        messages=messages,
+        add_generation_prompt=True,
+        bos_token=bos,
+        eos_token="",
+        tools=None,
+        **kwargs,
+    )
 
 
 def conversation(echo_reasoning, with_assistant=True):
@@ -114,8 +122,10 @@ def report(model, model_dir, thinking_kwargs):
     markers = marker_candidates(model_dir)
     print(f"{model}")
     if not markers:
-        print("  no think-like special tokens found "
-              "(non-reasoning model → leave both flags at their default)\n")
+        print(
+            "  no think-like special tokens found "
+            "(non-reasoning model → leave both flags at their default)\n"
+        )
         return
     for echo in (False, True):
         hist = history_of(render(tpl, conversation(echo), bos, **thinking_kwargs))
@@ -124,16 +134,23 @@ def report(model, model_dir, thinking_kwargs):
         # the same conversation minus the assistant turn: only the delta was
         # contributed by rendering a past think block.
         baseline = history_of(
-            render(tpl, conversation(echo, with_assistant=False), bos,
-                   **thinking_kwargs))
-        label = ("reasoning echoed back" if echo
-                 else "reasoning NOT echoed (use this one)")
+            render(
+                tpl, conversation(echo, with_assistant=False), bos, **thinking_kwargs
+            )
+        )
+        label = (
+            "reasoning echoed back" if echo else "reasoning NOT echoed (use this one)"
+        )
         print(f"  [{label}]")
-        print(f"    assistant turn renders as: {hist[len(os.path.commonprefix([hist, baseline])):]!r}")
+        print(
+            f"    assistant turn renders as: {hist[len(os.path.commonprefix([hist, baseline])) :]!r}"
+        )
         for content, tok_id in sorted(markers.items(), key=lambda kv: kv[1]):
             kept = hist.count(content) > baseline.count(content)
-            print(f"    {content:<14} id={tok_id:<7} "
-                  f"{'kept in history  -> InHistory=true' if kept else 'dropped          -> InHistory=false'}")
+            print(
+                f"    {content:<14} id={tok_id:<7} "
+                f"{'kept in history  -> InHistory=true' if kept else 'dropped          -> InHistory=false'}"
+            )
     print()
 
 
