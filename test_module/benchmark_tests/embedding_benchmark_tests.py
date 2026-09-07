@@ -41,14 +41,17 @@ def _embedding_params(ctx: MediaContext) -> tuple[str, int, int, int]:
     """Return (model, isl, num_calls, concurrency).
 
     ``BENCHMARK_MAX_CONCURRENCY`` overrides the per-worker batch for specs whose
-    workers each serve several requests at once.
+    workers each serve several requests at once. ``BENCHMARK_NUM_PROMPTS``
+    overrides the total request count: it should be >= 10-20x the concurrency,
+    otherwise the run is dominated by the startup transient and the reported
+    average never reflects steady state.
     """
     env = ctx.model_spec.device_model_spec.env_vars
     concurrency = env.get("BENCHMARK_MAX_CONCURRENCY", env.get("VLLM__MAX_NUM_SEQS", 1))
     return (
         ctx.model_spec.hf_model_repo,
         int(env.get("VLLM__MAX_MODEL_LENGTH", 1024)),
-        1000,
+        int(env.get("BENCHMARK_NUM_PROMPTS", 1000)),
         int(concurrency),
     )
 
