@@ -18,7 +18,7 @@ on:
           - tt-ubuntu-2204-bh-loudbox-viommu-stable
       model:
         description: Chart model value.
-        default: Qwen3-Embedding-4B
+        default: Llama-3.2-3B-Instruct
       device:
         description: Chart device value. Must match the runner's board.
         default: n150
@@ -53,7 +53,7 @@ permissions:
 
 jobs:
   hw-smoke:
-    name: Hardware Smoke (${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }} / ${{ github.event.inputs.device || 'n150' }})
+    name: Hardware Smoke (${{ github.event.inputs.model || 'Llama-3.2-3B-Instruct' }} / ${{ github.event.inputs.device || 'n150' }})
     runs-on: ${{ github.event.inputs.runner || 'tt-ubuntu-2204-n150-stable' }}
     # ~13m end to end for the default row; generous for bigger models.
     timeout-minutes: 150
@@ -69,7 +69,7 @@ jobs:
 
       - name: Hardware smoke
         env:
-          MODEL: ${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }}
+          MODEL: ${{ github.event.inputs.model || 'Llama-3.2-3B-Instruct' }}
           DEVICE: ${{ github.event.inputs.device || 'n150' }}
           ENGINE: ${{ github.event.inputs.engine || 'forge' }}
           IMPL: ${{ github.event.inputs.impl || 'forge_vllm_plugin' }}
