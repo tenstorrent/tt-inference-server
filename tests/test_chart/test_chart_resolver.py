@@ -58,14 +58,14 @@ def test_explicit_engine_override_picks_media():
     assert "tt-media-inference-server" in r.stdout
 
 
-def test_explicit_impl_override_picks_non_default():
+def test_explicit_impl_override_picks_named_impl():
     r = _render(
         "model=Qwen3-32B",
         "device=galaxy",
-        "impl=tt_transformers",
+        "impl=qwen3_32b_galaxy",
     )
     assert r.returncode == 0, r.stderr
-    assert "e95ffa5-48eba14" in r.stdout, "expected tt_transformers' image tag"
+    assert "0.21.0-bc4c4df-be7d805" in r.stdout
 
 
 def test_unknown_impl_fails_with_clear_error():
@@ -110,6 +110,6 @@ def test_hfcachedir_sets_weights_env_and_mount():
 
 
 def test_cache_hostpath_includes_impl():
-    r = _render("model=Qwen3-32B", "device=galaxy", "impl=tt_transformers")
+    r = _render("model=Qwen3-32B", "device=galaxy", "impl=qwen3_32b_galaxy")
     assert r.returncode == 0, r.stderr
-    assert "/opt/cache/Qwen3-32B-galaxy-tt_transformers" in r.stdout
+    assert "/opt/cache/Qwen3-32B-galaxy-qwen3_32b_galaxy" in r.stdout
