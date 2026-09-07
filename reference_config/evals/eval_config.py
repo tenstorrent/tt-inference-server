@@ -4837,6 +4837,18 @@ _eval_config_list = [
                     score_func=lambda results: 0.0,
                 ),
             ),
+            EvalTask(
+                task_name="tts_speaker_similarity",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=80.0,
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
         ],
     ),
     EvalConfig(
