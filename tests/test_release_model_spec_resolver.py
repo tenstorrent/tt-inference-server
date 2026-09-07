@@ -216,7 +216,7 @@ def test_real_release_scope_resolves_to_runtime_equivalent_dev_leaves():
     qwen = next(
         item
         for item in resolved
-        if item.combo.model_name == "Qwen3-32B"
+        if item.combo.model_name == "Qwen/Qwen3-32B"
         and item.combo.device == DeviceTypes.GALAXY
         and item.combo.engine == InferenceEngine.VLLM
     )
