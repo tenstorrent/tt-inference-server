@@ -44,8 +44,8 @@ def _uses_external_runtime_model_spec(runtime_config) -> bool:
     )
 
 
-def _has_eval_config(model_name: str) -> bool:
-    """Whether the active target pack defines evals for ``model_name``.
+def _has_eval_config(hf_model_repo: str) -> bool:
+    """Whether the active target pack defines evals for ``hf_model_repo``.
 
     Goes through the pack rather than EVAL_CONFIGS directly so a
     requirements-driven run is gated on the document's accuracy evals, which
@@ -53,7 +53,7 @@ def _has_eval_config(model_name: str) -> bool:
     """
     from workflow_module.target_pack import get_target_pack
 
-    return get_target_pack().eval_config(model_name) is not None
+    return get_target_pack().eval_config(hf_model_repo) is not None
 
 
 def _swarmone_license_available() -> bool:
@@ -140,8 +140,8 @@ def validate_runtime_args(model_spec, runtime_config):
     )
 
     if workflow_type == WorkflowType.EVALS:
-        assert _has_eval_config(model_spec.model_name), (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert _has_eval_config(model_spec.hf_model_repo), (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
     if (
         workflow_type == WorkflowType.BENCHMARKS
@@ -226,8 +226,8 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and generated
         # benchmark tasks. A run_*.log file will be made for failed combinations.
-        assert _has_eval_config(model_spec.model_name), (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert _has_eval_config(model_spec.hf_model_repo), (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
         if not can_dispatch_to_engine(model_spec, runtime_config):
             get_benchmark_config(model_spec)

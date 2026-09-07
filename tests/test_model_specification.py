@@ -687,7 +687,7 @@ class TestSystemIntegration:
 
         template.expand_to_specs()
 
-        assert lookups == ["model-base", "model-instruct"]
+        assert lookups == ["org/model-base", "org/model-instruct"]
 
     def _template_with_device_targets(self, device_targets, template_targets=None):
         """A two-device template where only the second device overrides its tiers."""

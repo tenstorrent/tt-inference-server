@@ -13,6 +13,11 @@ import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from utils.model_naming import (  # noqa: F401
+    slugify_model_id,
+    unslugify_model_id,
+)
+
 logger = logging.getLogger(__name__)
 
 # Engine-generic helpers live in the engine core; re-exported here for
@@ -150,6 +155,11 @@ def get_run_id(timestamp, model_id, workflow):
         return base64.urlsafe_b64encode(u.bytes)[:8].decode("utf-8")
 
     return f"{timestamp}_{model_id}_{workflow}_{_short_uuid()}"
+
+
+def server_log_file_name(prefix, timestamp, model, device, workflow) -> str:
+    """``<prefix>_<timestamp>_<model>_<device>_<workflow>.log``, one path component."""
+    return f"{prefix}_{timestamp}_{slugify_model_id(model)}_{device}_{workflow}.log"
 
 
 def get_default_workflow_root_log_dir():

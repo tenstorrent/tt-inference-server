@@ -66,7 +66,7 @@ Client workflows (`benchmarks`, `evals`, `reports`) send HTTP requests to the mo
 Single command example:
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n150 --workflow benchmarks --docker-server
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workflow benchmarks --docker-server
 ```
 
 ```mermaid
@@ -291,7 +291,7 @@ flowchart TD
 No flags needed. A Docker volume is created automatically for model weights and TT Metal caches. Weights are downloaded inside the container on first start via `ensure_weights_available()`. No host permission setup is needed.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --docker-server
 ```
 
 **2. Host persistent volume (`--host-volume`)**
@@ -299,7 +299,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server
 Bind mounts an entire host directory as the container's `cache_root`. All data (weights, TT Metal caches) lives on the host filesystem. Weights are downloaded on the host by `setup_host()`. The host directory must be writable by the image's built-in UID (UID `1000` for default release images, e.g. `sudo chown 1000 ~/persistent_volume` or `sudo chown 1000 /mnt/data/tt-cache`).
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --docker-server \
   --host-volume /mnt/data/tt-cache
 ```
 
@@ -308,7 +308,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
 Mounts the host's existing HuggingFace cache directory readonly into the container. TT Metal caches use a separate Docker named volume, so no host write access is needed for caches. The `run.py` script will find that snapshot weights directory and mount that to docker container.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --docker-server \
   --host-hf-cache ~/.cache/huggingface
 ```
 
@@ -317,7 +317,7 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
 Mounts a host directory containing pre-downloaded model weights readonly into the container. TT Metal caches use a separate Docker named volume, so no host write access is needed for caches.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server \
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --docker-server \
   --host-weights-dir /mnt/models/Llama-3.1-8B-Instruct
 ```
 
@@ -328,7 +328,7 @@ For local vLLM runs, `run.py` resolves host storage through `setup_host()` befor
 If the resolved `persistent_volume/` tree already exists from an earlier Docker or different-UID run, fix its ownership or permissions for the current host user before retrying. `--image-user` does not affect `--local-server`.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --local-server \
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --local-server \
   --tt-metal-home /opt/tt-metal
 ```
 
@@ -337,40 +337,40 @@ python3 run.py --model Llama-3.1-8B-Instruct --workflow server --local-server \
 Use `--print-docker-cmd` to output the generated `docker run` command without starting the server. This is useful for inspecting or customizing the command before running it manually.
 
 ```bash
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --docker-server --print-docker-cmd
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --docker-server --print-docker-cmd
 ```
 
 ### Example Commands
 
 Run the evals workflow:
 ```bash
-python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150
+python3 run.py --model Qwen/Qwen2.5-72B-Instruct --workflow evals --tt-device N150
 ```
 
 Run a workflow with a Docker server:
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --docker-server
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --docker-server
 ```
 
 Run benchmarks workflow:
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K
 ```
 
 Run server workflow in Docker with interactive mode:
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --interactive
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --interactive
 ```
 
 Run server workflow in Docker bound to localhost only:
 
 ```bash
-python3 run.py --model Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --bind-host 127.0.0.1
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --workflow server --tt-device T3K --docker-server --bind-host 127.0.0.1
 ```
 
 Run with custom service port and additional workflow arguments:
 ```bash
-python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
+python3 run.py --model Qwen/Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --service-port 9000 --workflow-args "batch_size=4 max_tokens=512"
 ```
 
 ## Container Interface
@@ -413,26 +413,26 @@ To use `run.py` with an external vLLM server, you need to configure the server e
 Run benchmarks against an external vLLM server:
 ```bash
 # Server running on localhost:8000
-python3 run.py --model Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K --disable-trace-capture
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --workflow benchmarks --tt-device T3K --disable-trace-capture
 
 # can use --service-port env var to set another port
-python3 run.py --model Qwen2.5-72B-Instruct --workflow benchmarks --tt-device N150 --disable-trace-capture --service-port 9000  
+python3 run.py --model Qwen/Qwen2.5-72B-Instruct --workflow benchmarks --tt-device N150 --disable-trace-capture --service-port 9000  
 ```
 
 Run evaluations against an external vLLM server:
 ```bash
 # Server running on localhost:8000
-python3 run.py --model Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --disable-trace-capture
+python3 run.py --model meta-llama/Llama-3.3-70B-Instruct --workflow evals --tt-device T3K --disable-trace-capture
 
 # can use --service-port to set another port
-python3 run.py --model Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --disable-trace-capture --service-port 7592
+python3 run.py --model Qwen/Qwen2.5-72B-Instruct --workflow evals --tt-device N150 --disable-trace-capture --service-port 7592
 ```
 
 Run multiple model inference servers, each must be on a separate card
 ```bash
 # run model on multiple devices
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 --docker-server --dev-mode --device-id 0
-python3 run.py --model Llama-3.1-8B-Instruct --workflow server --tt-device n300 --docker-server --dev-mode --device-id 1
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --tt-device n300 --docker-server --dev-mode --device-id 0
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --workflow server --tt-device n300 --docker-server --dev-mode --device-id 1
 ```
 
 ### Important Notes
