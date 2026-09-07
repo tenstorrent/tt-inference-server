@@ -35,14 +35,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.2-3B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.3.0-20edc39-03cb300 \
-  --model Llama-3.2-3B \
+  --model meta-llama/Llama-3.2-3B \
   --tt-device n150
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.2-3B --device n150 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.2-3B --device n150 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
