@@ -2,8 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import json
 import logging
 import math
+import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -17,6 +19,122 @@ from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 logger = logging.getLogger(__name__)
+
+
+def _harbor_env_type() -> str:
+    """Harbor environment for agentic evals; defaults to ``docker``.
+
+    Trials run as local containers unless the caller opts into a cluster with
+    ``HARBOR_ENV_TYPE=kubernetes`` (plus the ``HARBOR_K8S_*`` vars consumed by
+    :func:`_harbor_env_kwargs`). The default stays ``docker`` so a laptop or a
+    bare-metal runner with no cluster credentials keeps working; CI sets the
+    variable in the job environment.
+    """
+    return os.getenv("HARBOR_ENV_TYPE", "docker")
+
+
+def _harbor_env_kwargs() -> Dict[str, Any]:
+    """Cluster knobs forwarded as Harbor ``environment.kwargs`` (opt-in).
+
+    Empty unless ``HARBOR_ENV_TYPE=kubernetes`` — so the docker path emits no
+    kwargs.
+    """
+    if _harbor_env_type() != "kubernetes":
+        return {}
+    if os.getenv("HARBOR_K8S_KUBECONFIG"):
+        raise ValueError(
+            "HARBOR_K8S_KUBECONFIG is not a Harbor setting and would be "
+            "silently ignored. Export KUBECONFIG with the same path instead."
+        )
+    kwargs: Dict[str, Any] = {
+        "namespace": os.getenv("HARBOR_K8S_NAMESPACE", "default"),
+        "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "auto"),
+    }
+    passthrough = {
+        "HARBOR_K8S_CONTEXT": "context",
+        "HARBOR_K8S_IMAGE_REGISTRY": "image_registry",
+        "HARBOR_K8S_IMAGE_PULL_SECRET": "image_pull_secret",
+        "HARBOR_K8S_SERVICE_ACCOUNT": "service_account",
+        # Select the image build backend. BuildKit can be reached through a
+        # local Unix socket mounted into the runner pod, so both knobs belong
+        # in Harbor's environment kwargs rather than its container env.
+        "HARBOR_K8S_IMAGE_BUILDER": "image_builder",
+        "HARBOR_K8S_BUILDKIT_ADDRESS": "buildkit_address",
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY": (
+            "prebuilt_image_mirror_failure_policy"
+        ),
+        # Opt-in compose execution strategy. "pods" runs each compose
+        # service as a container of one ordinary pod (no privileged DinD),
+        # but requires HARBOR_K8S_IMAGE_REGISTRY the cluster can pull from.
+        "HARBOR_K8S_COMPOSE_STRATEGY": "compose_strategy",
+    }
+    for env_var, kwarg in passthrough.items():
+        value = os.getenv(env_var)
+        if value:
+            kwargs[kwarg] = value
+    boolean_passthrough = {
+        # Skip the `docker manifest inspect` probe when the registry has no
+        # credentials or is unreachable from the Harbor host.
+        "HARBOR_K8S_SKIP_IMAGE_CHECK": "skip_image_check",
+        # Allow manifest probes against an HTTP or untrusted-TLS registry.
+        "HARBOR_K8S_REGISTRY_INSECURE": "registry_insecure",
+    }
+    for env_var, kwarg in boolean_passthrough.items():
+        value = os.getenv(env_var)
+        if value is None:
+            continue
+        normalized = value.strip().lower()
+        if normalized not in {"true", "false"}:
+            raise ValueError(f"{env_var} must be 'true' or 'false'")
+        kwargs[kwarg] = normalized == "true"
+    prebuilt_image_mirrors = os.getenv("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS")
+    if prebuilt_image_mirrors:
+        parsed_mirrors = json.loads(prebuilt_image_mirrors)
+        if not isinstance(parsed_mirrors, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in parsed_mirrors.items()
+        ):
+            raise ValueError(
+                "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS must be a JSON string map"
+            )
+        kwargs["prebuilt_image_mirrors"] = parsed_mirrors
+    node_selector = os.getenv("HARBOR_K8S_NODE_SELECTOR")
+    if node_selector:
+        # JSON object, e.g. '{"tt-pool": "shield"}'
+        kwargs["node_selector"] = json.loads(node_selector)
+    pod_labels = os.getenv("HARBOR_K8S_POD_LABELS")
+    if pod_labels:
+        # JSON object, e.g. '{"ci-run-id": "123456789"}'
+        parsed_labels = json.loads(pod_labels)
+        if not isinstance(parsed_labels, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in parsed_labels.items()
+        ):
+            raise ValueError("HARBOR_K8S_POD_LABELS must be a JSON string map")
+        kwargs["pod_labels"] = parsed_labels
+    return kwargs
+
+
+def _harbor_timeout_sec() -> Optional[float]:
+    """Wall-clock ceiling for the ``harbor run`` subprocess (#4759), from env."""
+    value = os.getenv("HARBOR_TIMEOUT_SEC")
+    return float(value) if value else None
+
+
+def _harbor_enforce_agent_deadline() -> bool:
+    """Whether Harbor enforces heuristic wave and stall deadlines."""
+    value = os.getenv("HARBOR_ENFORCE_AGENT_DEADLINE")
+    if value is None:
+        return False
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(
+        "HARBOR_ENFORCE_AGENT_DEADLINE must be a boolean "
+        "(true/false, 1/0, yes/no, on/off)"
+    )
 
 
 @dataclass(frozen=True)
@@ -134,7 +252,16 @@ def accept_eval_score(ref, score, n_total=None):
 
 
 @dataclass(frozen=True)
-class TerminalBenchEvalConfig:
+class HarborEvalConfig:
+    """One agentic eval run through the Harbor CLI (``harbor run``).
+
+    Backs every agentic benchmark we run -- terminal-bench, tau3-bench, and
+    SWE-bench -- because Harbor's dataset/agent/environment triple is the only
+    thing that differs between them. ``dataset`` is whatever ``harbor run -d``
+    accepts: an ``org/name`` package (``terminal-bench/terminal-bench-2-1``) or
+    a bare registry name (``swebench-verified``).
+    """
+
     dataset: str
     agent: str
     model: Optional[str] = None
@@ -144,82 +271,44 @@ class TerminalBenchEvalConfig:
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
-    environment_type: str = "docker"
+    environment_type: str = field(default_factory=_harbor_env_type)
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
     timeout_multiplier: Optional[float] = None
     agent_timeout_sec: Optional[float] = None
-    quiet: bool = True
+    agent_setup_timeout_multiplier: Optional[float] = None
+    quiet: bool = False
     yes: bool = True
     task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
     agent_import_path: Optional[str] = None
+    agent_env: Dict[str, str] = field(default_factory=dict)
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
-    # Wave-aware deadline model (mirrors SWEbenchEvalConfig). Reserved
-    # allowance for Harbor's additive non-agent phases (env build ~600s,
-    # agent setup ~360s, verifier ~60s); currently NOT folded into the
-    # per-task budget, which is just ``agent_timeout_sec``.
+    environment_kwargs: Dict[str, Any] = field(default_factory=_harbor_env_kwargs)
+    harbor_timeout_sec: Optional[float] = field(default_factory=_harbor_timeout_sec)
+    # Per-request LLM read timeout for the mini-swe-agent backend, injected into
+    # the generated mini config as ``model.model_kwargs.timeout``. Brings a
+    # SWE-bench run through Harbor to parity with the standalone harness, whose
+    # litellm path otherwise defaults to an infinite read timeout. ``None`` opts
+    # out. Ignored by every non-mini agent (they carry their own timeout knob).
+    llm_timeout_sec: Optional[int] = 10 * 60
+    # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
+    # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
     # Grace before the first wave (dataset resolve + image pulls).
     startup_grace_sec: int = 10 * 60
     # Kill if no trial makes progress for ``B + stall_grace_sec``.
     stall_grace_sec: int = 5 * 60
     # Progress watchdog log cadence.
-    progress_log_interval_sec: int = 5 * 60
-    # When False the watchdog logs deadlines but never kills the harbor
-    # subprocess, letting it run to completion.
-    enforce_agent_deadline: bool = False
+    progress_log_interval_sec: int = 60
+    # When False, heuristic wave/stall deadlines are log-only. An explicit
+    # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
+    enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
 
 
-@dataclass(frozen=True)
-class SWEbenchEvalConfig:
-    dataset_name: str
-    sweagent_subset: str = "verified"
-    dataset_split: str = "test"
-    agent_backend: str = "mini-swe-agent"
-    model: Optional[str] = None
-    n_concurrent_trials: int = 1
-    max_workers: int = 1
-    n_tasks: Optional[int] = None
-    temperature: float = 1.0
-    top_p: float = 0.95
-    max_input_tokens: int = 200 * 1024
-    max_output_tokens: Optional[int] = None
-    completion_kwargs: Dict[str, Any] = field(default_factory=dict)
-    sweagent_config: str = "config/default.yaml"
-    mini_config: str = "swebench.yaml"
-    mini_model_class: str = "litellm"
-    mini_environment_class: str = "docker"
-    swebench_timeout_sec: Optional[int] = None
-    # Per-request LLM timeout for the agent; litellm's OpenAI-compatible path
-    # defaults to an infinite read timeout, so without this a never-answered
-    # request hangs the eval forever. None disables.
-    llm_timeout_sec: Optional[int] = 10 * 60
-    # Per-task budget B for the wave-aware deadline model. Each mini-swe-agent
-    # instance runs in its own container started with ``sleep <this>``; once it
-    # exits no further agent action can succeed, so this is the authoritative
-    # wall-clock ceiling for a single instance. Written into the generated mini
-    # config as ``environment.container_timeout``.
-    mini_container_timeout_sec: int = 2 * 60 * 60
-    # Grace added on top of the container lifetime for dataset load + image
-    # pulls before the first wave can start (folds into the worst-case ceiling).
-    startup_grace_sec: int = 10 * 60
-    # If no instance completes for ``B + stall_grace_sec`` the run is wedged
-    # (every in-flight instance is necessarily past its own budget); kill it.
-    stall_grace_sec: int = 5 * 60
-    # How often the progress watchdog logs elapsed / percent / max-allowed.
-    progress_log_interval_sec: int = 5 * 60
-    # Explicit hard wall-clock kill for the whole agent subprocess. ``None``
-    # (default) uses the wave-aware ceiling derived from the fields above;
-    # set to a positive int to override with a flat bound.
-    agent_subprocess_timeout_sec: Optional[int] = None
-    # When False the watchdog logs deadlines but never kills the agent
-    # subprocess, letting it run to completion. Killing early truncates
-    # ``preds.json``, so the harness would grade a wrong denominator.
-    enforce_agent_deadline: bool = False
-    shuffle: bool = True
-    random_delay_multiplier: float = 0.3
-    instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
+TerminalBenchEvalConfig = HarborEvalConfig
+
+MINI_SWE_AGENT_VERSION = "2.2.8"
 
 
 @dataclass(frozen=True)
@@ -270,8 +359,7 @@ class EvalTask:
     # Let this task's scorer execute model-generated code on the eval host.
     # Off by default: the host is the CI runner, not containerized.
     allow_code_execution: bool = False
-    agentic_eval_config: Optional[TerminalBenchEvalConfig] = None
-    swebench_eval_config: Optional[SWEbenchEvalConfig] = None
+    agentic_eval_config: Optional[HarborEvalConfig] = None
     # Acceptance severity for this eval ("must"/"should"). "must" failures block
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
@@ -574,8 +662,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/zai-org/GLM-5.2-FP8",
                     },
@@ -609,19 +697,29 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=64,
-                    max_workers=24,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=512 * 1024,
-                    max_output_tokens=64 * 1024,
-                    instance_ids_map={
+                    # task.toml ships a 3000s agent budget sized on GPU runs;
+                    # TT decode is slower, so raise it rather than have trials
+                    # truncate into a silent zero.
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
                             "pytest-dev__pytest-5262",
@@ -825,8 +923,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/zai-org/GLM-5.3",
                     },
@@ -965,27 +1063,29 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=16,
-                    max_workers=24,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=1.0,
-                    # max inputs tokens should be increased when we get a chance
-                    max_input_tokens=256 * 1024,
-                    max_output_tokens=64 * 1024,
-                    # mini_last_n_observations is ommitted for now
-                    # mini_last_n_observations=15,
-                    # completion_kwargs={
-                    #     "extra_body": {
-                    #         "top_k": 20,
-                    #     },
-                    # },
-                    instance_ids_map={
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 1.0,
+                                    # "extra_body": {"top_k": 20},
+                                }
+                            },
+                            # mini's step/observation trimming knobs live here
+                            # too, e.g. agent.last_n_observations: 15.
+                        },
+                    },
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
                             "pytest-dev__pytest-5262",
@@ -1152,8 +1252,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
                     },
@@ -1188,19 +1288,26 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=64,
-                    max_workers=24,
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=6,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=256 * 1000,
-                    max_output_tokens=64 * 1024,
-                    instance_ids_map={
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
                             "pytest-dev__pytest-5262",
@@ -1371,8 +1478,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/moonshotai/Kimi-K3",
                     },
@@ -1583,8 +1690,8 @@ _eval_config_list = [
                     # path, so use literal values -- a templated model name
                     # reaches litellm unexpanded and fails with "LLM Provider
                     # NOT provided". OPENAI_BASE_URL / OPENAI_API_KEY are
-                    # intentionally omitted: the task's docker-compose already
-                    # substitutes those from the launching shell env.
+                    # injected into environment.env by build_harbor_config after
+                    # runtime authentication configures the endpoint.
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M2.7",
                     },
@@ -1618,19 +1725,26 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=8,
-                    max_workers=24,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=200 * 1024,
-                    max_output_tokens=64 * 1024,
-                    instance_ids_map={
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
                             "pytest-dev__pytest-5262",
@@ -1811,19 +1925,26 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=8,
-                    max_workers=24,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=500 * 1024,
-                    max_output_tokens=64 * 1024,
-                    instance_ids_map={
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
                             "pytest-dev__pytest-5262",
@@ -1913,29 +2034,28 @@ _eval_config_list = [
             #             "unit": "percent",
             #         },
             #     ),
-            #     swebench_eval_config=SWEbenchEvalConfig(
-            #         dataset_name="SWE-bench/SWE-bench_Verified",
-            #         sweagent_subset="verified",
-            #         # we will need to specify specific tasks
-            #         # for CI runs to keep runtime reasonable
-            #         dataset_split="test",
-            #         # mini-swe-agent is preferred: simpler CLI
-            #         # The swe-agent backend is kept as a fallback.
-            #         agent_backend="mini-swe-agent",
+            #     agentic_eval_config=HarborEvalConfig(
+            #         dataset="swebench-verified",
+            #         agent="mini-swe-agent",
             #         n_concurrent_trials=5,
-            #         max_workers=8,
+            #         n_attempts=1,
             #         n_tasks=None,
-            #         temperature=1.0,
-            #         top_p=0.95,
-            #         max_input_tokens=200 * 1024,
-            #         # max output tokens is not specifed in Qwen docs btw
-            #         max_output_tokens=32 * 1024,
-            #         completion_kwargs={
-            #             "extra_body": {
-            #                 "top_k": 20,
+            #         agent_timeout_sec=2 * 60 * 60,
+            #         agent_kwargs={
+            #             "version": MINI_SWE_AGENT_VERSION,
+            #             # max output tokens is not specifed in Qwen docs btw
+            #             "max_tokens": 32 * 1024,
+            #             "config": {
+            #                 "model": {
+            #                     "model_kwargs": {
+            #                         "temperature": 1.0,
+            #                         "top_p": 0.95,
+            #                         "extra_body": {"top_k": 20},
+            #                     }
+            #                 }
             #             },
             #         },
-            #         instance_ids_map={
+            #         task_names_map={
             #             EvalLimitMode.CI_NIGHTLY: [
             #                 "django__django-11299",
             #                 "astropy__astropy-14096",
@@ -5282,32 +5402,35 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=5,
-                    max_workers=8,
+                    n_attempts=1,
                     n_tasks=None,  # full dataset
-                    temperature=1.0,
-                    top_p=0.95,
-                    # gemma-4-31B native ctx is 256K (model card), but a single
-                    # H100 NVL (94GB, bf16 KV) only holds a 210,605-token KV
-                    # cache, so a request can't exceed ~205K. We serve at
-                    # --max-model-len 204800 (200K). mini-swe-agent sends
-                    # ~max_input + max_output per request, so keep under 204800:
-                    # 160K + 32K = 192K (~8K headroom). SWE prompts rarely
-                    # approach 200K, so the 256K->200K cap should not affect
-                    # scores.
-                    max_input_tokens=160 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        # gemma-4-31B native ctx is 256K (model card), but a
+                        # single H100 NVL (94GB, bf16 KV) only holds a
+                        # 210,605-token KV cache, so a request can't exceed
+                        # ~205K. We serve at --max-model-len 204800 (200K).
+                        # The GPU reference run below capped input at 160K, so
+                        # 160K + 32K = 192K stayed under it with ~8K headroom.
+                        # Only the output cap is expressible now; SWE prompts
+                        # rarely approach 200K, so this should not affect scores.
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
                         },
                     },
-                    instance_ids_map={
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
@@ -5439,25 +5562,30 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=5,
-                    max_workers=8,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
-                    max_input_tokens=96 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        # Output cap left at the value the pre-Harbor runs used,
+                        # chosen so input + output (96K + 32K = 128K) fit
+                        # gemma-4's 131072 ctx.
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
                         },
                     },
-                    instance_ids_map={
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
@@ -5599,25 +5727,30 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=5,
-                    max_workers=8,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
-                    max_input_tokens=96 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        # Output cap left at the value the pre-Harbor runs used,
+                        # chosen so input + output (96K + 32K = 128K) fit
+                        # gemma-4's 131072 ctx.
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
                         },
                     },
-                    instance_ids_map={
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
@@ -5749,25 +5882,30 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=5,
-                    max_workers=8,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
-                    max_input_tokens=96 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        # Output cap left at the value the pre-Harbor runs used,
+                        # chosen so input + output (96K + 32K = 128K) fit
+                        # gemma-4's 131072 ctx.
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
                         },
                     },
-                    instance_ids_map={
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
@@ -5899,25 +6037,30 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
                     n_concurrent_trials=5,
-                    max_workers=8,
+                    n_attempts=1,
                     n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    # Clamped so max_input + max_output (96K + 32K = 128K) fits gemma-4's 131072 ctx.
-                    max_input_tokens=96 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        # Output cap left at the value the pre-Harbor runs used,
+                        # chosen so input + output (96K + 32K = 128K) fit
+                        # gemma-4's 131072 ctx.
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
                         },
                     },
-                    instance_ids_map={
+                    task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-11299",
                             "astropy__astropy-14096",
