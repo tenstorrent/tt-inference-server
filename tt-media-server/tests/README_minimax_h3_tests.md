@@ -148,7 +148,11 @@ Every judged output also has to echo the request: duration = `expected_frames(se
   (21:9, 16:9, 4:3 and 3:4-short, 9:16-short pass with two keyframes; 21:9/16:9 were refused before); the input-dependent
   conditioner hang above is new -- bisected the same evening on quad2 to metal `56cdeeb9095` (construction-time warmup):
   439b4bb8d5b, b25d5e74729, e9dfcbdae42 pass the single-keyframe 4:3/3:4/1:1 probe, 56cdeeb9095 and 8fb0c4c0483 hang, and
-  8fb0c4c0483 with `warmup=False` passes again. ref2va's first video-reference request hangs the same way. Harness fixes from the run: rail-share audio rule, construction-warmup replay flags,
+  8fb0c4c0483 with `warmup=False` passes again. ref2va's first video-reference request hangs the same way. Root cause and fix
+  (2026-09-07): programs JIT-compiled under the six live captures allocate into the band the replays rewrite, so the second use of
+  such a geometry runs off stomped state -- fixed by releasing and re-capturing the traces whenever the program cache grew since the
+  last replay: tenstorrent/tt-metal#55655 (validated: single-keyframe 3:4/1:1/3:4, two-keyframe 1:1/3:4 x short/long, ref2va vid1).
+  Harness fixes from the run: rail-share audio rule, construction-warmup replay flags,
   ladder 119808, budgets, stop-on-hang, skip-aspects knob, run_live_test.sh glob/argument fixes.
   ref2va (quad2, 22:05-23:14, `MINIMAX_H3_CONSTRUCTION_WARMUP=0` because the construction warmup hangs every request with
   visual references): `test_minimax_h3_live.py -k Ref2va` 7 passed / 1 xfailed (cancel orphan) / 7 XPASS -- every limit
