@@ -16,13 +16,14 @@ import pytest
 from workflows.utils import get_repo_root_path
 
 CHART = get_repo_root_path() / "charts" / "tt-inference-server"
+FIXTURES = get_repo_root_path() / "tests" / "test_chart" / "fixtures"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("helm") is None, reason="helm CLI not available"
 )
 
 
-def _render(*set_args):
+def _render(*set_args, values_files=()):
     cmd = [
         "helm",
         "template",
@@ -33,6 +34,8 @@ def _render(*set_args):
         "--set",
         "auth.apiKey=fake",
     ]
+    for f in values_files:
+        cmd.extend(["-f", str(FIXTURES / f)])
     for s in set_args:
         cmd.extend(["--set", s])
     return subprocess.run(cmd, capture_output=True, text=True)
@@ -47,13 +50,24 @@ def test_single_engine_resolves_without_flags():
 
 
 def test_default_engine_picks_vllm_when_device_under_multiple_engines():
-    r = _render("model=Llama-3.1-70B", "device=t3k")
+    # No catalogue model has one device under two engines, so overlay a
+    # synthetic fixture whose t3k is served by both vllm and media.
+    r = _render(
+        "model=resolver-multi-engine-fixture",
+        "device=t3k",
+        values_files=["resolver_multi_engine.yaml"],
+    )
     assert r.returncode == 0, r.stderr
     assert "vllm-tt-metal-src" in r.stdout
 
 
 def test_explicit_engine_override_picks_media():
-    r = _render("model=Llama-3.1-70B", "device=t3k", "engine=media")
+    r = _render(
+        "model=resolver-multi-engine-fixture",
+        "device=t3k",
+        "engine=media",
+        values_files=["resolver_multi_engine.yaml"],
+    )
     assert r.returncode == 0, r.stderr
     assert "tt-media-inference-server" in r.stdout
 
