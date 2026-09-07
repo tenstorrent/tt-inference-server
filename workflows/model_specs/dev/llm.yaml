@@ -264,6 +264,18 @@ templates:
   # checkpoint-bound). Prefill runs UNTRACED for this profile (the residual
   # tap hook is python-side; traced prefill replays skip it) and each request
   # pays a one-time fused-trace capture (~3 s) at first decode.
+  #
+  # OPERATING POINTS (one impl, two configs):
+  #   * LATENCY (this entry): block-output spec, max_num_seqs=1. B=1 spec
+  #     speedup -- server-measured 42 tok/s/u @128/128, 92 @128/1024 (up to
+  #     3.4x vs baseline). Aggregate does NOT scale with concurrency (B=1).
+  #   * THROUGHPUT: set env GEMMA4_DFLASH_SERVE_BLOCK=1 (turns block-output OFF)
+  #     and vllm_args max_num_seqs=32 (+ max_concurrency=32). The impl then
+  #     serves EVERY request via the plain baseline batched path -- "baseline
+  #     picks up for concurrency>1" -- measured 437 agg tok/s @128/128 conc-32.
+  #     A batched decode always falls back to baseline regardless of this env
+  #     (decode_forward gates on batch>1), so the spec path is never asked to
+  #     run B>1. (Speculation only pays bandwidth-bound / low batch anyway.)
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
