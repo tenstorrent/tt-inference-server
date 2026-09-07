@@ -903,7 +903,10 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  impl: qwen36_blackhole
+  # Attribution only -- ImplSpec.code_path feeds the generated docs/report link,
+  # not the runner. Without it the release report credits these numbers to
+  # models/demos/blackhole/qwen36, i.e. the demo rather than the autoport.
+  impl: qwen36_autoport
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
@@ -917,7 +920,19 @@ templates:
       max_tokens_all_users_override: 525312
       default_impl: true
       env_vars:
+        # Deliberately left at qwen36_blackhole. The upstream plugin selector
+        # whitelists only that value and raises on anything else, so it must NOT
+        # be set to qwen36_autoport; the bundle below claims the architecture
+        # first and the built-in map then skips it.
         TT_QWEN35_TEXT_VER: qwen36_blackhole
+        # Serves the autoport instead of the demo: the TT plugin registers every
+        # bundle found here ahead of its own built-in model map.
+        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
+        # The autoport defaults to Qwen/Qwen3.6-27B (tt/functional_decoder.py),
+        # so without these it would serve 3.6 weights under a 3.8 name. Revision
+        # is the one the bring-up validated.
+        QWEN_AUTOPORT_MODEL_ID: Qwen/Qwen3.8-27B
+        QWEN_AUTOPORT_MODEL_REVISION: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
@@ -928,7 +943,11 @@ templates:
         tool_call_parser: qwen3_coder
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 1073741824
+        # 1073741824 is subtracted PER BANK, i.e. 8.6 GB/device, and the engine
+        # then dies at startup: "Out of Memory: ... 476544000 B DRAM buffer
+        # across 8 banks ... bank size is 3198599552 B". 200 MB is what the
+        # autoport derives its serving capacity against. Measured on p300x2.
+        trace_region_size: 200000000
         l1_small_size: 24576
         sample_on_device_mode: decode_only
   status: EXPERIMENTAL
