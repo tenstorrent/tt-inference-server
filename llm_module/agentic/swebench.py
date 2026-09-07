@@ -55,6 +55,9 @@ class SWEbenchRunConfig:
     random_delay_multiplier: float
     score_existing_predictions: bool
     instance_ids: list[str] = field(default_factory=list)
+    # Overrides for the generated mini-swe-agent config's "agent" section
+    # (e.g. {"step_limit": 75}); layered after the builtin mini_config.
+    mini_agent_kwargs: dict[str, Any] = field(default_factory=dict)
     # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
     # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
     # (standalone ``run_agentic.py`` re-execs into the EVALS_AGENTIC venv); set
@@ -214,7 +217,7 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     if config.completion_kwargs:
         model_kwargs.update(config.completion_kwargs)
 
-    model_config = {
+    model_config: dict[str, Any] = {
         "model": {
             "model_name": config.model_name,
             "model_class": config.mini_model_class,
@@ -222,6 +225,10 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             "model_kwargs": model_kwargs,
         }
     }
+    if config.mini_agent_kwargs:
+        # This file is layered after the builtin mini_config on the CLI, so
+        # these agent overrides (e.g. step_limit) win.
+        model_config["agent"] = dict(config.mini_agent_kwargs)
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path

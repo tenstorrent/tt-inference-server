@@ -200,7 +200,27 @@ def run(config: TerminalBenchRunConfig) -> int:
 
     logger.info("Running command: %s", " ".join(cmd))
     result = subprocess.run(cmd)
+    _prune_terminal_recordings(config.jobs_dir / config.task_name)
     if result.returncode != 0:
         return result.returncode
     _annotate_result_file(config.jobs_dir / config.task_name / "result.json")
     return result.returncode
+
+
+def _prune_terminal_recordings(job_dir: Path) -> None:
+    """Drop raw terminal captures before the job dir becomes a CI artifact.
+
+    A trial whose agent floods the terminal records every byte: one
+    compile-compcert trial on run 33095231523 left a 225 GB recording.cast
+    plus a 120 GB tmux pane, which can fill the runner disk mid-run and makes
+    the workflow_logs artifact undownloadable. Trajectories and logs -- the
+    files actually used to debug trials -- are kept.
+    """
+    for pattern in ("recording.cast", "*.pane"):
+        for path in job_dir.rglob(pattern):
+            try:
+                size = path.stat().st_size
+                path.unlink()
+                logger.info("Pruned terminal recording %s (%d bytes)", path, size)
+            except OSError as e:  # pragma: no cover - best-effort cleanup
+                logger.warning("Could not prune %s: %s", path, e)
