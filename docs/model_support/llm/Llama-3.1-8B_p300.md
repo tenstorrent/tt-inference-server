@@ -1,12 +1,5 @@
 # Llama-3.1-8B Tenstorrent Support on BH P300
 
-Supported weights variants for this model implementation are:
-
-- `Llama-3.1-8B`: [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) **(default)** 
-- `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
-
-To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
-
 #### Useful links
 
 - [BH P300 details](https://tenstorrent.com/hardware/blackhole)
@@ -17,13 +10,8 @@ To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
 
 - [WH Galaxy](Llama-3.1-8B_galaxy.md)
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
-- [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
-- [P100](Llama-3.1-8B_p100.md)
 - [P150](Llama-3.1-8B_p150.md)
-- [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
-- [N150](Llama-3.1-8B_n150.md)
-- [N300](Llama-3.1-8B_n300.md)
 
 ## Quickstart - Deploy Llama-3.1-8B Inference Server on BH P300
 
@@ -42,14 +30,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.19.0-b204341-9bd099c \
-  --model meta-llama/Llama-3.1-8B \
+  --model meta-llama/Llama-3.1-8B-Instruct \
   --tt-device p300
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model meta-llama/Llama-3.1-8B --device p300 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --device p300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -57,7 +45,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
+| Weights | [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |

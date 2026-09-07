@@ -10,7 +10,6 @@
 
 - [BH LoudBox](Qwen3-32B_p150x8.md)
 - [BH QuietBox 2](Qwen3-32B_p300x2.md)
-- [WH LoudBox/QuietBox](Qwen3-32B_t3k.md)
 
 ## Quickstart - Deploy Qwen3-32B Inference Server on WH Galaxy
 
@@ -52,49 +51,3 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | tt-metal Commit | `bc4c4df` |
 | vLLM Commit | `be7d805` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805` |
-
-#### Additional released configurations
-
-| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
-|---|---|---|---|---|---|---|
-| [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) | `tt-transformers` | 128 | 131072 | `e95ffa5` | `48eba14` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |
-
----
-
-## GALAXY_T3K Configuration
-
-### Quickstart - Deploy on WH Galaxy
-
-**docker run command**
-
-```bash
-docker run \
-  --env "HF_TOKEN=$HF_TOKEN" \
-  --ipc host \
-  --publish 8000:8000 \
-  --device /dev/tenstorrent \
-  --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
-  --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14 \
-  --model Qwen/Qwen3-32B \
-  --tt-device galaxy_t3k
-```
-
-**via run.py command**
-
-```bash
-python3 run.py --model Qwen/Qwen3-32B --device galaxy_t3k --workflow server --docker-server
-```
-
-### Model Parameters
-
-| Parameter | Value |
-|-----------|-------|
-| Weights | [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) |
-| Model Status | 🟡 Functional |
-| Max Batch Size | 32 |
-| Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e95ffa5/models/tt_transformers) |
-| tt-metal Commit | `e95ffa5` |
-| vLLM Commit | `48eba14` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-e95ffa5-48eba14` |

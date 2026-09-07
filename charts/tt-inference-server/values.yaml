@@ -556,7 +556,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e0e0500-409b1cd
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 20Gi
@@ -798,7 +798,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.10.0-555f240-22be241
             resources:
               requests:
                 memory: 80Gi
@@ -966,7 +966,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-e95ffa5-48eba14
+              tag: 0.4.0-e95ffa5-48eba14
             resources:
               requests:
                 memory: 80Gi
@@ -1156,7 +1156,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.9.0-13f44c5-0edd242
+              tag: 0.3.0-13f44c5-0edd242
             resources:
               requests:
                 memory: 180Gi
@@ -1337,7 +1337,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.0-e867533-8f36910
+              tag: 0.9.0-65718bb-409b1cd
             resources:
               requests:
                 memory: 175Gi
@@ -1415,7 +1415,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.10.0-555f240-22be241
             resources:
               requests:
                 memory: 175Gi
@@ -3006,7 +3006,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-555f240-22be241
+              tag: 0.10.0-555f240-22be241
             resources:
               requests:
                 memory: 20Gi
@@ -3030,7 +3030,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.19.0-b204341-9bd099c
+              tag: 0.17.0-8c48a10-f52987a
             resources:
               requests:
                 memory: 20Gi
@@ -3080,7 +3080,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-bac8b34-7c6685a
+              tag: 0.11.0-bac8b34-7c6685a
             resources:
               requests:
                 memory: 20Gi
@@ -4268,7 +4268,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.1-555f240
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 path: /tt-liveness
@@ -4693,7 +4693,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.9.0-c180ef7
+              tag: 0.4.0-13f44c5
             probes:
               liveness:
                 path: /tt-liveness
@@ -4971,7 +4971,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.1-555f240
+              tag: 0.10.0-555f240
             probes:
               liveness:
                 path: /tt-liveness
