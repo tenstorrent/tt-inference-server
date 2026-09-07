@@ -126,10 +126,15 @@ def test_evals_smoke_run_is_merged_like_any_other_report():
 def test_smoke_and_full_both_survive_deduplication(tmp_path):
     """They differ in run_command, so they are two identities, not one test run
     twice — de-duplication must not collapse them into one."""
-    _write(tmp_path, "a", "report_evals_0_100.json",
-           _report(args=f"--dev-mode {SMOKE_FLAG}", score=100.0))
-    _write(tmp_path, "b", "report_evals_0_200.json",
-           _report(args="--dev-mode", score=83.0))
+    _write(
+        tmp_path,
+        "a",
+        "report_evals_0_100.json",
+        _report(args=f"--dev-mode {SMOKE_FLAG}", score=100.0),
+    )
+    _write(
+        tmp_path, "b", "report_evals_0_200.json", _report(args="--dev-mode", score=83.0)
+    )
 
     sources, _ = load_test_reports(discover_test_reports(tmp_path))
     kept, superseded = deduplicate(sources)
@@ -147,15 +152,19 @@ def test_a_failed_test_is_still_merged():
     assert mergeable(_report(accuracy_check=3, score=40.0))[0] is True
 
 
-def test_discovery_ignores_run_py_own_output_tree():
-    """Each artifact re-uploads run.py's reports_output/, which holds the same
-    content under a different name. Taking both would duplicate every section."""
-    container = Path("/tmp")  # not used; exercise via a tmp_path test below
-
-
 def test_discovery_skips_workflow_logs(tmp_path):
+    """Each artifact re-uploads run.py's own reports_output/ tree under
+    workflow_logs/, holding the same results under a different name. Taking
+    both would duplicate every section."""
     _write(tmp_path, "report_x-tests_m_t_1", "report_evals_0_1.json", _report())
-    nested = tmp_path / "report_x-tests_m_t_1" / "workflow_logs" / "reports_output" / "evals" / "data"
+    nested = (
+        tmp_path
+        / "report_x-tests_m_t_1"
+        / "workflow_logs"
+        / "reports_output"
+        / "evals"
+        / "data"
+    )
     nested.mkdir(parents=True)
     (nested / "report_data_gemma_2026.json").write_text(json.dumps(_report()))
 
@@ -167,9 +176,9 @@ def test_discovery_skips_workflow_logs(tmp_path):
 # de-duplication across CI attempts
 # --------------------------------------------------------------------------- #
 def test_strip_server_url_normalises_both_flag_forms():
-    assert _strip_server_url("run.py --workflow evals --server-url http://a --dev-mode") == (
-        "run.py --workflow evals --dev-mode"
-    )
+    assert _strip_server_url(
+        "run.py --workflow evals --server-url http://a --dev-mode"
+    ) == ("run.py --workflow evals --dev-mode")
     assert _strip_server_url("run.py --server-url=http://a --dev-mode") == (
         "run.py --dev-mode"
     )
@@ -179,10 +188,12 @@ def test_retried_test_keeps_only_the_newest_report(tmp_path):
     """A test that fails acceptance still writes a report, so retrying leaves
     two for one test. Merging both double-counts it and lets the superseded
     attempt's failure set the verdict."""
-    _write(tmp_path, "a1", "report_evals_0_100.json",
-           _report(accuracy_check=3, score=40.0))
-    _write(tmp_path, "a2", "report_evals_0_200.json",
-           _report(accuracy_check=2, score=83.0))
+    _write(
+        tmp_path, "a1", "report_evals_0_100.json", _report(accuracy_check=3, score=40.0)
+    )
+    _write(
+        tmp_path, "a2", "report_evals_0_200.json", _report(accuracy_check=2, score=83.0)
+    )
 
     sources, _ = load_test_reports(discover_test_reports(tmp_path))
     assert len(sources) == 2
@@ -219,10 +230,14 @@ def test_different_tests_are_not_deduplicated(tmp_path):
 # --------------------------------------------------------------------------- #
 def test_merged_schema_concatenates_sections_and_claims_release(tmp_path):
     _write(tmp_path, "a", "report_evals_0_100.json", _report("evals"))
-    _write(tmp_path, "b", "report_agentic_0_200.json", _report("agentic", task="swe_bench"))
+    _write(
+        tmp_path, "b", "report_agentic_0_200.json", _report("agentic", task="swe_bench")
+    )
 
     sources, _ = load_test_reports(discover_test_reports(tmp_path))
-    schema = build_merged_schema(sources, model="google/gemma-4-31B-it", target="SC16:120-A")
+    schema = build_merged_schema(
+        sources, model="google/gemma-4-31B-it", target="SC16:120-A"
+    )
 
     assert len(schema.sections) == 2
     # Presents as a release so existing consumers treat it like a single-host report.
@@ -234,7 +249,9 @@ def test_merged_schema_concatenates_sections_and_claims_release(tmp_path):
 
 
 def test_model_status_comes_from_the_sources(tmp_path):
-    _write(tmp_path, "a", "report_evals_0_100.json", _report(model_status="EXPERIMENTAL"))
+    _write(
+        tmp_path, "a", "report_evals_0_100.json", _report(model_status="EXPERIMENTAL")
+    )
     sources, _ = load_test_reports(discover_test_reports(tmp_path))
     assert resolve_model_status(sources) == "EXPERIMENTAL"
 
@@ -244,14 +261,22 @@ def test_enforcement_follows_the_model_status(tmp_path):
     informational for EXPERIMENTAL. Delegating to acceptance_criteria_check
     inherits that gating instead of reimplementing it."""
     experimental = tmp_path / "experimental"
-    _write(experimental, "a", "report_evals_0_100.json",
-           _report(accuracy_check=3, score=40.0, model_status="EXPERIMENTAL"))
+    _write(
+        experimental,
+        "a",
+        "report_evals_0_100.json",
+        _report(accuracy_check=3, score=40.0, model_status="EXPERIMENTAL"),
+    )
     _, stats = merge_reports(experimental, tmp_path / "out-exp")
     assert stats["accepted"] is True
 
     functional = tmp_path / "functional"
-    _write(functional, "a", "report_evals_0_100.json",
-           _report(accuracy_check=3, score=40.0, model_status="FUNCTIONAL"))
+    _write(
+        functional,
+        "a",
+        "report_evals_0_100.json",
+        _report(accuracy_check=3, score=40.0, model_status="FUNCTIONAL"),
+    )
     _, stats = merge_reports(functional, tmp_path / "out-fun")
     assert stats["accepted"] is False
 
@@ -261,10 +286,15 @@ def test_disagreeing_model_status_enforces_everything(tmp_path):
     Trusting either could let the laxer one relax enforcement for the whole
     report, so resolution yields "" and upstream then enforces every check —
     the same principle acceptance_criteria.py applies to a missing status."""
-    _write(tmp_path, "a", "report_evals_0_100.json",
-           _report(model_status="EXPERIMENTAL"))
-    _write(tmp_path, "b", "report_agentic_0_200.json",
-           _report("agentic", model_status="FUNCTIONAL"))
+    _write(
+        tmp_path, "a", "report_evals_0_100.json", _report(model_status="EXPERIMENTAL")
+    )
+    _write(
+        tmp_path,
+        "b",
+        "report_agentic_0_200.json",
+        _report("agentic", model_status="FUNCTIONAL"),
+    )
 
     sources, _ = load_test_reports(discover_test_reports(tmp_path))
     assert resolve_model_status(sources) == ""
@@ -273,10 +303,15 @@ def test_disagreeing_model_status_enforces_everything(tmp_path):
 def test_disagreement_does_not_hide_a_failure(tmp_path):
     """The consequence of the rule above: an EXPERIMENTAL report alongside a
     failing FUNCTIONAL one must not launder the failure into a PASS."""
-    _write(tmp_path, "a", "report_evals_0_100.json",
-           _report(model_status="EXPERIMENTAL"))
-    _write(tmp_path, "b", "report_agentic_0_200.json",
-           _report("agentic", accuracy_check=3, score=40.0, model_status="FUNCTIONAL"))
+    _write(
+        tmp_path, "a", "report_evals_0_100.json", _report(model_status="EXPERIMENTAL")
+    )
+    _write(
+        tmp_path,
+        "b",
+        "report_agentic_0_200.json",
+        _report("agentic", accuracy_check=3, score=40.0, model_status="FUNCTIONAL"),
+    )
 
     _, stats = merge_reports(tmp_path, tmp_path / "out")
     assert stats["accepted"] is False
@@ -288,7 +323,8 @@ def test_a_requested_test_that_never_reported_blocks_acceptance(tmp_path):
     _write(tmp_path, "a", "report_evals_0_100.json", _report())
 
     _, stats = merge_reports(
-        tmp_path, tmp_path / "out",
+        tmp_path,
+        tmp_path / "out",
         missing_tests=["inference-workflow-benchmarks --dev-mode"],
     )
     assert stats["accepted"] is False
@@ -319,7 +355,9 @@ def test_merge_renders_the_release_shaped_json(tmp_path):
         "acceptance_summary_markdown",
     }
     assert payload["metadata"]["workflow"] == "release"
-    assert [c["name"] for c in payload["acceptance_criteria_metadata"]["categories"]] == [
+    assert [
+        c["name"] for c in payload["acceptance_criteria_metadata"]["categories"]
+    ] == [
         "Benchmarks",
         "Evals",
         "Spec Tests",

@@ -313,8 +313,14 @@ def build_merged_schema(
         key: value
         for key, value in seed.items()
         # Per-test values that would be misleading on a merged report.
-        if key not in ("run_command", "report_id", "generated_at", "workflow",
-                       "runtime_model_spec_json")
+        if key
+        not in (
+            "run_command",
+            "report_id",
+            "generated_at",
+            "workflow",
+            "runtime_model_spec_json",
+        )
     }
     model_name = str(metadata.get("model_name") or model or "")
     device = str(metadata.get("device") or "")
@@ -407,7 +413,10 @@ def merge_reports(
         for old, new in superseded:
             logger.info(
                 "Superseded %s (job %d) by %s (job %d) — same test, later attempt",
-                old.path.name, old.job_id, new.path.name, new.job_id,
+                old.path.name,
+                old.job_id,
+                new.path.name,
+                new.job_id,
             )
 
     logger.info(
@@ -440,7 +449,9 @@ def merge_reports(
             if key in previously_waived:
                 blockers.pop(key)
         accepted = not blockers
-        logger.info("Re-applied %d waiver(s) from source reports", len(previously_waived))
+        logger.info(
+            "Re-applied %d waiver(s) from source reports", len(previously_waived)
+        )
 
     # A requested test that produced no report is invisible to the category
     # checks, which read a missing category as NA rather than a failure. Exabox
@@ -448,9 +459,7 @@ def merge_reports(
     # partial run — and without it a run where most tests never started reads
     # exactly like a clean one.
     if missing_tests:
-        gap_blockers = task_failure_blockers(
-            (test, 1, False) for test in missing_tests
-        )
+        gap_blockers = task_failure_blockers((test, 1, False) for test in missing_tests)
         blockers = {**blockers, **gap_blockers}
         accepted = False
         logger.warning(
@@ -479,8 +488,7 @@ def merge_reports(
         "merged": len(sources),
         "skipped": len(skipped),
         "superseded": [
-            {"dropped": old.path.name, "kept": new.path.name}
-            for old, new in superseded
+            {"dropped": old.path.name, "kept": new.path.name} for old, new in superseded
         ],
         "sections": len(schema.sections),
         "missing_tests": list(missing_tests),
@@ -505,25 +513,52 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--container-dir", required=True, type=Path,
-                        help="Directory holding the downloaded per-test report artifacts")
-    parser.add_argument("--output-dir", required=True, type=Path,
-                        help="Where to write report_<id>.md and data/report_data_<id>.json")
-    parser.add_argument("--model", default="", help="Model id, for the merge description")
-    parser.add_argument("--target", default="", help="Target cluster, for the merge description")
-    parser.add_argument("--job-id", default="",
-                        help="Aggregating job id. When given, job-id-named copies are "
-                             "written so the data collector can attribute the report.")
-    parser.add_argument("--missing-test", action="append", default=[], dest="missing_tests",
-                        metavar="TEST",
-                        help="A requested test that produced no report; repeatable")
-    parser.add_argument("--keep-duplicates", action="store_true",
-                        help="Merge every report found, including several attempts of the "
-                             "same test. Off by default: retrying a test leaves two "
-                             "reports, and merging both double-counts its sections and "
-                             "lets the superseded attempt's failure set the verdict.")
-    parser.add_argument("--stats-json", type=Path, default=None,
-                        help="Also write the run stats to this path")
+    parser.add_argument(
+        "--container-dir",
+        required=True,
+        type=Path,
+        help="Directory holding the downloaded per-test report artifacts",
+    )
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        type=Path,
+        help="Where to write report_<id>.md and data/report_data_<id>.json",
+    )
+    parser.add_argument(
+        "--model", default="", help="Model id, for the merge description"
+    )
+    parser.add_argument(
+        "--target", default="", help="Target cluster, for the merge description"
+    )
+    parser.add_argument(
+        "--job-id",
+        default="",
+        help="Aggregating job id. When given, job-id-named copies are "
+        "written so the data collector can attribute the report.",
+    )
+    parser.add_argument(
+        "--missing-test",
+        action="append",
+        default=[],
+        dest="missing_tests",
+        metavar="TEST",
+        help="A requested test that produced no report; repeatable",
+    )
+    parser.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help="Merge every report found, including several attempts of the "
+        "same test. Off by default: retrying a test leaves two "
+        "reports, and merging both double-counts its sections and "
+        "lets the superseded attempt's failure set the verdict.",
+    )
+    parser.add_argument(
+        "--stats-json",
+        type=Path,
+        default=None,
+        help="Also write the run stats to this path",
+    )
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args(argv)
 
@@ -533,8 +568,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     if not args.container_dir.exists():
-        logger.warning("Container dir %s does not exist; treating as empty",
-                       args.container_dir)
+        logger.warning(
+            "Container dir %s does not exist; treating as empty", args.container_dir
+        )
         args.container_dir.mkdir(parents=True, exist_ok=True)
 
     result, stats = merge_reports(
@@ -569,7 +605,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(payload)
     logger.info(
         "Merged %d report(s) into %d section(s) -> %s",
-        stats["merged"], stats["sections"], result.markdown_path,
+        stats["merged"],
+        stats["sections"],
+        result.markdown_path,
     )
     return 0
 
