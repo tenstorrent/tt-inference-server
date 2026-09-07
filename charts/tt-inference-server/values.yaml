@@ -3552,7 +3552,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.4.0-13f44c5
+              tag: 0.4.0-e95ffa59adbe39237525161272141cbbb603c686
             probes:
               liveness:
                 path: /tt-liveness
@@ -3573,7 +3573,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.4.0-13f44c5
+              tag: 0.4.0-e95ffa59adbe39237525161272141cbbb603c686
             probes:
               liveness:
                 path: /tt-liveness
