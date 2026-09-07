@@ -407,9 +407,7 @@ TEST_F(MainIntegrationTest,
   //
   // Pre-fix, the matched prefix plateaued (corrupt blocks past the matched
   // prefix); the shared helper asserts it instead advances by a full block
-  // every turn. Assertions are shape-only: the think-row arithmetic depends on
-  // how the caller renders history, which this harness cannot vary, so it is
-  // pinned per policy in conversation_hasher_test's ThinkRows suite.
+  // every turn.
   const std::vector<std::string> userMessages = {
       "opening reasoning turn for the think-marker multiturn prefix cache test "
       "with plenty of words so this first message tokenizes to well over "

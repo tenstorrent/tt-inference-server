@@ -209,8 +209,6 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
       // Mirror the session-side think marker state machine.
       if (token == thinkStartId) {
         inThinking = true;
-        // Not hashed, but it occupies a KV row unless the template
-        // re-renders it, in which case the later prompt supplies that row.
         if (!markersInHistory.start) ++thinkCount;
         continue;
       }
