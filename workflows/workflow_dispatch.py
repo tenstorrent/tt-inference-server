@@ -111,7 +111,7 @@ def _eval_config_for(model_spec):
     except Exception as e:  # pragma: no cover - defensive
         logger.warning("Could not import the target pack (%s); skipping evals.", e)
         return None
-    return get_target_pack().eval_config(model_spec.model_name)
+    return get_target_pack().eval_config(model_spec.hf_model_repo)
 
 
 def _llm_release_includes_agentic(model_spec) -> bool:
@@ -228,7 +228,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_agentic_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -239,7 +239,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_agentic_traces_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -250,7 +250,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_prefix_cache_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -261,7 +261,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_spec_decode_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -272,7 +272,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_llm_bench_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -282,7 +282,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
                 _stress_argv(repo_root, model_spec, runtime_config, json_fpath),
                 model_spec=model_spec,
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -295,7 +295,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
             "run_workflows.py is required for image-model workflows."
         )
     _warn_on_unsupported_args(runtime_config)
-    env = _engine_env()
+    env = _engine_env(model_spec)
     # --served-model picks the model the prefill_decode mock stack serves,
     # independent of the catalog --model. The smoke runner reads $MODEL (an
     # explicit value wins over the --model-derived default), so forward it here.
@@ -345,10 +345,31 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
     return [WorkflowResult(workflow_name=engine_workflow, return_code=return_code)]
 
 
-def _engine_env() -> dict:
+def _engine_env(model_spec=None) -> dict:
     """Env overrides forwarded to every engine subprocess (VenvCommand merges
-    these over ``os.environ``)."""
-    return {"TT_RUN_COMMAND": "python " + shlex.join(sys.argv)}
+    these over ``os.environ``).
+
+    ``TT_RUN_COMMAND`` records the v1 invocation for report metadata. When a
+    caller passed a bare basename, rewrite ``--model`` to the resolved HF
+    identity so the recorded command matches scheduled-CI spelling.
+    """
+    argv = _argv_with_canonical_model(sys.argv, model_spec)
+    return {"TT_RUN_COMMAND": "python " + shlex.join(argv)}
+
+
+def _argv_with_canonical_model(argv, model_spec) -> list:
+    identity = getattr(model_spec, "hf_model_repo", None) if model_spec else None
+    if not identity:
+        return list(argv)
+    out = list(argv)
+    for i, tok in enumerate(out):
+        if tok == "--model" and i + 1 < len(out):
+            out[i + 1] = identity
+            break
+        if tok.startswith("--model="):
+            out[i] = f"--model={identity}"
+            break
+    return out
 
 
 def _engine_run_argv(
@@ -369,7 +390,7 @@ def _engine_run_argv(
     argv = [
         str(run_workflows_py),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--workflow",
         engine_workflow,
         "--device",
@@ -418,7 +439,7 @@ def _base_engine_argv(
     argv = [
         str(launcher),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--workflow",
         engine_workflow,
         "--device",
@@ -554,7 +575,7 @@ def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
         "--output-path",
         str(output_path),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--device",
         runtime_config.device,
     ]

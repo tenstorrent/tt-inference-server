@@ -27,10 +27,10 @@ class TenstorrentTargetPack(TargetPack):
     """``TargetPack`` over the Tenstorrent ``reference_config/`` corpus."""
 
     # --- eval configs ---
-    def eval_config(self, model_name: str) -> Optional[Any]:
+    def eval_config(self, hf_model_repo: str) -> Optional[Any]:
         from reference_config.evals.eval_config import EVAL_CONFIGS
 
-        return EVAL_CONFIGS.get(model_name)
+        return EVAL_CONFIGS.get(hf_model_repo)
 
     def resolve_eval_reference(self, score: Any, limit_mode: Any) -> Mapping[str, Any]:
         from reference_config.evals.eval_config import resolve_eval_reference

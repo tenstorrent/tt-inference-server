@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from workflow_module.requirements_schema import load_requirements
+from workflows.model_spec import MODEL_SPECS
 from workflows.model_spec_provider import (
     TenstorrentModelSpecProvider,
     hardware_to_device_name,
@@ -77,6 +78,17 @@ def test_hardware_unknown_raises(hardware):
 
 
 # --- off-catalog synthesis ---------------------------------------------------
+
+
+def test_catalog_provider_accepts_full_repo_and_basename():
+    provider = TenstorrentModelSpecProvider()
+    spec = next(iter(MODEL_SPECS.values()))
+
+    assert spec.hf_model_repo in provider.model_names()
+    assert spec.model_name in provider.model_names()
+    assert spec in provider.resolve_candidates(
+        spec.hf_model_repo, spec.device_type.name.lower()
+    )
 
 
 def test_synthesize_off_catalog_spec():
