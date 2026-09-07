@@ -184,8 +184,8 @@ TEST_F(ConversationHasherTest, RenderLastUserTurn_BosIncludedOnlyWithoutPrior) {
 
 namespace {
 
-constexpr uint32_t kThinkStart = 90001;
-constexpr uint32_t kThinkEnd = 90002;
+constexpr uint32_t K_THINK_START = 90001;
+constexpr uint32_t K_THINK_END = 90002;
 
 // [first block of ordinary tokens] <think> t t </think> [one more block]
 std::vector<uint32_t> tokensWithOneThinkBlock() {
@@ -196,10 +196,10 @@ std::vector<uint32_t> tokensWithOneThinkBlock() {
   for (size_t i = 0; i < firstBlockSize; ++i) {
     tokens.push_back(static_cast<uint32_t>(1000 + i));
   }
-  tokens.push_back(kThinkStart);
+  tokens.push_back(K_THINK_START);
   tokens.push_back(70001);  // reasoning content
   tokens.push_back(70002);  // reasoning content
-  tokens.push_back(kThinkEnd);
+  tokens.push_back(K_THINK_END);
   for (size_t i = 0; i < blockSize; ++i) {
     tokens.push_back(static_cast<uint32_t>(2000 + i));
   }
@@ -209,7 +209,7 @@ std::vector<uint32_t> tokensWithOneThinkBlock() {
 std::vector<BlockHashInfo> hashWithPolicy(bool startInHistory,
                                           bool endInHistory) {
   return getPrefixCacheHashesByBlocksWithThinking(
-      tokensWithOneThinkBlock(), kThinkStart, kThinkEnd,
+      tokensWithOneThinkBlock(), K_THINK_START, K_THINK_END,
       {.start = startInHistory, .end = endInHistory});
 }
 
