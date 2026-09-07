@@ -33,12 +33,15 @@ _NUM_CALLS_SENTINEL = 2
 TTS_QUALITY_DEPS = ("numpy", "torch", "transformers", "librosa", "datasets")
 # SECS additionally decodes/resamples audio client-side.
 TTS_SECS_DEPS = TTS_QUALITY_DEPS + ("soundfile",)
+# Naturalness scores clips with a torch.hub MOS predictor (needs torchaudio).
+TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 
 # EvalConfig task names this runner knows how to execute. A model's EvalConfig
 # lists the subset that applies to it: WER for every TTS model, SECS only for
 # voice-cloning models (the request must support ``reference_audio``).
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
+TASK_NATURALNESS = "tts_naturalness"
 
 
 def _tts_sample_count(ctx: MediaContext) -> int:
@@ -318,9 +321,87 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
     )
 
 
+def _run_tts_naturalness_eval(ctx: MediaContext) -> dict:
+    """Run ``TTSNaturalnessTest`` against the live server (lazy imports)."""
+    from .._test_common import TestConfig
+    from .tts_naturalness_test import TTSNaturalnessTest
+
+    test = TTSNaturalnessTest(
+        TestConfig(
+            {
+                "timeout": 3600,
+                "retry_attempts": 1,
+                "retry_delay": 10,
+                "break_on_failure": False,
+            }
+        ),
+        targets={},
+        ctx=ctx,
+    )
+    logger.info("Running TTSNaturalnessTest: base_url=%s", ctx.base_url)
+    return dict(test.run_tests().data)
+
+
+def _run_naturalness_task(ctx: MediaContext, task) -> Block:
+    """Naturalness eval (task_name=tts_naturalness) -> one Block."""
+    missing = _missing_deps(TTS_NATURALNESS_DEPS)
+    if missing:
+        reason = f"TTS naturalness deps unavailable: {', '.join(missing)}"
+        logger.error(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"mean_utmos": None},
+        )
+
+    try:
+        result = _run_tts_naturalness_eval(ctx)
+    except Exception as e:
+        reason = f"TTS naturalness eval failed to run: {type(e).__name__}: {e}"
+        logger.exception(reason)
+        return _tts_eval_block(
+            ctx,
+            task,
+            score=None,
+            accuracy_check=ReportCheckTypes.NA,
+            error=reason,
+            metrics={"mean_utmos": None},
+        )
+
+    mean_utmos = result.get("mean_utmos")
+    valid_samples = int(result.get("valid_samples") or 0)
+    if valid_samples <= 0 or mean_utmos is None:
+        accuracy_check = ReportCheckTypes.NA
+        score = None
+    else:
+        accuracy_check = (
+            ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
+        )
+        # MOS is 1..5; map to the suite's 0..100 scale.
+        score = round((mean_utmos - 1.0) / 4.0 * 100.0, 2)
+    logger.info(
+        "TTS naturalness eval: mean_utmos=%s valid_samples=%s -> score=%s check=%s",
+        mean_utmos,
+        valid_samples,
+        score,
+        accuracy_check.name,
+    )
+    return _tts_eval_block(
+        ctx,
+        task,
+        score=score,
+        accuracy_check=accuracy_check,
+        metrics={"mean_utmos": mean_utmos},
+    )
+
+
 _TASK_RUNNERS = {
     TASK_WER: _run_wer_task,
     TASK_SECS: _run_secs_task,
+    TASK_NATURALNESS: _run_naturalness_task,
 }
 
 
