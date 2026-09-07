@@ -435,15 +435,10 @@ class TestResolveAuthToken:
         return Namespace(**base)
 
     def _patch_engine(self, monkeypatch, engine):
-        monkeypatch.setattr(
-            cf,
-            "get_runtime_model_spec",
-            lambda model, device: (
-                SimpleNamespace(inference_engine=engine),
-                None,
-                None,
-            ),
+        fake_provider = SimpleNamespace(
+            resolve=lambda model, device: SimpleNamespace(inference_engine=engine)
         )
+        monkeypatch.setattr(cf, "get_model_spec_provider", lambda: fake_provider)
 
     def test_forge_uses_literal_default_not_jwt(self, monkeypatch):
         # Even with JWT_SECRET set, a forge server must get the literal key.
@@ -489,7 +484,9 @@ class TestResolveAuthToken:
         def boom(model, device):
             raise RuntimeError("no spec")
 
-        monkeypatch.setattr(cf, "get_runtime_model_spec", boom)
+        monkeypatch.setattr(
+            cf, "get_model_spec_provider", lambda: SimpleNamespace(resolve=boom)
+        )
         assert cf._resolve_auth_token(self._args()) == ""
 
     # --- runtime_model_spec_json precedence (dual-catalog models) -------------

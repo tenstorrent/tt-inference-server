@@ -21,7 +21,7 @@ Usage:
 import re
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -224,7 +224,93 @@ def generate_section_anchor(section_title: str) -> str:
 
 def get_model_display_name(template: ModelSpecTemplate) -> str:
     """Get the display name for a model template."""
-    return model_weights_to_model_name(template.weights[0])
+    return template.model_display_name or model_weights_to_model_name(
+        template.weights[0]
+    )
+
+
+def coalesce_model_families_for_docs(
+    templates: List[ModelSpecTemplate],
+) -> List[ModelSpecTemplate]:
+    """Combine model-family leaves sharing one device and runtime configuration."""
+
+    def shared_signature(template):
+        data = asdict(template)
+        for field_name in (
+            "weights",
+            "device_model_specs",
+            "metadata",
+            "model_display_name",
+        ):
+            data.pop(field_name, None)
+        return data
+
+    def device_signature(device_spec):
+        # Catalog device specs carry no perf_reference: the field is rejected in
+        # YAML and only filled in during expansion, so there is nothing here to
+        # exclude from the comparison.
+        return asdict(device_spec)
+
+    grouped = defaultdict(list)
+    ordered_keys = []
+    for index, template in enumerate(templates):
+        key = (
+            (
+                "family",
+                template.model_type,
+                template.model_display_name,
+                template.inference_engine,
+                template.impl.impl_id,
+            )
+            if template.model_display_name
+            else ("template", index)
+        )
+        if key not in grouped:
+            ordered_keys.append(key)
+        grouped[key].append(template)
+
+    coalesced = []
+    for key in ordered_keys:
+        members = grouped[key]
+        buckets = []
+        for item in members:
+            for device_spec in item.device_model_specs:
+                shared = shared_signature(item)
+                device = device_signature(device_spec)
+                bucket = next(
+                    (
+                        candidate
+                        for candidate in buckets
+                        if candidate["shared"] == shared
+                        and candidate["device"] == device
+                    ),
+                    None,
+                )
+                if bucket is None:
+                    bucket = {
+                        "template": item,
+                        "device_spec": device_spec,
+                        "shared": shared,
+                        "device": device,
+                        "weights": [],
+                        "metadata": {},
+                    }
+                    buckets.append(bucket)
+                for weight in item.weights:
+                    if weight not in bucket["weights"]:
+                        bucket["weights"].append(weight)
+                bucket["metadata"].update(item.metadata)
+
+        for bucket in buckets:
+            coalesced.append(
+                replace(
+                    bucket["template"],
+                    weights=bucket["weights"],
+                    device_model_specs=[bucket["device_spec"]],
+                    metadata=bucket["metadata"],
+                )
+            )
+    return coalesced
 
 
 def get_model_device_filename(model_name: str, device: DeviceTypes) -> str:
@@ -315,7 +401,9 @@ def get_page_group_status_link(
 
 def group_templates_by_model(
     templates: List[ModelSpecTemplate],
-) -> Dict[str, List[ModelSpecTemplate]]:
+    *,
+    include_model_type: bool = False,
+) -> Dict[object, List[ModelSpecTemplate]]:
     """
     Group templates by their model display name.
     Multiple templates may exist for the same model targeting different devices.
@@ -323,7 +411,10 @@ def group_templates_by_model(
     groups = defaultdict(list)
     for template in templates:
         display_name = get_model_display_name(template)
-        groups[display_name].append(template)
+        key = (
+            (template.model_type, display_name) if include_model_type else display_name
+        )
+        groups[key].append(template)
     return dict(groups)
 
 
@@ -447,36 +538,51 @@ def generate_model_page_group_page(
 
     # Collect devices in this group that support the model
     supported_devices_in_group = []
-    device_template_map = {}  # device -> (template, dev_spec)
+    device_template_map = defaultdict(list)  # device -> [(template, dev_spec)]
     for device in group.device_ordering:
         for template in templates:
             for dev_spec in template.device_model_specs:
                 if dev_spec.device == device:
-                    supported_devices_in_group.append(device)
-                    device_template_map[device] = (template, dev_spec)
+                    device_template_map[device].append((template, dev_spec))
                     break
-            if device in device_template_map:
-                break
+        if device_template_map[device]:
+            # The default implementation is what a user gets without asking for
+            # one, so it is the configuration the page documents; the rest go
+            # into the additional-configurations table. Taking the first entry
+            # in catalog order instead made that depend on entry order, so a
+            # non-default impl listed first became the headline configuration
+            # and its batch and context limits went into the quickstart. Stable
+            # sort, so catalog order still decides among equals.
+            device_template_map[device].sort(key=lambda item: not item[1].default_impl)
+            supported_devices_in_group.append(device)
 
     if not supported_devices_in_group:
         return f"# {model_name} - No devices found in group {group.name}\n"
 
     # Use first supported device for common sections
     first_device = supported_devices_in_group[0]
-    first_template, first_dev_spec = device_template_map[first_device]
+    first_device_templates = device_template_map[first_device]
+    first_template, first_dev_spec = first_device_templates[0]
 
     # Page title with group name
     lines.append(f"# {model_name} Tenstorrent Support on {group.name}")
     lines.append("")
 
     # Supported weights (only show if multiple weights are supported)
-    if first_template.weights and len(first_template.weights) > 1:
-        default_weights = first_template.weights[0]
+    supported_weights = list(
+        dict.fromkeys(
+            weight
+            for template, _ in first_device_templates
+            for weight in template.weights
+        )
+    )
+    if len(supported_weights) > 1:
+        default_weights = supported_weights[0]
         default_weights_name = default_weights.split("/")[-1]
 
         lines.append("Supported weights variants for this model implementation are:")
         lines.append("")
-        for idx, weight in enumerate(first_template.weights):
+        for idx, weight in enumerate(supported_weights):
             weight_name = weight.split("/")[-1]
             if idx == 0:
                 lines.append(
@@ -488,9 +594,15 @@ def generate_model_page_group_page(
                 )
 
         lines.append("")
-        lines.append(
-            f"To use non-default weights, replace `{default_weights_name}` in commands below."
-        )
+        if len(first_device_templates) == 1:
+            lines.append(
+                f"To use non-default weights, replace `{default_weights_name}` in commands below."
+            )
+        else:
+            lines.append(
+                "Weight variants use more than one released configuration; "
+                "see the configuration table below."
+            )
         lines.append("")
 
     # Useful links section
@@ -532,7 +644,8 @@ def generate_model_page_group_page(
 
     # Generate sections for each supported device in the group
     for idx, device in enumerate(supported_devices_in_group):
-        target_template, target_dev_spec = device_template_map[device]
+        device_templates = device_template_map[device]
+        target_template, target_dev_spec = device_templates[0]
         product_name = device.to_product_str()
 
         # Section header for secondary devices
@@ -672,6 +785,47 @@ def generate_model_page_group_page(
 
         lines.append(f"| Docker Image | `{docker_image}` |")
         lines.append("")
+
+        if len(device_templates) > 1:
+            lines.append("#### Additional released configurations")
+            lines.append("")
+            columns = ["Weights", "Implementation", "Max Batch Size"]
+            if model_type in (ModelType.LLM, ModelType.VLM):
+                columns.append("Max Context Length")
+            columns.extend(["tt-metal Commit", "vLLM Commit", "Docker Image"])
+            lines.append("| " + " | ".join(columns) + " |")
+            lines.append("|" + "|".join("---" for _ in columns) + "|")
+            for alternate, alternate_dev_spec in device_templates[1:]:
+                alternate_weights = ", ".join(
+                    f"[{weight}](https://huggingface.co/{weight})"
+                    for weight in alternate.weights
+                )
+                alternate_image = (
+                    alternate.docker_image
+                    or generate_default_docker_link(
+                        alternate.version,
+                        alternate.tt_metal_commit,
+                        alternate.vllm_commit,
+                        inference_engine=alternate.inference_engine,
+                        multihost=device.is_multihost(),
+                    )
+                )
+                values = [
+                    alternate_weights,
+                    f"`{alternate.impl.impl_name}`",
+                    str(alternate_dev_spec.max_concurrency),
+                ]
+                if model_type in (ModelType.LLM, ModelType.VLM):
+                    values.append(str(alternate_dev_spec.max_context))
+                values.extend(
+                    [
+                        f"`{alternate.tt_metal_commit}`",
+                        f"`{alternate.vllm_commit or '-'}`",
+                        f"`{alternate_image}`",
+                    ]
+                )
+                lines.append("| " + " | ".join(values) + " |")
+            lines.append("")
 
     return "\n".join(lines)
 
@@ -882,7 +1036,7 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
     devices_with_templates = get_devices_with_templates(templates)
 
     # Group templates by model name
-    model_groups = group_templates_by_model(templates)
+    model_groups = group_templates_by_model(templates, include_model_type=True)
 
     # Iterate through all devices with page group mappings (excluding EXCLUDED_DEVICES)
     for device in get_devices_with_templates_ordered():
@@ -900,7 +1054,7 @@ def generate_models_by_hardware_page(templates: List[ModelSpecTemplate]) -> str:
 
         # Collect models that support this device
         device_models = []
-        for model_name, model_templates in model_groups.items():
+        for (_, model_name), model_templates in model_groups.items():
             status_enum = get_device_status_enum_for_model(model_templates, device)
             if status_enum is not None:
                 model_type = get_model_type_for_templates(model_templates)
@@ -1029,6 +1183,7 @@ def generate_doc_pages(
         output_dir: Output directory for docs (default: docs/model_support)
         dry_run: If True, print what would be written without writing
     """
+    templates = coalesce_model_families_for_docs(templates)
     output_path = Path(output_dir)
 
     print(f"Generating Model Support documentation from {len(templates)} templates")
@@ -1057,9 +1212,9 @@ def generate_doc_pages(
         write_file(output_path / subdir / "README.md", page_content, dry_run)
 
     # Group templates by model name and generate per-page-group pages in subdirectories
-    model_groups = group_templates_by_model(templates)
+    model_groups = group_templates_by_model(templates, include_model_type=True)
 
-    for model_name, model_templates in model_groups.items():
+    for (_, model_name), model_templates in model_groups.items():
         # Get model type subdirectory
         model_type = get_model_type_for_templates(model_templates)
         subdir = get_model_subdir(model_type)
@@ -1103,6 +1258,7 @@ def update_readme_model_support(
         readme_path: Path to README.md file (default: README.md)
         dry_run: If True, print what would change without writing
     """
+    templates = coalesce_model_families_for_docs(templates)
     readme_file = Path(readme_path)
     if not readme_file.exists():
         print(f"Warning: README.md not found at {readme_path}, skipping update")

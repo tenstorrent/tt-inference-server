@@ -8,6 +8,77 @@ templates:
 # For both: STABLE_DIFFUSION_XL_BASE and STABLE_DIFFUSION_XL_IMG2IMG
 - weights:
     - stabilityai/stable-diffusion-xl-base-1.0
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 4
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 16
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
     - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
   version: "0.11.1"
   tt_metal_commit: bac8b34
@@ -16,26 +87,69 @@ templates:
   min_ram_gb: 6
   model_type: IMAGE
   inference_engine: MEDIA
-  # img2img uses the same weights as base SDXL
+      # img2img uses the same weights as base SDXL
   hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
   device_model_specs:
     - device: N150
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: N300
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: T3K
-      max_concurrency: 4
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: GALAXY
-      max_concurrency: 16
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: N300
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 4
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
+- weights:
+    - stabilityai/stable-diffusion-xl-base-1.0-img-2-img
+  version: "0.11.1"
+  tt_metal_commit: bac8b34
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+      # img2img uses the same weights as base SDXL
+  hf_weights_repo: stabilityai/stable-diffusion-xl-base-1.0
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 16
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: stable-diffusion-xl-base-1.0
 
 - weights:
     - stabilityai/stable-diffusion-3.5-large
@@ -49,11 +163,22 @@ templates:
   device_model_specs:
     - device: T3K
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - stabilityai/stable-diffusion-3.5-large
+  version: "0.9.0"
+  tt_metal_commit: c180ef7
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: GALAXY
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: COMPLETE
 
@@ -70,24 +195,123 @@ templates:
   device_model_specs:
     - device: N150
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+  version: "0.12.0"
+  tt_metal_commit: fbbbd2d
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  docker_image: "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: N300
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+  version: "0.12.0"
+  tt_metal_commit: fbbbd2d
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  docker_image: "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: T3K
       max_concurrency: 4
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - diffusers/stable-diffusion-xl-1.0-inpainting-0.1
+  version: "0.12.0"
+  tt_metal_commit: fbbbd2d
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  docker_image: "ghcr.io/tenstorrent/tt-media-inference-server:0.5.0-fbbbd2da8cfab49ddf43d28dd9c0813a3c3ee2bd"
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: GALAXY
       max_concurrency: 32
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: COMPLETE
 
 - weights:
     - black-forest-labs/FLUX.1-dev
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
+    - black-forest-labs/FLUX.1-dev
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
+    - black-forest-labs/FLUX.1-dev
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
+    - black-forest-labs/FLUX.1-dev
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
     - black-forest-labs/FLUX.1-schnell
   version: "0.10.0"
   tt_metal_commit: 555f240
@@ -99,24 +323,76 @@ templates:
   device_model_specs:
     - device: T3K
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: GALAXY
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P300
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
-      default_impl: true
-    - device: P150X4
-      max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
+    - black-forest-labs/FLUX.1-schnell
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
+    - black-forest-labs/FLUX.1-schnell
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P300
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
+    - black-forest-labs/FLUX.1-schnell
+  version: "0.10.0"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P150X4
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
 
 - weights:
     - black-forest-labs/FLUX.1-dev
+  version: "0.10.1"
+  tt_metal_commit: 555f240
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: COMPLETE
+  model_display_name: FLUX.1-dev
+- weights:
     - black-forest-labs/FLUX.1-schnell
   version: "0.10.1"
   tt_metal_commit: 555f240
@@ -128,9 +404,10 @@ templates:
   device_model_specs:
     - device: P150X8
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: COMPLETE
+  model_display_name: FLUX.1-dev
 
 - weights:
     - black-forest-labs/FLUX.1-dev
@@ -144,7 +421,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 55000000
@@ -162,7 +439,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 55000000
@@ -180,24 +457,90 @@ templates:
   device_model_specs:
     - device: T3K
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - Motif-Technologies/Motif-Image-6B-Preview
+  version: "0.9.0"
+  tt_metal_commit: c180ef7
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: GALAXY
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - Motif-Technologies/Motif-Image-6B-Preview
+  version: "0.9.0"
+  tt_metal_commit: c180ef7
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: P150X8
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
+  status: COMPLETE
+- weights:
+    - Motif-Technologies/Motif-Image-6B-Preview
+  version: "0.9.0"
+  tt_metal_commit: c180ef7
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: P300X2
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: COMPLETE
 
 - weights:
     - Qwen/Qwen-Image
+  version: "0.9.0"
+  tt_metal_commit: be88351
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+      env_vars:
+        TT_DIT_CACHE_DIR: /tmp/TT_DIT_CACHE
+  status: FUNCTIONAL
+  model_display_name: Qwen-Image
+- weights:
+    - Qwen/Qwen-Image
+  version: "0.9.0"
+  tt_metal_commit: be88351
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: FUNCTIONAL
+  model_display_name: Qwen-Image
+- weights:
     - Qwen/Qwen-Image-2512
   version: "0.9.0"
   tt_metal_commit: be88351
@@ -209,15 +552,28 @@ templates:
   device_model_specs:
     - device: T3K
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
       env_vars:
         TT_DIT_CACHE_DIR: /tmp/TT_DIT_CACHE
+  status: FUNCTIONAL
+  model_display_name: Qwen-Image
+- weights:
+    - Qwen/Qwen-Image-2512
+  version: "0.9.0"
+  tt_metal_commit: be88351
+  impl: tt_transformers
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: IMAGE
+  inference_engine: MEDIA
+  device_model_specs:
     - device: GALAXY
       max_concurrency: 1
-      max_context: 65536  # 64 * 1024
+      max_context: 65536      # 64 * 1024
       default_impl: true
   status: FUNCTIONAL
+  model_display_name: Qwen-Image
 - weights:
     - Tongyi-MAI/Z-Image-Turbo
   version: "0.17.0"

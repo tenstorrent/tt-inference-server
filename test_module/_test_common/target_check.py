@@ -20,15 +20,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Shared performance targets JSON. Override at runtime by pointing
-# OVERRIDE_BENCHMARK_TARGETS at a different file.
-_DEFAULT_TARGETS_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "reference_config"
-    / "benchmarking"
-    / "benchmark_targets"
-    / "model_performance_reference.json"
-)
+# Shared performance targets JSON comes from the registered target pack.
+# Override at runtime by pointing OVERRIDE_BENCHMARK_TARGETS at a different file.
 
 
 # For latency-style metrics (lower is better) the threshold is target * multiplier;
@@ -78,7 +71,11 @@ class PerformanceTargets:
 
 def _resolve_targets_path() -> Path:
     override = os.getenv("OVERRIDE_BENCHMARK_TARGETS")
-    return Path(override) if override else _DEFAULT_TARGETS_PATH
+    if override:
+        return Path(override)
+    from workflow_module.target_pack import get_target_pack
+
+    return get_target_pack().performance_targets_path()
 
 
 _REFERENCE_CACHE: Optional[Dict[str, Any]] = None

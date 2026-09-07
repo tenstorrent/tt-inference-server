@@ -47,13 +47,10 @@ from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
-from reference_config.agentic_traces.agentic_traces_config import (
-    TraceSource,
-    get_agentic_traces_config,
-    resolve_run_specs,
-)
+from llm_module.agentic_traces.schema import TraceSource
 from workflow_module import accept_blocks
-from workflows.workflow_types import AgenticTracesMode
+from workflow_module.engine_types import AgenticTracesMode
+from workflow_module.target_pack import get_target_pack
 
 from ..context import MediaContext
 
@@ -119,7 +116,7 @@ def run_agentic_traces(
     result = RunnerResult()
     spec = ctx.model_spec
 
-    config = get_agentic_traces_config(spec)
+    config = get_target_pack().agentic_traces_config(spec)
     if config is None:
         logger.error(
             "No agentic-traces config registered for model_id=%s. Add an entry to "
@@ -132,7 +129,7 @@ def run_agentic_traces(
     try:
         traces_mode = AgenticTracesMode.from_string(mode) or AgenticTracesMode.FULL
         selected_sources = _parse_trace_sources(trace_sources)
-        effective_config, run_specs = resolve_run_specs(
+        effective_config, run_specs = get_target_pack().resolve_agentic_run_specs(
             config,
             trace_sources=selected_sources,
             git_ref_override=git_ref_override,
