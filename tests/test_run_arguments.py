@@ -20,6 +20,8 @@ from run import (
     handle_secrets,
     get_current_commit_sha,
     populate_model_spec_cli_args,
+    resolve_runtime,
+    should_mount_runtime_model_spec,
 )
 from workflows.validate_setup import (
     validate_runtime_args,
@@ -113,6 +115,48 @@ def mock_model_spec():
     mock_spec.to_json.return_value = "/tmp/test-model-spec.json"
 
     return mock_spec
+
+
+def test_quetzal_docker_always_mounts_resolved_runtime_spec(
+    mock_model_spec, mock_runtime_config
+):
+    mock_model_spec.impl.impl_id = "quetzal"
+    mock_runtime_config.dev_mode = False
+    mock_runtime_config.custom_weights = None
+    mock_runtime_config.runtime_model_spec_json = None
+
+    assert should_mount_runtime_model_spec(mock_model_spec, mock_runtime_config)
+
+
+def test_native_catalog_docker_can_use_baked_runtime_spec(
+    mock_model_spec, mock_runtime_config
+):
+    mock_model_spec.impl.impl_id = "tt_transformers"
+    mock_runtime_config.dev_mode = False
+    mock_runtime_config.custom_weights = None
+    mock_runtime_config.runtime_model_spec_json = None
+
+    assert not should_mount_runtime_model_spec(mock_model_spec, mock_runtime_config)
+
+
+def test_runtime_json_resolves_impl_and_engine_from_model_spec(
+    mock_args, mock_model_spec
+):
+    mock_args.runtime_model_spec_json = "/tmp/runtime-model-spec.json"
+    mock_args.impl = None
+    mock_args.engine = None
+    mock_model_spec.impl.impl_name = "quetzal"
+    mock_model_spec.inference_engine = "vLLM"
+    runtime_config = MagicMock()
+
+    with patch("run.ModelSpec.from_json", return_value=mock_model_spec), patch(
+        "run.RuntimeConfig.from_args", return_value=runtime_config
+    ) as from_args, patch("run.populate_model_spec_cli_args"):
+        resolved_runtime, resolved_spec = resolve_runtime(mock_args)
+
+    from_args.assert_called_once_with(mock_args, impl="quetzal", engine="vLLM")
+    assert resolved_runtime is runtime_config
+    assert resolved_spec is mock_model_spec
 
 
 @pytest.fixture
@@ -593,6 +637,17 @@ class TestModelSpecCliArgsCompatibility:
         assert args.host_volume == "/some/path"
         assert args.host_hf_cache == "/home/user/.cache/huggingface"
         assert args.image_user == "15863"
+
+    def test_quetzal_package_root_parsing(self, base_args):
+        with patch(
+            "sys.argv",
+            ["run.py"]
+            + base_args
+            + ["--quetzal-package-root", "/mnt/models/sha256-package"],
+        ):
+            args = parse_arguments()
+
+        assert args.quetzal_package_root == "/mnt/models/sha256-package"
 
 
 class TestArgsInference:
