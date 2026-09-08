@@ -432,16 +432,23 @@ class TestFilter:
         """
         Filter tests by specific model name.
 
+        Accepts either the bare weight name used in the suite configs
+        ("Qwen3-32B") or a full HF repo id ("Qwen/Qwen3-32B"). Callers pass
+        the repo id since #4722 made it the canonical model id, while the
+        suite configs still key on the bare name; matching both keeps the
+        two spellings from silently resolving to zero suites.
+
         Args:
             model_name: Model name (e.g., "stable-diffusion-xl-base-1.0")
 
         Returns:
             Self for method chaining
         """
+        candidates = {model_name, model_name.split("/")[-1]}
         self.filtered_suites = [
             suite
             for suite in self.filtered_suites
-            if model_name in suite.get("weights", [])
+            if candidates & set(suite.get("weights", []))
         ]
 
         return self
