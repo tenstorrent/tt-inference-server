@@ -11,6 +11,7 @@ runners emit; these tests assert against that shape directly.
 from __future__ import annotations
 
 from report_module.acceptance_criteria import (
+    CATEGORY_AGENTIC_TARGETS,
     CATEGORY_BENCHMARKS,
     CATEGORY_EVALS,
     CATEGORY_SPEC_TESTS,
@@ -466,6 +467,138 @@ def test_mixed_spec_statuses_counts():
     cat = {c.name: c for c in cats}[CATEGORY_SPEC_TESTS]
     assert accepted is True
     assert cat.total == 3 and cat.passed == 1 and cat.skipped == 1 and cat.na == 1
+
+
+# --- Agentic targets ------------------------------------------------------
+
+
+def _targets_block(points=(), missing=()) -> Block:
+    return Block(
+        kind="agentic_traces_targets",
+        id="kimi_super_cluster",
+        data={
+            "points": [dict(point) for point in points],
+            "missing_concurrencies": list(missing),
+        },
+    )
+
+
+def _verdict(field, passed, measured=1.0):
+    return {
+        "field": field,
+        "target": 1.0,
+        "measured": measured if passed is not None else None,
+        "passed": passed,
+        "lower_is_better": True,
+    }
+
+
+def test_agentic_targets_na_without_blocks():
+    """Catalog runs carry no expectations, so the category must not pass vacuously."""
+    cat = _categories_by_name(_schema())[CATEGORY_AGENTIC_TARGETS]
+    assert cat.status == STATUS_NA and cat.total == 0
+
+
+def test_agentic_targets_pass_when_every_point_met():
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 2,
+                "graded": 2,
+                "passed": True,
+                "verdicts": [_verdict("ttftMeanMs", True), _verdict("tpotMeanMs", True)],
+            }
+        ]
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is True and blockers == {}
+    assert cat.status == STATUS_PASS and cat.total == 1 and cat.failed == 0
+
+
+def test_agentic_targets_fail_with_per_point_blockers():
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 1,
+                "graded": 2,
+                "passed": False,
+                "verdicts": [_verdict("ttftMeanMs", True), _verdict("tpotMeanMs", False)],
+            },
+            {
+                "concurrency": 4,
+                "met": 2,
+                "graded": 2,
+                "passed": True,
+                "verdicts": [_verdict("ttftMeanMs", True), _verdict("tpotMeanMs", True)],
+            },
+        ]
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is False
+    # the count is per measured point, not per block
+    assert cat.status == STATUS_FAIL and cat.total == 2 and cat.failed == 1
+    # one blocker for the failing point, none for the passing one
+    assert set(blockers) == {"agentic_traces_targets.c1"}
+    assert "1/2 targets met" in blockers["agentic_traces_targets.c1"]
+    assert "tpotMeanMs" in blockers["agentic_traces_targets.c1"]
+
+
+def test_agentic_targets_count_is_per_measured_point():
+    """Three measured points all missing targets read as 0/3, not 0/1 blocks."""
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": c,
+                "met": 0,
+                "graded": 1,
+                "passed": False,
+                "verdicts": [_verdict("ttftMeanMs", False)],
+            }
+            for c in (1, 4, 8)
+        ]
+    )
+    accepted, _blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is False
+    assert cat.total == 3 and cat.failed == 3 and cat.passed == 0
+
+
+def test_agentic_targets_unmeasured_document_points_block():
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 1,
+                "graded": 1,
+                "passed": True,
+                "verdicts": [_verdict("ttftMeanMs", True)],
+            }
+        ],
+        missing=(64,),
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is False
+    # the measured point passed and counts as such; the missing point blocks
+    # without posing as a measured-and-failed one
+    assert cat.status == STATUS_FAIL and cat.total == 1 and cat.failed == 0
+    assert set(blockers) == {"agentic_traces_targets.missing"}
+    assert "c64" in blockers["agentic_traces_targets.missing"]
+    assert "never measured" in blockers["agentic_traces_targets.missing"]
+
+
+def test_agentic_targets_ungradable_point_blocks():
+    """A point whose run produced no gradable metrics is not a pass."""
+    block = _targets_block(
+        points=[{"concurrency": 1, "met": 0, "graded": 0, "passed": False, "verdicts": []}]
+    )
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+    assert accepted is False
+    assert "no gradable metrics" in blockers["agentic_traces_targets.c1"]
 
 
 # --- Evals: explicit status overrides accuracy heuristics -----------------

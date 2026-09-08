@@ -17,6 +17,9 @@ from .status import TestStatus, glyph_for_label
 KIND_BENCHMARKS = "benchmarks"
 KIND_EVALS = "evals"
 KIND_SPEC_TESTS = "spec_tests"
+# Sweep-level grading block from the agentic-traces runner, present only
+# when a requirements document stated expected sweep points to grade against.
+KIND_AGENTIC_TRACES_TARGETS = "agentic_traces_targets"
 
 TARGET_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
@@ -75,6 +78,7 @@ def _status_badge(status: str) -> str:
 CATEGORY_BENCHMARKS = "Benchmarks"
 CATEGORY_EVALS = "Evals"
 CATEGORY_SPEC_TESTS = "Spec Tests"
+CATEGORY_AGENTIC_TARGETS = "Agentic Targets"
 
 INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integration"})
 
@@ -120,6 +124,7 @@ def acceptance_criteria_check(
         _check_benchmarks(schema, model_status),
         _check_evals(schema, known_issues, model_status),
         _check_spec_tests(schema),
+        _check_agentic_targets(schema),
     ]
     blockers: Dict[str, str] = {}
     for category in categories:
@@ -552,6 +557,78 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
     )
 
 
+def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
+    """Grade the agentic-traces targets blocks from requirements-driven runs.
+
+    Each block carries the sweep's precomputed verdicts (see
+    ``build_targets_block``): one entry per measured concurrency plus the
+    document points the sweep never reached. The count is per measured point
+    (``2/3 passed`` reads as "two concurrencies met their targets"), and a
+    point blocks when any graded metric missed. Unmeasured document points
+    block too -- a partial sweep is not a passed one -- but stay out of the
+    count: never-measured is a different story from measured-and-missed, and
+    the blocker names them. No blocks means the run had no expectations to
+    grade against (a catalog run), so the category is NA rather than PASS.
+    """
+    targets_blocks = [
+        b
+        for b in schema.sections
+        if b.kind == KIND_AGENTIC_TRACES_TARGETS and isinstance(b.data, Mapping)
+    ]
+    if not targets_blocks:
+        return CategoryResult(CATEGORY_AGENTIC_TARGETS, STATUS_NA, 0, 0)
+
+    blockers: Dict[str, str] = {}
+    total = 0
+    failed = 0
+    any_missing = False
+    for block in targets_blocks:
+        block_key = _block_key(block)
+        data = block.data
+        points = [p for p in data.get("points") or [] if isinstance(p, Mapping)]
+        missing = [c for c in data.get("missing_concurrencies") or []]
+        for point in points:
+            total += 1
+            if point.get("passed"):
+                continue
+            failed += 1
+            concurrency = point.get("concurrency")
+            met = point.get("met") or 0
+            graded = point.get("graded") or 0
+            if not graded:
+                blockers[f"{block_key}.c{concurrency}"] = (
+                    f"Agentic targets at concurrency {concurrency}: the run "
+                    "produced no gradable metrics."
+                )
+                continue
+            offenders = [
+                str(v.get("field"))
+                for v in point.get("verdicts") or []
+                if isinstance(v, Mapping) and v.get("passed") is False
+            ]
+            suffix = f" ({', '.join(offenders[:3])}, ...)" if offenders else ""
+            blockers[f"{block_key}.c{concurrency}"] = (
+                f"Agentic targets missed at concurrency {concurrency}: "
+                f"{met}/{graded} targets met{suffix}."
+            )
+        if missing:
+            any_missing = True
+            listed = ", ".join(f"c{concurrency}" for concurrency in missing)
+            blockers[f"{block_key}.missing"] = (
+                f"Requirements document expects agentic sweep points {listed}, "
+                "which were never measured."
+            )
+
+    status = STATUS_FAIL if failed or any_missing else STATUS_PASS
+    return CategoryResult(
+        CATEGORY_AGENTIC_TARGETS,
+        status,
+        total,
+        failed,
+        blockers=blockers,
+    )
+
+
 def _format_metric_value(value: Any) -> str:
     if isinstance(value, bool):
         return str(value)
@@ -676,11 +753,13 @@ __all__ = [
     "KIND_BENCHMARKS",
     "KIND_EVALS",
     "KIND_SPEC_TESTS",
+    "KIND_AGENTIC_TRACES_TARGETS",
     "STATUS_PASS",
     "STATUS_FAIL",
     "STATUS_NA",
     "CATEGORY_BENCHMARKS",
     "CATEGORY_EVALS",
     "CATEGORY_SPEC_TESTS",
+    "CATEGORY_AGENTIC_TARGETS",
     "INFRA_TASK_TYPES",
 ]
