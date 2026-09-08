@@ -130,6 +130,41 @@ def test_custom_dataset_path_switches_off_random():
     assert "--random-output-len" not in cmd
 
 
+def test_goodput_constraints_passed_as_separate_tokens():
+    # vllm bench serve defines --goodput with nargs="+": KEY:VALUE pairs in
+    # milliseconds, one argv token each.
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="meta-llama/Llama-3.1-8B-Instruct",
+        is_remote=False,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(goodput="ttft:2000 tpot:20 e2el:20000"),
+        server=server,
+        result_filename=_result_path(),
+    )
+    idx = cmd.index("--goodput")
+    assert cmd[idx + 1 : idx + 4] == ["ttft:2000", "tpot:20", "e2el:20000"]
+
+
+def test_no_goodput_flag_without_constraints():
+    server = ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="meta-llama/Llama-3.1-8B-Instruct",
+        is_remote=False,
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=_config(),
+        server=server,
+        result_filename=_result_path(),
+    )
+    assert "--goodput" not in cmd
+
+
 def test_without_custom_dataset_the_sweep_stays_random():
     server = ServerConnection(
         base_url="http://127.0.0.1",

@@ -11,7 +11,7 @@ These are the LLM/VLM API parameter tests that run as part of `--workflow spec_t
 ### step 1: first create the venv by running the workflow
 This will fail out if no server is running.
 ```bash
-python3 run.py --model Qwen3-32B --device galaxy --workflow spec_tests
+python3 run.py --model Qwen/Qwen3-32B --device galaxy --workflow spec_tests
 ```
 
 ### step 2: run server
@@ -21,7 +21,7 @@ Please make sure to set the runtime arguments the same as in tt-inference-server
 
 You can run directly using tt-inference-server docker as an alternative to running locally and managing your own tt-metal and vLLM builds, for example:
 ```bash
-python3 run.py --model Qwen3-32B --device galaxy --workflow server --docker-server --dev-mode
+python3 run.py --model Qwen/Qwen3-32B --device galaxy --workflow server --docker-server --dev-mode
 ```
 
 ### step 3: run the suite directly against a running server

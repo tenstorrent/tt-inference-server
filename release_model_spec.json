@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.20.0",
+  "release_version": "0.21.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -34,6 +34,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -245,25 +246,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 180.0,
                       "tput_user": 13.100000000000001,
-                      "tput": 1710.4,
+                      "tput": 427.6,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 36.0,
                       "tput_user": 65.5,
-                      "tput": 8552.0,
+                      "tput": 2138.0,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 18.0,
                       "tput_user": 131.0,
-                      "tput": 17104.0,
+                      "tput": 4276.0,
                       "tolerance": 0.0
                     }
                   },
@@ -369,6 +371,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -496,25 +499,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 510.0,
                       "tput_user": 2.7,
-                      "tput": 343.6,
+                      "tput": 85.9,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 102.0,
                       "tput_user": 13.5,
-                      "tput": 1718.0,
+                      "tput": 429.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 51.0,
                       "tput_user": 27.0,
-                      "tput": 3436.0,
+                      "tput": 859.0,
                       "tolerance": 0.0
                     }
                   },
@@ -637,6 +641,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1023,6 +1028,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1147,6 +1153,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1273,6 +1280,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1484,6 +1492,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -1696,26 +1705,56 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": 4,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 620.0,
-                      "tput_user": 4.1000000000000005,
-                      "tput": 532.8000000000001,
+                      "ttft_ms": 300.0,
+                      "tput_user": 15.600000000000001,
+                      "tput": 15.600000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 124.0,
-                      "tput_user": 20.5,
-                      "tput": 2664.0,
+                      "ttft_ms": 60.0,
+                      "tput_user": 78.0,
+                      "tput": 78.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 62.0,
-                      "tput_user": 41.0,
-                      "tput": 5328.0,
-                      "tolerance": 0.0
+                      "ttft_ms": 203.2,
+                      "tput_user": 55.1,
+                      "tput": 51.2,
+                      "tolerance": 0.05
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                },
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 256,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": 4,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "target": {
+                      "ttft_ms": 4360.9,
+                      "tput_user": 50.4,
+                      "tput": 617.1,
+                      "tolerance": 0.05
                     }
                   },
                   "target_peak_perf": {
@@ -1737,7 +1776,12 @@
                 "max-log-len": "32",
                 "seed": "9472",
                 "additional_config": "{\"tt\": {\"dispatch_core_axis\": \"col\", \"sample_on_device_mode\": \"all\", \"fabric_config\": \"FABRIC_1D_RING\", \"worker_l1_size\": 1344544, \"trace_region_size\": 184915840}}",
-                "data_parallel_size": 4
+                "data_parallel_size": 4,
+                "structured-outputs-config": "{\"backend\": \"xgrammar\", \"disable_any_whitespace\": true}",
+                "enable_auto_tool_choice": true,
+                "reasoning_parser": "qwen3",
+                "tool_call_parser": "hermes",
+                "default_chat_template_kwargs": "{\"enable_thinking\": false}"
               },
               "override_tt_config": {
                 "dispatch_core_axis": "col",
@@ -1776,18 +1820,18 @@
               "ARCH_NAME": "wormhole_b0",
               "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1
             },
-            "tt_metal_commit": "bac8b34",
-            "vllm_commit": "7c6685a",
+            "tt_metal_commit": "bc4c4df",
+            "vllm_commit": "be7d805",
             "hf_weights_repo": "Qwen/Qwen3-32B",
             "param_count": 32,
             "min_disk_gb": 84,
             "min_ram_gb": 80.0,
             "model_type": "LLM",
             "repacked": 0,
-            "version": "0.11.1",
-            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a",
+            "version": "0.21.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805",
             "status": "COMPLETE",
-            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bac8b34/models/demos/llama3_70b_galaxy",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/demos/llama3_70b_galaxy",
             "override_tt_config": {
               "dispatch_core_axis": "col",
               "sample_on_device_mode": "all",
@@ -1836,26 +1880,56 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": 4,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 620.0,
-                      "tput_user": 4.1000000000000005,
-                      "tput": 532.8000000000001,
+                      "ttft_ms": 300.0,
+                      "tput_user": 15.600000000000001,
+                      "tput": 15.600000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 124.0,
-                      "tput_user": 20.5,
-                      "tput": 2664.0,
+                      "ttft_ms": 60.0,
+                      "tput_user": 78.0,
+                      "tput": 78.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 62.0,
-                      "tput_user": 41.0,
-                      "tput": 5328.0,
-                      "tolerance": 0.0
+                      "ttft_ms": 203.2,
+                      "tput_user": 55.1,
+                      "tput": 51.2,
+                      "tolerance": 0.05
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null
+                },
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 32,
+                  "num_prompts": 256,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": 4,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "target": {
+                      "ttft_ms": 4360.9,
+                      "tput_user": 50.4,
+                      "tput": 617.1,
+                      "tolerance": 0.05
                     }
                   },
                   "target_peak_perf": {
@@ -1966,25 +2040,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 620.0,
                       "tput_user": 4.1000000000000005,
-                      "tput": 133.20000000000002,
+                      "tput": 4.1000000000000005,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 124.0,
                       "tput_user": 20.5,
-                      "tput": 666.0,
+                      "tput": 20.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 62.0,
                       "tput_user": 41.0,
-                      "tput": 1332.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     }
                   },
@@ -2276,6 +2351,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -2412,6 +2488,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -2690,6 +2767,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -2813,6 +2891,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3032,6 +3111,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3072,6 +3152,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3199,6 +3280,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3239,6 +3321,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -3460,65 +3543,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 1210.0,
-                      "tput_user": 2.0,
-                      "tput": null,
+                      "ttft_ms": 1150.0,
+                      "tput_user": 1.8,
+                      "tput": 59.300000000000004,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 242.0,
-                      "tput_user": 10.0,
-                      "tput": null,
+                      "ttft_ms": 230.0,
+                      "tput_user": 9.0,
+                      "tput": 296.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 121.0,
-                      "tput_user": 20.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                },
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 32,
-                  "num_prompts": 64,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 38720.0,
-                      "tput_user": 2.0,
-                      "tput": 64.0,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 7744.0,
-                      "tput_user": 10.0,
-                      "tput": 320.0,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 3872.0,
-                      "tput_user": 20.0,
-                      "tput": 640.0,
+                      "ttft_ms": 115.0,
+                      "tput_user": 18.0,
+                      "tput": 593.0,
                       "tolerance": 0.0
                     }
                   },
@@ -3627,65 +3671,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 130.0,
-                      "tput_user": 8.200000000000001,
-                      "tput": null,
+                      "ttft_ms": 510.0,
+                      "tput_user": 7.1000000000000005,
+                      "tput": 237.10000000000002,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 26.0,
-                      "tput_user": 41.0,
-                      "tput": null,
+                      "ttft_ms": 102.0,
+                      "tput_user": 35.5,
+                      "tput": 1185.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 13.0,
-                      "tput_user": 82.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                },
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 32,
-                  "num_prompts": 64,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 130.0,
-                      "tput_user": 8.200000000000001,
-                      "tput": 262.40000000000003,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 26.0,
-                      "tput_user": 41.0,
-                      "tput": 1312.0,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 13.0,
-                      "tput_user": 82.0,
-                      "tput": 2624.0,
+                      "ttft_ms": 51.0,
+                      "tput_user": 71.0,
+                      "tput": 2371.0,
                       "tolerance": 0.0
                     }
                   },
@@ -3888,6 +3893,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4095,25 +4101,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 160.0,
-                      "tput_user": 6.6000000000000005,
-                      "tput": null,
+                      "ttft_ms": 370.0,
+                      "tput_user": 4.7,
+                      "tput": 151.5,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 32.0,
-                      "tput_user": 33.0,
-                      "tput": null,
+                      "ttft_ms": 74.0,
+                      "tput_user": 23.5,
+                      "tput": 757.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 16.0,
-                      "tput_user": 66.0,
-                      "tput": null,
+                      "ttft_ms": 37.0,
+                      "tput_user": 47.0,
+                      "tput": 1515.0,
                       "tolerance": 0.0
                     }
                   },
@@ -4302,6 +4309,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4443,6 +4451,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4581,6 +4590,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4722,6 +4732,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -4863,6 +4874,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -5104,25 +5116,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 380.0,
-                      "tput_user": 2.8000000000000003,
-                      "tput": null,
+                      "ttft_ms": 1190.0,
+                      "tput_user": 2.0,
+                      "tput": 61.0,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 14.0,
-                      "tput": null,
+                      "ttft_ms": 238.0,
+                      "tput_user": 10.0,
+                      "tput": 305.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 38.0,
-                      "tput_user": 28.0,
-                      "tput": null,
+                      "ttft_ms": 119.0,
+                      "tput_user": 20.0,
+                      "tput": 610.0,
                       "tolerance": 0.0
                     }
                   },
@@ -5245,25 +5258,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 380.0,
-                      "tput_user": 2.8000000000000003,
-                      "tput": null,
+                      "ttft_ms": 1190.0,
+                      "tput_user": 2.0,
+                      "tput": 61.0,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 14.0,
-                      "tput": null,
+                      "ttft_ms": 238.0,
+                      "tput_user": 10.0,
+                      "tput": 305.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 38.0,
-                      "tput_user": 28.0,
-                      "tput": null,
+                      "ttft_ms": 119.0,
+                      "tput_user": 20.0,
+                      "tput": 610.0,
                       "tolerance": 0.0
                     }
                   },
@@ -5373,48 +5387,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 960.0,
-                      "tput_user": 2.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 192.0,
-                      "tput_user": 10.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 96.0,
-                      "tput_user": 20.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-70B",
                 "block_size": "64",
@@ -5514,48 +5487,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 32,
-                  "num_prompts": 256,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 640.0,
-                      "tput_user": 1.8,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 128.0,
-                      "tput_user": 9.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 64.0,
-                      "tput_user": 18.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-70B",
                 "block_size": "64",
@@ -5665,6 +5597,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -5906,25 +5839,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 380.0,
-                      "tput_user": 2.8000000000000003,
-                      "tput": null,
+                      "ttft_ms": 1130.0,
+                      "tput_user": 1.9000000000000001,
+                      "tput": 61.0,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 14.0,
-                      "tput": null,
+                      "ttft_ms": 226.0,
+                      "tput_user": 9.5,
+                      "tput": 305.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 38.0,
-                      "tput_user": 28.0,
-                      "tput": null,
+                      "ttft_ms": 113.0,
+                      "tput_user": 19.0,
+                      "tput": 610.0,
                       "tolerance": 0.0
                     }
                   },
@@ -6047,25 +5981,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 380.0,
-                      "tput_user": 2.8000000000000003,
-                      "tput": null,
+                      "ttft_ms": 1130.0,
+                      "tput_user": 1.9000000000000001,
+                      "tput": 61.0,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 14.0,
-                      "tput": null,
+                      "ttft_ms": 226.0,
+                      "tput_user": 9.5,
+                      "tput": 305.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 38.0,
-                      "tput_user": 28.0,
-                      "tput": null,
+                      "ttft_ms": 113.0,
+                      "tput_user": 19.0,
+                      "tput": 610.0,
                       "tolerance": 0.0
                     }
                   },
@@ -6175,48 +6110,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 960.0,
-                      "tput_user": 2.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 192.0,
-                      "tput_user": 10.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 96.0,
-                      "tput_user": 20.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-70B-Instruct",
                 "block_size": "64",
@@ -6316,48 +6210,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 32,
-                  "num_prompts": 256,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 640.0,
-                      "tput_user": 1.8,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 128.0,
-                      "tput_user": 9.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 64.0,
-                      "tput_user": 18.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-70B-Instruct",
                 "block_size": "64",
@@ -6467,6 +6320,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -6698,48 +6552,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 380.0,
-                      "tput_user": 2.8000000000000003,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 14.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 38.0,
-                      "tput_user": 28.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                 "block_size": "64",
@@ -6840,48 +6653,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 380.0,
-                      "tput_user": 2.8000000000000003,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 14.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 38.0,
-                      "tput_user": 28.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                 "block_size": "64",
@@ -6979,48 +6751,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 960.0,
-                      "tput_user": 2.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 192.0,
-                      "tput_user": 10.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 96.0,
-                      "tput_user": 20.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                 "block_size": "64",
@@ -7121,48 +6852,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 32,
-                  "num_prompts": 256,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 640.0,
-                      "tput_user": 1.8,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 128.0,
-                      "tput_user": 9.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 64.0,
-                      "tput_user": 18.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                 "block_size": "64",
@@ -7263,48 +6953,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 890.0,
-                      "tput_user": 1.7000000000000002,
-                      "tput": 1.7000000000000002,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 178.0,
-                      "tput_user": 8.5,
-                      "tput": 8.5,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 89.0,
-                      "tput_user": 17.0,
-                      "tput": 17.0,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
                 "block_size": "64",
@@ -7785,6 +7434,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -7905,6 +7555,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8027,6 +7678,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8151,25 +7803,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 60.0,
-                      "tput_user": 18.3,
-                      "tput": null,
+                      "ttft_ms": 90.0,
+                      "tput_user": 16.8,
+                      "tput": 509.1,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 12.0,
-                      "tput_user": 91.5,
-                      "tput": null,
+                      "ttft_ms": 18.0,
+                      "tput_user": 84.0,
+                      "tput": 2545.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 6.0,
-                      "tput_user": 183.0,
-                      "tput": null,
+                      "ttft_ms": 9.0,
+                      "tput_user": 168.0,
+                      "tput": 5091.0,
                       "tolerance": 0.0
                     }
                   },
@@ -8271,25 +7924,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 60.0,
-                      "tput_user": 18.3,
-                      "tput": null,
+                      "ttft_ms": 100.0,
+                      "tput_user": 32.300000000000004,
+                      "tput": 1018.3000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 12.0,
-                      "tput_user": 91.5,
-                      "tput": null,
+                      "ttft_ms": 20.0,
+                      "tput_user": 161.5,
+                      "tput": 5091.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 6.0,
-                      "tput_user": 183.0,
-                      "tput": null,
+                      "ttft_ms": 10.0,
+                      "tput_user": 323.0,
+                      "tput": 10183.0,
                       "tolerance": 0.0
                     }
                   },
@@ -8393,25 +8047,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 60.0,
-                      "tput_user": 18.3,
-                      "tput": null,
+                      "ttft_ms": 70.0,
+                      "tput_user": 35.800000000000004,
+                      "tput": 4073.0,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 12.0,
-                      "tput_user": 91.5,
-                      "tput": null,
+                      "ttft_ms": 14.0,
+                      "tput_user": 179.0,
+                      "tput": 20365.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 6.0,
-                      "tput_user": 183.0,
-                      "tput": null,
+                      "ttft_ms": 7.0,
+                      "tput_user": 358.0,
+                      "tput": 40730.0,
                       "tolerance": 0.0
                     }
                   },
@@ -8517,6 +8172,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8638,6 +8294,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8757,6 +8414,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8876,6 +8534,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -8997,6 +8656,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9120,25 +8780,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 170.0,
-                      "tput_user": 6.1000000000000005,
-                      "tput": null,
+                      "ttft_ms": 210.0,
+                      "tput_user": 5.6000000000000005,
+                      "tput": 5.6000000000000005,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 34.0,
-                      "tput_user": 30.5,
-                      "tput": null,
+                      "ttft_ms": 42.0,
+                      "tput_user": 28.0,
+                      "tput": 28.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 17.0,
-                      "tput_user": 61.0,
-                      "tput": null,
+                      "ttft_ms": 21.0,
+                      "tput_user": 56.0,
+                      "tput": 56.0,
                       "tolerance": 0.0
                     }
                   },
@@ -9243,25 +8904,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 170.0,
-                      "tput_user": 6.1000000000000005,
-                      "tput": null,
+                      "ttft_ms": 200.0,
+                      "tput_user": 10.9,
+                      "tput": 10.9,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 34.0,
-                      "tput_user": 30.5,
-                      "tput": null,
+                      "ttft_ms": 40.0,
+                      "tput_user": 54.5,
+                      "tput": 54.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 17.0,
-                      "tput_user": 61.0,
-                      "tput": null,
+                      "ttft_ms": 20.0,
+                      "tput_user": 109.0,
+                      "tput": 109.0,
                       "tolerance": 0.0
                     }
                   },
@@ -9364,25 +9026,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 170.0,
-                      "tput_user": 6.1000000000000005,
-                      "tput": null,
+                      "ttft_ms": 120.0,
+                      "tput_user": 16.7,
+                      "tput": 16.7,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 34.0,
-                      "tput_user": 30.5,
-                      "tput": null,
+                      "ttft_ms": 24.0,
+                      "tput_user": 83.5,
+                      "tput": 83.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 17.0,
-                      "tput_user": 61.0,
-                      "tput": null,
+                      "ttft_ms": 12.0,
+                      "tput_user": 167.0,
+                      "tput": 167.0,
                       "tolerance": 0.0
                     }
                   },
@@ -9487,6 +9150,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9610,6 +9274,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9735,6 +9400,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9775,6 +9441,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -9976,6 +9643,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10099,6 +9767,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10248,6 +9917,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10373,6 +10043,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10506,6 +10177,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10787,6 +10459,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -10827,6 +10500,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -11065,25 +10739,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 890.0,
+                      "ttft_ms": 510.0,
                       "tput_user": 2.1,
-                      "tput": null,
+                      "tput": 2.1,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 178.0,
+                      "ttft_ms": 102.0,
                       "tput_user": 10.5,
-                      "tput": null,
+                      "tput": 10.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 89.0,
+                      "ttft_ms": 51.0,
                       "tput_user": 21.0,
-                      "tput": null,
+                      "tput": 21.0,
                       "tolerance": 0.0
                     }
                   },
@@ -11188,25 +10863,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 580.0,
-                      "tput_user": 4.2,
-                      "tput": null,
+                      "ttft_ms": 400.0,
+                      "tput_user": 4.1000000000000005,
+                      "tput": 4.1000000000000005,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 116.0,
-                      "tput_user": 21.0,
-                      "tput": null,
+                      "ttft_ms": 80.0,
+                      "tput_user": 20.5,
+                      "tput": 20.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 58.0,
-                      "tput_user": 42.0,
-                      "tput": null,
+                      "ttft_ms": 40.0,
+                      "tput_user": 41.0,
+                      "tput": 41.0,
                       "tolerance": 0.0
                     }
                   },
@@ -11313,65 +10989,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 230.0,
-                      "tput_user": 17.0,
-                      "tput": null,
+                      "ttft_ms": 290.0,
+                      "tput_user": 7.300000000000001,
+                      "tput": 7.300000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 46.0,
-                      "tput_user": 85.0,
-                      "tput": null,
+                      "ttft_ms": 58.0,
+                      "tput_user": 36.5,
+                      "tput": 36.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 23.0,
-                      "tput_user": 170.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                },
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 8,
-                  "num_prompts": 256,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 10880.0,
-                      "tput_user": 6.6819999999999995,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 2176.0,
-                      "tput_user": 33.41,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 1088.0,
-                      "tput_user": 66.82,
-                      "tput": null,
+                      "ttft_ms": 29.0,
+                      "tput_user": 73.0,
+                      "tput": 73.0,
                       "tolerance": 0.0
                     }
                   },
@@ -11554,25 +11191,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 570.0,
+                      "ttft_ms": 340.0,
                       "tput_user": 3.3000000000000003,
-                      "tput": null,
+                      "tput": 3.3000000000000003,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 114.0,
+                      "ttft_ms": 68.0,
                       "tput_user": 16.5,
-                      "tput": null,
+                      "tput": 16.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 57.0,
+                      "ttft_ms": 34.0,
                       "tput_user": 33.0,
-                      "tput": null,
+                      "tput": 33.0,
                       "tolerance": 0.0
                     }
                   },
@@ -11677,25 +11315,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 300.0,
                       "tput_user": 3.7,
-                      "tput": null,
+                      "tput": 3.7,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 60.0,
                       "tput_user": 18.5,
-                      "tput": null,
+                      "tput": 18.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 30.0,
                       "tput_user": 37.0,
-                      "tput": null,
+                      "tput": 37.0,
                       "tolerance": 0.0
                     }
                   },
@@ -11816,48 +11455,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 500.0,
-                      "tput_user": 4.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 100.0,
-                      "tput_user": 20.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 50.0,
-                      "tput_user": 40.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-8B-Instruct",
                 "block_size": "64",
@@ -11951,25 +11549,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 300.0,
                       "tput_user": 3.7,
-                      "tput": null,
+                      "tput": 3.7,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 60.0,
                       "tput_user": 18.5,
-                      "tput": null,
+                      "tput": 18.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 30.0,
                       "tput_user": 37.0,
-                      "tput": null,
+                      "tput": 37.0,
                       "tolerance": 0.0
                     }
                   },
@@ -12074,48 +11673,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 150.0,
-                      "tput_user": 12.5,
-                      "tput": 12.5,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 30.0,
-                      "tput_user": 62.5,
-                      "tput": 62.5,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 15.0,
-                      "tput_user": 125.0,
-                      "tput": 125.0,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "meta-llama/Llama-3.1-8B-Instruct",
                 "block_size": "64",
@@ -12365,65 +11923,26 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 230.0,
-                      "tput_user": 17.0,
-                      "tput": null,
+                      "ttft_ms": 290.0,
+                      "tput_user": 7.300000000000001,
+                      "tput": 7.300000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 46.0,
-                      "tput_user": 85.0,
-                      "tput": null,
+                      "ttft_ms": 58.0,
+                      "tput_user": 36.5,
+                      "tput": 36.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 23.0,
-                      "tput_user": 170.0,
-                      "tput": null,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                },
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 32,
-                  "num_prompts": 256,
-                  "image_height": null,
-                  "image_width": null,
-                  "images_per_prompt": null,
-                  "task_type": "text",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 10880.0,
-                      "tput_user": 6.6819999999999995,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 2176.0,
-                      "tput_user": 33.41,
-                      "tput": null,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 1088.0,
-                      "tput_user": 66.82,
-                      "tput": null,
+                      "ttft_ms": 29.0,
+                      "tput_user": 73.0,
+                      "tput": 73.0,
                       "tolerance": 0.0
                     }
                   },
@@ -12643,6 +12162,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13124,6 +12644,133 @@
         }
       }
     },
+    "google/diffusiongemma-26B-A4B-it": {
+      "P300X2": {
+        "vLLM": {
+          "diffusion_gemma": {
+            "model_id": "id_diffusion-gemma_diffusiongemma-26B-A4B-it_p300x2",
+            "impl": {
+              "impl_id": "diffusion_gemma",
+              "impl_name": "diffusion-gemma",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/experimental/diffusion_gemma"
+            },
+            "hf_model_repo": "google/diffusiongemma-26B-A4B-it",
+            "model_name": "diffusiongemma-26B-A4B-it",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 262144,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [],
+              "vllm_args": {
+                "model": "google/diffusiongemma-26B-A4B-it",
+                "block_size": "64",
+                "max_model_len": "262144",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "262144",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"sample_on_device_mode\": \"all\", \"enable_model_warmup\": true, \"trace_mode\": \"all\", \"trace_region_size\": 3758096384}}",
+                "generation-config": "vllm",
+                "default-chat-template-kwargs": "{\"enable_thinking\": true}",
+                "no-enable-prefix-caching": true,
+                "no-enable-chunked-prefill": true,
+                "no-async-scheduling": true
+              },
+              "override_tt_config": {
+                "sample_on_device_mode": "all",
+                "enable_model_warmup": true,
+                "trace_mode": "all",
+                "trace_region_size": 3758096384
+              },
+              "env_vars": {
+                "MESH_DEVICE": "P150x4",
+                "ARCH_NAME": "blackhole",
+                "VLLM_RPC_TIMEOUT": "1800000",
+                "VLLM_ENABLE_V1_MULTIPROCESSING": "0",
+                "DISABLE_METAL_OP_TIMEOUT": "1",
+                "DG_VLLM_GUMBEL_MODE": "device",
+                "DG_UPFRONT_CAPTURE": "1",
+                "DG_MODEL_OWNED_HYBRID_KV": "1",
+                "DG_UPFRONT_COARSE_PREFILL_BUCKETS": "1",
+                "DG_UPFRONT_LAZY_PREFILL_RECAPTURE": "1",
+                "DG_PREFILL_FIXED_CHUNKS": "1",
+                "DG_PREFILL_CHUNK_SIZE": "4096",
+                "DG_PREFILL_RAGGED_CHUNK": "1024",
+                "DG_DENOISE_REVEAL_PMAX": "262144",
+                "DG_DENOISE_SLIDING_WINDOW": "1",
+                "DG_UPFRONT_PREFILL_WARMUP_LENS": "32,64,96",
+                "DG_TRACE_REGION_SIZE": "3758096384"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "1800000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "P150x4",
+              "ARCH_NAME": "blackhole",
+              "VLLM_ENABLE_V1_MULTIPROCESSING": "0",
+              "DISABLE_METAL_OP_TIMEOUT": "1",
+              "DG_VLLM_GUMBEL_MODE": "device",
+              "DG_UPFRONT_CAPTURE": "1",
+              "DG_MODEL_OWNED_HYBRID_KV": "1",
+              "DG_UPFRONT_COARSE_PREFILL_BUCKETS": "1",
+              "DG_UPFRONT_LAZY_PREFILL_RECAPTURE": "1",
+              "DG_PREFILL_FIXED_CHUNKS": "1",
+              "DG_PREFILL_CHUNK_SIZE": "4096",
+              "DG_PREFILL_RAGGED_CHUNK": "1024",
+              "DG_DENOISE_REVEAL_PMAX": "262144",
+              "DG_DENOISE_SLIDING_WINDOW": "1",
+              "DG_UPFRONT_PREFILL_WARMUP_LENS": "32,64,96",
+              "DG_TRACE_REGION_SIZE": "3758096384"
+            },
+            "tt_metal_commit": "bc4c4df",
+            "vllm_commit": "be7d805",
+            "hf_weights_repo": "google/diffusiongemma-26B-A4B-it",
+            "param_count": 4,
+            "min_disk_gb": 28,
+            "min_ram_gb": 10.0,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.21.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/experimental/diffusion_gemma",
+            "override_tt_config": {
+              "sample_on_device_mode": "all",
+              "enable_model_warmup": true,
+              "trace_mode": "all",
+              "trace_region_size": 3758096384
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {
+              "tokenizer_trust_remote_code": true,
+              "output_block_size": 256,
+              "max_effective_input_tokens": 261888
+            },
+            "cli_args": {}
+          }
+        }
+      }
+    },
     "google/gemma-3-4b-it": {
       "N150": {
         "vLLM": {
@@ -13156,6 +12803,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13282,6 +12930,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13402,48 +13051,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": 896,
-                  "image_width": 896,
-                  "images_per_prompt": 1,
-                  "task_type": "vlm",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 2020.0,
-                      "tput_user": 4.2,
-                      "tput": 134.4,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 404.0,
-                      "tput_user": 21.0,
-                      "tput": 672.0,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 202.0,
-                      "tput_user": 42.0,
-                      "tput": 1344.0,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "google/medgemma-4b-it",
                 "block_size": "64",
@@ -13528,48 +13136,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": 896,
-                  "image_width": 896,
-                  "images_per_prompt": 1,
-                  "task_type": "vlm",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 1020.0,
-                      "tput_user": 7.800000000000001,
-                      "tput": 268.8,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 204.0,
-                      "tput_user": 39.0,
-                      "tput": 1344.0,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 102.0,
-                      "tput_user": 78.0,
-                      "tput": 2688.0,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "google/medgemma-4b-it",
                 "block_size": "64",
@@ -13668,6 +13235,7 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -13891,25 +13459,26 @@
                   "image_width": 896,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
                       "ttft_ms": 760.0,
                       "tput_user": 4.3,
-                      "tput": 309.20000000000005,
+                      "tput": 77.30000000000001,
                       "tolerance": 0.0
                     },
                     "complete": {
                       "ttft_ms": 152.0,
                       "tput_user": 21.5,
-                      "tput": 1546.0,
+                      "tput": 386.5,
                       "tolerance": 0.0
                     },
                     "target": {
                       "ttft_ms": 76.0,
                       "tput_user": 43.0,
-                      "tput": 3092.0,
+                      "tput": 773.0,
                       "tolerance": 0.0
                     }
                   },
@@ -14014,48 +13583,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": 896,
-                  "image_width": 896,
-                  "images_per_prompt": 1,
-                  "task_type": "vlm",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 760.0,
-                      "tput_user": 4.3,
-                      "tput": 77.30000000000001,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 152.0,
-                      "tput_user": 21.5,
-                      "tput": 386.5,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 43.0,
-                      "tput": 773.0,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "google/medgemma-27b-it",
                 "block_size": "64",
@@ -14237,48 +13765,7 @@
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
               "default_impl": true,
-              "perf_reference": [
-                {
-                  "isl": 128,
-                  "osl": 128,
-                  "max_concurrency": 1,
-                  "num_prompts": 8,
-                  "image_height": 896,
-                  "image_width": 896,
-                  "images_per_prompt": 1,
-                  "task_type": "vlm",
-                  "theoretical_ttft_ms": null,
-                  "theoretical_tput_user": null,
-                  "targets": {
-                    "functional": {
-                      "ttft_ms": 760.0,
-                      "tput_user": 4.3,
-                      "tput": 309.20000000000005,
-                      "tolerance": 0.0
-                    },
-                    "complete": {
-                      "ttft_ms": 152.0,
-                      "tput_user": 21.5,
-                      "tput": 1546.0,
-                      "tolerance": 0.0
-                    },
-                    "target": {
-                      "ttft_ms": 76.0,
-                      "tput_user": 43.0,
-                      "tput": 3092.0,
-                      "tolerance": 0.0
-                    }
-                  },
-                  "target_peak_perf": {
-                    "customer_functional": 0.1,
-                    "customer_complete": 0.5,
-                    "customer_sellable": 0.8
-                  },
-                  "num_inference_steps": null,
-                  "structured_dataset": null,
-                  "structured_output_ratio": null
-                }
-              ],
+              "perf_reference": [],
               "vllm_args": {
                 "model": "google/medgemma-27b-it",
                 "block_size": "64",
@@ -14380,6 +13867,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14504,6 +13992,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14625,6 +14114,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14750,6 +14240,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -14871,6 +14362,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15001,6 +14493,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15127,6 +14620,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15257,6 +14751,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15377,6 +14872,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15499,25 +14995,26 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 3390.0,
+                      "ttft_ms": 3570.0,
                       "tput_user": 3.1,
-                      "tput": null,
+                      "tput": 76.2,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 678.0,
+                      "ttft_ms": 714.0,
                       "tput_user": 15.5,
-                      "tput": null,
+                      "tput": 381.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 339.0,
+                      "ttft_ms": 357.0,
                       "tput_user": 31.0,
-                      "tput": null,
+                      "tput": 762.0,
                       "tolerance": 0.0
                     }
                   },
@@ -15619,25 +15116,26 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 950.0,
+                      "ttft_ms": 1020.0,
                       "tput_user": 12.200000000000001,
-                      "tput": null,
+                      "tput": 304.7,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 190.0,
+                      "ttft_ms": 204.0,
                       "tput_user": 61.0,
-                      "tput": null,
+                      "tput": 1523.5,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 95.0,
+                      "ttft_ms": 102.0,
                       "tput_user": 122.0,
-                      "tput": null,
+                      "tput": 3047.0,
                       "tolerance": 0.0
                     }
                   },
@@ -15741,6 +15239,7 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -15865,25 +15364,26 @@
                   "image_width": 512,
                   "images_per_prompt": 1,
                   "task_type": "vlm",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 3030.0,
+                      "ttft_ms": 3220.0,
                       "tput_user": 2.0,
-                      "tput": null,
+                      "tput": 52.0,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 606.0,
+                      "ttft_ms": 644.0,
                       "tput_user": 10.0,
-                      "tput": null,
+                      "tput": 260.0,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 303.0,
+                      "ttft_ms": 322.0,
                       "tput_user": 20.0,
-                      "tput": null,
+                      "tput": 520.0,
                       "tolerance": 0.0
                     }
                   },
@@ -15989,6 +15489,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16104,6 +15605,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16217,6 +15719,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16334,6 +15837,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16451,6 +15955,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16570,6 +16075,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16685,6 +16191,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16798,6 +16305,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -16915,6 +16423,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17032,6 +16541,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "video",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17152,6 +16662,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17265,6 +16776,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17380,6 +16892,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17495,6 +17008,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -17610,24 +17124,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 125000.0,
-                      "tput_user": 0.008,
+                      "ttft_ms": 110000.0,
+                      "tput_user": 0.0091,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 25000.0,
-                      "tput_user": 0.04,
+                      "ttft_ms": 22000.0,
+                      "tput_user": 0.0455,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 12500.0,
-                      "tput_user": 0.08,
+                      "ttft_ms": 11000.0,
+                      "tput_user": 0.091,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -17723,24 +17238,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 125000.0,
-                      "tput_user": 0.008,
+                      "ttft_ms": 110000.0,
+                      "tput_user": 0.0091,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 25000.0,
-                      "tput_user": 0.04,
+                      "ttft_ms": 22000.0,
+                      "tput_user": 0.0455,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 12500.0,
-                      "tput_user": 0.08,
+                      "ttft_ms": 11000.0,
+                      "tput_user": 0.091,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -17838,24 +17354,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 125000.0,
-                      "tput_user": 0.008,
+                      "ttft_ms": 110000.0,
+                      "tput_user": 0.0091,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 25000.0,
-                      "tput_user": 0.04,
+                      "ttft_ms": 22000.0,
+                      "tput_user": 0.0455,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 12500.0,
-                      "tput_user": 0.08,
+                      "ttft_ms": 11000.0,
+                      "tput_user": 0.091,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -17953,24 +17470,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 125000.0,
-                      "tput_user": 0.008,
+                      "ttft_ms": 110000.0,
+                      "tput_user": 0.0091,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 25000.0,
-                      "tput_user": 0.04,
+                      "ttft_ms": 22000.0,
+                      "tput_user": 0.0455,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 12500.0,
-                      "tput_user": 0.08,
+                      "ttft_ms": 11000.0,
+                      "tput_user": 0.091,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -18068,6 +17586,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18183,6 +17702,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18298,6 +17818,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18411,6 +17932,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18526,6 +18048,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18641,6 +18164,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18756,6 +18280,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18871,6 +18396,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -18984,6 +18510,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19097,6 +18624,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19210,6 +18738,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19323,6 +18852,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19442,6 +18972,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19557,6 +19088,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19670,6 +19202,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19783,6 +19316,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -19896,6 +19430,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20009,6 +19544,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20128,6 +19664,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20243,6 +19780,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20356,6 +19894,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20843,6 +20382,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "image",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -20958,6 +20498,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21145,6 +20686,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21258,6 +20800,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21373,6 +20916,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21488,6 +21032,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -21605,24 +21150,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 8000.0,
-                      "tput_user": 5.631,
+                      "ttft_ms": 4000.0,
+                      "tput_user": 11.262,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 1600.0,
-                      "tput_user": 28.155,
+                      "ttft_ms": 800.0,
+                      "tput_user": 56.31,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 800.0,
-                      "tput_user": 56.31,
+                      "ttft_ms": 400.0,
+                      "tput_user": 112.62,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -21792,24 +21338,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 8000.0,
-                      "tput_user": 6.555,
+                      "ttft_ms": 4000.0,
+                      "tput_user": 13.11,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 1600.0,
-                      "tput_user": 32.775,
+                      "ttft_ms": 800.0,
+                      "tput_user": 65.55,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 800.0,
-                      "tput_user": 65.55,
+                      "ttft_ms": 400.0,
+                      "tput_user": 131.1,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -21905,24 +21452,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 8000.0,
-                      "tput_user": 5.38,
+                      "ttft_ms": 4000.0,
+                      "tput_user": 10.76,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 1600.0,
-                      "tput_user": 26.9,
+                      "ttft_ms": 800.0,
+                      "tput_user": 53.8,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 800.0,
-                      "tput_user": 53.8,
+                      "ttft_ms": 400.0,
+                      "tput_user": 107.6,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -22020,24 +21568,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 27000.0,
-                      "tput_user": 4.7,
+                      "ttft_ms": 12500.0,
+                      "tput_user": 13.0,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 5400.0,
-                      "tput_user": 23.5,
+                      "ttft_ms": 2500.0,
+                      "tput_user": 65.0,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 2700.0,
-                      "tput_user": 47.0,
+                      "ttft_ms": 1250.0,
+                      "tput_user": 130.0,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -22135,24 +21684,25 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "asr",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
                     "functional": {
-                      "ttft_ms": 19000.0,
-                      "tput_user": 6.2,
+                      "ttft_ms": 8000.0,
+                      "tput_user": 38.0,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "complete": {
-                      "ttft_ms": 3800.0,
-                      "tput_user": 31.0,
+                      "ttft_ms": 1600.0,
+                      "tput_user": 190.0,
                       "tput": null,
                       "tolerance": 0.0
                     },
                     "target": {
-                      "ttft_ms": 1900.0,
-                      "tput_user": 62.0,
+                      "ttft_ms": 800.0,
+                      "tput_user": 380.0,
                       "tput": null,
                       "tolerance": 0.0
                     }
@@ -22252,6 +21802,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "tts",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22365,6 +21916,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "tts",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22630,6 +22182,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22755,6 +22308,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -22882,6 +22436,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23009,6 +22564,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23138,6 +22694,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23259,6 +22816,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23382,6 +22940,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23505,6 +23064,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23554,7 +23114,8 @@
                 "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
                 "VLLM__MAX_MODEL_LENGTH": "1024",
                 "VLLM__MIN_CONTEXT_LENGTH": "32",
-                "VLLM__MAX_NUM_SEQS": "1"
+                "VLLM__MAX_NUM_SEQS": "1",
+                "BENCHMARK_MAX_CONCURRENCY": "32"
               },
               "tensor_cache_timeout": 3600.0,
               "system_requirements": null,
@@ -23569,7 +23130,8 @@
               "VLLM__MAX_NUM_BATCHED_TOKENS": "1024",
               "VLLM__MAX_MODEL_LENGTH": "1024",
               "VLLM__MIN_CONTEXT_LENGTH": "32",
-              "VLLM__MAX_NUM_SEQS": "1"
+              "VLLM__MAX_NUM_SEQS": "1",
+              "BENCHMARK_MAX_CONCURRENCY": "32"
             },
             "tt_metal_commit": "555f240",
             "vllm_commit": null,
@@ -23628,6 +23190,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23753,6 +23316,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -23880,6 +23444,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24007,6 +23572,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24132,6 +23698,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24269,6 +23836,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24406,6 +23974,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "embedding",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24543,6 +24112,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24662,6 +24232,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24785,6 +24356,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -24898,6 +24470,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25015,6 +24588,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25128,6 +24702,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25245,6 +24820,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25358,6 +24934,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25475,6 +25052,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25588,6 +25166,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25705,6 +25284,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25818,6 +25398,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -25935,6 +25516,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -26048,6 +25630,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -26165,6 +25748,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -26278,6 +25862,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -26395,6 +25980,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "text",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -26532,6 +26118,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
@@ -26645,6 +26232,7 @@
                   "image_width": null,
                   "images_per_prompt": null,
                   "task_type": "cnn",
+                  "data_parallel": null,
                   "theoretical_ttft_ms": null,
                   "theoretical_tput_user": null,
                   "targets": {
