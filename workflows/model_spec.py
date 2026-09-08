@@ -7,10 +7,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import yaml
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Iterable, Union
+
+import yaml
 
 from workflows.utils import (
     get_repo_root_path,
@@ -36,9 +37,9 @@ MODEL_SPECS_SCHEMA_VERSION = "0.1.0"
 
 
 def generate_docker_tag(
-    version: Optional[str],
-    tt_metal_commit: Optional[str],
-    vllm_commit: Optional[str],
+    version: str | None,
+    tt_metal_commit: str | None,
+    vllm_commit: str | None,
 ) -> str:
     if version is None or tt_metal_commit is None:
         raise ValueError(
@@ -52,7 +53,7 @@ def generate_docker_tag(
 
 
 def generate_code_link(
-    repo_url: str, tt_metal_commit: Optional[str], code_path: str
+    repo_url: str, tt_metal_commit: str | None, code_path: str
 ) -> str:
     if tt_metal_commit is None:
         raise ValueError("Cannot generate code link: tt_metal_commit is None")
@@ -60,9 +61,9 @@ def generate_code_link(
 
 
 def generate_default_docker_link(
-    version: Optional[str],
-    tt_metal_commit: Optional[str],
-    vllm_commit: Optional[str],
+    version: str | None,
+    tt_metal_commit: str | None,
+    vllm_commit: str | None,
     inference_engine: str = "",
     multihost: bool = False,
 ) -> str:
@@ -79,7 +80,7 @@ def generate_default_docker_link(
     return f"{_default_docker_repo}:{_default_docker_tag}"
 
 
-def read_performance_reference_json() -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
+def read_performance_reference_json() -> dict[DeviceTypes, list[BenchmarkTaskParams]]:
     default_filepath = (
         get_repo_root_path()
         / "reference_config"
@@ -98,15 +99,15 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    hf_model_repo: str, perf_targets_map: Dict[str, float]
-) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
-    perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
+    hf_model_repo: str, perf_targets_map: dict[str, float]
+) -> dict[DeviceTypes, list[BenchmarkTaskParams]]:
+    perf_reference_map: dict[DeviceTypes, list[BenchmarkTaskParams]] = {}
     model_data = model_performance_reference.get(hf_model_repo, {})
 
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)
 
-        params_list: List[BenchmarkTaskParams] = []
+        params_list: list[BenchmarkTaskParams] = []
 
         for bench in benchmarks:
             # Parse performance targets under the "reference" key.
@@ -391,7 +392,7 @@ training_lora_impl = ImplSpec(
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
 
-_IMPL_REGISTRY: Dict[str, ImplSpec] = {
+_IMPL_REGISTRY: dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
@@ -430,14 +431,14 @@ class SystemRequirements:
 class KnownIssue:
     workflow_type: WorkflowType
     reason: str
-    task_name: Optional[str] = None
+    task_name: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.workflow_type, WorkflowType):
             coerced = WorkflowType.from_string(str(self.workflow_type))
             object.__setattr__(self, "workflow_type", coerced)
 
-    def matches(self, workflow_type: WorkflowType, task_name: Optional[str]) -> bool:
+    def matches(self, workflow_type: WorkflowType, task_name: str | None) -> bool:
         if self.workflow_type != workflow_type:
             return False
         if self.task_name is None:
@@ -455,19 +456,19 @@ class DeviceModelSpec:
     max_concurrency: int
     max_context: int
     # Explicit device KV-pool token budget for benchmark concurrency; set only when the pool is decoupled from max_context*max_num_seqs (does NOT affect max_context). None => derived from max_context.
-    max_tokens_all_users_override: Optional[int] = None
-    perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    max_tokens_all_users_override: int | None = None
+    perf_targets_map: dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
-    perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
-    vllm_args: Dict[str, str] = field(default_factory=dict)
-    override_tt_config: Dict[str, str] = field(default_factory=dict)
-    env_vars: Dict[str, str] = field(default_factory=dict)
+    perf_reference: list[BenchmarkTaskParams] = field(default_factory=list)
+    vllm_args: dict[str, str] = field(default_factory=dict)
+    override_tt_config: dict[str, str] = field(default_factory=dict)
+    env_vars: dict[str, str] = field(default_factory=dict)
     tensor_cache_timeout: float = 3600.0
-    system_requirements: Optional[SystemRequirements] = None
-    known_issues: List[KnownIssue] = field(default_factory=list)
+    system_requirements: SystemRequirements | None = None
+    known_issues: list[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.
     # Default 3 × exponential backoff = hours of burn on permanent 4xx.
-    eval_max_retries: Optional[int] = None
+    eval_max_retries: int | None = None
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
@@ -478,7 +479,6 @@ class DeviceModelSpec:
 
     def validate_data(self):
         """Validate that required specification is present."""
-        pass
 
     def _infer_data(self):
         """Infer missing data fields from other specification values."""
@@ -517,8 +517,8 @@ class DeviceModelSpec:
         self._infer_env_vars()
 
     def find_known_issue(
-        self, workflow_type: WorkflowType, task_name: Optional[str] = None
-    ) -> Optional[KnownIssue]:
+        self, workflow_type: WorkflowType, task_name: str | None = None
+    ) -> KnownIssue | None:
         for issue in self.known_issues:
             if issue.matches(workflow_type, task_name):
                 return issue
@@ -561,33 +561,31 @@ class ModelSpec:
     device_model_spec: DeviceModelSpec
 
     # Optional specification fields (WITH DEFAULTS)
-    system_requirements: Optional[SystemRequirements] = None
-    env_vars: Dict[str, str] = field(default_factory=dict)
-    tt_metal_commit: Optional[str] = None
-    vllm_commit: Optional[str] = None
-    hf_weights_repo: Optional[str] = (
+    system_requirements: SystemRequirements | None = None
+    env_vars: dict[str, str] = field(default_factory=dict)
+    tt_metal_commit: str | None = None
+    vllm_commit: str | None = None
+    hf_weights_repo: str | None = (
         None  # HF repo to download weights from (defaults to hf_model_repo)
     )
-    param_count: Optional[int] = None
-    min_disk_gb: Optional[int] = None
-    min_ram_gb: Optional[int] = None
-    model_type: Optional[ModelType] = ModelType.LLM
+    param_count: int | None = None
+    min_disk_gb: int | None = None
+    min_ram_gb: int | None = None
+    model_type: ModelType | None = ModelType.LLM
     repacked: int = 0
-    version: Optional[str] = None
-    docker_image: Optional[str] = None
+    version: str | None = None
+    docker_image: str | None = None
     status: str = ModelStatusTypes.EXPERIMENTAL
-    code_link: Optional[str] = None
-    override_tt_config: Dict[str, str] = field(default_factory=dict)
-    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
-    subdevice_type: Optional[DeviceTypes] = (
-        None  # Used for data-parallel configurations
-    )
+    code_link: str | None = None
+    override_tt_config: dict[str, str] = field(default_factory=dict)
+    supported_modalities: list[str] = field(default_factory=lambda: ["text"])
+    subdevice_type: DeviceTypes | None = None  # Used for data-parallel configurations
     uses_tensor_model_cache: bool = True
     has_builtin_warmup: bool = False
-    metadata: Dict = field(default_factory=dict)
+    metadata: dict = field(default_factory=dict)
 
     # DEPRECATED - only used by tt-media-server, kept for backwards compatibility
-    cli_args: Dict[str, str] = field(default_factory=dict)
+    cli_args: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
@@ -710,7 +708,7 @@ class ModelSpec:
         )
 
     @staticmethod
-    def infer_param_count(hf_model_repo: str) -> Optional[int]:
+    def infer_param_count(hf_model_repo: str) -> int | None:
         """
         Infers the parameter count (in billions) from the hf_model_repo string.
 
@@ -742,9 +740,11 @@ class ModelSpec:
         def serialize_value(obj):
             """Recursively serialize complex objects for JSON export."""
             # Handle enums first (they have __dict__ but aren't dataclasses)
-            if hasattr(obj, "name") and hasattr(obj, "value"):  # Enum
-                return obj.name
-            elif isinstance(obj, ModelType):  # Explicit ModelType handling
+            if (
+                hasattr(obj, "name")
+                and hasattr(obj, "value")
+                or isinstance(obj, ModelType)
+            ):  # Enum
                 return obj.name
             elif hasattr(obj, "__dict__") and hasattr(obj, "__dataclass_fields__"):
                 # Handle dataclasses by converting to dict
@@ -788,7 +788,7 @@ class ModelSpec:
         return filepath
 
     @classmethod
-    def from_json(cls, json_fpath: str) -> "ModelSpec":
+    def from_json(cls, json_fpath: str) -> ModelSpec:
         """
         Create a ModelSpec instance from a JSON file.
 
@@ -1019,18 +1019,18 @@ class ModelSpecTemplate:
     """
 
     # Required fields (NO DEFAULTS) - must come first
-    weights: List[str]  # List of HF model repos to create specs for
+    weights: list[str]  # List of HF model repos to create specs for
     impl: ImplSpec
     inference_engine: InferenceEngine
-    device_model_specs: List[DeviceModelSpec]
+    device_model_specs: list[DeviceModelSpec]
 
     # Optional template fields (WITH DEFAULTS) - must come after required fields
-    system_requirements: Optional[SystemRequirements] = None
+    system_requirements: SystemRequirements | None = None
     status: str = ModelStatusTypes.EXPERIMENTAL
-    env_vars: Dict[str, str] = field(default_factory=dict)
-    supported_modalities: List[str] = field(default_factory=lambda: ["text"])
+    env_vars: dict[str, str] = field(default_factory=dict)
+    supported_modalities: list[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
-    perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    perf_targets_map: dict[str, float] = field(default_factory=dict)
     # True when the catalog explicitly pinned the image via `version` or
     # `docker_image` (prod templates always do; dev never does). When neither is
     # set, no docker tag is synthesized, so these specs are excluded from
@@ -1038,19 +1038,19 @@ class ModelSpecTemplate:
     # Set by _build_template from YAML key presence; defaults True for directly
     # constructed templates so they are never dropped.
     image_pinned: bool = True
-    model_type: Optional[ModelType] = ModelType.LLM
-    min_disk_gb: Optional[int] = None
-    min_ram_gb: Optional[int] = None
+    model_type: ModelType | None = ModelType.LLM
+    min_disk_gb: int | None = None
+    min_ram_gb: int | None = None
     uses_tensor_model_cache: bool = True
-    hf_weights_repo: Optional[str] = (
+    hf_weights_repo: str | None = (
         None  # HF repo to download weights from (shared across all weights)
     )
     has_builtin_warmup: bool = False
-    metadata: Dict[str, Dict] = field(default_factory=dict)
+    metadata: dict[str, dict] = field(default_factory=dict)
     # Leaf-granular prod entries retain their source model family, which a
     # single-weight entry cannot imply. This keeps documentation grouping
     # stable; performance targets are looked up per weight and do not use it.
-    model_display_name: Optional[str] = None
+    model_display_name: str | None = None
 
     def __post_init__(self):
         self._validate_data()
@@ -1085,7 +1085,7 @@ class ModelSpecTemplate:
             }
             object.__setattr__(self, "perf_targets_map", default_perf_targets_map)
 
-    def expand_to_specs(self) -> List["ModelSpec"]:
+    def expand_to_specs(self) -> list[ModelSpec]:
         """Expand this template into individual ModelSpec instances."""
         specs = []
 
@@ -1178,18 +1178,18 @@ class ProdModelSpecTemplate(ModelSpecTemplate):
 
     tt_metal_commit: str
     version: str
-    vllm_commit: Optional[str] = None
-    docker_image: Optional[str] = None
+    vllm_commit: str | None = None
+    docker_image: str | None = None
 
 
 # Catalog data lives in workflows/model_specs/catalog.yaml.
 # spec_templates below loads from that file at import time.
 
 
-def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirements"]:
+def _build_system_requirements(data: dict | None) -> SystemRequirements | None:
     if data is None:
         return None
-    kwargs: Dict = {}
+    kwargs: dict = {}
     for key in ("firmware", "kmd"):
         if data.get(key) is not None:
             kwargs[key] = VersionRequirement(
@@ -1199,7 +1199,7 @@ def _build_system_requirements(data: Optional[Dict]) -> Optional["SystemRequirem
     return SystemRequirements(**kwargs)
 
 
-def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
+def _build_device_model_spec(data: dict) -> DeviceModelSpec:
     kwargs = dict(data)
     kwargs["device"] = DeviceTypes.from_string(kwargs["device"])
     if "perf_reference" in kwargs:
@@ -1223,7 +1223,7 @@ def _build_device_model_spec(data: Dict) -> "DeviceModelSpec":
     return DeviceModelSpec(**kwargs)
 
 
-def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
+def _build_template(data: dict, env: str = "prod") -> ModelSpecTemplate:
     """Build a template from a raw catalog dict.
 
     ``env`` selects the dataclass and thus the field contract: "prod" builds a
@@ -1266,8 +1266,8 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
 
 
 def load_templates_from_yaml(
-    path: Path, env: Optional[str] = None
-) -> List["ModelSpecTemplate"]:
+    path: Path, env: str | None = None
+) -> list[ModelSpecTemplate]:
     """Load one catalog file as templates for the given catalog environment.
 
     ``env`` selects the template contract -- "prod" requires release pins, dev
@@ -1311,7 +1311,7 @@ MODEL_SPEC_CATALOG_FILES = (
     "training.yaml",
 )
 
-spec_templates: List["ModelSpecTemplate"] = [
+spec_templates: list[ModelSpecTemplate] = [
     template
     for fname in MODEL_SPEC_CATALOG_FILES
     for template in load_templates_from_yaml(
@@ -1320,7 +1320,7 @@ spec_templates: List["ModelSpecTemplate"] = [
 ]
 
 
-def model_spec_leaf_identity(spec: ModelSpec) -> Tuple[str, str, str, str]:
+def model_spec_leaf_identity(spec: ModelSpec) -> tuple[str, str, str, str]:
     """Return the exact identity of one expanded catalog leaf."""
     return (
         spec.hf_model_repo,
@@ -1330,10 +1330,10 @@ def model_spec_leaf_identity(spec: ModelSpec) -> Tuple[str, str, str, str]:
     )
 
 
-def validate_model_specs(specs: List[ModelSpec]) -> None:
+def validate_model_specs(specs: list[ModelSpec]) -> None:
     """Reject catalog identities that would resolve or collapse ambiguously."""
-    specs_by_identity: Dict[Tuple[str, str, str, str], ModelSpec] = {}
-    identities_by_model_id: Dict[str, Tuple[str, str, str, str]] = {}
+    specs_by_identity: dict[tuple[str, str, str, str], ModelSpec] = {}
+    identities_by_model_id: dict[str, tuple[str, str, str, str]] = {}
 
     for spec in specs:
         identity = model_spec_leaf_identity(spec)
@@ -1349,7 +1349,7 @@ def validate_model_specs(specs: List[ModelSpec]) -> None:
             )
         identities_by_model_id[spec.model_id] = identity
 
-    defaults_by_group: Dict[Tuple[str, str, str], List[str]] = {}
+    defaults_by_group: dict[tuple[str, str, str], list[str]] = {}
     for spec in specs:
         if not spec.device_model_spec.default_impl:
             continue
@@ -1367,8 +1367,8 @@ def validate_model_specs(specs: List[ModelSpec]) -> None:
 
 
 def get_model_spec_map(
-    templates: List[ModelSpecTemplate],
-) -> Dict[str, ModelSpec]:
+    templates: list[ModelSpecTemplate],
+) -> dict[str, ModelSpec]:
     """
     Generate final model specifications from templates.
 
@@ -1399,7 +1399,7 @@ def export_model_specs_json(model_specs: dict, output_path: Path) -> int:
     """
     nested_specs = {}
     num_specs = 0
-    for model_id, model_spec in model_specs.items():
+    for model_spec in model_specs.values():
         hf_repo = model_spec.hf_model_repo
         device = model_spec.device_type.to_string()
         engine = model_spec.inference_engine
@@ -1440,7 +1440,7 @@ _UNPINNED_IMAGE_MODEL_IDS = {
 # The list of "valid" specs the helm chart generator consumes: every spec EXCEPT
 # the unpinned ones above. MODEL_SPECS still holds all specs for other consumers
 # (run.py, model-support docs, the release_model_spec.json export).
-IMAGE_PINNED_MODEL_SPECS: List[ModelSpec] = [
+IMAGE_PINNED_MODEL_SPECS: list[ModelSpec] = [
     spec
     for spec in MODEL_SPECS.values()
     if spec.model_id not in _UNPINNED_IMAGE_MODEL_IDS
@@ -1451,9 +1451,9 @@ def resolve_model_spec(
     specs: Iterable[ModelSpec],
     *,
     model: str,
-    device: Union[str, DeviceTypes],
-    engine: Optional[Union[str, InferenceEngine]] = None,
-    impl: Optional[str] = None,
+    device: str | DeviceTypes,
+    engine: str | InferenceEngine | None = None,
+    impl: str | None = None,
     catalog_name: str = "catalog",
 ) -> ModelSpec:
     """Resolve one model request from an explicit set of expanded specs."""
@@ -1548,9 +1548,9 @@ def resolve_model_spec(
 def get_runtime_model_spec(
     model: str,
     device: str,
-    engine: Optional[str] = None,
-    impl: Optional[str] = None,
-) -> Tuple[ModelSpec, str, str]:
+    engine: str | None = None,
+    impl: str | None = None,
+) -> tuple[ModelSpec, str, str]:
     """Select a ModelSpec from the active catalog.
 
     The active catalog is whatever was loaded into MODEL_SPECS at module
@@ -1581,7 +1581,7 @@ def derive_custom_weights_spec(
     base_spec: ModelSpec,
     custom_weights: str,
     *,
-    local_model_path: Optional[str] = None,
+    local_model_path: str | None = None,
 ) -> ModelSpec:
     """Re-key a resolved base spec onto a custom-weights identity.
 

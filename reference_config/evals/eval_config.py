@@ -2,12 +2,14 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+from __future__ import annotations
+
 import json
 import logging
 import math
 import os
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable
 
 from reference_config.evals.eval_utils import (
     score_multilevel_keys_mean,
@@ -33,7 +35,7 @@ def _harbor_env_type() -> str:
     return os.getenv("HARBOR_ENV_TYPE", "docker")
 
 
-def _harbor_env_kwargs() -> Dict[str, Any]:
+def _harbor_env_kwargs() -> dict[str, Any]:
     """Cluster knobs forwarded as Harbor ``environment.kwargs`` (opt-in).
 
     Empty unless ``HARBOR_ENV_TYPE=kubernetes`` — so the docker path emits no
@@ -46,7 +48,7 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
             "HARBOR_K8S_KUBECONFIG is not a Harbor setting and would be "
             "silently ignored. Export KUBECONFIG with the same path instead."
         )
-    kwargs: Dict[str, Any] = {
+    kwargs: dict[str, Any] = {
         "namespace": os.getenv("HARBOR_K8S_NAMESPACE", "default"),
         "image_mode": os.getenv("HARBOR_K8S_IMAGE_MODE", "auto"),
     }
@@ -115,7 +117,7 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
     return kwargs
 
 
-def _harbor_timeout_sec() -> Optional[float]:
+def _harbor_timeout_sec() -> float | None:
     """Wall-clock ceiling for the ``harbor run`` subprocess (#4759), from env."""
     value = os.getenv("HARBOR_TIMEOUT_SEC")
     return float(value) if value else None
@@ -156,7 +158,7 @@ class ModeReferenceScore:
     score: float
     ref: str = ""
     # Falls back to EvalTaskScore.tolerance when None.
-    tolerance: Optional[float] = None
+    tolerance: float | None = None
 
 
 @dataclass(frozen=True)
@@ -166,13 +168,13 @@ class EvalTaskScore:
     score_func: Callable
     gpu_reference_score: float = None
     gpu_reference_score_ref: str = None
-    score_func_kwargs: Dict[str, str] = field(default_factory=dict)
+    score_func_kwargs: dict[str, str] = field(default_factory=dict)
     tolerance: float = 0.05
     # Per-limit-mode references measured on that mode's fixed subset. Used by
     # the release report's accuracy check when the run sets --limit-samples-mode
     # (or --ci-mode). The full-set gpu_reference_score remains the baseline for
     # unrestricted --workflow evals runs.
-    mode_reference_scores: Dict["EvalLimitMode", "ModeReferenceScore"] = field(
+    mode_reference_scores: dict[EvalLimitMode, ModeReferenceScore] = field(
         default_factory=dict
     )
 
@@ -264,34 +266,34 @@ class HarborEvalConfig:
 
     dataset: str
     agent: str
-    model: Optional[str] = None
+    model: str | None = None
     n_concurrent_trials: int = 1
     n_attempts: int = 1
-    n_tasks: Optional[int] = None
-    task_names: List[str] = field(default_factory=list)
-    exclude_task_names: List[str] = field(default_factory=list)
-    agent_kwargs: Dict[str, Any] = field(default_factory=dict)
+    n_tasks: int | None = None
+    task_names: list[str] = field(default_factory=list)
+    exclude_task_names: list[str] = field(default_factory=list)
+    agent_kwargs: dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
-    override_cpus: Optional[int] = None
-    override_memory_mb: Optional[int] = None
-    timeout_multiplier: Optional[float] = None
-    agent_timeout_sec: Optional[float] = None
-    agent_setup_timeout_multiplier: Optional[float] = None
+    override_cpus: int | None = None
+    override_memory_mb: int | None = None
+    timeout_multiplier: float | None = None
+    agent_timeout_sec: float | None = None
+    agent_setup_timeout_multiplier: float | None = None
     quiet: bool = False
     yes: bool = True
-    task_names_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
-    agent_import_path: Optional[str] = None
-    agent_env: Dict[str, str] = field(default_factory=dict)
-    environment_env: Dict[str, str] = field(default_factory=dict)
-    verifier_env: Dict[str, str] = field(default_factory=dict)
-    environment_kwargs: Dict[str, Any] = field(default_factory=_harbor_env_kwargs)
-    harbor_timeout_sec: Optional[float] = field(default_factory=_harbor_timeout_sec)
+    task_names_map: dict[EvalLimitMode, list[str]] = field(default_factory=dict)
+    agent_import_path: str | None = None
+    agent_env: dict[str, str] = field(default_factory=dict)
+    environment_env: dict[str, str] = field(default_factory=dict)
+    verifier_env: dict[str, str] = field(default_factory=dict)
+    environment_kwargs: dict[str, Any] = field(default_factory=_harbor_env_kwargs)
+    harbor_timeout_sec: float | None = field(default_factory=_harbor_timeout_sec)
     # Per-request LLM read timeout for the mini-swe-agent backend, injected into
     # the generated mini config as ``model.model_kwargs.timeout``. Brings a
     # SWE-bench run through Harbor to parity with the standalone harness, whose
     # litellm path otherwise defaults to an infinite read timeout. ``None`` opts
     # out. Ignored by every non-mini agent (they carry their own timeout knob).
-    llm_timeout_sec: Optional[int] = 10 * 60
+    llm_timeout_sec: int | None = 10 * 60
     # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
     # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
@@ -335,22 +337,22 @@ class EvalTask:
     # reaches scoring; the eval launcher gates lm-eval via
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
-    gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
+    gen_kwargs: dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
     # opt out of receiving it as an OpenAI request sampling parameter.
     propagate_seed_to_gen_kwargs: bool = True
-    model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
+    model_kwargs: dict[str, str] = field(default_factory=dict)
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
     # Optional: kwargs passed to task custom_dataset loaders (e.g., RULER sequence length configs)
-    custom_dataset_kwargs: Dict[str, Union[str, List[int]]] = None
+    custom_dataset_kwargs: dict[str, str | list[int]] = None
     # Skip task when device.max_context < this. Avoids hours of HTTP 400
     # retry-burn on long-context evals (longbench, RULER) at small ctx.
-    min_context_required: Optional[int] = None
+    min_context_required: int | None = None
     # Optional: limit the number of samples passed to lm_eval (--limit)
     # Limit the number of examples per task.
     # If <1, limit is a percentage of the total number of examples.
-    limit_samples_map: Dict[EvalLimitMode, Union[float, int]] = field(
+    limit_samples_map: dict[EvalLimitMode, float | int] = field(
         default_factory=lambda: {
             # this defines smoke test limit to 1% for all models unless overridden
             EvalLimitMode.SMOKE_TEST: 0.01,
@@ -359,7 +361,7 @@ class EvalTask:
     # Let this task's scorer execute model-generated code on the eval host.
     # Off by default: the host is the CI runner, not containerized.
     allow_code_execution: bool = False
-    agentic_eval_config: Optional[HarborEvalConfig] = None
+    agentic_eval_config: HarborEvalConfig | None = None
     # Acceptance severity for this eval ("must"/"should"). "must" failures block
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
@@ -373,7 +375,7 @@ class EvalTask:
     #      use_chat_api, apply_chat_template, gen_kwargs, model_kwargs, ...;
     #   3. measured baselines (device-variant): score.
     # Only tier-2/3 fields may appear in an override block.
-    device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    device_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
         self.validate_data()
@@ -416,7 +418,7 @@ class EvalTask:
         }
         for device_key, overrides in self.device_overrides.items():
             if not isinstance(overrides, dict):
-                raise ValueError(
+                raise TypeError(
                     f"EvalTask {self.task_name!r}: device_overrides[{device_key!r}] "
                     "must be a dict of field overrides"
                 )
@@ -434,7 +436,7 @@ class EvalTask:
                 )
 
 
-def resolve_task_for_device(task: "EvalTask", device) -> "EvalTask":
+def resolve_task_for_device(task: EvalTask, device) -> EvalTask:
     """Apply ``task``'s per-device overrides for ``device`` (identity if none).
 
     ``device`` may be a device enum member (uses ``.name``) or a plain string;
@@ -466,7 +468,7 @@ def resolve_task_for_device(task: "EvalTask", device) -> "EvalTask":
 @dataclass(frozen=True)
 class EvalConfig:
     hf_model_repo: str
-    tasks: List[EvalTask]
+    tasks: list[EvalTask]
 
 
 # Note: meta evals defined in: https://github.com/meta-llama/llama-cookbook/blob/main/end-to-end-use-cases/benchmarks/llm_eval_harness/meta_eval/eval_config.yaml
