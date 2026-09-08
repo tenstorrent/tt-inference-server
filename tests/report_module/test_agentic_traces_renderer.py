@@ -12,7 +12,10 @@ scientific notation.
 
 from __future__ import annotations
 
-from report_module.agentic_traces_renderer import render_agentic_traces
+from report_module.agentic_traces_renderer import (
+    render_agentic_traces,
+    render_agentic_traces_targets,
+)
 from report_module.renderers import get_renderer
 from report_module.schema import Block
 
@@ -448,59 +451,108 @@ class TestMixedSweep:
 
 
 class TestMeasuredAgenticSweep:
-    """The report also carries the sweep in the requirements document's shape.
+    """The measured sweep JSON is not rendered in the report.
 
-    The tables are for reading; this block is for diffing a measured point
-    against the expected one a document declares, so it must stay valid JSON
-    under the document's own key.
+    The tables carry the numbers, the targets block grades them field for
+    field, and the raw JSON is written to ``agentic_sweep.json`` on disk --
+    an 80-line blob in the report itself is noise. A pointer to the file
+    remains for provenance.
     """
 
-    def test_sweep_block_is_included_by_default(self):
+    def test_sweep_json_is_not_rendered(self):
         out = _render(_record())
 
-        assert "#### Measured `agenticSweep`" in out
+        assert "#### Measured `agenticSweep`" not in out
+        assert "```json" not in out
 
-    def test_sweep_block_is_parseable_json_under_the_documents_key(self):
-        import json
+    def test_a_pointer_to_the_on_disk_sweep_file_remains(self):
+        out = _render(_record())
 
-        out = _render(_record(concurrency=8))
-        body = out.split("```json", 1)[1].split("```", 1)[0]
+        assert "agentic_sweep.json" in out
 
-        assert [p["concurrency"] for p in json.loads(body)["agenticSweep"]] == [8]
-
-    def test_one_point_per_run_ordered_by_concurrency(self):
-        import json
-
-        out = _render(_record(concurrency=16), _record(concurrency=4))
-        body = out.split("```json", 1)[1].split("```", 1)[0]
-
-        assert [p["concurrency"] for p in json.loads(body)["agenticSweep"]] == [4, 16]
-
-    def test_swarmone_runs_are_left_out_of_the_sweep(self):
-        """agenticSweep is defined over AIPerf's metrics; swo-bench has none."""
+    def test_no_pointer_without_inferencex_rows(self):
+        """The sweep file is InferenceX-only; a swo-bench run leaves no file."""
         out = _render(_swo_record())
 
-        assert "#### Measured `agenticSweep`" not in out
+        assert "agentic_sweep.json" not in out
+
+
+class TestDefinitionsPlacement:
+    """The glossary trails the targets section when one follows, so the
+    tables are not split from their verdicts."""
+
+    def test_catalog_run_keeps_definitions_in_the_run_section(self):
+        out = _render(_record())
+
+        assert "**Metric definitions:**" in out
+
+    def test_requirements_run_defers_definitions_to_the_targets_section(self):
+        out = _render(
+            _record(expected_sweep=[{"concurrency": 1, "ttftMeanMs": 8000.0}])
+        )
+
+        assert "**Metric definitions:**" not in out
 
 
 class TestRequirementsTargets:
-    """Grading against the document's expected sweep, when one drove the run."""
+    """The targets block renders its precomputed verdicts.
+
+    Grading happens in ``build_targets_block`` at parse time; this renderer
+    only lays out what the block carries, so the report and the acceptance
+    criteria can never disagree about the verdicts.
+    """
 
     _POINT = {
         "concurrency": 1,
-        "ttftMeanMs": 8000.0,  # record measures 7868.93 -> pass
-        "tpotMeanMs": 3.0,  # record measures 11.8 -> fail
-        "goodputPct": 90.0,  # record measures none -> ungraded
-        "inputTokensMean": 999999.0,  # never graded
+        "met": 1,
+        "graded": 2,
+        "passed": False,
+        "verdicts": [
+            {
+                "field": "ttftMeanMs",
+                "target": 8000.0,
+                "measured": 7868.93,
+                "passed": True,
+                "lower_is_better": True,
+            },
+            {
+                "field": "tpotMeanMs",
+                "target": 3.0,
+                "measured": 11.8,
+                "passed": False,
+                "lower_is_better": True,
+            },
+            {
+                "field": "goodputPct",
+                "target": 90.0,
+                "measured": None,
+                "passed": None,
+                "lower_is_better": False,
+            },
+        ],
     }
 
-    def test_absent_when_no_expectations_are_attached(self):
-        out = _render(_record())
+    def _block(self, points=(_POINT,), missing=()):
+        return Block(
+            kind="agentic_traces_targets",
+            id="kimi_super_cluster",
+            data={
+                "points": [dict(point) for point in points],
+                "missing_concurrencies": list(missing),
+            },
+        )
+
+    def test_kind_resolves_to_this_renderer(self):
+        assert get_renderer("agentic_traces_targets") is render_agentic_traces_targets
+
+    def test_run_renderer_no_longer_emits_the_section(self):
+        """Even with expectations attached, grading lives in its own block."""
+        out = _render(_record(expected_sweep=[{"concurrency": 1, "ttftMeanMs": 8000.0}]))
 
         assert "#### Requirements Targets" not in out
 
-    def test_grades_each_field_with_direction(self):
-        out = _render(_record(expected_sweep=[dict(self._POINT)]))
+    def test_renders_the_stored_verdicts(self):
+        out = render_agentic_traces_targets(self._block(), METADATA)
 
         assert "#### Requirements Targets" in out
         assert "**c1**: 1/2 targets met ❌" in out
@@ -510,61 +562,82 @@ class TestRequirementsTargets:
         # expected but unmeasured reads as a gap, not a failure
         assert "**N/A** / 90.00 ➖" in out
 
-    def test_token_shape_fields_are_not_graded(self):
-        out = _render(_record(expected_sweep=[dict(self._POINT)]))
-
-        # Scoped to the grading section: the measured-sweep JSON block above
-        # it legitimately carries the token-shape fields.
-        section = out.split("#### Requirements Targets", 1)[1]
-        assert "inputTokensMean" not in section
-
     def test_unmeasured_document_points_are_called_out(self):
         """A truncated sweep must not read as a complete one that scored less."""
-        sweep = [dict(self._POINT), {"concurrency": 64, "ttftMeanMs": 700.0}]
-        out = _render(_record(expected_sweep=sweep))
+        out = render_agentic_traces_targets(self._block(missing=(64,)), METADATA)
 
         assert "c64" in out
         assert "never measured" in out
 
     def test_each_measured_point_renders_its_own_column(self):
-        sweep = [dict(self._POINT), {**self._POINT, "concurrency": 4}]
-        out = _render(
-            _record(concurrency=1, expected_sweep=sweep),
-            _record(concurrency=4, expected_sweep=sweep),
+        point4 = {**self._POINT, "concurrency": 4}
+        out = render_agentic_traces_targets(
+            self._block(points=(self._POINT, point4)), METADATA
         )
 
         assert "c1 (1/2)" in out and "c4 (1/2)" in out
 
     def test_points_declaring_different_fields_render_the_union(self):
         """A field only a later point declares must still get its own row."""
-        sweep = [
-            {"concurrency": 1, "ttftMeanMs": 8000.0},
-            {"concurrency": 4, "ttftMeanMs": 8000.0, "e2elP90Ms": 30000.0},
-        ]
-        out = _render(
-            _record(concurrency=1, expected_sweep=sweep),
-            _record(concurrency=4, expected_sweep=sweep),
+        point4 = {
+            "concurrency": 4,
+            "met": 2,
+            "graded": 2,
+            "passed": True,
+            "verdicts": [
+                {
+                    "field": "ttftMeanMs",
+                    "target": 8000.0,
+                    "measured": 100.0,
+                    "passed": True,
+                    "lower_is_better": True,
+                },
+                {
+                    "field": "e2elP90Ms",
+                    "target": 30000.0,
+                    "measured": 25000.0,
+                    "passed": True,
+                    "lower_is_better": True,
+                },
+            ],
+        }
+        out = render_agentic_traces_targets(
+            self._block(points=(self._POINT, point4)), METADATA
         )
 
-        section = out.split("#### Requirements Targets", 1)[1]
-        assert "`e2elP90Ms` ↓" in section
+        assert "`e2elP90Ms` ↓" in out
         # the point that did not declare the field reads as a dash, not N/A
-        row = next(line for line in section.splitlines() if "e2elP90Ms" in line)
+        row = next(line for line in out.splitlines() if "e2elP90Ms" in line)
         cells = [cell.strip() for cell in row.strip("|").split("|")]
         assert cells[1] == "—"
-        assert "30000" in cells[2].replace(",", "")
+        assert "30,000" in cells[2]
 
     def test_a_point_with_no_declared_targets_is_not_failed(self):
-        sweep = [dict(self._POINT), {"concurrency": 4}]
-        out = _render(
-            _record(concurrency=1, expected_sweep=sweep),
-            _record(concurrency=4, expected_sweep=sweep),
+        empty = {
+            "concurrency": 4,
+            "met": 0,
+            "graded": 0,
+            "passed": None,
+            "verdicts": [],
+        }
+        out = render_agentic_traces_targets(
+            self._block(points=(self._POINT, empty)), METADATA
         )
 
         assert "**c4**: no targets declared" in out
         assert "c4 (no targets)" in out
 
-    def test_swarmone_rows_do_not_gain_a_section(self):
-        out = _render(_swo_record())
+    def test_empty_block_renders_nothing(self):
+        assert render_agentic_traces_targets(
+            self._block(points=(), missing=()), METADATA
+        ) == ""
 
-        assert "#### Requirements Targets" not in out
+    def test_the_glossary_trails_the_verdicts(self):
+        """The run section defers its metric definitions to this section."""
+        out = render_agentic_traces_targets(self._block(), METADATA)
+
+        assert "**Metric definitions:**" in out
+        # the InferenceX set, since a targets block only exists for
+        # InferenceX-graded sweeps
+        assert "**TPOT**: inter-token latency" in out
+        assert "Ready Starved" not in out

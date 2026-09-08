@@ -44,7 +44,10 @@ from llm_module.drivers.aiperf_agentic_traces import (
     AIPerfAgenticTracesDriver,
 )
 from llm_module.drivers.swo_bench_agentic_traces import SwoBenchAgenticTracesDriver
-from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
+from llm_module.parsers.aiperf_agentic_traces import (
+    AIPerfAgenticTracesParser,
+    build_targets_block,
+)
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
@@ -277,6 +280,15 @@ def run_agentic_traces(
     # lost a point still yields the rest rather than nothing.
     if payloads and output_root is not None:
         write_agentic_sweep(payloads, Path(output_root))
+
+    # The sweep-level grading block: the measured points graded against the
+    # document's expected ones, precomputed so the report renderer and the
+    # acceptance criteria read the same verdicts. None for catalog runs,
+    # which carry no expectations.
+    if payloads:
+        targets_block = build_targets_block(payloads, device=device_label)
+        if targets_block is not None:
+            result.blocks.append(targets_block)
 
     if not result.blocks:
         logger.error("[agentic-traces] No blocks produced -- sweep had zero successes.")
