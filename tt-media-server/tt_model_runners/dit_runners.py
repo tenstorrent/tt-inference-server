@@ -1452,7 +1452,17 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             )
             raise
 
-        self.logger.info(f"Device {self.device_id}: Model loaded")
+        # Say which denoise mode this process actually runs: the envs are overrides over the mesh preset and
+        # tracing forces bucketing on (pipeline: `bucket_denoise = trace_denoise or bucket_denoise`), so the
+        # resolved values on the pipeline object -- not the envs -- are what operators and the live tests need.
+        p = self.pipeline
+        self.logger.info(
+            f"Device {self.device_id}: Model loaded -- denoise modes: trace_denoise={p.trace_denoise} "
+            f"bucket_denoise={p.bucket_denoise} construction_warmup={p.warmup if hasattr(p, 'warmup') else 'n/a'} "
+            f"(env MINIMAX_H3_TRACE_DENOISE={os.environ.get('MINIMAX_H3_TRACE_DENOISE', 'unset')!r}, "
+            f"MINIMAX_H3_BUCKET_DENOISE={os.environ.get('MINIMAX_H3_BUCKET_DENOISE', 'unset')!r}, "
+            f"MINIMAX_H3_CONSTRUCTION_WARMUP={os.environ.get('MINIMAX_H3_CONSTRUCTION_WARMUP', 'unset')!r})"
+        )
         return True
 
     def _resolve_shape(self, request: VideoGenerateRequest) -> tuple[int, int, int]:
