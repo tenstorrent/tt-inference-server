@@ -36,7 +36,7 @@ templates:
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
   env_vars:
-    MODEL_RUNNER: "trainer-training-lora"
+    MODEL_RUNNER: "training-lora"
     TRAINING_MODEL: "Llama-3.1-8B"
     ENABLE_JOB_PERSISTENCE: true
     JOB_CLEANUP_INTERVAL_SECONDS: 10000
@@ -47,8 +47,5 @@ templates:
       max_concurrency: 1
       max_context: 1024
     - device: P300
-      max_concurrency: 1
-      max_context: 1024
-    - device: P300X2          # add this
       max_concurrency: 1
       max_context: 1024
