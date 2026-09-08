@@ -308,8 +308,12 @@ class PrefillDecodeWorkflow(WorkflowExecution):
 
     def _inject_model_spec_metadata(self, meta: dict) -> None:
         """Report the served model, not the placeholder catalog spec."""
-        served = meta.get("model_name") or os.environ.get("MODEL")
+        served = (
+            meta.get("model_repo") or meta.get("model_name") or os.environ.get("MODEL")
+        )
         meta["model_repo"] = served
+        # Bare basename in model_name; full served id stays on model_repo.
+        meta["model_name"] = served.rsplit("/", 1)[-1] if served else None
         meta["model_id"] = None
         meta["inference_engine"] = None
         meta["tt_metal_commit"] = None

@@ -45,6 +45,7 @@ from test_module._test_common.target_check import (
     get_performance_targets,
     summary_from_tiered,
 )
+from utils.model_naming import slugify_model_id
 
 logger = logging.getLogger(__name__)
 
@@ -176,10 +177,6 @@ def _latest_generated_at(schemas: Sequence[ReportSchema]) -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _slug(text: str) -> str:
-    return text.replace("/", "__").replace("\\", "__").replace(" ", "_")
-
-
 def _compact_timestamp(text: str) -> str:
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
         try:
@@ -197,12 +194,17 @@ def build_summary_schema(schemas: Sequence[ReportSchema]) -> Optional[ReportSche
     sections = [aggregate_to_block(aggregate) for aggregate in aggregates]
     first = aggregates[0]
     generated_at = _latest_generated_at(schemas)
+    # ``aggregate.model`` is the full HF repo id. Store it as model_repo for
+    # display; model_name stays the basename (same split as ModelSpec).
+    model_repo = first.model
+    bare_name = model_repo.rsplit("/", 1)[-1]
     report_id = (
-        f"summary_{_slug(first.model)}_{_slug(first.device)}"
+        f"summary_{slugify_model_id(model_repo)}_{slugify_model_id(first.device)}"
         f"_{_compact_timestamp(generated_at)}"
     )
     metadata = {
-        "model_name": first.model,
+        "model_name": bare_name,
+        "model_repo": model_repo,
         "device": first.device,
         "generated_at": generated_at,
         "report_id": report_id,

@@ -400,7 +400,12 @@ async def _run_image_generation_eval_test(
 
     test_config = ServerTestConfig.create_default(timeout=25000)
     request_dict = {
-        "model_name": ctx.model_spec.model_name,
+        # Full HF repo id. This keys the accuracy reference via
+        # resolve_model_name() (model_accuracy_reference.json is keyed by full
+        # repo + variant suffix). It is NOT the served model param — the media
+        # server model is selected by the MODEL env var (basename), not the
+        # request payload.
+        "model_name": ctx.model_spec.hf_model_repo,
         "num_prompts": num_prompts,
         "num_inference_steps": inference_steps,
         "server_url": ctx.base_url,
@@ -502,7 +507,7 @@ def run_image_eval(ctx: MediaContext) -> Block:
             fid_score,
             average_clip_score,
             len(status_list),
-            ctx.model_spec.model_name,
+            ctx.model_spec.hf_model_repo,
         )
 
         data["fid_score"] = fid_score

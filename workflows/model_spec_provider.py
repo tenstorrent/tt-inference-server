@@ -78,7 +78,12 @@ class TenstorrentModelSpecProvider(ModelSpecProvider):
     """``ModelSpecProvider`` over the Tenstorrent YAML model catalog."""
 
     def model_names(self) -> List[str]:
-        return sorted({spec.model_name for spec in MODEL_SPECS.values()})
+        # The full HF repo id is canonical; retain bare basenames as accepted
+        # aliases for backwards compatibility.
+        return sorted(
+            {spec.hf_model_repo for spec in MODEL_SPECS.values()}
+            | {spec.model_name for spec in MODEL_SPECS.values()}
+        )
 
     def resolve(self, model: str, device: str) -> ModelSpec:
         model_spec, _, _ = get_runtime_model_spec(model=model, device=device)
@@ -88,7 +93,7 @@ class TenstorrentModelSpecProvider(ModelSpecProvider):
         return [
             config
             for config in MODEL_SPECS.values()
-            if config.model_name == model
+            if model in (config.hf_model_repo, config.model_name)
             and config.device_type.name.lower() == device.lower()
         ]
 

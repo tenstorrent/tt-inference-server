@@ -220,7 +220,7 @@ def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
 
     return (
         TestFilter()
-        .filter_by_model(ctx.model_spec.model_name)
+        .filter_by_model(ctx.model_spec.hf_model_repo)
         .filter_by_device(ctx.device.name.lower())
         .filter_prerequisites_by_engine(ctx.model_spec.inference_engine)
         .get_tests()

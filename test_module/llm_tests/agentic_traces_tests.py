@@ -52,6 +52,7 @@ from workflow_module import accept_blocks
 from workflow_module.engine_types import AgenticTracesMode
 from workflow_module.target_pack import get_target_pack
 
+from .._test_common import report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -268,7 +269,7 @@ def run_agentic_traces(
     accept_blocks(
         result.blocks,
         envelope={
-            "model_name": getattr(spec, "model_name", "") or model_repo,
+            **report_model_fields(spec),
             "device": device_label,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },
