@@ -2,21 +2,17 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Wave-aware progress logging + deadline watchdog for agentic eval harnesses.
+"""Wave-aware progress logging + deadline watchdog for Harbor agentic evals.
 
-The SWE-bench (`mini-extra swebench`) and terminal-bench (`harbor run`)
-harnesses run as opaque blocking subprocesses that schedule tasks across a
-fixed pool of workers. Tasks therefore start in *waves*: with ``W`` workers and
-``N`` tasks, only the first ``W`` start immediately and the rest queue. A single
-flat ``start + T`` deadline is wrong for a queued run -- it would kill healthy
-tasks that only started in a later wave -- so this module models three separate
-numbers, all anchored to a per-task budget ``B`` (the wall-clock a single task
-may legitimately take):
+Harbor runs as an opaque blocking subprocess and schedules trials across a
+fixed pool of workers. Trials therefore start in *waves*: with ``W`` workers
+and ``N`` trials, only the first ``W`` start immediately and the rest queue. A
+single flat ``start + T`` deadline is wrong for a queued run -- it would kill
+healthy trials that only started in a later wave -- so this module models three
+numbers, all anchored to a per-trial budget ``B``:
 
-* **worst-case ceiling** ``ceil(N / W) * B`` -- the absolute "max allowed"
-  time, logged for visibility and used as a backstop kill. Grace periods are
-  deliberately *not* folded in here: they only relax stall detection, so the
-  ceiling stays tight at the raw per-task budget times the wave count.
+* **worst-case ceiling** ``startup_grace + ceil(N / W) * B`` -- the absolute
+  "max allowed" time, logged for visibility and used as a backstop kill.
 * **projected remaining** ``ceil(remaining / W) * B`` -- shrinks as tasks
   finish.
 * **stall deadline** ``last_progress + B + stall_grace`` -- the tight signal:
@@ -24,7 +20,7 @@ may legitimately take):
   in-flight task is necessarily past its own budget, so the run is wedged. The
   ``stall_grace`` cushion is added only after the allocated budget ``B`` has
   already elapsed since the last progress (plus ``startup_grace`` before the
-  first task completes, to cover dataset load + image pulls).
+  first trial starts or completes, to cover dataset load + image pulls).
 
 Progress is read by polling harness output files (see the ``*_probe`` helpers),
 never by parsing stdout, so the harness Rich progress bar is left untouched.
@@ -35,8 +31,10 @@ from __future__ import annotations
 import json
 import logging
 import math
-import re
+import os
+import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from datetime import timedelta
@@ -50,8 +48,8 @@ logger = logging.getLogger(__name__)
 # callers treat it like any other nonzero exit.
 TIMEOUT_EXIT_CODE = 124
 
-# Grace given to the child to exit after SIGTERM before we SIGKILL it.
-_TERMINATE_GRACE_SEC = 30.0
+# Harbor's Kubernetes cleanup can wait up to 60 seconds for pod deletion.
+_TERMINATE_GRACE_SEC = 90.0
 
 
 @dataclass(frozen=True)
@@ -89,10 +87,14 @@ def waves_remaining(remaining_tasks: int, concurrency: int) -> int:
 
 
 def worst_case_ceiling_s(
-    total: int, concurrency: int, per_task_budget_s: float
+    total: int,
+    concurrency: int,
+    per_task_budget_s: float,
+    *,
+    startup_grace_s: float = 0,
 ) -> float:
-    """Absolute wall-clock budget: worst-case wave count * B (no grace added)."""
-    return waves_remaining(total, concurrency) * per_task_budget_s
+    """Absolute wall-clock budget: startup + worst-case wave count * B."""
+    return startup_grace_s + (waves_remaining(total, concurrency) * per_task_budget_s)
 
 
 def projected_remaining_s(
@@ -123,11 +125,9 @@ def run_with_progress(
     Returns the child's exit code, or ``TIMEOUT_EXIT_CODE`` (124) if the
     watchdog killed it (stall, worst-case ceiling, or ``hard_timeout_s``).
 
-    When ``enforce_deadlines`` is ``False`` the watchdog still logs progress and
-    reports when a deadline *would* have fired, but never terminates the child --
-    it runs to natural completion. This is useful when killing early would
-    truncate the harness's output (e.g. SWE-bench grades only the instances
-    present in ``preds.json``, so an early kill produces a wrong denominator).
+    When ``enforce_deadlines`` is ``False`` the heuristic wave/stall deadlines
+    are logged but not enforced. An explicit ``hard_timeout_s`` is always
+    enforced because callers use it as an unconditional wall-clock backstop.
 
     stdout/stderr are inherited (not piped), so the harness's own progress UI
     still renders; we only poll ``probe`` for the numbers.
@@ -135,29 +135,29 @@ def run_with_progress(
     log = log or logger
     log.info("Running command: %s", " ".join(str(c) for c in cmd))
 
-    start = time.monotonic()
-    proc = subprocess.Popen(list(cmd), cwd=str(cwd) if cwd else None, env=env)
-
-    last_heartbeat = 0
-    last_progress_time = start
-    first_progress_seen = False
-    # Fixed once the total is known from the first successful probe.
-    ceiling_s: Optional[float] = None
-
+    previous_sigterm_handler = _install_sigterm_handler()
     try:
-        while True:
-            try:
-                return proc.wait(timeout=log_interval_s)
-            except subprocess.TimeoutExpired:
-                pass
+        start = time.monotonic()
+        proc = subprocess.Popen(
+            list(cmd),
+            cwd=str(cwd) if cwd else None,
+            env=env,
+            start_new_session=os.name == "posix",
+        )
 
-            now = time.monotonic()
+        last_heartbeat = 0
+        last_progress_time = start
+        first_progress_seen = False
+        # Fixed once the total is known from the first successful probe.
+        ceiling_s: Optional[float] = None
+
+        def observe_progress(now: float):
+            nonlocal ceiling_s, first_progress_seen
+            nonlocal last_heartbeat, last_progress_time
             elapsed = now - start
-
-            snap: Optional[ProgressSnapshot]
             try:
                 snap = probe()
-            except Exception as exc:  # noqa: BLE001 - probe must never crash the run
+            except Exception as exc:  # noqa: BLE001 - probe must not crash run
                 log.debug("[agentic progress] %s: probe error: %s", label, exc)
                 snap = None
 
@@ -168,19 +168,18 @@ def run_with_progress(
 
             if snap is not None and snap.total and ceiling_s is None:
                 ceiling_s = worst_case_ceiling_s(
-                    snap.total, concurrency, per_task_budget_s
+                    snap.total,
+                    concurrency,
+                    per_task_budget_s,
+                    startup_grace_s=startup_grace_s,
                 )
 
-            # Stall allowance: a full per-task budget must elapse with no
-            # progress before the grace cushion is even added. Until the first
-            # task completes, also allow the one-time startup grace (dataset
-            # load, image pulls) so a slow first wave is not mistaken for a
-            # stall.
+            # Allow one full per-task budget without progress. Before the first
+            # observed start/completion, include the one-time startup grace.
             stall_allowance = per_task_budget_s + stall_grace_s
             if not first_progress_seen:
                 stall_allowance += startup_grace_s
             since_progress = now - last_progress_time
-            stall_kill_in = stall_allowance - since_progress
 
             _log_progress(
                 log,
@@ -190,59 +189,103 @@ def run_with_progress(
                 per_task_budget_s=per_task_budget_s,
                 concurrency=concurrency,
                 ceiling_s=ceiling_s,
-                stall_kill_in_s=stall_kill_in,
+                stall_kill_in_s=stall_allowance - since_progress,
             )
+            return elapsed, since_progress, stall_allowance
 
-            reason: Optional[str] = None
-            if hard_timeout_s is not None and elapsed > hard_timeout_s:
-                reason = f"hard timeout {_fmt(hard_timeout_s)} exceeded"
-            elif ceiling_s is not None and elapsed > ceiling_s:
-                reason = f"worst-case ceiling {_fmt(ceiling_s)} exceeded"
-            elif since_progress > stall_allowance:
-                reason = (
-                    f"no progress for {_fmt(since_progress)} "
-                    f"(budget {_fmt(per_task_budget_s)} + grace "
-                    f"{_fmt(stall_grace_s)}"
-                    + (
-                        ""
-                        if first_progress_seen
-                        else f" + startup {_fmt(startup_grace_s)}"
+        try:
+            while True:
+                now = time.monotonic()
+                elapsed = now - start
+                if hard_timeout_s is not None:
+                    hard_timeout_remaining = hard_timeout_s - elapsed
+                    if hard_timeout_remaining <= 0:
+                        log.error(
+                            "[agentic progress] %s: killing harness after %s -- "
+                            "hard timeout %s exceeded",
+                            label,
+                            _fmt(elapsed),
+                            _fmt(hard_timeout_s),
+                        )
+                        _terminate(proc, log)
+                        return TIMEOUT_EXIT_CODE
+                    wait_s = min(log_interval_s, hard_timeout_remaining)
+                else:
+                    wait_s = log_interval_s
+
+                try:
+                    return proc.wait(timeout=wait_s)
+                except subprocess.TimeoutExpired:
+                    pass
+
+                now = time.monotonic()
+                elapsed = now - start
+                if hard_timeout_s is not None and elapsed >= hard_timeout_s:
+                    log.error(
+                        "[agentic progress] %s: killing harness after %s -- "
+                        "hard timeout %s exceeded",
+                        label,
+                        _fmt(elapsed),
+                        _fmt(hard_timeout_s),
                     )
-                    + ")"
-                )
+                    _terminate(proc, log)
+                    return TIMEOUT_EXIT_CODE
 
-            if reason is not None:
-                if not enforce_deadlines:
-                    log.warning(
-                        "[agentic progress] %s: deadline exceeded after %s -- %s; "
-                        "not enforcing (enforce_deadlines=False), letting harness "
-                        "run to completion.",
+                elapsed, since_progress, stall_allowance = observe_progress(now)
+
+                hard_timeout_exceeded = (
+                    hard_timeout_s is not None and elapsed >= hard_timeout_s
+                )
+                reason: Optional[str] = None
+                if hard_timeout_exceeded:
+                    reason = f"hard timeout {_fmt(hard_timeout_s)} exceeded"
+                elif ceiling_s is not None and elapsed > ceiling_s:
+                    reason = f"worst-case ceiling {_fmt(ceiling_s)} exceeded"
+                elif since_progress > stall_allowance:
+                    reason = (
+                        f"no progress for {_fmt(since_progress)} "
+                        f"(budget {_fmt(per_task_budget_s)} + grace "
+                        f"{_fmt(stall_grace_s)}"
+                        + (
+                            ""
+                            if first_progress_seen
+                            else f" + startup {_fmt(startup_grace_s)}"
+                        )
+                        + ")"
+                    )
+
+                if reason is not None:
+                    if not hard_timeout_exceeded and not enforce_deadlines:
+                        log.warning(
+                            "[agentic progress] %s: deadline exceeded after %s -- "
+                            "%s; not enforcing heuristic deadlines, letting "
+                            "harness run to completion.",
+                            label,
+                            _fmt(elapsed),
+                            reason,
+                        )
+                        continue
+                    log.error(
+                        "[agentic progress] %s: killing harness after %s -- %s",
                         label,
                         _fmt(elapsed),
                         reason,
                     )
-                    continue
-                log.error(
-                    "[agentic progress] %s: killing harness after %s -- %s",
+                    _terminate(proc, log)
+                    return TIMEOUT_EXIT_CODE
+        except BaseException:
+            # Never leave the harness orphaned. BaseException covers
+            # KeyboardInterrupt, SystemExit, and the SIGTERM handler below.
+            if proc.poll() is None:
+                log.warning(
+                    "[agentic progress] %s: engine interrupted; terminating "
+                    "harness so it is not orphaned.",
                     label,
-                    _fmt(elapsed),
-                    reason,
                 )
                 _terminate(proc, log)
-                return TIMEOUT_EXIT_CODE
-    except BaseException:
-        # Never leave the harness orphaned. Without this, killing or crashing
-        # the engine re-parents the child to init, where it keeps running (and
-        # keeps hammering the inference endpoint) invisibly. BaseException so
-        # KeyboardInterrupt and SystemExit are covered too.
-        if proc.poll() is None:
-            log.warning(
-                "[agentic progress] %s: engine interrupted; terminating harness "
-                "so it is not orphaned.",
-                label,
-            )
-            _terminate(proc, log)
-        raise
+            raise
+    finally:
+        _restore_sigterm_handler(previous_sigterm_handler)
 
 
 def _log_progress(
@@ -291,89 +334,79 @@ def _log_progress(
     )
 
 
+def _install_sigterm_handler():
+    """Turn parent SIGTERM into SystemExit so the child cleanup path runs."""
+    if threading.current_thread() is not threading.main_thread():
+        return None
+    previous = signal.getsignal(signal.SIGTERM)
+
+    def handle_sigterm(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, handle_sigterm)
+    return previous
+
+
+def _restore_sigterm_handler(previous) -> None:
+    if previous is not None:
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _signal_process_tree(proc: subprocess.Popen, sig: signal.Signals) -> None:
+    """Signal the dedicated harness process group, with a child-only fallback."""
+    pid = getattr(proc, "pid", None)
+    if os.name == "posix" and isinstance(pid, int):
+        try:
+            os.killpg(pid, sig)
+            return
+        except OSError:
+            pass
+    if sig == signal.SIGTERM:
+        proc.terminate()
+    else:
+        proc.kill()
+
+
+def _process_group_exists(proc: subprocess.Popen) -> bool:
+    """Return whether the harness process group still has members."""
+    pid = getattr(proc, "pid", None)
+    if os.name == "posix" and isinstance(pid, int):
+        try:
+            os.killpg(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+        except OSError:
+            return proc.poll() is None
+    return proc.poll() is None
+
+
+def _wait_for_process_tree(proc: subprocess.Popen, timeout_s: float) -> bool:
+    """Wait until the harness leader and all process-group members exit."""
+    deadline = time.monotonic() + timeout_s
+    while _process_group_exists(proc):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=min(0.1, remaining))
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            time.sleep(min(0.1, remaining))
+    return True
+
+
 def _terminate(proc: subprocess.Popen, log: logging.Logger) -> None:
-    """SIGTERM the child, then SIGKILL if it does not exit within the grace."""
-    proc.terminate()
-    try:
-        proc.wait(timeout=_TERMINATE_GRACE_SEC)
+    """SIGTERM the harness tree, then SIGKILL it after the cleanup grace."""
+    _signal_process_tree(proc, signal.SIGTERM)
+    if _wait_for_process_tree(proc, _TERMINATE_GRACE_SEC):
         return
-    except subprocess.TimeoutExpired:
-        log.warning("Harness did not exit after SIGTERM; sending SIGKILL.")
-    proc.kill()
-    try:
-        proc.wait(timeout=_TERMINATE_GRACE_SEC)
-    except subprocess.TimeoutExpired:
-        log.error("Harness did not exit after SIGKILL.")
-
-
-# --------------------------------------------------------------------------- #
-# Harness-specific probes
-# --------------------------------------------------------------------------- #
-
-_RUNNING_ON_RE = re.compile(r"Running on (\d+) instances")
-# mini-swe-agent's docker environment logs exactly one of these per instance
-# that reaches container startup, so the count is the number of instances the
-# pool has actually picked up -- as opposed to ``total - completed``, which
-# lumps queued instances in with running ones.
-_STARTED_CONTAINER_RE = re.compile(r"Started container minisweagent-")
-
-
-def make_swebench_probe(
-    mini_output_dir: Path, total: Optional[int]
-) -> Callable[[], Optional[ProgressSnapshot]]:
-    """Probe for ``mini-extra swebench``.
-
-    ``preds.json`` is rewritten after every finished instance, so its key count
-    is the completed count. ``total`` comes from the caller (instance_ids /
-    n_tasks); if unknown we fall back to parsing ``Running on N instances`` from
-    ``minisweagent.log``.
-
-    ``in_flight`` is ``started - completed``, where ``started`` counts container
-    startup lines in the same log. The harness keeps its started/running set only
-    in memory (RunBatchProgressManager persists exit statuses alone), so this log
-    line is the one on-disk trace that an instance has begun.
-
-    Only completions count as progress for the stall timer -- we deliberately
-    ignore log mtime, which retry chatter would keep touching and thereby defeat
-    stall detection.
-    """
-    preds_path = mini_output_dir / "preds.json"
-    log_path = mini_output_dir / "minisweagent.log"
-    resolved_total = {"n": total}
-
-    def probe() -> Optional[ProgressSnapshot]:
-        completed = 0
-        if preds_path.exists():
-            try:
-                preds = json.loads(preds_path.read_text(encoding="utf-8"))
-                completed = len(preds) if isinstance(preds, dict) else 0
-            except (OSError, json.JSONDecodeError):
-                return None
-
-        started: Optional[int] = None
-        if log_path.exists():
-            try:
-                text = log_path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                text = None
-            if text is not None:
-                started = len(_STARTED_CONTAINER_RE.findall(text))
-                if resolved_total["n"] is None:
-                    match = _RUNNING_ON_RE.search(text)
-                    if match:
-                        resolved_total["n"] = int(match.group(1))
-
-        # An instance that dies before its container comes up (image pull
-        # failure) still lands in preds.json, so started can trail completed.
-        in_flight = None if started is None else max(0, started - completed)
-        return ProgressSnapshot(
-            completed=completed,
-            total=resolved_total["n"],
-            in_flight=in_flight,
-            heartbeat=completed,
-        )
-
-    return probe
+    log.warning("Harness process tree survived SIGTERM; sending SIGKILL.")
+    _signal_process_tree(proc, signal.SIGKILL)
+    if not _wait_for_process_tree(proc, _TERMINATE_GRACE_SEC):
+        log.error("Harness process tree survived SIGKILL.")
 
 
 def make_terminal_bench_probe(

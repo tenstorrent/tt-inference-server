@@ -50,4 +50,4 @@ librosa
 # YOLOX (yolox_nano) evals compute real COCO mAP via pycocotools' COCOeval.
 pycocotools
 datasets==5.0.0
-pyarrow==24.0.0
+pyarrow==25.0.1
