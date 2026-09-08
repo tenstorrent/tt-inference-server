@@ -2071,6 +2071,188 @@ _eval_config_list = [
             # ),
         ],
     ),
+    # First-bring-up wiring (no TARGETS_JSON supplied): the three fallback tasks
+    # from the make-tti-tests §6 fallback list (r1_gpqa_diamond, terminal_bench_2,
+    # swe_bench_verified). published_score/published_score_ref below all come from
+    # https://huggingface.co/Qwen/Qwen3.6-35B-A3B ("Benchmark Results" table,
+    # "Qwen3.6-35BA3B" column); gpu_reference_score is left None because no TT
+    # measurement of these tasks exists yet -- this is the first release wiring
+    # for this model. Sampling params (temperature=1.0, top_p=0.95, top_k=20) are
+    # the card's "Thinking mode for general tasks" recipe; Qwen3.6 models think by
+    # default, matching how the card's own published numbers were produced, so no
+    # default-chat-template-kwargs override is needed here.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3.6-35B-A3B",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA. The model card reports a
+                # single "GPQA" number (86.0) without stating subset/shot-count;
+                # by current (2026) convention for a bare "GPQA" model-card row
+                # this is understood to be the 198-question Diamond subset, but
+                # that is not spelled out on the card, so treat the published/
+                # measured ratio with a little more skepticism than a card that
+                # says "GPQA-Diamond" explicitly.
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=86.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # Fallback CI fraction per make-tti-tests §6 (this model's own
+                # measured single-user decode is ~16.4 t/s/u -- slow enough that
+                # a bigger CI_NIGHTLY fraction risks CI timeouts on a first run).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=51.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    # ASSUMED: copied from the Qwen3.6-27B entry above (same
+                    # family, same release methodology); not verified against
+                    # this run's actual runner resources.
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    # Raised from the Qwen3.6-27B entry's 3h: this model's own
+                    # measured single-user decode is ~16.4 t/s/u (tt-metal
+                    # doc/optimized_vllm/README.md), which is slow enough that a
+                    # first bring-up run should not assume a healthier model's
+                    # timeout is generous enough.
+                    agent_timeout_sec=4 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        # Card methodology says max_tokens=80K / 256K ctx (footnote
+                        # under "Benchmark Results"). max_input_tokens is kept
+                        # below max_context (262144) MINUS max_output_tokens with
+                        # headroom, per make-tti-tests §6, rather than the
+                        # Qwen3.6-27B entry's 256K+80K (which sums to above its
+                        # own 262144 max_context).
+                        "model_info": {
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 80 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 80 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    # Standard house CI_NIGHTLY terminal-bench subset, reused
+                    # verbatim from the Qwen3.6-27B entry above.
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=73.4,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # Raised from the usual 2h (see terminal_bench_2 comment
+                    # above): this model's measured decode is ~16.4 t/s/u.
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    # Standard house CI_NIGHTLY swe-bench-verified subset, reused
+                    # verbatim from every other model's entry in this file.
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="arcee-ai/AFM-4.5B",
         tasks=[
