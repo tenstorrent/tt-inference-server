@@ -256,6 +256,50 @@ templates:
         enable_chunked_prefill: true
         max_num_batched_tokens: 65536
         long_prefill_token_threshold: 4096
+    # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): the plugin's
+    # standard-DP discovery opens the native 8x4 mesh, create_submeshes
+    # reshapes to (4,8) and yields four physical-COLUMN (1,8) engines, each a
+    # separate process with TT_VISIBLE_DEVICES=<its column> and NO mesh-graph
+    # descriptor override (auto-discovery control plane handles constrained
+    # subsets; column-subset mesh_sanity byte-exact). Metal dp=4x tp=8 campaign:
+    # decode contention-free (31B b1 ~30 tok/s/u per replica), b32 TTFT within
+    # 2% of solo; 4 concurrent long prefills contend on HOST (TTFT up to 3.2x
+    # at 128k) — decode unaffected.
+    - device: BLACKHOLE_GALAXY
+      # Whole-box concurrency: 32 users x 4 DP engines. max_num_seqs below
+      # pins the per-engine ceiling (default inference would give 128/engine).
+      max_concurrency: 128
+      max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
+      default_impl: true
+      env_vars:
+        # Explicit linear CCL: topology settings do not transfer across device
+        # configs (the P150x8 entry inherits gemma4's ring default on the LB
+        # descriptor; the native galaxy column ring is unmeasured — A/B later).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
+        # On-device decode sampling required on TP so token ids >= 65536 are
+        # reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # Token-chunked prefill; 65536/4096 parity with P150X8/P300X2.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -334,6 +378,40 @@ templates:
         # the parity re-run banked 9x b32@4k throughput (1.26 -> 11.7 tok/s/u)
         # and cleared the corruption bands the old 2048/2048 scheduler shadow
         # had masked.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
+    # WH Galaxy (32x WH) DP=4 — same standard-DP mechanism as the
+    # BLACKHOLE_GALAXY entry above: MESH_DEVICE (4,8) splits into four (1,8)
+    # engines, each exactly a T3K. Per-engine knobs therefore mirror the
+    # validated T3K entry (12 GB/chip context cap, WH linear CCL, async decode
+    # pinned off, 200 MB trace region, tt-metal#55102 prose ceiling ~100k).
+    - device: GALAXY
+      # Whole-box: 32 users x 4 DP engines; max_num_seqs pins per-engine.
+      max_concurrency: 128
+      max_context: 131072  # per engine — same 12 GB/chip cap as T3K (262144 OOMs)
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "(4, 8)"  # Override default TG->(8,4) so DP carves (1,8) engines
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # WH concurrent-decode caveat + async pin: see the T3K entry above.
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000  # WH budget (see T3K note); not BH's 512 MB
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # No async_scheduling on Wormhole — see the T3K entry above.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
         enable_chunked_prefill: true
         max_num_batched_tokens: 65536
         long_prefill_token_threshold: 4096
@@ -456,6 +534,45 @@ templates:
         # at 4096 the batch-2 steps starve decode (TPOT 281ms -> 35ms measured).
         max_num_batched_tokens: 65536
         long_prefill_token_threshold: 4096
+    # BH Galaxy (32x P150) native, DP=4 (2026-09-03 bring-up): four physical-
+    # column (1,8) engines via the plugin's standard-DP discovery (see the 31B
+    # BLACKHOLE_GALAXY entry for the mechanism and gates). Config mirrors the
+    # 12B P150X8 target entry: bounded sliding + batched prefill + eager 4k
+    # chunks — gated/traced prefill wedges 12B under mixed prefill+decode
+    # concurrency (G7, cross-platform); same known wave-boundary issue applies.
+    - device: BLACKHOLE_GALAXY
+      # Whole-box concurrency: 32 users x 4 DP engines. max_num_seqs below
+      # pins the per-engine ceiling (default inference would give 128/engine).
+      max_concurrency: 128
+      max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
+      default_impl: true
+      env_vars:
+        G4_FORCE_BATCH_PREFILL: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"  # eager chunks: no prefill traces under bounded
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
+        # On-device decode sampling required on TP so token ids >= 65536 are
+        # reachable (host sampling only sees device 0's vocab shard).
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
     # and SWE-Bench Verified. Dev-only; no tt_metal_commit/version pin needed
@@ -541,6 +658,43 @@ templates:
         # the parity re-run banked 9x b32@4k throughput (1.26 -> 11.7 tok/s/u)
         # and cleared the corruption bands the old 2048/2048 scheduler shadow
         # had masked.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
+    # WH Galaxy (32x WH) DP=4 — four (1,8) T3K-shaped engines (see the 31B
+    # GALAXY entry for the mechanism). Per-engine knobs mirror the validated
+    # 12B T3K entry above: bounded sliding + batched prefill (gated/traced
+    # prefill wedges 12B on 1x8 — G7, cross-platform), chunk 4096, WH linear
+    # CCL and async decode pinned off; same conc32 wave-boundary known issue.
+    - device: GALAXY
+      # Whole-box: 32 users x 4 DP engines; max_num_seqs pins per-engine.
+      max_concurrency: 128
+      max_context: 262144  # per engine — T3K-validated (bounded sliding); prose primes-verified only above ~110k (tt-metal#55102)
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: "(4, 8)"  # Override default TG->(8,4) so DP carves (1,8) engines
+        G4_FORCE_BATCH_PREFILL: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # T3K-measured optimum (see T3K entry)
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"  # inert under bounded; pinned 0 to mirror T3K/P150X8
+        # WH concurrent-decode caveat + async pin: see the T3K entry above.
+        GEMMA4_SUPPORTS_ASYNC_DECODE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 200000000  # WH budget (see T3K note); not BH's 512 MB
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        # No async_scheduling on Wormhole — see the T3K entry above.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
         enable_chunked_prefill: true
         max_num_batched_tokens: 65536
         long_prefill_token_threshold: 4096
