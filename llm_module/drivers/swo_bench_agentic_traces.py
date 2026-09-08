@@ -213,16 +213,19 @@ def build_swo_bench_cmd(
 ) -> List[str]:
     """Construct the ``swo-bench replay`` CLI for one SwarmOne run.
 
-    The scenario (``-s``) selects a recorded multi-turn coding session set;
-    ``-t`` narrows to a single task. ``-j`` caps in-flight requests and ``-r``
-    sets how many distinct conversations stay resident. ``--model-context-length``
-    is always passed (and context auto-resolution disabled) because the
-    Tenstorrent Console ``/v1/models`` does not report the window, which would
-    otherwise abort the run (see SWO_BENCH_REPORT.md).
+    ``--scenario`` selects a recorded multi-turn coding session set; ``--task``
+    narrows to a single task. ``--concurrency`` caps in-flight requests
+    (swo-bench 3.5.x renamed the old ``--concurrent``). The old ``--resident``
+    axis is gone: 3.5.x has no "distinct conversations kept active" knob -- the
+    conversation count comes from the scenario/task itself, and ``-r``/
+    ``--repetitions`` is a different, multiplying axis we deliberately do not
+    pass. ``--model-context-length`` is always passed (and context
+    auto-resolution disabled) because the Tenstorrent Console ``/v1/models``
+    does not report the window, which would otherwise abort the run (see
+    SWO_BENCH_REPORT.md).
 
     Credentials are deliberately absent; see :func:`build_swo_bench_env`.
     """
-    resident = run.resident if run.resident is not None else run.concurrency
     cmd: List[str] = [
         str(swo_bench_executable(venv_python)),
         "replay",
@@ -237,10 +240,8 @@ def build_swo_bench_cmd(
             _swo_endpoint(url),
             "--model",
             model_name,
-            "--concurrent",
+            "--concurrency",
             str(run.concurrency),
-            "--resident",
-            str(resident),
             "--model-context-length",
             str(run.max_context_length),
             "--no-resolve-model-context",
