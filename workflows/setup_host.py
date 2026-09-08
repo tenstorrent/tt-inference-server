@@ -604,29 +604,18 @@ class HostSetupManager:
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
-        # hf-xet (huggingface_hub's default transfer backend since >=0.32) can
-        # hang indefinitely with no error output on some networks, particularly
-        # behind an HTTP(S) proxy like this host's (see huggingface/xet-core#446,
-        # #409 and huggingface/huggingface_hub#4520, #3603). HF_HUB_DISABLE_XET=1
-        # forces the plain-HTTPS path, which tt-studio already had to adopt for
-        # the identical symptom. Bound + retry the download too, so a stall fails
-        # fast instead of silently burning the whole CI job timeout.
+        # hf-xet (huggingface_hub's default transfer backend since >=0.32) collapses
+        # to KB/s or hangs outright on this host's proxied network, while the same
+        # repo's non-Xet files transfer instantly (huggingface/xet-core#446, #409;
+        # huggingface/huggingface_hub#4520, #3603). HF_HUB_DISABLE_XET=1 forces the
+        # plain-HTTPS path. Left deliberately unbounded: a 60GB+ repo can take hours
+        # here, so a per-attempt timeout would risk killing a working download.
         download_env = {**os.environ, "HF_HUB_DISABLE_XET": "1"}
-        download_timeout_s = 60 * 60
         max_attempts = 3
         returncode = 1
         for attempt in range(1, max_attempts + 1):
-            try:
-                result = subprocess.run(
-                    cmd, env=download_env, timeout=download_timeout_s
-                )
-                returncode = result.returncode
-            except subprocess.TimeoutExpired:
-                logger.warning(
-                    f"hf download timed out after {download_timeout_s}s "
-                    f"(attempt {attempt}/{max_attempts})"
-                )
-                continue
+            result = subprocess.run(cmd, env=download_env)
+            returncode = result.returncode
             if returncode == 0:
                 break
             logger.warning(
