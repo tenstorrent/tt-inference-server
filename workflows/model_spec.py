@@ -361,6 +361,23 @@ qwen36_blackhole_vlm_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Qwen/Qwen3.6-35B-A3B (hybrid Gated-DeltaNet/MoE decoder: 30 linear-attention +
+# 10 full-attention layers of 40, 256 routed experts + 1 shared expert, 8 routed
+# experts active per token, ~3B active of ~35B total params) on Blackhole P300X2.
+# tt-metal code path is models/autoports/qwen_qwen3_6_35b_a3b, authored against
+# TT_METAL_REF=vkovacevic/agentic-research/qb2-qwen36-35b-a3b -- a DIFFERENT
+# implementation from qwen36_blackhole above (models/demos/blackhole/qwen36,
+# which serves the dense Qwen3.5/3.6 family): the two are not interchangeable and
+# do not share code. Registered on vllm-tt-plugin as TTQwen3_5MoeForConditionalGeneration
+# (HF config.json architectures[0]="Qwen3_5MoeForConditionalGeneration", matching
+# tt/generator_vllm.py's exported Qwen3_5MoeForConditionalGeneration class) via
+# VLLM_REF=vkovacevic/qwen36-35b-a3b-autoport.
+qwen36_autoport_impl = ImplSpec(
+    impl_id="qwen36_autoport",
+    impl_name="qwen36-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_6_35b_a3b",
+)
 diffusion_gemma_impl = ImplSpec(
     impl_id="diffusion_gemma",
     impl_name="diffusion-gemma",
@@ -387,6 +404,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "qwen36_autoport": qwen36_autoport_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
 }
