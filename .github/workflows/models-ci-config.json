@@ -35,6 +35,27 @@
         }
       }
     },
+    "Llama-3.1-8B": {
+      "implementations": [
+        {
+          "inference_engine": "FORGE",
+          "model_type": "TRAINING",
+          "impl": "trainer-training-lora",
+          "ci": {
+            "nightly": {
+              "devices": [
+                "P150"
+              ]
+            },
+            "release": {
+              "devices": [
+                "P150"
+              ]
+            }
+          }
+        }
+      ]
+    },
     "Llama-3.1-8B-Instruct": {
       "implementations": [
         {
