@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
@@ -13,6 +14,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_QUETZAL_COMMIT_SHA=""
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
@@ -110,6 +112,36 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
+# The optional source archive is supplied by the authenticated caller as a
+# BuildKit secret, so neither Git metadata nor credentials enter an image layer.
+# Installing without dependencies preserves the image's pinned tt-metal/vLLM stack.
+RUN --mount=type=secret,id=quetzal_source,required=false,target=/tmp/quetzal-source.tar \
+    set -eu; \
+    if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
+      printf '%s' "${TT_QUETZAL_COMMIT_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
+        || { echo 'TT_QUETZAL_COMMIT_SHA must be a lowercase 40-hex commit' >&2; exit 1; }; \
+      test -s /tmp/quetzal-source.tar \
+        || { echo 'Quetzal source archive is required for a Quetzal build' >&2; exit 1; }; \
+      mkdir -p /tmp/quetzal-source /tmp/quetzal-wheel; \
+      tar -xf /tmp/quetzal-source.tar -C /tmp/quetzal-source; \
+      cd /tmp/quetzal-source; \
+      . "${PYTHON_ENV_DIR}/bin/activate"; \
+      uv build --wheel --out-dir /tmp/quetzal-wheel; \
+      set -- /tmp/quetzal-wheel/*.whl; \
+      [ "$#" -eq 1 ] && [ -f "$1" ] \
+        || { echo 'Quetzal build must produce exactly one wheel' >&2; exit 1; }; \
+      uv pip install --no-cache-dir --no-deps "$1"; \
+      python -c 'import importlib.metadata as m; import serving.artifact_discovery; import tt_quetzalcoatlus.vllm_plugin; eps = [e for e in m.entry_points(group="vllm.general_plugins") if e.name == "quetzal_model_registry"]; assert len(eps) == 1; assert eps[0].value == "tt_quetzalcoatlus.vllm_plugin:register"'; \
+      cd /; \
+      rm -rf /tmp/quetzal-source /tmp/quetzal-wheel; \
+      { uv cache clean || echo 'WARN: uv cache clean failed'; true; }; \
+    elif [ -e /tmp/quetzal-source.tar ]; then \
+      echo 'Quetzal source archive requires TT_QUETZAL_COMMIT_SHA' >&2; \
+      exit 1; \
+    else \
+      echo 'Building native-only image (TT_QUETZAL_COMMIT_SHA unset)'; \
+    fi
+
 # Build tt-smi in separate venv to avoid conflicts with tt-metal venv
 RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_DIR} \
     && cd ${TT_SMI_DIR} \
@@ -126,8 +158,11 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_D
 # ==============================================================================
 FROM ${TT_METAL_DOCKERFILE_URL} AS runtime
 
+ARG TT_QUETZAL_COMMIT_SHA=""
+
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
-    org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server
+    org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server \
+    org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA}
 
 # IDENTICAL arguments and environment as builder stage
 ARG TT_METAL_COMMIT_SHA_OR_TAG
@@ -139,6 +174,7 @@ ARG APP_DIR="${HOME_DIR}/app"
 
 # IDENTICAL environment variables as builder stage
 ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
+    TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA} \
     SHELL=/bin/bash \
     TZ=America/Los_Angeles \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
@@ -217,6 +253,12 @@ RUN cd ${PYTHON_ENV_DIR}/bin \
     && uv pip install --no-cache-dir -r ${APP_DIR}/requirements.txt \
     && uv cache clean" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${PYTHON_ENV_DIR}
+
+# Prove the plugin survived the builder-to-runtime copy and final requirements install.
+RUN if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
+      /bin/bash -c "source '${PYTHON_ENV_DIR}/bin/activate' \
+        && python -c 'import importlib.metadata as m; import serving.artifact_discovery; import tt_quetzalcoatlus.vllm_plugin; eps = [e for e in m.entry_points(group=\"vllm.general_plugins\") if e.name == \"quetzal_model_registry\"]; assert len(eps) == 1; assert eps[0].value == \"tt_quetzalcoatlus.vllm_plugin:register\"'"; \
+    fi
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
 RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
