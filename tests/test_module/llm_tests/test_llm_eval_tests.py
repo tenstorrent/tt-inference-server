@@ -89,11 +89,21 @@ def _diffusiongemma_eval_task(task_name):
     return next(task for task in tasks if task.task_name == task_name)
 
 
-def _build_eval_test_command(task):
+def _llama_1b_eval_task(task_name):
+    tasks = _eval_config_map["meta-llama/Llama-3.2-1B-Instruct"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
+def _build_eval_test_command(
+    task,
+    *,
+    hf_model_repo="google/diffusiongemma-26B-A4B-it",
+    model_id="diffusiongemma-26B-A4B-it",
+):
     model_spec = SimpleNamespace(
-        model_id="diffusiongemma-26B-A4B-it",
-        model_name="diffusiongemma-26B-A4B-it",
-        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        model_id=model_id,
+        model_name=model_id,
+        hf_model_repo=hf_model_repo,
         device_model_spec=SimpleNamespace(
             max_context=262144,
             max_concurrency=1,
@@ -234,6 +244,28 @@ class TestDiffusionGemmaEvalContract:
         assert config.agent_timeout_sec == 45 * 60
         assert config.agent_kwargs["model_info"]["max_output_tokens"] == 4 * 1024
         assert config.agent_kwargs["llm_kwargs"]["max_tokens"] == 4 * 1024
+
+
+class TestLlama1BLongBenchEvalContract:
+    @pytest.mark.parametrize("task_name", ["longbench_code_e", "longbench_fewshot_e"])
+    def test_code_and_fewshot_match_raw_completion_reference(self, task_name):
+        task = _llama_1b_eval_task(task_name)
+        command = _build_eval_test_command(
+            task,
+            hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
+            model_id="Llama-3.2-1B-Instruct",
+        )
+
+        assert task.use_chat_api is False
+        assert task.apply_chat_template is False
+        assert "--apply_chat_template" not in command
+        assert "/v1/completions" in command[command.index("--model_args") + 1]
+        assert _command_gen_kwargs(command) == {
+            "stream": "False",
+            "temperature": "0",
+            "max_gen_toks": "512",
+            "seed": "42",
+        }
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------
