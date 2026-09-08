@@ -604,31 +604,16 @@ class HostSetupManager:
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
-        # hf-xet (huggingface_hub's default transfer backend since >=0.32) collapses
-        # to KB/s or hangs outright on this host's proxied network, while the same
-        # repo's non-Xet files transfer instantly (huggingface/xet-core#446, #409;
-        # huggingface/huggingface_hub#4520, #3603). HF_HUB_DISABLE_XET=1 forces the
-        # plain-HTTPS path. Left deliberately unbounded: a 60GB+ repo can take hours
-        # here, so a per-attempt timeout would risk killing a working download.
-        download_env = {**os.environ, "HF_HUB_DISABLE_XET": "1"}
-        max_attempts = 3
-        returncode = 1
-        for attempt in range(1, max_attempts + 1):
-            result = subprocess.run(cmd, env=download_env)
-            returncode = result.returncode
-            if returncode == 0:
-                break
-            logger.warning(
-                f"hf download exited with code {returncode} "
-                f"(attempt {attempt}/{max_attempts})"
-            )
-        if returncode != 0 and weights_complete:
+        # hf-xet (huggingface_hub's default backend since >=0.32) collapses to KB/s
+        # on this host's proxied network; HF_HUB_DISABLE_XET=1 forces plain HTTPS.
+        result = subprocess.run(cmd, env={**os.environ, "HF_HUB_DISABLE_XET": "1"})
+        if result.returncode != 0 and weights_complete:
             logger.warning(
                 f"Could not reach Hugging Face to verify weights; "
                 f"using existing weights at {host_weights_dir}"
             )
         else:
-            assert returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+            assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
         logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):
