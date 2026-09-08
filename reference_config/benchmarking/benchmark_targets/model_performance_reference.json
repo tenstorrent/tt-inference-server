@@ -6949,5 +6949,47 @@
                 }
             }
         ]
+    },
+    "Qwen/Qwen3.6-35B-A3B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "MEASURED, not a donor-derived guess: ttft_ms and tput_user come",
+                    "directly from tt-metal doc/optimized_vllm/README.md 'After",
+                    "optimization' row for 128/128/1, concurrency 1, temp 0.0",
+                    "(TT_METAL_REF=vkovacevic/agentic-research/qb2-qwen36-35b-a3b),",
+                    "TTFT 6274.1ms and TPOT-derived decode 16.4688 t/s/u. That",
+                    "measurement used tt-metal's own run_vllm_server harness",
+                    "(--stages serve,benchmark), not tt-inference-server's",
+                    "run.py --workflow benchmark, so num_prompts=8 here is asserted to",
+                    "match this file's fallback point shape, not independently",
+                    "confirmed against that exact request count. 'tput' equals",
+                    "'tput_user' because max_concurrency is 1, where aggregate decode",
+                    "throughput is per-user throughput by definition. No cross-model",
+                    "donor was needed here because a same-model, same-device",
+                    "measurement already exists; Qwen/Qwen3-30B-A3B (closest MoE donor",
+                    "by active params) only has galaxy/t3k (Wormhole) rows, which would",
+                    "have been a cross-architecture transplant onto Blackhole and a",
+                    "strictly worse source than this real number. Replace with a",
+                    "run.py --workflow benchmark measurement before trusting a",
+                    "FUNCTIONAL+ verdict."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6274.1,
+                        "tput_user": 16.4688,
+                        "tput": 16.4688
+                    }
+                }
+            }
+        ]
     }
 }
