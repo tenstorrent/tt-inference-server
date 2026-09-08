@@ -1320,15 +1320,28 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
 MINIMAX_H3_TRACE_REGION_BYTES = 1_005_000_000
 
 
+def _minimax_h3_env_bool(name: str) -> bool | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    key = raw.strip().lower()
+    if key in ("1", "true"):
+        return True
+    if key in ("0", "false"):
+        return False
+    raise ValueError(f"{name}={raw!r} must be 1/true or 0/false")
+
+
 def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) -> dict:
     """Device params for MiniMax-H3, keyed on the mesh shape.
 
     Everything here is derived from the pipeline's per-shape preset so the two can't disagree:
-    fabric follows topology (Ring -> FABRIC_1D_RING), and a `trace_region_size` is reserved when the
-    preset enables `trace_denoise` (the 4x32 quad) -- without it the pipeline's trace capture is
-    fatal. The region is only reserved, so a shape that does not trace pays nothing but address
-    space. `l1_small_size` is mandatory (a bare open fails as "bank size is 0 B"). Ref2VA uses
-    16384: the video VAE's taps=3 encoder clashes with a 65536 pool.
+    fabric follows topology (Ring -> FABRIC_1D_RING), and a `trace_region_size` is reserved when
+    `trace_denoise` is on (preset: the 4x32 quad; override: MINIMAX_H3_TRACE_DENOISE) -- without it
+    the pipeline's trace capture is fatal. The region is only reserved, so a shape that does not
+    trace pays nothing but address space. `l1_small_size` is mandatory (a bare open fails as
+    "bank size is 0 B"). Ref2VA uses 16384: the video VAE's taps=3 encoder clashes with a 65536
+    pool.
     """
     preset = resolve_mesh_preset(mesh_shape)
     router_config = ttnn.FabricRouterConfig()
@@ -1341,7 +1354,9 @@ def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) 
         "fabric_router_config": router_config,
         "l1_small_size": l1_small_size,
     }
-    if preset.get("trace_denoise"):
+    env_trace = _minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE")
+    trace = preset.get("trace_denoise", False) if env_trace is None else env_trace
+    if trace:
         params["trace_region_size"] = MINIMAX_H3_TRACE_REGION_BYTES
     return params
 
@@ -1386,6 +1401,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 weights_dir=self._weights_dir(),
                 task=self.pipeline_task,
                 dit_fsdp=self.dit_fsdp,
+                trace_denoise=_minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE"),
+                bucket_denoise=_minimax_h3_env_bool("MINIMAX_H3_BUCKET_DENOISE"),
             )
         except Exception as e:
             log_exception_chain(
