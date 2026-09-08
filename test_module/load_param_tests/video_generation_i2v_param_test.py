@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING
 import aiohttp
 from report_module.schema import Block
 
+from workflow_module.target_pack import get_target_pack
+
 from .._test_common import BaseTest, HardwareRequirement, TestConfig
 
 if TYPE_CHECKING:
@@ -39,9 +41,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-ACCURACY_REFERENCE_PATH = (
-    "reference_config/evals/eval_targets/model_accuracy_reference.json"
-)
+ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
 
 # Fixture is sourced from the test_fixtures datasets directory, which is
 # the canonical location used by other v2 vision tests as well

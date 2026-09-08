@@ -319,6 +319,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen3-8B` | galaxy, n150, n300, p300, t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
 | `Qwen3.6-27B` | p150x8, p300x2 |
+| `diffusiongemma-26B-A4B-it` | p300x2 |
 | `gemma-3-1b-it` | n150 |
 | `gemma-3-27b-it` | galaxy, p300x2, t3k |
 | `gemma-3-4b-it` | n150, n300, p150, t3k |

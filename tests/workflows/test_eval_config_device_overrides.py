@@ -1,0 +1,126 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+"""Tests for EvalTask per-device overrides (3-tier device-variance schema)."""
+
+import pytest
+
+from reference_config.evals.eval_config import EvalTask, resolve_task_for_device
+
+
+class _FakeDevice:
+    def __init__(self, name):
+        self.name = name
+
+
+def test_no_overrides_returns_task_unchanged():
+    task = EvalTask(task_name="t")
+    assert resolve_task_for_device(task, "GALAXY") is task
+    assert resolve_task_for_device(task, None) is task
+
+
+def test_matching_device_applies_tier2_overrides():
+    task = EvalTask(
+        task_name="t",
+        max_concurrent=32,
+        device_overrides={
+            "SUPER_CLUSTER": {
+                "max_concurrent": 38,
+                "use_chat_api": True,
+                "gen_kwargs": {"stream": "True"},
+            }
+        },
+    )
+    resolved = resolve_task_for_device(task, "SUPER_CLUSTER")
+    assert resolved.max_concurrent == 38
+    assert resolved.use_chat_api is True
+    assert resolved.gen_kwargs == {"stream": "True"}
+    # tier-1 identity untouched
+    assert resolved.task_name == "t"
+    # base task unchanged (frozen dataclass)
+    assert task.max_concurrent == 32
+
+
+def test_device_enum_and_case_insensitive_matching():
+    task = EvalTask(
+        task_name="t",
+        device_overrides={"galaxy": {"max_concurrent": 16}},
+    )
+    assert resolve_task_for_device(task, _FakeDevice("GALAXY")).max_concurrent == 16
+    assert resolve_task_for_device(task, "Galaxy").max_concurrent == 16
+
+
+def test_non_matching_device_returns_task_unchanged():
+    task = EvalTask(
+        task_name="t",
+        device_overrides={"SUPER_CLUSTER": {"max_concurrent": 38}},
+    )
+    assert resolve_task_for_device(task, "GALAXY") is task
+
+
+def test_tier1_override_rejected():
+    with pytest.raises(ValueError, match="device-invariant"):
+        EvalTask(
+            task_name="t",
+            device_overrides={"GALAXY": {"task_name": "other"}},
+        )
+
+
+def test_unknown_field_rejected():
+    with pytest.raises(ValueError, match="unknown EvalTask fields"):
+        EvalTask(
+            task_name="t",
+            device_overrides={"GALAXY": {"not_a_field": 1}},
+        )
+
+
+def test_chat_api_override_reinfers_eval_class():
+    task = EvalTask(
+        task_name="t",
+        device_overrides={"SUPER_CLUSTER": {"use_chat_api": True}},
+    )
+    assert task.eval_class == "local-completions"
+    resolved = resolve_task_for_device(task, "SUPER_CLUSTER")
+    assert resolved.eval_class == "local-chat-completions"
+
+
+def test_chat_api_off_override_reinfers_eval_class_back():
+    # The reverse direction: the base task's eval_class was already inferred to
+    # the chat variant; overriding use_chat_api off must flip it back.
+    task = EvalTask(
+        task_name="t",
+        use_chat_api=True,
+        device_overrides={"GALAXY": {"use_chat_api": False}},
+    )
+    assert task.eval_class == "local-chat-completions"
+    resolved = resolve_task_for_device(task, "GALAXY")
+    assert resolved.use_chat_api is False
+    assert resolved.eval_class == "local-completions"
+
+
+def test_evals_meta_override_preserves_batch_size():
+    # EVALS_META inference moves max_concurrent into batch_size (and Nones the
+    # former). Re-inference after replace() must not wipe batch_size to None —
+    # neither for an explicit batch_size override nor for an unrelated one.
+    from workflow_module.engine_types import WorkflowVenvType
+
+    task = EvalTask(
+        task_name="meta_ifeval",
+        workflow_venv_type=WorkflowVenvType.EVALS_META,
+        max_concurrent=32,
+        device_overrides={
+            "GALAXY": {"batch_size": 64},
+            "SUPER_CLUSTER": {"gen_kwargs": {"stream": "True"}},
+        },
+    )
+    assert task.batch_size == 32
+    assert task.max_concurrent is None
+
+    resolved = resolve_task_for_device(task, "GALAXY")
+    assert resolved.batch_size == 64
+    assert resolved.max_concurrent is None
+
+    resolved_unrelated = resolve_task_for_device(task, "SUPER_CLUSTER")
+    assert resolved_unrelated.batch_size == 32
+    assert resolved_unrelated.max_concurrent is None

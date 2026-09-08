@@ -12,7 +12,7 @@ do.
 
 ```bash
 python run_workflows.py \
-    --model stable-diffusion-xl-base-1.0 \
+    --model stabilityai/stable-diffusion-xl-base-1.0 \
     --workflow release \
     --device n150 \
     --service-port 8000
@@ -30,7 +30,7 @@ aggregated summary report on top of the per-run reports:
 
 ```bash
 python run_workflows.py \
-    --model stable-diffusion-xl-base-1.0 \
+    --model stabilityai/stable-diffusion-xl-base-1.0 \
     --workflow benchmarks \
     --device n150 \
     --repeat 10
@@ -125,10 +125,10 @@ process-global accumulator, runs acceptance, and generates the report.
 
 ```python
 WORKFLOW_REGISTRY = {
-    "evals":      EvalsWorkflow,       # task_types = (EVALUATION,)
+    "evals": EvalsWorkflow,  # task_types = (EVALUATION,)
     "benchmarks": BenchmarksWorkflow,  # task_types = (BENCHMARK,)
-    "spec_tests": SpecTestsWorkflow,   # task_types = (SPEC_TESTS,)
-    "release":    ReleaseWorkflow,     # composes the three above
+    "spec_tests": SpecTestsWorkflow,  # task_types = (SPEC_TESTS,)
+    "release": ReleaseWorkflow,  # composes the three above
 }
 ```
 
@@ -236,7 +236,7 @@ manual venv setup required:
 
 ```bash
 python launchers/run_prefix_cache.py \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --workflow benchmarks \
     --device gpu \
     --service-port 8000 \
@@ -334,7 +334,7 @@ worker(s) with `--prefix-cache-metrics-url` (forwarded to AIPerf's
 
 ```bash
 python launchers/run_prefix_cache.py \
-    --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+    --model meta-llama/Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
     --service-port 8000 --prefix-cache --prefix-cache-preset ci \
     --prefix-cache-metrics-url bh-glx-120-a03u08.exabox.tenstorrent.com:9000 \
     --jwt-secret "$JWT_SECRET"
@@ -379,7 +379,7 @@ re-execs `run_workflows.py` inside it:
 
 ```bash
 python launchers/run_spec_decode.py \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --runtime-model-spec-json [spec_decode_runtime_spec.json] \
     --workflow benchmarks \
     --device gpu \
@@ -397,19 +397,23 @@ with speculative decoding enabled.
 
 ## Agentic evals
 
-Run agentic accuracy evals (Terminal-Bench and SWE-bench) directly against an
-already-up OpenAI-compatible LLM server. The workflow is `agentic`; it bypasses
-the generic media-task dispatcher and emits `Block(kind="evals")` results through
-the same report/acceptance path as other evals.
+Run agentic accuracy evals (Terminal-Bench, tau3-bench, and SWE-bench) directly
+against an already-up OpenAI-compatible LLM server. The workflow is `agentic`; it
+bypasses the generic media-task dispatcher and emits `Block(kind="evals")` results
+through the same report/acceptance path as other evals.
 
-Agentic harnesses require the dedicated `EVALS_AGENTIC` venv (Harbor,
-mini-swe-agent, SWE-bench, and related tools). Use the thin launcher
+Every agentic eval runs through [Harbor](https://github.com/harbor-framework/harbor):
+Harbor acquires the tasks, sandboxes them (`docker` locally, `kubernetes` on a
+cluster), installs and runs the agent *inside* the task container, and scores. So
+the dedicated `EVALS_AGENTIC` venv holds only the Harbor CLI — the agents
+(mini-swe-agent, terminus-2, ...) and per-benchmark graders are container-side and
+are not host dependencies. Use the thin launcher
 `run_agentic.py`, which selects/creates that venv and re-execs `run_workflows.py`
 inside it:
 
 ```bash
 MODEL_SPECS_ENV=dev python launchers/run_agentic.py \
-    --model Qwen3.6-27B \
+    --model Qwen/Qwen3.6-27B \
     --workflow agentic \
     --device gpu \
     --service-port 8000 \
@@ -445,6 +449,16 @@ The workflow checks the server via `/v1/models`, sets OpenAI-compatible
 environment variables (`OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_API_BASE`),
 then runs each configured agentic task through the LLM driver/parser
 adapters.
+
+The progress watchdog reads Harbor's `result.json` file. It first polls and logs
+after one minute, then repeats every minute. It logs wave and stall deadlines by
+default. Set `HARBOR_ENFORCE_AGENT_DEADLINE=true` to enforce these heuristic
+deadlines. Each wave budget includes the agent timeout and the configured
+non-agent overhead. The maximum run time also includes one startup grace period.
+
+`HARBOR_TIMEOUT_SEC` sets an unconditional wall-clock limit. This limit applies
+when heuristic deadlines are disabled. On timeout, the workflow keeps the
+partial result for diagnostics and returns exit code 124.
 
 By default every `EVALS_AGENTIC` task configured for the model runs. To run only
 a subset, pass `--agentic-benchmark` (forwarded from `run.py`) with a
@@ -865,7 +879,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 │   ├── benchmark_configs.py        # get_llm_configs(model_spec, device)
 │   ├── drivers/                    # base, agentic, aiperf, aiperf_agentic_traces, aiperf_prefix_cache, genai_perf, guidellm, inferencex, vllm
 │   ├── parsers/                    # mirror of drivers/
-│   ├── agentic/                    # Terminal-Bench/SWE-bench harness wrappers
+│   ├── agentic/                    # Harbor CLI wrapper (terminal-bench/tau3/SWE-bench)
 │   ├── agentic_traces/             # Agentic trace-replay run expansion (config + mode → runs)
 │   └── prefix_cache/               # Scenario manifest + expander + CI mooncake trace
 ├── tests/                          # pytest tests for the modules above

@@ -40,6 +40,15 @@ class LLMRunConfig:
     # file instead of ``--dataset-name random``. Selection happens when the
     # sweep is built, not inside the driver.
     custom_dataset_path: Optional[Path] = None
+    # Acceptance severity ("must"/"should") for this sweep point, propagated
+    # from the benchmark params to the emitted block. None => default (must).
+    priority: Optional[str] = field(default=None, compare=False)
+    # Per-metric severity keyed by PerformanceTarget attribute; lets a block
+    # mixing must/should targets downgrade individual metric failures.
+    target_priorities: Optional[dict] = field(default=None, compare=False)
+    # ``vllm bench serve --goodput`` SLO constraints for this sweep point
+    # ("ttft:2000 tpot:20 e2el:20000", milliseconds). None = not measured.
+    goodput: Optional[str] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

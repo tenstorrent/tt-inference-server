@@ -45,8 +45,6 @@ bool Session::clearInFlight() {
   parentThinkCount_ = 0;
   onComplete_ = nullptr;
   onNoHashes_ = nullptr;
-  inThinkingBlock_ = false;
-  accumulatedThinkTokens_ = 0;
   return true;
 }
 
@@ -62,39 +60,24 @@ void Session::initTokenAccumulator(
   initialBlocks_ = std::move(initialBlocks);
   parentHash_ = initialBlocks_.empty() ? 0 : initialBlocks_.back().hash;
   // Think tokens live in the KV cache but are excluded from block hashes, so
-  // re-hashing the prompt cannot recover the count from earlier turns (the
-  // prompt does not re-encode prior <think> markers). Seed it explicitly from
-  // the matched KV prefix on a HIT so the count accumulates across turns.
+  // re-hashing the prompt cannot recover the count from earlier turns (a later
+  // prompt no longer carries the prior turn's reasoning). Seed it explicitly
+  // from the matched KV prefix on a HIT so the count accumulates across turns.
   parentThinkCount_ = parentThinkCount;
   onComplete_ = std::move(onComplete);
   onNoHashes_ = std::move(onNoHashes);
   generatedTokens_.clear();
   being_generated_ = true;
 
-  // Initialize thinking token tracking
+  // Thinking-token accounting inputs for finalizeAndRegisterHashes().
   auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
   thinkStartTokenId_ = thinkStart;
   thinkEndTokenId_ = thinkEnd;
-  inThinkingBlock_ = false;
-  accumulatedThinkTokens_ = parentThinkCount_;
+  markersInHistory_ = utils::tokenizers::thinkMarkersInHistory();
 }
 
 void Session::addGeneratedToken(uint32_t tokenId) {
   generatedTokens_.push_back(tokenId);
-
-  // Track thinking state using the same marker rules as prefix hashing.
-  const bool thinkingEnabled =
-      thinkStartTokenId_ != utils::tokenizers::kNoTokenId &&
-      thinkEndTokenId_ != utils::tokenizers::kNoTokenId;
-  if (!thinkingEnabled) return;
-
-  if (tokenId == thinkStartTokenId_) {
-    inThinkingBlock_ = true;
-  } else if (tokenId == thinkEndTokenId_) {
-    inThinkingBlock_ = false;
-  } else if (inThinkingBlock_) {
-    ++accumulatedThinkTokens_;  // Only content tokens, not markers
-  }
 }
 
 void Session::finalizeAndRegisterHashes() {
@@ -108,8 +91,8 @@ void Session::finalizeAndRegisterHashes() {
   // Compute new block info continuing from parent (avoids re-hashing matched
   // prefix). Uses thinking-aware hashing to exclude thinking tokens from hash.
   auto newBlocks = utils::getPrefixCacheHashesByBlocksWithThinking(
-      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_, parentHash_,
-      parentThinkCount_);
+      allDeltaTokens, thinkStartTokenId_, thinkEndTokenId_, markersInHistory_,
+      parentHash_, parentThinkCount_);
 
   // Only register if new blocks were formed
   if (!newBlocks.empty()) {
