@@ -1456,9 +1456,10 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         # tracing forces bucketing on (pipeline: `bucket_denoise = trace_denoise or bucket_denoise`), so the
         # resolved values on the pipeline object -- not the envs -- are what operators and the live tests need.
         p = self.pipeline
+        construction_warmup = os.environ.get("MINIMAX_H3_CONSTRUCTION_WARMUP", "1") != "0"   # the kwarg passed above
         self.logger.info(
             f"Device {self.device_id}: Model loaded -- denoise modes: trace_denoise={p.trace_denoise} "
-            f"bucket_denoise={p.bucket_denoise} construction_warmup={p.warmup if hasattr(p, 'warmup') else 'n/a'} "
+            f"bucket_denoise={p.bucket_denoise} construction_warmup={construction_warmup} "
             f"(env MINIMAX_H3_TRACE_DENOISE={os.environ.get('MINIMAX_H3_TRACE_DENOISE', 'unset')!r}, "
             f"MINIMAX_H3_BUCKET_DENOISE={os.environ.get('MINIMAX_H3_BUCKET_DENOISE', 'unset')!r}, "
             f"MINIMAX_H3_CONSTRUCTION_WARMUP={os.environ.get('MINIMAX_H3_CONSTRUCTION_WARMUP', 'unset')!r})"
