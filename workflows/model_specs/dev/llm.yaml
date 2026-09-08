@@ -1022,6 +1022,80 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen/Qwen3.6-35B-A3B: hybrid Gated-DeltaNet/MoE decoder (30 linear-attention +
+# 10 full-attention layers of 40; 256 routed experts + 1 shared, 8 routed active
+# per token; ~3B active of ~35B total params). Distinct tt-metal implementation
+# from qwen36_blackhole above -- impl: qwen36_autoport points at
+# models/autoports/qwen_qwen3_6_35b_a3b, not models/demos/blackhole/qwen36 -- so
+# this is a new (model_name, device) pair and default_impl: true here does not
+# collide with any other spec.
+# tt-metal: TT_METAL_REF=vkovacevic/agentic-research/qb2-qwen36-35b-a3b.
+# vllm-tt-plugin: VLLM_REF=vkovacevic/qwen36-35b-a3b-autoport (registers
+# TTQwen3_5MoeForConditionalGeneration; client -> vLLM -> model already verified
+# working as of the optimized-vLLM bring-up stage).
+# HF checkpoint is image-text-to-text (vision_config present, pipeline_tag
+# image-text-to-text) but the tt-metal autoport implementation is text-only (no
+# vision tower / pixel_values handling in tt/*.py) -- declaring text-only here,
+# not a VLM, until a vision path is brought up.
+# Bring-up is validated only through optimized-vLLM (functional/fused/optimized/
+# multichip decoder, full model, datatype sweep, vLLM, optimized vLLM all
+# passed); benchmarks/evals/spec_tests wiring below is new and UNVALIDATED
+# against the actual release workflow. First release run is expected to surface
+# genuine gaps, not just config bugs -- see the eval/benchmark comments below.
+- weights:
+    - Qwen/Qwen3.6-35B-A3B
+  impl: qwen36_autoport
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      # max_num_seqs=32, max_model_len=262144, block_size=32: the exact vLLM
+      # launch configuration measured passing in tt-metal
+      # doc/optimized_vllm/work_log.md (run_vllm_server --stages serve,benchmark),
+      # not a template default. MESH_DEVICE is left at the DeviceTypes-inferred
+      # default (P300x2 -> 2x2 mesh), matching the validated "local 2x2
+      # Blackhole p300c mesh" in doc/multichip_decoder/README.md; no override
+      # needed (unlike qwen36_blackhole's MESH_DEVICE="(1,4)" override, which is
+      # for a different TP layout on the same physical device).
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: true
+      vllm_args:
+        block_size: "32"
+        # Overlap host schedule with device decode; measured in the same
+        # run_vllm_server command above (--additional-server-args=--async-scheduling).
+        async_scheduling: true
+        # vLLM deployment recipe from the HF model card
+        # (https://huggingface.co/Qwen/Qwen3.6-35B-A3B, "vLLM" section) and
+        # matches the qwen36_blackhole Qwen3.6-27B entry above.
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        # fabric_config/trace_region_size: measured passing in
+        # doc/optimized_vllm/work_log.md (`--tt-config
+        # '{"trace_region_size":384000000,"fabric_config":"FABRIC_1D_RING"}'`).
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 384000000
+        # ASSUMED carried over unchanged from the model's own optimized-vLLM
+        # measurement above, not independently re-verified against this exact
+        # tt-inference-server dev-spec launch path.
+        # sample_on_device_mode=all, NOT the decode_only default other TP-mesh
+        # Qwen specs in this file use: doc/optimized_vllm/README.md documents
+        # that this adapter reuses the full-model split LM-head/sampler contract
+        # for BOTH prefill and decode ("no host argmax, full-logits readback, or
+        # generic slow sampling path"); there is no separate decode-only
+        # sampling path implemented, and decode_only was never exercised here.
+        sample_on_device_mode: all
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-35B-A3B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3-32B
   impl: qwen3_32b_galaxy
