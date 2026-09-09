@@ -379,6 +379,20 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # GLM-5.2 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay only;
+    # no SwarmOne scenario is recorded for this model. Same InferenceX pin as
+    # Kimi above so numbers stay comparable across the two models.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_GLM-5.2_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=80,
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
