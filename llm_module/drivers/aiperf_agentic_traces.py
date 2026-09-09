@@ -541,8 +541,53 @@ def parse_aiperf_output(
         if value:
             metrics[key] = value
 
-    metrics.update(_parse_prefix_cache_metrics(artifact_dir, metrics_urls))
+    # Which measured hit rate wins depends on whether an endpoint was named.
+    # ``--agentic-traces-metrics-url`` means the caller pointed us at the worker
+    # that owns the prefix cache, so its counters are authoritative. With no URL
+    # the only scrape is the load target, and a Dynamo frontend is
+    # prefix-unaware -- whatever counters it happens to expose describe the
+    # frontend, not the cache -- so the server's own per-response usage
+    # accounting is the trustworthy number instead.
 
+    engine_metrics = (
+        _parse_prefix_cache_metrics(artifact_dir, metrics_urls) if metrics_urls else {}
+    )
+    if engine_metrics:
+        metrics.update(engine_metrics)
+    else:
+        metrics.update(_usage_cache_hit_metrics(summary))
+
+    return metrics
+
+
+def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    """Measured prefix-cache hit rate from the server's own usage accounting.
+    
+    Returns ``{}`` when the tags are absent, so the report drops the column
+    rather than publishing a misleading 0%.
+    """
+
+    def _avg(tag: str) -> Optional[float]:
+        block = summary.get(tag)
+        if not isinstance(block, Mapping):
+            return None
+        value = block.get("avg")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    cached = _avg("total_usage_prompt_cache_read_tokens")
+    prompt = _avg("total_usage_prompt_tokens")
+
+    pct = _avg("overall_usage_prompt_cache_read_pct")
+    if pct is None and cached is not None and prompt:
+        pct = 100.0 * cached / prompt
+    if pct is None:
+        return {}
+
+    metrics: Dict[str, Any] = {"measured_prefix_cache_hit_pct": pct}
+    if cached is not None:
+        metrics["prefix_cache_hit_tokens_measured"] = cached
+    if prompt is not None:
+        metrics["prefix_cache_prompt_tokens_measured"] = prompt
     return metrics
 
 
