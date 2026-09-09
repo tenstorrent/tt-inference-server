@@ -13,12 +13,11 @@
 # blacksmith pin (tt-media-server/.../forge_runners/requirements.txt) or the
 # tt-forge pin changes.
 #
-# Regenerated from a green single-chip P150 run on 2026-09-01 (job
-# af3eab19-fc5b-48cc-9387-2db7f5c8ca4a): values below are the observed
-# train_loss/val_loss from GET /v1/jobs/{id}/metrics. Because the runner is
-# non-deterministic (deterministic=False), treat these as a reference
-# trajectory, not exact goldens — re-regenerate if the blacksmith/forge pins
-# move.
+# Regenerated from a green single-chip P150 run on 2026-09-09: values below
+# are the observed train_loss/val_loss from GET /v1/jobs/{id}/metrics. Because
+# the runner is non-deterministic (deterministic=False), treat these as a
+# reference trajectory, not exact goldens — re-regenerate if the
+# blacksmith/forge pins move.
 
 # Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
 # small so a nightly P150 job stays bounded while still exercising the full
@@ -57,9 +56,9 @@ checks:
 
 # Per-checkpoint expectations (steps must line up with steps_freq / val_steps_freq).
 expected_losses:
-  - {global_step: 5,  metric_name: train_loss, value: 5.73}
-  - {global_step: 10, metric_name: train_loss, value: 5.12}
-  - {global_step: 15, metric_name: train_loss, value: 3.66}
-  - {global_step: 5,  metric_name: val_loss,   value: 5.10}
-  - {global_step: 10, metric_name: val_loss,   value: 3.88}
-  - {global_step: 15, metric_name: val_loss,   value: 2.35}
+  - {global_step: 5,  metric_name: train_loss, value: 5.51}
+  - {global_step: 10, metric_name: train_loss, value: 4.29}
+  - {global_step: 15, metric_name: train_loss, value: 2.57}
+  - {global_step: 5,  metric_name: val_loss,   value: 4.93}
+  - {global_step: 10, metric_name: val_loss,   value: 3.08}
+  - {global_step: 15, metric_name: val_loss,   value: 2.02}
