@@ -330,10 +330,13 @@ def parse_aiperf_output(
         value = summary.get(tag)
         return value if isinstance(value, Mapping) else {}
 
-    def _stat(tag: str, stat: str = "avg", default: Any = 0) -> Any:
+    def _stat(tag: str, stat: str = "avg", default: Any = None) -> Any:
         return _block(tag).get(stat, default)
 
     def _int(tag: str, stat: str = "avg") -> int:
+        # Counts keep a zero default: an absent counter genuinely means zero
+        # (no errors, no overflows), unlike a metric, where absence must stay
+        # distinguishable from a measured 0.0 for downstream grading.
         value = _stat(tag, stat)
         return int(value) if isinstance(value, (int, float)) else 0
 
@@ -348,24 +351,24 @@ def parse_aiperf_output(
     metrics: Dict[str, Any] = {
         # Latency. TTFT carries the full spread because it is the headline
         # metric for long-context agentic prefill.
-        "mean_ttft_ms": ttft.get("avg", 0),
-        "median_ttft_ms": ttft.get("p50", 0),
-        "p90_ttft_ms": ttft.get("p90", 0),
-        "p95_ttft_ms": ttft.get("p95", 0),
-        "p99_ttft_ms": ttft.get("p99", 0),
-        "min_ttft_ms": ttft.get("min", 0),
-        "max_ttft_ms": ttft.get("max", 0),
-        "std_ttft_ms": ttft.get("std", 0),
-        "mean_tpot_ms": itl.get("avg", 0),
-        "median_tpot_ms": itl.get("p50", 0),
-        "p90_tpot_ms": itl.get("p90", 0),
-        "p95_tpot_ms": itl.get("p95", 0),
-        "p99_tpot_ms": itl.get("p99", 0),
-        "mean_e2el_ms": e2el.get("avg", 0),
-        "median_e2el_ms": e2el.get("p50", 0),
-        "p90_e2el_ms": e2el.get("p90", 0),
-        "p95_e2el_ms": e2el.get("p95", 0),
-        "p99_e2el_ms": e2el.get("p99", 0),
+        "mean_ttft_ms": ttft.get("avg"),
+        "median_ttft_ms": ttft.get("p50"),
+        "p90_ttft_ms": ttft.get("p90"),
+        "p95_ttft_ms": ttft.get("p95"),
+        "p99_ttft_ms": ttft.get("p99"),
+        "min_ttft_ms": ttft.get("min"),
+        "max_ttft_ms": ttft.get("max"),
+        "std_ttft_ms": ttft.get("std"),
+        "mean_tpot_ms": itl.get("avg"),
+        "median_tpot_ms": itl.get("p50"),
+        "p90_tpot_ms": itl.get("p90"),
+        "p95_tpot_ms": itl.get("p95"),
+        "p99_tpot_ms": itl.get("p99"),
+        "mean_e2el_ms": e2el.get("avg"),
+        "median_e2el_ms": e2el.get("p50"),
+        "p90_e2el_ms": e2el.get("p90"),
+        "p95_e2el_ms": e2el.get("p95"),
+        "p99_e2el_ms": e2el.get("p99"),
         "mean_ttst_ms": _stat("time_to_second_token"),
         # Distinct from TTFT on a reasoning model: TTFT is the first token of any
         # kind, this is the first token the user actually sees, so the gap is
@@ -381,22 +384,23 @@ def parse_aiperf_output(
         # whole request wall-clock, so it is the honest user-visible speed for
         # a long-prefill agentic turn (40 vs 119 tok/s/user in practice).
         "output_token_throughput": _stat("output_token_throughput"),
-        "output_token_throughput_per_user": per_user.get("avg", 0),
-        "median_output_token_throughput_per_user": per_user.get("p50", 0),
-        "mean_e2e_norm_intvty": e2e_per_user.get("avg", 0),
+        "output_token_throughput_per_user": per_user.get("avg"),
+        "median_output_token_throughput_per_user": per_user.get("p50"),
+        "mean_e2e_norm_intvty": e2e_per_user.get("avg"),
         # Tail percentiles read off the low end: this is a rate, so the slow
         # tail is the bottom of the distribution. A "p90" here means what the
         # slowest 10% of requests saw, matching p90_e2el_ms above (and
         # InferenceX's e2e_norm_intvty, which grades the same way). Reading
         # AIPerf's own p90 would report the *fastest* decile instead.
-        "p75_e2e_norm_intvty": e2e_per_user.get("p25", 0),
-        "p90_e2e_norm_intvty": e2e_per_user.get("p10", 0),
-        "p95_e2e_norm_intvty": e2e_per_user.get("p5", 0),
+        "p75_e2e_norm_intvty": e2e_per_user.get("p25"),
+        "p90_e2e_norm_intvty": e2e_per_user.get("p10"),
+        "p95_e2e_norm_intvty": e2e_per_user.get("p5"),
         "input_token_throughput": _stat("input_token_throughput"),
         "total_token_throughput": _stat("total_token_throughput"),
         "request_throughput": _stat("request_throughput"),
         # Requests/sec meeting every --goodput SLO. AIPerf emits this only
-        # when those bars were passed, so it stays 0 for a run with no SLOs.
+        # when those bars were passed, so it is absent for a run with no
+        # SLOs -- and goodputPct stays unreported rather than reading as 0%.
         "goodput": _stat("goodput"),
         # Prefill/decode split, which is the main serving insight for
         # long-context agentic replay. "effective" averages over the whole run
@@ -451,6 +455,13 @@ def parse_aiperf_output(
         "connection_reuse_rate": _stat("http_req_connection_reused"),
         "mean_http_req_waiting_ms": _stat("http_req_waiting"),
     }
+
+    # A metric the export never contained must stay absent, not read as a
+    # measured 0.0: the sweep export omits what a run did not produce, and the
+    # requirements grading compares against targets -- a defaulted 0.0 would
+    # pass any lower-is-better latency target vacuously. Counts are exempt by
+    # construction (``_int`` above): an absent counter means zero happened.
+    metrics = {key: value for key, value in metrics.items() if value is not None}
 
     # Error-adjusted percentiles: these blocks carry no `avg`, only percentiles,
     # so they read as 0 if fetched like the others. They are absent entirely when
