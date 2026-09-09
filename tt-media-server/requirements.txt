@@ -27,3 +27,8 @@ tqdm
 uvicorn
 requests
 num2words
+cutlet
+fugashi
+unidic-lite
+hangul-romanize
+pypinyin

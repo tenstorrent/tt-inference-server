@@ -17,9 +17,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# seed pinned so the identical request check holds for stochastic TTS models too
 default_payload = {
     "text": "Hello, this is a test of the text to speech system.",
     "response_format": "verbose_json",
+    "seed": 0,
 }
 
 short_text_payload = {

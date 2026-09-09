@@ -177,6 +177,10 @@ AVAILABLE_RUNNERS = {
         "tt_model_runners.z_image_turbo_runner",
         fromlist=["ZImageTurboRunner"],
     ).ZImageTurboRunner(wid),
+    ModelRunners.TT_XTTS_V2: lambda wid: __import__(
+        "tt_model_runners.xtts_v2_runner",
+        fromlist=["XttsV2Runner"],
+    ).XttsV2Runner(wid),
 }
 
 
