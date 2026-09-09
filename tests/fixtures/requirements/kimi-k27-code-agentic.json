@@ -1,0 +1,494 @@
+{
+    "schemaVersion": "2.6.0",
+    "document": {
+      "schemaVersion": "2.6.0",
+      "id": "69ee4a1a-4f9e-48f9-8ed3-33e1371f0b14",
+      "meta": {
+        "title": "Kimi-K2.7-Code Requirements",
+        "customer": "random",
+        "customerId": "random",
+        "author": "random",
+        "status": "in_review",
+        "revision": 1,
+        "createdAt": "2026-09-09T16:56:42.451Z",
+        "updatedAt": "2026-09-09T16:56:42.451Z",
+        "notes": ""
+      },
+      "model": {
+      "name": "zai-org/GLM-5.2",
+      "repoUrl": "https://huggingface.co/zai-org/GLM-5.2",
+        "contextLength": 262144
+      },
+      "deployment": {
+        "environment": "on_prem",
+        "hardware": "SC",
+        "maxConcurrencyPerInstance": 1,
+        "maxInstances": 1
+      },
+      "costAssumptions": {
+        "currency": "USD",
+        "activeBasis": "giant_neocloud",
+        "asOf": "2026-09-02",
+        "source": "InferenceX - https://inferencex.semianalysis.com/inference/glm-5-2"
+      }
+    },
+    "workloads": [
+      {
+        "kind": "agentic",
+        "id": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "name": "New agentic scenario",
+        "oslValues": [],
+        "slo": {
+          "e2elMs": 20000,
+          "tpotMs": 20,
+          "ttftMs": 2000
+        },
+        "agenticWorkload": {
+          "traces": [
+            {
+              "id": "8a460203-50f4-4081-9300-7e8b85ef3cdb",
+              "name": "AgentX - Claude Code",
+              "suiteUrl": "https://docs.nvidia.com/aiperf/tutorials/datasets-inputs/inference-x-agent-x-mvp-benchmark",
+              "interactionMode": "interactive",
+              "share": 1,
+              "turnsPerSession": {
+                "mean": 8,
+                "max": 40
+              },
+              "toolCallsPerTurn": {
+                "mean": 1.5,
+                "max": 5
+              },
+              "contextPolicy": "append_only",
+              "peakContextTokens": 32768,
+              "prefixReusePct": 95,
+              "tokenSpread": {
+                "inputMean": 16000,
+                "inputP95": 64000,
+                "outputMean": 500,
+                "outputP95": 2000
+              },
+              "clientToolLatencyMs": 600
+            }
+          ]
+        },
+        "agenticSweep": [
+          {
+            "concurrency": 1,
+            "ttftMeanMs": 798.82,
+            "ttftP50Ms": 674.35,
+            "ttftP90Ms": 1181.6,
+            "ttftP95Ms": 1825.31,
+            "tpotMeanMs": 2.99,
+            "tpotP50Ms": 2.92,
+            "tpotP90Ms": 3.25,
+            "tpotP95Ms": 3.36,
+            "e2elMeanMs": 6640.2,
+            "e2elP50Ms": 3266.35,
+            "e2elP90Ms": 16475.15,
+            "e2elP95Ms": 20503.15,
+            "reqThroughputRps": 0.07602,
+            "totalThroughputTps": 21149.54344,
+            "decodeThroughputTps": 149.9896,
+            "inputTokensMean": 275639.09124,
+            "inputTokensP95": 526822.45,
+            "outputTokensMean": 1968.75547,
+            "outputTokensP95": 6905.45,
+            "kvCacheHitRatePct": 94.6068248312436,
+            "e2eNormIntvtyP75Tps": 190.451378339202,
+            "e2eNormIntvtyP90Tps": 113.898821250043,
+            "goodputPct": 90
+          },
+          {
+            "concurrency": 4,
+            "ttftMeanMs": 685.75,
+            "ttftP50Ms": 470.27,
+            "ttftP90Ms": 1266.58,
+            "ttftP95Ms": 1653.07,
+            "tpotMeanMs": 3.44,
+            "tpotP50Ms": 3.11,
+            "tpotP90Ms": 3.86,
+            "tpotP95Ms": 4.54,
+            "e2elMeanMs": 4925.88,
+            "e2elP50Ms": 2067.66,
+            "e2elP90Ms": 13016.16,
+            "e2elP95Ms": 18629.93,
+            "reqThroughputRps": 0.17554,
+            "totalThroughputTps": 32759.70424,
+            "decodeThroughputTps": 225.66072,
+            "inputTokensMean": 185628.47544,
+            "inputTokensP95": 579536,
+            "outputTokensMean": 1287.54517,
+            "outputTokensP95": 5388,
+            "kvCacheHitRatePct": 89.8734072417885,
+            "e2eNormIntvtyP75Tps": 162.289232406511,
+            "e2eNormIntvtyP90Tps": 103.524267975378,
+            "goodputPct": 90
+          },
+          {
+            "concurrency": 8,
+            "ttftMeanMs": 664.66,
+            "ttftP50Ms": 420.85,
+            "ttftP90Ms": 1074.32,
+            "ttftP95Ms": 1584.33,
+            "tpotMeanMs": 4.35,
+            "tpotP50Ms": 3.77,
+            "tpotP90Ms": 5.73,
+            "tpotP95Ms": 6.74,
+            "e2elMeanMs": 5082.16,
+            "e2elP50Ms": 2380.66,
+            "e2elP90Ms": 12242.25,
+            "e2elP95Ms": 19102.75,
+            "reqThroughputRps": 0.3688,
+            "totalThroughputTps": 56538.0676,
+            "decodeThroughputTps": 411.93824,
+            "inputTokensMean": 152098.3536,
+            "inputTokensP95": 465826.2,
+            "outputTokensMean": 1116.32733,
+            "outputTokensP95": 4440.85,
+            "kvCacheHitRatePct": 87.2336709908954,
+            "e2eNormIntvtyP75Tps": 146.005090706476,
+            "e2eNormIntvtyP90Tps": 102.768245475034,
+            "goodputPct": 90
+          },
+          {
+            "concurrency": 12,
+            "ttftMeanMs": 698.86,
+            "ttftP50Ms": 402.62,
+            "ttftP90Ms": 1099.32,
+            "ttftP95Ms": 2057.21,
+            "tpotMeanMs": 5.12,
+            "tpotP50Ms": 4.27,
+            "tpotP90Ms": 6.21,
+            "tpotP95Ms": 7.51,
+            "e2elMeanMs": 5624.07,
+            "e2elP50Ms": 2295.74,
+            "e2elP90Ms": 12824.27,
+            "e2elP95Ms": 23344.83,
+            "reqThroughputRps": 0.4613,
+            "totalThroughputTps": 64701.24328,
+            "decodeThroughputTps": 503.6092,
+            "inputTokensMean": 139118.91947,
+            "inputTokensP95": 380789.2,
+            "outputTokensMean": 1091.34195,
+            "outputTokensP95": 4763.25,
+            "kvCacheHitRatePct": 84.0546399188041,
+            "e2eNormIntvtyP75Tps": 137.052124962709,
+            "e2eNormIntvtyP90Tps": 90.7985000402776,
+            "goodputPct": 90
+          },
+          {
+            "concurrency": 16,
+            "ttftMeanMs": 770.79,
+            "ttftP50Ms": 410.63,
+            "ttftP90Ms": 1426.78,
+            "ttftP95Ms": 2086.87,
+            "tpotMeanMs": 6.2,
+            "tpotP50Ms": 4.86,
+            "tpotP90Ms": 7.98,
+            "tpotP95Ms": 9.95,
+            "e2elMeanMs": 6014.18,
+            "e2elP50Ms": 2635.1,
+            "e2elP90Ms": 13970.97,
+            "e2elP95Ms": 22475.18,
+            "reqThroughputRps": 0.69346,
+            "totalThroughputTps": 105186.63624,
+            "decodeThroughputTps": 677.94056,
+            "inputTokensMean": 150754.11306,
+            "inputTokensP95": 519512.9,
+            "outputTokensMean": 977.93128,
+            "outputTokensP95": 4207.4,
+            "kvCacheHitRatePct": 78.6951458278095,
+            "e2eNormIntvtyP75Tps": 112.857207063827,
+            "e2eNormIntvtyP90Tps": 75.1134558364355,
+            "goodputPct": 90
+          },
+          {
+            "concurrency": 64,
+            "ttftMeanMs": 700,
+            "ttftP50Ms": 400,
+            "ttftP90Ms": 1700,
+            "ttftP95Ms": 2200,
+            "tpotMeanMs": 6.2,
+            "tpotP50Ms": 5.1,
+            "tpotP90Ms": 8,
+            "tpotP95Ms": 10,
+            "e2elMeanMs": 6400,
+            "e2elP50Ms": 2900,
+            "e2elP90Ms": 14500,
+            "e2elP95Ms": 28000,
+            "reqThroughputRps": 1,
+            "totalThroughputTps": 200000,
+            "decodeThroughputTps": 890,
+            "inputTokensMean": 140000,
+            "inputTokensP95": 520000,
+            "outputTokensMean": 1000,
+            "outputTokensP95": 4300,
+            "kvCacheHitRatePct": 90,
+            "goodputPct": 90
+          }
+        ],
+        "agenticSweepGeneration": {
+          "anchor": {
+            "kind": "referenceCurve",
+            "referenceCurveId": "rc1",
+            "sourceId": "inferencex",
+            "modelHfId": "zai-org/GLM-5.2",
+            "snapshotId": "inferencex/zai-org/GLM-5.2/2026-09-02T16-32-41-788Z",
+            "queriedAt": "2026-09-02T16:32:41.788Z",
+            "sourceRunDate": "2026-08-18",
+            "sourceRunUrl": "https://github.com/SemiAnalysisAI/InferenceX/actions/runs/32174968310/attempts/1",
+            "configurationId": "inferencex:b300.sglang.fp4.agentic_traces.mtp.colo.single.on.p-tp8ep1dp0w0g8.d-tp8ep1dp0w0g8",
+            "configurationLabel": "b300 · sglang · fp4 · agentic_traces · spec:mtp · colocated · P TP8·EP1·8gpu / D TP8·EP1·8gpu · 8 GPUs total · 5 pts"
+          },
+          "estimationMethodId": "none",
+          "estimationMethodVersion": "2",
+          "mergePolicy": "overwrite",
+          "generatedAt": "2026-09-03T14:30:52.761Z",
+          "affectedOperatingPointKeys": [
+            "1",
+            "4",
+            "8",
+            "12",
+            "16"
+          ],
+          "generatedMetricsChecksum": "fnv1a32:f42a5a44"
+        },
+        "maxConcurrency": 64
+      }
+    ],
+    "items": [
+      {
+        "type": "agentic_operating_point",
+        "scenarioId": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "scenarioName": "New agentic scenario",
+        "concurrency": 1,
+        "traces": [
+          "AgentX - Claude Code (interactive) — 100% of sessions · 8–40 turns/session · 1.5–5 tool calls/turn · append-only, peak 32768 tokens · 95% prefix reuse · 16K–64K in / 500–2K out tokens · tool exec 0.6 s"
+        ],
+        "targets": {
+          "concurrency": 1,
+          "ttftMeanMs": 798.82,
+          "ttftP50Ms": 674.35,
+          "ttftP90Ms": 1181.6,
+          "ttftP95Ms": 1825.31,
+          "tpotMeanMs": 2.99,
+          "tpotP50Ms": 2.92,
+          "tpotP90Ms": 3.25,
+          "tpotP95Ms": 3.36,
+          "e2elMeanMs": 6640.2,
+          "e2elP50Ms": 3266.35,
+          "e2elP90Ms": 16475.15,
+          "e2elP95Ms": 20503.15,
+          "reqThroughputRps": 0.07602,
+          "totalThroughputTps": 21149.54344,
+          "decodeThroughputTps": 149.9896,
+          "inputTokensMean": 275639.09124,
+          "inputTokensP95": 526822.45,
+          "outputTokensMean": 1968.75547,
+          "outputTokensP95": 6905.45,
+          "kvCacheHitRatePct": 94.6068248312436,
+          "e2eNormIntvtyP75Tps": 190.451378339202,
+          "e2eNormIntvtyP90Tps": 113.898821250043,
+          "goodputPct": 90
+        },
+        "methodology": "Replay the scenario's declared agentic trace mix at concurrency 1; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+        "tools": [
+          "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+        ]
+      },
+      {
+        "type": "agentic_operating_point",
+        "scenarioId": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "scenarioName": "New agentic scenario",
+        "concurrency": 4,
+        "traces": [
+          "AgentX - Claude Code (interactive) — 100% of sessions · 8–40 turns/session · 1.5–5 tool calls/turn · append-only, peak 32768 tokens · 95% prefix reuse · 16K–64K in / 500–2K out tokens · tool exec 0.6 s"
+        ],
+        "targets": {
+          "concurrency": 4,
+          "ttftMeanMs": 685.75,
+          "ttftP50Ms": 470.27,
+          "ttftP90Ms": 1266.58,
+          "ttftP95Ms": 1653.07,
+          "tpotMeanMs": 3.44,
+          "tpotP50Ms": 3.11,
+          "tpotP90Ms": 3.86,
+          "tpotP95Ms": 4.54,
+          "e2elMeanMs": 4925.88,
+          "e2elP50Ms": 2067.66,
+          "e2elP90Ms": 13016.16,
+          "e2elP95Ms": 18629.93,
+          "reqThroughputRps": 0.17554,
+          "totalThroughputTps": 32759.70424,
+          "decodeThroughputTps": 225.66072,
+          "inputTokensMean": 185628.47544,
+          "inputTokensP95": 579536,
+          "outputTokensMean": 1287.54517,
+          "outputTokensP95": 5388,
+          "kvCacheHitRatePct": 89.8734072417885,
+          "e2eNormIntvtyP75Tps": 162.289232406511,
+          "e2eNormIntvtyP90Tps": 103.524267975378,
+          "goodputPct": 90
+        },
+        "methodology": "Replay the scenario's declared agentic trace mix at concurrency 4; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+        "tools": [
+          "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+        ]
+      },
+      {
+        "type": "agentic_operating_point",
+        "scenarioId": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "scenarioName": "New agentic scenario",
+        "concurrency": 8,
+        "traces": [
+          "AgentX - Claude Code (interactive) — 100% of sessions · 8–40 turns/session · 1.5–5 tool calls/turn · append-only, peak 32768 tokens · 95% prefix reuse · 16K–64K in / 500–2K out tokens · tool exec 0.6 s"
+        ],
+        "targets": {
+          "concurrency": 8,
+          "ttftMeanMs": 664.66,
+          "ttftP50Ms": 420.85,
+          "ttftP90Ms": 1074.32,
+          "ttftP95Ms": 1584.33,
+          "tpotMeanMs": 4.35,
+          "tpotP50Ms": 3.77,
+          "tpotP90Ms": 5.73,
+          "tpotP95Ms": 6.74,
+          "e2elMeanMs": 5082.16,
+          "e2elP50Ms": 2380.66,
+          "e2elP90Ms": 12242.25,
+          "e2elP95Ms": 19102.75,
+          "reqThroughputRps": 0.3688,
+          "totalThroughputTps": 56538.0676,
+          "decodeThroughputTps": 411.93824,
+          "inputTokensMean": 152098.3536,
+          "inputTokensP95": 465826.2,
+          "outputTokensMean": 1116.32733,
+          "outputTokensP95": 4440.85,
+          "kvCacheHitRatePct": 87.2336709908954,
+          "e2eNormIntvtyP75Tps": 146.005090706476,
+          "e2eNormIntvtyP90Tps": 102.768245475034,
+          "goodputPct": 90
+        },
+        "methodology": "Replay the scenario's declared agentic trace mix at concurrency 8; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+        "tools": [
+          "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+        ]
+      },
+      {
+        "type": "agentic_operating_point",
+        "scenarioId": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "scenarioName": "New agentic scenario",
+        "concurrency": 12,
+        "traces": [
+          "AgentX - Claude Code (interactive) — 100% of sessions · 8–40 turns/session · 1.5–5 tool calls/turn · append-only, peak 32768 tokens · 95% prefix reuse · 16K–64K in / 500–2K out tokens · tool exec 0.6 s"
+        ],
+        "targets": {
+          "concurrency": 12,
+          "ttftMeanMs": 698.86,
+          "ttftP50Ms": 402.62,
+          "ttftP90Ms": 1099.32,
+          "ttftP95Ms": 2057.21,
+          "tpotMeanMs": 5.12,
+          "tpotP50Ms": 4.27,
+          "tpotP90Ms": 6.21,
+          "tpotP95Ms": 7.51,
+          "e2elMeanMs": 5624.07,
+          "e2elP50Ms": 2295.74,
+          "e2elP90Ms": 12824.27,
+          "e2elP95Ms": 23344.83,
+          "reqThroughputRps": 0.4613,
+          "totalThroughputTps": 64701.24328,
+          "decodeThroughputTps": 503.6092,
+          "inputTokensMean": 139118.91947,
+          "inputTokensP95": 380789.2,
+          "outputTokensMean": 1091.34195,
+          "outputTokensP95": 4763.25,
+          "kvCacheHitRatePct": 84.0546399188041,
+          "e2eNormIntvtyP75Tps": 137.052124962709,
+          "e2eNormIntvtyP90Tps": 90.7985000402776,
+          "goodputPct": 90
+        },
+        "methodology": "Replay the scenario's declared agentic trace mix at concurrency 12; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+        "tools": [
+          "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+        ]
+      },
+      {
+        "type": "agentic_operating_point",
+        "scenarioId": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "scenarioName": "New agentic scenario",
+        "concurrency": 16,
+        "traces": [
+          "AgentX - Claude Code (interactive) — 100% of sessions · 8–40 turns/session · 1.5–5 tool calls/turn · append-only, peak 32768 tokens · 95% prefix reuse · 16K–64K in / 500–2K out tokens · tool exec 0.6 s"
+        ],
+        "targets": {
+          "concurrency": 16,
+          "ttftMeanMs": 770.79,
+          "ttftP50Ms": 410.63,
+          "ttftP90Ms": 1426.78,
+          "ttftP95Ms": 2086.87,
+          "tpotMeanMs": 6.2,
+          "tpotP50Ms": 4.86,
+          "tpotP90Ms": 7.98,
+          "tpotP95Ms": 9.95,
+          "e2elMeanMs": 6014.18,
+          "e2elP50Ms": 2635.1,
+          "e2elP90Ms": 13970.97,
+          "e2elP95Ms": 22475.18,
+          "reqThroughputRps": 0.69346,
+          "totalThroughputTps": 105186.63624,
+          "decodeThroughputTps": 677.94056,
+          "inputTokensMean": 150754.11306,
+          "inputTokensP95": 519512.9,
+          "outputTokensMean": 977.93128,
+          "outputTokensP95": 4207.4,
+          "kvCacheHitRatePct": 78.6951458278095,
+          "e2eNormIntvtyP75Tps": 112.857207063827,
+          "e2eNormIntvtyP90Tps": 75.1134558364355,
+          "goodputPct": 90
+        },
+        "methodology": "Replay the scenario's declared agentic trace mix at concurrency 16; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+        "tools": [
+          "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+        ]
+      },
+      {
+        "type": "agentic_operating_point",
+        "scenarioId": "64b4f088-911d-4420-b73c-2ff2d1a16163",
+        "scenarioName": "New agentic scenario",
+        "concurrency": 64,
+        "traces": [
+          "AgentX - Claude Code (interactive) — 100% of sessions · 8–40 turns/session · 1.5–5 tool calls/turn · append-only, peak 32768 tokens · 95% prefix reuse · 16K–64K in / 500–2K out tokens · tool exec 0.6 s"
+        ],
+        "targets": {
+          "concurrency": 64,
+          "ttftMeanMs": 700,
+          "ttftP50Ms": 400,
+          "ttftP90Ms": 1700,
+          "ttftP95Ms": 2200,
+          "tpotMeanMs": 6.2,
+          "tpotP50Ms": 5.1,
+          "tpotP90Ms": 8,
+          "tpotP95Ms": 10,
+          "e2elMeanMs": 6400,
+          "e2elP50Ms": 2900,
+          "e2elP90Ms": 14500,
+          "e2elP95Ms": 28000,
+          "reqThroughputRps": 1,
+          "totalThroughputTps": 200000,
+          "decodeThroughputTps": 890,
+          "inputTokensMean": 140000,
+          "inputTokensP95": 520000,
+          "outputTokensMean": 1000,
+          "outputTokensP95": 4300,
+          "kvCacheHitRatePct": 90,
+          "goodputPct": 90
+        },
+        "methodology": "Replay the scenario's declared agentic trace mix at concurrency 64; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+        "tools": [
+          "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+        ]
+      }
+    ]
+  }
