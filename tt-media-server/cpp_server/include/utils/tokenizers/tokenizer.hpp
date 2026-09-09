@@ -209,11 +209,29 @@ struct StaticTokenizerInfo {
   std::vector<uint32_t> assistantHeaderSequence;
   uint32_t thinkStartTokenId = kNoTokenId;
   uint32_t thinkEndTokenId = kNoTokenId;
+  // See ThinkMarkersInHistory. Default false ("dropped from history").
+  bool thinkStartInHistory = false;
+  bool thinkEndInHistory = false;
 };
 
 /** Per-model thinking marker token IDs (O(1), no tokenizer.json parse). */
 std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model);
 std::pair<uint32_t, uint32_t> thinkTokenIds();
+
+/**
+ * Which think delimiters this model's chat template re-renders once the think
+ * block has become history. Drives prefix-cache position accounting, not
+ * tokenization: every delimiter occupies a KV row, but only the ones the next
+ * prompt no longer carries must be added back when reconstructing the first
+ * free KV index from a block-aligned match. Derive per model with the
+ * `add-model-dynamo` skill's render_think_history.py.
+ */
+struct ThinkMarkersInHistory {
+  bool start = false;
+  bool end = false;
+};
+ThinkMarkersInHistory thinkMarkersInHistoryFor(config::ModelType model);
+ThinkMarkersInHistory thinkMarkersInHistory();
 
 /**
  * Static constants for `model`. Throws std::invalid_argument if no entry

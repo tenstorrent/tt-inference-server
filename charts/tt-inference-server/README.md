@@ -235,7 +235,10 @@ Set per release, typically via `--set`.
 | `impl` | no | `""` | Pin the implementation when a device offers more than one. Defaults to `models.<model>.<engine>.<device>.defaultImpl`. |
 | `hfToken` | yes* | `""` | HuggingFace token. Injected as `HF_TOKEN`. Required unless weights are pre-downloaded via `hfCacheDir`. |
 | `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Mounted read-only at `/mnt/hf-cache`; skips download at startup. |
+| `auth.apiKey` | yes* | `""` | Bearer key clients must send. Stored in the release Secret as `API_KEY` (media/forge) or `VLLM_API_KEY` (vllm). *Required for `media` and `forge` engines unless `auth.disabled=true`: those servers guard their inference routes with a literal bearer key and fall back to a well-known built-in default when unset. |
+| `auth.disabled` | no | `false` | Run the server with authentication off (`NO_AUTH=1`). media/forge only — vLLM is already open when `auth.apiKey` is unset. |
 | `hugepages.enabled` | no | `true` | Whether Tenstorrent boards need 1Gi hugepages. Set `false` on IOMMU + KMD 1.29.0+ clusters to drop the `hugepages-1Gi` request/limit, the `/dev/hugepages-1G` volume + mounts, and the `cleanup-hugepages` initContainer. |
+| `hugepages.size` | no | `""` | Hugepage request/limit when enabled. Empty means one 1Gi page per ASIC of the chosen device (`deviceChipCounts`) — 1Gi on an n150, 8Gi on a T3K, 32Gi on a Galaxy. |
 | `podMonitor.enabled` | no | `false` | Emit a `PodMonitor` scraping the server's `/metrics`. Requires the Prometheus Operator CRDs (`monitoring.coreos.com`); leave `false` on clusters without them. |
 | `podMonitor.labels` | no | `{release: prometheus}` | Labels on the `PodMonitor`; must match your Prometheus's `podMonitorSelector` or it won't be scraped. The default matches tt-telemetry's chart and the kube-prometheus-stack convention (`podMonitorSelector` defaults to `release: <the stack's release name>`); override when yours is named differently. |
 | `podMonitor.interval` | no | `30s` | Scrape interval. |
@@ -263,10 +266,8 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `defaults.service.port` | `8000` | Service port. |
 | `defaults.service.targetPort` | `8000` | Container target port. |
 | `defaults.service.annotations` | `{}` | Annotations applied to the Service. |
-| `defaults.resources.limits.hugepages-1Gi` | `32Gi` | Hugepage limit. Dropped when `hugepages.enabled=false`. (`cpu` and `memory` limits are unset by default.) |
 | `defaults.resources.requests.cpu` | `"6"` | CPU request. |
 | `defaults.resources.requests.memory` | `64Gi` | Memory request (often overridden per impl). |
-| `defaults.resources.requests.hugepages-1Gi` | `32Gi` | Hugepage request. Dropped when `hugepages.enabled=false`. |
 | `defaults.probes.startup.periodSeconds` | `15` | startupProbe poll interval (must be `> 0`). The startupProbe is always rendered — it owns the model compile/warmup window, and while it runs the kubelet suppresses liveness/readiness so a slow compile never triggers a restart. `failureThreshold` is not set here — the Deployment derives it as `ceil(progressDeadlineSeconds / periodSeconds)`, so the startup budget tracks the max compile time and the Pod flips to `1/1` as soon as one poll succeeds. |
 | `defaults.probes.liveness.enabled` | `true` | Enable liveness probe. |
 | `defaults.probes.liveness.path` | `/v1/models` | Liveness probe HTTP path (`/tt-liveness` for non-vllm engines). |
@@ -318,6 +319,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen3-8B` | galaxy, n150, n300, p300, t3k |
 | `Qwen3-VL-32B-Instruct` | t3k |
 | `Qwen3.6-27B` | p150x8, p300x2 |
+| `diffusiongemma-26B-A4B-it` | p300x2 |
 | `gemma-3-1b-it` | n150 |
 | `gemma-3-27b-it` | galaxy, p300x2, t3k |
 | `gemma-3-4b-it` | n150, n300, p150, t3k |
@@ -393,6 +395,29 @@ helm install my-model ./charts/tt-inference-server \
 
 The host path is mounted read-only at `/mnt/hf-cache` inside the container. The chart sets `MODEL_WEIGHTS_DIR` (vLLM) or `MODEL_WEIGHTS_PATH` + `DOWNLOAD_WEIGHTS_FROM_SERVICE=false` (media) accordingly.
 
+### Authentication
+
+The media and forge servers check a literal `Authorization: Bearer $API_KEY` on
+their inference routes (`/health` and `/v1/models` stay open) and fall back to a
+well-known built-in key when `API_KEY` is unset — authenticated-looking, but not
+authenticated. The chart therefore fails the install for those engines until you
+choose:
+
+```bash
+# authenticate with your own key (lands in the release Secret as API_KEY)
+helm install my-model ./charts/tt-inference-server \
+  --set model="Qwen3-Embedding-4B" --set device=n150 \
+  --set auth.apiKey="$(openssl rand -hex 16)"
+
+# or run without auth, e.g. behind your own gateway
+helm install my-model ./charts/tt-inference-server \
+  --set model="Qwen3-Embedding-4B" --set device=n150 \
+  --set auth.disabled=true
+```
+
+vLLM engines need no such gate: they are unauthenticated unless `VLLM_API_KEY`
+is set, which is where `auth.apiKey` lands for them.
+
 ### Extra Environment Variables
 
 Inject arbitrary environment variables via `defaults.extraEnv`. Each entry supports either a literal `value` or a `valueFrom` reference:
@@ -411,6 +436,11 @@ defaults:
 ```
 
 Literal values are written into the ConfigMap. `valueFrom` entries are injected directly into the container spec and are not stored in the ConfigMap.
+
+For `media` and `forge` engines the chart also sets
+`HF_HOME=/home/container_app_user/cache_root/huggingface`, so downloaded weights
+land on the cache volume instead of the container's ephemeral layer and survive a
+Pod restart. vLLM images manage their own weight location under `CACHE_ROOT`.
 
 ### Custom Node Scheduling
 

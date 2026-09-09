@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Sequence, Type
 
 from test_module.task_types import MediaTaskType
-from workflows.workflow_types import ModelType
+from workflow_module.engine_types import ModelType
 
 from .execution import (
     AgenticTracesOptions,
@@ -90,7 +90,7 @@ def _run_sweep_task(logger, label: str, run_sweep) -> TaskOutcome:
 
 def _has_agentic_tasks(ctx) -> bool:
     """True if the run's eval tasks include any EVALS_AGENTIC task."""
-    from workflows.workflow_types import WorkflowVenvType
+    from .engine_types import WorkflowVenvType
 
     tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
     return any(
@@ -308,8 +308,12 @@ class PrefillDecodeWorkflow(WorkflowExecution):
 
     def _inject_model_spec_metadata(self, meta: dict) -> None:
         """Report the served model, not the placeholder catalog spec."""
-        served = meta.get("model_name") or os.environ.get("MODEL")
+        served = (
+            meta.get("model_repo") or meta.get("model_name") or os.environ.get("MODEL")
+        )
         meta["model_repo"] = served
+        # Bare basename in model_name; full served id stays on model_repo.
+        meta["model_name"] = served.rsplit("/", 1)[-1] if served else None
         meta["model_id"] = None
         meta["inference_engine"] = None
         meta["tt_metal_commit"] = None
@@ -455,6 +459,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 preset=opts.preset,
                 warmup_requests=opts.warmup_requests,
                 auth_token=opts.auth_token,
+                metrics_urls=opts.metrics_urls,
                 venv_python=Path(opts.venv_python) if opts.venv_python else None,
             )
         except Exception as e:

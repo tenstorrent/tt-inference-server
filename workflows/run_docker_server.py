@@ -31,6 +31,7 @@ from workflows.utils import (
     get_default_workflow_root_log_dir,
     get_repo_root_path,
     run_command,
+    server_log_file_name,
 )
 from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.workflow_types import (
@@ -449,6 +450,21 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
     return cli_args
 
 
+# Ephemeral in-container store, discarded with the --rm container.
+_EPHEMERAL_TRAINING_STORE_ROOT = "/tmp/tt_training_store"
+
+
+def _resolve_training_store_root(setup_config) -> str:
+    """Container-side $TRAINING_STORE_ROOT for a TRAINING server.
+
+    --host-volume -> writable/persistent cache_root, so keep artifacts there.
+    Default named volume (e.g. CI) is not writable, so use an ephemeral dir.
+    """
+    if setup_config and setup_config.host_model_volume_root:
+        return str(setup_config.cache_root)
+    return _EPHEMERAL_TRAINING_STORE_ROOT
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -574,6 +590,12 @@ def generate_docker_run_command(
             docker_env_vars["NO_AUTH"] = "1"
         elif api_key:
             docker_env_vars["API_KEY"] = api_key
+        if model_spec.model_type == ModelType.TRAINING:
+            # A model spec can override by setting TRAINING_STORE_ROOT in its
+            # env_vars; otherwise pick it from how cache_root is mounted.
+            docker_env_vars.setdefault(
+                "TRAINING_STORE_ROOT", _resolve_training_store_root(setup_config)
+            )
         if _is_cpp_media_spec(model_spec):
             openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
             if openai_api_key:
@@ -764,9 +786,12 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     server_prefix = (
         "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
     )
-    docker_log_file_path = (
-        docker_log_file_dir
-        / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+    docker_log_file_path = docker_log_file_dir / server_log_file_name(
+        server_prefix,
+        timestamp,
+        runtime_config.model,
+        runtime_config.device,
+        runtime_config.workflow,
     )
 
     assert ensure_docker_image(model_spec.docker_image), (
@@ -1125,9 +1150,12 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
         ensure_readwriteable_dir(docker_log_file_dir)
-        docker_log_file_path = (
-            docker_log_file_dir
-            / f"multihost_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+        docker_log_file_path = docker_log_file_dir / server_log_file_name(
+            "multihost",
+            timestamp,
+            runtime_config.model,
+            runtime_config.device,
+            runtime_config.workflow,
         )
 
         # Run Controller container with monitoring

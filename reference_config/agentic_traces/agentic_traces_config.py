@@ -21,9 +21,9 @@ config, and in ``tests/reference_config/test_agentic_traces_config.py``.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
+from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import AgenticTracesMode
 
@@ -35,27 +35,6 @@ AGENTIC_TRACES_MIN_PROFILE_SECONDS = 900
 
 # Scenarios known to enforce AGENTIC_TRACES_MIN_PROFILE_SECONDS.
 _MIN_DURATION_SCENARIOS = frozenset({"inferencex-agentx-mvp"})
-
-
-class TraceSource(Enum):
-    """Where a run's agentic traces come from.
-
-    ``INFERENCEX_AGENTX`` replays the SemiAnalysis Weka coding traces through
-    the AIPerf fork vendored in the InferenceX repo. ``SWARMONE`` replays
-    SwarmOne's recorded coding sessions through its ``swo-bench`` CLI.
-    """
-
-    INFERENCEX_AGENTX = "inferencex_agentx"
-    SWARMONE = "swarmone"
-
-    @classmethod
-    def from_string(cls, name: str) -> "TraceSource":
-        key = name.strip().upper().replace("-", "_")
-        try:
-            return cls[key]
-        except KeyError:
-            valid = ", ".join(sorted(m.value for m in cls))
-            raise ValueError(f"Invalid TraceSource: {name!r}. Valid: {valid}")
 
 
 # Sources that a sweep only runs when it names them explicitly via

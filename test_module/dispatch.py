@@ -25,7 +25,7 @@ from typing import Callable, List, Optional, Tuple
 
 from report_module.schema import Block
 from workflow_module import accept_blocks
-from workflows.workflow_types import ModelType
+from workflow_module.engine_types import ModelType
 
 from ._test_common import (
     SkipTest,
@@ -220,7 +220,7 @@ def _resolve_spec_test_suites(ctx: MediaContext) -> List[dict]:
 
     return (
         TestFilter()
-        .filter_by_model(ctx.model_spec.model_name)
+        .filter_by_model(ctx.model_spec.hf_model_repo)
         .filter_by_device(ctx.device.name.lower())
         .filter_prerequisites_by_engine(ctx.model_spec.inference_engine)
         .get_tests()

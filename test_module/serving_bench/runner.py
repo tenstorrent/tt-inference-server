@@ -32,6 +32,8 @@ from typing import List, Optional
 
 from report_module.schema import Block
 
+from test_module._test_common import report_model_fields
+
 from .presets import preset_env_for_mode
 
 logger = logging.getLogger(__name__)
@@ -143,7 +145,7 @@ def run_serving_bench(ctx, suites: Optional[str] = None) -> List[ServingBenchRes
     accept_blocks(
         blocks,
         envelope={
-            "model_name": getattr(ctx.model_spec, "model_name", ""),
+            **report_model_fields(ctx.model_spec),
             "device": ctx.device.name
             if hasattr(ctx.device, "name")
             else str(ctx.device),

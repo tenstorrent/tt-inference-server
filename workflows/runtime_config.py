@@ -54,6 +54,10 @@ class RuntimeConfig:
     override_tt_config: Optional[str] = None
     vllm_override_args: Optional[str] = None
     runtime_model_spec_json: Optional[str] = None
+    # Path to the LLM-serving requirements document driving this run, if
+    # any. Carried so dispatched children can re-load the document and rebuild
+    # the same off-catalog spec / eval + benchmark content the parent used.
+    requirements_json: Optional[str] = None
 
     # Workflow control
     tools: str = "vllm"
@@ -88,6 +92,7 @@ class RuntimeConfig:
     spec_decode: bool = False
     spec_decode_preset: str = "full"
     spec_decode_warmup_requests: Optional[int] = None
+    spec_decode_metrics_url: Optional[List[str]] = None
 
     # Agentic-traces benchmark. The benchmark parameters themselves live in
     # reference_config/agentic_traces (per ModelSpec); these are only the
@@ -169,6 +174,7 @@ class RuntimeConfig:
             override_tt_config=args.override_tt_config,
             vllm_override_args=args.vllm_override_args,
             runtime_model_spec_json=args.runtime_model_spec_json,
+            requirements_json=getattr(args, "requirements_json", None),
             tools=args.tools,
             goodput=getattr(args, "goodput", None),
             disable_trace_capture=args.disable_trace_capture,
@@ -200,6 +206,7 @@ class RuntimeConfig:
             spec_decode_warmup_requests=getattr(
                 args, "spec_decode_warmup_requests", None
             ),
+            spec_decode_metrics_url=getattr(args, "spec_decode_metrics_url", None),
             agentic_benchmark=getattr(args, "agentic_benchmark", None),
             repeat_evals=getattr(args, "repeat_evals", 1) or 1,
             agentic_traces=getattr(args, "agentic_traces", False),

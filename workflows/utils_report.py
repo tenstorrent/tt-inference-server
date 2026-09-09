@@ -17,6 +17,16 @@ class PerformanceTarget:
     ttft_ms: float = None
     tput_user: float = None
     tput: float = None
+    # Optional latency/throughput targets. Populated by requirements-driven
+    # runs from a sweep point's reference measurements and the scenario's
+    # SLOs (tpot/e2el, lower-is-better) and scalar targets (tput_total =
+    # system throughput, goodput = % of requests meeting the run's --goodput
+    # SLO constraints; both higher-is-better). Left None for catalog perf
+    # references, where they grade as NA (see llm_module/target_checks.py).
+    tpot_ms: float = None
+    e2el_ms: float = None
+    tput_total: float = None
+    goodput: float = None
     tolerance: float = 0.0
 
 
@@ -61,15 +71,16 @@ class PerformanceTargets:
 
 
 def get_performance_targets(
-    model_name: str, device_str: str, model_type: str = None
+    hf_model_repo: str, device_str: str, model_type: str = None
 ) -> PerformanceTargets:
     """Extract device-specific performance targets for a model.
 
-    Handles model name mapping (e.g., distil-whisper variants) and returns
-    parsed performance targets in a type-safe format.
+    Returns parsed performance targets in a type-safe format.
 
     Args:
-        model_name: Name of the model
+        hf_model_repo: Full HF repo id of the model, e.g.
+            'meta-llama/Llama-3.1-8B-Instruct' (matches the keys in
+            model_performance_reference.json)
         device_str: Device string (e.g., 'galaxy', 't3k', 'n150')
         model_type: Model type (e.g., 'AUDIO', 'TEXT', 'CNN') - optional for backward compatibility
 
@@ -82,18 +93,18 @@ def get_performance_targets(
     from workflows.model_spec import model_performance_reference
 
     # Get model performance targets
-    model_data = model_performance_reference.get(model_name, {})
+    model_data = model_performance_reference.get(hf_model_repo, {})
     device_json_list = model_data.get(device_str, [])
 
     # Return first config if available
     if device_json_list:
         logger.info(
-            f"Found performance targets for model '{model_name}' on device '{device_str}'"
+            f"Found performance targets for model '{hf_model_repo}' on device '{device_str}'"
         )
         return PerformanceTargets.from_device_config(device_json_list[0])
 
     logger.warning(
-        f"No performance targets found for model '{model_name}' on device '{device_str}'"
+        f"No performance targets found for model '{hf_model_repo}' on device '{device_str}'"
     )
     return PerformanceTargets()
 
@@ -133,6 +144,22 @@ class BenchmarkTaskParams:
     # outputs; None means run with --no-structured-output (the baseline).
     structured_dataset: str = None
     structured_output_ratio: float = None
+
+    # Acceptance severity for this sweep point ("must"/"should"), set by
+    # requirements-driven runs. None means the default (must) — a failing
+    # target blocks acceptance. Carried onto the emitted benchmark block so
+    # acceptance can downgrade "should" failures to informational.
+    priority: str = None
+    # Per-metric acceptance severity, keyed by PerformanceTarget attribute
+    # (e.g. {"tput_total": "should"}). Requirements-driven runs set this when
+    # a sweep point mixes must- and should-priority targets, so acceptance can
+    # downgrade individual metric failures instead of the whole block.
+    target_priorities: dict = None
+
+    # ``vllm bench serve --goodput`` SLO constraint string for this sweep
+    # point ("ttft:2000 tpot:20 e2el:20000", milliseconds), derived from the
+    # requirements scenario's SLOs. None means goodput is not measured.
+    goodput: str = None
 
     def __post_init__(self):
         self._infer_data()

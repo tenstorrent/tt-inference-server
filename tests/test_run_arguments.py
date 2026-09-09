@@ -106,6 +106,7 @@ def mock_model_spec():
     mock_spec = MagicMock()
     mock_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
     mock_spec.model_name = "Mistral-7B-Instruct-v0.3"
+    mock_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
     mock_spec.tt_metal_commit = "test-commit"
     mock_spec.vllm_commit = "test-vllm-commit"
     mock_spec.inference_engine = "vLLM"
@@ -602,6 +603,7 @@ class TestArgsInference:
         spec = MagicMock()
         spec.model_id = model_id
         spec.model_name = "Mistral-7B-Instruct-v0.3"
+        spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         spec.device_type = DeviceTypes.N150
         spec.inference_engine = "vLLM"
         spec.impl.impl_name = impl_name
@@ -852,6 +854,7 @@ class TestOverrideArgsIntegration:
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
         mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.device_type = DeviceTypes.N150
         mock_model_spec.inference_engine = "vLLM"
         mock_model_spec.impl.impl_name = "tt-transformers"
@@ -876,6 +879,7 @@ class TestOverrideArgsIntegration:
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "test-model-id"
         mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.device_type = "n150"
         mock_model_spec.docker_image = "test:image"
         mock_model_spec.impl.impl_name = "tt-transformers"
