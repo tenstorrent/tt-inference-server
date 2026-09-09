@@ -1317,7 +1317,7 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
 
-MINIMAX_H3_TRACE_REGION_BYTES = 1_005_000_000
+MINIMAX_H3_TRACE_REGION_BYTES = 1_175_000_000
 
 
 def _minimax_h3_env_bool(name: str) -> bool | None:
@@ -1520,17 +1520,24 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         )
 
         self.logger.debug(f"Device {self.device_id}: Inference completed")
-        # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
-        # wants. Without the permute it reads the width as a channel count and raises.
-        frames = output.video[0].permute(1, 2, 3, 0).contiguous().numpy()
+        if getattr(output, "video_format", "rgb_float") == "yuv420":
+            # Planar (F, H*3//2, W) uint8 NUMPY array straight off the device stitch -- already
+            # ffmpeg's rawvideo yuv420p layout, so no permute and no host colour conversion.
+            frames = np.ascontiguousarray(output.video)
+            pixel_format = "yuv420p"
+        else:
+            # (1, 3, F, H, W) in [0, 1] -> (F, H, W, 3), which is what the exporter's rawvideo pipe
+            # wants. Without the permute it reads the width as a channel count and raises.
+            frames = output.video[0].permute(1, 2, 3, 0).contiguous().numpy()
+            pixel_format = "rgb24"
         audio = output.audio[0].numpy()
 
         # video_runner set export_in_runner=False: hand the raw a/v to its encoder thread to mux.
         if not self.export_in_runner:
-            return VideoAudioResult(frames, audio, output.sampling_rate, output.fps)
+            return VideoAudioResult(frames, audio, output.sampling_rate, output.fps, pixel_format)
 
         path = VideoManager().export_to_mp4_with_audio(
-            frames, audio, output.sampling_rate, fps=output.fps
+            frames, audio, output.sampling_rate, fps=output.fps, pixel_format=pixel_format
         )
         # A **list**, one entry per request in the batch -- `base_service.py:40` and
         # `device_worker.py:115` both do `results[0]`. Returning the bare path string is not a type

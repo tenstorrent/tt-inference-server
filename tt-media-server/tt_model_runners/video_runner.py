@@ -419,6 +419,7 @@ def _encoder_loop(
                     payload.audio,
                     payload.sampling_rate,
                     fps=payload.fps,
+                    pixel_format=getattr(payload, "pixel_format", "rgb24"),
                 )
             else:
                 mp4_path = video_manager.export_to_mp4(payload)
