@@ -4884,11 +4884,12 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
-                        # Terminus-2 defaults to effectively unlimited turns
-                        # (1,000,000), so without this the 3h timeout is the
-                        # only brake on a stuck trial. The verifier still
-                        # grades the container's end state after the cap.
-                        "max_turns": 50,
+                        # EXTENSIVE variant: no artificial turn cap. Terminus-2
+                        # defaults to effectively unlimited turns (1,000,000),
+                        # bounded only by the 3h agent_timeout below -- exactly
+                        # how the passing H100 reference run (44.94) was
+                        # measured. The base-v2 branch keeps max_turns=50 for
+                        # wall-clock; here we let a trial run to completion.
                         "model_info": {
                             # Sized for QB2 (P300X2) at max_model_len=113280
                             # (the autoport's audited vLLM context ceiling, see
@@ -4981,20 +4982,16 @@ _eval_config_list = [
                     # 8K out = 72K leaves a wide margin under the 113280
                     # window.
                     max_input_tokens=64 * 1024,
-                    # 8K out, same measured-turn rationale as
-                    # terminal_bench_2 above.
-                    max_output_tokens=8 * 1024,
-                    # mini-swe-agent's builtin swebench.yaml step_limit is
-                    # sized for GPU-speed turns; cap explicitly so a stuck
-                    # instance is bounded at QB2 decode speed.
-                    # 40 -> 100: on run 34145630605 all five instances died at
-                    # LimitsExceeded (35-41 steps) with empty patches, while
-                    # the tt-transformers reference run 34117111997 submitted
-                    # all five at 36-85 API calls -- and the two it RESOLVED
-                    # (astropy 81, django 85) sit exactly in the band a 40- or
-                    # 75-step cap kills. 100 = observed max (85) + margin,
-                    # still bounding a stuck instance at QB2 decode speed.
-                    mini_agent_kwargs={"step_limit": 100},
+                    # EXTENSIVE variant: 16K out (was 8K), matching
+                    # terminal_bench_2. 64K + 16K = 80K stays under 113280.
+                    max_output_tokens=16 * 1024,
+                    # EXTENSIVE variant: step_limit 250, effectively no cutoff.
+                    # The tt-transformers reference run 34117111997 resolved
+                    # astropy at 81 and django at 85 API calls; a 40/75/100 cap
+                    # risks the long resolvers. 250 lets a real trajectory
+                    # finish while still bounding a genuinely stuck instance.
+                    # base-v2 keeps step_limit=100 for wall-clock.
+                    mini_agent_kwargs={"step_limit": 250},
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
