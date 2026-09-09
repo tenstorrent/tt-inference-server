@@ -18,7 +18,7 @@ def test_diffusiongemma_llm_suite_uses_model_specific_conformance_test():
         suite for suite in suites if suite["id"] == "diffusiongemma-26b-a4b-it-p300x2"
     )
 
-    assert suite["weights"] == ["diffusiongemma-26B-A4B-it"]
+    assert suite["weights"] == ["google/diffusiongemma-26B-A4B-it"]
     assert suite["device"] == "p300x2"
     assert [case["template"] for case in suite["test_cases"]] == [
         "VLLMDiffusionGemmaParamConformanceTest"
