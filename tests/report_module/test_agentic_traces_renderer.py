@@ -547,7 +547,9 @@ class TestRequirementsTargets:
 
     def test_run_renderer_no_longer_emits_the_section(self):
         """Even with expectations attached, grading lives in its own block."""
-        out = _render(_record(expected_sweep=[{"concurrency": 1, "ttftMeanMs": 8000.0}]))
+        out = _render(
+            _record(expected_sweep=[{"concurrency": 1, "ttftMeanMs": 8000.0}])
+        )
 
         assert "#### Requirements Targets" not in out
 
@@ -628,9 +630,10 @@ class TestRequirementsTargets:
         assert "c4 (no targets)" in out
 
     def test_empty_block_renders_nothing(self):
-        assert render_agentic_traces_targets(
-            self._block(points=(), missing=()), METADATA
-        ) == ""
+        assert (
+            render_agentic_traces_targets(self._block(points=(), missing=()), METADATA)
+            == ""
+        )
 
     def test_the_glossary_trails_the_verdicts(self):
         """The run section defers its metric definitions to this section."""

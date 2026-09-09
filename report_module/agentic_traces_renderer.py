@@ -671,8 +671,7 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
         fields = [field for field in POINT_FIELDS if field in present]
         fields += sorted(present.difference(POINT_FIELDS))
         verdict_maps = [
-            {v.get("field"): v for v in point.get("verdicts") or []}
-            for point in points
+            {v.get("field"): v for v in point.get("verdicts") or []} for point in points
         ]
         table_rows: List[Dict[str, str]] = []
         for field in fields:

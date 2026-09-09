@@ -507,7 +507,10 @@ def test_agentic_targets_pass_when_every_point_met():
                 "met": 2,
                 "graded": 2,
                 "passed": True,
-                "verdicts": [_verdict("ttftMeanMs", True), _verdict("tpotMeanMs", True)],
+                "verdicts": [
+                    _verdict("ttftMeanMs", True),
+                    _verdict("tpotMeanMs", True),
+                ],
             }
         ]
     )
@@ -525,14 +528,20 @@ def test_agentic_targets_fail_with_per_point_blockers():
                 "met": 1,
                 "graded": 2,
                 "passed": False,
-                "verdicts": [_verdict("ttftMeanMs", True), _verdict("tpotMeanMs", False)],
+                "verdicts": [
+                    _verdict("ttftMeanMs", True),
+                    _verdict("tpotMeanMs", False),
+                ],
             },
             {
                 "concurrency": 4,
                 "met": 2,
                 "graded": 2,
                 "passed": True,
-                "verdicts": [_verdict("ttftMeanMs", True), _verdict("tpotMeanMs", True)],
+                "verdicts": [
+                    _verdict("ttftMeanMs", True),
+                    _verdict("tpotMeanMs", True),
+                ],
             },
         ]
     )
@@ -612,7 +621,9 @@ def test_agentic_targets_ungradable_point_blocks():
 def test_agentic_targets_point_without_declared_targets_is_skipped():
     """An empty document point promises nothing: not counted, not blocking."""
     block = _targets_block(
-        points=[{"concurrency": 1, "met": 0, "graded": 0, "passed": None, "verdicts": []}]
+        points=[
+            {"concurrency": 1, "met": 0, "graded": 0, "passed": None, "verdicts": []}
+        ]
     )
     accepted, blockers, cats = acceptance_criteria_check(_schema(block))
     cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
