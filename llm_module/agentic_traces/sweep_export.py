@@ -275,7 +275,9 @@ def grade_agentic_sweep(
     return verdicts, missing
 
 
-def expected_sweep_from_record(record: Mapping[str, Any]) -> Optional[List[Dict[str, Any]]]:
+def expected_sweep_from_record(
+    record: Mapping[str, Any],
+) -> Optional[List[Dict[str, Any]]]:
     """The document's full expected sweep attached to a report record, if any.
 
     Every run carries the whole sweep, not just its own point, so the report
