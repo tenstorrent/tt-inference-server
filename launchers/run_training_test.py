@@ -21,7 +21,7 @@ Usage (flags mirror the other engine launchers)::
         --model meta-llama/Llama-3.1-8B-Instruct --workflow training_tests --device p150 \
         --service-port 8000 --runtime-model-spec-json /tmp/spec.json \
         --output-dir workflow_logs/reports_output/training_tests \
-        --expected-config workflows/training/expected/llama_3_1_8b_instruct_sst2_p150.yaml \
+        --expected-config workflows/training/expected/llama_3_1_8b_instruct_sst2.yaml \
         --docker-server
 """
 

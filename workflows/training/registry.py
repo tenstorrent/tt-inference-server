@@ -20,7 +20,11 @@ EXPECTED_CONFIG_DIR = Path(__file__).parent / "expected"
 # "Llama-3.1-8B-Instruct"), which is what _build_training_cmd forwards — NOT the
 # full HF repo path.
 _EXPECTED_BY_MODEL_DEVICE: Dict[Tuple[str, str], str] = {
-    ("Llama-3.1-8B-Instruct", "p150"): "llama_3_1_8b_instruct_sst2_p150.yaml",
+    # P150, P300 (single card, 2 dies) and P300x2 (2 cards, 4 chips) all share
+    # the same reference trajectory for now
+    ("Llama-3.1-8B-Instruct", "p150"): "llama_3_1_8b_instruct_sst2.yaml",
+    ("Llama-3.1-8B-Instruct", "p300"): "llama_3_1_8b_instruct_sst2.yaml",
+    ("Llama-3.1-8B-Instruct", "p300x2"): "llama_3_1_8b_instruct_sst2.yaml",
 }
 
 

@@ -3,8 +3,9 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 #
 # Expected LoRA training-loss trajectory for meta-llama/Llama-3.1-8B-Instruct on
-# SST-2, single-chip P150, run through the forge server's `trainer-training-lora`
-# runner (tt-blacksmith LoraLLMTrainer).
+# SST-2, run through the forge server's `trainer-training-lora` runner
+# (tt-blacksmith LoraLLMTrainer). Shared as the reference curve for the P150,
+# P300, and P300x2 devices (see workflows/training/registry.py).
 #
 # IMPORTANT: these values are NOT tt-blacksmith's golden CSVs. The forge runner
 # builds its LoraLLMConfig directly from the TrainingRequest below (seed=0,
