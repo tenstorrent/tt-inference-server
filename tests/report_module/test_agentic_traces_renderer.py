@@ -535,6 +535,35 @@ class TestRequirementsTargets:
 
         assert "c1 (1/2)" in out and "c4 (1/2)" in out
 
+    def test_points_declaring_different_fields_render_the_union(self):
+        """A field only a later point declares must still get its own row."""
+        sweep = [
+            {"concurrency": 1, "ttftMeanMs": 8000.0},
+            {"concurrency": 4, "ttftMeanMs": 8000.0, "e2elP90Ms": 30000.0},
+        ]
+        out = _render(
+            _record(concurrency=1, expected_sweep=sweep),
+            _record(concurrency=4, expected_sweep=sweep),
+        )
+
+        section = out.split("#### Requirements Targets", 1)[1]
+        assert "`e2elP90Ms` ↓" in section
+        # the point that did not declare the field reads as a dash, not N/A
+        row = next(line for line in section.splitlines() if "e2elP90Ms" in line)
+        cells = [cell.strip() for cell in row.strip("|").split("|")]
+        assert cells[1] == "—"
+        assert "30000" in cells[2].replace(",", "")
+
+    def test_a_point_with_no_declared_targets_is_not_failed(self):
+        sweep = [dict(self._POINT), {"concurrency": 4}]
+        out = _render(
+            _record(concurrency=1, expected_sweep=sweep),
+            _record(concurrency=4, expected_sweep=sweep),
+        )
+
+        assert "**c4**: no targets declared" in out
+        assert "c4 (no targets)" in out
+
     def test_swarmone_rows_do_not_gain_a_section(self):
         out = _render(_swo_record())
 

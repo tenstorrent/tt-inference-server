@@ -639,6 +639,7 @@ def _targets_block(rows: Sequence[Mapping[str, Any]]) -> str:
     """
     # Same import-cycle guard as ``_agentic_sweep_block``.
     from llm_module.agentic_traces.sweep_export import (
+        POINT_FIELDS,
         expected_sweep_from_record,
         grade_agentic_sweep,
         to_agentic_sweep,
@@ -672,25 +673,41 @@ def _targets_block(rows: Sequence[Mapping[str, Any]]) -> str:
 
     if verdicts:
         summary = "; ".join(
-            f"**c{point.concurrency}**: {point.met}/{point.graded} targets met "
-            f"{'✅' if point.passed else '❌'}"
+            (
+                f"**c{point.concurrency}**: no targets declared"
+                if point.passed is None
+                else f"**c{point.concurrency}**: {point.met}/{point.graded} "
+                f"targets met {'✅' if point.passed else '❌'}"
+            )
             for point in verdicts
         )
         parts.append(summary)
 
         headers = ["Metric"] + [
-            f"c{point.concurrency} ({point.met}/{point.graded})" for point in verdicts
+            (
+                f"c{point.concurrency} ({point.met}/{point.graded})"
+                if point.passed is not None
+                else f"c{point.concurrency} (no targets)"
+            )
+            for point in verdicts
         ]
-        fields = [verdict.field for verdict in verdicts[0].verdicts]
+        # Rows are the union of fields across points, in the document's
+        # canonical order: points may declare different field sets, and a
+        # field declared only at a later point must still render. A point
+        # that did not declare a field gets a dash -- distinct from the
+        # "N/A ➖" cell for a declared-but-unmeasured field.
+        present = {verdict.field for point in verdicts for verdict in point.verdicts}
+        fields = [field for field in POINT_FIELDS if field in present]
+        fields += sorted(present.difference(POINT_FIELDS))
+        verdict_maps = [{v.field: v for v in point.verdicts} for point in verdicts]
         table_rows: List[Dict[str, str]] = []
         for field in fields:
-            per_point = [
-                next(v for v in point.verdicts if v.field == field)
-                for point in verdicts
-            ]
-            entry: Dict[str, str] = {"Metric": _target_field_label(per_point[0])}
+            per_point = [vmap.get(field) for vmap in verdict_maps]
+            # ``present`` guarantees at least one point graded this field.
+            first = next(v for v in per_point if v is not None)
+            entry: Dict[str, str] = {"Metric": _target_field_label(first)}
             for header, verdict in zip(headers[1:], per_point):
-                entry[header] = _target_cell(verdict)
+                entry[header] = _target_cell(verdict) if verdict is not None else "—"
             table_rows.append(entry)
         parts.append(build_markdown_table(table_rows))
 
