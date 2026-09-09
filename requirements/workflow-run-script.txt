@@ -20,8 +20,6 @@ aiohttp
 numpy
 scipy
 torch==2.7.1+cpu
-# torchaudio: resampling inside the UTMOS naturalness scorer (tts_naturalness_test)
-torchaudio==2.7.1+cpu
 torchvision==0.22.1+cpu
 open-clip-torch
 pillow
