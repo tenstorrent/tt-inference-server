@@ -98,10 +98,10 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    model_name: str, perf_targets_map: Dict[str, float]
+    hf_model_repo: str, perf_targets_map: Dict[str, float]
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
-    model_data = model_performance_reference.get(model_name, {})
+    model_data = model_performance_reference.get(hf_model_repo, {})
 
     for device_str, benchmarks in model_data.items():
         device_type = DeviceTypes.from_string(device_str)
@@ -303,6 +303,12 @@ speecht5_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/speecht5_tts",
 )
+xtts_v2_impl = ImplSpec(
+    impl_id="xtts-v2",
+    impl_name="xtts-v2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/experimental/xtts_v2",
+)
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -391,6 +397,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
+    "xtts-v2": xtts_v2_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
@@ -1082,9 +1089,8 @@ class ModelSpecTemplate:
         specs = []
 
         for weight in self.weights:
-            weight_model_name = model_weights_to_model_name(weight)
             template_reference_map = get_perf_reference_map(
-                weight_model_name, self.perf_targets_map
+                weight, self.perf_targets_map
             )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -1103,7 +1109,7 @@ class ModelSpecTemplate:
                 # actually overrides; otherwise this is one map per weight.
                 if device_model_spec.perf_targets_map:
                     perf_reference_map = get_perf_reference_map(
-                        weight_model_name,
+                        weight,
                         {
                             **self.perf_targets_map,
                             **device_model_spec.perf_targets_map,

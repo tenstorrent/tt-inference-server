@@ -197,7 +197,7 @@ class RequirementsTargetPack(TargetPack):
         self._delegate = delegate
 
     # --- eval configs ---
-    def eval_config(self, model_name: str) -> Optional[Any]:
+    def eval_config(self, hf_model_repo: str) -> Optional[Any]:
         from reference_config.evals.eval_config import EvalConfig
 
         if not self._doc.accuracy_evals:
@@ -268,20 +268,22 @@ class RequirementsTargetPack(TargetPack):
         concurrency = self._doc.deployment.max_concurrency_per_instance
         if not concurrency:
             return {}
-        overrides = {}
-        for field_name in ("agentic_eval_config", "swebench_eval_config"):
-            cfg = getattr(template, field_name, None)
-            if cfg is None or cfg.n_concurrent_trials == concurrency:
-                continue
-            logger.info(
-                "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
-                "the requirements document's deployment.maxConcurrencyPerInstance.",
-                task_name,
-                cfg.n_concurrent_trials,
-                concurrency,
+        cfg = getattr(template, "agentic_eval_config", None)
+        if cfg is None or cfg.n_concurrent_trials == concurrency:
+            return {}
+        logger.info(
+            "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
+            "the requirements document's deployment.maxConcurrencyPerInstance.",
+            task_name,
+            cfg.n_concurrent_trials,
+            concurrency,
+        )
+        return {
+            "agentic_eval_config": replace(
+                cfg,
+                n_concurrent_trials=concurrency,
             )
-            overrides[field_name] = replace(cfg, n_concurrent_trials=concurrency)
-        return overrides
+        }
 
     def _find_task_template(self, task_name: str) -> Optional[Any]:
         """Borrow a runnable EvalTask for ``task_name`` from the catalog.

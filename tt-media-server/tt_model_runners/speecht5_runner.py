@@ -7,12 +7,12 @@ import base64
 import io
 import os
 import re
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, Optional
 
 import soundfile as sf
 import torch
 import ttnn
-from config.constants import SupportedModels
+from config.constants import DEFAULT_TTS_LANGUAGE, SupportedModels
 from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import (
@@ -39,13 +39,14 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     preprocess_postnet_parameters,
 )
 from num2words import num2words
+from telemetry.audio_metrics import TtsChunkProgress, record_tts_input_tokens
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import SpeechT5ForTextToSpeech, SpeechT5HifiGan, SpeechT5Processor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
+from utils.text_chunking import chunk_text
 from utils.speaker_embeddings import SpeakerEmbeddingsManager
 
-DEFAULT_CHUNK_SIZE = 256  # Maximum characters per text chunk
 
 # Maximum KV cache slots pre-allocated in the generator.
 # ~3 mel frames per input token * 256 max tokens = 768, rounded up to 800.
@@ -55,73 +56,6 @@ MAX_KV_STEPS = 800
 # 32/64 cover short texts; 128/256 cover typical chunked inputs.
 # 384 causes L1 OOM on N150 — max supported is 256.
 WARMUP_ENCODER_SIZES = [32, 64, 128, 160, 192, 256]
-
-
-def chunk_text(
-    text: str, max_chunk_size: int = DEFAULT_CHUNK_SIZE, processor=None
-) -> List[str]:
-    """Split text into chunks that always end at sentence boundaries.
-
-    Sentences are packed greedily into chunks until adding the next sentence
-    would exceed max_chunk_size characters. A single sentence that exceeds
-    max_chunk_size is kept as one chunk (never split mid-sentence).
-
-    The only exception: if a sentence exceeds MAX_ENCODER_TOKENS tokens (hard
-    device limit), it is split at the last clause boundary (,;) within that
-    token budget to avoid L1 OOM.
-    """
-    MAX_ENCODER_TOKENS = 250  # conservative limit below the 256 padded size
-
-    if len(text) <= max_chunk_size:
-        return [text]
-
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    if not sentences:
-        return [text]
-
-    def split_oversized(sentence):
-        if processor is None:
-            return [sentence]
-        n_tokens = processor(text=sentence, return_tensors="pt")["input_ids"].shape[1]
-        if n_tokens <= MAX_ENCODER_TOKENS:
-            return [sentence]
-        clauses = re.split(r"(?<=[,;])\s+", sentence)
-        parts = []
-        current = ""
-        for clause in clauses:
-            candidate = (current + " " + clause).strip() if current else clause
-            n = processor(text=candidate, return_tensors="pt")["input_ids"].shape[1]
-            if n <= MAX_ENCODER_TOKENS:
-                current = candidate
-            else:
-                if current:
-                    parts.append(current)
-                current = clause
-        if current:
-            parts.append(current)
-        return parts if parts else [sentence]
-
-    flat_sentences = []
-    for s in sentences:
-        s = s.strip()
-        if s:
-            flat_sentences.extend(split_oversized(s))
-
-    chunks = []
-    current = ""
-    for sentence in flat_sentences:
-        if not current:
-            current = sentence
-        elif len(current) + 1 + len(sentence) <= max_chunk_size:
-            current = current + " " + sentence
-        else:
-            chunks.append(current)
-            current = sentence
-
-    if current:
-        chunks.append(current)
-
-    return chunks
 
 
 def normalize_text_for_tts(text: str) -> str:
@@ -544,10 +478,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 ).unsqueeze(0), None
             return self.speaker_manager.get_speaker_embedding(speaker_id), speaker_id
 
-    def _generate_mel_for_chunk(self, text: str) -> torch.Tensor:
+    def _generate_mel_for_chunk(self, text: str) -> tuple[torch.Tensor, int]:
         """
         Run encoder + autoregressive decoder loop for one text chunk.
-        Returns mel spectrogram: [1, steps * REDUCTION_FACTOR, num_mel_bins]
+        Returns (mel spectrogram [1, steps * REDUCTION_FACTOR, num_mel_bins],
+        encoder token count before padding).
         Matches the per-chunk mel generation in demo_ttnn.py generate_speech_fp32().
         """
         inputs = self.processor(text=text, return_tensors="pt")
@@ -767,14 +702,20 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
         # Stack all mel frames on CPU into [1, steps * REDUCTION_FACTOR, num_mel_bins]
         if spectrogram_frames_cpu:
-            return torch.cat(spectrogram_frames_cpu, dim=1)
-        return torch.zeros(batch_size, 1, num_mel_bins)
+            return torch.cat(spectrogram_frames_cpu, dim=1), real_seq_len
+        return torch.zeros(batch_size, 1, num_mel_bins), real_seq_len
 
     async def _generate_audio_sync(
         self,
         text: str,
+        speaker_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generate audio with automatic chunking for long texts (matches demo_ttnn.py)."""
+        """Generate audio with automatic chunking for long texts (matches demo_ttnn.py).
+
+        ``speaker_id`` is the resolved catalog id (None for a client-supplied
+        embedding); it rides on the response so the API layer can report the
+        voice actually used, not just the one requested.
+        """
         try:
             text = normalize_text_for_tts(text)
             chunks = chunk_text(text, processor=self.processor)
@@ -783,14 +724,22 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     f"Long text ({len(text)} chars) split into {len(chunks)} chunks"
                 )
 
+            # Streaming TTFA/cadence proxy: the endpoint has no streaming mode
+            # (the client always gets the complete utterance), so these record
+            # what streaming would deliver — per-chunk mel generation time,
+            # with the first chunk doubling as the time-to-first-audio floor.
+            progress = TtsChunkProgress(model_type=self.settings.model_runner)
             mel_spectrograms = []
+            total_tokens = 0
             for i, chunk in enumerate(chunks):
                 if len(chunks) > 1:
                     self.logger.info(
                         f"Processing chunk {i + 1}/{len(chunks)}: "
                         f"'{chunk[:60]}{'...' if len(chunk) > 60 else ''}'"
                     )
-                mel = self._generate_mel_for_chunk(chunk)
+                mel, chunk_tokens = self._generate_mel_for_chunk(chunk)
+                progress.on_chunk()
+                total_tokens += chunk_tokens
                 mel_spectrograms.append(mel)
 
             # Concatenate mels from all chunks along time axis, then run vocoder once
@@ -811,6 +760,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
             duration = len(final_audio.squeeze()) / SpeechT5Constants.SAMPLE_RATE
 
+            # Success-only, matching the handler-side usage metrics: a failed
+            # generation did not convert its tokens to speech.
+            record_tts_input_tokens(
+                model_type=self.settings.model_runner, tokens=total_tokens
+            )
+
             yield {
                 "type": "final_result",
                 "result": TextToSpeechResponse(
@@ -818,6 +773,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     duration=duration,
                     sample_rate=SpeechT5Constants.SAMPLE_RATE,
                     format="wav",
+                    speaker_id=speaker_id,
                 ),
                 "task_id": None,
             }
@@ -850,6 +806,13 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             if not request.text or not request.text.strip():
                 raise ValueError("Text cannot be empty")
 
+            # SpeechT5 is English-only.
+            language = getattr(request, "language", DEFAULT_TTS_LANGUAGE)
+            if language != DEFAULT_TTS_LANGUAGE:
+                raise ValueError(
+                    f"SpeechT5 supports only language {DEFAULT_TTS_LANGUAGE!r}; got {language!r}. "
+                )
+
             speaker_embedding, speaker_id = self._prepare_speaker_embedding(request)
             request._speaker_embedding_array = speaker_embedding.detach().numpy()
             # Compare by ID when available (avoids float-equality mismatch for same speaker).
@@ -873,7 +836,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
 
             final_result = None
-            async for result in self._generate_audio_sync(request.text):
+            async for result in self._generate_audio_sync(
+                request.text, speaker_id=speaker_id
+            ):
                 result["task_id"] = request._task_id
                 final_result = result
             if final_result and "result" in final_result:

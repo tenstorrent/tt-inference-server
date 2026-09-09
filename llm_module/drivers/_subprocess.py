@@ -18,6 +18,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from utils.model_naming import slugify_model_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,7 +80,8 @@ def find_first(paths: List[Path]) -> Optional[Path]:
 def safe_filename_part(text: str) -> str:
     """Sanitize ``text`` for embedding in a filename.
 
-    Replaces ``/`` (path separator on the host) with ``__`` and spaces
-    with ``_``
+    Thin alias for the canonical escape in :mod:`utils.model_naming`; the
+    values passed here are model ids, so they must land on the same token as
+    every other name derived from a model.
     """
-    return text.replace("/", "__").replace(" ", "_")
+    return slugify_model_id(text)

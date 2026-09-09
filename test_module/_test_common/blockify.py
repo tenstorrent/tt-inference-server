@@ -21,8 +21,22 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any, Dict
 
+from utils.model_naming import slugify_name_parts
+
 if TYPE_CHECKING:
     from ..context import MediaContext
+
+
+def report_model_fields(spec: Any) -> Dict[str, str]:
+    """Bare ``model_name`` + full ``model_repo`` for report envelopes.
+
+    ``model_name`` matches ``ModelSpec.model_name`` (basename / path token).
+    ``model_repo`` is the full HF id used for display and identity lookups.
+    Markdown headers prefer ``model_repo`` via ``ReportSchema.model_name``.
+    """
+    bare = getattr(spec, "model_name", "") or ""
+    repo = getattr(spec, "hf_model_repo", "") or bare
+    return {"model_name": bare, "model_repo": repo}
 
 
 def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
@@ -40,7 +54,7 @@ def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
     model_id = getattr(spec, "model_id", None)
     generated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
     envelope: Dict[str, Any] = {
-        "model_name": getattr(spec, "model_name", ""),
+        **report_model_fields(spec),
         "device": ctx.device.name,
         "generated_at": generated_at,
     }
@@ -53,15 +67,18 @@ def sweep_envelope(ctx: "MediaContext") -> Dict[str, Any]:
 def block_id(ctx: "MediaContext") -> str:
     """Stable ``model_device`` slug for the Block id and report filenames.
 
-    Mirrors :func:`report_module.schema._slugify_block_id` so Block ids
-    produced here line up with ones synthesized by ``ReportSchema``.
+    Keyed on the **full HF repo id**, the data identity of a model per
+    ``docs/model_id_naming.md`` -- not the bare basename, which is reserved for
+    ``metadata.model_name``. That is what makes these ids line up with the ones
+    :func:`report_module.schema._group_records_to_blocks` synthesizes: it slugs
+    each record's ``model`` field, which
+    :func:`test_module.context.common_report_metadata` fills from
+    ``hf_model_repo``. Two spellings here would stop blocks describing the same
+    (model, device) from collapsing in
+    :func:`report_module.summary._block_identity`.
     """
-    model = ctx.model_spec.model_name
-    device = ctx.device.name
-    parts = [p for p in (model, device) if p]
-    if not parts:
-        return ""
-    return "_".join(parts).replace("/", "__").replace("\\", "__").replace(" ", "_")
+    model = report_model_fields(ctx.model_spec)["model_repo"]
+    return slugify_name_parts(model, ctx.device.name)
 
 
-__all__ = ["block_id", "sweep_envelope"]
+__all__ = ["block_id", "report_model_fields", "sweep_envelope"]
