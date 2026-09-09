@@ -262,6 +262,9 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
 
     logger.info("Generating benchmark report...")
     _model, isl, _num_calls, concurrency = _embedding_params(ctx)
+    num_clients = int(
+        ctx.model_spec.device_model_spec.env_vars.get("BENCHMARK_NUM_CLIENTS", 1)
+    )
 
     total_input_tokens = float(metrics.get("Total input tokens", 0))
     benchmark_duration = float(metrics.get("Benchmark duration", 1.0))
@@ -302,11 +305,13 @@ def run_embedding_benchmark(ctx: MediaContext) -> Block:
             "num_prompts": successful_requests + failed_requests,
             "isl": isl,
             "concurrency": concurrency,
+            "num_clients": num_clients,
         },
         data={
             "Benchmarks": {
                 "isl": isl,
                 "concurrency": concurrency,
+                "num_clients": num_clients,
                 "num_requests": successful_requests + failed_requests,
                 "successful_requests": successful_requests,
                 "failed_requests": failed_requests,
