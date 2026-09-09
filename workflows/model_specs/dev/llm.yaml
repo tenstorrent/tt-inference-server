@@ -621,6 +621,20 @@ templates:
         # bef89e4 (capability-gated chunked prefill) and the tt-metal autoport
         # with supports_chunked_prefill; older plugins force it off anyway.
         max_num_batched_tokens: '4096'
+        # Render chat-door requests with message content as plain strings.
+        # vLLM's default "auto" detection sees that the template handles
+        # content-parts arrays and converts every string content into parts;
+        # the template's system-turn parts branch renders `text|trim + ' '`,
+        # leaving one stray space before <turn|> on EVERY request that has a
+        # system message (the string branch trims clean). That one
+        # off-distribution boundary token derails this checkpoint into
+        # repeated-token loops (tt-agentic-bringup-qb2#42): MMLU-Pro 30.95 on
+        # run 33842850459, degenerate turns in 4/5 terminal-bench trials on
+        # run 34145630605. With "string" the server render is byte-identical
+        # to reference tokenizer.apply_chat_template across no-system/system/
+        # multi-turn/tool-definition/tool-result batteries (verified in-image
+        # against vLLM 0.26.0 renderers/hf.py, 2026-09-09).
+        chat_template_content_format: string
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
