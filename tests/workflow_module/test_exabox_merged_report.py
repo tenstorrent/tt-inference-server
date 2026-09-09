@@ -361,4 +361,5 @@ def test_merge_renders_the_release_shaped_json(tmp_path):
         "Benchmarks",
         "Evals",
         "Spec Tests",
+        "Agentic Targets",
     ]
