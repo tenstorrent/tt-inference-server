@@ -933,6 +933,13 @@ templates:
         # is the one the bring-up validated.
         QWEN_AUTOPORT_MODEL_ID: Qwen/Qwen3.8-27B
         QWEN_AUTOPORT_MODEL_REVISION: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        # Prefill one request per model call. Multi-active-row prefill hangs in
+        # the server: at max_num_seqs 32, k=7 completes but k=15 and k=31 do
+        # not, with identical [32, S] shapes. Verified bit-identical to the
+        # batched path (PCC 1.0, same argmax) at k=7, and it fixes concurrency
+        # 32 end to end: 32/32 in 114 s where it previously never returned.
+        # Only prefill serialises; 32-way decode concurrency is unaffected.
+        QWEN36_PREFILL_PER_REQUEST: "1"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
