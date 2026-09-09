@@ -18,6 +18,7 @@ from vllm import ModelRegistry
 
 from utils.cache_monitor import get_container_cache_dir
 from utils.device_utils import get_mesh_device_name
+from utils.error_response_sanitizer import ERROR_SANITIZER_MIDDLEWARE
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
@@ -74,6 +75,15 @@ def parse_args():
         "--disable-trace-capture",
         action="store_true",
         help="Disable automatic trace capture requests on server startup",
+    )
+    parser.add_argument(
+        "--disable-error-sanitizer",
+        action="store_true",
+        help=(
+            "Do not install the error-response sanitizer middleware that strips "
+            "file paths, stack frames and internal markers from 4xx/5xx bodies "
+            "(tenstorrent/tt-cloud-console#1152)"
+        ),
     )
     parser.add_argument(
         "--service-port",
@@ -690,6 +700,37 @@ def format_vllm_serve_command(argv) -> str:
     return " \\\n  ".join(command_lines)
 
 
+def add_error_sanitizer_middleware(
+    vllm_argv: list[str], disabled: bool = False
+) -> None:
+    """Install utils.error_response_sanitizer via vLLM's ``--middleware`` flag.
+
+    Every vLLM commit the release images pin accepts ``--middleware <import.path>``
+    (class -> ``app.add_middleware``), so this works without touching the pinned
+    engine. The flag's parsing differs across those commits (``action="append"``
+    on older ones, ``nargs="+"`` on newer ones) and a second ``--middleware``
+    occurrence would silently replace the first on the newer parser, so if the
+    caller already passes ``--middleware`` we leave argv alone and say so.
+    """
+    if disabled:
+        logger.warning(
+            "--disable-error-sanitizer is set: 4xx/5xx bodies may include file paths "
+            "and stack frames."
+        )
+        return
+    if any(
+        token == "--middleware" or token.startswith("--middleware=")
+        for token in vllm_argv
+    ):
+        logger.warning(
+            "--middleware already passed to vLLM; not adding %s. Append it to your "
+            "--middleware list to keep error responses sanitized.",
+            ERROR_SANITIZER_MIDDLEWARE,
+        )
+        return
+    vllm_argv.extend(["--middleware", ERROR_SANITIZER_MIDDLEWARE])
+
+
 def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     # runpy uses sys.argv, rebuild it with the merged vLLM args.
     vllm_argv = [sys.argv[0]]
@@ -744,6 +785,10 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     for key, value in remaining_default_vllm_args.items():
         cli_arg_name = f"--{key}"
         _append_vllm_arg(vllm_argv, cli_arg_name, value)
+
+    add_error_sanitizer_middleware(
+        vllm_argv, disabled=getattr(args, "disable_error_sanitizer", False)
+    )
 
     # finally set sys.argv to the vllm server args
     sys.argv = vllm_argv

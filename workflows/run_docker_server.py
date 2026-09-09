@@ -333,6 +333,7 @@ _RESERVED_WRAPPER_FLAGS = {
     "impl",
     "no-auth",
     "disable-trace-capture",
+    "disable-error-sanitizer",
     "service-port",
     "port",
     "host",

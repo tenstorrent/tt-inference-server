@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from utils.error_response_sanitizer import ERROR_SANITIZER_MIDDLEWARE
 from workflows.model_spec import load_templates_from_yaml
 from workflows.utils import get_repo_root_path
 
@@ -159,6 +160,8 @@ def test_set_vllm_sys_argv_merges_defaults_and_passthrough_overrides(
         "mistralai/Mistral-7B-Instruct-v0.3",
         "--seed",
         "9472",
+        "--middleware",
+        ERROR_SANITIZER_MIDDLEWARE,
     ]
 
 
@@ -188,6 +191,8 @@ def test_set_vllm_sys_argv_honors_equals_style_overrides(
         "64",
         "--port",
         "8000",
+        "--middleware",
+        ERROR_SANITIZER_MIDDLEWARE,
     ]
 
 
@@ -217,8 +222,87 @@ def test_set_vllm_sys_argv_logs_multiline_bash_command(
         "  --disable-log-requests \\\n"
         "  --served-model-name 'my model' \\\n"
         "  '--guided-decoding-backend=outlines backend' \\\n"
-        "  --port 8000"
+        "  --port 8000 \\\n"
+        f"  --middleware {ERROR_SANITIZER_MIDDLEWARE}"
     )
+
+
+def test_set_vllm_sys_argv_installs_error_sanitizer_middleware_last(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None),
+        ["--max-model-len", "4096"],
+        {"port": 8000},
+    )
+
+    assert sys.argv[-2:] == ["--middleware", ERROR_SANITIZER_MIDDLEWARE]
+    assert sys.argv.count("--middleware") == 1
+
+
+def test_set_vllm_sys_argv_honors_disable_error_sanitizer(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None, disable_error_sanitizer=True),
+        [],
+        {"port": 8000},
+    )
+
+    assert "--middleware" not in sys.argv
+    assert ERROR_SANITIZER_MIDDLEWARE not in sys.argv
+
+
+@pytest.mark.parametrize(
+    "passthrough",
+    [
+        ["--middleware", "my_pkg.MyMiddleware"],
+        ["--middleware=my_pkg.MyMiddleware"],
+    ],
+)
+def test_set_vllm_sys_argv_does_not_add_second_middleware_flag(
+    monkeypatch, run_vllm_api_server_module, passthrough
+):
+    # A second --middleware occurrence would silently replace the caller's on
+    # vLLM commits that parse the flag with nargs="+", so we leave argv alone.
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    mock_logger = MagicMock()
+    monkeypatch.setattr(run_vllm_api_server_module, "logger", mock_logger)
+
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=None), list(passthrough), {"port": 8000}
+    )
+
+    assert sys.argv[1 : 1 + len(passthrough)] == passthrough
+    assert ERROR_SANITIZER_MIDDLEWARE not in sys.argv
+    assert sum(tok.startswith("--middleware") for tok in sys.argv) == 1
+    assert mock_logger.warning.called
+
+
+def test_parse_args_accepts_disable_error_sanitizer(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_vllm_api_server.py",
+            "--tt-device",
+            "n150",
+            "--disable-error-sanitizer",
+            "--max-model-len",
+            "4096",
+        ],
+    )
+
+    args, remaining = run_vllm_api_server_module.parse_args()
+
+    assert args.disable_error_sanitizer is True
+    assert remaining == ["--max-model-len", "4096"]
 
 
 def test_diffusiongemma_launch_uses_standalone_plugin_vllm_024_contract(
@@ -337,6 +421,7 @@ def test_main_passes_passthrough_port_to_trace_capture(
         impl=None,
         no_auth=False,
         disable_trace_capture=False,
+        disable_error_sanitizer=False,
         service_port=None,
     )
     model_spec = {
