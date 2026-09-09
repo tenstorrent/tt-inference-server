@@ -13,7 +13,7 @@ from collections import OrderedDict
 import numpy as np
 import soundfile as sf
 import torch
-from config.constants import DEFAULT_TTS_LANGUAGE
+from config.constants import DEFAULT_TTS_LANGUAGE, XTTS_SUPPORTED_LANGUAGES
 from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import TextToSpeechResponse
@@ -129,11 +129,9 @@ class XttsV2Runner(BaseMetalDeviceRunner):
             from models.experimental.xtts_v2.frontend import SUPPORTED_LANGUAGES
             from models.experimental.xtts_v2.tt.ttnn_xtts_model import XttsV2
 
-            # The request schema validates against a mirrored copy of the pipeline's
-            # language list (config.constants.XTTS_SUPPORTED_LANGUAGES) so the domain
+            # The runner validates requests against a mirrored copy of the pipeline's
+            # language list (config.constants.XTTS_SUPPORTED_LANGUAGES) so the config
             # layer needs no tt-metal import. Catch drift here, where both are visible.
-            from config.constants import XTTS_SUPPORTED_LANGUAGES
-
             if XTTS_SUPPORTED_LANGUAGES != frozenset(SUPPORTED_LANGUAGES):
                 raise RuntimeError(
                     "config.constants.XTTS_SUPPORTED_LANGUAGES is out of sync with the "
@@ -288,6 +286,15 @@ class XttsV2Runner(BaseMetalDeviceRunner):
             if not request.text or not request.text.strip():
                 raise ValueError("Text cannot be empty")
 
+            # The request schema only checks the code is valid for some TTS model;
+            # each runner enforces its own list.
+            language = getattr(request, "language", DEFAULT_TTS_LANGUAGE)
+            if language not in XTTS_SUPPORTED_LANGUAGES:
+                raise ValueError(
+                    f"XTTS-v2 does not support language {language!r}; "
+                    f"supported: {sorted(XTTS_SUPPORTED_LANGUAGES)}"
+                )
+
             # Fixed seed -> reproducible audio for identical text; None -> a fresh
             # random base per request.
             base_seed = (
@@ -300,7 +307,7 @@ class XttsV2Runner(BaseMetalDeviceRunner):
             samples = self._synthesize(
                 request.text,
                 base_seed,
-                language=getattr(request, "language", DEFAULT_TTS_LANGUAGE),
+                language=language,
                 voice=self._voice_for_request(request),
             )
             elapsed = time.time() - t_start

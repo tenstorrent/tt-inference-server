@@ -549,6 +549,12 @@ XTTS_SUPPORTED_LANGUAGES = frozenset(
     )
 )
 
+# Language codes the TTS request schema accepts (used only by the request
+# validator): the union of codes across TTS models. Whether the active model
+# actually supports a valid code is the runner's call — each runner checks its
+# own list and rejects the rest. Currently the union is XTTS-v2's list.
+VALID_LANGUAGE_CODES = frozenset(XTTS_SUPPORTED_LANGUAGES)
+
 # Language a TTS request synthesizes in when none is given.
 DEFAULT_TTS_LANGUAGE = "en"
 

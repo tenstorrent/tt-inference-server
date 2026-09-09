@@ -8,7 +8,7 @@ import numpy as np
 from config.constants import (
     DEFAULT_TTS_LANGUAGE,
     TTS_RESPONSE_FORMATS,
-    XTTS_SUPPORTED_LANGUAGES,
+    VALID_LANGUAGE_CODES,
 )
 from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, field_validator
@@ -60,9 +60,11 @@ class TextToSpeechRequest(BaseRequest):
             raise ValueError("reference_audio exceeds the 16 MB base64 limit")
         return v
 
-    # Synthesis language. Validated here so an unsupported code raises HTTP 422 early
+    # Synthesis language. Validated here so an unknown code raises HTTP 422 early
     # instead of raising inside a device worker. Region variants normalize to their
-    # base code ("pt-br" -> "pt", "zh-cn" -> "zh").
+    # base code ("pt-br" -> "pt", "zh-cn" -> "zh"). This only checks that the code
+    # is valid for some TTS model; whether the active model supports it is
+    # enforced by its runner.
     language: str = DEFAULT_TTS_LANGUAGE
 
     @field_validator("language", mode="before")
@@ -71,9 +73,9 @@ class TextToSpeechRequest(BaseRequest):
         if v is None:
             return DEFAULT_TTS_LANGUAGE
         base = str(v).strip().lower().split("-")[0]
-        if base not in XTTS_SUPPORTED_LANGUAGES:
+        if base not in VALID_LANGUAGE_CODES:
             raise ValueError(
-                f"Unsupported language {v!r}; supported: {sorted(XTTS_SUPPORTED_LANGUAGES)} "
+                f"Unknown language {v!r}; valid codes: {sorted(VALID_LANGUAGE_CODES)} "
                 "(region variants like 'pt-br' are accepted)"
             )
         return base
