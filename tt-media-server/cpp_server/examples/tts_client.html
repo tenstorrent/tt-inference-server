@@ -1,0 +1,572 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TTS Streaming Client</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #3b82f6;
+    --bg: #f7f7f9;
+    --panel: #ffffff;
+    --border: #e2e2e7;
+    --text: #1a1a1e;
+    --muted: #6b7280;
+    --ok: #16a34a;
+    --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.subtitle { color: var(--muted); margin-top: 0; font-size: 0.9rem; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 12px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], input[type="password"], input[type="number"], textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    background: transparent;
+    color: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; min-width: 0; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 9px 18px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: white; }
+  button.primary:disabled { background: #9db8e8; cursor: not-allowed; }
+  button.secondary { background: #e5e7eb; color: #111827; }
+  button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    margin-bottom: 4px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.busy { background: var(--accent); animation: pulse 1s infinite ease-in-out; }
+  .dot.ok { background: var(--ok); }
+  .dot.err { background: var(--err); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .metric {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .metric .value { font-size: 1.25rem; font-weight: 700; }
+  .metric .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  audio { width: 100%; margin-top: 14px; }
+  .log {
+    background: #0f172a;
+    color: #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.76rem;
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  .log .err-line { color: #fca5a5; }
+  .note {
+    font-size: 0.78rem;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 14px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .brand img { height: 18px; width: auto; }
+  .brand span { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="tenstorrent_logo.svg" alt="Tenstorrent" />
+    <span>Powered by Tenstorrent</span>
+  </div>
+  <h1>TTS Streaming Client</h1>
+  <p class="subtitle">Talks to <code>POST /v1/audio/speech</code> (see <code>tts_controller.hpp</code>).</p>
+
+  <section class="panel">
+    <label for="endpoint">Endpoint (host + port)</label>
+    <input type="text" id="endpoint" value="http://localhost:8000" placeholder="http://localhost:8000" />
+
+    <div class="row">
+      <div>
+        <label for="apiKey">API Key (Bearer token)</label>
+        <input type="password" id="apiKey" value="your-secret-key" />
+      </div>
+    </div>
+
+    <label for="text">Text</label>
+    <textarea id="text">The quick brown fox jumps over the lazy dog.</textarea>
+
+    <label for="description">Voice description (optional)</label>
+    <input type="text" id="description" placeholder="e.g. a calm low voice" />
+
+    <div class="actions">
+      <button type="button" class="primary" id="submitBtn">Generate &amp; Play</button>
+      <button type="button" class="secondary" id="stopBtn" disabled>Stop</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="status-line">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Idle</span>
+    </div>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="value" id="mTtfc">–</div>
+        <div class="label">Time to First Chunk</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mAvgGap">–</div>
+        <div class="label">Avg Time Between Chunks</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mChunks">–</div>
+        <div class="label">Chunks Received</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mRtf">–</div>
+        <div class="label">RTF (total &divide; audio)</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mTotal">–</div>
+        <div class="label">Total Time</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mAudioDur">–</div>
+        <div class="label">Audio Duration</div>
+      </div>
+    </div>
+
+    <audio id="player" controls></audio>
+
+    <div class="log" id="log"></div>
+
+    <div class="note">
+      This page must be served from (or CORS-allowed by) the same origin as
+      the TTS server, since the request needs a custom
+      <code>Authorization</code> header. Opening this file directly
+      (<code>file://</code>) against a remote host will fail with a
+      network/CORS error in the browser console. "Chunks received" counts
+      distinct reads of audio bytes off the HTTP stream on the client side —
+      the closest thing observable from the browser to the server's internal
+      audio chunks. Audio is played in real time via the Web Audio API as
+      chunks arrive (with a small lead buffer to absorb network jitter); the
+      player below holds the fully assembled clip for replay/seeking.
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const endpointEl = $("endpoint");
+  const apiKeyEl = $("apiKey");
+  const textEl = $("text");
+  const descriptionEl = $("description");
+  const submitBtn = $("submitBtn");
+  const stopBtn = $("stopBtn");
+  const statusDot = $("statusDot");
+  const statusText = $("statusText");
+  const playerEl = $("player");
+  const logEl = $("log");
+
+  const metricEls = {
+    ttfc: $("mTtfc"),
+    avgGap: $("mAvgGap"),
+    chunks: $("mChunks"),
+    rtf: $("mRtf"),
+    total: $("mTotal"),
+    audioDur: $("mAudioDur"),
+  };
+
+  let abortController = null;
+  let lastObjectUrl = null;
+
+  // Real-time playback state: schedules decoded PCM chunks back-to-back on
+  // a single AudioContext timeline as they arrive off the network.
+  const REALTIME_LEAD_SECONDS = 0.08;
+  let audioCtx = null;
+  let nextPlayTime = 0;
+  let scheduledSources = [];
+  let pcmCarry = new Uint8Array(0);
+
+  function log(message, isError = false) {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const line = document.createElement("div");
+    if (isError) line.className = "err-line";
+    line.textContent = `[${ts}] ${message}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(text, kind) {
+    statusText.textContent = text;
+    statusDot.className = "dot" + (kind ? ` ${kind}` : "");
+  }
+
+  function resetMetrics() {
+    Object.values(metricEls).forEach((el) => (el.textContent = "–"));
+  }
+
+  function fmtMs(ms) {
+    return `${ms.toFixed(0)} ms`;
+  }
+
+  function fmtSec(s) {
+    return `${s.toFixed(3)} s`;
+  }
+
+  // Concatenate Uint8Array chunks without repeated array copies per byte.
+  function concatBytes(a, b) {
+    const out = new Uint8Array(a.length + b.length);
+    out.set(a, 0);
+    out.set(b, a.length);
+    return out;
+  }
+
+  // Rewrites the placeholder RIFF/data sizes (0xFFFFFFFF) that the server's
+  // streaming WAV header uses, so the assembled Blob is a valid, finite WAV
+  // file every decoder/player can seek and report duration for.
+  function finalizeWavHeader(headerBytes, dataSize) {
+    const header = headerBytes.slice(); // copy, don't mutate the original
+    const view = new DataView(header.buffer);
+    view.setUint32(4, 36 + dataSize, true); // RIFF chunk size
+    view.setUint32(40, dataSize, true); // data chunk size
+    return header;
+  }
+
+  function parseWavHeader(headerBytes) {
+    const view = new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength);
+    return {
+      channels: view.getUint16(22, true),
+      sampleRateHz: view.getUint32(24, true),
+      bitsPerSample: view.getUint16(34, true),
+    };
+  }
+
+  function stopRealtimePlayback() {
+    scheduledSources.forEach((src) => {
+      try { src.stop(); } catch { /* already finished */ }
+    });
+    scheduledSources = [];
+    if (audioCtx) audioCtx.close().catch(() => {});
+    audioCtx = null;
+    nextPlayTime = 0;
+    pcmCarry = new Uint8Array(0);
+  }
+
+  // Deinterleaves PCM16LE bytes into a Web Audio AudioBuffer; the buffer's
+  // declared sampleRate can differ from the context's — the browser resamples.
+  function pcm16BytesToAudioBuffer(ctx, bytes, sampleRateHz, channels) {
+    const frameBytes = channels * 2;
+    const frames = Math.floor(bytes.length / frameBytes);
+    const buffer = ctx.createBuffer(channels, frames, sampleRateHz);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let ch = 0; ch < channels; ch++) {
+      const channelData = buffer.getChannelData(ch);
+      for (let i = 0; i < frames; i++) {
+        channelData[i] = view.getInt16((i * channels + ch) * 2, true) / 32768;
+      }
+    }
+    return buffer;
+  }
+
+  // Schedules one chunk immediately after whatever is already queued, so
+  // playback stays gapless regardless of when chunks actually arrive.
+  function scheduleRealtimeChunk(bytes, sampleRateHz, channels) {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      nextPlayTime = audioCtx.currentTime + REALTIME_LEAD_SECONDS;
+    }
+    const buffer = pcm16BytesToAudioBuffer(audioCtx, bytes, sampleRateHz, channels);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    const startAt = Math.max(nextPlayTime, audioCtx.currentTime);
+    source.start(startAt);
+    nextPlayTime = startAt + buffer.duration;
+    scheduledSources.push(source);
+    source.onended = () => {
+      scheduledSources = scheduledSources.filter((s) => s !== source);
+    };
+  }
+
+  // Buffers any leftover partial audio frame until enough bytes arrive to
+  // fill a whole frame, since network reads can split mid-sample.
+  function feedRealtime(bytes, sampleRateHz, channels) {
+    const frameBytes = channels * 2;
+    const combined = concatBytes(pcmCarry, bytes);
+    const usableLen = combined.length - (combined.length % frameBytes);
+    if (usableLen === 0) {
+      pcmCarry = combined;
+      return;
+    }
+    scheduleRealtimeChunk(combined.slice(0, usableLen), sampleRateHz, channels);
+    pcmCarry = combined.slice(usableLen);
+  }
+
+  function buildRequest(baseUrl, apiKey, text, description) {
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    };
+    const payload = { text };
+    if (description) payload.description = description;
+    return {
+      url: `${baseUrl.replace(/\/+$/, "")}/v1/audio/speech`,
+      headers,
+      body: JSON.stringify(payload),
+    };
+  }
+
+  async function readErrorBody(response) {
+    try {
+      const json = await response.json();
+      const err = json && json.error;
+      if (err) {
+        return `${response.status} ${err.type || ""}: ${err.message || JSON.stringify(err)}`;
+      }
+      return `${response.status}: ${JSON.stringify(json)}`;
+    } catch {
+      return `HTTP ${response.status} ${response.statusText}`;
+    }
+  }
+
+  async function run() {
+    const baseUrl = endpointEl.value.trim();
+    const text = textEl.value.trim();
+    const description = descriptionEl.value.trim();
+    const apiKey = apiKeyEl.value;
+
+    if (!baseUrl) { log("Endpoint is required", true); return; }
+    if (!text) { log("Text is required", true); return; }
+
+    resetMetrics();
+    logEl.textContent = "";
+    stopRealtimePlayback();
+    if (lastObjectUrl) {
+      URL.revokeObjectURL(lastObjectUrl);
+      lastObjectUrl = null;
+    }
+    playerEl.removeAttribute("src");
+
+    const { url, headers, body } = buildRequest(baseUrl, apiKey, text, description);
+    abortController = new AbortController();
+    submitBtn.disabled = true;
+    stopBtn.disabled = false;
+    setStatus("Sending request…", "busy");
+    log(`POST ${url}`);
+
+    const sentAt = performance.now();
+
+    let response;
+    try {
+      response = await fetch(url, { method: "POST", headers, body, signal: abortController.signal });
+    } catch (e) {
+      if (e.name === "AbortError") {
+        log("Request aborted before response.");
+        setStatus("Stopped", "err");
+      } else {
+        log(`Network/CORS error: ${e.message}`, true);
+        setStatus("Network error", "err");
+      }
+      stopRealtimePlayback();
+      finishUi();
+      return;
+    }
+
+    if (!response.ok) {
+      const msg = await readErrorBody(response);
+      log(`Server error: ${msg}`, true);
+      setStatus("Server error", "err");
+      stopRealtimePlayback();
+      finishUi();
+      return;
+    }
+
+    setStatus("Streaming…", "busy");
+
+    const reader = response.body.getReader();
+    let headerCarry = new Uint8Array(0);
+    let headerBytes = null; // parsed once we have 44 bytes
+    const audioParts = [];
+    let totalAudioBytes = 0;
+    let channels = 0;
+    let sampleRateHz = 0;
+    let bitsPerSample = 0;
+
+    let firstChunkAt = null;
+    const chunkTimestamps = [];
+    let sumGaps = 0;
+
+    function onAudioBytes(bytes) {
+      audioParts.push(bytes);
+      totalAudioBytes += bytes.length;
+      const now = performance.now();
+      if (firstChunkAt === null) {
+        firstChunkAt = now;
+        metricEls.ttfc.textContent = fmtMs(firstChunkAt - sentAt);
+        log(`First chunk received after ${(firstChunkAt - sentAt).toFixed(0)} ms`);
+      } else {
+        const gap = now - chunkTimestamps[chunkTimestamps.length - 1];
+        sumGaps += gap;
+        const avgGap = sumGaps / (chunkTimestamps.length);
+        metricEls.avgGap.textContent = fmtMs(avgGap);
+      }
+      chunkTimestamps.push(now);
+      metricEls.chunks.textContent = String(chunkTimestamps.length);
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.length === 0) continue;
+
+        if (headerBytes === null) {
+          const combined = concatBytes(headerCarry, value);
+          if (combined.length < 44) {
+            headerCarry = combined;
+            continue;
+          }
+          headerBytes = combined.slice(0, 44);
+          const parsed = parseWavHeader(headerBytes);
+          channels = parsed.channels;
+          sampleRateHz = parsed.sampleRateHz;
+          bitsPerSample = parsed.bitsPerSample;
+          log(
+            `WAV header: ${parsed.sampleRateHz} Hz, ${parsed.channels} ch, ` +
+              `${parsed.bitsPerSample}-bit`
+          );
+          const rest = combined.slice(44);
+          if (rest.length > 0) {
+            onAudioBytes(rest);
+            feedRealtime(rest, sampleRateHz, channels);
+          }
+        } else {
+          onAudioBytes(value);
+          feedRealtime(value, sampleRateHz, channels);
+        }
+      }
+    } catch (e) {
+      if (e.name === "AbortError") {
+        log("Stream aborted by user.");
+        setStatus("Stopped", "err");
+      } else {
+        log(`Stream error: ${e.message}`, true);
+        setStatus("Stream error", "err");
+      }
+      stopRealtimePlayback();
+      finishUi();
+      return;
+    }
+
+    const endedAt = performance.now();
+    const totalSeconds = (endedAt - sentAt) / 1000;
+    metricEls.total.textContent = fmtSec(totalSeconds);
+
+    if (headerBytes === null || totalAudioBytes === 0) {
+      log("Stream ended with no audio data.", true);
+      setStatus("No audio received", "err");
+      stopRealtimePlayback();
+      finishUi();
+      return;
+    }
+
+    const bytesPerSample = bitsPerSample / 8;
+    const audioDurationSeconds =
+      totalAudioBytes / (sampleRateHz * channels * bytesPerSample);
+    metricEls.audioDur.textContent = fmtSec(audioDurationSeconds);
+
+    if (audioDurationSeconds > 0) {
+      const rtf = totalSeconds / audioDurationSeconds;
+      metricEls.rtf.textContent = rtf.toFixed(3);
+    }
+
+    const fixedHeader = finalizeWavHeader(headerBytes, totalAudioBytes);
+    const blob = new Blob([fixedHeader, ...audioParts], { type: "audio/wav" });
+    lastObjectUrl = URL.createObjectURL(blob);
+    playerEl.src = lastObjectUrl; // available for replay/seek; already played live
+
+    log(
+      `Done: ${chunkTimestamps.length} chunks, ${totalAudioBytes} audio bytes, ` +
+        `${totalSeconds.toFixed(3)}s total, ${audioDurationSeconds.toFixed(3)}s audio.`
+    );
+    setStatus("Playing", "ok");
+    finishUi();
+  }
+
+  function finishUi() {
+    submitBtn.disabled = false;
+    stopBtn.disabled = true;
+    abortController = null;
+  }
+
+  submitBtn.addEventListener("click", () => {
+    run().catch((e) => {
+      log(`Unexpected error: ${e.message}`, true);
+      setStatus("Error", "err");
+      finishUi();
+    });
+  });
+
+  stopBtn.addEventListener("click", () => {
+    if (abortController) abortController.abort();
+    stopRealtimePlayback();
+  });
+})();
+</script>
+</body>
+</html>
