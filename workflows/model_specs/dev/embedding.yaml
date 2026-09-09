@@ -57,13 +57,14 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
-        BENCHMARK_MAX_CONCURRENCY: "256"
+        # Saturation probe: 512 in flight (Little's law caps RPS at
+        # in_flight/E2EL, 256 was the binding limit at ~3.2k RPS) across 4
+        # client processes (one saturates a CPU core at ~2k req/s).
+        BENCHMARK_MAX_CONCURRENCY: "512"
         # >= 10-20x concurrency so the startup transient (client ramp, single-
         # request batches) is <2% of the run and the average measures steady state.
-        BENCHMARK_NUM_PROMPTS: "10000"
-        # One Python bench client saturates a CPU core at ~2k req/s; split the
-        # load across two processes to measure the server, not the client.
-        BENCHMARK_NUM_CLIENTS: "2"
+        BENCHMARK_NUM_PROMPTS: "20000"
+        BENCHMARK_NUM_CLIENTS: "4"
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
