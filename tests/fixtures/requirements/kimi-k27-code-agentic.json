@@ -21,7 +21,7 @@
       },
       "deployment": {
         "environment": "on_prem",
-        "hardware": "SC",
+        "hardware": "SC8",
         "maxConcurrencyPerInstance": 1,
         "maxInstances": 1
       },
