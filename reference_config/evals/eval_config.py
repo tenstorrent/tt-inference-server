@@ -4806,20 +4806,39 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Deliberately NOT use_chat_api, unlike r1_gpqa_diamond above:
-                # the server-side chat rendering inserts a stray space token
-                # at the system-turn boundary for conversations with system
-                # content, and this checkpoint degenerates into repeated-token
-                # output on that malformed prompt (bringup run 33842850459
-                # scored 30.95 because 29/42 responses collapsed; replaying
-                # the server-rendered token ids reproduces it exactly, while
-                # the reference rendering of the same conversation reasons
-                # correctly and stops on its own). The completions path with
-                # the classic no-thinking 5-shot CoT methodology -- the same
-                # shape every other model's mmlu_pro entry uses -- answered
-                # correctly and deterministically in local replays. Note the
-                # published 85.2 may assume thinking, so expect this score to
-                # undershoot it; grade as indicative.
+                # Deliberately NOT use_chat_api, unlike r1_gpqa_diamond above.
+                # Two independent reasons, established by a 168-replay local
+                # A/B sweep of all 42 conversations from the failing bringup
+                # run 33842850459 (token-id level, greedy, every combination
+                # of render x thinking; tt-agentic-bringup-qb2 issue #42):
+                #   1. PRIMARY -- thinking-mode collapse on long prompts. With
+                #      thinking on, generations whose PROMPT exceeds the
+                #      checkpoint's 1024-token sliding window collapse into
+                #      repeated-token soup ~650-1000 tokens into the response:
+                #      27-29 of 42 collapsed (=31% score, matching the CI
+                #      30.95), and fixing the rendering rescued only 2 of 29.
+                #      Zero collapses were ever observed with prompts <= 1024
+                #      (fewshot-ramp + length-bisect on fixed content confirm
+                #      the threshold). All MMLU-Pro 5-shot prompts are
+                #      1100-2200 tokens. The completions path avoids it:
+                #      apply_chat_template defaults enable_thinking=false and
+                #      no-thinking answers stay short (~300-500 tokens) --
+                #      36/42 = 85.7 in the same sweep, matching the published
+                #      85.2 and the passing CI run 33962855960 (85.71). So the
+                #      published score is met WITHOUT thinking; do not
+                #      re-enable thinking here until the long-prompt collapse
+                #      is root-caused in the autoport sliding-window decode
+                #      path (suspects: cache_position_modulo fill/update ring
+                #      semantics in multichip_decoder + ttnn paged kernels).
+                #   2. MINOR -- the server-side chat render carries one stray
+                #      space token after the system turn: the chat template's
+                #      content-parts branch appends ' ' after the LAST part,
+                #      and vLLM normalizes string content to parts before
+                #      rendering. Behaviorally near-irrelevant for this eval
+                #      (2/29 flips) but every chat-door render is off-spec;
+                #      one-line template fix / --chat-template-content-format
+                #      string tracked in issue #42 (matters for agents, which
+                #      cannot leave the chat door).
                 model_kwargs={
                     "max_length": 49152,
                     "timeout": "3600",
