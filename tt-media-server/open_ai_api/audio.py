@@ -54,7 +54,11 @@ async def parse_audio_request(
     stream: Optional[bool] = Form(False),
     response_format: Optional[str] = Form(ResponseFormat.VERBOSE_JSON.value),
     is_preprocessing_enabled: Optional[bool] = Form(True),
-    perform_diarization: Optional[bool] = Form(False),
+    # None, not False: the server-side default lives in
+    # settings.perform_diarization, and `Form(False)` plus the old
+    # `perform_diarization or False` below collapsed "omitted" and "explicitly
+    # false" into the same value, so a True default could never take effect.
+    perform_diarization: Optional[bool] = Form(None),
     temperatures: Optional[str] = Form(None),
     compression_ratio_threshold: Optional[float] = Form(None),
     logprob_threshold: Optional[float] = Form(None),
@@ -75,7 +79,9 @@ async def parse_audio_request(
             is_preprocessing_enabled=is_preprocessing_enabled
             if is_preprocessing_enabled is not None
             else True,
-            perform_diarization=perform_diarization or False,
+            perform_diarization=perform_diarization
+            if perform_diarization is not None
+            else settings.perform_diarization,
             temperatures=temperatures,
             compression_ratio_threshold=compression_ratio_threshold,
             logprob_threshold=logprob_threshold,

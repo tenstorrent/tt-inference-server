@@ -44,13 +44,19 @@ def audio_worker_function(
     audio_manager,
     audio_file_data,
     is_preprocessing_enabled,
-    perform_diarization=False,
+    perform_diarization=None,
     chunk_duration_seconds=None,
 ):
     """Process audio data using the initialized AudioManager"""
     from config.settings import settings
 
     from config.constants import ModelRunners
+
+    # Runs in a CpuWorkloadHandler worker process, so `settings` here is that
+    # process's own singleton. None means the caller did not specify, so fall
+    # back to the server-side default rather than silently to False.
+    if perform_diarization is None:
+        perform_diarization = settings.perform_diarization
 
     should_preprocess = settings.allow_audio_preprocessing and is_preprocessing_enabled
 

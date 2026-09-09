@@ -8,7 +8,7 @@ import numpy as np
 from config.constants import ResponseFormat
 from config.settings import settings
 from domain.base_request import BaseRequest
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 
 
 class AudioProcessingRequest(BaseRequest):
@@ -21,8 +21,13 @@ class AudioProcessingRequest(BaseRequest):
     is_preprocessing_enabled: bool = (
         True  # Enable VAD and diarization for specific request
     )
-    perform_diarization: bool = (
-        False  # Whether to perform speaker diarization during preprocessing
+    # Whether to perform speaker diarization during preprocessing. Defaults from
+    # settings (PERFORM_DIARIZATION) rather than a literal so the JSON route,
+    # which builds this model straight from the body, gets the same server-side
+    # default as the multipart route. default_factory, not a bare default, so it
+    # reads the settings singleton at construction instead of import time.
+    perform_diarization: bool = Field(
+        default_factory=lambda: settings.perform_diarization
     )
 
     temperatures: Optional[Union[float, Tuple[float, ...]]] = 0.0

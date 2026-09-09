@@ -143,6 +143,19 @@ class Settings(BaseSettings):
 
     # Audio processing settings
     allow_audio_preprocessing: bool = True
+    # Server-side default for AudioProcessingRequest.perform_diarization, so
+    # clients get diarization without having to send the field on every request
+    # (and cannot forget to). A request that sends the field explicitly still
+    # wins in both directions; override the default per deployment with
+    # PERFORM_DIARIZATION=false.
+    #
+    # NOTE for Qwen3-ASR on Galaxy: with diarization on, audio_service takes the
+    # `apply_diarization_with_vad` branch instead of the two-tier duration
+    # fan-out (`qwen3_asr_chunk_plan`). Segmentation then follows speech/speaker
+    # boundaries rather than fixed windows, so a long single-speaker clip can
+    # yield far fewer segments than audio_chunk_duration_seconds would, and its
+    # RTR drops accordingly. Concurrent-request throughput is unaffected.
+    perform_diarization: bool = True
     audio_chunk_duration_seconds: Optional[int] = None
     # Qwen3-ASR fan-out is two-tier (see model_services.audio_service):
     #  - clips at/under audio_min_split_duration_seconds stay whole (one runner);
