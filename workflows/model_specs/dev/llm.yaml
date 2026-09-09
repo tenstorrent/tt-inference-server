@@ -2376,7 +2376,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 16  # capped to fit the standalone-decode deployment's 32 slots
-      max_context: 1048576  # 1024 * 1024;
+      max_context: 56320  # served ceiling: prefill PREFILL_MAX_SEQ_LEN (11 x 5120-token chunks)
       default_impl: true
   status: FUNCTIONAL
   env_vars:
