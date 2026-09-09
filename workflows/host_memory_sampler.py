@@ -38,17 +38,25 @@ DEFAULT_MEMINFO_PATH = Path("/proc/meminfo")
 DEFAULT_INTERVAL_S = 0.5
 INTERVAL_ENV_VAR = "TT_HOST_MEM_SAMPLE_SEC"
 
-# Recorded verbatim from /proc/meminfo, in kB. MemAvailable is the figure the
-# pre-flight check uses; Buffers and Cached are broken out because page cache
-# is reclaimable and counting it as "used" is what makes a host look full when
-# it is not. HugePages_* covers the pinned 1 GB pages used for host-to-device
-# DMA staging, which are not visible in MemAvailable.
+# Recorded verbatim from /proc/meminfo, in kB.
+#
+# MemAvailable is the figure the pre-flight check in setup_host.py uses.
+# Buffers and Cached are broken out because page cache is reclaimable, and
+# counting it as "used" is what makes a host look full when it is not.
+# AnonPages, Shmem, Mapped and the slab figures separate memory a process
+# actually holds from cache the kernel would hand back under pressure — the
+# distinction that decides whether a high "used" number means anything.
 MEMINFO_FIELDS = (
     "MemTotal",
     "MemFree",
     "MemAvailable",
     "Buffers",
     "Cached",
+    "AnonPages",
+    "Mapped",
+    "Shmem",
+    "SReclaimable",
+    "SUnreclaim",
     "SwapTotal",
     "SwapFree",
     "HugePages_Total",
@@ -57,8 +65,16 @@ MEMINFO_FIELDS = (
 )
 
 # HugePages_Total/Free are counts of pages, not kB; Hugepagesize gives the size
-# of one page so the pinned DMA staging total can be recovered from them.
+# of one page. Note these cover only the kernel's *default* hugepage pool,
+# which on these hosts is 2 MB — see HUGEPAGES_1G_SYSFS_DIR below.
 PAGE_COUNT_FIELDS = frozenset({"HugePages_Total", "HugePages_Free"})
+
+# /proc/meminfo reports only the default-size hugepage pool. The TT stack pins
+# its host-to-device DMA staging in 1 GB pages (/dev/hugepages-1G), a separate
+# pool that is invisible there and has to be read from sysfs instead.
+HUGEPAGES_1G_SYSFS_DIR = Path("/sys/kernel/mm/hugepages/hugepages-1048576kB")
+HUGEPAGES_1G_FIELDS = ("nr_hugepages", "free_hugepages")
+HUGEPAGES_1G_COLUMNS = ("HugePages1G_Total", "HugePages1G_Free")
 
 
 def column_name(field: str) -> str:
@@ -68,6 +84,8 @@ def column_name(field: str) -> str:
 CSV_HEADER = (
     "epoch_s,iso_time,"
     + ",".join(column_name(f) for f in MEMINFO_FIELDS)
+    + ","
+    + ",".join(HUGEPAGES_1G_COLUMNS)
     + ",mem_used_kB"
 )
 
@@ -102,10 +120,29 @@ def read_meminfo(meminfo_path: Path = DEFAULT_MEMINFO_PATH) -> Dict[str, int]:
     return values
 
 
+def read_hugepages_1g(
+    sysfs_dir: Path = HUGEPAGES_1G_SYSFS_DIR,
+) -> Dict[str, int]:
+    """Return the 1 GB hugepage pool counts, or {} if the pool does not exist.
+
+    Values are page counts; each page is 1 GiB.
+    """
+    values: Dict[str, int] = {}
+    for field, column in zip(HUGEPAGES_1G_FIELDS, HUGEPAGES_1G_COLUMNS):
+        try:
+            values[column] = int((sysfs_dir / field).read_text().strip())
+        except (OSError, ValueError):
+            # Pool absent on this host, or unreadable: leave the cell empty
+            # rather than reporting a zero that would read as "none pinned".
+            pass
+    return values
+
+
 def format_sample(values: Dict[str, int], now: float) -> str:
     """One CSV row. Missing fields are left empty rather than guessed at."""
     cells = [f"{now:.0f}", datetime.fromtimestamp(now).isoformat(timespec="seconds")]
     cells += [str(values.get(field, "")) for field in MEMINFO_FIELDS]
+    cells += [str(values.get(column, "")) for column in HUGEPAGES_1G_COLUMNS]
     total, available = values.get("MemTotal"), values.get("MemAvailable")
     cells.append(
         str(total - available) if total is not None and available is not None else ""
@@ -125,10 +162,12 @@ class HostMemorySampler:
         output_path: Path,
         interval_s: float = DEFAULT_INTERVAL_S,
         meminfo_path: Path = DEFAULT_MEMINFO_PATH,
+        hugepages_1g_dir: Path = HUGEPAGES_1G_SYSFS_DIR,
     ):
         self.output_path = Path(output_path)
         self.interval_s = interval_s
         self.meminfo_path = Path(meminfo_path)
+        self.hugepages_1g_dir = Path(hugepages_1g_dir)
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -174,7 +213,9 @@ class HostMemorySampler:
             with self.output_path.open("w", buffering=1) as f:
                 f.write(CSV_HEADER + "\n")
                 while not self._stop.is_set():
-                    f.write(format_sample(read_meminfo(self.meminfo_path), time.time()))
+                    values = read_meminfo(self.meminfo_path)
+                    values.update(read_hugepages_1g(self.hugepages_1g_dir))
+                    f.write(format_sample(values, time.time()))
                     f.write("\n")
                     self._stop.wait(self.interval_s)
         except Exception:
