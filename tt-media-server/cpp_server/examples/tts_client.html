@@ -142,6 +142,10 @@
         <label for="apiKey">API Key (Bearer token)</label>
         <input type="password" id="apiKey" value="your-secret-key" />
       </div>
+      <div>
+        <label for="concurrency">Concurrent Requests</label>
+        <input type="number" id="concurrency" value="1" min="1" max="350" />
+      </div>
     </div>
 
     <label for="text">Text</label>
@@ -162,6 +166,7 @@
       <span id="statusText">Idle</span>
     </div>
 
+    <p class="subtitle" style="margin-top:14px;">Sample request (request #1 — the only one whose audio plays)</p>
     <div class="metrics">
       <div class="metric">
         <div class="value" id="mTtfc">–</div>
@@ -189,6 +194,34 @@
       </div>
     </div>
 
+    <p class="subtitle" style="margin-top:14px;">Batch summary (all concurrent requests)</p>
+    <div class="metrics">
+      <div class="metric">
+        <div class="value" id="bDone">–</div>
+        <div class="label">Requests Done</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="bFailed">–</div>
+        <div class="label">Requests Failed</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="bAvgTtfc">–</div>
+        <div class="label">Avg Time to First Chunk</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="bAvgRtf">–</div>
+        <div class="label">Avg RTF</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="bWallTime">–</div>
+        <div class="label">Batch Wall Time</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="bThroughput">–</div>
+        <div class="label">Throughput</div>
+      </div>
+    </div>
+
     <audio id="player" controls></audio>
 
     <div class="log" id="log"></div>
@@ -203,7 +236,10 @@
       the closest thing observable from the browser to the server's internal
       audio chunks. Audio is played in real time via the Web Audio API as
       chunks arrive (with a small lead buffer to absorb network jitter); the
-      player below holds the fully assembled clip for replay/seeking.
+      player below holds the fully assembled clip for replay/seeking. With
+      "Concurrent Requests" &gt; 1, all requests run in parallel (tested up
+      to 350) but only the first one drives the sample metrics and audio
+      playback — the rest only contribute to the batch summary.
     </div>
   </section>
 </main>
@@ -215,12 +251,15 @@
   const apiKeyEl = $("apiKey");
   const textEl = $("text");
   const descriptionEl = $("description");
+  const concurrencyEl = $("concurrency");
   const submitBtn = $("submitBtn");
   const stopBtn = $("stopBtn");
   const statusDot = $("statusDot");
   const statusText = $("statusText");
   const playerEl = $("player");
   const logEl = $("log");
+
+  const MAX_CONCURRENCY = 350;
 
   const metricEls = {
     ttfc: $("mTtfc"),
@@ -231,7 +270,16 @@
     audioDur: $("mAudioDur"),
   };
 
-  let abortController = null;
+  const batchEls = {
+    done: $("bDone"),
+    failed: $("bFailed"),
+    avgTtfc: $("bAvgTtfc"),
+    avgRtf: $("bAvgRtf"),
+    wallTime: $("bWallTime"),
+    throughput: $("bThroughput"),
+  };
+
+  let batchAbortController = null;
   let lastObjectUrl = null;
 
   // Real-time playback state: schedules decoded PCM chunks back-to-back on
@@ -258,6 +306,10 @@
 
   function resetMetrics() {
     Object.values(metricEls).forEach((el) => (el.textContent = "–"));
+  }
+
+  function resetBatchMetrics() {
+    Object.values(batchEls).forEach((el) => (el.textContent = "–"));
   }
 
   function fmtMs(ms) {
@@ -384,89 +436,66 @@
     }
   }
 
-  async function run() {
-    const baseUrl = endpointEl.value.trim();
-    const text = textEl.value.trim();
-    const description = descriptionEl.value.trim();
-    const apiKey = apiKeyEl.value;
-
-    if (!baseUrl) { log("Endpoint is required", true); return; }
-    if (!text) { log("Text is required", true); return; }
-
-    resetMetrics();
-    logEl.textContent = "";
-    stopRealtimePlayback();
-    if (lastObjectUrl) {
-      URL.revokeObjectURL(lastObjectUrl);
-      lastObjectUrl = null;
-    }
-    playerEl.removeAttribute("src");
-
-    const { url, headers, body } = buildRequest(baseUrl, apiKey, text, description);
-    abortController = new AbortController();
-    submitBtn.disabled = true;
-    stopBtn.disabled = false;
-    setStatus("Sending request…", "busy");
-    log(`POST ${url}`);
-
+  // Runs one POST /v1/audio/speech request end-to-end. Only the request with
+  // playAudio=true drives the sample metric tiles, real-time scheduling, and
+  // the final replayable blob; the rest just stream-and-discard for timing.
+  async function runOneRequest(index, playAudio, req, signal) {
     const sentAt = performance.now();
-
     let response;
     try {
-      response = await fetch(url, { method: "POST", headers, body, signal: abortController.signal });
+      response = await fetch(req.url, {
+        method: "POST",
+        headers: req.headers,
+        body: req.body,
+        signal,
+      });
     } catch (e) {
-      if (e.name === "AbortError") {
-        log("Request aborted before response.");
-        setStatus("Stopped", "err");
-      } else {
-        log(`Network/CORS error: ${e.message}`, true);
-        setStatus("Network error", "err");
-      }
-      stopRealtimePlayback();
-      finishUi();
-      return;
+      if (e.name === "AbortError") return { ok: false, aborted: true };
+      log(`[req ${index + 1}] network/CORS error: ${e.message}`, true);
+      return { ok: false, error: e.message };
     }
 
     if (!response.ok) {
       const msg = await readErrorBody(response);
-      log(`Server error: ${msg}`, true);
-      setStatus("Server error", "err");
-      stopRealtimePlayback();
-      finishUi();
-      return;
+      log(`[req ${index + 1}] server error: ${msg}`, true);
+      return { ok: false, error: msg };
     }
 
-    setStatus("Streaming…", "busy");
+    if (playAudio) setStatus("Streaming…", "busy");
 
     const reader = response.body.getReader();
     let headerCarry = new Uint8Array(0);
     let headerBytes = null; // parsed once we have 44 bytes
-    const audioParts = [];
+    const audioParts = playAudio ? [] : null;
     let totalAudioBytes = 0;
     let channels = 0;
     let sampleRateHz = 0;
     let bitsPerSample = 0;
 
     let firstChunkAt = null;
-    const chunkTimestamps = [];
+    let lastChunkAt = null;
+    let chunkCount = 0;
+    let gapsCount = 0;
     let sumGaps = 0;
 
     function onAudioBytes(bytes) {
-      audioParts.push(bytes);
+      if (playAudio) audioParts.push(bytes);
       totalAudioBytes += bytes.length;
       const now = performance.now();
       if (firstChunkAt === null) {
         firstChunkAt = now;
-        metricEls.ttfc.textContent = fmtMs(firstChunkAt - sentAt);
-        log(`First chunk received after ${(firstChunkAt - sentAt).toFixed(0)} ms`);
+        if (playAudio) {
+          metricEls.ttfc.textContent = fmtMs(firstChunkAt - sentAt);
+          log(`First chunk received after ${(firstChunkAt - sentAt).toFixed(0)} ms`);
+        }
       } else {
-        const gap = now - chunkTimestamps[chunkTimestamps.length - 1];
-        sumGaps += gap;
-        const avgGap = sumGaps / (chunkTimestamps.length);
-        metricEls.avgGap.textContent = fmtMs(avgGap);
+        sumGaps += now - lastChunkAt;
+        gapsCount += 1;
+        if (playAudio) metricEls.avgGap.textContent = fmtMs(sumGaps / gapsCount);
       }
-      chunkTimestamps.push(now);
-      metricEls.chunks.textContent = String(chunkTimestamps.length);
+      lastChunkAt = now;
+      chunkCount += 1;
+      if (playAudio) metricEls.chunks.textContent = String(chunkCount);
     }
 
     try {
@@ -486,76 +515,158 @@
           channels = parsed.channels;
           sampleRateHz = parsed.sampleRateHz;
           bitsPerSample = parsed.bitsPerSample;
-          log(
-            `WAV header: ${parsed.sampleRateHz} Hz, ${parsed.channels} ch, ` +
-              `${parsed.bitsPerSample}-bit`
-          );
+          if (playAudio) {
+            log(
+              `WAV header: ${parsed.sampleRateHz} Hz, ${parsed.channels} ch, ` +
+                `${parsed.bitsPerSample}-bit`
+            );
+          }
           const rest = combined.slice(44);
           if (rest.length > 0) {
             onAudioBytes(rest);
-            feedRealtime(rest, sampleRateHz, channels);
+            if (playAudio) feedRealtime(rest, sampleRateHz, channels);
           }
         } else {
           onAudioBytes(value);
-          feedRealtime(value, sampleRateHz, channels);
+          if (playAudio) feedRealtime(value, sampleRateHz, channels);
         }
       }
     } catch (e) {
-      if (e.name === "AbortError") {
-        log("Stream aborted by user.");
-        setStatus("Stopped", "err");
-      } else {
-        log(`Stream error: ${e.message}`, true);
-        setStatus("Stream error", "err");
-      }
-      stopRealtimePlayback();
-      finishUi();
-      return;
+      if (e.name === "AbortError") return { ok: false, aborted: true };
+      log(`[req ${index + 1}] stream error: ${e.message}`, true);
+      return { ok: false, error: e.message };
     }
 
-    const endedAt = performance.now();
-    const totalSeconds = (endedAt - sentAt) / 1000;
-    metricEls.total.textContent = fmtSec(totalSeconds);
+    const totalSeconds = (performance.now() - sentAt) / 1000;
 
     if (headerBytes === null || totalAudioBytes === 0) {
-      log("Stream ended with no audio data.", true);
-      setStatus("No audio received", "err");
-      stopRealtimePlayback();
-      finishUi();
-      return;
+      log(`[req ${index + 1}] ended with no audio data.`, true);
+      return { ok: false, error: "no audio data" };
     }
 
     const bytesPerSample = bitsPerSample / 8;
     const audioDurationSeconds =
       totalAudioBytes / (sampleRateHz * channels * bytesPerSample);
-    metricEls.audioDur.textContent = fmtSec(audioDurationSeconds);
+    const rtf = audioDurationSeconds > 0 ? totalSeconds / audioDurationSeconds : null;
 
-    if (audioDurationSeconds > 0) {
-      const rtf = totalSeconds / audioDurationSeconds;
-      metricEls.rtf.textContent = rtf.toFixed(3);
+    if (playAudio) {
+      metricEls.total.textContent = fmtSec(totalSeconds);
+      metricEls.audioDur.textContent = fmtSec(audioDurationSeconds);
+      if (rtf !== null) metricEls.rtf.textContent = rtf.toFixed(3);
+
+      const fixedHeader = finalizeWavHeader(headerBytes, totalAudioBytes);
+      const blob = new Blob([fixedHeader, ...audioParts], { type: "audio/wav" });
+      lastObjectUrl = URL.createObjectURL(blob);
+      playerEl.src = lastObjectUrl; // available for replay/seek; already played live
+
+      log(
+        `[req ${index + 1}] done: ${chunkCount} chunks, ${totalAudioBytes} audio bytes, ` +
+          `${totalSeconds.toFixed(3)}s total, ${audioDurationSeconds.toFixed(3)}s audio.`
+      );
     }
 
-    const fixedHeader = finalizeWavHeader(headerBytes, totalAudioBytes);
-    const blob = new Blob([fixedHeader, ...audioParts], { type: "audio/wav" });
-    lastObjectUrl = URL.createObjectURL(blob);
-    playerEl.src = lastObjectUrl; // available for replay/seek; already played live
+    return {
+      ok: true,
+      ttfcMs: firstChunkAt !== null ? firstChunkAt - sentAt : null,
+      chunks: chunkCount,
+      totalSeconds,
+      audioDurationSeconds,
+      rtf,
+    };
+  }
 
+  async function runBatch() {
+    const baseUrl = endpointEl.value.trim();
+    const text = textEl.value.trim();
+    const description = descriptionEl.value.trim();
+    const apiKey = apiKeyEl.value;
+
+    let count = parseInt(concurrencyEl.value, 10);
+    if (!Number.isFinite(count) || count < 1) count = 1;
+    count = Math.min(count, MAX_CONCURRENCY);
+    concurrencyEl.value = count;
+
+    if (!baseUrl) { log("Endpoint is required", true); return; }
+    if (!text) { log("Text is required", true); return; }
+
+    resetMetrics();
+    resetBatchMetrics();
+    logEl.textContent = "";
+    stopRealtimePlayback();
+    if (lastObjectUrl) {
+      URL.revokeObjectURL(lastObjectUrl);
+      lastObjectUrl = null;
+    }
+    playerEl.removeAttribute("src");
+
+    const req = buildRequest(baseUrl, apiKey, text, description);
+    batchAbortController = new AbortController();
+    submitBtn.disabled = true;
+    stopBtn.disabled = false;
+    setStatus(count > 1 ? `Running ${count} requests…` : "Sending request…", "busy");
     log(
-      `Done: ${chunkTimestamps.length} chunks, ${totalAudioBytes} audio bytes, ` +
-        `${totalSeconds.toFixed(3)}s total, ${audioDurationSeconds.toFixed(3)}s audio.`
+      count > 1
+        ? `Launching ${count} concurrent requests to ${req.url} ` +
+            `(audio playback follows request #1 only)`
+        : `POST ${req.url}`
     );
-    setStatus("Playing", "ok");
+
+    const batchStartAt = performance.now();
+    let completed = 0;
+    let failed = 0;
+    let sumTtfc = 0;
+    let ttfcCount = 0;
+    let sumRtf = 0;
+    let rtfCount = 0;
+
+    function onOneDone(result) {
+      completed += 1;
+      if (!result.ok) {
+        if (!result.aborted) failed += 1;
+      } else {
+        if (result.ttfcMs !== null) {
+          sumTtfc += result.ttfcMs;
+          ttfcCount += 1;
+        }
+        if (result.rtf !== null) {
+          sumRtf += result.rtf;
+          rtfCount += 1;
+        }
+      }
+      const wallSeconds = (performance.now() - batchStartAt) / 1000;
+      batchEls.done.textContent = `${completed} / ${count}`;
+      batchEls.failed.textContent = String(failed);
+      if (ttfcCount > 0) batchEls.avgTtfc.textContent = fmtMs(sumTtfc / ttfcCount);
+      if (rtfCount > 0) batchEls.avgRtf.textContent = (sumRtf / rtfCount).toFixed(3);
+      batchEls.wallTime.textContent = fmtSec(wallSeconds);
+      batchEls.throughput.textContent = `${(completed / wallSeconds).toFixed(2)} req/s`;
+    }
+
+    const tasks = Array.from({ length: count }, (_, i) =>
+      runOneRequest(i, i === 0, req, batchAbortController.signal).then((result) => {
+        onOneDone(result);
+        return result;
+      })
+    );
+    await Promise.allSettled(tasks);
+
+    const wallSeconds = (performance.now() - batchStartAt) / 1000;
+    log(
+      `Batch done: ${completed}/${count} completed, ${failed} failed, ` +
+        `${wallSeconds.toFixed(3)}s wall time.`
+    );
+    setStatus(failed > 0 ? "Completed with errors" : "Done", failed > 0 ? "err" : "ok");
     finishUi();
   }
 
   function finishUi() {
     submitBtn.disabled = false;
     stopBtn.disabled = true;
-    abortController = null;
+    batchAbortController = null;
   }
 
   submitBtn.addEventListener("click", () => {
-    run().catch((e) => {
+    runBatch().catch((e) => {
       log(`Unexpected error: ${e.message}`, true);
       setStatus("Error", "err");
       finishUi();
@@ -563,7 +674,7 @@
   });
 
   stopBtn.addEventListener("click", () => {
-    if (abortController) abortController.abort();
+    if (batchAbortController) batchAbortController.abort();
     stopRealtimePlayback();
   });
 })();
