@@ -279,16 +279,18 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
-      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
-      max_context: 65536  # dFlash serving profile is unbounded-KV (<100k)
+      max_concurrency: 32  # adaptive engine: solo=spec, batch=baseline
+      max_context: 262144  # full-ISL adaptive engine
       env_vars:
         MESH_DEVICE: "P150x8"
         TT_GEMMA4_SPEC: "dflash"
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
+        GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # spec above this OOMs the capture at max_num_seqs=32; serve baseline instead
         GEMMA4_DFLASH_VERIFY: "7"
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
         # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
@@ -302,7 +304,7 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
-        max_num_seqs: 1
+        max_num_seqs: 32
         # Sync default: the async submit/accept split is in place and coherent,
         # but block-output disables the steady-decode overlap (output_tokens set)
         # and dFlash's step is serially dependent, so async gives no gain yet.

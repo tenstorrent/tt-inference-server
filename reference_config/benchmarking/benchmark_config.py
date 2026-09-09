@@ -101,6 +101,9 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (32768, 128),
     (65536, 128),
     (131072, 128),
+    (196608, 128),  # 192K -- dFlash bounded 256K sweep
+    (229376, 128),  # 224K
+    (253952, 128),  # ~248K -- safe near-max for a 262144 context (leaves room for osl + block-output placeholder; 262016 crashes at zero margin)
 ]
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
 # endpoints, whose token budget is context*concurrency (see
