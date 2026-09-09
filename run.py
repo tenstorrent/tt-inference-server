@@ -14,6 +14,7 @@ if "--dev-mode" in sys.argv[1:]:
     os.environ["MODEL_SPECS_ENV"] = "dev"
 
 import argparse  # noqa: E402
+import atexit  # noqa: E402
 import getpass  # noqa: E402
 import logging  # noqa: E402
 import shutil  # noqa: E402
@@ -50,6 +51,7 @@ from workflows.utils import (
     load_dotenv,
     write_dotenv,
 )
+from workflows.host_memory_sampler import start_host_memory_sampler
 from workflows.workflow_dispatch import build_engine_commands, can_dispatch_to_engine
 from workflows.validate_setup import run_multihost_validation_subprocess, validate_setup
 from workflows.workflow_types import (
@@ -1053,6 +1055,15 @@ def main():
     run_log_path = run_logs_path / f"run_{run_id}.log"
 
     setup_run_logger(logger=logger, run_id=run_id, run_log_path=run_log_path)
+
+    # Record host memory for the whole run, not just the pre-flight check in
+    # setup_host.py. Model load stages the weights to the devices well before
+    # the first benchmark point, so sampling has to start here to capture the
+    # peak. Registered with atexit so it also stops on the early-return and
+    # exception paths below.
+    memory_sampler = start_host_memory_sampler(log_path, run_id)
+    if memory_sampler is not None:
+        atexit.register(memory_sampler.stop)
 
     wf_logger = logging.getLogger("workflow_module")
     wf_logger.handlers = logger.handlers
