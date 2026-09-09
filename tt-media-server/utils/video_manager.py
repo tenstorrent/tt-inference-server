@@ -46,6 +46,11 @@ class VideoAudioResult:
     audio: NDArray
     sampling_rate: int
     fps: int = 16
+    # "rgb24": frames are (N, H, W, 3) uint8. "yuv420p": frames are planar (N, H * 3 // 2, W)
+    # uint8 -- exactly ffmpeg's rawvideo yuv420p layout, which the MiniMax-H3 pipeline hands back
+    # under vae_output_type="yuv420" (see MiniMaxH3Output.video_format) so no colour conversion
+    # ever runs on host.
+    pixel_format: str = "rgb24"
 
 
 class VideoManager:
@@ -109,6 +114,7 @@ class VideoManager:
         audio: NDArray,
         sampling_rate: int,
         fps: int = 16,
+        pixel_format: str = "rgb24",
     ) -> str:
         """Export frames plus a soundtrack to a single muxed MP4.
 
@@ -117,6 +123,7 @@ class VideoManager:
         to the common length; they round independently and differ slightly.
         """
         if hasattr(frames, "frames"):
+            pixel_format = getattr(frames, "pixel_format", pixel_format)
             frames = frames.frames
 
         _VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -130,9 +137,14 @@ class VideoManager:
         preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
 
         try:
-            processed = self._process_frames_for_export(frames)
+            if pixel_format == "yuv420p":
+                # Planar yuv420 is already the rawvideo byte layout; dtype/contiguity is the only
+                # normalization, and no RGB conversion happens anywhere on this path.
+                processed = np.ascontiguousarray(np.asarray(frames, dtype=np.uint8))
+            else:
+                processed = self._process_frames_for_export(frames)
             self._run_ffmpeg(
-                self._build_encode_cmd(processed, silent_path, fps, crf, preset),
+                self._build_encode_cmd(processed, silent_path, fps, crf, preset, pixel_format),
                 stdin_data=memoryview(processed),
             )
             self._write_wav(audio, sampling_rate, wav_path)
@@ -222,14 +234,24 @@ class VideoManager:
 
     @staticmethod
     def _build_encode_cmd(
-        frames: NDArray, output_path: str, fps: int, crf: int, preset: str
+        frames: NDArray,
+        output_path: str,
+        fps: int,
+        crf: int,
+        preset: str,
+        pixel_format: str = "rgb24",
     ) -> list[str]:
         """Build the ffmpeg rawvideo → libx264 command list."""
-        _, height, width, channels = frames.shape
-        if channels != _RGB_CHANNELS:
-            raise ValueError(
-                f"Expected {_RGB_CHANNELS} RGB channels after processing, got {channels}"
-            )
+        if pixel_format == "yuv420p":
+            # Planar (N, H * 3 // 2, W): the real frame height is 2/3 of the planar rows.
+            _, planar_height, width = frames.shape
+            height = planar_height * 2 // 3
+        else:
+            _, height, width, channels = frames.shape
+            if channels != _RGB_CHANNELS:
+                raise ValueError(
+                    f"Expected {_RGB_CHANNELS} RGB channels after processing, got {channels}"
+                )
 
         cmd = [
             "ffmpeg",
@@ -241,7 +263,7 @@ class VideoManager:
             "-s",
             f"{width}x{height}",
             "-pix_fmt",
-            "rgb24",
+            pixel_format,
             "-r",
             str(fps),
             "-i",

@@ -121,6 +121,15 @@ class TestBuildEncodeCmd:
         assert "+faststart" in cmd
         assert cmd[-1] == "/tmp/test.mp4"
 
+    def test_yuv420p_sizes_from_planar_layout(self):
+        # Planar (N, H*3//2, W) uint8: 8x8 frames occupy 12 rows.
+        frames = np.zeros((2, 12, 8), dtype=np.uint8)
+        cmd = VideoManager._build_encode_cmd(
+            frames, "/tmp/out.mp4", 16, 23, "ultrafast", pixel_format="yuv420p"
+        )
+        assert cmd[cmd.index("-s") + 1] == "8x8"
+        assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
+
 
 class TestRunFfmpeg:
     """Tests for _run_ffmpeg process execution."""

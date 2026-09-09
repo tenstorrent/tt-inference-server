@@ -909,7 +909,29 @@ class TestEncoderLoop:
         assert args[1] is audio
         assert args[2] == 16000
         assert kwargs["fps"] == 25
+        assert kwargs["pixel_format"] == "rgb24"
         output_shm.write_response.assert_called_once()
+
+    def test_video_audio_result_forwards_yuv420p_pixel_format(self):
+        import numpy as np
+
+        from utils.video_manager import VideoAudioResult
+
+        frames = np.zeros((2, 6, 4), dtype=np.uint8)
+        audio = np.zeros((2, 100), dtype=np.float32)
+        payload = VideoAudioResult(
+            frames, audio, sampling_rate=16000, fps=25, pixel_format="yuv420p"
+        )
+        job = _EncodeJob(task_id="t-yuv", frames=payload)
+
+        with patch(
+            "utils.video_manager.VideoManager.export_to_mp4_with_audio",
+            return_value="/tmp/out.mp4",
+        ) as mux:
+            self._drain(job)
+
+        _, kwargs = mux.call_args
+        assert kwargs["pixel_format"] == "yuv420p"
 
     def test_raw_frames_use_video_only_export(self):
         import numpy as np
