@@ -5,7 +5,7 @@
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from open_ai_api.tt_maintenance_api import router
 from resolver.service_resolver import service_resolver
@@ -61,6 +61,31 @@ class TestHealthEndpoint:
 
         assert response.status_code == 503
         assert response.json()["detail"] == "Model not ready"
+
+    @pytest.mark.parametrize("endpoint", ["/health", "/tt-liveness"])
+    @pytest.mark.parametrize("code", [503, 500])
+    def test_forwards_service_status_code_unchanged(
+        self, test_client, mock_service, endpoint, code
+    ):
+        """/health and /tt-liveness must forward the service's code unchanged.
+
+        This is the path production actually takes. Scheduler.check_is_model_ready
+        RAISES while warming up; it does not return {"model_ready": False}, so the
+        handler's own 503 branch is never reached and whatever the scheduler raised
+        is what the client sees. The sibling tests below mock a *return* value, which
+        is why this endpoint could serve 405 in production while every unit test
+        passed. Parametrized rather than pinned to 503 so it fails if a handler ever
+        starts rewriting the code; that the warming-up code IS 503 is asserted at the
+        source in test_scheduler.py::test_check_is_model_ready_when_not_ready.
+        """
+        mock_service.check_is_model_ready.side_effect = HTTPException(
+            status_code=code, detail="Model is not ready"
+        )
+
+        response = test_client.get(endpoint)
+
+        assert response.status_code == code
+        assert response.json()["detail"] == "Model is not ready"
 
     def test_health_returns_503_when_model_ready_key_missing(
         self, test_client, mock_service

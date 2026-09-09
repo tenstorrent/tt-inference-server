@@ -21,9 +21,10 @@ def liveness(service: BaseService = Depends(service_resolver)) -> dict[str, Any]
 
     Raises:
         HTTPException: If service is unavailable or model check fails.
-            HTTPExceptions raised by the service (e.g. 405 "model not ready",
-            503 "no workers available") are propagated unchanged so callers
-            can distinguish "still warming up" from "actually broken".
+            HTTPExceptions raised by the service are propagated unchanged.
+            Both unavailable states are 503 and are told apart by `detail`:
+            "Model is not ready" (still warming up) vs
+            "Service unavailable: No workers available." (actually broken).
     """
     try:
         return {"status": "alive", **service.check_is_model_ready()}

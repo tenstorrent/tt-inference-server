@@ -124,8 +124,14 @@ class Scheduler:
             )
 
     def check_is_model_ready(self) -> bool:
+        # 503, not 405: warming up is a temporary unavailability, whereas 405
+        # means the HTTP method is not allowed on this route. Probes and load
+        # balancers key off the class of the code, and /health + /tt-liveness
+        # forward this exception unchanged, so a 405 there reads as a routing
+        # bug rather than "still loading". The two unavailable states below are
+        # both 503 and are distinguished by `detail`, not by status code.
         if self.is_ready is not True:
-            raise HTTPException(405, "Model is not ready")
+            raise HTTPException(503, "Model is not ready")
 
         # Check if at least one worker is ready
         ready_workers = [

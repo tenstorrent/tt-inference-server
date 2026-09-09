@@ -8,6 +8,7 @@ from multiprocessing import Process, Queue
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
+from fastapi import HTTPException
 
 # Mock external dependencies
 sys.modules["ttnn"] = Mock()
@@ -165,12 +166,14 @@ class TestScheduler:
         """Test check_is_model_ready when model is not ready"""
         scheduler.is_ready = False
 
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             scheduler.check_is_model_ready()
 
-        assert "405" in str(exc_info.value) or "Model is not ready" in str(
-            exc_info.value
-        )
+        # Assert the status code itself, not a substring of str(exc): the old
+        # `"405" in str(...) or "Model is not ready" in str(...)` form passed for
+        # ANY status code, because the detail substring alone satisfied the `or`.
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == "Model is not ready"
 
     def test_process_request_queue_full(self, scheduler):
         """Test process_request when queue is full"""
@@ -215,12 +218,14 @@ class TestScheduler:
         mock_request = Mock()
 
         # Execute and verify
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             scheduler.process_request(mock_request)
 
-        assert "405" in str(exc_info.value) or "Model is not ready" in str(
-            exc_info.value
-        )
+        # Assert the status code itself, not a substring of str(exc): the old
+        # `"405" in str(...) or "Model is not ready" in str(...)` form passed for
+        # ANY status code, because the detail substring alone satisfied the `or`.
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == "Model is not ready"
 
     def test_process_request_no_ready_workers(self, scheduler):
         """Test process_request when no workers are ready"""
