@@ -4832,30 +4832,33 @@ _eval_config_list = [
                         # grades the container's end state after the cap.
                         "max_turns": 50,
                         "model_info": {
-                            # Sized for QB2 (P300X2), where gemma-4-31B serves
-                            # at max_model_len=49152 (Blackhole hybrid-off DRAM
-                            # ceiling, see workflows/model_specs). The agent
-                            # sends ~max_input + max_output per request, vLLM
+                            # Sized for QB2 (P300X2) at max_model_len=113280
+                            # (the autoport's audited vLLM context ceiling, see
+                            # workflows/model_specs). The agent sends
+                            # ~max_input + max_output per request, and vLLM
                             # up-front-rejects any request with max_tokens >
                             # max_model_len (80K out zeroed the whole eval on
-                            # run 32355285037, tt-agentic-bringup-qb2#2), and
-                            # the prompt must stay under the 32768 prefill
-                            # bucket. NOTE: gpu_reference_score=44.94 was
-                            # measured at 112K in / 80K out on a 200K-window
-                            # H100 -- restore those budgets to re-collect the
-                            # GPU reference; QB2 scores under these budgets are
+                            # run 32355285037, tt-agentic-bringup-qb2#2).
+                            # NOTE: gpu_reference_score=44.94 was measured at
+                            # 112K in / 80K out on a 200K-window H100 --
+                            # restore those budgets to re-collect the GPU
+                            # reference; QB2 scores under these budgets are
                             # not directly comparable to it.
-                            # 8K out (not 16K): measured turns on run
-                            # 33095231523 -- productive turns median ~1.4K,
-                            # thinking-heavy turns median ~6.4K -- so 8K
-                            # bounds a turn at ~6 min on QB2 (~23 tok/s)
-                            # while truncating only the extreme tail.
-                            "max_input_tokens": 30 * 1024,
-                            "max_output_tokens": 8 * 1024,
+                            # 64K in (was 30K under the 49152 window): on run
+                            # 34145630605 the 30K cap forced up to 9 context
+                            # summarizations per task (cobol: 118 min vs the
+                            # reference run's 10 min at 112K in). 64K + 16K
+                            # out = 80K leaves a wide margin under 113280.
+                            # 16K out (was 8K): thinking-heavy turns median
+                            # ~6.4K on run 33095231523; 16K truncates only the
+                            # extreme tail while bounding a turn at ~9 min at
+                            # ~31 tok/s decode.
+                            "max_input_tokens": 64 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 8 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
@@ -4909,17 +4912,17 @@ _eval_config_list = [
                     n_tasks=None,  # full dataset
                     temperature=1.0,
                     top_p=0.95,
-                    # Sized for QB2 (49152 window; chunked prefill admits any
+                    # Sized for QB2 (113280 window; chunked prefill admits any
                     # prompt length up to it). NOTE: gpu_reference_score=64.80
                     # was measured at 160K in / 32K out on a 200K-window H100
                     # -- restore those budgets to re-collect the GPU
                     # reference; QB2 scores under these budgets are not
                     # directly comparable to it.
-                    # 36K in: 100-step trajectories carry more history than
-                    # the 40-step runs this was first sized for; 36K + 8K out
-                    # = 44K leaves ~5K headroom for chat template + tool defs
-                    # under the 49152 window.
-                    max_input_tokens=36 * 1024,
+                    # 64K in: 100-step trajectories carry far more history
+                    # than the 40-step runs this was first sized for; 64K +
+                    # 8K out = 72K leaves a wide margin under the 113280
+                    # window.
+                    max_input_tokens=64 * 1024,
                     # 8K out, same measured-turn rationale as
                     # terminal_bench_2 above.
                     max_output_tokens=8 * 1024,
