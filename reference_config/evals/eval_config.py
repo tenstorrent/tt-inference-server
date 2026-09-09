@@ -4909,20 +4909,31 @@ _eval_config_list = [
                     n_tasks=None,  # full dataset
                     temperature=1.0,
                     top_p=0.95,
-                    # Sized for QB2 (49152 window / 32768 prefill bucket),
-                    # same rationale as terminal_bench_2 above. NOTE:
-                    # gpu_reference_score=64.80 was measured at 160K in / 32K
-                    # out on a 200K-window H100 -- restore those budgets to
-                    # re-collect the GPU reference; QB2 scores under these
-                    # budgets are not directly comparable to it.
-                    max_input_tokens=30 * 1024,
+                    # Sized for QB2 (49152 window; chunked prefill admits any
+                    # prompt length up to it). NOTE: gpu_reference_score=64.80
+                    # was measured at 160K in / 32K out on a 200K-window H100
+                    # -- restore those budgets to re-collect the GPU
+                    # reference; QB2 scores under these budgets are not
+                    # directly comparable to it.
+                    # 36K in: 100-step trajectories carry more history than
+                    # the 40-step runs this was first sized for; 36K + 8K out
+                    # = 44K leaves ~5K headroom for chat template + tool defs
+                    # under the 49152 window.
+                    max_input_tokens=36 * 1024,
                     # 8K out, same measured-turn rationale as
                     # terminal_bench_2 above.
                     max_output_tokens=8 * 1024,
                     # mini-swe-agent's builtin swebench.yaml step_limit is
                     # sized for GPU-speed turns; cap explicitly so a stuck
                     # instance is bounded at QB2 decode speed.
-                    mini_agent_kwargs={"step_limit": 40},  # 75 -> 40: serial instances at ~2-3 min/step must stay bounded in wall time
+                    # 40 -> 100: on run 34145630605 all five instances died at
+                    # LimitsExceeded (35-41 steps) with empty patches, while
+                    # the tt-transformers reference run 34117111997 submitted
+                    # all five at 36-85 API calls -- and the two it RESOLVED
+                    # (astropy 81, django 85) sit exactly in the band a 40- or
+                    # 75-step cap kills. 100 = observed max (85) + margin,
+                    # still bounding a stuck instance at QB2 decode speed.
+                    mini_agent_kwargs={"step_limit": 100},
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
