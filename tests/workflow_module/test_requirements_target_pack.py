@@ -511,7 +511,8 @@ def _agentic_pack(concurrencies, slo=None, sweep=None):
                 "id": "w1",
                 "slo": slo or {},
                 "agenticSweep": (
-                    sweep if sweep is not None
+                    sweep
+                    if sweep is not None
                     else [{"concurrency": c} for c in concurrencies]
                 ),
             }
