@@ -3,7 +3,15 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import pytest
-from tt_model_runners.minimax_h3_policy import (
+
+# The serving-envelope constants and their validators are re-exported from the model's own policy
+# module, so importing them needs the tt-metal package on the path; skip cleanly where it is absent.
+pytest.importorskip(
+    "models.tt_dit.pipelines.minimax_h3.policy",
+    exc_type=ImportError,
+)
+
+from tt_model_runners.minimax_h3_policy import (  # noqa: E402
     MINIMAX_H3_ASPECT_RATIOS,
     MINIMAX_H3_DEFAULT_ASPECT_RATIO,
     MINIMAX_H3_DEFAULT_DURATION_S,
