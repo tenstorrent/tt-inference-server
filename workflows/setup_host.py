@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -33,6 +34,18 @@ from workflows.workflow_types import ModelSource, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _dir_bytes(path: Path) -> int:
+    """Total bytes under path, including partial *.incomplete download staging."""
+    total = 0
+    for f in path.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            continue  # renamed or removed mid-walk by the downloader
+    return total
 
 
 @dataclass
@@ -604,7 +617,24 @@ class HostSetupManager:
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
-        result = subprocess.run(cmd)
+        # `hf download` draws progress with \r, which CI log collectors buffer, so a
+        # stalled transfer looks identical to a frozen process. Log the actual rate
+        # every 5 min instead; in-flight bytes land in
+        # .cache/huggingface/download/*.incomplete under host_weights_dir.
+        result = subprocess.Popen(cmd)
+        last_bytes, elapsed = _dir_bytes(host_weights_dir), 0
+        while result.poll() is None:
+            time.sleep(5)
+            elapsed += 5
+            if elapsed < 300:
+                continue
+            now_bytes = _dir_bytes(host_weights_dir)
+            logger.info(
+                f"hf download throughput: "
+                f"{(now_bytes - last_bytes) / elapsed / 1e6:.2f} MB/s "
+                f"({now_bytes / 1e9:.1f} GB on disk)"
+            )
+            last_bytes, elapsed = now_bytes, 0
         if result.returncode != 0 and weights_complete:
             logger.warning(
                 f"Could not reach Hugging Face to verify weights; "
