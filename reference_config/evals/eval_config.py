@@ -4790,6 +4790,64 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
+                # scored by the task's own answer extractor. Unlike bare
+                # n-shot GPQA, the few-shot examples demonstrate reasoning
+                # before the final answer, so they do not suppress thinking.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Deliberately NOT use_chat_api, unlike r1_gpqa_diamond above:
+                # the server-side chat rendering inserts a stray space token
+                # at the system-turn boundary for conversations with system
+                # content, and this checkpoint degenerates into repeated-token
+                # output on that malformed prompt (bringup run 33842850459
+                # scored 30.95 because 29/42 responses collapsed; replaying
+                # the server-rendered token ids reproduces it exactly, while
+                # the reference rendering of the same conversation reasons
+                # correctly and stops on its own). The completions path with
+                # the classic no-thinking 5-shot CoT methodology -- the same
+                # shape every other model's mmlu_pro entry uses -- answered
+                # correctly and deterministically in local replays. Note the
+                # published 85.2 may assume thinking, so expect this score to
+                # undershoot it; grade as indicative.
+                model_kwargs={
+                    "max_length": 49152,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 8192,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # mmlu_pro is a GROUP of 14 subject subtasks and lm-eval
+                # applies the limit PER SUBTASK: an int here multiplies by 14.
+                # 3/subtask = ~42 questions per nightly run, 1/subtask = 14 on
+                # smoke. (A first attempt set 40, which became 560 scheduled
+                # samples and a ~99-hour ETA.)
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
