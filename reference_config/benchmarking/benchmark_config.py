@@ -98,12 +98,22 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (8192, 1024),
     (10000, 1024),
     (16384, 128),
+    (16384, 1024),
     (32768, 128),
+    (32768, 1024),
     (65536, 128),
+    (65536, 1024),
     (131072, 128),
+    (131072, 1024),
     (196608, 128),  # 192K -- dFlash bounded 256K sweep
     (229376, 128),  # 224K
     (253952, 128),  # ~248K -- safe near-max for a 262144 context (leaves room for osl + block-output placeholder; 262016 crashes at zero margin)
+    (253952, 1024),
+    # High-ISL osl=1024 companions: with osl=128 the report's output-TPS column
+    # is ~entirely TTFT (prefill) -- e.g. 131072/128 = 128 tok over ~50 s prefill
+    # + 3.6 s decode -> 2.4 TPS while decode itself runs 35 tok/s/u. A 1024-token
+    # generation amortizes the one-time prefill/capture and reads out the
+    # steady-state decode rate. Filtered by isl+osl <= max_context like the rest.
 ]
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
 # endpoints, whose token budget is context*concurrency (see
