@@ -592,13 +592,32 @@ def test_agentic_targets_unmeasured_document_points_block():
 
 
 def test_agentic_targets_ungradable_point_blocks():
-    """A point whose run produced no gradable metrics is not a pass."""
+    """Declared targets the run never produced are a failure, not a pass."""
     block = _targets_block(
-        points=[{"concurrency": 1, "met": 0, "graded": 0, "passed": False, "verdicts": []}]
+        points=[
+            {
+                "concurrency": 1,
+                "met": 0,
+                "graded": 0,
+                "passed": False,
+                "verdicts": [_verdict("ttftMeanMs", None)],
+            }
+        ]
     )
     accepted, blockers, _ = acceptance_criteria_check(_schema(block))
     assert accepted is False
-    assert "no gradable metrics" in blockers["agentic_traces_targets.c1"]
+    assert "none of the declared metrics" in blockers["agentic_traces_targets.c1"]
+
+
+def test_agentic_targets_point_without_declared_targets_is_skipped():
+    """An empty document point promises nothing: not counted, not blocking."""
+    block = _targets_block(
+        points=[{"concurrency": 1, "met": 0, "graded": 0, "passed": None, "verdicts": []}]
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    cat = {c.name: c for c in cats}[CATEGORY_AGENTIC_TARGETS]
+    assert accepted is True and blockers == {}
+    assert cat.status == STATUS_PASS and cat.total == 0 and cat.failed == 0
 
 
 # --- Evals: explicit status overrides accuracy heuristics -----------------

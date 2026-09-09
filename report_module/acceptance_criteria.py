@@ -564,11 +564,14 @@ def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
     ``build_targets_block``): one entry per measured concurrency plus the
     document points the sweep never reached. The count is per measured point
     (``2/3 passed`` reads as "two concurrencies met their targets"), and a
-    point blocks when any graded metric missed. Unmeasured document points
-    block too -- a partial sweep is not a passed one -- but stay out of the
-    count: never-measured is a different story from measured-and-missed, and
-    the blocker names them. No blocks means the run had no expectations to
-    grade against (a catalog run), so the category is NA rather than PASS.
+    point blocks when any graded metric missed. A point where the document
+    declared no targets (``passed`` is None) is skipped entirely -- an empty
+    point promises nothing, so there is nothing to fail. Unmeasured document
+    points block too -- a partial sweep is not a passed one -- but stay out
+    of the count: never-measured is a different story from measured-and-
+    missed, and the blocker names them. No blocks means the run had no
+    expectations to grade against (a catalog run), so the category is NA
+    rather than PASS.
     """
     targets_blocks = [
         b
@@ -588,17 +591,25 @@ def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
         points = [p for p in data.get("points") or [] if isinstance(p, Mapping)]
         missing = [c for c in data.get("missing_concurrencies") or []]
         for point in points:
+            passed = point.get("passed")
+            if passed is None:
+                # The document declared no gradable targets at this
+                # concurrency: nothing to pass or fail, so the point stays
+                # out of the count and raises no blocker.
+                continue
             total += 1
-            if point.get("passed"):
+            if passed:
                 continue
             failed += 1
             concurrency = point.get("concurrency")
             met = point.get("met") or 0
             graded = point.get("graded") or 0
             if not graded:
+                # Targets were declared but the run produced none of them:
+                # the gap is the run's, not the document's.
                 blockers[f"{block_key}.c{concurrency}"] = (
                     f"Agentic targets at concurrency {concurrency}: the run "
-                    "produced no gradable metrics."
+                    "produced none of the declared metrics."
                 )
                 continue
             offenders = [
