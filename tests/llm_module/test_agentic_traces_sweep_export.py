@@ -296,6 +296,29 @@ class TestGradeSweepPoint:
         assert failing.met == 1 and failing.graded == 2
         assert failing.passed is False
 
+    def test_a_point_with_no_declared_targets_is_ungraded_not_failed(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 100.0},
+            {"concurrency": 1},
+        )
+
+        assert verdict.verdicts == ()
+        assert verdict.graded == 0 and verdict.met == 0
+        assert verdict.passed is None
+
+    def test_declared_but_unmeasured_fields_fail_the_point(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1},
+            {"concurrency": 1, "ttftMeanMs": 800.0},
+        )
+
+        assert verdict.graded == 0 and verdict.verdicts != ()
+        assert verdict.passed is False
+
     @staticmethod
     def _field(verdict, name):
         return next(v for v in verdict.verdicts if v.field == name)

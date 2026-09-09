@@ -207,8 +207,17 @@ class PointVerdict:
         return sum(1 for v in self.verdicts if v.passed is True)
 
     @property
-    def passed(self) -> bool:
-        """A point passes when every graded field does."""
+    def passed(self) -> Optional[bool]:
+        """A point passes when every graded field does.
+
+        None when the document declared no gradable fields at this
+        concurrency: an empty point promises nothing, so there is nothing to
+        fail. A point that declared fields the run never measured still fails
+        (``graded`` is 0 with verdicts present) -- that gap is the run's, not
+        the document's.
+        """
+        if not self.verdicts:
+            return None
         return self.graded > 0 and self.met == self.graded
 
 
