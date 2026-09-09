@@ -61,6 +61,9 @@ templates:
         # >= 10-20x concurrency so the startup transient (client ramp, single-
         # request batches) is <2% of the run and the average measures steady state.
         BENCHMARK_NUM_PROMPTS: "10000"
+        # One Python bench client saturates a CPU core at ~2k req/s; split the
+        # load across two processes to measure the server, not the client.
+        BENCHMARK_NUM_CLIENTS: "2"
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
