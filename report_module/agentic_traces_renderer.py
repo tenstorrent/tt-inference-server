@@ -286,12 +286,17 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "**OSL Mismatch / OSL Diff %**: responses whose length did not match the "
     "trace's recorded output, and by how much. Non-zero means the replayed "
     "conversation diverged from what was recorded.",
-    "**Cache Hit %**: measured from the serving engine's own counters over the "
-    "profiling window, so the cache-priming warmup is excluded. **Theo. Cache "
-    "Hit %** is the reuse inherent to the traces, i.e. the upper bound the "
-    "engine was offered. A measured rate well below it means the cache was "
-    "evicting reuse the workload had available. Omitted when the server "
-    "exposes no such counters.",
+    "**Cache Hit %**: share of prompt tokens served from cache over the "
+    "profiling window, so the cache-priming warmup is excluded. Read from the "
+    "serving engine's own counters when `--agentic-traces-metrics-url` names a "
+    "worker exporting them, else from the server's per-response usage "
+    "accounting (`prompt_tokens_details.cached_tokens`), which is what a "
+    "prefix-unaware frontend can still report. **Theo. Cache Hit %** is the "
+    "reuse inherent to the traces, i.e. the upper bound the engine was "
+    "offered. A measured rate well below it means the cache was evicting reuse "
+    "the workload had available; above it means reuse the traces do not "
+    "themselves imply, e.g. a cache still warm from an earlier run. Omitted "
+    "when neither source is available.",
     "**Credit Drops**: requests the load generator could not dispatch on the "
     "trace's schedule. Non-zero means the recorded timing was not reproduced, "
     "usually because the server was saturated.",
