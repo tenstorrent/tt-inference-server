@@ -15,8 +15,8 @@
         "notes": ""
       },
       "model": {
-      "name": "moonshotai/Kimi-K2.7-Code",
-      "repoUrl": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "name": "zai-org/GLM-5.2",
+      "repoUrl": "https://huggingface.co/zai-org/GLM-5.2",
         "contextLength": 262144
       },
       "deployment": {
