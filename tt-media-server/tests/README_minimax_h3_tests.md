@@ -159,3 +159,12 @@ Every judged output also has to echo the request: duration = `expected_frames(se
   combination (mix_3i_3v, img7, img8, img9, mix_6i_3v, and the img8 / mix_6i_3v repeats) completed 4 generations, so the
   second-request OOM is gone at the new arena caps; marks removed. Each combination's fresh start is ~40 s without the
   warmup and the first generation binds/captures (~2 min), warm ones ~40 s.
+
+## Deploying the configuration these suites were verified on (C12 quad, 2026-09-10)
+
+`tests/deploy/c12_quad/h3_deploy.sh` (`setup` / `start <task>` / `probe <task>` / `status` / `check` / `stop` / `reset` /
+`logs`) reproduces the configuration that ran t2va and fl2va clean on the 4x32 quad: tt-metal device tree `162a86b008a`,
+tt-metal Python `34260b25483`, tt-inference-server `78d516584` + `70a756282`, media-server `python_env`, trace off,
+bucketing on, construction warmup off. `tests/deploy/c12_quad/README.md` explains each pin, the launch/readiness/reset
+procedure, the fl2va request format and the pitfalls (device-stitched decode `333841bbeb0`, LLK `1b17275b8df`, bucketing
+off -> OOM, shared-tree contention).
