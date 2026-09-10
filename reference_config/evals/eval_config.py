@@ -482,7 +482,7 @@ _eval_config_list = [
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=16,
+                max_concurrent=80,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 # min_context_required=131000,
                 use_chat_api=True,
@@ -530,7 +530,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=64,
+                max_concurrent=80,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
@@ -586,7 +586,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=64,
+                    n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -641,7 +641,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=64,
+                    n_concurrent_trials=40,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -700,7 +700,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=64,
+                    n_concurrent_trials=80,
                     n_attempts=1,
                     n_tasks=None,
                     # task.toml ships a 3000s agent budget sized on GPU runs;
