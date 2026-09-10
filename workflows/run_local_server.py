@@ -16,6 +16,10 @@ from pathlib import Path
 
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.log_setup import clean_log_file
+from workflows.quetzal_package import (
+    quetzal_package_env,
+    resolve_quetzal_package_mount,
+)
 from workflows.setup_host import SetupConfig
 from workflows.utils import (
     ensure_readwriteable_dir,
@@ -164,6 +168,10 @@ def build_local_server_env(
     env["TT_METAL_LOGS_PATH"] = str(logs_path)
     env["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(Path(json_fpath).resolve())
 
+    quetzal_package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
+    if quetzal_package_mount:
+        env.update(quetzal_package_env(quetzal_package_mount, local_server=True))
+
     if setup_config.host_weights_dir:
         env["MODEL_WEIGHTS_DIR"] = str(
             Path(setup_config.host_model_weights_mount_dir).resolve()
@@ -202,6 +210,7 @@ def generate_local_run_command(
             "--local-server currently supports only vLLM-backed model specs."
         )
 
+    quetzal_package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
     paths = get_local_server_paths(runtime_config, repo_root=repo_root)
     env = build_local_server_env(
         model_spec,
@@ -220,6 +229,8 @@ def generate_local_run_command(
         runtime_config.device,
     ]
 
+    if quetzal_package_mount:
+        command.extend(["--impl", model_spec.impl.impl_name])
     if runtime_config.no_auth:
         command.append("--no-auth")
     if runtime_config.disable_trace_capture:
