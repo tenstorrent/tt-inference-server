@@ -12,7 +12,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-import time
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -621,20 +621,26 @@ class HostSetupManager:
         # stalled transfer looks identical to a frozen process. Log the actual rate
         # every 5 min instead; in-flight bytes land in
         # .cache/huggingface/download/*.incomplete under host_weights_dir.
-        result = subprocess.Popen(cmd)
-        last_bytes, elapsed = _dir_bytes(host_weights_dir), 0
-        while result.poll() is None:
-            time.sleep(5)
-            elapsed += 5
-            if elapsed < 300:
-                continue
-            now_bytes = _dir_bytes(host_weights_dir)
-            logger.info(
-                f"hf download throughput: "
-                f"{(now_bytes - last_bytes) / elapsed / 1e6:.2f} MB/s "
-                f"({now_bytes / 1e9:.1f} GB on disk)"
-            )
-            last_bytes, elapsed = now_bytes, 0
+        done = threading.Event()
+
+        def _log_throughput():
+            last_bytes = _dir_bytes(host_weights_dir)
+            while not done.wait(300):
+                now_bytes = _dir_bytes(host_weights_dir)
+                logger.info(
+                    f"hf download throughput: "
+                    f"{(now_bytes - last_bytes) / 300 / 1e6:.2f} MB/s "
+                    f"({now_bytes / 1e9:.1f} GB on disk)"
+                )
+                last_bytes = now_bytes
+
+        reporter = threading.Thread(target=_log_throughput, daemon=True)
+        reporter.start()
+        try:
+            result = subprocess.run(cmd)
+        finally:
+            done.set()
+            reporter.join(timeout=5)
         if result.returncode != 0 and weights_complete:
             logger.warning(
                 f"Could not reach Hugging Face to verify weights; "
