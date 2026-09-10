@@ -4921,6 +4921,19 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # EXPERIMENTAL (this branch only; see
+                                # gibberish-breakdown.md sec.3 option 1):
+                                # per-request thinking OFF for terminal_bench.
+                                # thinking-on + a system prompt is the regime
+                                # where the autoport degenerates -- agent turns
+                                # produce gibberish/cap-hitting thinking, fail
+                                # the terminus JSON parser, get retried with the
+                                # failure quoted back, and context balloons into
+                                # the 3h timeout. Sweep: thinking OFF was 30/30
+                                # clean vs 13/15 gibberish on. vLLM honors this
+                                # per-request, overriding the server default
+                                # enable_thinking=true; GPQA and MMLU untouched.
+                                "chat_template_kwargs": {"enable_thinking": False},
                             },
                         },
                     },
@@ -4995,6 +5008,14 @@ _eval_config_list = [
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
+                            # EXPERIMENTAL (this branch only): per-request
+                            # thinking OFF for swe_bench, same rationale as
+                            # terminal_bench above (gibberish-breakdown.md
+                            # sec.3 option 1). SWE turns are shorter so it is
+                            # less affected than TB (1 gibberish turn in 159),
+                            # but thinking-off removes the danger entirely and
+                            # keeps SWE consistent with TB for this A/B.
+                            "chat_template_kwargs": {"enable_thinking": False},
                         },
                     },
                     instance_ids_map={
