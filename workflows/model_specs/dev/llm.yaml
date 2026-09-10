@@ -1616,6 +1616,32 @@ templates:
       tool_call_parser_name: deepseek_v3
 
 - weights:
+    - meta-llama/Llama-3.2-1B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 32768
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_BUNDLE_MANIFEST_SHA256: a1cadb5f5834752ce67b249d7844a4ebc940bcd91005e3c2598b5ff620ce6d69
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+        VLLM_PLUGINS: quetzal_model_registry,tt
+      vllm_args:
+        revision: 9213176726f574b556790deb65791e0c5aa438b6
+        tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
+        enable_auto_tool_choice: true
+        tool_call_parser: llama3_json
+      override_tt_config:
+        sample_on_device_mode: all
+        l1_small_size: 16384      # Quetzal-generated runtime device contract
+        trace_region_size: 90000000  # qualified Quetzal trace reservation
+  status: EXPERIMENTAL
+
+- weights:
     - meta-llama/Llama-3.2-1B
     - meta-llama/Llama-3.2-1B-Instruct
   model_display_name: Llama-3.2-1B
