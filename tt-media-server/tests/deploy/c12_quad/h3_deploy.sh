@@ -16,14 +16,21 @@
 #   device side  tt-metal 162a86b008a   (.so, kernels, firmware, runtime)  -- newer builds carry LLK 1b17275b8df (noise)
 #   python side  tt-metal 34260b25483   (models/tt_dit, ttnn python)       -- 333841bbeb0+ corrupts warm requests
 #   server       tt-inference-server 78d516584 + 70a756282 (SP side-file fix) + create_pipeline knob patch
-# Env overrides: H3_WT (worktree root), H3_API_KEY, H3_SKIP_BUILD=1, H3_FORCE_CHECKOUT=1, H3_FORCE_ENV=1, H3_HOSTS, H3_RANK0
+# Env overrides: H3_VM, H3_WT (worktree root), H3_METAL_REPO, H3_TIS_REPO, H3_MEDIA_ENV, H3_API_KEY, H3_SKIP_BUILD=1,
+#                H3_FORCE_CHECKOUT=1, H3_FORCE_ENV=1, H3_HOSTS, H3_RANK0
 set -u
 
-VM=/data/DC-deploy/vision-models
+VM=${H3_VM:-/data/DC-deploy/vision-models}
 WT=${H3_WT:-$VM/zni_worktrees}
-METAL_SHARED=$VM/tt-metal
-TIS_SHARED=$VM/tt-inference-server
+METAL_SHARED=${H3_METAL_REPO:-$VM/tt-metal}                 # any tt-metal clone with the tenstorrent remote as 'origin'
+TIS_SHARED=${H3_TIS_REPO:-$VM/tt-inference-server}          # any tt-inference-server clone
 DEVICE_COMMIT=162a86b008a
+# 162a86b008a is the PRE-rebase "add H3 bucketing" (amended 2026-09-04 17:22 UTC on the C12 checkout, never on the
+# branch that was pushed). It is published as tenstorrent/tt-metal branch zni/h3-c12-clean-device-tree; the public
+# post-rebase commit with the same message (193c08b2944) is NOT equivalent -- it sits on main 09-04 incl. LLK 1b17275b8df.
+DEVICE_COMMIT_REF=zni/h3-c12-clean-device-tree
+PY_COMMIT_REF=sadesoye/H3_rebase_merge_optimizations
+SERVER_COMMIT_REF=sadesoye/add_h3_fl2va_ref2va
 PY_COMMIT=34260b25483
 SERVER_COMMIT=78d516584
 SP_FIX_COMMIT=70a756282
@@ -31,7 +38,7 @@ DEV=$WT/tt-metal-old
 PY=$WT/tt-metal-0909
 TMS_ROOT=$WT/tms-0909
 TMS=$TMS_ROOT/tt-media-server
-MEDIA_ENV=$TIS_SHARED/tt-media-server/python_env
+MEDIA_ENV=${H3_MEDIA_ENV:-$TIS_SHARED/tt-media-server/python_env}   # media-server venv (uvicorn, tt-run, mpi4py, torch, PIL)
 ENVF=$WT/env_c12_0909.sh
 HOSTS=${H3_HOSTS:-bh-glx-EXP-c01u21,bh-glx-EXP-c01u14,bh-glx-EXP-c02u07,bh-glx-EXP-c01u07}
 RANK0=${H3_RANK0:-bh-glx-EXP-c01u21}
@@ -50,8 +57,17 @@ die() { say "ERROR: $*"; exit 2; }
 hosts_list() { echo "$HOSTS" | tr ',' ' '; }
 
 # ---------------------------------------------------------------------------------------------------- setup
-worktree_at() {  # <repo> <dir> <commit>
-  local repo=$1 dir=$2 commit=$3
+ensure_commit() {  # <repo> <commit> <remote ref>: fetch the ref over https (gh credential) if the commit is not local
+  local repo=$1 commit=$2 ref=$3
+  git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null && return 0
+  say "$commit not in $repo -- fetching origin/$ref"
+  git -C "$repo" -c url."https://github.com/".insteadOf="git@github.com:" fetch origin "$ref" >/dev/null 2>&1 || die "fetch of $ref failed in $repo"
+  git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null || die "$commit still missing after fetching $ref"
+}
+
+worktree_at() {  # <repo> <dir> <commit> [<remote ref containing it>]
+  local repo=$1 dir=$2 commit=$3 ref=${4:-}
+  [ -n "$ref" ] && ensure_commit "$repo" "$commit" "$ref"
   if [ ! -d "$dir/.git" ] && [ ! -f "$dir/.git" ]; then
     say "creating worktree $dir @ $commit"
     git -C "$repo" worktree add --detach "$dir" "$commit" >/dev/null || die "worktree add failed for $dir"
@@ -70,7 +86,7 @@ worktree_at() {  # <repo> <dir> <commit>
 }
 
 setup_device_tree() {
-  worktree_at "$METAL_SHARED" "$DEV" "$DEVICE_COMMIT"
+  worktree_at "$METAL_SHARED" "$DEV" "$DEVICE_COMMIT" "$DEVICE_COMMIT_REF"
   [ -e "$DEV/.cpmcache" ] || ln -s "$METAL_SHARED/.cpmcache" "$DEV/.cpmcache"
   [ -e "$DEV/python_env" ] || ln -s "$METAL_SHARED/python_env" "$DEV/python_env"
   for s in umd tracy tt-cluster-descriptors; do
@@ -86,7 +102,7 @@ setup_device_tree() {
 }
 
 setup_python_tree() {
-  worktree_at "$METAL_SHARED" "$PY" "$PY_COMMIT"
+  worktree_at "$METAL_SHARED" "$PY" "$PY_COMMIT" "$PY_COMMIT_REF"
   cd "$PY" || die "no $PY"
   ln -sfn "$DEV/build_Release" build
   ln -sfn "$METAL_SHARED/runtime" runtime
@@ -100,6 +116,7 @@ setup_python_tree() {
 }
 
 setup_server_tree() {
+  ensure_commit "$TIS_SHARED" "$SERVER_COMMIT" "$SERVER_COMMIT_REF"; ensure_commit "$TIS_SHARED" "$SP_FIX_COMMIT" "$SERVER_COMMIT_REF"
   if [ ! -d "$TMS_ROOT/.git" ] && [ ! -f "$TMS_ROOT/.git" ]; then
     say "creating worktree $TMS_ROOT @ $SERVER_COMMIT"
     git -C "$TIS_SHARED" worktree add --detach "$TMS_ROOT" "$SERVER_COMMIT" >/dev/null || die "worktree add failed for $TMS_ROOT"

@@ -31,6 +31,14 @@ $WT/h3_deploy.sh status | check | logs | stop | reset
 Logs go to `$WT/deploy_logs/` (`workers.log` = merged rank log). Knobs: `H3_SKIP_BUILD=1`, `H3_FORCE_CHECKOUT=1`
 (park a moved worktree and re-pin it), `H3_FORCE_ENV=1` (rewrite the env file), `H3_API_KEY`, `H3_WT`.
 
+> **Where the pinned commits live.** `34260b25483` (Python) and `78d516584`/`70a756282` (server) are on the public
+> branches `sadesoye/H3_rebase_merge_optimizations` and `sadesoye/add_h3_fl2va_ref2va`. The device-tree commit
+> **`162a86b008a` is not on any public branch**: it is the *pre-rebase* "add H3 bucketing" (amended 2026-09-04 17:22 UTC on
+> the C12 checkout; the branch was then rebased onto main 09-04 and force-pushed). It is published as
+> `tenstorrent/tt-metal` branch **`zni/h3-c12-clean-device-tree`** — fetch that. The public commit with the same message,
+> `193c08b2944`, is **not** equivalent: it sits on the rebased main and contains LLK `1b17275b8df` (552 C++/kernel
+> files differ). `h3_deploy.sh setup` fetches the right refs automatically when a commit is missing locally.
+
 ## 1. Prerequisites (already in place on C12)
 
 - Shared NFS `/data/DC-deploy/vision-models` (trees, weights `hf_data/MiniMax-H3-diffusers`, weight cache `tt_dit_cache`).
