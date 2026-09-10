@@ -594,6 +594,59 @@ class TestModelSpecCliArgsCompatibility:
         assert args.host_hf_cache == "/home/user/.cache/huggingface"
         assert args.image_user == "15863"
 
+    def test_service_port_defaults_to_443_for_https_server_url(self, base_args):
+        """--server-url https://host without a port targets 443 by default."""
+        full_args = base_args + ["--server-url", "https://example.com"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SERVICE_PORT", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.server_url == "https://example.com"
+        assert args.service_port == "443"
+
+    def test_explicit_service_port_wins_over_https_default(self, base_args):
+        """An explicit --service-port is used even for https URLs."""
+        full_args = base_args + [
+            "--server-url",
+            "https://example.com",
+            "--service-port",
+            "9000",
+        ]
+        with patch("sys.argv", ["run.py"] + full_args):
+            args = parse_arguments()
+
+        assert args.service_port == "9000"
+
+    def test_service_port_env_wins_over_https_default(self, base_args):
+        """SERVICE_PORT env var beats the https 443 default."""
+        full_args = base_args + ["--server-url", "https://example.com"]
+        with patch.dict(os.environ, {"SERVICE_PORT": "9001"}, clear=False):
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.service_port == "9001"
+
+    def test_service_port_stays_8000_for_https_url_with_port(self, base_args):
+        """A port in the URL wins downstream; service_port keeps the 8000 default."""
+        full_args = base_args + ["--server-url", "https://example.com:8443"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SERVICE_PORT", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.service_port == "8000"
+
+    def test_service_port_stays_8000_for_http_server_url(self, base_args):
+        """Plain http URLs keep the historical 8000 default."""
+        full_args = base_args + ["--server-url", "http://example.com"]
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SERVICE_PORT", None)
+            with patch("sys.argv", ["run.py"] + full_args):
+                args = parse_arguments()
+
+        assert args.service_port == "8000"
+
 
 class TestArgsInference:
     """Tests for argument inference and validation."""
