@@ -6,6 +6,10 @@
 # Optimized multi-stage build for significantly smaller runtime images
 ARG TT_METAL_DOCKERFILE_URL
 
+# Native builds resolve this name to an empty stage. Quetzal builds override it
+# with a sanitized, exact-commit named context supplied by the build script.
+FROM scratch AS quetzal_source
+
 # ==============================================================================
 # BUILDER STAGE - Contains all build dependencies and artifacts
 # ==============================================================================
@@ -112,18 +116,18 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
-# The optional source archive is supplied by the authenticated caller as a
-# BuildKit secret, so neither Git metadata nor credentials enter an image layer.
+# The optional source is supplied by the authenticated caller as a sanitized
+# exact-commit build context. Its read-only mount is not committed to a layer.
 # Installing without dependencies preserves the image's pinned tt-metal/vLLM stack.
-RUN --mount=type=secret,id=quetzal_source,required=false,target=/tmp/quetzal-source.tar \
+RUN --mount=type=bind,from=quetzal_source,source=.,target=/tmp/quetzal-source-ro,ro \
     set -eu; \
     if [ -n "${TT_QUETZAL_COMMIT_SHA}" ]; then \
       printf '%s' "${TT_QUETZAL_COMMIT_SHA}" | grep -Eq '^[0-9a-f]{40}$' \
         || { echo 'TT_QUETZAL_COMMIT_SHA must be a lowercase 40-hex commit' >&2; exit 1; }; \
-      test -s /tmp/quetzal-source.tar \
-        || { echo 'Quetzal source archive is required for a Quetzal build' >&2; exit 1; }; \
+      test -s /tmp/quetzal-source-ro/pyproject.toml \
+        || { echo 'Quetzal source context is required for a Quetzal build' >&2; exit 1; }; \
       mkdir -p /tmp/quetzal-source /tmp/quetzal-wheel; \
-      tar -xf /tmp/quetzal-source.tar -C /tmp/quetzal-source; \
+      cp -a /tmp/quetzal-source-ro/. /tmp/quetzal-source/; \
       cd /tmp/quetzal-source; \
       . "${PYTHON_ENV_DIR}/bin/activate"; \
       uv build --wheel --out-dir /tmp/quetzal-wheel; \
@@ -135,8 +139,8 @@ RUN --mount=type=secret,id=quetzal_source,required=false,target=/tmp/quetzal-sou
       cd /; \
       rm -rf /tmp/quetzal-source /tmp/quetzal-wheel; \
       { uv cache clean || echo 'WARN: uv cache clean failed'; true; }; \
-    elif [ -e /tmp/quetzal-source.tar ]; then \
-      echo 'Quetzal source archive requires TT_QUETZAL_COMMIT_SHA' >&2; \
+    elif [ -e /tmp/quetzal-source-ro/pyproject.toml ]; then \
+      echo 'Quetzal source context requires TT_QUETZAL_COMMIT_SHA' >&2; \
       exit 1; \
     else \
       echo 'Building native-only image (TT_QUETZAL_COMMIT_SHA unset)'; \
