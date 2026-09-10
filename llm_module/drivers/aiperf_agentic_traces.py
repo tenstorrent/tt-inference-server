@@ -293,6 +293,8 @@ def build_aiperf_cmd(
         cmd.extend(["--goodput", goodput.strip()])
     if run.streaming:
         cmd.append("--streaming")
+        prefill_concurrency = max(1, run.concurrency)
+        cmd.extend(["--prefill-concurrency", str(prefill_concurrency)])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:
@@ -539,8 +541,49 @@ def parse_aiperf_output(
         if value:
             metrics[key] = value
 
-    metrics.update(_parse_prefix_cache_metrics(artifact_dir, metrics_urls))
+    # The engine's own prefix-cache counters are authoritative when the scrape
+    # produced any: they are the cache's accounting, scoped to the profiling
+    # window. A prefix-unaware frontend (Dynamo) exports none and AIPerf then
+    # writes no usable series -- or no ``server_metrics_export.json`` at all --
+    # so fall back to the server's per-response usage accounting, which every
+    # OpenAI-compatible endpoint reports as ``prompt_tokens_details``.
+    engine_metrics = _parse_prefix_cache_metrics(artifact_dir, metrics_urls)
+    if engine_metrics:
+        metrics.update(engine_metrics)
+    else:
+        metrics.update(_usage_cache_hit_metrics(summary))
 
+    return metrics
+
+
+def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    """Measured prefix-cache hit rate from the server's own usage accounting.
+
+    Returns ``{}`` when the tags are absent, so the report drops the column
+    rather than publishing a misleading 0%.
+    """
+
+    def _avg(tag: str) -> Optional[float]:
+        block = summary.get(tag)
+        if not isinstance(block, Mapping):
+            return None
+        value = block.get("avg")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    cached = _avg("total_usage_prompt_cache_read_tokens")
+    prompt = _avg("total_usage_prompt_tokens")
+
+    pct = _avg("overall_usage_prompt_cache_read_pct")
+    if pct is None and cached is not None and prompt:
+        pct = 100.0 * cached / prompt
+    if pct is None:
+        return {}
+
+    metrics: Dict[str, Any] = {"measured_prefix_cache_hit_pct": pct}
+    if cached is not None:
+        metrics["prefix_cache_hit_tokens_measured"] = cached
+    if prompt is not None:
+        metrics["prefix_cache_prompt_tokens_measured"] = prompt
     return metrics
 
 
