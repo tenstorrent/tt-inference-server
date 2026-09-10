@@ -107,6 +107,9 @@ spec:
             - {{ .Values.model | quote }}
             - "--tt-device"
             - {{ .Values.device | quote }}
+            {{- if .Values.auth.disabled }}
+            - "--no-auth"
+            {{- end }}
           {{- end }}
           ports:
             - name: http

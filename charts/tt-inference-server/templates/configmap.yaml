@@ -28,6 +28,11 @@ under CACHE_ROOT, so this mirrors run_docker_server.py's media/forge branch.
 {{- $_ := set $data .name (.value | toString) }}
 {{- end }}
 {{- end }}
+{{- if eq $engine "vllm" }}
+{{- /* Apply operator policy after model defaults / extraEnv. */}}
+{{- $_ := set $data "TT_ALLOWED_MEDIA_DOMAINS" (toJson .Values.media.allowedDomains) }}
+{{- $_ := set $data "VLLM_MEDIA_URL_ALLOW_REDIRECTS" "0" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

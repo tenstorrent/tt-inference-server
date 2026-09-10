@@ -370,6 +370,10 @@ def test_main_passes_passthrough_port_to_trace_capture(
         MagicMock(side_effect=lambda _spec: env_setup_order.append("runtime_env")),
     )
     monkeypatch.setattr(run_vllm_api_server_module, "runtime_settings", MagicMock())
+    security_setup = MagicMock()
+    monkeypatch.setattr(
+        run_vllm_api_server_module, "configure_inference_security", security_setup
+    )
     monkeypatch.setattr(run_vllm_api_server_module.runpy, "run_module", MagicMock())
     monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
     start_trace_capture = MagicMock()
@@ -379,6 +383,7 @@ def test_main_passes_passthrough_port_to_trace_capture(
 
     run_vllm_api_server_module.main()
 
+    security_setup.assert_called_once_with(sys.argv, no_auth=False)
     start_trace_capture.assert_called_once_with(
         model_spec,
         disable_trace_capture=False,
@@ -447,3 +452,20 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+def test_model_env_cannot_override_operator_security_policy(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setenv("TT_ALLOWED_MEDIA_DOMAINS", '["images.example.com"]')
+    monkeypatch.setenv("TT_INFERENCE_ALLOWED_ROUTES", '["/v1/chat/completions"]')
+    run_vllm_api_server_module.set_runtime_env_vars(
+        {
+            "env_vars": {
+                "TT_ALLOWED_MEDIA_DOMAINS": '["unapproved.example"]',
+                "TT_INFERENCE_ALLOWED_ROUTES": '["/invocations"]',
+            }
+        }
+    )
+    assert os.environ["TT_ALLOWED_MEDIA_DOMAINS"] == '["images.example.com"]'
+    assert os.environ["TT_INFERENCE_ALLOWED_ROUTES"] == '["/v1/chat/completions"]'

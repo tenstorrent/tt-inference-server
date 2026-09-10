@@ -34,16 +34,16 @@ Validate required values and that model/engine/device/impl resolves.
 
 {{/*
 media/forge fall back to a well-known built-in key when API_KEY is unset, which
-looks authenticated but is not, so make the operator pick. vLLM needs no gate:
-it is open unless VLLM_API_KEY is set, which is what auth.apiKey sets.
+looks authenticated but is not, so make the operator pick. Patched vLLM also
+requires explicit credentials or the isolated-development --no-auth flag.
 */}}
 {{- $auth := .Values.auth | default dict }}
 {{- if and (dig "apiKey" "" $auth) (dig "disabled" false $auth) }}
   {{- fail "auth.apiKey and auth.disabled are contradictory: the server would honour NO_AUTH and serve unauthenticated while the key sits in the release Secret. Set one." }}
 {{- end }}
-{{- if or (eq $engine "media") (eq $engine "forge") }}
+{{- if or (eq $engine "media") (eq $engine "forge") (eq $engine "vllm") }}
   {{- if and (not (dig "apiKey" "" $auth)) (not (dig "disabled" false $auth)) }}
-    {{- fail (printf "engine '%s' authenticates its inference routes with a bearer key, and leaving it unset would silently use the server image's built-in default. Set auth.apiKey=<key> (stored in the release Secret as API_KEY), or auth.disabled=true to run without auth." $engine) }}
+    {{- fail (printf "engine '%s' requires explicit authentication configuration. Set auth.apiKey=<key> (stored in the release Secret), or auth.disabled=true for isolated development." $engine) }}
   {{- end }}
 {{- end }}
 {{- end }}

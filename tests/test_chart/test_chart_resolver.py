@@ -113,3 +113,41 @@ def test_cache_hostpath_includes_impl():
     r = _render("model=Qwen3-32B", "device=galaxy", "impl=tt_transformers")
     assert r.returncode == 0, r.stderr
     assert "/opt/cache/Qwen3-32B-galaxy-tt_transformers" in r.stdout
+
+
+def test_vllm_requires_an_explicit_auth_choice():
+    result = _render("model=Llama-3.1-8B-Instruct", "device=galaxy", "auth.apiKey=")
+    assert result.returncode != 0
+    assert "requires explicit authentication configuration" in result.stderr
+
+
+def test_vllm_development_no_auth_is_explicit():
+    result = _render(
+        "model=Llama-3.1-8B-Instruct",
+        "device=galaxy",
+        "auth.apiKey=",
+        "auth.disabled=true",
+    )
+    assert result.returncode == 0, result.stderr
+    assert '"--no-auth"' in result.stdout
+
+
+def test_vllm_media_policy_is_rendered():
+    import json
+    import yaml
+
+    result = _render(
+        "model=Llama-3.1-8B-Instruct",
+        "device=galaxy",
+        "media.allowedDomains[0]=images.example.com",
+    )
+    assert result.returncode == 0, result.stderr
+    config = next(
+        doc
+        for doc in yaml.safe_load_all(result.stdout)
+        if doc and doc["kind"] == "ConfigMap"
+    )
+    assert json.loads(config["data"]["TT_ALLOWED_MEDIA_DOMAINS"]) == [
+        "images.example.com"
+    ]
+    assert config["data"]["VLLM_MEDIA_URL_ALLOW_REDIRECTS"] == "0"

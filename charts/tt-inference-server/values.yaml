@@ -32,13 +32,18 @@ hfCacheDir: ""
 # Inference-route authentication. media and forge servers check a literal
 # `Authorization: Bearer $API_KEY` (/health and /v1/models stay open) and fall
 # back to a well-known built-in key when unset, so one of these two is required
-# for those engines. vLLM is open unless VLLM_API_KEY is set.
+# for those engines. The patched vLLM launcher also requires an explicit choice.
 auth:
   # Bearer key clients must send. Stored in the release Secret as API_KEY
   # (media/forge) or VLLM_API_KEY (vllm).
   apiKey: ""
-  # Serve without authentication (NO_AUTH=1). media/forge only.
+  # Isolated development only: NO_AUTH=1 (media/forge), --no-auth (vLLM).
   disabled: false
+
+# Exact approved remote-media hosts. Empty denies remote fetching in the patched
+# vLLM connector; inline media remains supported. Requires a rebuilt workload image.
+media:
+  allowedDomains: []
 
 # Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
 # 1.29.0+, where they aren't required. When disabled, the chart drops the

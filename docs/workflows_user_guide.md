@@ -250,9 +250,61 @@ export JWT_SECRET=my-secret-string
 ```
 
 - **HF_TOKEN**: Required for access to gated HF repositories (get your token from https://huggingface.co, go to `Settings` -> `Access Tokens`).
-- **JWT_SECRET**: Your JWT Token secret for vLLM server authorization. Use `--no-auth` to disable authorization.
+- **JWT_SECRET**: Your JWT Token secret for vLLM server authorization. Use `--no-auth` only for isolated development. Startup requires this secret, `VLLM_API_KEY`, or `--api-key` unless `--no-auth` is explicitly selected.
 
 If not set via `.env` or environment, `run.py` will prompt interactively on first run.
+
+### Inference HTTP security
+
+The patched launcher requires credentials unless `--no-auth` is explicitly
+selected for isolated development. It exposes only `/v1/models`,
+`/v1/chat/completions`, `/v1/completions`, `/v1/embeddings`, and `/v1/audio/speech`
+by default. All require a bearer key. Health checks and metrics remain available;
+CORS preflights are permitted only for exposed routes. Other HTTP routes return
+404, and WebSocket connections are rejected.
+
+`TT_INFERENCE_ALLOWED_ROUTES` is an optional JSON array replacing the exposed
+route list. Include `/invocations`, `/tokenize`, or a deployment-specific
+`/tokenizer` route only if needed. Every opted-in route still requires
+credentials. Do not expose operational or development endpoints.
+
+Remote media is supported through a shared vLLM connector, selected with
+`VLLM_MEDIA_CONNECTOR=tt_secure`. Configure exact approved hostnames with the
+JSON-array environment variable `TT_ALLOWED_MEDIA_DOMAINS` or native
+`--allowed-media-domains` arguments. The environment policy takes precedence;
+conflicting CLI arguments cause startup to fail. An empty list denies remote
+fetching; inline data URIs remain supported. Never use an empty native vLLM
+allowlist alone as a deny-all policy: native vLLM treats it as unrestricted.
+
+The launcher applies the native domain allowlist and disables redirects. The
+shared connector additionally requires HTTPS on port 443, rejects credentials
+in URLs, rejects private/non-global DNS answers (including mixed public/private
+answers), and connects to the validated numeric address without another lookup.
+TLS certificate validation and SNI retain the approved hostname. No client
+credentials or cookies are forwarded to image hosts.
+
+Downloads accept image, audio, or video Content-Type headers, use a 20 MiB size
+cap and a five-second connection/download budget, and never follow redirects.
+The operating system controls DNS resolver timeouts. Compressed HTTP responses
+are rejected; hosts must honor `Accept-Encoding: identity`. Image decoding is
+limited to 16 megapixels through Pillow's decompression-bomb checks. The policy
+also applies in explicit `--no-auth` development mode.
+
+The full image must be rebuilt: it needs the patched launcher, `utils` modules,
+and the `tt_media_security` general plugin for spawned workers. It also requires
+a TT vLLM build with `MEDIA_CONNECTOR_REGISTRY`; unsupported builds fail startup.
+Starting vLLM outside the launcher does not install the HTTP route/auth guard.
+The Helm chart supplies `media.allowedDomains` and requires an explicit auth
+choice. Operators must also restrict workload ingress to the authenticated
+gateway and apply network egress restrictions in the workload cluster.
+
+Before closing an SSRF finding, run the native connector contract test
+(`tests/test_secure_media_vllm.py`) in the rebuilt TT image, then retest the actual
+workload ingress. Blocked routes must return 404; opted-in routes must return 401
+without credentials. With valid credentials, unapproved URLs, internal targets,
+redirects, and DNS rebinding must produce zero outbound requests to the forbidden
+target. Verify approved remote images and inline images still work. Unit tests
+alone do not establish that an existing deployed image has this protection.
 
 ##### Weights download
 

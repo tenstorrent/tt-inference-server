@@ -8,6 +8,16 @@ def register():
     return "tt_vllm_plugin.platform.TTPlatform"
 
 
+def register_media_security():
+    """Register the shared media policy in spawned vLLM workers as well."""
+    import os
+
+    if os.environ.get("VLLM_MEDIA_CONNECTOR") == "tt_secure":
+        from utils.secure_media import register_media_connector
+
+        register_media_connector()
+
+
 def register_models():
     """Register custom models with ModelRegistry for online inference.
 

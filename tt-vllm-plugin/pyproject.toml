@@ -46,6 +46,7 @@ tt = "tt_vllm_plugin:register"
 
 [project.entry-points."vllm.general_plugins"]
 tt_model_registry = "tt_vllm_plugin:register_models"
+tt_media_security = "tt_vllm_plugin:register_media_security"
 
 [tool.setuptools.packages.find]
 include = ["tt_vllm_plugin*"]

@@ -18,6 +18,7 @@ from vllm import ModelRegistry
 
 from utils.cache_monitor import get_container_cache_dir
 from utils.device_utils import get_mesh_device_name
+from utils.inference_security import configure_inference_security
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
 from utils.vllm_run_utils import (
@@ -567,6 +568,10 @@ def set_runtime_env_vars(model_spec_json):
         return
 
     for key, value in env_vars.items():
+        if key in ("TT_ALLOWED_MEDIA_DOMAINS", "TT_INFERENCE_ALLOWED_ROUTES"):
+            # These are operator policies, never defaults supplied by a model
+            # catalog. configure_inference_security reads the runtime values.
+            continue
         if not isinstance(key, str):
             key = str(key)
             logger.warning(
@@ -791,6 +796,9 @@ def main():
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
+    # vLLM versions differ in which routes their API-key middleware protects.
+    # Guard every inference route (including /invocations) before media loading.
+    configure_inference_security(sys.argv, no_auth=args.no_auth)
 
     # Step 5: Start trace capture if needed
     start_trace_capture(
