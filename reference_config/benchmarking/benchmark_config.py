@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import logging
 import os
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
@@ -14,6 +15,8 @@ from workflows.workflow_types import (
     ModelType,
     WorkflowVenvType,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # Forge models need a newer vllm client that can load their tokenizers; other
@@ -123,6 +126,85 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
+
+# Per-model explicit operating-point sets, overriding the shared sweep above.
+#
+# The shared sweep is a generic ISL ladder at OSL 128/1024 with concurrency
+# [1, model_max_concurrency]. When a model has a requirements document that
+# names an explicit (ISL, OSL, concurrency) set, the generic sweep can end up
+# measuring nothing that maps to a requirement while spending its budget on
+# points nobody asked for.
+#
+# qwen3.8-27b (agentic coding) Rev 0.11 is such a case. It requires OSL 252 --
+# the TraceLab per-step median agentic output -- at concurrency 1, 8 and 16, and
+# caps concurrency at 8 for >=128K context. Against the shared sweep, none of
+# the 19 points it generated for this model matched any requirement row (OSL was
+# never 252), five of them were concurrency 32 which no requirement asks for,
+# and those five consumed 10 of the job's 18 hours by each hitting the 7200 s
+# per-point timeout without producing a result. See the gap analysis in tt-metal
+# models/autoports/qwen_qwen3_6_27b/doc/benchmark_requirements_gap.
+#
+# Entries are (isl, osl, max_concurrency). num_prompts still comes from
+# get_num_prompts, and the per-model ``isl + osl <= max_context`` filter still
+# applies, so a model whose context cannot hold a point simply drops it.
+MODEL_EXPLICIT_TEXT_SWEEP: Dict[str, List[Tuple[int, int, int]]] = {
+    "Qwen3.8-27B": [
+        # Rev 0.11 section 3, batch 1 -- agentic coding without subagents.
+        (128, 252, 1),
+        (1024, 252, 1),
+        (4096, 252, 1),
+        (16384, 252, 1),
+        (32768, 252, 1),
+        (65536, 252, 1),
+        (131072, 252, 1),
+        # Rev 0.11 names ISL 262144 at OSL 252, which exceeds this model's
+        # 262144 context and would be dropped by the isl+osl filter. Use the
+        # largest ISL that still leaves room for the required output, so the
+        # near-maximum-context point is actually measured.
+        (262144 - 252, 252, 1),
+        # batch 8 -- agentic coding with subagents.
+        (4096, 252, 8),
+        (32768, 252, 8),
+        (131072, 252, 8),
+        # batch 16 -- with subagents at short/mid context only; Rev 0.11 caps
+        # concurrency at 8 for >=128K, so there is deliberately no 131072 row.
+        (4096, 252, 16),
+        (32768, 252, 16),
+    ],
+}
+
+
+def _normalize_model_key(value: str) -> str:
+    """Lowercase alphanumeric form of a model identifier.
+
+    The same model reaches this code as "Qwen3.8-27B", "Qwen/Qwen3.8-27B" or a
+    slugified model_id depending on whether the spec came from the catalog, a
+    runtime spec JSON or off-catalog synthesis. Comparing normalized forms means
+    the override cannot miss on punctuation or casing -- and a miss is otherwise
+    invisible, because the run would silently fall back to the generic sweep.
+    """
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+_MODEL_EXPLICIT_TEXT_SWEEP_NORMALIZED = {
+    _normalize_model_key(name): points
+    for name, points in MODEL_EXPLICIT_TEXT_SWEEP.items()
+}
+
+
+def get_explicit_text_sweep(model_spec) -> List[Tuple[int, int, int]]:
+    """Explicit requirement point set for this model, or None."""
+    for candidate in (
+        getattr(model_spec, "model_name", None),
+        str(getattr(model_spec, "hf_model_repo", "") or "").rsplit("/", 1)[-1],
+        getattr(model_spec, "model_id", None),
+    ):
+        points = _MODEL_EXPLICIT_TEXT_SWEEP_NORMALIZED.get(
+            _normalize_model_key(candidate)
+        )
+        if points:
+            return points
+    return None
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -650,21 +732,45 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 param_map={device: [BenchmarkTaskParams()]}
             )
         else:
+            explicit_points = get_explicit_text_sweep(model_spec)
+            logger.info(
+                "benchmark sweep for model_name=%r hf_repo=%r: %s",
+                model_spec.model_name,
+                model_spec.hf_model_repo,
+                (
+                    f"explicit requirement set, {len(explicit_points)} points"
+                    if explicit_points
+                    else f"generic sweep, {len(text_isl_osl_pairs)} isl/osl pairs"
+                ),
+            )
+            if explicit_points is not None:
+                text_sweep_params = [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=concurrency,
+                        num_prompts=get_num_prompts(isl, osl, concurrency),
+                    )
+                    for isl, osl, concurrency in explicit_points
+                    if isl + osl <= max_context
+                ]
+            else:
+                text_sweep_params = [
+                    expanded_params
+                    for isl, osl in text_isl_osl_pairs
+                    if isl + osl <= max_context
+                    for expanded_params in _expand_text_sweep_params(
+                        isl=isl,
+                        osl=osl,
+                        max_context=max_context,
+                        max_tokens_all_users=max_tokens_all_users,
+                        model_max_concurrency=model_max_concurrency,
+                        min_num_prompts=sweep_min_num_prompts,
+                    )
+                ]
             benchmark_task_runs = BenchmarkTask(
                 param_map={
-                    device: [
-                        expanded_params
-                        for isl, osl in text_isl_osl_pairs
-                        if isl + osl <= max_context
-                        for expanded_params in _expand_text_sweep_params(
-                            isl=isl,
-                            osl=osl,
-                            max_context=max_context,
-                            max_tokens_all_users=max_tokens_all_users,
-                            model_max_concurrency=model_max_concurrency,
-                            min_num_prompts=sweep_min_num_prompts,
-                        )
-                    ]
+                    device: text_sweep_params
                     + (
                         # additional vision language model image + text benchmarks
                         [
