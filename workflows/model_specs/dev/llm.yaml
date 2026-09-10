@@ -158,7 +158,7 @@ templates:
   # TT-native MTP speculative serving (it-assistant KV-shared drafter, K=5).
   # B=1 latency profile: speculation only pays bandwidth-bound (measured 4k:
   # code 67.5 tok/s/u vs 28.8 plain; prose is checkpoint-bound ~parity). The
-  # plugin routes Gemma4 to Gemma4MTPForCausalLM via TT_GEMMA4_SPEC; each
+  # plugin routes Gemma4 to Gemma4MTPForCausalLM via TT_MODEL_CLASS_OVERRIDES; each
   # engine step emits a VARIABLE accepted-prefix+bonus row (<= K+1), padded on
   # the wire and stripped by the runner (tt_spec_variable_output).
   inference_engine: VLLM
@@ -168,7 +168,9 @@ templates:
       max_context: 262144  # 256K bounded (requires the tt-metal MTP bounded page-table install)
       env_vars:
         MESH_DEVICE: "P150x8"
-        TT_GEMMA4_SPEC: "mtp"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
         GEMMA4_SPEC_DRAFT_LEN: "5"
         GEMMA4_MTP_SERVE_HORIZON: "2048"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -220,7 +222,9 @@ templates:
       max_context: 65536  # KNOWN ISSUE: 12B MTP serving hangs the device (RoPE decode, fetch-queue timeout) during the FIRST bootstrap capture at ANY context (same at 65536 pre-bounded-fix, 2026-09-06 log identical) -- 0 sessions ever; pre-existing, independent of the bounded page-table install (31B MTP validated to 256K). Debug separately before raising.
       env_vars:
         MESH_DEVICE: "P150x8"
-        TT_GEMMA4_SPEC: "mtp"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
         GEMMA4_SPEC_DRAFT_LEN: "5"
         GEMMA4_MTP_SERVE_HORIZON: "2048"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
@@ -283,7 +287,9 @@ templates:
       max_context: 262144  # full-ISL adaptive engine
       env_vars:
         MESH_DEVICE: "P150x8"
-        TT_GEMMA4_SPEC: "dflash"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
         GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # spec above this OOMs the capture at max_num_seqs=32; serve baseline instead
@@ -338,9 +344,11 @@ templates:
       # 2026-09-03 galaxy runs found true-262k prompts degenerate on 31B
       # (native column and emulated LB alike) -- raise only after a 131k-262k
       # band walk validates the band on this box.
-      max_context: 131072
+      max_context: 65536  # BRING-UP: warm-cache pool (131072 needs a single-rank warm boot first)
       env_vars:
-        TT_GEMMA4_SPEC: "dflash"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
         GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # inert at this ctx; keeps the capture-OOM guard if ctx is raised
@@ -350,7 +358,7 @@ templates:
         # the 31B tt_transformers BLACKHOLE_GALAXY entry).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"  # per-engine pool = max_context
+        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # BRING-UP pool
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
         # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
