@@ -6,6 +6,7 @@
 #include <trantor/net/EventLoop.h>
 #include <trantor/net/EventLoopThreadPool.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -300,21 +301,46 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
     }
   }
 
-  // Reject requests whose prompt exceeds the maximum input sequence length.
-  const size_t maxInputSeqLen = tt::config::maxISL();
+  // Reject prompts that cannot fit the served context window. The wording is
+  // OpenAI's so SDKs classify it as a context-length error (litellm maps
+  // "This model's maximum context length is" to ContextWindowExceededError,
+  // which agents such as mini-swe-agent abort on instead of retrying).
+  //
+  // Prompt-only on purpose: max_tokens is not part of the check because an
+  // omitted max_tokens is filled with maxContextLength() upstream
+  // (llm_mapping.cpp), so a prompt+max_tokens budget would reject every
+  // request that leaves max_tokens unset; generation that runs out of context
+  // is already truncated by the runner (finish_reason=length with tokens).
+  //
+  // MAX_ISL can only tighten the prompt limit, never exceed the context: its
+  // default (256000) is above MAX_CONTEXT_LENGTH (131072), which used to admit
+  // over-context prompts that then failed downstream as ctx_exhausted and were
+  // reported as a *successful* empty completion (finish_reason=length,
+  // 1 token). Clients treated that as a retryable empty answer and re-sent the
+  // same prompt every second (2026-09-10, iad-equinix agentic run: one prompt
+  // 2927x in 10 min).
+  //
+  // Must finish the stream (sendErrorAndDone, not a bare sendChunk): a rejected
+  // request that is never finalized stays in flight at the frontend and the
+  // request plane forever, and enough of them wedge the server with
+  // RequestQueueFullException while the pipeline is idle.
+  const size_t contextLength = tt::config::maxContextLength();
+  const size_t maxInputSeqLen =
+      std::min(tt::config::maxISL(), contextLength);
   const size_t promptTokens =
       static_cast<size_t>(req->full_prompt_tokens_count);
-  if (promptTokens > maxInputSeqLen) {
+  if (promptTokens >= maxInputSeqLen) {
     TT_LOG_WARN(
-        "[DynamoRequestHandler] Prompt exceeds max input sequence length ({} > "
-        "{})",
-        promptTokens, maxInputSeqLen);
-    TokenChunk err;
-    err.error = "Prompt exceeds maximum input sequence length (" +
-                std::to_string(maxInputSeqLen) +
-                " tokens): prompt_tokens=" + std::to_string(promptTokens);
-    err.error_code = 400;
-    sendChunk(err);
+        "[DynamoRequestHandler] context length exceeded: prompt_tokens={} "
+        "context_length={} max_isl={}",
+        promptTokens, contextLength, maxInputSeqLen);
+    const std::string message =
+        "This model's maximum context length is " +
+        std::to_string(maxInputSeqLen) +
+        " tokens. However, your messages resulted in " +
+        std::to_string(promptTokens) +
+        " tokens. Please reduce the length of the messages.";
+    sendErrorAndDone(message, 400);
     return;
   }
 

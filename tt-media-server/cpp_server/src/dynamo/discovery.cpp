@@ -288,6 +288,12 @@ Json::Value buildMdcJson(const DiscoveryConfig& c) {
   runtime["total_kv_blocks"] = Json::Value::null;
   runtime["max_num_seqs"] = Json::Value::null;
   runtime["max_num_batched_tokens"] = Json::Value::null;
+  // Dynamo resolves the model's context window from
+  // runtime_config.context_length first (the top-level "context_length" above
+  // is the legacy field); without this the frontend lists context_window: 0 in
+  // /v1/models and cannot apply its own token-budget validation.
+  runtime["context_length"] =
+      static_cast<int>(tt::config::maxContextLength());
   const RuntimeParsers parsers = runtimeParsersForModelPath(c.model_path);
   setRuntimeParserField(runtime, "reasoning_parser", parsers.reasoning);
   setRuntimeParserField(runtime, "tool_call_parser", parsers.tool_call);
