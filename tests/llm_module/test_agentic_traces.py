@@ -718,6 +718,51 @@ class TestOutputParsing:
         assert "branch_children_spawned" not in metrics
         assert metrics["completed"] == 10
 
+    def test_metrics_the_export_lacks_are_omitted_not_zeroed(self, tmp_path):
+        """A missing tag is not a measured 0.0.
+
+        Downstream, the sweep export omits what a run did not produce and the
+        requirements grading compares against targets -- a defaulted 0.0 would
+        pass any lower-is-better latency target vacuously.
+        """
+        (tmp_path / "profile_export_aiperf.json").write_text(
+            json.dumps(
+                {
+                    "time_to_first_token": {"unit": "ms", "avg": 100.0, "p50": 90.0},
+                    "request_count": {"unit": "requests", "avg": 10.0},
+                }
+            )
+        )
+        metrics = parse_aiperf_output(tmp_path)
+
+        assert metrics["mean_ttft_ms"] == 100.0
+        # absent from the export -> absent from the metrics, not 0.0
+        assert "p95_ttft_ms" not in metrics
+        assert "p99_ttft_ms" not in metrics
+        assert "mean_tpot_ms" not in metrics
+        assert "p95_isl" not in metrics
+        assert "theoretical_prefix_cache_hit_pct" not in metrics
+        assert "goodput" not in metrics
+        # counts still default to zero: an absent counter means zero happened
+        assert metrics["error_request_count"] == 0
+        assert metrics["context_overflow_count"] == 0
+
+    def test_omitted_metrics_stay_off_the_sweep_point(self, tmp_path):
+        """The real parse -> sweep-point path, not a hand-built sparse dict."""
+        from llm_module.agentic_traces.sweep_export import to_agentic_sweep_point
+
+        (tmp_path / "profile_export_aiperf.json").write_text(
+            json.dumps(
+                {
+                    "time_to_first_token": {"unit": "ms", "avg": 100.0},
+                    "request_count": {"unit": "requests", "avg": 10.0},
+                }
+            )
+        )
+        point = to_agentic_sweep_point(parse_aiperf_output(tmp_path), concurrency=1)
+
+        assert point == {"concurrency": 1, "ttftMeanMs": 100.0}
+
 
 def _server_metrics_export(**overrides):
     """The fork's aggregated scrape: phase-scoped, with in-window deltas."""
