@@ -322,6 +322,58 @@ templates:
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
+    # BH Galaxy (32x P150) native, DP=4: four physical-column (1,8) engines via
+    # the plugin's standard-DP discovery (mechanism identical to the 31B
+    # tt_transformers BLACKHOLE_GALAXY entry -- TT_VISIBLE_DEVICES per rank, no
+    # descriptor override). Each engine runs the ADAPTIVE dFlash profile ported
+    # from the P150X8 entry above: solo decode = spec block-output, batch >1 =
+    # plain batched baseline; the plugin's DP gate admits adaptive block-output
+    # (each engine owns its own scheduler + solo-decode gate). Whole box: up to
+    # 4 concurrent conc-1 spec lanes, or 128 batched-baseline users.
+    # NOTE: dp=4 galaxy boots need the discovery-join timeout fix on the plugin
+    # (TT_DP_DISCOVERY_JOIN_TIMEOUT_S; a 32-chip mesh needs 10-20 s to close).
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128  # 32 users x 4 DP engines (max_num_seqs pins per-engine)
+      # Bring-up budget 128K/engine. The 262144 LB budget is NOT ported yet:
+      # 2026-09-03 galaxy runs found true-262k prompts degenerate on 31B
+      # (native column and emulated LB alike) -- raise only after a 131k-262k
+      # band walk validates the band on this box.
+      max_context: 131072
+      env_vars:
+        TT_GEMMA4_SPEC: "dflash"
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
+        GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # inert at this ctx; keeps the capture-OOM guard if ctx is raised
+        GEMMA4_DFLASH_VERIFY: "7"
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
+        # Explicit linear CCL: the native galaxy column ring is unmeasured (see
+        # the 31B tt_transformers BLACKHOLE_GALAXY entry).
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"  # per-engine pool = max_context
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (eager, tap-safe)
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
+        no-async-scheduling: true  # block-output disables the steady-decode overlap (see P150X8 entry)
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook sees the whole prompt (see P150X8 entry).
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
