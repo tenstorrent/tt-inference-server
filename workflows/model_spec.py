@@ -380,8 +380,33 @@ training_lora_impl = ImplSpec(
     code_path="tt-media-server/tt_model_runners/forge_training_runners/training_lora_runner.py",
 )
 
+# --- Gemma4 speculative-decoding serving profiles (same tt-metal code path) ---
+#
+# Same namespacing pattern as the qwen36 profiles above: these are NOT separate
+# implementations -- both point at models/demos/gemma4 -- but a model spec is
+# keyed by (impl_name, model_name, device), so offering the MTP (it-assistant
+# KV-shared drafter) and dFlash (z-lab block-diffusion drafter) speculative
+# profiles for the same weights needs distinct impl ids. The profile selects
+# the TT decode class via the plugin's TT_GEMMA4_SPEC env (set in the yaml
+# entry); speculation is TT-native (draft+verify inside one device step,
+# variable tokens/step) and does not use vLLM's speculative_config.
+gemma4_mtp_impl = ImplSpec(
+    impl_id="gemma4_mtp",
+    impl_name="gemma4-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+gemma4_dflash_impl = ImplSpec(
+    impl_id="gemma4_dflash",
+    impl_name="gemma4-dflash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
+    "gemma4_mtp": gemma4_mtp_impl,
+    "gemma4_dflash": gemma4_dflash_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
