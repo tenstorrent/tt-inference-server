@@ -1822,7 +1822,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=8,
@@ -1877,7 +1877,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=4,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -1928,7 +1928,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
