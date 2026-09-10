@@ -293,7 +293,7 @@ templates:
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
         GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # spec-capture DRAM frontier @ max_num_seqs=32; prompts above serve as plain baseline (the model declares this as tt_adaptive_block_max_prompt_tokens so the scheduler reserves width-1 for them)
-        GEMMA4_DFLASH_VERIFY: "7"
+        GEMMA4_DFLASH_VERIFY: "5"  # V=5: in-tile packed verify (P_v=6) -- +75% high-ISL vs V=7, higher acceptance (V=7 drifts off greedy at large S_k), acc ~3.3 < 5 so no cap
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
@@ -352,7 +352,7 @@ templates:
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
         GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
         GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # inert at this ctx; keeps the capture-OOM guard if ctx is raised
-        GEMMA4_DFLASH_VERIFY: "7"
+        GEMMA4_DFLASH_VERIFY: "5"  # V=5: in-tile packed verify (P_v=6) -- +75% high-ISL vs V=7, higher acceptance (V=7 drifts off greedy at large S_k), acc ~3.3 < 5 so no cap
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"
         # Explicit linear CCL: the native galaxy column ring is unmeasured (see
         # the 31B tt_transformers BLACKHOLE_GALAXY entry).
