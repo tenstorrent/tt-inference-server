@@ -1396,6 +1396,17 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     def create_pipeline(self):
         try:
             # No topology arg: the pipeline resolves it from its per-shape preset.
+            import inspect
+
+            # h3_deploy: pass newer pipeline knobs only when this pipeline version accepts them.
+            accepted = inspect.signature(MiniMaxH3Pipeline.create_pipeline).parameters
+            extra = {}
+            if "warmup" in accepted:
+                # construction-time warmup (metal 56cdeeb9095) corrupts the first served request: keep it off
+                extra["warmup"] = os.environ.get("MINIMAX_H3_CONSTRUCTION_WARMUP", "1") != "0"
+            if "vae_output_type" in accepted:
+                # yuv420 = device-stitched decode (333841bbeb0+, corrupts warm requests); float = host stitch
+                extra["vae_output_type"] = os.environ.get("MINIMAX_H3_VAE_OUTPUT", "yuv420")
             return MiniMaxH3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 weights_dir=self._weights_dir(),
@@ -1403,6 +1414,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 dit_fsdp=self.dit_fsdp,
                 trace_denoise=_minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE"),
                 bucket_denoise=_minimax_h3_env_bool("MINIMAX_H3_BUCKET_DENOISE"),
+                **extra,
             )
         except Exception as e:
             log_exception_chain(
