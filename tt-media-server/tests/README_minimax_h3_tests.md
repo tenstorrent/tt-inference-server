@@ -168,3 +168,10 @@ tt-metal Python `34260b25483`, tt-inference-server `78d516584` + `70a756282`, me
 bucketing on, construction warmup off. `tests/deploy/c12_quad/README.md` explains each pin, the launch/readiness/reset
 procedure, the fl2va request format and the pitfalls (device-stitched decode `333841bbeb0`, LLK `1b17275b8df`, bucketing
 off -> OOM, shared-tree contention).
+
+**Another quad.** `tests/deploy/om_quad3/README.md` runs the same script, pins and knobs on OM Quad3 (`172.16.104.120-123`)
+through its `H3_*` overrides (`env_om_quad3.sh`, `base_env_om.sh`, `om_quad3_prep.sh`, `copy_media_env_from_quad1.sh`). What
+differs on OM is only the plumbing: a local `H3_VM=/home/zni/c12` on every host, replicated from rank 0 with `h3_deploy.sh
+replicate` instead of one shared filesystem; `base_env_om.sh` as `H3_BASE_ENV` in place of `metal_env_H3.sh`;
+`H3_RESET_MODE=glx_reset_auto` (`tt-smi -glx_reset_auto` per host -- OM has no `recover.sh` descriptors); and a per-host overlayfs
+over the read-only prebuilt DiT cache `/data_bh/h3/dit_cache/tt_dit_cache` as `TT_DIT_CACHE_DIR`.

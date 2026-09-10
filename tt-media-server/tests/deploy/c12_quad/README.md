@@ -39,6 +39,14 @@ Logs go to `$WT/deploy_logs/` (`workers.log` = merged rank log). Knobs: `H3_SKIP
 > `193c08b2944`, is **not** equivalent: it sits on the rebased main and contains LLK `1b17275b8df` (552 C++/kernel
 > files differ). `h3_deploy.sh setup` fetches the right refs automatically when a commit is missing locally.
 
+**Running the recipe on another quad (OM Quad3): see [`../om_quad3/README.md`](../om_quad3/README.md).** The script stays
+the C12 recipe; a non-C12 quad only exports overrides before each call (unset = the C12 defaults, see section 1 and the
+script header):
+`H3_VM H3_WT H3_METAL_REPO H3_TIS_REPO H3_MEDIA_ENV H3_HOSTS H3_RANK0 H3_RANKFILE H3_DESC_DIR H3_DESC_PREFIX H3_BASE_ENV H3_RESET_MODE H3_SHARED_FS H3_CANARY H3_API_KEY`
+(`H3_BASE_ENV` replaces `metal_env_H3.sh`; `H3_RESET_MODE=glx_reset_auto` where there are no recover.sh descriptors;
+`H3_SHARED_FS=0` when `$H3_VM` is local per host, then `h3_deploy.sh replicate` after every setup/edit; the rankfile is
+generated from `H3_HOSTS` when missing; `H3_CANARY=false` switches readiness to `model_ready`).
+
 ## 1. Prerequisites (already in place on C12)
 
 - Shared NFS `/data/DC-deploy/vision-models` (trees, weights `hf_data/MiniMax-H3-diffusers`, weight cache `tt_dit_cache`).
