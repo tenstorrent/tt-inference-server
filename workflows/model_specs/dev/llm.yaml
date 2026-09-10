@@ -594,7 +594,7 @@ templates:
       # 4096-token prefill chunk attending to the full prefix, so the ceiling
       # carries over to chunked prefill (validated by long-context needle
       # recall at ~105K on qb2-120-p02t01, 2026-09-09).
-      max_context: 113280
+      max_context: 135168
       default_impl: false
       env_vars:
         MESH_DEVICE: P150x4
@@ -603,7 +603,7 @@ templates:
         # tt-metal or the plugin (pool sizing comes from the adapter's
         # get_max_tokens_all_users(max_model_len)); retained for operator
         # clarity and yaml/Helm consumers.
-        GEMMA4_MAX_TOKENS_ALL_USERS: '113280'
+        GEMMA4_MAX_TOKENS_ALL_USERS: '135168'
         GEMMA4_31B_AUTOPORT_DIR: models/autoports/google_gemma_4_31b
         EXTRA_MODELS_DIR: ../../tt-metal/models/autoports/vllm_bundles
       override_tt_config:
