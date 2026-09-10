@@ -183,21 +183,3 @@ size); clean clips sit at 0.15–0.45 bits/pixel/frame with audio around -35..-4
 
 Expected times (20 steps): 16:9 5 s ≈ 25 s warm (first request per padded length +5–30 s for the compile);
 10 s ≈ 35 s; 15 s ≈ 50–55 s; first+last 5 s ≈ 25–30 s.
-
-## 6. Pitfalls we hit
-- **Do not activate the tt-metal `python_env` in the shell that runs the test harness** — it leaks `PYTHONPATH`/`PATH`
-  and the harness loses `fastapi`. Run the harness in a clean shell.
-- **Two operators on the same trees/quad**: the worktrees, `env_c12_0909.sh` and the deployment are shared state. A
-  `git checkout` or an env edit by someone else changes the next launch; a second launch kills the first.
-- `bucket_denoise` off looks fine for a single length but OOMs (`bank_manager.cpp:462`) once ~16 distinct padded lengths
-  have been served; after that every request fails within 1.5 s until restart.
-- `ref2va` with three reference *videos* (`mix_2i_3v`, `mix_3i_3v`, `mix_6i_3v`) still corrupts on this configuration;
-  image-only and audio+image references are clean.
-- Same-seed outputs are not byte-identical (pre-existing).
-
-## 7. Where things are
-- Report: `zni_worktrees/H3_C12_findings_2026-09-10.md` (root causes, bisections, per-task results).
-- Videos: `zni_worktrees/video_backup/20260910_{171227_t2va-suite-pinned,174340_fl2va-suite,163516_ref2va-suite}`.
-- Probe/judge helpers: `zni_worktrees/{judge_one.sh,judge_job.sh,frame_check.sh,backup_videos.sh,run_suites.sh}`.
-- Harness with the keyframe check: `tests/h3_media_checks.py` / `tests/h3_live_sequences.py` (scratch copy; to be
-  merged into `zni/h3-test-coverage-on-78d51658`).
