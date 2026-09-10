@@ -17,7 +17,7 @@
 #   python side  tt-metal 34260b25483   (models/tt_dit, ttnn python)       -- 333841bbeb0+ corrupts warm requests
 #   server       tt-inference-server 78d516584 + 70a756282 (SP side-file fix) + create_pipeline knob patch
 # Env overrides: H3_VM, H3_WT (worktree root), H3_METAL_REPO, H3_TIS_REPO, H3_MEDIA_ENV, H3_API_KEY, H3_SKIP_BUILD=1,
-#                H3_FORCE_CHECKOUT=1, H3_FORCE_ENV=1, H3_HOSTS, H3_RANK0
+#                H3_FORCE_CHECKOUT=1, H3_FORCE_ENV=1, H3_HOSTS, H3_RANK0, H3_RANKFILE, H3_DESC_DIR, H3_DESC_PREFIX (another quad)
 set -u
 
 VM=${H3_VM:-/data/DC-deploy/vision-models}
@@ -42,9 +42,10 @@ MEDIA_ENV=${H3_MEDIA_ENV:-$TIS_SHARED/tt-media-server/python_env}   # media-serv
 ENVF=$WT/env_c12_0909.sh
 HOSTS=${H3_HOSTS:-bh-glx-EXP-c01u21,bh-glx-EXP-c01u14,bh-glx-EXP-c02u07,bh-glx-EXP-c01u07}
 RANK0=${H3_RANK0:-bh-glx-EXP-c01u21}
-RANKFILE=$VM/test_C12_rankfile
+RANKFILE=${H3_RANKFILE:-$VM/test_C12_rankfile}          # rank i = host i of HOSTS, "slot=0:*"
 RANKBIND=$DEV/tests/tt_metal/distributed/config/32x4_quad_bh_galaxy_rank_bindings.yaml
-DESC_DIR=/data/scaleout_configs/bh_glx_exabox
+DESC_DIR=${H3_DESC_DIR:-/data/scaleout_configs/bh_glx_exabox}   # recover.sh cabling/deployment descriptors
+DESC_PREFIX=${H3_DESC_PREFIX:-C12}
 URL=http://$RANK0:8000
 KEY=${H3_API_KEY:-your-secret-key}
 LOGDIR=$WT/deploy_logs
@@ -286,8 +287,8 @@ reset() {
   say "recover.sh on the quad (tt-smi reset + link validation, up to 3 attempts; ~2-7 min each)"
   (cd "$METAL_SHARED" && source python_env/bin/activate && source "$VM/metal_env_H3.sh" && \
    ./tools/scaleout/exabox/recover.sh --hosts "$HOSTS" \
-     --cabling-descriptor-path "$DESC_DIR/C12_cabling_descriptor.textproto" \
-     --deployment-descriptor-path "$DESC_DIR/C12_deployment_descriptor.textproto" \
+     --cabling-descriptor-path "$DESC_DIR/${DESC_PREFIX}_cabling_descriptor.textproto" \
+     --deployment-descriptor-path "$DESC_DIR/${DESC_PREFIX}_deployment_descriptor.textproto" \
      --num-iterations 10 --skip-version-check --max-attempts 3) > "$LOGDIR/recover.$(date -u +%Y%m%d_%H%M%S).log" 2>&1
   local log; log=$(ls -t "$LOGDIR"/recover.*.log | head -1)
   if grep -q "Recovery succeeded" "$log"; then say "recovery ok; settling 60 s"; sleep 60
