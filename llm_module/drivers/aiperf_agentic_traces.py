@@ -541,17 +541,13 @@ def parse_aiperf_output(
         if value:
             metrics[key] = value
 
-    # Which measured hit rate wins depends on whether an endpoint was named.
-    # ``--agentic-traces-metrics-url`` means the caller pointed us at the worker
-    # that owns the prefix cache, so its counters are authoritative. With no URL
-    # the only scrape is the load target, and a Dynamo frontend is
-    # prefix-unaware -- whatever counters it happens to expose describe the
-    # frontend, not the cache -- so the server's own per-response usage
-    # accounting is the trustworthy number instead.
-
-    engine_metrics = (
-        _parse_prefix_cache_metrics(artifact_dir, metrics_urls) if metrics_urls else {}
-    )
+    # The engine's own prefix-cache counters are authoritative when the scrape
+    # produced any: they are the cache's accounting, scoped to the profiling
+    # window. A prefix-unaware frontend (Dynamo) exports none and AIPerf then
+    # writes no usable series -- or no ``server_metrics_export.json`` at all --
+    # so fall back to the server's per-response usage accounting, which every
+    # OpenAI-compatible endpoint reports as ``prompt_tokens_details``.
+    engine_metrics = _parse_prefix_cache_metrics(artifact_dir, metrics_urls)
     if engine_metrics:
         metrics.update(engine_metrics)
     else:
@@ -562,7 +558,7 @@ def parse_aiperf_output(
 
 def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
     """Measured prefix-cache hit rate from the server's own usage accounting.
-    
+
     Returns ``{}`` when the tags are absent, so the report drops the column
     rather than publishing a misleading 0%.
     """
