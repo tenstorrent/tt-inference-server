@@ -28,6 +28,7 @@ bottom of this module).
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -576,9 +577,171 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
             f"can be traced back to what produced it.\n\n{config}"
         )
 
+    sweep = _agentic_sweep_block(rows)
+    if sweep:
+        parts.append(sweep)
+
+    targets = _targets_block(rows)
+    if targets:
+        parts.append(targets)
+
     parts.append(_definitions_block(rows))
 
     return "\n\n".join(parts)
+
+
+def _agentic_sweep_block(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Emit the measured sweep in the requirements document's own shape.
+
+    The tables above are for reading; this is for comparing. A requirements
+    document states its expectations as an ``agenticSweep``, so emitting the
+    measurement in that same shape lets the expected point and the observed one
+    diff field for field instead of being eyeballed across a table.
+
+    Only the InferenceX rows: ``agenticSweep`` is defined over AIPerf's metric
+    set, and a swo-bench row would render as a point with nothing in it.
+    """
+    # Imported here, not at module scope: llm_module imports report_module.schema,
+    # so a module-level import back would close the cycle.
+    from llm_module.agentic_traces.sweep_export import to_agentic_sweep
+
+    inferencex_rows = [
+        row for row in rows if str(row.get("trace_source") or "") == INFERENCEX_SOURCE
+    ]
+    if not inferencex_rows:
+        return ""
+    sweep = to_agentic_sweep(inferencex_rows)
+    body = json.dumps({"agenticSweep": sweep}, indent=2)
+    return (
+        "#### Measured `agenticSweep`\n\n"
+        "The same runs in the shape a requirements document states its "
+        "expectations in, one object per concurrency, so an expected point and "
+        "the measured one line up field for field. Written alongside the raw "
+        "results as `agentic_sweep.json` too.\n\n"
+        f"```json\n{body}\n```"
+    )
+
+
+def _targets_block(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Grade the measured sweep against the requirements document's targets.
+
+    When a requirements document drove the run, each InferenceX payload
+    carries the document's expected ``agenticSweep`` (see ``expected_sweep``
+    in the driver payload), so the measured point and the expected one grade
+    field for field here, and the points a truncated sweep never reached are
+    called out rather than silently absent. Catalog runs carry no
+    expectations and get no section.
+
+    Grading is exact (tolerance 0), matching how the document grades
+    benchmark targets: latencies gate at or below the target, rates at or
+    above. The token-shape fields (input/output token mean/p95) describe the
+    trace mix rather than the server, so they are never graded.
+    """
+    # Same import-cycle guard as ``_agentic_sweep_block``.
+    from llm_module.agentic_traces.sweep_export import (
+        POINT_FIELDS,
+        expected_sweep_from_record,
+        grade_agentic_sweep,
+        to_agentic_sweep,
+    )
+
+    inferencex_rows = [
+        row for row in rows if str(row.get("trace_source") or "") == INFERENCEX_SOURCE
+    ]
+    expected_sweep: List[Dict[str, Any]] = []
+    for row in inferencex_rows:
+        sweep = expected_sweep_from_record(row)
+        if sweep:
+            expected_sweep = sweep
+            break
+    if not expected_sweep:
+        return ""
+
+    verdicts, missing = grade_agentic_sweep(
+        to_agentic_sweep(inferencex_rows), expected_sweep
+    )
+    if not verdicts and not missing:
+        return ""
+
+    parts = [
+        "#### Requirements Targets\n",
+        "Measured against the expected `agenticSweep` points from the "
+        "requirements document, exact (tolerance 0): latencies pass at or "
+        "below the target (↓), rates at or above (↑). Cells read "
+        "**measured** / target.",
+    ]
+
+    if verdicts:
+        summary = "; ".join(
+            (
+                f"**c{point.concurrency}**: no targets declared"
+                if point.passed is None
+                else f"**c{point.concurrency}**: {point.met}/{point.graded} "
+                f"targets met {'✅' if point.passed else '❌'}"
+            )
+            for point in verdicts
+        )
+        parts.append(summary)
+
+        headers = ["Metric"] + [
+            (
+                f"c{point.concurrency} ({point.met}/{point.graded})"
+                if point.passed is not None
+                else f"c{point.concurrency} (no targets)"
+            )
+            for point in verdicts
+        ]
+        # Rows are the union of fields across points, in the document's
+        # canonical order: points may declare different field sets, and a
+        # field declared only at a later point must still render. A point
+        # that did not declare a field gets a dash -- distinct from the
+        # "N/A ➖" cell for a declared-but-unmeasured field.
+        present = {verdict.field for point in verdicts for verdict in point.verdicts}
+        fields = [field for field in POINT_FIELDS if field in present]
+        fields += sorted(present.difference(POINT_FIELDS))
+        verdict_maps = [{v.field: v for v in point.verdicts} for point in verdicts]
+        table_rows: List[Dict[str, str]] = []
+        for field in fields:
+            per_point = [vmap.get(field) for vmap in verdict_maps]
+            # ``present`` guarantees at least one point graded this field.
+            first = next(v for v in per_point if v is not None)
+            entry: Dict[str, str] = {"Metric": _target_field_label(first)}
+            for header, verdict in zip(headers[1:], per_point):
+                entry[header] = _target_cell(verdict) if verdict is not None else "—"
+            table_rows.append(entry)
+        parts.append(build_markdown_table(table_rows))
+
+    if missing:
+        listed = ", ".join(f"c{concurrency}" for concurrency in missing)
+        parts.append(
+            f"The document also expects {listed}, which this sweep never "
+            "measured — those points are ungraded, not passed."
+        )
+    return "\n\n".join(parts)
+
+
+def _target_field_label(verdict: Any) -> str:
+    direction = "↓" if verdict.lower_is_better else "↑"
+    return f"`{verdict.field}` {direction}"
+
+
+def _target_cell(verdict: Any) -> str:
+    measured = (
+        _fmt_target_number(verdict.field, verdict.measured)
+        if verdict.measured is not None
+        else NA
+    )
+    target = _fmt_target_number(verdict.field, verdict.target)
+    glyph = {True: "✅", False: "❌", None: "➖"}[verdict.passed]
+    return f"**{measured}** / {target} {glyph}"
+
+
+def _fmt_target_number(field: str, value: float) -> str:
+    if field.endswith("Ms"):
+        return f"{value:,.0f}" if abs(value) >= 100 else f"{value:,.2f}"
+    if field == "reqThroughputRps":
+        return f"{value:.3f}"
+    return f"{value:,.2f}"
 
 
 def _definitions_block(rows: Sequence[Mapping[str, Any]]) -> str:
