@@ -13,10 +13,12 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from utils.model_naming import unslugify_model_id
 from workflows.workflow_types import InferenceEngine
 
 from workflow_module import command_factory as cf
@@ -203,6 +205,7 @@ class TestSpecDecodeOptions:
             spec_decode=True,
             spec_decode_preset="ci",
             spec_decode_warmup_requests=2,
+            spec_decode_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
             jwt_secret=None,
         )
         opts = cf._build_spec_decode_options(args)
@@ -210,6 +213,24 @@ class TestSpecDecodeOptions:
         assert opts.preset == "ci"
         assert opts.warmup_requests == 2
         assert opts.auth_token == ""
+        # Repeatable --spec-decode-metrics-url -> tuple, forwarded verbatim
+        # (normalization happens later in the driver).
+        assert opts.metrics_urls == ("worker-a:9000", "worker-b:9000/metrics")
+
+    def test_metrics_urls_default_empty_when_flag_absent(self, monkeypatch):
+        monkeypatch.delenv("JWT_SECRET", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # No spec_decode_metrics_url attr at all (image-model entry path).
+        args = Namespace(
+            spec_decode=True,
+            spec_decode_preset="ci",
+            spec_decode_warmup_requests=2,
+            jwt_secret=None,
+        )
+        opts = cf._build_spec_decode_options(args)
+        assert opts is not None
+        assert opts.metrics_urls == ()
 
     def test_release_pins_tool_venv_python(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
@@ -435,15 +456,10 @@ class TestResolveAuthToken:
         return Namespace(**base)
 
     def _patch_engine(self, monkeypatch, engine):
-        monkeypatch.setattr(
-            cf,
-            "get_runtime_model_spec",
-            lambda model, device: (
-                SimpleNamespace(inference_engine=engine),
-                None,
-                None,
-            ),
+        fake_provider = SimpleNamespace(
+            resolve=lambda model, device: SimpleNamespace(inference_engine=engine)
         )
+        monkeypatch.setattr(cf, "get_model_spec_provider", lambda: fake_provider)
 
     def test_forge_uses_literal_default_not_jwt(self, monkeypatch):
         # Even with JWT_SECRET set, a forge server must get the literal key.
@@ -489,7 +505,9 @@ class TestResolveAuthToken:
         def boom(model, device):
             raise RuntimeError("no spec")
 
-        monkeypatch.setattr(cf, "get_runtime_model_spec", boom)
+        monkeypatch.setattr(
+            cf, "get_model_spec_provider", lambda: SimpleNamespace(resolve=boom)
+        )
         assert cf._resolve_auth_token(self._args()) == ""
 
     # --- runtime_model_spec_json precedence (dual-catalog models) -------------
@@ -538,3 +556,67 @@ class TestResolveAuthToken:
         )
         assert cf._engine_from_runtime_spec_json(None) is None
         assert cf._engine_from_runtime_spec_json("/no/such/file.json") is None
+
+
+class TestOutputLeaf:
+    """The run's output directory must stay one path component deep.
+
+    ``args.model`` is the full HF repo id, so interpolating it raw turned the
+    org prefix into a real parent directory and buried the report one level
+    below where every consumer (report globs, CI artifact payloads) looks.
+    """
+
+    @staticmethod
+    def _args(model):
+        return Namespace(model=model, device="p150", workflow="release")
+
+    def test_org_prefix_does_not_become_a_directory(self):
+        leaf = cf._output_leaf(self._args("Qwen/Qwen3-32B"))
+        assert leaf == "Qwen__Qwen3-32B_p150_release"
+        assert "/" not in leaf
+        assert len(Path(leaf).parts) == 1
+
+    def test_bare_model_id_is_unchanged(self):
+        assert cf._output_leaf(self._args("resnet-50")) == "resnet-50_p150_release"
+
+    def test_output_path_stays_directly_under_output_dir(self, tmp_path):
+        leaf = cf._output_leaf(self._args("meta-llama/Llama-3.1-8B-Instruct"))
+        assert (tmp_path / leaf).parent == tmp_path
+
+    @pytest.mark.parametrize(
+        "model", ["Qwen/Qwen3-32B", "microsoft/phi-1_5", "resnet-50"]
+    )
+    def test_model_portion_recovers_the_repo_id(self, model):
+        leaf = cf._output_leaf(self._args(model))
+        assert unslugify_model_id(leaf[: -len("_p150_release")]) == model
+
+
+class TestCanonicalizeCliModel:
+    """Bare --model must become the HF identity before eval/output use."""
+
+    def test_bare_basename_becomes_hf_repo(self):
+        args = Namespace(
+            model="whisper-large-v3",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "openai/whisper-large-v3"
+
+    def test_prefixed_identity_unchanged(self):
+        args = Namespace(
+            model="openai/whisper-large-v3",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "openai/whisper-large-v3"
+
+    def test_true_bare_identity_unchanged(self):
+        args = Namespace(
+            model="resnet-50",
+            device="n150",
+            runtime_model_spec_json=None,
+        )
+        cf._canonicalize_cli_model(args)
+        assert args.model == "resnet-50"

@@ -30,6 +30,9 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
+from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
+    Flux1KontextPipeline,
+)
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -48,8 +51,13 @@ from models.tt_dit.pipelines.wan.pipeline_wan_i2v import (
     WanPipelineI2V,
 )
 from PIL import Image
-from telemetry.image_metrics import ImageStageRecorder, sampler_name
+from telemetry.image_metrics import (
+    ImageStageRecorder,
+    format_resolution,
+    sampler_name,
+)
 from telemetry.telemetry_client import TelemetryEvent
+from telemetry.video_stage_metrics import UNKNOWN, VideoStageRecorder
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from tt_model_runners.minimax_h3_policy import (
     MINIMAX_H3_ASPECT_RATIOS,
@@ -68,6 +76,7 @@ dit_runner_log_map = {
     ModelRunners.TT_SD3_5.value: "SD35",
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
+    ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
@@ -245,6 +254,27 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return image
 
+    def _video_stage_recorder(self, resolution=None):
+        """Denoise + VAE-decode recorder for one video generation, or None during warmup.
+
+        Callers must ``flush`` in a ``finally`` so a generation that dies inside
+        the decode still reports the denoise loop that closed. ``flush`` only
+        exports spans that actually closed.
+
+        Only the tt_dit pipelines that emit a ``vae`` section can feed this: the
+        Wan2.2 family (the I2V variants inherit ``WanPipeline.__call__``) and
+        Mochi. The Prodia distills, LTX and MiniMax-H3 accept no ``on_event``,
+        so their run sites must not pass one -- it would be a TypeError, not a
+        silently ignored kwarg.
+        """
+        if self._warming_up:
+            return None
+        return VideoStageRecorder(
+            model_type=self.settings.model_runner,
+            device_id=self.device_id,
+            resolution=_resolution_label(resolution),
+        )
+
 
 class TTSD35Runner(TTDiTRunner):
     def __init__(self, device_id: str):
@@ -294,6 +324,116 @@ class TTFlux1Runner(TTDiTRunner):
             "l1_small_size": 32768,
             "trace_region_size": self.settings.trace_region_size,
         }
+
+
+# FLUX.1-Kontext-dev: instruction-based image editing (reference image + prompt).
+# Shares the FLUX transformer/VAE/encoders with TTFlux1Runner but takes an input
+# image, so run() is overridden to feed it into the pipeline. No mask is used
+# (unlike SDXL edit/inpainting) — requests arrive as ImageToImageRequest.
+class TTFluxKontextRunner(TTDiTRunner):
+    _KONTEXT_GUIDANCE_SCALE = 3.5  # BFL-recommended default for Kontext-dev
+
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    @staticmethod
+    def _active_lora():
+        """Read the active LoRA (path, scale) from the shared state file, if any.
+        Written by the /v1/lora/apply endpoint; read here so a worker restart
+        (deep_reset) rebuilds the pipeline with the LoRA fused in."""
+        import json
+        import os
+
+        state = os.path.join(os.environ.get("LORA_DIR", "/loras"), "active_lora.json")
+        try:
+            if os.path.isfile(state):
+                d = json.load(open(state))
+                p = d.get("path")
+                if p and os.path.isfile(p):
+                    return p, float(d.get("scale", 1.0))
+        except Exception:
+            pass
+        return None, 1.0
+
+    def create_pipeline(self):
+        try:
+            lora_path, lora_scale = self._active_lora()
+            if lora_path:
+                self.logger.info(
+                    f"Device {self.device_id}: building with LoRA {lora_path} (scale={lora_scale})"
+                )
+            return Flux1KontextPipeline.create_pipeline(
+                checkpoint_name=self.settings.model_weights_path,
+                mesh_device=self.ttnn_device,
+                lora_path=lora_path,
+                lora_scale=lora_scale,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Flux1-Kontext pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        return {
+            "l1_small_size": 32768,
+            "trace_region_size": self.settings.trace_region_size,
+        }
+
+    def _decode_image(self, image_b64: str, width: int, height: int) -> Image.Image:
+        # Reuse the shared decoder: it strips an optional data-URL prefix AND
+        # restores base64 padding that HTTP/JSON transport may have trimmed
+        # (a bare b64decode raises "Invalid base64-encoded string" on those),
+        # then converts to RGB and resizes.
+        return self.image_manager.base64_to_pil_image(
+            image_b64, target_size=(width, height), target_mode="RGB"
+        )
+
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        # Per-request resolution. The request model enforces both-or-neither, so
+        # never mix one request axis with one pipeline default — that would skew
+        # the aspect ratio. The pipeline snaps to the nearest Kontext bucket.
+        req_width = getattr(request, "width", None)
+        req_height = getattr(request, "height", None)
+        if req_width and req_height:
+            width, height = req_width, req_height
+        else:
+            width = getattr(self.pipeline, "_width", None) or 1024
+            height = getattr(self.pipeline, "_height", None) or 1024
+
+        # Edit mode = a reference image is supplied; otherwise text-to-image.
+        image_b64 = getattr(request, "image", None)
+        image = self._decode_image(image_b64, width, height) if image_b64 else None
+        mode = "edit" if image is not None else "generate"
+
+        # NOTE: JP->EN translation (when translate=True) is applied in the API
+        # layer (open_ai_api/image.py) before the request reaches the worker, so
+        # request.prompt is already English here.
+        prompt = request.prompt
+
+        self.logger.info(
+            f"Device {self.device_id}: Kontext {mode} inference "
+            f"({width}x{height}, {request.num_inference_steps} steps)"
+        )
+        images = self.pipeline(
+            image=image,
+            width=width,
+            height=height,
+            prompts=[prompt],
+            num_inference_steps=request.num_inference_steps,
+            guidance_scale=self._KONTEXT_GUIDANCE_SCALE,  # Kontext default (ignore SDXL 5.0 default)
+            seed=int(request.seed or 0),
+            # Siblings trace for throughput; the Kontext path is validated untraced,
+            # so start conservative.
+            traced=False,
+        )
+        self.logger.debug(f"Device {self.device_id}: Kontext inference completed")
+        return images
 
 
 class TTMotifImage6BPreviewRunner(TTDiTRunner):
@@ -373,21 +513,33 @@ class TTMochi1Runner(TTDiTRunner):
         # MochiPipeline.__call__ takes prompts/negative_prompts lists since the
         # tt_dit pipeline refactor; num_frames/height/width/output_type moved to
         # MochiPipelineConfig defaults (168 frames, 480x848).
-        frames = self.pipeline(
-            prompts=[request.prompt],
-            negative_prompts=[request.negative_prompt or ""],
-            num_inference_steps=request.num_inference_steps,
-            guidance_scale=3.5,
-            seed=int(request.seed or 0),
-        )
-        # The pipeline returns PIL frames (or a tensor); the video exporter
-        # needs a (batch, frames, H, W, C) uint8 array.
-        if hasattr(frames, "cpu"):
-            frames = frames.cpu().numpy()
-        elif isinstance(frames, list):
-            frames = np.stack(
-                [np.stack([np.asarray(f) for f in video]) for video in frames]
+        recorder = self._video_stage_recorder()
+        frames = None
+        # One try over the call and the frame stack, flushing in the finally:
+        # a generation that dies in the decode still reports its denoise loop,
+        # and one that dies converting still reports the decode. Flushed after
+        # the conversion because the stacked array is the shape the probe reads
+        # best, but the probe reads the raw PIL list too.
+        try:
+            frames = self.pipeline(
+                prompts=[request.prompt],
+                negative_prompts=[request.negative_prompt or ""],
+                num_inference_steps=request.num_inference_steps,
+                guidance_scale=3.5,
+                seed=int(request.seed or 0),
+                on_event=recorder,
             )
+            # The pipeline returns PIL frames (or a tensor); the video exporter
+            # needs a (batch, frames, H, W, C) uint8 array.
+            if hasattr(frames, "cpu"):
+                frames = frames.cpu().numpy()
+            elif isinstance(frames, list):
+                frames = np.stack(
+                    [np.stack([np.asarray(f) for f in video]) for video in frames]
+                )
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -480,10 +632,25 @@ def _wan22_dit_device_params(mesh_shape: tuple) -> dict:
     return device_params
 
 
+def _resolution_label(resolution=None):
+    """``WxH`` for a runner's configured output size, or None if it has none.
+
+    Only a fallback: the recorder prefers the shape of the frames the VAE
+    actually produced.
+    """
+    if resolution is None:
+        return None
+    label = format_resolution(
+        getattr(resolution, "width", None), getattr(resolution, "height", None)
+    )
+    return None if label == UNKNOWN else label
+
+
 def _wan22_pipeline_args(
     request,
     resolution=None,
     image_prompt=None,
+    on_event=None,
 ):
     """Build the kwargs dict shared by Wan2.2 T2V and I2V ``__call__`` sites."""
     seed = int(request.seed) if request.seed is not None else 0
@@ -499,6 +666,8 @@ def _wan22_pipeline_args(
         pipeline_args["image_prompt"] = image_prompt
     if bool(request.negative_prompt):
         pipeline_args["negative_prompts"] = [request.negative_prompt]
+    if on_event is not None:
+        pipeline_args["on_event"] = on_event
     return pipeline_args
 
 
@@ -535,7 +704,15 @@ class TTWan22Runner(TTDiTRunner):
     )
     def run(self, requests: list[VideoGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
-        frames = self.pipeline(**_wan22_pipeline_args(requests[0], self.resolution))
+        recorder = self._video_stage_recorder(self.resolution)
+        frames = None
+        try:
+            frames = self.pipeline(
+                **_wan22_pipeline_args(requests[0], self.resolution, on_event=recorder)
+            )
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -780,12 +957,19 @@ class TTWan22I2VRunner(TTDiTRunner):
     def run(self, requests: list[VideoI2VGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running inference")
         request = requests[0]
+        recorder = self._video_stage_recorder(self.resolution)
         pipeline_args = _wan22_pipeline_args(
             request,
             self.resolution,
             image_prompt=self._build_image_prompt(request),
+            on_event=recorder,
         )
-        frames = self.pipeline(**pipeline_args)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Inference completed")
         return frames
 
@@ -892,10 +1076,12 @@ class TTWan22I2VAniSoraRunner(TTDiTRunner):
     def run(self, requests: list[VideoI2VGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running AniSora inference")
         request = requests[0]
+        recorder = self._video_stage_recorder(self.resolution)
         pipeline_args = _wan22_pipeline_args(
             request,
             self.resolution,
             image_prompt=self._build_image_prompt(request),
+            on_event=recorder,
         )
         # AniSora-specific: force 8 steps (ignore the client's num_inference_steps,
         # same as the distill forces 4) and use the model's real CFG (3.5 on both
@@ -903,7 +1089,12 @@ class TTWan22I2VAniSoraRunner(TTDiTRunner):
         pipeline_args["num_inference_steps"] = WAN22_ANISORA_NUM_STEPS
         pipeline_args["guidance_scale"] = WAN22_ANISORA_GUIDANCE_SCALE
         pipeline_args["guidance_scale_2"] = WAN22_ANISORA_GUIDANCE_SCALE
-        frames = self.pipeline(**pipeline_args)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: AniSora inference completed")
         return frames
 
@@ -993,7 +1184,15 @@ class TTWan22I2VDistillRunner(TTDiTRunner):
             "traced": True,
             "image_prompt": self._build_image_prompt(request),
         }
-        frames = self.pipeline(**pipeline_args)
+        recorder = self._video_stage_recorder(self.resolution)
+        if recorder is not None:
+            pipeline_args["on_event"] = recorder
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Distill inference completed")
         return frames
 
@@ -1072,12 +1271,19 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
     def run(self, requests: list[VideoI2VGenerateRequest]):
         self.logger.debug(f"Device {self.device_id}: Running LoRA inference")
         request = requests[0]
+        recorder = self._video_stage_recorder(self.resolution)
         pipeline_args = _wan22_pipeline_args(
             request,
             self.resolution,
             image_prompt=self._build_image_prompt(request),
+            on_event=recorder,
         )
-        frames = self.pipeline(**pipeline_args)
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: LoRA inference completed")
         return frames
 
@@ -1306,7 +1512,15 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
             "traced": True,
             "image_prompt": self._build_image_prompt(request),
         }
-        frames = self.pipeline(**pipeline_args)
+        recorder = self._video_stage_recorder(self.resolution)
+        if recorder is not None:
+            pipeline_args["on_event"] = recorder
+        frames = None
+        try:
+            frames = self.pipeline(**pipeline_args)
+        finally:
+            if recorder is not None:
+                recorder.flush(frames)
         self.logger.debug(f"Device {self.device_id}: Lightning inference completed")
         return frames
 

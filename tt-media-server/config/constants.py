@@ -16,6 +16,7 @@ class SupportedModels(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
+    FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
@@ -47,6 +48,7 @@ class SupportedModels(Enum):
     QWEN_3_8B = "Qwen/Qwen3-8B"
     QWEN_3_32B = "Qwen/Qwen3-32B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
+    XTTS_V2 = "coqui/XTTS-v2"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = (
@@ -67,6 +69,7 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
+    FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
@@ -105,6 +108,7 @@ class ModelNames(Enum):
     QWEN_3_8B = "Qwen3-8B"
     QWEN_3_32B = "Qwen3-32B"
     SPEECHT5_TTS = "speecht5_tts"
+    XTTS_V2 = "XTTS-v2"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = "Mistral-Small-3.1-24B-Instruct-2503"
@@ -120,6 +124,7 @@ class ModelRunners(Enum):
     TT_SD3_5 = "tt-sd3.5"
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
+    TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
@@ -164,6 +169,7 @@ class ModelRunners(Enum):
     LLM_TEST = "llm_test"
     LLAMA_RUNNER = "llama_runner"
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
+    TT_XTTS_V2 = "tt-xtts-v2"
     TT_XLA_SDXL = "tt-xla-sdxl"
     TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
 
@@ -187,6 +193,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
+        ModelRunners.TT_FLUX_1_KONTEXT_DEV,
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
@@ -246,6 +253,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
+        ModelRunners.TT_XTTS_V2,
     },
 }
 
@@ -334,6 +342,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SD3_5: {ModelNames.STABLE_DIFFUSION_3_5_LARGE},
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
+    ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
@@ -391,6 +400,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
+    ModelRunners.TT_XTTS_V2: {ModelNames.XTTS_V2},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -520,6 +530,39 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
     (ResponseFormat.JSON.value, ResponseFormat.VERBOSE_JSON.value)
 )
 
+# Languages the XTTS-v2 pipeline supports. The XTTS runner asserts this stays
+# in sync with the pipeline's own list at warmup.
+XTTS_SUPPORTED_LANGUAGES = frozenset(
+    (
+        "ar",
+        "cs",
+        "de",
+        "en",
+        "es",
+        "fr",
+        "hu",
+        "it",
+        "ko",
+        "nl",
+        "pl",
+        "pt",
+        "ru",
+        "tr",
+        "zh",
+        "hi",
+        "ja",
+    )
+)
+
+# Language codes the TTS request schema accepts (used only by the request
+# validator): the union of codes across TTS models. Whether the active model
+# actually supports a valid code is the runner's call — each runner checks its
+# own list and rejects the rest. Currently the union is XTTS-v2's list.
+VALID_LANGUAGE_CODES = frozenset(XTTS_SUPPORTED_LANGUAGES)
+
+# Language a TTS request synthesizes in when none is given.
+DEFAULT_TTS_LANGUAGE = "en"
+
 
 class JobTypes(Enum):
     VIDEO = "video"
@@ -554,15 +597,29 @@ class TrainingOptimizers(Enum):
 
 TRAINING_STORE_ADAPTERS_DIR = "adapters/"
 TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+TRAINING_STORE_JOB_DATABASE_FILENAME = "jobs.db"
 
 
-# Adapters/merged models live under $CACHE_ROOT
+# Root for LoRA adapters / merged models. Precedence, not redundancy — keep both:
+#   * $TRAINING_STORE_ROOT: set by the launcher for TRAINING servers — cache_root
+#     under --host-volume, else an ephemeral dir.
+#   * $CACHE_ROOT: fallback when TRAINING_STORE_ROOT is unset, e.g. inference
+#     servers reading adapters back from the cache volume.
+# "." is just a last resort so unconfigured callers (e.g. tests) don't crash.
+def _training_store_root() -> str:
+    return os.getenv("TRAINING_STORE_ROOT") or os.getenv("CACHE_ROOT", ".")
+
+
 def adapters_root() -> str:
-    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_ADAPTERS_DIR)
+    return os.path.join(_training_store_root(), TRAINING_STORE_ADAPTERS_DIR)
 
 
 def merged_models_root() -> str:
-    return os.path.join(os.getenv("CACHE_ROOT", "."), TRAINING_STORE_MERGED_MODELS_DIR)
+    return os.path.join(_training_store_root(), TRAINING_STORE_MERGED_MODELS_DIR)
+
+
+def job_database_path() -> str:
+    return os.path.join(_training_store_root(), TRAINING_STORE_JOB_DATABASE_FILENAME)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -827,6 +884,31 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
+    },
+    # FLUX.1-Kontext-dev shares the FLUX.1-dev transformer/VAE/encoders, so device
+    # configs mirror TT_FLUX_1_DEV. P300 (1,2) is the layout validated end-to-end.
+    (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+        "trace_region_size": 51000000,
+    },
+    (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+        "trace_region_size": 51000000,
+    },
+    (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
     },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
@@ -1129,6 +1211,12 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
+    (ModelRunners.TT_XTTS_V2, DeviceTypes.N150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
@@ -1148,6 +1236,18 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     (ModelRunners.TT_SPEECHT5_TTS, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_XTTS_V2, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_XTTS_V2, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
@@ -1347,7 +1447,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 2,
@@ -1363,7 +1463,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
@@ -1611,7 +1711,13 @@ ModelConfigs = {
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
 }

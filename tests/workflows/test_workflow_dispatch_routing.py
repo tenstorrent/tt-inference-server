@@ -14,8 +14,18 @@ from workflows.utils import get_repo_root_path
 from workflows.workflow_types import ModelType, WorkflowType
 
 
-def _spec(model_type, name="Llama-3.1-8B-Instruct"):
-    return SimpleNamespace(model_type=model_type, model_name=name)
+def _spec(model_type, name="Llama-3.1-8B-Instruct", hf_model_repo=None):
+    if hf_model_repo is None:
+        # EVAL_CONFIGS is keyed by the full HF repo id; map the default LLM
+        # name to its real repo so the routing lookups resolve.
+        hf_model_repo = (
+            "meta-llama/Llama-3.1-8B-Instruct"
+            if name == "Llama-3.1-8B-Instruct"
+            else name
+        )
+    return SimpleNamespace(
+        model_type=model_type, model_name=name, hf_model_repo=hf_model_repo
+    )
 
 
 def _rc(workflow="benchmarks", **kw):
@@ -32,6 +42,7 @@ def _rc(workflow="benchmarks", **kw):
         spec_decode=False,
         spec_decode_preset="full",
         spec_decode_warmup_requests=None,
+        spec_decode_metrics_url=None,
         agentic_benchmark=None,
         repeat_evals=1,
         agentic_traces_mode="full",
@@ -491,7 +502,10 @@ def _patch_eval_configs(monkeypatch, *, agentic):
     venv = WorkflowVenvType.EVALS_AGENTIC if agentic else WorkflowVenvType.EVALS_COMMON
     cfg = SimpleNamespace(tasks=[SimpleNamespace(workflow_venv_type=venv)])
     monkeypatch.setattr(
-        eval_config, "EVAL_CONFIGS", {"Llama-3.1-8B-Instruct": cfg}, raising=False
+        eval_config,
+        "EVAL_CONFIGS",
+        {"meta-llama/Llama-3.1-8B-Instruct": cfg},
+        raising=False,
     )
 
 
@@ -578,6 +592,7 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
         spec_decode=True,
         spec_decode_preset="ci",
         spec_decode_warmup_requests=2,
+        spec_decode_metrics_url=["worker-a:9000"],
     )
     _patch_engine_dispatch(monkeypatch, tmp_path)
 
@@ -597,6 +612,29 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
     assert "--spec-decode" in argv
     assert argv[argv.index("--spec-decode-preset") + 1] == "ci"
     assert argv[argv.index("--spec-decode-warmup-requests") + 1] == "2"
+    assert argv[argv.index("--spec-decode-metrics-url") + 1] == "worker-a:9000"
+
+
+def test_spec_decode_forwards_each_metrics_url_separately(monkeypatch, tmp_path):
+    """Stringifying the list would forward a bogus "['http://...']" URL."""
+    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
+    rc = _rc(
+        workflow="benchmarks",
+        spec_decode=True,
+        spec_decode_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
+
+    forwarded = [
+        argv[i + 1]
+        for i, token in enumerate(argv)
+        if token == "--spec-decode-metrics-url"
+    ]
+    assert forwarded == ["worker-a:9000", "worker-b:9000/metrics"]
 
 
 def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
@@ -681,6 +719,41 @@ def test_release_without_the_opt_in_forwards_nothing_agentic_traces(
 
     argv = _FakeRunner.captured[0].argv
     assert not any(a.startswith("--agentic-traces") for a in argv)
+
+
+def test_argv_with_canonical_model_rewrites_bare_flag():
+    spec = _spec(
+        ModelType.AUDIO,
+        name="whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
+    )
+    argv = [
+        "run.py",
+        "--model",
+        "whisper-large-v3",
+        "--workflow",
+        "release",
+        "--device",
+        "p150",
+    ]
+    out = workflow_dispatch._argv_with_canonical_model(argv, spec)
+    assert out[out.index("--model") + 1] == "openai/whisper-large-v3"
+
+
+def test_engine_env_records_canonical_model_in_run_command(monkeypatch):
+    spec = _spec(
+        ModelType.AUDIO,
+        name="whisper-large-v3",
+        hf_model_repo="openai/whisper-large-v3",
+    )
+    monkeypatch.setattr(
+        workflow_dispatch.sys,
+        "argv",
+        ["run.py", "--model", "whisper-large-v3", "--workflow", "release"],
+    )
+    env = workflow_dispatch._engine_env(spec)
+    assert "--model openai/whisper-large-v3" in env["TT_RUN_COMMAND"]
+    assert "--model whisper-large-v3 " not in env["TT_RUN_COMMAND"] + " "
 
 
 if __name__ == "__main__":

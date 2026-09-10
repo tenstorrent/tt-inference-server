@@ -43,7 +43,7 @@ class TTSLoadTest(BaseTest):
     """
 
     def __init__(self, config, targets=None, **kwargs):
-        super().__init__(config, targets)
+        super().__init__(config, targets, **kwargs)
         # Align with audio/whisper: use output_path from config when set (e.g. workflow_logs/spec_tests_output)
         if config and config.get("output_path"):
             base = Path(config.get("output_path"))

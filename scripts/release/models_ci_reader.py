@@ -3,6 +3,9 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+# DEPRECATED: this script is superseded by the automated release pipeline.
+# Kept for reference only — do not add new functionality here.
+
 import argparse
 import io
 import json

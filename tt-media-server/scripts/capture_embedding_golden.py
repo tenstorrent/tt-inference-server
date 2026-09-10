@@ -2,9 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""Phase 1 golden capture: reference embeddings from the Python BGE runner.
+"""Phase 1 golden capture: reference embeddings from a Python embedding runner.
 
-Runs a fixed prompt set through BGELargeENRunner and writes a JSON file used
+Runs a fixed prompt set through the selected runner and writes a JSON file used
 later to validate the C++ server (same prompts must yield the same vectors).
 
 Each prompt is embedded twice: alone (batch of 1) and inside a full batch.
@@ -13,32 +13,54 @@ so both references are stored to avoid chasing phantom mismatches later.
 
 Usage (tt-metal worktree venv active):
 
-    TT_METAL_HOME=/localdev/jzivanovic/tt-metal-65718bb \
+    TT_METAL_HOME=<worktree> \
     PYTHONPATH="$TT_METAL_HOME:$PWD" \
-    python scripts/capture_embedding_golden.py
+    python scripts/capture_embedding_golden.py [model]
+
+where [model] is one of: bge-large (default), bge-m3, qwen3-8b.
+Output goes to scripts/goldens/<model>_<device>.json.
 """
 
 import os
+import re
 import sys
 
+# {cli name: (ModelNames value for MODEL env, runner class, HF model id)}
+CAPTURE_MODELS = {
+    "bge-large": ("bge-large-en-v1.5", "BGELargeENRunner", "BAAI/bge-large-en-v1.5"),
+    "bge-m3": ("bge-m3", "BGEM3Runner", "BAAI/bge-m3"),
+    "qwen3-8b": (
+        "Qwen3-Embedding-8B",
+        "Qwen3Embedding8BRunner",
+        "Qwen/Qwen3-Embedding-8B",
+    ),
+}
+
+_choice = sys.argv[1] if len(sys.argv) > 1 else "bge-large"
+if _choice not in CAPTURE_MODELS:
+    print(f"unknown model {_choice!r}; expected one of {sorted(CAPTURE_MODELS)}")
+    sys.exit(2)
+_model_env, _runner_class, MODEL_ID = CAPTURE_MODELS[_choice]
+
 # Must happen before any tt-media-server import (Settings reads env at import).
-os.environ.setdefault("MODEL", "bge-large-en-v1.5")
+os.environ.setdefault("MODEL", _model_env)
 os.environ.setdefault("DEVICE", "n150")
 os.environ.setdefault("DEVICE_IDS", "(0)")
 
 import asyncio  # noqa: E402
 import datetime  # noqa: E402
 import json  # noqa: E402
-import re  # noqa: E402
 import subprocess  # noqa: E402
 
 from domain.text_embedding_request import TextEmbeddingRequest  # noqa: E402
-from tt_model_runners.embedding_runner import BGELargeENRunner  # noqa: E402
 
-MODEL_ID = "BAAI/bge-large-en-v1.5"
-MAX_MODEL_LEN = 384
+import tt_model_runners.embedding_runner as _runners  # noqa: E402
+
+DEVICE = os.environ["DEVICE"]
 OUTPUT_PATH = os.path.join(
-    os.path.dirname(__file__), "goldens", "bge_large_en_v1_5_n150.json"
+    os.path.dirname(__file__),
+    "goldens",
+    f"{re.sub(r'[^a-z0-9]+', '_', MODEL_ID.split('/')[-1].lower())}_{DEVICE}.json",
 )
 
 # The tt-metal BGE demo logs its internal device-vs-CPU check during warmup;
@@ -61,17 +83,34 @@ def _install_pcc_sink() -> None:
 
 
 def _repeat_to_token_count(hf_tokenizer, target: int) -> str:
-    """Build a prompt whose untruncated token count is exactly `target`."""
-    n = target  # first guess; BERT adds [CLS]/[SEP]
-    while True:
-        text = " ".join(["hello"] * n)
-        count = len(hf_tokenizer(text, truncation=False)["input_ids"])
-        if count == target:
-            return text
-        n += target - count
+    """Build a prompt whose untruncated token count is exactly `target`.
+
+    Tokenizers differ in tokens-per-word ("hello" is 1 token for BERT but 2
+    for XLM-Roberta), so a fixed-step correction can oscillate forever.
+    Instead: binary-search the largest word count at or below the target,
+    then top up one token at a time with a short filler word.
+    """
+
+    def tokens(words: list[str]) -> int:
+        return len(hf_tokenizer(" ".join(words), truncation=False)["input_ids"])
+
+    lo, hi = 1, target
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if tokens(["hello"] * mid) <= target:
+            lo = mid
+        else:
+            hi = mid - 1
+    words = ["hello"] * lo
+    while tokens(words) < target:
+        words.append("a")
+    if tokens(words) != target:
+        raise RuntimeError(f"cannot hit exactly {target} tokens; got {tokens(words)}")
+    return " ".join(words)
 
 
-def build_prompts(hf_tokenizer) -> list[dict]:
+def build_prompts(hf_tokenizer, max_model_len: int) -> list[dict]:
+    over_limit_words = max_model_len + max_model_len // 2
     prompts = [
         {"id": "single_token", "text": "cat"},
         {
@@ -79,10 +118,13 @@ def build_prompts(hf_tokenizer) -> list[dict]:
             "text": "The quick brown fox jumps over the lazy dog.",
         },
         {
-            "id": "exact_384",
-            "text": _repeat_to_token_count(hf_tokenizer, MAX_MODEL_LEN),
+            "id": f"exact_{max_model_len}",
+            "text": _repeat_to_token_count(hf_tokenizer, max_model_len),
         },
-        {"id": "over_limit_600", "text": " ".join(["hello"] * 600)},
+        {
+            "id": f"over_limit_{over_limit_words}",
+            "text": " ".join(["hello"] * over_limit_words),
+        },
         {
             "id": "non_ascii",
             "text": "Beograd je glavni grad Srbije. Летње вече на Дунаву. 東京は日本の首都です。",
@@ -119,9 +161,10 @@ def embed(runner, texts: list[str]) -> list:
 def main() -> int:
     _install_pcc_sink()
 
-    runner = BGELargeENRunner("0")
+    runner = getattr(_runners, _runner_class)("0")
+    max_model_len = int(runner.max_model_len)
     hf_tokenizer = runner.tokenizer.tokenizer  # underlying HF AutoTokenizer
-    prompts = build_prompts(hf_tokenizer)
+    prompts = build_prompts(hf_tokenizer, max_model_len)
 
     print(f"[golden] {len(prompts)} prompts prepared", flush=True)
     runner.set_device()
@@ -163,9 +206,9 @@ def main() -> int:
     golden = {
         "metadata": {
             "model": MODEL_ID,
-            "device": "n150",
+            "device": DEVICE,
             "tt_metal_commit": commit,
-            "max_model_len": MAX_MODEL_LEN,
+            "max_model_len": max_model_len,
             "batch_size": batch_size,
             "embedding_dim": len(prompts[0]["embedding_single"]),
             "warmup_pcc": _warmup_pcc[0] if _warmup_pcc else None,

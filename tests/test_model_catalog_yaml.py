@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import json
+from dataclasses import replace
 
 from workflows.utils import get_repo_root_path
 from workflows.model_spec import (
@@ -15,6 +16,7 @@ from workflows.model_spec import (
     _build_device_model_spec,
     _build_system_requirements,
     _build_template,
+    get_model_spec_map,
     load_templates_from_yaml,
     tt_transformers_impl,
 )
@@ -92,6 +94,82 @@ def test_build_device_model_spec_with_known_issues_and_overrides():
             task_name="ifeval",
         ),
     ]
+
+
+def test_catalog_device_spec_accepts_perf_targets_map():
+    """The tiers are settable per device; the reference numbers are not.
+
+    `perf_targets_map` says what fraction of theoretical counts as passing, which
+    is a property of the stack on that board. `perf_reference` is the theoretical
+    number itself, a property of the model and the hardware, so it is derived and
+    rejected here. Keeping both readable in one place because the pair is easy to
+    confuse.
+    """
+    spec = _build_device_model_spec(
+        {
+            "device": "P300X2",
+            "max_concurrency": 16,
+            "max_context": 1024,
+            "perf_targets_map": {"complete": 0.30},
+        }
+    )
+    assert spec.perf_targets_map == {"complete": 0.30}
+
+
+def test_catalog_device_spec_rejects_explicit_performance_reference():
+    with pytest.raises(ValueError, match="must not define perf_reference"):
+        _build_device_model_spec(
+            {
+                "device": "N150",
+                "max_concurrency": 1,
+                "max_context": 1024,
+                "perf_reference": [],
+            }
+        )
+
+
+def test_expansion_carries_every_catalog_device_field_but_perf_reference():
+    """Expansion may substitute the derived field and nothing else.
+
+    ``image_benchmark_num_batches`` was configurable in the catalog for a month
+    without reaching the runtime spec, because expansion rebuilt the device spec
+    from a hand-written field list. Compare against the whole catalog spec so a
+    field added later cannot be dropped the same way.
+    """
+    template = _build_template(
+        {
+            "weights": ["Qwen/Qwen3-8B"],
+            "impl": "tt_transformers",
+            "inference_engine": "VLLM",
+            "device_model_specs": [
+                {
+                    "device": "N150",
+                    "max_concurrency": 32,
+                    "max_context": 32768,
+                    "default_impl": True,
+                    "image_benchmark_num_batches": 7,
+                    "eval_max_retries": 1,
+                    "tensor_cache_timeout": 60.0,
+                },
+            ],
+        },
+        "dev",
+    )
+    catalog_spec = template.device_model_specs[0]
+
+    runtime_spec = template.expand_to_specs()[0].device_model_spec
+
+    assert runtime_spec.image_benchmark_num_batches == 7
+    # ModelSpec.__post_init__ adds the weight to the runtime spec's vllm_args,
+    # so check that one separately. Blanking it on both sides lets __post_init__
+    # rebuild the same derived args and leaves every other field comparable.
+    assert runtime_spec.vllm_args == {
+        **catalog_spec.vllm_args,
+        "model": "Qwen/Qwen3-8B",
+    }
+    assert replace(runtime_spec, vllm_args={}, perf_reference=[]) == replace(
+        catalog_spec, vllm_args={}, perf_reference=[]
+    )
 
 
 def test_build_template_resolves_all_enum_and_impl_references():
@@ -256,6 +334,31 @@ def test_catalog_yaml_loads_and_every_template_expands(env, yaml_name):
     for t in templates:
         specs = t.expand_to_specs()
         assert specs, f"{env}/{yaml_name}: template {t.weights} expanded to zero specs"
+
+
+def test_multiweight_dev_templates_define_stable_display_name():
+    for yaml_name in EXPECTED_CATALOG_FILES:
+        templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / yaml_name)
+        for template in templates:
+            if len(template.weights) > 1:
+                expected = template.weights[0].split("/")[-1]
+                assert template.model_display_name == expected, (
+                    f"dev/{yaml_name}: multiweight template {template.weights!r} "
+                    f"must define model_display_name={expected!r}"
+                )
+
+
+@pytest.mark.parametrize("env", EXPECTED_CATALOG_ENVS)
+def test_catalog_environment_has_unambiguous_expanded_identities(env):
+    """Validate identities across category-file boundaries within one environment."""
+    templates = [
+        template
+        for yaml_name in EXPECTED_CATALOG_FILES
+        for template in load_templates_from_yaml(MODEL_SPECS_DIR / env / yaml_name)
+    ]
+    expanded_count = sum(len(template.expand_to_specs()) for template in templates)
+
+    assert len(get_model_spec_map(templates)) == expanded_count
 
 
 def test_diffusiongemma_dev_spec_matches_validated_256k_contract():

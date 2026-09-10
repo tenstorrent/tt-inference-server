@@ -16,6 +16,12 @@ logger = TTLogger()
 def log_execution_time(
     message=None, telemetry_event_name: TelemetryEvent = None, device_id=None
 ):
+    # device_id may be a zero-arg callable: decorators are evaluated at module import,
+    # BEFORE the worker sets TT_VISIBLE_DEVICES, so a plain os.environ.get(...) argument
+    # freezes as None. A callable is resolved at call time instead.
+    def _resolve_device_id():
+        return device_id() if callable(device_id) else device_id
+
     def decorator(func):
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
@@ -46,7 +52,7 @@ def log_execution_time(
             finally:
                 get_telemetry_client().record_telemetry_event_async(
                     event_name=telemetry_event_name,
-                    device_id=device_id,
+                    device_id=_resolve_device_id(),
                     duration=duration,
                     status=status,
                 ) if telemetry_event_name else None
@@ -80,7 +86,7 @@ def log_execution_time(
             finally:
                 get_telemetry_client().record_telemetry_event_async(
                     event_name=telemetry_event_name,
-                    device_id=device_id,
+                    device_id=_resolve_device_id(),
                     duration=duration,
                     status=status,
                 ) if telemetry_event_name else None
@@ -118,7 +124,7 @@ def log_execution_time(
             finally:
                 get_telemetry_client().record_telemetry_event_async(
                     event_name=telemetry_event_name,
-                    device_id=device_id,
+                    device_id=_resolve_device_id(),
                     duration=duration,
                     status=status,
                 ) if telemetry_event_name else None

@@ -923,6 +923,11 @@ class TestCrossThreadRoundtrip:
 
 # ── Timeout ──
 
+TIMEOUT_WAIT_S = 0.15
+TIMEOUT_MIN_ELAPSED_S = 0.14
+# Loaded CI runners can schedule far past the deadline; this only guards hangs.
+TIMEOUT_MAX_ELAPSED_S = 5.0
+
 
 class TestTimeout:
     def test_read_response_timeout(self):
@@ -932,12 +937,12 @@ class TestTimeout:
         shm.open()
 
         start = time.monotonic()
-        result = shm.read_response(timeout_s=0.15)
+        result = shm.read_response(timeout_s=TIMEOUT_WAIT_S)
         elapsed = time.monotonic() - start
 
         assert result is None
-        assert elapsed >= 0.14
-        assert elapsed < 1.0
+        assert elapsed >= TIMEOUT_MIN_ELAPSED_S
+        assert elapsed < TIMEOUT_MAX_ELAPSED_S
 
         shm.close()
         _force_cleanup_shm(name)
@@ -949,12 +954,12 @@ class TestTimeout:
         shm.open()
 
         start = time.monotonic()
-        result = shm.read_request(timeout_s=0.15)
+        result = shm.read_request(timeout_s=TIMEOUT_WAIT_S)
         elapsed = time.monotonic() - start
 
         assert result is None
-        assert elapsed >= 0.14
-        assert elapsed < 1.0
+        assert elapsed >= TIMEOUT_MIN_ELAPSED_S
+        assert elapsed < TIMEOUT_MAX_ELAPSED_S
 
         shm.close()
         _force_cleanup_shm(name)
