@@ -311,11 +311,14 @@ templates:
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
         max_num_seqs: 32
-        # Sync default: the async submit/accept split is in place and coherent,
-        # but block-output disables the steady-decode overlap (output_tokens set)
-        # and dFlash's step is serially dependent, so async gives no gain yet.
-        # The real lever is reducing the ~135ms/iter vLLM host overhead.
-        no-async-scheduling: true
+        # Async overlaps host scheduling with the device decode for the BATCHED
+        # baseline fallback (conc>1) -- baseline-entry parity; sync cost it
+        # ~20-35% at conc-32. The solo spec block step returns committed host
+        # tokens (no read to overlap) and stays correct under the async
+        # schedule/commit lag because TTScheduler carries each step's block
+        # decision on its SchedulerOutput. Requires the model to declare
+        # supports_async_decode (Gemma4DFlash does).
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -372,7 +375,7 @@ templates:
       vllm_args:
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
-        no-async-scheduling: true  # block-output disables the steady-decode overlap (see P150X8 entry)
+        async_scheduling: true  # batched-fallback overlap; async-safe adaptive block (see P150X8 entry)
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
