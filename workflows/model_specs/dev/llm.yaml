@@ -284,7 +284,7 @@ templates:
   device_model_specs:
     - device: P150X8
       max_concurrency: 32  # adaptive engine: solo=spec, batch=baseline
-      max_context: 131072  # spec DRAM frontier at max_num_seqs=32; nothing above it is admitted, so no ceiling downgrade breaks the block-output contract (>131072 is baseline-only -- serve it from the tt_transformers entry)
+      max_context: 262144  # full 256K: spec <=131072, baseline >131072 (see GEMMA4_DFLASH_MAX_SPEC_ISL)
       env_vars:
         MESH_DEVICE: "P150x8"
         # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
@@ -292,10 +292,11 @@ templates:
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
         GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
         GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # spec-capture DRAM frontier @ max_num_seqs=32; prompts above serve as plain baseline (the model declares this as tt_adaptive_block_max_prompt_tokens so the scheduler reserves width-1 for them)
         GEMMA4_DFLASH_VERIFY: "7"
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "131072"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
         # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
