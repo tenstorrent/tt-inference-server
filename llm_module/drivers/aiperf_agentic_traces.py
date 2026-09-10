@@ -268,6 +268,8 @@ def build_aiperf_cmd(
         cmd.extend(normalized_metrics_urls)
     if run.streaming:
         cmd.append("--streaming")
+        prefill_concurrency = max(1, run.concurrency)
+        cmd.extend(["--prefill-concurrency", str(prefill_concurrency)])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:
