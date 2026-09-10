@@ -122,6 +122,17 @@ class TestIsI2VOnlyDeployment:
         with patch.dict(os.environ, {"MODEL": "not-a-model"}):
             assert _is_i2v_only_deployment() is False
 
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fl2va")
+    def test_fl2va_runner_is_not_i2v_only(self):
+        """FL2VA shares the t2va transformer and accepts text-only /generations."""
+        with patch.dict(os.environ, {}, clear=True):
+            assert _is_i2v_only_deployment() is False
+
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_proxy_runner_with_fl2va_model_is_not_i2v_only(self):
+        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
+            assert _is_i2v_only_deployment() is False
+
 
 class TestSubmitGenerateVideoRequest:
     """Tests for POST /generations endpoint"""

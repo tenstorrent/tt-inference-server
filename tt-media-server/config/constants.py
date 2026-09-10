@@ -268,7 +268,6 @@ I2V_MODEL_RUNNERS = frozenset(
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
-        ModelRunners.TT_MINIMAX_H3_FL2VA,
     }
 )
 # SP_RUNNER proxies to a multihost peer and serves either T2V or I2V weights,
@@ -281,7 +280,6 @@ I2V_MODEL_NAMES = frozenset(
         ModelNames.WAN_2_2_I2V_DISTILL,
         ModelNames.WAN_2_2_I2V_LORA,
         ModelNames.WAN_2_2_I2V_LIGHTNING,
-        ModelNames.MINIMAX_H3_FL2VA,
     }
 )
 

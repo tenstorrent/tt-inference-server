@@ -1551,21 +1551,19 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
 
 class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
-    """MiniMax-H3 ``fl2va``: prompt plus first/last keyframes, video and soundtrack out.
+    """MiniMax-H3 ``fl2va``: same ``transformer/`` as t2va, optional first/last keyframes.
 
-    Same ``transformer/`` partition as t2va. ``image_prompts`` use sentinels
-    ``frame_pos=0`` (first) and ``frame_pos=-1`` (last).
+    ``image_prompts`` use sentinels ``frame_pos=0`` (first) and ``frame_pos=-1``
+    (last). A text-only request (no ``image_prompts``) runs as t2va.
     """
-
-    requires_image_conditioning = True
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
         self.image_manager = ImageManager()
 
-    def _pipeline_extra_kwargs(self, request: VideoI2VGenerateRequest) -> dict:
+    def _pipeline_extra_kwargs(self, request: VideoGenerateRequest) -> dict:
         first, last = None, None
-        for entry in request.image_prompts:
+        for entry in getattr(request, "image_prompts", None) or []:
             image = self.image_manager.base64_to_pil_image(entry.image)
             if entry.frame_pos == 0:
                 first = image
@@ -1577,9 +1575,7 @@ class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
                     f"or -1 (last); got {entry.frame_pos}"
                 )
         if first is None and last is None:
-            raise ValueError(
-                "MiniMax-H3 FL2VA requires image_prompts with frame_pos 0 and/or -1"
-            )
+            return {}
         return {"image": first, "last_image": last}
 
 

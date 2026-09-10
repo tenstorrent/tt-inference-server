@@ -314,7 +314,7 @@ curl -X POST localhost:8000/v1/videos/generations/i2v \
   -d '{"prompt":"Brad Pitt from age 18 to age 60","aspect_ratio":"16:9","duration_seconds":5,"seed":0,"image_prompts":[{"image":"<b64 first>","frame_pos":0},{"image":"<b64 last>","frame_pos":-1}]}'
 ```
 
-`POST /generations` (text-only) is rejected on this deployment.
+`POST /generations` (text-only) is accepted: same transformer as t2va, no keyframes.
 
 ## Ref2VA (`MODEL_RUNNER=tt-minimax-h3-ref2va`)
 
