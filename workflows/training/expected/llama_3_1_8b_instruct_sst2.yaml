@@ -22,7 +22,9 @@
 
 # Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
 # small so a nightly P150 job stays bounded while still exercising the full
-# submit -> train -> checkpoint -> metrics path.
+# submit -> train -> metrics path. Checkpointing is intentionally disabled
+# (save_interval: 0 -> save_strategy "none"), so no adapter is written; this
+# test only grades the loss trajectory from GET /v1/jobs/{id}/metrics.
 request:
   dataset_loader: SST2
   dataset_max_sequence_length: 64
