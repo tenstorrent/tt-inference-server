@@ -26,7 +26,7 @@ from test_module.llm_tests import agentic_traces_tests
 from test_module.llm_tests.agentic_traces_tests import run_agentic_traces
 from workflow_module.blocks_sink import get_default_accumulator
 
-KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 
 
 @pytest.fixture(autouse=True)
