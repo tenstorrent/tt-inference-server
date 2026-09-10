@@ -4891,32 +4891,33 @@ _eval_config_list = [
                         # measured. The base-v2 branch keeps max_turns=50 for
                         # wall-clock; here we let a trial run to completion.
                         "model_info": {
-                            # Sized for QB2 (P300X2) at max_model_len=49152
-                            # (CI-proven; 113280 OOM'd in warmup, run
-                            # 34359296273). The agent sends ~max_input +
-                            # max_output per request, and vLLM up-front-rejects
-                            # any request with max_tokens > max_model_len (80K
-                            # out zeroed the whole eval on run 32355285037,
-                            # tt-agentic-bringup-qb2#2), and the prompt must
-                            # stay under the 32768 prefill bucket.
+                            # Sized for QB2 (P300X2) at max_model_len=113280
+                            # (the autoport's audited vLLM context ceiling, see
+                            # workflows/model_specs). The agent sends
+                            # ~max_input + max_output per request, and vLLM
+                            # up-front-rejects any request with max_tokens >
+                            # max_model_len (80K out zeroed the whole eval on
+                            # run 32355285037, tt-agentic-bringup-qb2#2).
                             # NOTE: gpu_reference_score=44.94 was measured at
                             # 112K in / 80K out on a 200K-window H100 --
                             # restore those budgets to re-collect the GPU
                             # reference; QB2 scores under these budgets are
                             # not directly comparable to it.
-                            # 30K in / 8K out: 30K + 8K = 38K under the 49152
-                            # window; 8K bounds a thinking-heavy turn (~6.4K
-                            # median on run 33095231523) without truncating.
-                            # The cutoff removals below (no max_turns, high
-                            # step_limit) are what let long trajectories
-                            # finish -- the per-request token caps only have
-                            # to fit the window.
-                            "max_input_tokens": 30 * 1024,
-                            "max_output_tokens": 8 * 1024,
+                            # 64K in (was 30K under the 49152 window): on run
+                            # 34145630605 the 30K cap forced up to 9 context
+                            # summarizations per task (cobol: 118 min vs the
+                            # reference run's 10 min at 112K in). 64K + 16K
+                            # out = 80K leaves a wide margin under 113280.
+                            # 16K out (was 8K): thinking-heavy turns median
+                            # ~6.4K on run 33095231523; 16K truncates only the
+                            # extreme tail while bounding a turn at ~9 min at
+                            # ~31 tok/s decode.
+                            "max_input_tokens": 64 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 8 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
@@ -4976,12 +4977,14 @@ _eval_config_list = [
                     # -- restore those budgets to re-collect the GPU
                     # reference; QB2 scores under these budgets are not
                     # directly comparable to it.
-                    # 30K in / 8K out: fits the 49152 window (30K + 8K = 38K,
-                    # prompt under the 32768 prefill bucket). What lets long
-                    # trajectories finish is the removed step cutoff below, not
-                    # a bigger per-request budget.
-                    max_input_tokens=30 * 1024,
-                    max_output_tokens=8 * 1024,
+                    # 64K in: 100-step trajectories carry far more history
+                    # than the 40-step runs this was first sized for; 64K +
+                    # 8K out = 72K leaves a wide margin under the 113280
+                    # window.
+                    max_input_tokens=64 * 1024,
+                    # EXTENSIVE variant: 16K out (was 8K), matching
+                    # terminal_bench_2. 64K + 16K = 80K stays under 113280.
+                    max_output_tokens=16 * 1024,
                     # EXTENSIVE variant: step_limit 250, effectively no cutoff.
                     # The tt-transformers reference run 34117111997 resolved
                     # astropy at 81 and django at 85 API calls; a 40/75/100 cap

@@ -584,17 +584,17 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 1
-      # CI-proven ceiling on the p300x2 "test" runner. A 113280 raise (the
-      # autoport's Stage 09 audit maximum) OOM'd in warmup on tt-shield run
-      # 34359296273: bf16 to_device across 12 DRAM banks, banks 98% full,
-      # short ~1.35 MB/bank. That audit's +1.16 MB/bank margin was measured on
-      # a 4x P150b mesh (~2 GB/bank); the p300x2 runner has ~830 MB banks
-      # (~10 GB/chip), so the 113280 ceiling does not transfer. The
-      # streamed-attention warmup peak A(C)=4096*C scales with context, so
-      # raising it must be re-measured on THIS board, not inherited from the
-      # audit. 49152 is the value the passing reference runs used (evals
-      # 33962855960, release 34145630605, tt-shield 34210885241).
-      max_context: 49152  # 48 * 1024
+      # 49152 -> 113280: the autoport's Stage 09 context-capacity audit
+      # (models/autoports/google_gemma_4_31b/doc/vllm_integration/
+      # context_capacity_audit.md) proves 113280 is the largest source-feasible
+      # 64-aligned total for the full-depth vLLM HMA allocation on this 1x4
+      # mesh, hardware-verified with a real 113279-token completion; 113344 is
+      # infeasible by 148800 bytes/bank. The binding constraint is the
+      # streamed-attention peak A(C) = 4096*C, whose shape is identical for a
+      # 4096-token prefill chunk attending to the full prefix, so the ceiling
+      # carries over to chunked prefill (validated by long-context needle
+      # recall at ~105K on qb2-120-p02t01, 2026-09-09).
+      max_context: 113280
       default_impl: false
       env_vars:
         MESH_DEVICE: P150x4
@@ -603,7 +603,7 @@ templates:
         # tt-metal or the plugin (pool sizing comes from the adapter's
         # get_max_tokens_all_users(max_model_len)); retained for operator
         # clarity and yaml/Helm consumers.
-        GEMMA4_MAX_TOKENS_ALL_USERS: '49152'
+        GEMMA4_MAX_TOKENS_ALL_USERS: '113280'
         GEMMA4_31B_AUTOPORT_DIR: models/autoports/google_gemma_4_31b
         EXTRA_MODELS_DIR: ../../tt-metal/models/autoports/vllm_bundles
       override_tt_config:
