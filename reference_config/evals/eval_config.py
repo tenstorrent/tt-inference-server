@@ -5402,12 +5402,12 @@ _eval_config_list = [
                             # 196K (~8K headroom for chat template + tool defs).
                             # SWE/Terminal prompts rarely approach 200K, so the
                             # 256K->200K cap should not affect scores.
-                            "max_input_tokens": 112 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 64 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 64 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
