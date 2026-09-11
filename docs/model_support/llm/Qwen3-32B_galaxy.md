@@ -28,7 +28,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-32B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-a3a9fb4-be7d805 \
   --model Qwen/Qwen3-32B \
   --tt-device galaxy
 ```
@@ -48,10 +48,10 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🟢 Complete |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [qwen3-32b-galaxy](https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/demos/llama3_70b_galaxy) |
-| tt-metal Commit | `bc4c4df` |
+| Implementation Code | [qwen3-32b-galaxy](https://github.com/tenstorrent/tt-metal/tree/a3a9fb4/models/demos/llama3_70b_galaxy) |
+| tt-metal Commit | `a3a9fb4` |
 | vLLM Commit | `be7d805` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-a3a9fb4-be7d805` |
 
 #### Additional released configurations
 
