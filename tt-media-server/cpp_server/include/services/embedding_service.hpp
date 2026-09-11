@@ -33,6 +33,11 @@ class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
  protected:
   size_t currentQueueSize() const override;
 
+  /** Real per-worker liveness/readiness for /health and /tt-liveness; without
+   * this the health endpoints report an empty worker list and external
+   * harnesses see "0/0 workers ready". */
+  std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
+
   domain::EmbeddingResponse produceResponse(
       domain::EmbeddingRequest request) override;
 
