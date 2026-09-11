@@ -32,4 +32,4 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Max Batch Size | 1 |
 | Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/13f44c5/models/tt_transformers) |
 | tt-metal Commit | `13f44c5` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-13f44c5` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server:0.4.0-e95ffa59adbe39237525161272141cbbb603c686` |
