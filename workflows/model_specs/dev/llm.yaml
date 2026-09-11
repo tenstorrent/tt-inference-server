@@ -2577,7 +2577,7 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 80
+      max_concurrency: 8
       max_context: 1048576  # 1024 * 1024;
       default_impl: true
   status: EXPERIMENTAL
