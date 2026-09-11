@@ -750,7 +750,7 @@ jobs:
             --head-branch "${POST_RELEASE_BRANCH}" \
             --base "${POST_RELEASE_BASE}" \
             --base-ref "origin/${POST_RELEASE_BASE}" \
-            --tag-suffix "${TAG_SUFFIX}" \
+            --tag-suffix="${TAG_SUFFIX}" \
             --promoted-images "${PROMOTED_IMAGES}"
 
       # ----- FINAL step: create a DRAFT GitHub Release named after the version,
