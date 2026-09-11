@@ -4,11 +4,10 @@ This page lists all supported text-to-speech models and their device compatibili
 
 [Search other models by model type](../../../README.md#models-by-model-type)
 
-## Supported Models
+## Experimental Models
 
-Models with status: TOP_PERF, COMPLETE, or FUNCTIONAL.
+Models with EXPERIMENTAL status are under active development and may have stability or performance issues.
 
-| Model Name | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P150](https://tenstorrent.com/hardware/blackhole) | [N150](https://tenstorrent.com/hardware/wormhole) | [N300](https://tenstorrent.com/hardware/wormhole) |
-| --- | --- | --- | --- | --- |
-| [speecht5_tts](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p150.md) | [🟢 Complete](speecht5_tts_n150.md) | [🟢 Complete](speecht5_tts_n300.md) |
-| [xtts-v2](XTTS-v2_n150.md) | [🛠️ Experimental](XTTS-v2_p300x2.md) | [🛠️ Experimental](XTTS-v2_p150.md) | [🛠️ Experimental](XTTS-v2_n150.md) |  |
+| Model Name | [BH QuietBox 2](https://tenstorrent.com/hardware/tt-quietbox) | [P150](https://tenstorrent.com/hardware/blackhole) |
+| --- | --- | --- |
+| [speecht5_tts](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p300x2.md) | [🛠️ Experimental](speecht5_tts_p150.md) |

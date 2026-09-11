@@ -137,8 +137,8 @@ templates:
 
 - weights:
     - Wan-AI/Wan2.2-T2V-A14B-Diffusers
-  version: "0.10.1"
-  tt_metal_commit: 555f240
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
   impl: tt_transformers
   min_disk_gb: 60
   min_ram_gb: 32
@@ -147,7 +147,7 @@ templates:
   device_model_specs:
     - device: P150X8
       max_concurrency: 1
-      max_context: 65536      # 64 * 1024
+      max_context: 65536        # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 30000000

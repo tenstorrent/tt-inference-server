@@ -6,90 +6,20 @@ templates:
 # LLM templates
 # =============================================================================
 - weights:
-    - openai/gpt-oss-20b
-  impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: T3K
-      max_concurrency: 1
-      max_context: 16384      # 16 * 1024
-      default_impl: true
-      env_vars:
-        VLLM_ENABLE_RESPONSES_API_STORE: 1
-        VLLM_GPT_OSS_HARMONY_SYSTEM_INSTRUCTIONS: 1
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-20b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-- weights:
-    - openai/gpt-oss-20b
-  impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY_T3K
-      max_concurrency: 1
-      max_context: 16384      # 16 * 1024
-      default_impl: true
-      env_vars:
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-20b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-- weights:
-    - openai/gpt-oss-20b
-  impl: gpt_oss
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      env_vars:
-        MESH_DEVICE: "(4, 8)"      # Override default TG->(8,4) to use (4,8) mesh grid
-      vllm_args:
-        data_parallel_size: 4
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    openai/gpt-oss-20b:
-      reasoning_parser_name: openai_gptoss
-      tool_call_parser_name: openai
-
-- weights:
     - openai/gpt-oss-120b
-  version: "0.17.0"
-  tt_metal_commit: "8c48a10"
-  vllm_commit: "f52987a"
+  version: "0.12.0"
+  tt_metal_commit: "805f43d"
+  vllm_commit: "a45c614"
   impl: gpt_oss
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 1
-      max_context: 16384      # 16 * 1024
+      max_context: 16384        # 16 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 134217728      # 128 MB; vLLM default 50 MB is too small for long prefill
+        trace_region_size: 134217728        # 128 MB; vLLM default 50 MB is too small for long prefill
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
@@ -179,29 +109,11 @@ templates:
   status: EXPERIMENTAL
 
 - weights:
-    - google/gemma-3-1b-it
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: c254ee3
-  vllm_commit: c4f2327
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N150
-      max_concurrency: 32
-      max_context: 32768      # 32 * 1024
-      default_impl: true
-      override_tt_config:
-        l1_small_size: 4096
-        fabric_config: FABRIC_1D
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-
-- weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
@@ -218,9 +130,9 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
@@ -237,9 +149,9 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
@@ -254,9 +166,9 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
@@ -276,42 +188,17 @@ templates:
 - weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: e0e0500
-  vllm_commit: 409b1cd
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
+      max_concurrency: 128        # 32 * 4
       max_context: 40960
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
-  status: FUNCTIONAL
-  metadata:
-    Qwen/Qwen3-8B:
-      reasoning_parser_name: qwen3
-      tool_call_parser_name: hermes
-
-- weights:
-    - Qwen/Qwen3-8B
-  impl: tt_transformers
-  system_requirements:
-    firmware:
-      specifier: ">=19.2.0"
-      mode: STRICT
-    kmd:
-      specifier: ">=2.5.0"
-      mode: STRICT
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 22be241
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P300
-      max_concurrency: 32
-      max_context: 40960
-      default_impl: true
   status: FUNCTIONAL
   metadata:
     Qwen/Qwen3-8B:
@@ -378,14 +265,14 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 54000000
@@ -399,14 +286,14 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
@@ -423,33 +310,6 @@ templates:
 - weights:
     - Qwen/Qwen3-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: false
-      override_tt_config:
-        trace_region_size: 66147328
-        sample_on_device_mode: decode_only
-      vllm_args:
-        data_parallel_size: 4
-      env_vars:
-        TT_MM_THROTTLE_PERF: 5
-  status: FUNCTIONAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen3-32B:
-      reasoning_parser_name: qwen3
-      tool_call_parser_name: hermes
-
-- weights:
-    - Qwen/Qwen3-32B
-  impl: tt_transformers
   system_requirements:
     firmware:
       specifier: ">=18.12.0"
@@ -457,14 +317,14 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 61341696
@@ -509,14 +369,14 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 32768      # 32 * 1024
+      max_context: 32768        # 32 * 1024
       default_impl: true
   status: COMPLETE
   env_vars:
@@ -524,14 +384,14 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 32768      # 32 * 1024
+      max_context: 32768        # 32 * 1024
       default_impl: true
   status: COMPLETE
   env_vars:
@@ -539,14 +399,14 @@ templates:
 - weights:
     - mistralai/Mistral-7B-Instruct-v0.3
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 9b67e09
-  vllm_commit: a91b644
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 32768      # 32 * 1024
+      max_context: 32768        # 32 * 1024
       default_impl: true
   status: COMPLETE
   env_vars:
@@ -555,14 +415,14 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   status: FUNCTIONAL
   env_vars:
@@ -574,14 +434,14 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 27381760
@@ -597,14 +457,14 @@ templates:
 - weights:
     - Qwen/QwQ-32B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: e95ffa5
-  vllm_commit: 48eba14
+  version: "0.4.0"
+  tt_metal_commit: "e95ffa5"
+  vllm_commit: "48eba14"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
@@ -622,14 +482,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -645,14 +505,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -670,14 +530,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -697,14 +557,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -720,14 +580,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -745,14 +605,14 @@ templates:
 - weights:
     - Qwen/Qwen2.5-72B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 13f44c5
-  vllm_commit: 0edd242
+  version: "0.3.0"
+  tt_metal_commit: "13f44c5"
+  vllm_commit: "0edd242"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY_T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -769,99 +629,18 @@ templates:
     Qwen/Qwen2.5-72B-Instruct:
       tool_call_parser_name: hermes
   model_display_name: Qwen2.5-72B
-
-- weights:
-    - Qwen/Qwen2.5-7B
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N300
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 60000000
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
-- weights:
-    - Qwen/Qwen2.5-7B
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N150X4
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
-- weights:
-    - Qwen/Qwen2.5-7B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N300
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 60000000
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B-Instruct:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
-- weights:
-    - Qwen/Qwen2.5-7B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 5b5db8a
-  vllm_commit: e771fff
-  inference_engine: VLLM
-  device_model_specs:
-    - device: N150X4
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-7B-Instruct:
-      tool_call_parser_name: hermes
-  model_display_name: Qwen2.5-7B
 
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -888,14 +667,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-70B
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -922,14 +701,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-70B-Instruct
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -956,14 +735,14 @@ templates:
 - weights:
     - deepseek-ai/DeepSeek-R1-Distill-Llama-70B
   impl: llama3_70b_galaxy
-  version: "0.10.0"
-  tt_metal_commit: e867533
-  vllm_commit: 8f36910
+  version: "0.9.0"
+  tt_metal_commit: "65718bb"
+  vllm_commit: "409b1cd"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 32      # 8 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 32        # 8 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       vllm_args:
@@ -1221,14 +1000,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.3-70B-Instruct
   impl: tt_transformers
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
@@ -1455,18 +1234,18 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.16.0"
-  tt_metal_commit: 669d59e
-  vllm_commit: "3334377"
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 402653184      # 384 * 1024 * 1024
+        trace_region_size: 402653184        # 384 * 1024 * 1024
       known_issues:
         - workflow_type: SPEC_TESTS
           task_name: test_penalties
@@ -1490,18 +1269,18 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.16.0"
-  tt_metal_commit: 669d59e
-  vllm_commit: "3334377"
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 402653184      # 384 * 1024 * 1024
+        trace_region_size: 402653184        # 384 * 1024 * 1024
       known_issues:
         - workflow_type: SPEC_TESTS
           task_name: test_penalties
@@ -1525,18 +1304,18 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.16.0"
-  tt_metal_commit: 669d59e
-  vllm_commit: "3334377"
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       tensor_cache_timeout: 5400.0
       override_tt_config:
-        trace_region_size: 402653184      # 384 * 1024 * 1024
+        trace_region_size: 402653184        # 384 * 1024 * 1024
       known_issues:
         - workflow_type: SPEC_TESTS
           task_name: test_penalties
@@ -1685,14 +1464,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1705,14 +1484,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1725,14 +1504,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1745,14 +1524,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1765,14 +1544,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1785,14 +1564,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.2-1B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: 84b4c53
-  vllm_commit: 222ee06
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -1913,14 +1692,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 65536      # 64 * 1024
+      max_context: 65536        # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 52000000
@@ -1932,14 +1711,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 70000000
@@ -1951,14 +1730,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 117000000
@@ -1970,14 +1749,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   status: COMPLETE
   metadata:
@@ -1987,14 +1766,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N150
       max_concurrency: 32
-      max_context: 65536      # 64 * 1024
+      max_context: 65536        # 64 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 52000000
@@ -2006,14 +1785,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: N300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 70000000
@@ -2025,14 +1804,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         trace_region_size: 117000000
@@ -2044,14 +1823,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 25305db
-  vllm_commit: 6e67d2d
+  version: "0.2.0"
+  tt_metal_commit: "9b67e09"
+  vllm_commit: "a91b644"
   inference_engine: VLLM
   device_model_specs:
     - device: GPU
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
   status: COMPLETE
   metadata:
@@ -2059,85 +1838,6 @@ templates:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.1-8B
 
-- weights:
-    - meta-llama/Llama-3.1-8B
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P100
-      max_concurrency: 32
-      max_context: 65536      # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 90000000
-  status: EXPERIMENTAL
-  metadata:
-    meta-llama/Llama-3.1-8B:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-- weights:
-    - meta-llama/Llama-3.1-8B
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150
-      max_concurrency: 32
-      max_context: 65536      # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 900000000      # match P100 (single BH chip); 50MB default too small for prefill trace (#4005)
-      known_issues:
-        - workflow_type: EVALS
-          task_name: meta_ifeval
-          reason: "meta_ifeval measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
-        - workflow_type: EVALS
-          task_name: meta_gpqa_cot
-          reason: "meta_gpqa_cot measured scores flakily pass the >=95% threshold https://github.com/tenstorrent/tt-inference-server/issues/4360#issuecomment-4799932610."
-        - workflow_type: EVALS
-          task_name: longbench_fewshot_e
-          reason: "longbench_fewshot_e known issue with longbench code sub-task where
-            the chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
-            Masked due to other longbench subtasks passing."
-        - workflow_type: EVALS
-          task_name: longbench_summarization_e
-          reason: "longbench_summarization_e measured score is ~94% which does not satisfy
-            the >=95% threshold  https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
-            Masked due to other longbench subtasks passing."
-        - workflow_type: EVALS
-          task_name: longbench_code_e
-          reason: "longbench_code_e known issue with longbench code sub-task where the
-            chat templating interferes with prompt templating https://github.com/tenstorrent/tt-inference-server/issues/4002#issuecomment-4708954121.
-            Masked due to other longbench subtasks passing."
-  status: EXPERIMENTAL
-  metadata:
-    meta-llama/Llama-3.1-8B:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-- weights:
-    - meta-llama/Llama-3.1-8B-Instruct
-  version: "0.18.0"
-  tt_metal_commit: "c49bb76"
-  vllm_commit: "6b4a3a7"
-  impl: tt_transformers
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P100
-      max_concurrency: 32
-      max_context: 65536      # 64 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 90000000
-  status: EXPERIMENTAL
-  metadata:
-    meta-llama/Llama-3.1-8B-Instruct:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   version: "0.18.0"
@@ -2183,47 +1883,6 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B
   impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 55fd115
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X4
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        sample_on_device_mode: decode_only
-        trace_region_size: 70000000
-  status: COMPLETE
-  metadata:
-    meta-llama/Llama-3.1-8B:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-- weights:
-    - meta-llama/Llama-3.1-8B-Instruct
-  impl: tt_transformers
-  version: "0.10.0"
-  tt_metal_commit: 55fd115
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: P150X4
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        sample_on_device_mode: decode_only
-        trace_region_size: 70000000
-  status: COMPLETE
-  metadata:
-    meta-llama/Llama-3.1-8B-Instruct:
-      tool_call_parser_name: llama3_json
-  model_display_name: Llama-3.1-8B
-
-- weights:
-    - meta-llama/Llama-3.1-8B
-  impl: tt_transformers
   system_requirements:
     firmware:
       specifier: ">=18.12.0"
@@ -2259,14 +1918,14 @@ templates:
     kmd:
       specifier: ">=2.4.1"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: 555f240
-  vllm_commit: 22be241
+  version: "0.10.0"
+  tt_metal_commit: "555f240"
+  vllm_commit: "22be241"
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
-      max_concurrency: 256      # 32 * 8
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 256        # 32 * 8
+      max_context: 131072        # 128 * 1024
       default_impl: true
       vllm_args:
         data_parallel_size: 8
@@ -2280,9 +1939,9 @@ templates:
 
 - weights:
     - meta-llama/Llama-3.1-8B
-  version: "0.19.0"
-  tt_metal_commit: "b204341"
-  vllm_commit: "9bd099c"
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -2295,7 +1954,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         sample_on_device_mode: decode_only
@@ -2329,9 +1988,9 @@ templates:
   model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B
-  version: "0.19.0"
-  tt_metal_commit: "b204341"
-  vllm_commit: "9bd099c"
+  version: "0.10.1"
+  tt_metal_commit: "e867533"
+  vllm_commit: "22be241"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -2344,7 +2003,7 @@ templates:
   device_model_specs:
     - device: P300
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       env_vars:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
@@ -2380,9 +2039,9 @@ templates:
   model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
-  version: "0.19.0"
-  tt_metal_commit: "b204341"
-  vllm_commit: "9bd099c"
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -2395,7 +2054,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 32
-      max_context: 131072      # 128 * 1024
+      max_context: 131072        # 128 * 1024
       default_impl: true
       override_tt_config:
         sample_on_device_mode: decode_only
@@ -2545,14 +2204,14 @@ templates:
 - weights:
     - meta-llama/Llama-3.1-8B-Instruct
   impl: tt_transformers
-  version: "0.11.1"
-  tt_metal_commit: bac8b34
-  vllm_commit: 7c6685a
+  version: "0.11.0"
+  tt_metal_commit: "bac8b34"
+  vllm_commit: "7c6685a"
   inference_engine: VLLM
   device_model_specs:
     - device: GALAXY
-      max_concurrency: 128      # 32 * 4
-      max_context: 131072      # 128 * 1024
+      max_concurrency: 128        # 32 * 4
+      max_context: 131072        # 128 * 1024
       default_impl: true
       vllm_args:
         data_parallel_size: 4
@@ -2606,49 +2265,6 @@ templates:
       tool_call_parser_name: llama3_json
   model_display_name: Llama-3.1-8B
 
-- weights:
-    - Qwen/Qwen2.5-Coder-32B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 17a5973
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: T3K
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      override_tt_config:
-        trace_region_size: 56000000
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-Coder-32B-Instruct:
-      tool_call_parser_name: hermes
-- weights:
-    - Qwen/Qwen2.5-Coder-32B-Instruct
-  impl: tt_transformers
-  version: "0.9.0"
-  tt_metal_commit: 17a5973
-  vllm_commit: aa4ae1e
-  inference_engine: VLLM
-  device_model_specs:
-    - device: GALAXY_T3K
-      max_concurrency: 32
-      max_context: 131072      # 128 * 1024
-      default_impl: true
-      env_vars:
-        TT_MM_THROTTLE_PERF: 5
-        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
-      override_tt_config:
-        fabric_config: FABRIC_1D
-  status: EXPERIMENTAL
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    Qwen/Qwen2.5-Coder-32B-Instruct:
-      tool_call_parser_name: hermes
 - weights:
     - openai/gpt-oss-120b
   version: "0.17.0"
@@ -2775,41 +2391,6 @@ templates:
         HF_MODEL: Qwen/Qwen3.6-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
-        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
-      vllm_args:
-        enable_auto_tool_choice: true
-        reasoning_parser: qwen3
-        tool_call_parser: qwen3_coder
-      override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 1073741824
-        l1_small_size: 24576
-        sample_on_device_mode: decode_only
-  status: EXPERIMENTAL
-  has_builtin_warmup: true
-  metadata:
-    Qwen/Qwen3.6-27B:
-      reasoning_parser_name: qwen3
-      tool_call_parser_name: qwen3_coder
-- weights:
-    - Qwen/Qwen3.6-27B
-  version: "0.20.0"
-  tt_metal_commit: "de59f8a"
-  vllm_commit: "03fa3af"
-  impl: qwen36_blackhole
-  inference_engine: VLLM
-  model_type: LLM
-  supported_modalities:
-    - text
-  device_model_specs:
-    - device: P150X8
-      max_concurrency: 32
-      max_context: 262144
-      max_tokens_all_users_override: 525312
-      default_impl: true
-      env_vars:
-        HF_MODEL: Qwen/Qwen3.6-27B
-        MESH_DEVICE: "P150x8"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
         enable_auto_tool_choice: true
