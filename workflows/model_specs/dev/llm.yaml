@@ -956,7 +956,7 @@ templates:
         # autoport derives its serving capacity against. Measured on p300x2.
         trace_region_size: 200000000
         l1_small_size: 24576
-        sample_on_device_mode: decode_only
+        sample_on_device_mode: all
       # Run new autoport Python on a REUSED image instead of paying a ~1 h
       # rebuild. The test stage never checks out tt-metal, so these paths are
       # sparse-cloned on the runner and bind-mounted over the image's copy.
