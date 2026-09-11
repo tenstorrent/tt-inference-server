@@ -16,11 +16,15 @@ run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version
 #   - build the release-artifacts zip from the tt-shield run (upload artifact).
 #   - resolve tt-shield source images -> map to release images -> crane copy
 #     (publish) -> re-bake the prod catalogue into the vLLM image -> verify.
-#   - create post-release-v<version> off main (carry VERSION + models-ci-config,
-#     re-run the 4 generators) and open a draft PR to main.
+#   - create post-release-v<version> off the post-release-base branch (default
+#     main; carry VERSION + models-ci-config, re-run the 4 generators) and open a
+#     draft PR against that same base.
 # Suffixes (tag-suffix / post-release-suffix) mark testing artifacts; empty = real release.
 # publish-images=false (the default) skips the crane copy / re-bake / verify steps
 #   entirely, so a test run never writes to ghcr.io. A real release MUST set it true.
+# post-release-base redirects the post-release branch + PR away from main, so the
+#   merge -> publish-release.yml half can be rehearsed against a throwaway clone
+#   of main. A real release MUST leave it at 'main'.
 # ---------------------------------------------------------------------------
 
 on:
@@ -57,6 +61,11 @@ on:
         required: false
         default: false
         type: boolean
+      post-release-base:
+        description: "Base branch the post-release branch is cut from and the draft PR targets. MUST be 'main' for a real release; point it at a throwaway main-clone to rehearse the merge -> publish flow."
+        required: false
+        default: "main"
+        type: string
 
 # The pipeline commits generated files + a tag to the branch and opens a draft PR.
 permissions:
@@ -132,6 +141,7 @@ jobs:
           IN_TT_SHIELD_RUN_ID: ${{ github.event.inputs['tt-shield-run-id'] }}
           IN_TAG_SUFFIX: ${{ github.event.inputs['tag-suffix'] }}
           IN_POST_RELEASE_SUFFIX: ${{ github.event.inputs['post-release-suffix'] }}
+          IN_POST_RELEASE_BASE: ${{ github.event.inputs['post-release-base'] }}
         run: |
           # The VERSION file is the source of truth (checkout runs first, so it
           # is present). The `version` input is only for the run title; require
@@ -171,6 +181,14 @@ jobs:
             echo "TAG_SUFFIX=${IN_TAG_SUFFIX}"
             echo "POST_RELEASE_SUFFIX=${IN_POST_RELEASE_SUFFIX}"
           } >> "$GITHUB_ENV"
+          # Post-release base: empty input falls back to main so a dispatch that
+          # omits it behaves exactly like a real release.
+          POST_RELEASE_BASE="${IN_POST_RELEASE_BASE:-main}"
+          if ! git ls-remote --exit-code --heads origin "${POST_RELEASE_BASE}" >/dev/null 2>&1; then
+            echo "::error::post-release-base '${POST_RELEASE_BASE}' does not exist on origin — create it first (e.g. from main)."
+            exit 1
+          fi
+          echo "POST_RELEASE_BASE=${POST_RELEASE_BASE}" >> "$GITHUB_ENV"
 
       - name: Show effective parameters
         run: |
@@ -179,7 +197,8 @@ jobs:
           echo "vllm-commit      = ${VLLM_COMMIT}"
           echo "tt-shield-run-id = ${TT_SHIELD_RUN_ID}"
           echo "commit/tag       = v${RELEASE_VERSION}${TAG_SUFFIX}"
-          echo "post-release br  = post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX} (from main)"
+          echo "post-release br  = post-release-v${RELEASE_VERSION}${POST_RELEASE_SUFFIX} (from ${POST_RELEASE_BASE})"
+          echo "post-release base= ${POST_RELEASE_BASE}"
 
       # ----- Cross-check the hand-typed commits against what the tt-shield run
       #       actually built, BEFORE any promote/commit/tag/publish. Fails fast on
@@ -660,10 +679,11 @@ jobs:
           print(f"OK - catalogue v{baked['release_version']}, every spec pinned to this image resolves")
           PY
 
-      # ----- Post-release branch off main. Branches from origin/main, carries this branch's VERSION
+      # ----- Post-release branch off the base branch (post-release-base, default
+      #       main). Branches from origin/<base>, carries this branch's VERSION
       #       + models-ci-config.json onto it, RE-RUNS the same four generators
       #       there, then commits everything in ONE commit and pushes.
-      - name: "Post-release: branch from main + carry VERSION/config"
+      - name: "Post-release: branch from the base branch + carry VERSION/config"
         env:
           SRC_REF: ${{ github.ref_name }}
         run: |
@@ -672,17 +692,17 @@ jobs:
             echo "POST_RELEASE_BRANCH=${NEW_BRANCH}"
             echo "POST_RELEASE_SRC_REF=${SRC_REF}"
           } >> "$GITHUB_ENV"
-          echo "Creating '${NEW_BRANCH}' from main, carrying VERSION + models-ci-config.json from '${SRC_REF}'."
+          echo "Creating '${NEW_BRANCH}' from '${POST_RELEASE_BASE}', carrying VERSION + models-ci-config.json from '${SRC_REF}'."
 
           # Stash the carried files + the PR script (the post-release branch is
-          # main-based and won't contain this script) outside the repo before
-          # switching branches.
+          # base-branch-based and won't contain this script) outside the repo
+          # before switching branches.
           cp VERSION "${RUNNER_TEMP}/VERSION.carry"
           cp .github/workflows/models-ci-config.json "${RUNNER_TEMP}/models-ci-config.json.carry"
           cp scripts/release/create_post_release_pr.py "${RUNNER_TEMP}/create_post_release_pr.py"
 
-          # Branch off the latest main, then overlay the carried files.
-          git fetch origin main
+          # Branch off the latest base branch, then overlay the carried files.
+          git fetch origin "${POST_RELEASE_BASE}"
           git checkout -b "${NEW_BRANCH}" FETCH_HEAD
           cp "${RUNNER_TEMP}/VERSION.carry" VERSION
           cp "${RUNNER_TEMP}/models-ci-config.json.carry" .github/workflows/models-ci-config.json
@@ -707,7 +727,7 @@ jobs:
         run: |
           git add .
           if git diff --cached --quiet; then
-            echo "No changes vs main — pushing '${POST_RELEASE_BRANCH}' at main's tip."
+            echo "No changes vs '${POST_RELEASE_BASE}' — pushing '${POST_RELEASE_BRANCH}' at that branch's tip."
           else
             git commit -m "post-release v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}: carry VERSION/models-ci-config.json + regenerate prod specs, docs & helm (from ${POST_RELEASE_SRC_REF})"
           fi
@@ -716,7 +736,7 @@ jobs:
 
       # ----- FINAL step: open the draft "Post release v<version>" PR
       #       (post-release branch -> main) in the PR #4398 format.
-      - name: "Post-release: open draft PR -> main"
+      - name: "Post-release: open draft PR -> the base branch"
         env:
           GH_TOKEN: ${{ github.token }}
           TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
@@ -728,7 +748,9 @@ jobs:
           python3 scripts/release/create_post_release_pr.py \
             --tt-shield-run-id "${TT_SHIELD_RUN_ID}" \
             --head-branch "${POST_RELEASE_BRANCH}" \
-            --base main \
+            --base "${POST_RELEASE_BASE}" \
+            --base-ref "origin/${POST_RELEASE_BASE}" \
+            --tag-suffix "${TAG_SUFFIX}" \
             --promoted-images "${PROMOTED_IMAGES}"
 
       # ----- FINAL step: create a DRAFT GitHub Release named after the version,

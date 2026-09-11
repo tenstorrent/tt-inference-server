@@ -6,6 +6,10 @@ name: Publish Release (on post-release PR merge)
 # created by the release pipeline); this workflow only fills in the notes and
 # flips draft -> published.
 #
+# Works for a testing rehearsal too: the tag is taken from the PR body metadata,
+# which carries release-automation's tag-suffix, so a suffixed test Release
+# (v<version>-temp) publishes as itself and is NOT marked Latest.
+#
 # Trigger is filtered at the TRIGGER level on paths: ['VERSION'] so no run is
 # created for the many PRs that don't touch VERSION -> no skipped-run clutter in
 # the Actions tab. Caveat (accepted): it will NOT fire on a same-version
@@ -15,7 +19,13 @@ name: Publish Release (on post-release PR merge)
 on:
   pull_request:
     types: [closed]
-    branches: [main]
+    # `branches` filters the PR's BASE. main is the real lane; the second entry
+    # is the testing lane — a throwaway clone of main that release-automation.yml
+    # can be pointed at via its post-release-base input, so the
+    # merge -> publish half can be rehearsed without touching main.
+    branches:
+      - main
+      - vcankovic/test-release-automation-test-merge
     paths: ['VERSION']
 
 # gh edits/publishes a Release -> needs contents: write.
@@ -47,11 +57,16 @@ jobs:
     steps:
       - name: "Resolve the release tag"
         run: |
-          # Prefer the metadata block embedded in the PR body (exactly v<version>);
-          # fall back to the immutable head ref post-release-v<version>.
-          TAG="$(printf '%s' "${PR_BODY}" | grep -oE 'metadata:version=v[0-9][0-9.]*' | head -1 | sed 's/^metadata:version=//')"
+          # Prefer the metadata block embedded in the PR body (v<version> plus the
+          # release run's tag-suffix, if any); fall back to the immutable head ref
+          # post-release-v<version><post-release-suffix>. The trailing
+          # [A-Za-z0-9._-]* accepts a testing suffix and matches nothing on a real
+          # release. NOTE: the fallback yields the POST-RELEASE suffix, which only
+          # equals the tag suffix when both dispatch inputs were set the same —
+          # the body metadata is authoritative, which is why it is tried first.
+          TAG="$(printf '%s' "${PR_BODY}" | grep -oE 'metadata:version=v[0-9][0-9.]*[A-Za-z0-9._-]*' | head -1 | sed 's/^metadata:version=//')"
           if [ -z "${TAG}" ]; then
-            TAG="$(printf '%s' "${HEAD_REF}" | grep -oE 'v[0-9][0-9.]*' | head -1)"
+            TAG="$(printf '%s' "${HEAD_REF}" | grep -oE 'v[0-9][0-9.]*[A-Za-z0-9._-]*' | head -1)"
           fi
           if [ -z "${TAG}" ]; then
             echo "::error::could not resolve a release tag from the PR body metadata or head ref '${HEAD_REF}'."
@@ -72,9 +87,23 @@ jobs:
         run: |
           # Full PR body verbatim, via a file to avoid any shell-escaping issues.
           printf '%s' "${PR_BODY}" > "${RUNNER_TEMP}/release_notes.md"
-          gh release edit "${TAG}" \
-            --repo "${REPO}" \
-            --notes-file "${RUNNER_TEMP}/release_notes.md" \
-            --draft=false \
-            --latest
+          # A suffixed tag (anything after the digits/dots, e.g. v0.22.0-temp) is a
+          # testing artifact: publish it so the flow is fully exercised, but never
+          # promote it to the repo's Latest release.
+          case "${TAG}" in
+            v[0-9]*[!0-9.]*)
+              echo "::warning::'${TAG}' is a suffixed (testing) tag — publishing it WITHOUT --latest."
+              gh release edit "${TAG}" \
+                --repo "${REPO}" \
+                --notes-file "${RUNNER_TEMP}/release_notes.md" \
+                --draft=false
+              ;;
+            *)
+              gh release edit "${TAG}" \
+                --repo "${REPO}" \
+                --notes-file "${RUNNER_TEMP}/release_notes.md" \
+                --draft=false \
+                --latest
+              ;;
+          esac
           echo "Published Release '${TAG}' with the merged PR body as its notes."

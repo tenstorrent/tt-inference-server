@@ -424,7 +424,9 @@ def _sw_versions_block(sw_versions) -> str:
     )
 
 
-def render_body(version: str, run_id, rows, promoted_images, sw_versions=None) -> str:
+def render_body(
+    version: str, run_id, rows, promoted_images, sw_versions=None, tag_suffix: str = ""
+) -> str:
     # The recommended Wormhole-Galaxy SW versions only apply when the release
     # ships a GALAXY model; omit the whole section otherwise (BLACKHOLE_GALAXY
     # does not trigger it). Values are read from the galaxy job's setup log;
@@ -435,10 +437,13 @@ def render_body(version: str, run_id, rows, promoted_images, sw_versions=None) -
     return (
         # Machine-readable metadata block (parsed by downstream tooling); keep
         # it first, before the Summary. run_id = tt-shield Release run id,
-        # version = the release version with a leading 'v'.
+        # version = the release version with a leading 'v', INCLUDING the tag
+        # suffix so it names the tag/Release this run actually created (empty
+        # suffix on a real release -> unchanged 'v<version>'). publish-release.yml
+        # resolves the draft Release to publish from this line.
         "<!--\n"
         f"metadata:run_id={run_id or ''}\n"
-        f"metadata:version=v{version}\n"
+        f"metadata:version=v{version}{tag_suffix}\n"
         "-->\n\n"
         "# Summary of Changes\n\n"
         "<!-- Fill in the summary of changes manually. -->\n"
@@ -541,6 +546,13 @@ def main() -> None:
     )
     ap.add_argument("--base", default="main", help="PR base branch")
     ap.add_argument(
+        "--tag-suffix",
+        default="",
+        help="Tag suffix used by this release run (e.g. '-temp'); appended to "
+        "metadata:version so the PR names the tag/Release that exists. Empty "
+        "for a real release.",
+    )
+    ap.add_argument(
         "--head-branch", default=None, help="PR head branch (default: current branch)"
     )
     ap.add_argument("--repo", default=DEFAULT_REPO, help="Repo to open the PR on")
@@ -622,7 +634,12 @@ def main() -> None:
     )
 
     body = render_body(
-        version, args.tt_shield_run_id, rows, promoted_images, sw_versions
+        version,
+        args.tt_shield_run_id,
+        rows,
+        promoted_images,
+        sw_versions,
+        args.tag_suffix,
     )
 
     print(f"Version:      {version}", file=sys.stderr)

@@ -221,6 +221,19 @@ def test_body_carries_release_metadata_and_promoted_images():
     assert "**Total:** 2" in body
 
 
+def test_body_metadata_carries_the_tag_suffix():
+    """publish-release.yml resolves the Release to publish from this line.
+
+    A suffixed run tags/creates v<version><suffix>, so metadata naming the bare
+    v<version> would send the publisher looking for a Release that never existed.
+    """
+    body = render_body("1.2.3", "999", rows=[], promoted_images=[], tag_suffix="-temp")
+
+    assert body.startswith(
+        "<!--\nmetadata:run_id=999\nmetadata:version=v1.2.3-temp\n-->\n\n"
+    )
+
+
 def test_invalid_base_ref_fails_instead_of_appearing_new(monkeypatch):
     def fail(*args, **kwargs):
         raise subprocess.CalledProcessError(128, args[0])
