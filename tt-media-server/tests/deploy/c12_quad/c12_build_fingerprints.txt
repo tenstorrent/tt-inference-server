@@ -1,0 +1,335 @@
+# host=bh-glx-EXP-c01u21 date=2026-09-11T00:15:36Z TT_METAL_HOME=/data/DC-deploy/vision-models/zni_worktrees/tt-metal-old lib=/data/DC-deploy/vision-models/zni_worktrees/tt-metal-old/build_Release/lib cache=/home/vision-models/.cache/tt-metal-cache/10633792612134188041
+## host libraries (size md5)
+libtt_metal.so                     28399664 eb0025aa08bd90b8f7db56d44930849d
+libtt_stl.so                          19280 f46de873567d70acb641ce8a622b9c4c
+_ttnncpp.so                        57114352 41a37ce5cd7f0e686cd31263a42c1870
+_ttnn.so                           19532456 805730c110ddbee3ccfd630b5ab606f0
+## compiler recorded in libtt_metal.so
+  GCC: (Ubuntu 12.3.0-1ubuntu1~22.04.3) 12.3.0
+  Linker: Ubuntu LLD 20.1.8
+## sfpi
+7.72.0 7.72.0 
+riscv-tt-elf-g++ (tenstorrent/sfpi:7.72.0[873]) 15.1.0
+## runtime/hw/lib/blackhole objects
+  noc.o                0fa9cca0b85a109b932704ac837822a4
+  substitutes.o        7f253db0f6d1c00f7d3bcea67a66075a
+  tdma_xmov.o          d8d6fbf21f211421b4a2a7857217b127
+  tmu-crt0.o           8149090d6e76aed9572b36ad25f9b893
+## runtime/hw/toolchain/blackhole linker scripts
+  firmware_aerisc.ld                 f8d86704247b7352d11768510f70fa92
+  firmware_brisc.ld                  ab111327e33c3b3a630219dc54029813
+  firmware_drisc.ld                  7e37f44526f9f99b31ef4a2da2710ba9
+  firmware_ierisc.ld                 f049f17c882f95af7a584304fa69294d
+  firmware_main_aerisc.ld            ac5abc102bf6b0a2ed0400d4ad03b7aa
+  firmware_ncrisc.ld                 6d9bd0fd1ff785aa57838ad2fca2c6db
+  firmware_subordinate_aerisc.ld     e4a176f6ebfa90c3e7f4485885cf6507
+  firmware_subordinate_ierisc.ld     1d3d8c6f887650158fd425154f11d5c8
+  firmware_trisc0.ld                 978c8281a9faa5a4c0d0120925e9a5e0
+  firmware_trisc1.ld                 70fcc175f8327a0613c4bd602fbc9278
+  firmware_trisc2.ld                 2479bc23c8002a0873f3ed3795dce386
+  kernel_aerisc.ld                   c02ec68ae008cebfd17e57edbad80ff6
+  kernel_brisc.ld                    4198dcb763d0a121adcfa765cc70066d
+  kernel_drisc.ld                    31dcbefb6c708a729c92e39f290c5a81
+  kernel_ierisc.ld                   e70c0179200c2ed7723c1a5344f0963c
+  kernel_main_aerisc.ld              daa9eb9352a2f75282928dcea14575df
+  kernel_ncrisc.ld                   1ed020d76e137b615b6167778091cebb
+  kernel_subordinate_aerisc.ld       9a60728f4a5324961cd7ee90b9e5744a
+  kernel_subordinate_ierisc.ld       fe95100985774d20413d1deca8c46118
+  kernel_trisc0.ld                   ac433b8e6f0b513b5d3212347353268b
+  kernel_trisc1.ld                   947b86f8eb4b76a5ac5a21013a223f2e
+  kernel_trisc2.ld                   1fdb3cd5b796d25057dab43a4bcc3959
+## JIT cache key dir: 10633792612134188041
+## firmware (<core>: md5 of <core>.elf | dephash of compile inputs)
+  active_erisc                 elf=51f995c4cf39995ee78a54037329d1c1 deps=firmware_main_aerisc.ld=2585057948999675715 
+  brisc                        elf=f3fa5113a1434e7b4a98276e7ec70689 deps=firmware_brisc.ld=6337443133392112300 
+  idle_erisc                   elf=30c596498cd90c144acadbd3b339c304 deps=firmware_ierisc.ld=8975971685846652637 
+  ncrisc                       elf=cb6846708814497914672ad639fd5c50 deps=firmware_ncrisc.ld=16824480138661903801 
+  subordinate_active_erisc     elf=366109548af1c9a3cc30aeaf1cb55236 deps=firmware_subordinate_aerisc.ld=8170986118551447927 
+  subordinate_idle_erisc       elf=25ec15977b09a36524880eda0c8f9f88 deps=firmware_subordinate_ierisc.ld=10438231086115569395 
+  trisc0                       elf=964043c62477d21330d467e1c1afe6c9 deps=firmware_trisc0.ld=2415539458112870434 
+  trisc1                       elf=d63287ee96078af80b9280068ba89e37 deps=firmware_trisc1.ld=3244697702412324174 
+  trisc2                       elf=b6f784510d2cae19ccbc05fb090978d2 deps=firmware_trisc2.ld=10306240713538239030 
+## kernels: <kernel> <hash-dir> <md5 over all *.elf inside> <n elf>
+  exp_ring_joint_sdpa      1020640260099356600    f3783d1c3ba75818785151ae8e510b04 6
+  exp_ring_joint_sdpa      12204339787955029425   6718ea531e13fcbd9f1dcdf8ff93aeb3 6
+  exp_ring_joint_sdpa      13995845297936601549   b9a0fc889ad23b89edc3e0f7914ead46 6
+  exp_ring_joint_sdpa      14445575550849502582   e8c44bf95c8b1e6a77eff0886e88e1c2 6
+  exp_ring_joint_sdpa      14576636351781375940   cab047a284c140f8fef6a38de15f7854 6
+  exp_ring_joint_sdpa      15118849517738107366   df548f9ac41921a2f68eca7e86885939 6
+  exp_ring_joint_sdpa      16648742299439707214   69963dabebaaf89e4aeb1934d58e3d22 6
+  exp_ring_joint_sdpa      1684217467159878394    e683c84306a8ec5a651a8dae6b48e60d 6
+  exp_ring_joint_sdpa      1753522780556962045    4da84c2be3b2a2fb434c656d86fb00ce 6
+  exp_ring_joint_sdpa      17857134576825697305   495b25b99e32beb5a58ccd15949591b5 6
+  exp_ring_joint_sdpa      1796410461180060616    80d4be0fa691473a2e8feb433e70115f 6
+  exp_ring_joint_sdpa      18098246246617508181   1df49447149e84f479b8ae01896daab9 6
+  exp_ring_joint_sdpa      252210901356948321     d627c2427055d5d6b839a0561e4e806a 6
+  exp_ring_joint_sdpa      4125903381160344639    35a7936330795ec1c59f55463ab23d70 6
+  exp_ring_joint_sdpa      435309340078453733     c33cf47989d68be685c62de743e011b9 6
+  exp_ring_joint_sdpa      7248832915569483398    324faadfdfceeb395e77b97e935e6221 6
+  exp_ring_joint_sdpa      7783201008699099485    09f6b2b0d2f10716bd92d75e59eb260a 6
+  exp_ring_joint_sdpa      7809309108269612438    d9be4870785bb31dfd690aee1517f823 6
+  exp_ring_joint_sdpa      840677314512946246     33ea229e7cec6f7ea94afce25fea323a 6
+  exp_ring_joint_sdpa      9095412960338462803    f5f1e9406ef77456d3a3d4fd5c2bb81d 6
+  exp_ring_joint_sdpa      945777928648459640     bb605926eae8ad3b50a02b850eb9c5b7 6
+  ring_joint_sdpa          10841778059893330229   1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          10853709271329646698   2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          10982006215803159260   e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          12272214824929796132   2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          12405916602522802519   2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          13205923984815199107   2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          1348414827315733613    207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          14113010975275723890   1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          14114991328656857431   2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          14228218631165824163   e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          14430946928544071993   00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          14912889042347943372   207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          14931852786113789608   1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          15143783316248444519   207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          15174765236821930446   00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          1529609442952072107    5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          15338185396759729343   207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          15349533092577677868   e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          15380827977235556334   719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          15625996136191651495   719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          15679104800427827360   5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          15769657105963779162   1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          16150666949539609687   2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          16168786292786003784   5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          16374925236892812464   1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          16445907084758785815   2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          16448358199701358918   719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          17002975381368680453   719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          17556700865071928330   5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          17843395127179239261   e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          1793691685802983693    e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          18131366006376901606   2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          18158828158749429801   207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          181611397044999027     9b6c48f46cf7e5ebd0088bf30e835642 6
+  ring_joint_sdpa          1822385466264045758    1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          2334613071751938890    41d140c000e33bb102ba7ee9834dbc8a 6
+  ring_joint_sdpa          2485298825724141863    1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          2790341966697344643    2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          3141372091242675359    719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          3574271969303812535    2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          4055918361247053878    2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          4096672777305479785    2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          4198222633738277045    207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          4212071214291654432    719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          4449945822283403969    2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          4780306171897148514    00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          493379816709087489     e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          5004260587180704688    00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          5129920480561002287    5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          5382210608138546762    00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          6349669850175950957    00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          6626748372639822133    207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          7070719778195214741    2ea5508cb15fc8011eb86058a598bab0 6
+  ring_joint_sdpa          7086519416770325910    2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          7695014505669908872    1add7d93fb313d13290fb2f9b4a1375a 6
+  ring_joint_sdpa          7964472941593646500    719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          8228331297061097403    00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          8285544418966642156    e2ab15d5dfc60c39148fc14698a4d05c 6
+  ring_joint_sdpa          8550981413264847614    719c803297f504bfbf2ce0f67cb7556b 6
+  ring_joint_sdpa          8817780054786474273    5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          8868772055680930796    5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          8879068387228708560    2d81c88e7e3c65a3cf482f044b044fc1 6
+  ring_joint_sdpa          9301521568288438476    00f9883b7a78f6c86fb61ff56ae87a6d 6
+  ring_joint_sdpa          9421201623746887712    5056368cc79f3fce811b368a23cfabf0 6
+  ring_joint_sdpa          9633104465759954301    207d9cac393521927ac7d996617ad0b4 6
+  ring_joint_sdpa          9948893554284415699    e2ab15d5dfc60c39148fc14698a4d05c 6
+  exp_ring_joint_reader    10851895596412164920   b1df4d977829456109b1f322bb50b5d3 2
+  exp_ring_joint_reader    109497786860249018     896e72063de58957170de040a93971ce 2
+  exp_ring_joint_reader    15296964281539165715   0714cf993800043fb88f5a3b064863b7 2
+  exp_ring_joint_reader    1597872637062462531    74d96d2b62833f0f619829aea35bdeae 2
+  exp_ring_joint_reader    17546048920449701290   2b6ba778b7314cfcae87421a08e0d85e 2
+  exp_ring_joint_reader    17839715859354833771   059f66aac1be4bbf22d39f96b68b8158 2
+  exp_ring_joint_reader    17985669650811495852   fef70e7f7fd0e0e5e5dfac6731879f0f 2
+  exp_ring_joint_reader    1890260106796730833    60134561182a3e3351ae156d800b2d56 2
+  exp_ring_joint_reader    2008291139319849173    be2c5a20a202cfc93e3773ae4bb1abbf 2
+  exp_ring_joint_reader    226561349119703367     397a56015d05ee691540f1f66cc36f85 2
+  exp_ring_joint_reader    3507637508462485094    7aa644c9ca8ecfe70ef262f5fc1637ac 2
+  exp_ring_joint_reader    385968525024289641     b3ab28250325a9d6e3bb15dbf39d69d9 2
+  exp_ring_joint_reader    3905798697737981946    4f7c809a8191580795a99b87ad1393b5 2
+  exp_ring_joint_reader    4485391166832028646    972435ae23ca8c2aaca946e208531bac 2
+  exp_ring_joint_reader    4673683083981999464    bf21b77f5fa3fbd0c3ff73c93007fd00 2
+  exp_ring_joint_reader    5085064688592839875    8c41a45d72fb0bdfd27d0217db36e202 2
+  exp_ring_joint_reader    7226145947202773597    a8c8c10db6d8c50ced87ef6dcf9888a1 2
+  exp_ring_joint_reader    7326451988307674732    7cf519153bf775dcc72ba6b887432016 2
+  exp_ring_joint_reader    799156961152648019     f6eb836c13f2dc37825390202bb9cebf 2
+  exp_ring_joint_reader    916091528427693097     15450f8a301dbac336f8a230fcbfd339 2
+  exp_ring_joint_reader    9856453452073078440    30ddfc0412680904ce7045e2c6d915a0 2
+  ring_joint_reader        10589092412282044414   01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        10800975921949073710   03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        11478832989832432986   a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        11633141353339698520   15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        11754526898254200553   9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        12207649142919277931   e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        12421094733537788331   15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        12919010691350780810   a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        13000478500175207466   e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        13036893121767968192   664ee106d20830bdb5607e2ffafa4a79 2
+  ring_joint_reader        13147921133493125537   15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        1330953540356798642    9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        13655629409117671848   15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        13692977918750132683   e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        13703365038027533926   a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        138959965174043752     01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        13929772998995942730   15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        14236732966952363620   a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        14506549945013156262   e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        14765497566277018116   15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        14828349570795606931   a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        14942357951624780054   15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        14978564861682009659   01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        15517802554749876501   15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        16085951588245446457   9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        16217817199791806814   9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        16396421407480611849   01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        16401819581137905640   01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        1640801481585657835    15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        16521887988818266608   e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        16808745136893512409   15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        16959710079755182558   01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        17030511431932797293   e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        17926935643022627127   03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        18131858975947371246   c8551e1153a5e577b20f11f4a7e5e30e 2
+  ring_joint_reader        1903510736936275832    9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        2834440698395121947    a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        29494513937347575      a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        3066098248539151818    e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        3191151054544713048    a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        3339059797869715805    a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        3403534170634737169    a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        3535506020374478591    15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        3657895438252461058    15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        4375450869018712443    e283b9894a57a41ee129968f2e648ef5 2
+  ring_joint_reader        4409496743973866261    9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        4579213464548622215    a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        4790905653302622750    15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        4801838420889390544    03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        5062711707554328876    15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        5085040196320289982    03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        542161829964438446     a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        5600041448830903853    a9066348e71e3053826c5651c134c5cc 2
+  ring_joint_reader        6068679857309537984    01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        7559628099547240304    9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        7688723612642816906    01b6dd5db3ef3ef65a88d2a1a80fe88a 2
+  ring_joint_reader        7836325567901535580    a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        7903903561497346868    a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        7915898632973341539    03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        7957371431407671069    03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        8102571465524950813    03597bc828fa0eab20ce865fb4647029 2
+  ring_joint_reader        8219882702706696884    a7e7d4575b49aafa1389537fc0716afe 2
+  ring_joint_reader        8521671762186625097    15cbd268202c8741d580a8c39c4697da 2
+  ring_joint_reader        9103446026373631297    15f91fa2dd13d51739e1abef337327e5 2
+  ring_joint_reader        9383939445238401611    9334e36c7e8c8c0d9533ba135f734f5c 2
+  ring_joint_reader        938649382501840821     03597bc828fa0eab20ce865fb4647029 2
+  exp_ring_joint_writer    1072550447096818216    6e9323747da4da75cc81214e47e583a8 2
+  exp_ring_joint_writer    11110082784733666532   8c6650269fffa2b15855b033e6fa745e 2
+  exp_ring_joint_writer    11224896202660769661   7a6ea1a8f40cf764989ce752c4352efa 2
+  exp_ring_joint_writer    11490996195293459818   24a36ac4927481680ccd870eb0ef3a89 2
+  exp_ring_joint_writer    11939863946732832540   f0cf716e8d222b2e642d1c15daa30a11 2
+  exp_ring_joint_writer    12195349004586487497   7812a92656b4701258bf5823aa6c5f03 2
+  exp_ring_joint_writer    12807857508944845188   46821389a67224551a9d182cbe0629fb 2
+  exp_ring_joint_writer    12902059659996338709   0f51d7cee7f7b7cd5eecce381b70415a 2
+  exp_ring_joint_writer    13223390135272428901   9a1c55370da96a30f91241f5d86c2c02 2
+  exp_ring_joint_writer    13406329609000271503   da13ba4d949ff0d39880c059905200a9 2
+  exp_ring_joint_writer    13551650833439856131   98f99c67576b6ad6d10cb2ec6059bc3f 2
+  exp_ring_joint_writer    14232293339138116897   7a335630300513cc42888a0e5ca2ddd9 2
+  exp_ring_joint_writer    1426207016284804722    7a9076e14443c0d922614b774e65eba4 2
+  exp_ring_joint_writer    14328423019638939598   02f08fce430fc9195f784a8a13c1e24b 2
+  exp_ring_joint_writer    14584546804406009817   b4204ed3df8c2ded5b9c82e0bdedb7ee 2
+  exp_ring_joint_writer    14591407595792266681   969ff80f70c2643f4698bb00fd148b3e 2
+  exp_ring_joint_writer    15036369993545364824   cd827e40d70266bcc1891366fc6fe78e 2
+  exp_ring_joint_writer    15293768531569675990   8d1681d30921c6003715e6f648d992f4 2
+  exp_ring_joint_writer    16355668873897476745   5360840439548c3a586d07ad63c44d39 2
+  exp_ring_joint_writer    16513718630410733564   5e89b4b0731c581a3b3a6c51b1600fbd 2
+  exp_ring_joint_writer    16598902625628993465   4c98b9007a89d62bb547a48cfa8d5ea7 2
+  exp_ring_joint_writer    17136998957314685099   584bbeccb98ec3a63b8e99b2498d91f8 2
+  exp_ring_joint_writer    17413365994742250019   0f2d7bee0684030fb036dd3b6c84e23c 2
+  exp_ring_joint_writer    17492429484799292533   336ef7c71df7f7c1c995a23014f582d3 2
+  exp_ring_joint_writer    17521450892467792060   85de27ad34e6e049f4566c4afdce7cfc 2
+  exp_ring_joint_writer    18132701640438442723   caf33090c4d3cd83dcfaacc625e8e5bb 2
+  exp_ring_joint_writer    18202022760602269677   7bf7648b35a4030e905ed0e835581821 2
+  exp_ring_joint_writer    18310232424990758118   691f2bfb5f432a2938685957ece02cc6 2
+  exp_ring_joint_writer    3384586355616268185    e7150a44e27590d952f6ea5ce6df863a 2
+  exp_ring_joint_writer    3771715830450334099    c64398b28fd83e3369c42c4db61308b5 2
+  exp_ring_joint_writer    436606792960566374     365f836ca27443ef52ee713e271dc006 2
+  exp_ring_joint_writer    4467047253478918684    ebe08001656ed07d38ede9998d99cafb 2
+  exp_ring_joint_writer    448231093214206879     960186791b48543c36eb3aab28884b1d 2
+  exp_ring_joint_writer    4847324282867040901    1ecc295583bc96be1e209438af248347 2
+  exp_ring_joint_writer    6332234402830093720    a7442d22f896c653a8b0a27c8e46d8a4 2
+  exp_ring_joint_writer    6637433685636320590    972a67b3c0570e60e070310d1f97b14d 2
+  exp_ring_joint_writer    668559670308275044     348a6da0ab88241c84a0a7fdd5d5f941 2
+  exp_ring_joint_writer    6724187724784073628    fd149c6201c0f96d6ec919e996587ac9 2
+  exp_ring_joint_writer    7527174260159743613    b2e574adac1662c79e3c18b6d00e4d1e 2
+  exp_ring_joint_writer    904416558385672225     d91850348751b39b62c028b643cb5b00 2
+  exp_ring_joint_writer    9647764765766750690    61f716e7b4f1e01c0c3473b11f439e23 2
+  exp_ring_joint_writer    9930954454651315299    39ae1999d88bbaaa8e0dfcfee9c27a27 2
+  ring_joint_writer        10075125524396240305   4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        10458659134292707660   deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        10510056608383891378   b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        10763953336818694435   deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        10836449094586875517   119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        10876481417913035704   2e87167b6942906fbbcbc62d88b25dbe 2
+  ring_joint_writer        10897663814961539162   4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        11064896605355347821   5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        11130349659608107498   5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        11185647766487050297   3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        11677914606433099876   5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        12003958362318311583   5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        12103816368798996504   3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        12111224166348625531   3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        12349396196873512102   3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        12377158708880404631   119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        12769995559389375325   3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        13007186187550519576   997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        13057243769955319781   b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        14445616473383673070   deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        14597986589478124027   3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        15015066180073498128   3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        15256255914852672515   3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        15898822798563129020   997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        15943091900560905235   119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        16483034183041670946   b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        16686690397324239871   b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        1687640632418627704    3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        17324391761724393383   deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        17735605597861149433   5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        17894462649723237930   3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        17917656915829418556   997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        18061261857485765585   6dfb8178f81a763b83c73eefbc245ac3 2
+  ring_joint_writer        18091382215023636877   4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        18397753790749521630   4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        1850899551830819687    3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        2032232181622488898    4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        2307071439943075973    b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        2532173885578856992    3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        2544794078013456424    4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        2894968235244436539    3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        2916990284287614761    3a1ae3f23451fa68d5bb3bfe8a8add4a 2
+  ring_joint_writer        3234825333764340817    119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        3341236772883971550    deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        3407664621427622684    997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        3598623609908402929    5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        3649632950364274712    997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        4415857675630608298    997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        4680194014183097316    3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        4938023313022316403    119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        5039590620193340860    deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        5119618122703045614    3b49f5b44f2cda93b3eb6317d88f09cb 2
+  ring_joint_writer        5234395312602723425    b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        5409911838170866750    4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        5540488981169805097    b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        6111569883389077661    deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        699417630413474907     b2c881be05b9f0ca50837c6489b62b02 2
+  ring_joint_writer        8163253213592290681    997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        8228679967975348573    119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        8427367520819749695    4a4a4306a31956a68bcbe8f43e04286f 2
+  ring_joint_writer        8992897501390091350    119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        9194779102449696270    deb42932abf5e2e9358c40b5fa5500ed 2
+  ring_joint_writer        9218556622606366952    119aca2f90b8ebafa98800dd7ca359d6 2
+  ring_joint_writer        9339547169027370530    5d23106a121efd2291e7e8581ff30c9b 2
+  ring_joint_writer        9519967268760298649    997e37ca939b9c812606840d04e37df5 2
+  ring_joint_writer        9997609767831394024    5d23106a121efd2291e7e8581ff30c9b 2
+## kernel families present: 151 dirs, 10291 hash dirs total
