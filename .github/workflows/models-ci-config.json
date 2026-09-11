@@ -17,11 +17,6 @@
                     "devices": [
                         "P300X2"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ]
                 }
             }
         },
@@ -294,11 +289,6 @@
                                 "GALAXY",
                                 "BH_GALAXY",
                                 "P300X2"
-                            ]
-                        },
-                        "release": {
-                            "devices": [
-                                "GALAXY"
                             ]
                         },
                         "weekly": {
