@@ -940,6 +940,13 @@ templates:
         # 32 end to end: 32/32 in 114 s where it previously never returned.
         # Only prefill serialises; 32-way decode concurrency is unaffected.
         QWEN36_PREFILL_PER_REQUEST: "1"
+        # Compile the requested cold-context lengths before steady-state timing.
+        # Complete allocation tracking protects retained decode traces.
+        TT_METAL_TRACE_ALLOC_TRACKING: "1"
+        TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
+        QWEN36_TRACE_REUSE: "1"
+        QWEN36_TRACE_REPORT: "1"
+        QWEN36_WARMUP_PREFILL_LENGTHS: "128,1024,4096,16384,32768,65536,131072,261892"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
@@ -963,9 +970,9 @@ templates:
       # Only sound for Python-only deltas: the image carries compiled tt-metal,
       # so keep the paths narrow enough that a C++ change cannot ride along.
       # Remove both keys once the image is rebuilt at a commit that has them.
-      # Fixed tag resolves to 4ea57c41431; --branch cloning accepts tags, not raw SHAs.
+      # Fixed tag resolves to 4a02bf62cf5; --branch cloning accepts tags, not raw SHAs.
       # Shared sampler Python is part of this checkpoint's serving repair.
-      tt_metal_source_ref: mvasiljevic/qwen38-perf-4ea57c41431
+      tt_metal_source_ref: mvasiljevic/qwen38-warm-4a02bf62cf5
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_6_27b
         - models/autoports/vllm_bundles
