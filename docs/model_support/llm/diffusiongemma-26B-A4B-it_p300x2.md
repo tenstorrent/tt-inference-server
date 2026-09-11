@@ -22,15 +22,15 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_diffusiongemma-26B-A4B-it:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805 \
-  --model diffusiongemma-26B-A4B-it \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-a3a9fb4-be7d805 \
+  --model google/diffusiongemma-26B-A4B-it \
   --tt-device p300x2
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model diffusiongemma-26B-A4B-it --device p300x2 --workflow server --docker-server
+python3 run.py --model google/diffusiongemma-26B-A4B-it --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -42,7 +42,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
 | Max Context Length | 262144 |
-| Implementation Code | [diffusion-gemma](https://github.com/tenstorrent/tt-metal/tree/bc4c4df/models/experimental/diffusion_gemma) |
-| tt-metal Commit | `bc4c4df` |
+| Implementation Code | [diffusion-gemma](https://github.com/tenstorrent/tt-metal/tree/a3a9fb4/models/experimental/diffusion_gemma) |
+| tt-metal Commit | `a3a9fb4` |
 | vLLM Commit | `be7d805` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.22.0-a3a9fb4-be7d805` |
