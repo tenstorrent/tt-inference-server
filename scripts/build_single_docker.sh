@@ -74,6 +74,8 @@ UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
+TT_QUETZAL_COMMIT_SHA=""
+TT_QUETZAL_SOURCE_DIR=""
 TAG_SUFFIX=""
 IMAGE_REPO="ghcr.io/tenstorrent/tt-inference-server"
 # ------------------------------------------------------------------------------
@@ -111,6 +113,22 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             TT_VLLM_COMMIT_SHA_OR_TAG="$2"
+            shift
+            ;;
+        --quetzal-commit)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --quetzal-commit requires a value."
+                exit 1
+            fi
+            TT_QUETZAL_COMMIT_SHA="$2"
+            shift
+            ;;
+        --quetzal-source-dir)
+            if [ $# -lt 2 ]; then
+                echo "⛔ Error: --quetzal-source-dir requires a value."
+                exit 1
+            fi
+            TT_QUETZAL_SOURCE_DIR="$2"
             shift
             ;;
         --ubuntu-version)
@@ -172,6 +190,40 @@ if [[ "$CONTAINER_APP_UID" =~ ^[0-9]+$ ]] && (( $CONTAINER_APP_UID >= 1000 && $C
 else
     echo "CONTAINER_APP_UID=${CONTAINER_APP_UID} is not a number or outside expected range of 1000 to 59999."
 fi
+QUETZAL_SOURCE_CONTEXT=""
+QUETZAL_SOURCE_ARCHIVE=""
+cleanup_quetzal_source_context() {
+    if [[ -n "$QUETZAL_SOURCE_CONTEXT" && -d "$QUETZAL_SOURCE_CONTEXT" ]]; then
+        rm -rf -- "$QUETZAL_SOURCE_CONTEXT"
+    fi
+}
+trap cleanup_quetzal_source_context EXIT
+if [[ -n "$TT_QUETZAL_COMMIT_SHA" || -n "$TT_QUETZAL_SOURCE_DIR" ]]; then
+    if [[ ! "$TT_QUETZAL_COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "⛔ Error: --quetzal-commit must be a lowercase 40-hex commit."
+        exit 1
+    fi
+    if [[ -z "$TT_QUETZAL_SOURCE_DIR" ]]; then
+        echo "⛔ Error: --quetzal-source-dir is required with --quetzal-commit."
+        exit 1
+    fi
+    if ! QUETZAL_SOURCE_HEAD=$(git -C "$TT_QUETZAL_SOURCE_DIR" rev-parse --verify HEAD 2>/dev/null); then
+        echo "⛔ Error: --quetzal-source-dir must be a Git checkout."
+        exit 1
+    fi
+    if [[ "$QUETZAL_SOURCE_HEAD" != "$TT_QUETZAL_COMMIT_SHA" ]]; then
+        echo "⛔ Error: Quetzal source HEAD does not match --quetzal-commit."
+        exit 1
+    fi
+    QUETZAL_SOURCE_CONTEXT=$(mktemp -d "${TMPDIR:-/tmp}/ttis-quetzal-source.XXXXXX")
+    QUETZAL_SOURCE_ARCHIVE="${QUETZAL_SOURCE_CONTEXT}/source.tar"
+    git -C "$TT_QUETZAL_SOURCE_DIR" archive --format=tar "$TT_QUETZAL_COMMIT_SHA" > "$QUETZAL_SOURCE_ARCHIVE"
+    if ! DOCKER_BUILDKIT=1 docker build --help 2>&1 | grep -q -- '--secret'; then
+        echo "⛔ Error: Quetzal image builds require Docker BuildKit support for --secret."
+        exit 1
+    fi
+    export DOCKER_BUILDKIT=1
+fi
 cd "$repo_root"
 
 # build image vars
@@ -179,6 +231,10 @@ UBUNTU_VERSION="${UBUNTU_VERSION}"
 OS_VERSION="ubuntu-${UBUNTU_VERSION}-amd64"
 TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG}
+QUETZAL_IMAGE_SUFFIX=""
+if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
+    QUETZAL_IMAGE_SUFFIX="-qz-${TT_QUETZAL_COMMIT_SHA:0:12}"
+fi
 CONTAINER_APP_UID="${CONTAINER_APP_UID}"
 IMAGE_VERSION=$(cat VERSION)
 # TODO: use this local source build of tt-metal dev image until
@@ -186,14 +242,18 @@ IMAGE_VERSION=$(cat VERSION)
 TT_METAL_DOCKERFILE_URL=local/tt-metal/tt-metalium/${OS_VERSION}:${TT_METAL_COMMIT_SHA_OR_TAG}
 
 
-dev_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
-release_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${TAG_SUFFIX:+-${TAG_SUFFIX}}
+dev_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-dev-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${QUETZAL_IMAGE_SUFFIX}${TAG_SUFFIX:+-${TAG_SUFFIX}}
+release_image_tag=${IMAGE_REPO}/vllm-tt-metal-src-release-${OS_VERSION}:${IMAGE_VERSION}-${TT_METAL_COMMIT_DOCKER_TAG}-${TT_VLLM_COMMIT_DOCKER_TAG}${QUETZAL_IMAGE_SUFFIX}${TAG_SUFFIX:+-${TAG_SUFFIX}}
 
 # Initialize flags for whether to build each image locally.
 build_dev_image=true
 build_release_image=true
 
-if [ "$force_build" = true ]; then
+if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
+    build=true
+    force_push=true
+    echo "Quetzal source supplied; forcing an exact image rebuild."
+elif [ "$force_build" = true ]; then
     echo "Force build option provided (--force-build). Skipping remote image checks; all images will be built locally."
 else
     # Check for the images independently, negating check_image_exists return
@@ -274,11 +334,20 @@ generate_model_specs_json()
         fi
         echo "✅ Generated model_spec.json"
 
+        QUETZAL_BUILD_ARGS=()
+        if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
+            QUETZAL_BUILD_ARGS+=(
+                --build-arg "TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}"
+                --secret "id=quetzal_source,src=${QUETZAL_SOURCE_ARCHIVE}"
+            )
+        fi
+
         docker build \
         -t ${dev_image_tag} \
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
+        "${QUETZAL_BUILD_ARGS[@]}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile
 

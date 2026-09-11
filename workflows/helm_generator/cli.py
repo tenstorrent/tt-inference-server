@@ -100,6 +100,9 @@ def filter_specs(
     engines: Optional[Sequence[str]] = None,
     include_multihost: bool = False,
 ) -> List[ModelSpec]:
+    # ``model_names`` matches either spelling: the values.yaml key (basename,
+    # what this generator writes) or the full HF repo id.
+    wanted_models = set(model_names) if model_names else None
     out: List[ModelSpec] = []
     for spec in specs:
         if not include_multihost and is_multihost(spec.device_type):
@@ -107,7 +110,9 @@ def filter_specs(
                 "skipping multihost spec %s (use --include-multihost)", spec.model_id
             )
             continue
-        if model_names and model_name_from_spec(spec) not in model_names:
+        if wanted_models is not None and not (
+            {model_name_from_spec(spec), spec.hf_model_repo} & wanted_models
+        ):
             continue
         if device_names and device_key(spec.device_type) not in device_names:
             continue
@@ -267,7 +272,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         dest="models",
         metavar="NAME",
-        help="Filter by model name; repeatable.",
+        help="Filter by model name -- either the full HF repo id "
+        "(Qwen/Qwen3-32B) or the values.yaml key, which is the basename "
+        "(Qwen3-32B); repeatable.",
     )
     p.add_argument(
         "--device",
@@ -317,6 +324,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         engines=args.engines or None,
         include_multihost=args.include_multihost,
     )
+    if not specs and (args.models or args.devices or args.engines):
+        # generate() is merge-only, so an over-narrow filter is a silent no-op.
+        logger.warning(
+            "no specs matched the given --model/--device/--engine filters; "
+            "nothing to update"
+        )
     try:
         generate(
             values_path=DEFAULT_VALUES_PATH,

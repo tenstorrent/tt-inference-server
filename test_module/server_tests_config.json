@@ -43,6 +43,7 @@
         "LLM": [
             "Qwen/Qwen3-32B",
             "meta-llama/Llama-3.1-8B-Instruct",
+            "meta-llama/Llama-3.2-1B-Instruct",
             "meta-llama/Llama-3.3-70B-Instruct",
             "openai/gpt-oss-20b",
             "google/diffusiongemma-26B-A4B-it",
@@ -95,7 +96,6 @@
             "bge": "BGE embedding model tests",
             "qwen3_emb": "Qwen3 embedding model tests",
             "speecht5": "SpeechT5 TTS model tests",
-            "xtts-v2": "XTTS-v2 TTS model tests",
             "wan": "Wan video generation model tests",
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
@@ -369,17 +369,6 @@
                 "p150"
             ]
         },
-        "xtts-v2": {
-            "weights": [
-                "coqui/XTTS-v2"
-            ],
-            "category": "TTS",
-            "compatible_devices": [
-                "n150",
-                "p150",
-                "p300x2"
-            ]
-        },
         "diffusiongemma_26b": {
             "id_name": "diffusiongemma-26b-a4b-it",
             "weights": [
@@ -450,6 +439,16 @@
                 "p300x2",
                 "galaxy",
                 "galaxy_t3k"
+            ]
+        },
+        "llama_3_2_1b": {
+            "id_name": "llama-3.2-1b",
+            "weights": [
+                "meta-llama/Llama-3.2-1B-Instruct"
+            ],
+            "category": "LLM",
+            "compatible_devices": [
+                "p300x2"
             ]
         },
         "mistral_small_24b": {
@@ -762,20 +761,6 @@
         },
         "SpeechT5TTSTest": {
             "module": "test_module.integration_tests.speecht5_tts_test",
-            "markers": [
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "XttsV2TTSTest": {
-            "module": "test_module.integration_tests.xtts_v2_tts_test",
             "markers": [
                 "e2e",
                 "slow"

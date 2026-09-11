@@ -411,6 +411,16 @@ def parse_arguments():
         "For --local-server, tensor cache/logs still use the host volume path.",
     )
     parser.add_argument(
+        "--quetzal-package-root",
+        type=str,
+        default=None,
+        help=(
+            "Host path to the selected immutable Quetzal package directory. "
+            "Required with --impl quetzal for Docker and local servers; Docker "
+            "mounts it read-only at the model spec's QUETZAL_PACKAGE_ROOT."
+        ),
+    )
+    parser.add_argument(
         "--custom-weights",
         type=str,
         default=None,
@@ -1019,6 +1029,7 @@ def format_cli_args_summary(runtime_config):
         f"  host_volume:                {runtime_config.host_volume}",
         f"  host_hf_cache:              {runtime_config.host_hf_cache}",
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
+        f"  quetzal_package_root:       {runtime_config.quetzal_package_root}",
         f"  custom_weights:             {runtime_config.custom_weights}"
         if runtime_config.custom_weights
         else None,
@@ -1063,7 +1074,11 @@ def resolve_runtime(args):
             f"{args.runtime_model_spec_json}"
         )
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
-        runtime_config = RuntimeConfig.from_args(args)
+        runtime_config = RuntimeConfig.from_args(
+            args,
+            impl=model_spec.impl.impl_name,
+            engine=model_spec.inference_engine,
+        )
         if model_spec.hf_model_repo:
             args.model = model_spec.hf_model_repo
     else:
@@ -1127,6 +1142,16 @@ def resolve_runtime(args):
     runtime_config.runtime_model_spec = model_spec.get_serialized_dict()
 
     return runtime_config, model_spec
+
+
+def should_mount_runtime_model_spec(model_spec, runtime_config):
+    """Whether Docker must consume the exact spec resolved by this invocation."""
+    return bool(
+        runtime_config.dev_mode
+        or runtime_config.custom_weights
+        or runtime_config.runtime_model_spec_json
+        or model_spec.impl.impl_id == "quetzal"
+    )
 
 
 def handle_maintenance_args(args):
@@ -1237,9 +1262,10 @@ def main():
     server_launch = None
     if runtime_config.docker_server:
         docker_json_fpath = None
-        # dev mode and --custom-weights both need the container to use this spec
-        # rather than resolving --model against the baked catalog.
-        if runtime_config.dev_mode or runtime_config.custom_weights:
+        # A Quetzal launch must bind the exact host-resolved spec. The selected
+        # implementation can be absent from the image's baked catalog, and the
+        # immutable package identity belongs to this invocation.
+        if should_mount_runtime_model_spec(model_spec, runtime_config):
             docker_json_fpath = json_fpath
         if runtime_config.print_docker_cmd:
             if is_multihost_deployment(runtime_config):

@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import builtins
 import importlib.util
 import json
 import os
@@ -84,8 +85,272 @@ def run_vllm_api_server_module(monkeypatch):
 
     assert spec is not None
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    real_import = builtins.__import__
+    vllm_imports = []
+
+    def track_vllm_import(name, *args, **kwargs):
+        if name == "vllm" or name.startswith("vllm."):
+            vllm_imports.append(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", track_vllm_import)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        monkeypatch.setattr(builtins, "__import__", real_import)
+    assert vllm_imports == []
     return module
+
+
+def _install_artifact_discovery_module(monkeypatch, resolver):
+    serving = types.ModuleType("serving")
+    serving.__path__ = []
+    artifact_discovery = types.ModuleType("serving.artifact_discovery")
+    artifact_discovery.resolve_package_artifacts = resolver
+    monkeypatch.setitem(sys.modules, "serving", serving)
+    monkeypatch.setitem(sys.modules, "serving.artifact_discovery", artifact_discovery)
+
+
+def _quetzal_model_spec(**overrides):
+    spec = {
+        "hf_model_repo": "meta-llama/Llama-3.2-1B-Instruct",
+        "device_type": "P300X2",
+        "impl": {"impl_id": "quetzal"},
+        "device_model_spec": {
+            "max_context": 32768,
+            "max_concurrency": 1,
+            "vllm_args": {
+                "max_model_len": "32768",
+                "max_num_seqs": "1",
+                "revision": "9" * 40,
+                "tokenizer_revision": "9" * 40,
+            },
+        },
+    }
+    spec.update(overrides)
+    return spec
+
+
+def _quetzal_provider_env():
+    return {
+        "MESH_DEVICE": "P150x4",
+        "QUETZAL_VLLM": "1",
+        "VLLM_PLUGINS": "quetzal_model_registry,tt",
+    }
+
+
+def _set_quetzal_provider_runtime_env(monkeypatch, tmp_path):
+    weights = tmp_path / "hf-snapshot"
+    weights.mkdir()
+    monkeypatch.setenv("MESH_DEVICE", "P150x4")
+    monkeypatch.setenv("MODEL_WEIGHTS_DIR", str(weights))
+    for name in (
+        "PYTHONSAFEPATH",
+        "QUETZAL_HF_REVISION",
+        "QUETZAL_HF_SNAPSHOT",
+        "QUETZAL_MODEL",
+        "TT_VLLM_BUILTIN_MODELS",
+    ):
+        monkeypatch.setenv(name, "stale")
+    monkeypatch.setenv("QUETZAL_CONTEXT_LEN", "32768")
+    return weights
+
+
+def _set_quetzal_bundle_env(monkeypatch, root, manifest_sha256="a" * 64):
+    monkeypatch.setenv("QUETZAL_PACKAGE_ROOT", str(root))
+    monkeypatch.setenv("QUETZAL_BUNDLE_MANIFEST_SHA256", manifest_sha256)
+    monkeypatch.delenv("QUETZAL_AUXILIARY_ROOTS_JSON", raising=False)
+    monkeypatch.delenv("QUETZAL_CONTEXT_LEN", raising=False)
+
+
+def _quetzal_main_args():
+    return argparse.Namespace(
+        model="meta-llama/Llama-3.2-1B-Instruct",
+        tt_device="p300x2",
+        device=None,
+        engine=None,
+        impl="quetzal",
+        no_auth=False,
+        disable_trace_capture=False,
+        service_port=None,
+    )
+
+
+def test_configure_quetzal_provider_exports_exact_catalog_selection(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.setenv("QUETZAL_VLLM", "stale")
+    monkeypatch.setenv("VLLM_PLUGINS", "tt_model_registry,tt")
+    model_spec = _quetzal_model_spec(
+        env_vars=_quetzal_provider_env(),
+    )
+    weights = _set_quetzal_provider_runtime_env(monkeypatch, tmp_path)
+
+    run_vllm_api_server_module.configure_quetzal_provider(model_spec)
+
+    assert os.environ["QUETZAL_VLLM"] == "1"
+    assert os.environ["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
+    assert os.environ["TT_VLLM_BUILTIN_MODELS"] == "0"
+    assert os.environ["PYTHONSAFEPATH"] == "1"
+    assert os.environ["QUETZAL_MODEL"] == model_spec["hf_model_repo"]
+    assert os.environ["QUETZAL_CONTEXT_LEN"] == "32768"
+    assert os.environ["QUETZAL_HF_REVISION"] == "9" * 40
+    assert os.environ["QUETZAL_HF_SNAPSHOT"] == str(weights.resolve())
+    assert os.environ["MESH_DEVICE"] == "P150x4"
+
+
+def test_configure_quetzal_provider_rejects_logical_mesh_for_physical_catalog(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    model_spec = _quetzal_model_spec(env_vars=_quetzal_provider_env())
+    _set_quetzal_provider_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("MESH_DEVICE", "P300x2")
+
+    with pytest.raises(RuntimeError, match="physical mesh"):
+        run_vllm_api_server_module.configure_quetzal_provider(model_spec)
+
+
+@pytest.mark.parametrize(
+    "env_vars",
+    [
+        {"VLLM_PLUGINS": "quetzal_model_registry,tt"},
+        dict(QUETZAL_VLLM="1", VLLM_PLUGINS="tt_model_registry,tt"),
+    ],
+)
+def test_configure_quetzal_provider_rejects_missing_or_wrong_catalog_selection(
+    monkeypatch, tmp_path, run_vllm_api_server_module, env_vars
+):
+    _set_quetzal_provider_runtime_env(monkeypatch, tmp_path)
+    with pytest.raises(RuntimeError, match="QUETZAL_VLLM|VLLM_PLUGINS"):
+        run_vllm_api_server_module.configure_quetzal_provider(
+            _quetzal_model_spec(env_vars=env_vars)
+        )
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected_error"),
+    [
+        ("root", "requires QUETZAL_PACKAGE_ROOT"),
+        ("symlink", "is not a directory"),
+        ("digest", "lowercase SHA-256"),
+        ("model", "canonical hf_model_repo"),
+        ("context", "context identity"),
+        ("batch", "max_concurrency=max_num_seqs=1"),
+        ("device", "does not support device_type"),
+        ("environment", "context identity"),
+        ("auxiliary", "QUETZAL_AUXILIARY_ROOTS_JSON"),
+    ],
+)
+def test_admit_quetzal_bundle_rejects_bad_selection(
+    monkeypatch, tmp_path, run_vllm_api_server_module, failure, expected_error
+):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    _set_quetzal_bundle_env(monkeypatch, bundle)
+    spec = _quetzal_model_spec()
+    if failure == "root":
+        monkeypatch.delenv("QUETZAL_PACKAGE_ROOT")
+    elif failure == "symlink":
+        link = tmp_path / "link"
+        link.symlink_to(bundle, target_is_directory=True)
+        monkeypatch.setenv("QUETZAL_PACKAGE_ROOT", str(link))
+    elif failure == "digest":
+        monkeypatch.delenv("QUETZAL_BUNDLE_MANIFEST_SHA256")
+    elif failure == "model":
+        spec["hf_model_repo"] = ""
+    elif failure in ("context", "batch"):
+        key = "max_model_len" if failure == "context" else "max_num_seqs"
+        spec["device_model_spec"]["vllm_args"][key] = "2"
+    elif failure == "device":
+        spec["device_type"] = "N300"
+    elif failure == "environment":
+        monkeypatch.setenv("QUETZAL_CONTEXT_LEN", "8192")
+    else:
+        monkeypatch.setenv("QUETZAL_AUXILIARY_ROOTS_JSON", "not-json")
+
+    with pytest.raises(RuntimeError, match=expected_error):
+        run_vllm_api_server_module.admit_quetzal_bundle(spec)
+
+
+def test_admit_quetzal_bundle_calls_public_runtime_resolver(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    _set_quetzal_bundle_env(monkeypatch, bundle)
+    manifest_sha256 = "1" * 64
+    monkeypatch.setenv("QUETZAL_BUNDLE_MANIFEST_SHA256", manifest_sha256)
+    auxiliary_root = tmp_path / "sha256-experts"
+    monkeypatch.setenv(
+        "QUETZAL_AUXILIARY_ROOTS_JSON", json.dumps({"experts": str(auxiliary_root)})
+    )
+    monkeypatch.setenv("QUETZAL_WEIGHTS", "/untrusted/legacy/weights.pt")
+    resolver = MagicMock(
+        return_value={
+            "schema": "ttq.artifact_bundle/v2",
+            "manifest_sha256": manifest_sha256,
+            "identity": {"model_id": "meta-llama/Llama-3.2-1B-Instruct"},
+            "auxiliary": {"references": 1},
+        }
+    )
+    _install_artifact_discovery_module(monkeypatch, resolver)
+    mock_logger = MagicMock()
+    monkeypatch.setattr(run_vllm_api_server_module, "logger", mock_logger)
+
+    run_vllm_api_server_module.admit_quetzal_bundle(_quetzal_model_spec())
+
+    resolver.assert_called_once_with(
+        bundle,
+        expected_manifest_sha256=manifest_sha256,
+        model_id="meta-llama/Llama-3.2-1B-Instruct",
+        context_len=32768,
+        expected_variant="p150x4",
+        expected_batch_size=1,
+        auxiliary_roots={"experts": str(auxiliary_root)},
+    )
+    assert "weights.pt" not in repr(resolver.call_args)
+    mock_logger.info.assert_called_once()
+
+
+def test_admit_quetzal_bundle_uses_catalog_package_fallback(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    auxiliary_root = tmp_path / "sha256-experts"
+    manifest_sha256 = "2" * 64
+    for name in run_vllm_api_server_module.QUETZAL_EXTERNAL_PACKAGE_ENV:
+        monkeypatch.delenv(name, raising=False)
+    spec = _quetzal_model_spec(
+        env_vars={
+            **_quetzal_provider_env(),
+            "QUETZAL_PACKAGE_ROOT": str(bundle),
+            "QUETZAL_BUNDLE_MANIFEST_SHA256": manifest_sha256,
+            "QUETZAL_AUXILIARY_ROOTS_JSON": json.dumps(
+                {"experts": str(auxiliary_root)}
+            ),
+        }
+    )
+    resolver = MagicMock(
+        return_value={
+            "schema": "ttq.artifact_bundle/v2",
+            "manifest_sha256": manifest_sha256,
+            "auxiliary": {"references": 1},
+        }
+    )
+    _install_artifact_discovery_module(monkeypatch, resolver)
+
+    run_vllm_api_server_module.admit_quetzal_bundle(spec)
+
+    resolver.assert_called_once_with(
+        bundle,
+        expected_manifest_sha256=manifest_sha256,
+        model_id="meta-llama/Llama-3.2-1B-Instruct",
+        context_len=32768,
+        expected_variant="p150x4",
+        expected_batch_size=1,
+        auxiliary_roots={"experts": str(auxiliary_root)},
+    )
 
 
 @pytest.mark.parametrize("wrapped_catalog", [False, True])
@@ -326,6 +591,49 @@ def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ
 
 
+@pytest.mark.parametrize(
+    "selected_root",
+    [
+        None,
+        "/mnt/models/quetzal/package",
+        "/home/container_app_user/quetzal/package",
+    ],
+)
+def test_runtime_env_preserves_external_package_or_uses_catalog_fallback(
+    monkeypatch, run_vllm_api_server_module, selected_root
+):
+    if selected_root:
+        monkeypatch.setenv("QUETZAL_PACKAGE_ROOT", selected_root)
+        monkeypatch.setenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "a" * 64)
+        monkeypatch.setenv(
+            "QUETZAL_AUXILIARY_ROOTS_JSON", '{"experts":"/external/experts"}'
+        )
+    else:
+        monkeypatch.delenv("QUETZAL_PACKAGE_ROOT", raising=False)
+        monkeypatch.delenv("QUETZAL_BUNDLE_MANIFEST_SHA256", raising=False)
+        monkeypatch.delenv("QUETZAL_AUXILIARY_ROOTS_JSON", raising=False)
+    model_spec = {
+        "impl": {"impl_id": "quetzal"},
+        "env_vars": {
+            "QUETZAL_PACKAGE_ROOT": "/catalog/package",
+            "QUETZAL_BUNDLE_MANIFEST_SHA256": "b" * 64,
+            "QUETZAL_AUXILIARY_ROOTS_JSON": '{"experts":"/catalog/experts"}',
+        },
+    }
+
+    run_vllm_api_server_module.set_runtime_env_vars(model_spec)
+
+    assert (
+        os.environ["QUETZAL_PACKAGE_ROOT"],
+        os.environ["QUETZAL_BUNDLE_MANIFEST_SHA256"],
+    ) == (selected_root or "/catalog/package", ("a" if selected_root else "b") * 64)
+    assert os.environ["QUETZAL_AUXILIARY_ROOTS_JSON"] == (
+        '{"experts":"/external/experts"}'
+        if selected_root
+        else '{"experts":"/catalog/experts"}'
+    )
+
+
 def test_main_passes_passthrough_port_to_trace_capture(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -357,7 +665,8 @@ def test_main_passes_passthrough_port_to_trace_capture(
     monkeypatch.setattr(
         run_vllm_api_server_module, "ensure_weights_available", MagicMock()
     )
-    monkeypatch.setattr(run_vllm_api_server_module, "register_tt_models", MagicMock())
+    register = MagicMock()
+    monkeypatch.setattr(run_vllm_api_server_module, "register_tt_models", register)
     env_setup_order = []
     monkeypatch.setattr(
         run_vllm_api_server_module,
@@ -385,6 +694,84 @@ def test_main_passes_passthrough_port_to_trace_capture(
         service_port=9001,
     )
     assert env_setup_order == ["runtime_env", "metal_timeout"]
+    register.assert_called_once_with("tt-transformers")
+
+
+def test_main_admits_quetzal_bundle_before_startup_side_effects(
+    monkeypatch, run_vllm_api_server_module
+):
+    spec = _quetzal_model_spec(
+        model_id="id_quetzal_Llama-3.2-1B-Instruct_p300x2",
+        env_vars=_quetzal_provider_env(),
+    )
+    module = run_vllm_api_server_module
+    monkeypatch.setattr(module, "parse_args", lambda: (_quetzal_main_args(), []))
+    monkeypatch.setattr(module, "load_model_spec", lambda **_kwargs: spec)
+    monkeypatch.setattr(
+        module,
+        "admit_quetzal_bundle",
+        MagicMock(side_effect=RuntimeError("bundle admission failed")),
+    )
+    later = MagicMock()
+    for name in (
+        "set_cache_paths",
+        "ensure_weights_available",
+        "register_tt_models",
+        "set_runtime_env_vars",
+        "configure_quetzal_provider",
+    ):
+        monkeypatch.setattr(module, name, later)
+
+    with pytest.raises(RuntimeError, match="bundle admission failed"):
+        module.main()
+
+    later.assert_not_called()
+
+
+def test_main_skips_native_registration_for_quetzal(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    spec = _quetzal_model_spec(
+        model_id="id_quetzal_Llama-3.2-1B-Instruct_p300x2",
+        env_vars=_quetzal_provider_env(),
+    )
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("TT_CACHE_PATH", "/cache")
+    weights = _set_quetzal_provider_runtime_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(module, "parse_args", lambda: (_quetzal_main_args(), []))
+    monkeypatch.setattr(module, "load_model_spec", lambda **_kwargs: spec)
+    register = MagicMock()
+    monkeypatch.setattr(module, "register_tt_models", register)
+    for name in (
+        "admit_quetzal_bundle",
+        "set_runtime_env_vars",
+        "set_metal_timeout_env_vars",
+        "runtime_settings",
+        "set_vllm_sys_argv",
+        "start_trace_capture",
+    ):
+        monkeypatch.setattr(module, name, MagicMock())
+
+    def assert_complete_provider_identity(*_args, **_kwargs):
+        assert os.environ["QUETZAL_VLLM"] == "1"
+        assert os.environ["VLLM_PLUGINS"] == "quetzal_model_registry,tt"
+        assert os.environ["TT_VLLM_BUILTIN_MODELS"] == "0"
+        assert os.environ["PYTHONSAFEPATH"] == "1"
+        assert os.environ["QUETZAL_MODEL"] == spec["hf_model_repo"]
+        assert os.environ["QUETZAL_CONTEXT_LEN"] == "32768"
+        assert os.environ["QUETZAL_HF_REVISION"] == "9" * 40
+        assert os.environ["QUETZAL_HF_SNAPSHOT"] == str(weights)
+        assert os.environ["MESH_DEVICE"] == "P150x4"
+
+    run_module = MagicMock(side_effect=assert_complete_provider_identity)
+    monkeypatch.setattr(module.runpy, "run_module", run_module)
+
+    module.main()
+
+    register.assert_not_called()
+    run_module.assert_called_once_with(
+        "vllm.entrypoints.openai.api_server", run_name="__main__"
+    )
 
 
 def _weights_spec():

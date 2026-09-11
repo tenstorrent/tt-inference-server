@@ -499,7 +499,7 @@ comma-separated list of aliases or raw task names:
 - `all` (or omitting the flag) → every configured agentic task
 
 ```bash
-python run.py --model Kimi-K2.7-Code --workflow agentic \
+python run.py --model moonshotai/Kimi-K2.7-Code --workflow agentic \
     --agentic-benchmark tau3 --device super_cluster \
     --server-url https://<host>:443 --skip-system-sw-validation --dev-mode
 ```
@@ -523,7 +523,7 @@ the client that produced it. Use the thin launcher `run_agentic_traces.py`:
 
 ```bash
 MODEL_SPECS_ENV=dev python launchers/run_agentic_traces.py \
-    --model Kimi-K2.7-Code \
+    --model moonshotai/Kimi-K2.7-Code \
     --workflow agentic_traces \
     --device super_cluster \
     --agentic-traces-mode ci \
@@ -652,7 +652,7 @@ driver for its `trace_source`.
 
 ```bash
 MODEL_SPECS_ENV=dev python run.py \
-    --model Kimi-K2.7-Code \
+    --model moonshotai/Kimi-K2.7-Code \
     --workflow agentic_traces \
     --agentic-traces-sources swarmone \
     --agentic-traces-mode ci \

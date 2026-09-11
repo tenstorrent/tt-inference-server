@@ -303,12 +303,6 @@ speecht5_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/experimental/speecht5_tts",
 )
-xtts_v2_impl = ImplSpec(
-    impl_id="xtts-v2",
-    impl_name="xtts-v2",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/experimental/xtts_v2",
-)
 forge_vllm_plugin_impl = ImplSpec(
     impl_id="forge_vllm_plugin",
     impl_name="forge-vllm-plugin",
@@ -389,7 +383,15 @@ trainer_training_lora_impl = ImplSpec(
     code_path="tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
 )
 
+quetzal_impl = ImplSpec(
+    impl_id="quetzal",
+    impl_name="quetzal",
+    repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
+    code_path="serving",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
@@ -397,7 +399,6 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
-    "xtts-v2": xtts_v2_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,

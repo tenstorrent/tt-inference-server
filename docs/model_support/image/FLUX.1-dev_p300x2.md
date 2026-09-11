@@ -23,7 +23,7 @@ This model is supported by [tt-media-server](../../../tt-media-server/README.md)
 **via run.py command**
 
 ```bash
-python3 run.py --model FLUX.1-dev --device p300x2 --workflow server --docker-server
+python3 run.py --model black-forest-labs/FLUX.1-dev --device p300x2 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
