@@ -262,6 +262,12 @@ templates:
 - weights:
     - google/gemma-4-31B-it
   impl: gemma4_dflash
+  # REQUIRES a SECOND checkpoint the workflow does not download: the z-lab
+  # drafter, resolved from the HF cache by glob (models--z-lab--gemma-4-31B-it-
+  # DFlash) or from GEMMA4_DFLASH_DRAFTER. It is loaded lazily at the FIRST
+  # request, so a box missing it boots healthy and then kills the engine on
+  # request 1 (EngineDeadError, no useful traceback). Fetch it before serving:
+  #   hf download z-lab/gemma-4-31B-it-DFlash
   # TT-native dFlash speculative serving (z-lab block-diffusion drafter,
   # verify V=7). B=1 latency profile; strongest on code-like content (4k:
   # 68.4 tok/s/u vs 28.8 plain; prose ~parity -- acceptance is content/
