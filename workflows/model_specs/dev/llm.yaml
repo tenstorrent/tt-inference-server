@@ -963,10 +963,13 @@ templates:
       # Only sound for Python-only deltas: the image carries compiled tt-metal,
       # so keep the paths narrow enough that a C++ change cannot ride along.
       # Remove both keys once the image is rebuilt at a commit that has them.
-      tt_metal_source_ref: mvasiljevic/qwen38-deltanet-kda
+      # Fixed tag resolves to 4ea57c41431; --branch cloning accepts tags, not raw SHAs.
+      # Shared sampler Python is part of this checkpoint's serving repair.
+      tt_metal_source_ref: mvasiljevic/qwen38-perf-4ea57c41431
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_6_27b
         - models/autoports/vllm_bundles
+        - models/common/sampling
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
