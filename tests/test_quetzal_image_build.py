@@ -122,9 +122,7 @@ def test_quetzal_rebuild_pushes_when_remote_tag_already_exists(tmp_path):
     assert "--secret" not in quetzal_builds[0]
     pushes = [line for line in docker_commands if line.startswith("push ")]
     builds = [
-        line
-        for line in docker_commands
-        if line.startswith(("build ", "buildx bake "))
+        line for line in docker_commands if line.startswith(("build ", "buildx bake "))
     ]
     assert builds
     assert len(pushes) == 1
@@ -136,7 +134,9 @@ def test_quetzal_rebuild_pushes_when_remote_tag_already_exists(tmp_path):
     assert native.returncode == 0, native.stdout + native.stderr
     native_commands = docker_log.read_text().splitlines()
     assert not any(line.startswith("push ") for line in native_commands)
-    assert not any("--build-context quetzal_source=" in line for line in native_commands)
+    assert not any(
+        "--build-context quetzal_source=" in line for line in native_commands
+    )
 
 
 def test_quetzal_image_build_contract_is_minimal_and_credential_free():
