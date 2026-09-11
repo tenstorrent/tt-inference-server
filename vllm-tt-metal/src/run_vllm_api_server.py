@@ -445,7 +445,8 @@ def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
     """Resolve model_arg to an hf_model_repo key in model_specs.
 
     Tries exact match first, then falls back to matching the short model name
-    (last path segment) against all hf_model_repo keys.
+    (last path segment) against all hf_model_repo keys. An ambiguous basename
+    is rejected rather than resolved to the first key.
 
     Args:
         model_specs: Nested model specs dict keyed by hf_model_repo at top level
@@ -455,15 +456,26 @@ def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
         The matching hf_model_repo key
 
     Raises:
-        ValueError: If no matching hf_model_repo is found
+        ValueError: If no matching hf_model_repo is found, or if the basename
+            matches more than one hf_model_repo
     """
     if model_arg in model_specs:
         return model_arg
 
     short_name = model_arg.split("/")[-1]
-    for hf_repo in model_specs:
-        if hf_repo.split("/")[-1] == short_name:
-            return hf_repo
+    matches = [
+        hf_repo for hf_repo in model_specs if hf_repo.split("/")[-1] == short_name
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        # Picking the first key would be an arbitrary choice of weights; fail
+        # like workflows.model_spec.resolve_model_spec does.
+        raise ValueError(
+            f"Model basename {short_name!r} is ambiguous; matching Hugging Face "
+            f"repositories: {sorted(matches)!r}; use the full Hugging Face "
+            "repository id"
+        )
 
     raise ValueError(
         f"No model spec found for model={model_arg}. "

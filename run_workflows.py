@@ -7,7 +7,7 @@
 
 Usage:
     python run_workflows.py \
-        --model stable-diffusion-xl-base-1.0 --workflow release \
+        --model stabilityai/stable-diffusion-xl-base-1.0 --workflow release \
         --device n150 --service-port 8000
 
 Prefix-caching benchmark (LLM-only, --workflow benchmarks):
@@ -17,7 +17,8 @@ Prefix-caching benchmark (LLM-only, --workflow benchmarks):
     script) rather than invoking run.py directly:
 
         python launchers/run_prefix_cache.py \
-            --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+            --model meta-llama/Llama-3.1-8B-Instruct \
+            --workflow benchmarks --device gpu \
             --prefix-cache --prefix-cache-preset ci --service-port 8000 \
             --jwt-secret "$JWT_SECRET"
 
@@ -26,7 +27,7 @@ Agentic evals (LLM-only, --workflow agentic):
     ``run_agentic.py`` to select/create that venv and re-exec this script:
 
         python launchers/run_agentic.py \
-            --model Qwen3.6-27B --workflow agentic --device gpu \
+            --model Qwen/Qwen3.6-27B --workflow agentic --device gpu \
             --service-port 8000
 
 Speculative-decoding benchmark (LLM-only, --workflow benchmarks):
@@ -36,7 +37,8 @@ Speculative-decoding benchmark (LLM-only, --workflow benchmarks):
     the sweep measures whatever server it is pointed at.
 
         python launchers/run_spec_decode.py \
-            --model Llama-3.1-8B-Instruct --workflow benchmarks --device gpu \
+            --model meta-llama/Llama-3.1-8B-Instruct \
+            --workflow benchmarks --device gpu \
             --spec-decode --spec-decode-preset ci --service-port 8000
 """
 
@@ -105,7 +107,16 @@ def parse_args() -> argparse.Namespace:
     # Canonical --model value is the full HF repo id; the basename is still
     # accepted for backwards compatibility (resolution dual-accepts both).
     valid_models = get_model_spec_provider().model_names()
-    full_repo_models = sorted(model for model in valid_models if "/" in model)
+    # List one canonical id per model: hide a basename that aliases a prefixed
+    # id, but keep the bare ids of specs with no org prefix (the Forge CNNs).
+    aliased_basenames = {
+        model.rsplit("/", 1)[-1] for model in valid_models if "/" in model
+    }
+    listed_models = sorted(
+        model
+        for model in valid_models
+        if "/" in model or model not in aliased_basenames
+    )
     valid_devices = get_device_catalog().device_names()
     valid_workflows = sorted(WORKFLOW_REGISTRY)
 
@@ -120,7 +131,7 @@ def parse_args() -> argparse.Namespace:
             "against an already-running inference server. For full server "
             "bring-up + workflow runs, invoke through v1 /run.py instead."
         ),
-        epilog="Available models:\n  " + "\n  ".join(full_repo_models),
+        epilog="Available models:\n  " + "\n  ".join(listed_models),
         formatter_class=argparse.RawTextHelpFormatter,
     )
     if requirements_mode:
