@@ -19,6 +19,8 @@ run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version
 #   - create post-release-v<version> off main (carry VERSION + models-ci-config,
 #     re-run the 4 generators) and open a draft PR to main.
 # Suffixes (tag-suffix / post-release-suffix) mark testing artifacts; empty = real release.
+# publish-images=false (the default) skips the crane copy / re-bake / verify steps
+#   entirely, so a test run never writes to ghcr.io. A real release MUST set it true.
 # ---------------------------------------------------------------------------
 
 on:
@@ -50,6 +52,11 @@ on:
         required: false
         default: ""
         type: string
+      publish-images:
+        description: "Publish the release docker images (crane copy + re-bake + verify). MUST be true for a real release; leave false to exercise the pipeline without touching ghcr.io."
+        required: false
+        default: false
+        type: boolean
 
 # The pipeline commits generated files + a tag to the branch and opens a draft PR.
 permissions:
@@ -80,7 +87,7 @@ jobs:
           REF: ${{ github.ref_name }}
         run: |
           case "$REF" in
-            stable | vcankovic/improve-release-automation)
+            stable | vcankovic/test-release-automation)
               echo "Branch '$REF' is allowed — proceeding." ;;
             *)
               echo "::error::Release automation may only run from 'stable', 'vcankovic/stable-automated-release-pipeline', or 'vcankovic/automated-release-pipeline'. Refusing to run on '$REF'."
@@ -348,6 +355,7 @@ jobs:
       - name: "Map source -> target docker images to publish"
         id: image-mapping
         env:
+          PUBLISH_IMAGES: ${{ inputs['publish-images'] }}
           SRC_VLLM: ${{ steps.source-images.outputs.vllm }}
           SRC_MEDIA: ${{ steps.source-images.outputs.media }}
           SRC_FORGE: ${{ steps.source-images.outputs.forge }}
@@ -387,7 +395,12 @@ jobs:
             echo "| media | \`$SRC_MEDIA\` | \`$DST_MEDIA\` |"
             echo "| forge | \`$SRC_FORGE\` | \`$DST_FORGE\` |"
             echo
-            echo "_Release-scoped crane copy commands are run by the 'crane copy (publish release images)' step below._"
+            if [ "${PUBLISH_IMAGES}" = "true" ]; then
+              echo "_Release-scoped crane copy commands are run by the 'crane copy (publish release images)' step below._"
+            else
+              echo "> **\`publish-images\` is false — NOTHING is published, re-baked or verified in this run.**"
+              echo "> The table above is only the plan a real release would execute."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       # ----- Install crane (google/go-containerregistry) — used to promote the
@@ -434,6 +447,9 @@ jobs:
       #       only if it is in the release AND a source image was built. -----
       - name: "crane copy (publish release images)"
         id: crane-plan
+        # Skipped unless publish-images=true; its `promoted_images` output is then
+        # empty, so the post-release PR lists no promoted images.
+        if: ${{ inputs['publish-images'] }}
         env:
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
@@ -506,6 +522,7 @@ jobs:
       #       vars and bake no catalogue.
       #       NOTE: must run AFTER the real vLLM `crane copy`.
       - name: "Re-bake model catalogue into the published vLLM image"
+        if: ${{ inputs['publish-images'] }}
         env:
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
           SRC_VLLM: ${{ steps.image-mapping.outputs.vllm_source }}
@@ -565,6 +582,10 @@ jobs:
       #       every spec that points at it. Catches both known causes above and
       #       any future one.
       - name: "Verify published vLLM image resolves every spec pinned to it"
+        # Gated with the copy: without it the destination tag either does not
+        # exist or still holds a PREVIOUS release's image, so verifying it would
+        # be meaningless (or a false failure).
+        if: ${{ inputs['publish-images'] }}
         env:
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
         run: |
