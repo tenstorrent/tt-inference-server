@@ -50,8 +50,7 @@ def percentile(values, p):
 
 def measure_batch(runner, batch_size):
     requests = [
-        TextEmbeddingRequest(model=MODEL_ID, input=LONG_TEXT)
-        for _ in range(batch_size)
+        TextEmbeddingRequest(model=MODEL_ID, input=LONG_TEXT) for _ in range(batch_size)
     ]
     text_inputs = [req.input for req in requests]
 
@@ -62,9 +61,7 @@ def measure_batch(runner, batch_size):
     for i in range(WARM_ITERS + MEASURE_ITERS):
         t0 = time.perf_counter()
         tokenized = runner.tokenizer.tokenize(text_inputs, runner.max_model_len)
-        token_counts = runner.tokenizer.calculate_token_counts(
-            tokenized, len(requests)
-        )
+        token_counts = runner.tokenizer.calculate_token_counts(tokenized, len(requests))
         t1 = time.perf_counter()
         result = runner.model.forward(
             tokenized["input_ids"],
@@ -127,6 +124,7 @@ def main() -> int:
     )
     print(header)
     for r in results:
+
         def fmt(s):
             return f"{s[0]:7.2f}/{s[1]:6.2f}/{s[2]:6.2f}"
 
@@ -142,15 +140,21 @@ def main() -> int:
     b8 = next(r for r in results if r["batch_size"] == 8)
     fwd1, fwd8 = b1["forward"][0], b8["forward"][0]
     total8 = b8["tokenize"][0] + fwd8 + b8["process_result"][0]
-    print(f"[breakdown] forward batch1={fwd1:.2f}ms batch8={fwd8:.2f}ms "
-          f"(delta {fwd8 - fwd1:+.2f}ms)")
-    print(f"[breakdown] python-side total for batch8: {total8:.2f}ms "
-          f"-> per-worker ceiling {8000 / total8:.1f} req/s, "
-          f"32 workers: {32 * 8000 / total8:.0f} req/s, "
-          f"{32 * 8000 / total8 * 384 / 1e6:.2f}M tok/s (excl. IPC/JSON/C++)")
-    print(f"[breakdown] device-only ceiling (forward8): "
-          f"{32 * 8000 / fwd8:.0f} req/s, "
-          f"{32 * 8000 / fwd8 * 384 / 1e6:.2f}M tok/s")
+    print(
+        f"[breakdown] forward batch1={fwd1:.2f}ms batch8={fwd8:.2f}ms "
+        f"(delta {fwd8 - fwd1:+.2f}ms)"
+    )
+    print(
+        f"[breakdown] python-side total for batch8: {total8:.2f}ms "
+        f"-> per-worker ceiling {8000 / total8:.1f} req/s, "
+        f"32 workers: {32 * 8000 / total8:.0f} req/s, "
+        f"{32 * 8000 / total8 * 384 / 1e6:.2f}M tok/s (excl. IPC/JSON/C++)"
+    )
+    print(
+        f"[breakdown] device-only ceiling (forward8): "
+        f"{32 * 8000 / fwd8:.0f} req/s, "
+        f"{32 * 8000 / fwd8 * 384 / 1e6:.2f}M tok/s"
+    )
 
     runner.close_device()
     print("[breakdown] DONE")
