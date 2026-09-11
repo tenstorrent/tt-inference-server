@@ -633,7 +633,8 @@ def _build_training_cmd(repo_root, model_spec, runtime_config, json_fpath, outpu
             str(expected_config_path(model_spec.model_name, runtime_config.device)),
         ]
     )
-    _forward_jwt(cmd, runtime_config)
+    # No JWT: the fine-tuning endpoints use Bearer $API_KEY + org header, which
+    # the launcher builds from the environment.
     return cmd
 
 

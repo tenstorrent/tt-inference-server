@@ -60,7 +60,6 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
     parser.add_argument("--runtime-model-spec-json", default=None)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--expected-config", required=True)
-    parser.add_argument("--jwt-secret", default=None)
     parser.add_argument("--server-url", default=None)
     parser.add_argument("--docker-server", action="store_true")
     # Bounds (seconds). Server readiness for an 8B model + first-run tensor
@@ -83,16 +82,15 @@ def _base_url(args: argparse.Namespace) -> str:
     return f"http://127.0.0.1:{args.service_port}"
 
 
-def _auth_headers(jwt_secret: Optional[str] = None) -> Dict[str, str]:
+def _auth_headers() -> Dict[str, str]:
     """Build the auth headers the forge/media fine-tuning endpoints expect.
 
     The training/fine-tuning endpoints live on the media server and require two
     things (see ``tt-media-server/security/``):
 
-    * ``Authorization: Bearer $API_KEY`` — a literal string compare against
-      ``$API_KEY`` (default ``"your-secret-key"``); it does NOT decode a JWT
-      (that is the vLLM auth model). ``$NO_AUTH`` disables the check
-      server-side, in which case no auth header is needed.
+    * ``Authorization: Bearer $API_KEY`` — literal compare against ``$API_KEY``
+      (default ``"your-secret-key"``), not a JWT (hence no ``--jwt-secret``).
+      ``$NO_AUTH`` disables the check server-side.
     * A non-empty org header (``get_org_id``); its name is configurable via
       ``$ORG_ID_HEADER`` (default ``X-TT-Organization``). The value is only
       used to scope jobs to a tenant, so any non-empty id works for tests.
@@ -254,7 +252,7 @@ def main() -> int:
     config = parse_config(yaml.safe_load(expected_path.read_text()))
 
     base_url = _base_url(args)
-    headers = {"Content-Type": "application/json", **_auth_headers(args.jwt_secret)}
+    headers = {"Content-Type": "application/json", **_auth_headers()}
     session = requests.Session()
 
     output_dir = Path(args.output_dir)
