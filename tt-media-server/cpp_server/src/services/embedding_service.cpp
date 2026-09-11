@@ -249,9 +249,15 @@ struct EmbeddingService::Impl {
   struct PendingRequest {
     domain::EmbeddingRequest request;
     std::function<void(domain::EmbeddingResponse&&)> onComplete;
+    // Anchors the batch-fill deadline in workerDispatchLoop: a batch departs
+    // once its oldest member is batchTimeout old, so no request is ever
+    // delayed by batching for more than batchTimeout.
+    std::chrono::steady_clock::time_point enqueueTime;
     PendingRequest(domain::EmbeddingRequest req,
                    std::function<void(domain::EmbeddingResponse&&)> complete)
-        : request(std::move(req)), onComplete(std::move(complete)) {}
+        : request(std::move(req)),
+          onComplete(std::move(complete)),
+          enqueueTime(std::chrono::steady_clock::now()) {}
   };
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
@@ -674,17 +680,32 @@ struct EmbeddingService::Impl {
 
         // The queue is non-empty but the batch may not be full: within one
         // client wave requests arrive ~40-80us apart, so grabbing immediately
-        // fragments the wave into batches of 1. Wait up to batchTimeout for
-        // the queue to fill; a full queue satisfies the predicate and exits
-        // early, so only partial batches ever pay this wait. wait_until
+        // fragments the wave into batches of 1. Give every batch a full
+        // batchTimeout window to fill, measured from the arrival of its own
+        // oldest request — NOT from when this thread got here: that request
+        // may already have aged in the queue while all dispatch threads were
+        // busy, and must not be delayed by another full window. If a
+        // different thread drains the front while we sleep, the next pass
+        // re-anchors on the new front, which is the true first request of
+        // the batch this thread will take. The wait is bounded: a pass only
+        // repeats when the batch filled (while-condition exits) or the front
+        // changed (another worker made progress); with an unchanged front
+        // the deadline has passed and we break, so a partial batch departs
+        // exactly when its oldest member turns batchTimeout old. wait_until
         // releases the mutex while sleeping, so producers keep enqueueing.
-        if (maxBatchSize > 1 && requestQueue.size() < maxBatchSize &&
-            batchTimeout.count() > 0) {
-          auto deadline = std::chrono::steady_clock::now() + batchTimeout;
-          queueCv.wait_until(lock, deadline, [this, &worker] {
-            return requestQueue.size() >= maxBatchSize ||
-                   !worker->running.load() || !worker->isReady;
-          });
+        if (maxBatchSize > 1 && batchTimeout.count() > 0) {
+          while (requestQueue.size() < maxBatchSize) {
+            const auto deadline =
+                requestQueue.front()->enqueueTime + batchTimeout;
+            if (std::chrono::steady_clock::now() >= deadline) break;
+            queueCv.wait_until(lock, deadline, [this, &worker] {
+              return requestQueue.size() >= maxBatchSize ||
+                     requestQueue.empty() || !worker->running.load() ||
+                     !worker->isReady;
+            });
+            if (!worker->running.load() || !worker->isReady) break;
+            if (requestQueue.empty()) break;
+          }
           if (!worker->running.load() || !worker->isReady) break;
           if (requestQueue.empty()) continue;
         }
