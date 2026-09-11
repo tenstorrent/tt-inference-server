@@ -41,9 +41,10 @@ size_t numWorkers();
 
 /**
  * Size of the process-wide ThreadPool that fronts inference dispatch (used by
- * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
- * threads for the full inference latency, so this caps the in-flight
- * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * `tt::utils::controllerCallbackPool()` on the image/media sync path; the
+ * embedding path is callback-based and does not use it). HTTP requests block
+ * one of these threads for the full inference latency, so this caps the
+ * in-flight dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
  * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
  * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
  * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
@@ -288,6 +289,16 @@ unsigned warmupTimeoutMs();
  * flight before the runner self-terminates the worker process. From
  * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
 unsigned outputHangTimeoutMs();
+
+/** Warmup budget (ms) per embedding startup phase (fork to READY handshake).
+ * From EMBEDDING_WARMUP_TIMEOUT_MS. Default:
+ * defaults::EMBEDDING_WARMUP_TIMEOUT_MS. */
+unsigned embeddingWarmupTimeoutMs();
+
+/** Respawn rounds for embedding workers whose warmup failed (nondeterministic
+ * PCC validation). From EMBEDDING_WARMUP_MAX_RETRIES. Default:
+ * defaults::EMBEDDING_WARMUP_MAX_RETRIES. */
+unsigned embeddingWarmupMaxRetries();
 
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();

@@ -86,6 +86,9 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
 # download.pytorch.org intermittently returns 503 during dependency installs;
 # raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
 ENV UV_HTTP_RETRIES=10
+# Newer tt-metal revisions use uv-managed Python. Keep that interpreter under
+# TT_METAL_HOME so it is copied into the runtime stage with the virtualenv.
+ENV UV_PYTHON_INSTALL_DIR=${TT_METAL_HOME}/uv-python
 
 # build tt-metal
 #
@@ -101,7 +104,8 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh --bundle-python \
+    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh \
+    && test -f "${PYTHON_ENV_DIR}/bin/activate" \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -118,7 +122,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && rm -rf ${TT_METAL_HOME}/dockerfile \
     && rm -rf ${TT_METAL_HOME}/infra/tests \
     && rm -rf ${TT_METAL_HOME}/tt-train \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -134,7 +138,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
 
 WORKDIR ${HOME_DIR}
 

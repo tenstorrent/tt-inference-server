@@ -15,7 +15,10 @@ namespace tt::config::defaults {
 
 constexpr const char* DEVICE_IDS = "(0)";
 constexpr const char* MODEL_SERVICE = "llm";
-constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
+// Within one client wave requests land ~40-80us apart; 2ms gives headroom to
+// fill a batch of 8 even under scheduling jitter. Only partial batches pay
+// this wait (a full queue satisfies the predicate and exits early).
+constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 2;
 constexpr const char* TT_PYTHON_PATH = "..";
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
@@ -109,6 +112,26 @@ constexpr size_t CLIENT_MAX_BODY_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
 constexpr size_t LOG_FILE_MAX_COUNT = 5;
 constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
+/**
+ * Budget for one embedding startup phase, fork to READY handshake
+ * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var). Must cover the
+ * worst case first boot, where warmup converts the HF weights and writes the
+ * shared tensor cache (~3-4 minutes for an 8B model); later boots just read
+ * the cache and finish in a couple of minutes. Workers that blow past this
+ * are terminated with a loud log instead of stalling startup.
+ */
+constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
+/**
+ * Extra warmup rounds for workers whose first warmup failed (overridable via
+ * the EMBEDDING_WARMUP_MAX_RETRIES env var). Some model warmups validate the
+ * device output against a CPU reference with a PCC threshold, and the result
+ * is not deterministic per chip (BGE-large on Galaxy spans ~0.86-0.96 against
+ * a 0.90 threshold), so a failed warmup is worth re-rolling rather than
+ * permanently losing the device. The Python server gets the same effect from
+ * its health monitor, which restarts dead workers up to
+ * max_worker_restart_count (5) times.
+ */
+constexpr unsigned EMBEDDING_WARMUP_MAX_RETRIES = 3;
 // Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
 // the legacy default (16) for small (1-16 worker) deployments.
 constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;

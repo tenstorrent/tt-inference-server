@@ -57,8 +57,17 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
-        # Disable Inspector RPC to prevent port conflicts with 32 concurrent workers
-        # Each worker would otherwise try to bind to the same port (50051)
+        # TEMPORARY A/B probe for the arrival-anchored batch deadline: rerun
+        # the 256-in-flight / 2-client config that previously never stabilized
+        # at full batches (~3.2k RPS) to isolate the dispatch-loop change.
+        # Compare against the pre-change 256 run, then restore 512/4
+        # (saturation probe: Little's law caps RPS at in_flight/E2EL; one
+        # client process saturates a CPU core at ~2k req/s).
+        BENCHMARK_MAX_CONCURRENCY: "256"
+        # >= 10-20x concurrency so the startup transient (client ramp, single-
+        # request batches) is <2% of the run and the average measures steady state.
+        BENCHMARK_NUM_PROMPTS: "20000"
+        BENCHMARK_NUM_CLIENTS: "2"
         TT_METAL_INSPECTOR_RPC: "0"
 
 - weights:
