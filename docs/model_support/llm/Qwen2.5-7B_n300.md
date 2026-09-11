@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Qwen2.5-7B`: [Qwen/Qwen2.5-7B](https://huggingface.co/Qwen/Qwen2.5-7B) **(default)** 
 - `Qwen2.5-7B-Instruct`: [Qwen/Qwen2.5-7B-Instruct](https://huggingface.co/Qwen/Qwen2.5-7B-Instruct)
 
-To use non-default weights, replace `Qwen2.5-7B` in commands below.
+To use non-default weights, replace `Qwen/Qwen2.5-7B` in commands below.
 
 #### Useful links
 
@@ -30,14 +30,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen2.5-7B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.9.0-5b5db8a-e771fff \
-  --model Qwen2.5-7B \
+  --model Qwen/Qwen2.5-7B \
   --tt-device n300
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen2.5-7B --device n300 --workflow server --docker-server
+python3 run.py --model Qwen/Qwen2.5-7B --device n300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
