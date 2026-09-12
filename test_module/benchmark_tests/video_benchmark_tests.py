@@ -41,10 +41,14 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_VIDEO_POLLING_INTERVAL_SECONDS = 5
 DEFAULT_VIDEO_TIMEOUT_SECONDS = 1200
+MINIMAX_H3_MODEL_NAME = "MiniMax-H3"
+MINIMAX_H3_DURATION_SECONDS = 5
+MINIMAX_H3_ASPECT_RATIO = "16:9"
 VIDEO_INFERENCE_STEPS = {
     "mochi-1-preview": 50,
     "Wan2.2-T2V-A14B-Diffusers": 40,
     "Wan2.2-I2V-A14B-Diffusers": 40,
+    MINIMAX_H3_MODEL_NAME: 50,
 }
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
@@ -145,6 +149,16 @@ def _generate_video(
         model_name=model_name,
         image_b64=image_b64,
     )
+    if model_name == MINIMAX_H3_MODEL_NAME:
+        # MiniMax fixes the server-side schedule at 50 steps and rejects an
+        # explicit num_inference_steps field. Shape is selected with its two
+        # model-specific V1 request fields.
+        payload = {
+            "prompt": prompt,
+            "aspect_ratio": MINIMAX_H3_ASPECT_RATIO,
+            "duration_seconds": MINIMAX_H3_DURATION_SECONDS,
+            "seed": 0,
+        }
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 
@@ -166,7 +180,16 @@ def _generate_video(
         job_id = job_data.get("id")
         logger.info(f"Video generation job submitted: {job_id}")
 
-        video_path = _poll_video_completion(ctx, job_id, headers)
+        video_path = _poll_video_completion(
+            ctx,
+            job_id,
+            headers,
+            timeout=(
+                1800
+                if model_name == MINIMAX_H3_MODEL_NAME
+                else DEFAULT_VIDEO_TIMEOUT_SECONDS
+            ),
+        )
         elapsed = time.time() - start_time
 
         if video_path:
