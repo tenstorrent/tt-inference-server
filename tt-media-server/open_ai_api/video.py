@@ -20,7 +20,7 @@ from config.constants import (
     REF2VA_MODEL_RUNNERS,
 )
 from config.settings import settings
-from domain.video_generate_request import VideoGenerateRequest
+from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
 from domain.video_i2v_generate_request import (
     MAX_BASE64_IMAGE_LEN,
     ImagePromptEntry,
@@ -131,7 +131,6 @@ _T2V_EXAMPLES = {
         "value": {
             "prompt": "A serene mountain landscape with flowing water",
             "negative_prompt": "blurry, low quality",
-            "num_inference_steps": 20,
             "seed": 42,
         },
     },
@@ -142,7 +141,6 @@ _I2V_EXAMPLES = {
         "summary": "I2V with one conditioning image at frame 0",
         "value": {
             "prompt": "A serene mountain landscape with flowing water",
-            "num_inference_steps": 12,
             "seed": 42,
             "image_prompts": [
                 {"image": _OPENAPI_IMAGE_PLACEHOLDER, "frame_pos": 0},
@@ -153,7 +151,6 @@ _I2V_EXAMPLES = {
         "summary": "I2V with two conditioning images (start + end)",
         "value": {
             "prompt": "A serene mountain landscape with flowing water",
-            "num_inference_steps": 12,
             "seed": 42,
             "image_prompts": [
                 {"image": _OPENAPI_IMAGE_PLACEHOLDER, "frame_pos": 0},
@@ -631,13 +628,15 @@ async def submit_generate_video_i2v_upload(
     # JSON /i2v path (where FastAPI parses the body and returns 422), that error
     # would surface as an unhandled 500 here — so translate it to a 422.
     try:
-        request = VideoI2VGenerateRequest(
+        request_kwargs = dict(
             prompt=prompt,
             negative_prompt=negative_prompt,
-            num_inference_steps=num_inference_steps,
             seed=seed,
             image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
         )
+        if not _is_minimax_h3():
+            request_kwargs["num_inference_steps"] = num_inference_steps
+        request = VideoI2VGenerateRequest(**request_kwargs)
     except ValidationError as e:
         # e.errors() embeds the original ValueError in each entry's ``ctx``, which
         # HTTPException's plain JSONResponse can't serialize (it would 500 while

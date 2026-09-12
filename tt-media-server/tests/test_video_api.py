@@ -793,6 +793,54 @@ class TestVideoGenerateRequestValidation:
             )
 
 
+class TestMiniMaxH3NumInferenceSteps:
+    """MiniMax-H3 does not take num_inference_steps as a client field."""
+
+    @pytest.mark.parametrize(
+        "runner",
+        [
+            "tt-minimax-h3-t2va",
+            "tt-minimax-h3-fl2va",
+            "tt-minimax-h3-ref2va",
+        ],
+    )
+    @patch("domain.video_generate_request.get_settings")
+    def test_omitted_is_accepted(self, mock_settings, runner):
+        mock_settings.return_value.model_runner = runner
+        VideoGenerateRequest(prompt="a fox")
+
+    @pytest.mark.parametrize(
+        "runner",
+        [
+            "tt-minimax-h3-t2va",
+            "tt-minimax-h3-fl2va",
+            "tt-minimax-h3-ref2va",
+        ],
+    )
+    @pytest.mark.parametrize("steps", [20, 50])
+    @patch("domain.video_generate_request.get_settings")
+    def test_client_value_rejected(self, mock_settings, runner, steps):
+        from pydantic import ValidationError
+
+        mock_settings.return_value.model_runner = runner
+        with pytest.raises(ValidationError, match="num_inference_steps"):
+            VideoGenerateRequest(prompt="a fox", num_inference_steps=steps)
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_fl2va_inherits_the_refusal(self, mock_settings):
+        from pydantic import ValidationError
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va"
+        with pytest.raises(ValidationError, match="num_inference_steps"):
+            VideoI2VGenerateRequest(
+                prompt="a fox",
+                num_inference_steps=20,
+                image_prompts=[
+                    ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)
+                ],
+            )
+
+
 class TestResponseContent:
     """Tests for response content structure"""
 

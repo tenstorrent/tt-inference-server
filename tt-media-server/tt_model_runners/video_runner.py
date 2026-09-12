@@ -60,7 +60,7 @@ from config.constants import (
     CANARY_TASK_IDS,
     ModelRunners,
 )
-from domain.video_generate_request import VideoGenerateRequest
+from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
@@ -323,6 +323,9 @@ def video_request_to_generate_request(
     gen_names = set(VideoGenerateRequest.model_fields.keys())
     common = shm_names & gen_names
     base_kwargs = {name: getattr(req, name) for name in common}
+    # SHM always carries the field; H3 does not accept it as a request lever.
+    if _is_minimax_h3():
+        base_kwargs.pop("num_inference_steps", None)
 
     if isinstance(image_prompts, dict):
         # Object payload: request fields the SHM struct cannot carry, plus the

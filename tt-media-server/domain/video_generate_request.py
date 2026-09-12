@@ -50,9 +50,12 @@ class VideoGenerateRequest(BaseRequest):
     def _reject_unknown_fields(cls, data):
         if not isinstance(data, dict) or not _is_minimax_h3():
             return data
-        unknown = sorted(set(data) - set(cls.model_fields))
+        # On the shared schema for Wan; H3's AdaLN table is precomputed at a
+        # fixed step count, so the field is not a request lever here.
+        served = set(cls.model_fields) - {"num_inference_steps"}
+        unknown = sorted(set(data) - served)
         if unknown:
-            known = ", ".join(sorted(cls.model_fields))
+            known = ", ".join(sorted(served))
             raise ValueError(
                 f"unknown field(s) for MiniMax-H3: {', '.join(unknown)}. "
                 f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
