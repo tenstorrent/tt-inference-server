@@ -26,8 +26,10 @@ from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import Field, field_validator, model_validator
 
-# Shape fields only LTX reads; MiniMax-H3 treats them as unknown.
-_LTX_SHAPE_FIELDS = frozenset({"height", "width", "fps", "duration", "num_frames"})
+# Fields on the shared schema that MiniMax-H3 does not read: LTX's shape fields
+# (H3 sizes clips with ``duration_seconds``), and ``num_inference_steps`` because
+# H3's AdaLN table is precomputed at a fixed step count.
+_H3_UNREAD_FIELDS = frozenset({"fps", "duration", "num_frames", "num_inference_steps"})
 
 
 class VideoGenerateRequest(BaseRequest):
@@ -67,7 +69,7 @@ class VideoGenerateRequest(BaseRequest):
     def _reject_unknown_fields(cls, data):
         if not isinstance(data, dict) or not _is_minimax_h3():
             return data
-        readable = set(cls.model_fields) - _LTX_SHAPE_FIELDS
+        readable = set(cls.model_fields) - _H3_UNREAD_FIELDS
         unknown = sorted(set(data) - readable)
         if unknown:
             known = ", ".join(sorted(readable))

@@ -256,6 +256,24 @@ class TestVideoRequestToGenerateRequest:
         assert gen.num_inference_steps == 20
         assert gen.seed == 42
 
+    @patch("domain.video_generate_request.get_settings")
+    def test_h3_does_not_forward_shm_inference_steps(self, mock_settings):
+        mock_settings.return_value.model_runner = "tt-minimax-h3-t2va"
+        req = VideoRequest(
+            task_id="t1",
+            prompt="hello",
+            negative_prompt="blurry",
+            num_inference_steps=20,
+            seed=42,
+            height=480,
+            width=832,
+            num_frames=81,
+            guidance_scale=3.0,
+            guidance_scale_2=4.0,
+        )
+        gen = video_request_to_generate_request(req)
+        assert gen.prompt == "hello"
+
     def test_returns_t2v_when_image_prompts_empty(self):
         """Empty / None ``image_prompts`` falls through to the T2V path so
         single-host T2V behaviour is byte-identical to before the change."""
