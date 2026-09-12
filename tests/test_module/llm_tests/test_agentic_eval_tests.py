@@ -63,6 +63,7 @@ class FakeTerminalBenchConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = "docker"
+    force_build: bool = False
     override_cpus: Optional[int] = 16
     override_memory_mb: Optional[int] = 48 * 1024
     timeout_multiplier: Optional[float] = None

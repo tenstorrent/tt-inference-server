@@ -49,6 +49,10 @@ class TerminalBenchRunConfig:
     quiet: bool = True
     yes: bool = True
     agent_import_path: Optional[str] = None
+    # Docker only: emit ``environment.force_build=true`` so Harbor builds each
+    # task image locally from its environment/Dockerfile instead of pulling the
+    # prebuilt registry image. Non-docker environments ignore the field.
+    force_build: bool = False
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
     # Wave-aware deadline model (see progress.py). Reserved allowance for
@@ -100,6 +104,8 @@ def _write_harbor_config(config: TerminalBenchRunConfig) -> Path:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
         environment_config["override_memory_mb"] = config.override_memory_mb
+    if config.force_build:
+        environment_config["force_build"] = True
 
     agent_config: dict[str, Any] = {
         "model_name": config.model_name,
@@ -149,6 +155,7 @@ def _needs_config_file(config: TerminalBenchRunConfig) -> bool:
         or config.agent_import_path is not None
         or bool(config.environment_env)
         or bool(config.verifier_env)
+        or config.force_build
     )
 
 

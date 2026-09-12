@@ -145,6 +145,12 @@ class TerminalBenchEvalConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = "docker"
+    # Docker only: force Harbor to build each task image locally from its
+    # environment/Dockerfile instead of pulling the prebuilt registry image
+    # (maps to Harbor's ``environment.force_build``; Harbor computes
+    # ``_use_prebuilt = not force_build and bool(docker_image)``). Building is
+    # much slower than pulling, so bump ``startup_grace_sec`` when enabling.
+    force_build: bool = False
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
     timeout_multiplier: Optional[float] = None
@@ -1064,6 +1070,10 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
+                    # Docker: build each task image locally from its
+                    # environment/Dockerfile instead of pulling the prebuilt
+                    # registry image (Harbor environment.force_build).
+                    force_build=True,
                     n_concurrent_trials=32,
                     n_attempts=1,
                     n_tasks=89,

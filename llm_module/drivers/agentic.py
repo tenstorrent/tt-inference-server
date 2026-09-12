@@ -254,6 +254,7 @@ def build_terminal_bench_config(
         n_concurrent_trials=cfg.n_concurrent_trials,
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
+        force_build=cfg.force_build,
         agent_kwargs=cfg.agent_kwargs,
         n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
         override_cpus=cfg.override_cpus,
