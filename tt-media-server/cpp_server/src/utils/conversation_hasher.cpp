@@ -117,10 +117,10 @@ PrefixCachingInfo computePrefixCachingInfoFromTokens(
     std::span<const uint32_t> tokens) {
   PrefixCachingInfo info;
 
-  // Hash non-thinking tokens into per-block hashes, tracking think counts.
+  // Hash non-thinking tokens into per-block hashes, tracking think rows.
   auto [thinkStart, thinkEnd] = tokenizers::thinkTokenIds();
-  info.blocks =
-      getPrefixCacheHashesByBlocksWithThinking(tokens, thinkStart, thinkEnd);
+  info.blocks = getPrefixCacheHashesByBlocksWithThinking(
+      tokens, thinkStart, thinkEnd, tokenizers::thinkMarkersInHistory());
 
   TT_LOG_INFO("[TokenHasher] tokens={} blocks={}", tokens.size(),
               info.blocks.size());
@@ -185,7 +185,8 @@ std::vector<uint64_t> getPrefixCacheHashesByBlocks(
 
 std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
     std::span<const uint32_t> tokens, uint32_t thinkStartId,
-    uint32_t thinkEndId, uint64_t parentHash, uint32_t parentThinkCount) {
+    uint32_t thinkEndId, tokenizers::ThinkMarkersInHistory markersInHistory,
+    uint64_t parentHash, uint32_t parentThinkCount) {
   const bool filterThinking = (thinkStartId != tokenizers::kNoTokenId &&
                                thinkEndId != tokenizers::kNoTokenId);
   const size_t firstBlockSize = tt::config::prefixCacheFirstBlockSize();
@@ -208,14 +209,16 @@ std::vector<BlockHashInfo> getPrefixCacheHashesByBlocksWithThinking(
       // Mirror the session-side think marker state machine.
       if (token == thinkStartId) {
         inThinking = true;
-        continue;  // Skip marker, don't count
+        if (!markersInHistory.start) ++thinkCount;
+        continue;
       }
       if (token == thinkEndId) {
         inThinking = false;
-        continue;  // Skip marker, don't count
+        if (!markersInHistory.end) ++thinkCount;
+        continue;
       }
       if (inThinking) {
-        ++thinkCount;  // Count content token, don't hash
+        ++thinkCount;  // Count content row, don't hash
         continue;
       }
     }

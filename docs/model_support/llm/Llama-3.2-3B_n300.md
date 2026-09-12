@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Llama-3.2-3B`: [meta-llama/Llama-3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B) **(default)** 
 - `Llama-3.2-3B-Instruct`: [meta-llama/Llama-3.2-3B-Instruct](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct)
 
-To use non-default weights, replace `Llama-3.2-3B` in commands below.
+Weight variants use more than one released configuration; see the configuration table below.
 
 #### Useful links
 
@@ -35,14 +35,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.2-3B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.3.0-20edc39-03cb300 \
-  --model Llama-3.2-3B \
+  --model meta-llama/Llama-3.2-3B \
   --tt-device n300
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Llama-3.2-3B --device n300 --workflow server --docker-server
+python3 run.py --model meta-llama/Llama-3.2-3B --device n300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 
@@ -58,3 +58,9 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | tt-metal Commit | `20edc39` |
 | vLLM Commit | `03cb300` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.3.0-20edc39-03cb300` |
+
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|---|
+| [meta-llama/Llama-3.2-3B](https://huggingface.co/meta-llama/Llama-3.2-3B) | `forge-vllm-plugin` | 1 | 2048 | `2496be4` | `-` | `ghcr.io/tenstorrent/tt-media-inference-server:0.2.0-2496be4518bca0a7a5b497a4cda3cfe7e2f59756` |

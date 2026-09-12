@@ -26,7 +26,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from llm_module import ServerConnection
 from llm_module.config import DriverContext
@@ -42,6 +42,7 @@ from llm_module.spec_decode import (
 from report_module.schema import Block
 from workflow_module import accept_blocks
 
+from .._test_common import report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ def run_spec_decode(
     preset: str = "full",
     warmup_requests: int = DEFAULT_WARMUP_REQUESTS,
     auth_token: str = "",
+    metrics_urls: Sequence[str] = (),
     venv_python: Optional[Path] = None,
     output_subdir: str = "spec_decode",
     inter_run_sleep_s: float = 2.0,
@@ -80,6 +82,14 @@ def run_spec_decode(
     auth_token:
         Bearer token sent to the inference server (JWT, OPENAI_API_KEY).
         Empty string disables auth.
+    metrics_urls:
+        Worker Prometheus ``/metrics`` endpoints holding the
+        ``vllm:spec_decode_*`` counters (``--spec-decode-metrics-url``),
+        scraped by the driver before/after each AIPerf run instead of the
+        load target. Repeatable for multi-worker (KV-routed) deployments;
+        before/after deltas are summed across endpoints. Empty scrapes
+        ``ctx.server_host`` — in a Dynamo deployment that is the
+        spec-decode-unaware frontend, which does not expose the counters.
     venv_python:
         Python interpreter that has ``aiperf`` installed. Falls back to
         ``sys.executable``.
@@ -136,6 +146,7 @@ def run_spec_decode(
         tokenizer=model_repo,
         auth_token=auth_token,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
+        spec_decode_metrics_urls=tuple(metrics_urls or ()),
     )
     context = DriverContext(output_dir=output_root, device=device_label)
 
@@ -173,7 +184,7 @@ def run_spec_decode(
     accept_blocks(
         blocks,
         envelope={
-            "model_name": getattr(spec, "model_name", "") or model_repo,
+            **report_model_fields(spec),
             "device": device_label,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

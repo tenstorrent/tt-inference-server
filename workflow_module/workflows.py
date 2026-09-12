@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Sequence, Type
 
 from test_module.task_types import MediaTaskType
-from workflows.workflow_types import ModelType
+from workflow_module.engine_types import ModelType
 
 from .execution import (
     AgenticTracesOptions,
@@ -90,7 +90,7 @@ def _run_sweep_task(logger, label: str, run_sweep) -> TaskOutcome:
 
 def _has_agentic_tasks(ctx) -> bool:
     """True if the run's eval tasks include any EVALS_AGENTIC task."""
-    from workflows.workflow_types import WorkflowVenvType
+    from .engine_types import WorkflowVenvType
 
     tasks = getattr(getattr(ctx, "all_params", None), "tasks", None) or []
     return any(
@@ -182,6 +182,31 @@ class AgenticWorkflow(WorkflowExecution):
         if not blocks:
             self.logger.error("❌ agentic produced no blocks (%.1fs)", elapsed)
             return [TaskOutcome("evaluation", 1, elapsed, None)]
+
+        subprocess_failures = []
+        for block in blocks:
+            data = block.data if isinstance(block.data, dict) else {}
+            return_code = data.get("subprocess_rc")
+            if (
+                data.get("success") is False
+                and isinstance(return_code, int)
+                and not isinstance(return_code, bool)
+                and return_code != 0
+            ):
+                subprocess_failures.append(return_code)
+
+        if subprocess_failures:
+            self.logger.error(
+                "❌ agentic partial failure: %d block(s), subprocess rc=%s (%.1fs)",
+                len(blocks),
+                subprocess_failures,
+                elapsed,
+            )
+            return [
+                TaskOutcome(
+                    "evaluation", subprocess_failures[0], elapsed, blocks[0].kind
+                )
+            ]
 
         self.logger.info(
             "✅ agentic blocks=%d kind=%s (%.1fs)",
@@ -308,8 +333,12 @@ class PrefillDecodeWorkflow(WorkflowExecution):
 
     def _inject_model_spec_metadata(self, meta: dict) -> None:
         """Report the served model, not the placeholder catalog spec."""
-        served = meta.get("model_name") or os.environ.get("MODEL")
+        served = (
+            meta.get("model_repo") or meta.get("model_name") or os.environ.get("MODEL")
+        )
         meta["model_repo"] = served
+        # Bare basename in model_name; full served id stays on model_repo.
+        meta["model_name"] = served.rsplit("/", 1)[-1] if served else None
         meta["model_id"] = None
         meta["inference_engine"] = None
         meta["tt_metal_commit"] = None
@@ -455,6 +484,7 @@ class BenchmarksWorkflow(WorkflowExecution):
                 preset=opts.preset,
                 warmup_requests=opts.warmup_requests,
                 auth_token=opts.auth_token,
+                metrics_urls=opts.metrics_urls,
                 venv_python=Path(opts.venv_python) if opts.venv_python else None,
             )
         except Exception as e:

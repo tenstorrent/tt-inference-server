@@ -25,12 +25,17 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.quetzal_package import (
+    quetzal_package_env,
+    resolve_quetzal_package_mount,
+)
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
     get_default_workflow_root_log_dir,
     get_repo_root_path,
     run_command,
+    server_log_file_name,
 )
 from workflows.validate_setup import run_multihost_validation_subprocess
 from workflows.workflow_types import (
@@ -53,11 +58,13 @@ def short_uuid():
 # binary; its CMD picks one based on SERVER_MODE (`cpp` -> run_cpp.sh).
 #
 # Unlike the Python server, the C++ binary doesn't derive per-model settings
-# from MODEL+DEVICE — it expects each as its own env var. The tables below
-# mirror tt-media-server/config/constants.py::ModelConfigs and must be kept
-# in sync until the C++ binary learns to derive them itself.
+# from MODEL+DEVICE — it expects each as its own env var. In particular it
+# sizes its worker pool from DEVICE_IDS before any embedded Python (and thus
+# ModelConfigs) exists. The tables below mirror
+# tt-media-server/config/constants.py::ModelConfigs and must be kept in sync
+# until the C++ binary learns to derive them itself.
 
-_SDXL_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
+_DEVICE_IDS_32 = ",".join(f"({i})" for i in range(32))
 
 _CPP_SDXL_RUNNER_BY_MODEL_NAME = {
     "stable-diffusion-xl-base-1.0": "tt_sdxl_generate",
@@ -70,28 +77,49 @@ _CPP_SDXL_DEVICE_DEFAULTS = {
     "n150": ("1,1", False, "(0)"),
     "n300": ("2,1", False, "(0)"),
     "t3k": ("2,1", False, "(0),(1),(2),(3)"),
-    "galaxy": ("1,1", True, _SDXL_DEVICE_IDS_32),
+    "galaxy": ("1,1", True, _DEVICE_IDS_32),
     "p150": ("1,1", False, "(0)"),
     "p300": ("2,1", False, "(0,1)"),
     "p300x2": ("2,1", False, "(0,1),(2,3)"),
     "p150x4": ("2,1", False, "(0,1),(2,3)"),
     "p150x8": ("2,1", False, "(0,1),(2,3),(4,5),(6,7)"),
-    "blackhole_galaxy": ("1,1", False, _SDXL_DEVICE_IDS_32),
+    "blackhole_galaxy": ("1,1", False, _DEVICE_IDS_32),
+}
+
+# Embedding models on the cpp_server backend. MODEL_RUNNER_TYPE values must
+# match the C++ embedding catalog in
+# tt-media-server/cpp_server/src/config/settings.cpp (embeddingModels()).
+_CPP_EMBEDDING_RUNNER_BY_MODEL_NAME = {
+    "bge-large-en-v1.5": "tt_bge_large_en",
+    "bge-m3": "tt_bge_m3",
+    "Qwen3-Embedding-8B": "tt_qwen_embedding_8b",
+}
+
+# device.name.lower() -> DEVICE_IDS (worker layout, one worker per group).
+# Mirrors constants.py::DeviceIds usage in the embedding ModelConfigs entries;
+# identical for all three embedding models.
+_CPP_EMBEDDING_DEVICE_IDS = {
+    "n150": "(0)",
+    "n300": "(0)",
+    "t3k": "(0),(1),(2),(3)",
+    "galaxy": _DEVICE_IDS_32,
 }
 
 
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
-    defaults = _CPP_SDXL_DEVICE_DEFAULTS.get(model_spec.device_type.name.lower())
-    return (
-        model_spec.inference_engine == InferenceEngine.MEDIA.value
-        and model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME
-        and defaults is not None
-    )
+    if model_spec.inference_engine != InferenceEngine.MEDIA.value:
+        return False
+    device = model_spec.device_type.name.lower()
+    if model_spec.model_name in _CPP_SDXL_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_SDXL_DEVICE_DEFAULTS
+    if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_EMBEDDING_DEVICE_IDS
+    return False
 
 
-def _get_cpp_media_server_docker_env_vars(model_spec):
-    """Build the env-var set the cpp_server binary needs at startup."""
+def _get_cpp_image_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server image (SDXL) service needs."""
     device = model_spec.device_type.name.lower()
     model_name = model_spec.model_name
     runner = _CPP_SDXL_RUNNER_BY_MODEL_NAME[model_name]
@@ -121,6 +149,46 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_embedding_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server embedding service needs.
+
+    Deliberately minimal: the C++ parent only needs the runner type, the
+    machine class (DEVICE, which it cannot derive) and the worker layout
+    (DEVICE_IDS). Everything else — device_mesh_shape, batch sizes, vllm
+    settings — is resolved from constants.py::ModelConfigs by the embedded
+    Python interpreter, to which the C++ worker exports MODEL/DEVICE/
+    MODEL_RUNNER itself. MODEL must NOT be set here: the C++ parent's
+    config::model() throws on non-LLM values.
+    """
+    device = model_spec.device_type.name.lower()
+    runner = _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME[model_spec.model_name]
+    device_ids = _CPP_EMBEDDING_DEVICE_IDS[device]
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "embedding",
+        "MODEL_RUNNER_TYPE": runner,
+        "DEVICE": device,
+        "DEVICE_IDS": device_ids,
+        # Keep HF weights on the persistent cache_root volume, same as the
+        # Python (uvicorn) media server branch below.
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=embedding, "
+        f"MODEL_RUNNER_TYPE={runner}, DEVICE={device}, DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
+def _get_cpp_server_docker_env_vars(model_spec):
+    """Dispatch to the per-service env-var builder for the cpp_server backend."""
+    if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
+        return _get_cpp_embedding_server_docker_env_vars(model_spec)
+    return _get_cpp_image_server_docker_env_vars(model_spec)
+
+
 def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
     src_root = Path(repo_root_path) / "tt-media-server"
     dst_root = f"{user_home_path}/tt-metal/server"
@@ -144,7 +212,7 @@ def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List
 def get_media_server_docker_env_vars(model_spec):
     """Get media server environment variables for Docker container."""
     if _is_cpp_media_spec(model_spec):
-        return _get_cpp_media_server_docker_env_vars(model_spec)
+        return _get_cpp_server_docker_env_vars(model_spec)
 
     env_vars = {
         "CACHE_ROOT": "/home/container_app_user/cache_root",  # TODO: remove this
@@ -335,6 +403,7 @@ _RESERVED_WRAPPER_FLAGS = {
     "service-port",
     "port",
     "host",
+    "quetzal-package-root",
 }
 
 
@@ -391,6 +460,21 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
     return cli_args
 
 
+# Ephemeral in-container store, discarded with the --rm container.
+_EPHEMERAL_TRAINING_STORE_ROOT = "/tmp/tt_training_store"
+
+
+def _resolve_training_store_root(setup_config) -> str:
+    """Container-side $TRAINING_STORE_ROOT for a TRAINING server.
+
+    --host-volume -> writable/persistent cache_root, so keep artifacts there.
+    Default named volume (e.g. CI) is not writable, so use an ephemeral dir.
+    """
+    if setup_config and setup_config.host_model_volume_root:
+        return str(setup_config.cache_root)
+    return _EPHEMERAL_TRAINING_STORE_ROOT
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -412,6 +496,7 @@ def generate_docker_run_command(
     device = DeviceTypes.from_string(runtime_config.device)
     mesh_device_str = device.to_mesh_device_str()
     container_name = f"tt-inference-server-{short_uuid()}"
+    quetzal_package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
 
     # TODO: remove this once https://github.com/tenstorrent/tt-metal/issues/23785 has been closed
     device_cache_dir = (
@@ -476,11 +561,23 @@ def generate_docker_run_command(
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
 
+    if quetzal_package_mount:
+        docker_command.extend([
+            "--mount",
+            "type=bind,"
+            f"src={quetzal_package_mount.host_root},"
+            f"dst={quetzal_package_mount.runtime_root},readonly",
+        ])
+
     if runtime_config.interactive:
         docker_command.append("-itd")
     # fmt: on
 
     docker_env_vars = {}
+    if quetzal_package_mount:
+        docker_env_vars.update(
+            quetzal_package_env(quetzal_package_mount, local_server=False)
+        )
     if setup_config:
         if (
             setup_config.container_model_weights_path
@@ -516,6 +613,12 @@ def generate_docker_run_command(
             docker_env_vars["NO_AUTH"] = "1"
         elif api_key:
             docker_env_vars["API_KEY"] = api_key
+        if model_spec.model_type == ModelType.TRAINING:
+            # A model spec can override by setting TRAINING_STORE_ROOT in its
+            # env_vars; otherwise pick it from how cache_root is mounted.
+            docker_env_vars.setdefault(
+                "TRAINING_STORE_ROOT", _resolve_training_store_root(setup_config)
+            )
         if _is_cpp_media_spec(model_spec):
             openai_api_key = os.getenv("OPENAI_API_KEY") or api_key
             if openai_api_key:
@@ -585,6 +688,8 @@ def generate_docker_run_command(
     if model_spec.inference_engine == InferenceEngine.VLLM.value:
         docker_command.extend(["--model", model_spec.hf_model_repo])
         docker_command.extend(["--tt-device", runtime_config.device])
+        if quetzal_package_mount:
+            docker_command.extend(["--impl", model_spec.impl.impl_name])
         if runtime_config.no_auth:
             docker_command.append("--no-auth")
         if runtime_config.disable_trace_capture:
@@ -706,9 +811,12 @@ def run_docker_server(model_spec, runtime_config, setup_config, json_fpath):
     server_prefix = (
         "vllm" if model_spec.model_type in (ModelType.LLM, ModelType.VLM) else "media"
     )
-    docker_log_file_path = (
-        docker_log_file_dir
-        / f"{server_prefix}_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+    docker_log_file_path = docker_log_file_dir / server_log_file_name(
+        server_prefix,
+        timestamp,
+        runtime_config.model,
+        runtime_config.device,
+        runtime_config.workflow,
     )
 
     assert ensure_docker_image(model_spec.docker_image), (
@@ -1067,9 +1175,12 @@ def run_multihost_server(model_spec, runtime_config, setup_config, json_fpath):
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         docker_log_file_dir = get_default_workflow_root_log_dir() / "docker_server"
         ensure_readwriteable_dir(docker_log_file_dir)
-        docker_log_file_path = (
-            docker_log_file_dir
-            / f"multihost_{timestamp}_{runtime_config.model}_{runtime_config.device}_{runtime_config.workflow}.log"
+        docker_log_file_path = docker_log_file_dir / server_log_file_name(
+            "multihost",
+            timestamp,
+            runtime_config.model,
+            runtime_config.device,
+            runtime_config.workflow,
         )
 
         # Run Controller container with monitoring

@@ -7,6 +7,7 @@ import json
 import logging
 import multiprocessing
 import os
+import re
 import runpy
 import shlex
 import sys
@@ -14,7 +15,6 @@ from pathlib import Path
 from typing import Optional
 
 from huggingface_hub import snapshot_download
-from vllm import ModelRegistry
 
 from utils.cache_monitor import get_container_cache_dir
 from utils.device_utils import get_mesh_device_name
@@ -33,6 +33,261 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+QUETZAL_IMPL_ID = "quetzal"
+QUETZAL_PROVIDER_ENV = {
+    "QUETZAL_VLLM": "1",
+    "PYTHONSAFEPATH": "1",
+    "TT_VLLM_BUILTIN_MODELS": "0",
+    "VLLM_PLUGINS": "quetzal_model_registry,tt",
+}
+QUETZAL_EXTERNAL_PACKAGE_ENV = {
+    "QUETZAL_PACKAGE_ROOT",
+    "QUETZAL_BUNDLE_MANIFEST_SHA256",
+    "QUETZAL_AUXILIARY_ROOTS_JSON",
+}
+QUETZAL_VARIANT_BY_DEVICE = {
+    "P150": "1chip",
+    "P150X4": "p150x4",
+    "P300X2": "p150x4",
+}
+
+
+def _model_spec_env_vars(model_spec: dict) -> dict:
+    """Merge catalog environment using the runtime's precedence rules."""
+    device_spec = model_spec.get("device_model_spec", {})
+    nested = (
+        device_spec.get("env_vars", {}) or {} if isinstance(device_spec, dict) else {}
+    )
+    return {**nested, **(model_spec.get("env_vars", {}) or {})}
+
+
+def _quetzal_package_selection(model_spec: dict) -> dict:
+    """Resolve package selectors with explicit launch values taking precedence."""
+    catalog_env = _model_spec_env_vars(model_spec)
+    selection = {}
+    for name in QUETZAL_EXTERNAL_PACKAGE_ENV:
+        value = os.getenv(name)
+        if value is None:
+            value = catalog_env.get(name)
+        if value is not None:
+            selection[name] = value
+    return selection
+
+
+def configure_quetzal_provider(model_spec: dict) -> None:
+    """Export complete generated-provider identity before vLLM is imported."""
+    if model_spec.get("impl", {}).get("impl_id") != QUETZAL_IMPL_ID:
+        return
+    env_vars = _model_spec_env_vars(model_spec)
+    for name in ("QUETZAL_VLLM", "VLLM_PLUGINS"):
+        expected = QUETZAL_PROVIDER_ENV[name]
+        actual = env_vars.get(name)
+        if actual != expected:
+            raise RuntimeError(
+                f"impl=quetzal requires catalog {name}={expected!r}, got {actual!r}"
+            )
+
+    model_id = model_spec.get("hf_model_repo")
+    if not isinstance(model_id, str) or not model_id.strip():
+        raise RuntimeError("impl=quetzal requires a canonical hf_model_repo")
+    context_len = _quetzal_runtime_context(model_spec)
+    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
+    revision = vllm_args.get("revision")
+    tokenizer_revision = vllm_args.get("tokenizer_revision")
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RuntimeError(
+            "impl=quetzal requires vLLM revision as an immutable lowercase "
+            "40-hex commit"
+        )
+    if tokenizer_revision != revision:
+        raise RuntimeError("impl=quetzal requires tokenizer_revision to match revision")
+    device_type = model_spec.get("device_type")
+    if not isinstance(device_type, str) or not device_type:
+        raise RuntimeError("impl=quetzal requires a canonical device_type")
+    mesh_device = env_vars.get("MESH_DEVICE")
+    if not isinstance(mesh_device, str) or not mesh_device.strip():
+        raise RuntimeError(
+            "impl=quetzal requires a physical MESH_DEVICE in the catalog"
+        )
+    runtime_mesh_device = os.getenv("MESH_DEVICE")
+    if runtime_mesh_device != mesh_device:
+        raise RuntimeError(
+            "impl=quetzal requires runtime MESH_DEVICE to match the catalog "
+            f"physical mesh ({mesh_device!r}), got {runtime_mesh_device!r}"
+        )
+    weights_dir = os.getenv("MODEL_WEIGHTS_DIR")
+    if not weights_dir or not Path(weights_dir).is_absolute():
+        raise RuntimeError(
+            "impl=quetzal requires MODEL_WEIGHTS_DIR as an absolute snapshot path"
+        )
+
+    os.environ.update(QUETZAL_PROVIDER_ENV)
+    os.environ.update(
+        {
+            "QUETZAL_CONTEXT_LEN": str(context_len),
+            "QUETZAL_HF_REVISION": revision,
+            "QUETZAL_HF_SNAPSHOT": str(Path(weights_dir).resolve()),
+            "QUETZAL_MODEL": model_id,
+            "MESH_DEVICE": mesh_device,
+        }
+    )
+
+
+def _quetzal_auxiliary_roots(raw=None) -> Optional[dict]:
+    """Return the v2 auxiliary-name to immutable-root mapping, when present."""
+    if raw is None:
+        raw = os.getenv("QUETZAL_AUXILIARY_ROOTS_JSON", "")
+    if not isinstance(raw, str):
+        raise RuntimeError("QUETZAL_AUXILIARY_ROOTS_JSON must be a JSON string")
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        roots = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("QUETZAL_AUXILIARY_ROOTS_JSON is not valid JSON") from error
+    if (
+        not isinstance(roots, dict)
+        or not roots
+        or not all(
+            isinstance(name, str) and name and isinstance(path, str) and path
+            for name, path in roots.items()
+        )
+    ):
+        raise RuntimeError(
+            "QUETZAL_AUXILIARY_ROOTS_JSON must map auxiliary names to paths"
+        )
+    return roots
+
+
+def _quetzal_manifest_sha256(expected_sha256=None) -> str:
+    if expected_sha256 is None:
+        expected_sha256 = os.getenv("QUETZAL_BUNDLE_MANIFEST_SHA256", "")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_BUNDLE_MANIFEST_SHA256 as a "
+            "lowercase SHA-256"
+        )
+    return expected_sha256
+
+
+def _quetzal_positive_int(value, name: str) -> int:
+    try:
+        value = int(value)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"impl=quetzal requires a positive {name}") from error
+    if value <= 0:
+        raise RuntimeError(f"impl=quetzal requires a positive {name}")
+    return value
+
+
+def _quetzal_runtime_context(model_spec: dict) -> int:
+    device_spec = model_spec.get("device_model_spec", {})
+    catalog_context = _quetzal_positive_int(
+        device_spec.get("max_context"), "max_context"
+    )
+    vllm_context = _quetzal_positive_int(
+        device_spec.get("vllm_args", {}).get("max_model_len", catalog_context),
+        "vLLM max_model_len",
+    )
+    inherited_context = os.getenv("QUETZAL_CONTEXT_LEN")
+    if inherited_context is not None:
+        inherited_context = _quetzal_positive_int(
+            inherited_context, "QUETZAL_CONTEXT_LEN"
+        )
+    if vllm_context != catalog_context or inherited_context not in (
+        None,
+        catalog_context,
+    ):
+        raise RuntimeError(
+            "impl=quetzal requires catalog, vLLM, and environment context identity "
+            "to match"
+        )
+    return catalog_context
+
+
+def _validate_quetzal_scheduler_capacity(model_spec: dict) -> None:
+    device_spec = model_spec.get("device_model_spec", {})
+    max_concurrency = _quetzal_positive_int(
+        device_spec.get("max_concurrency"), "max_concurrency"
+    )
+    max_num_seqs = _quetzal_positive_int(
+        device_spec.get("vllm_args", {}).get("max_num_seqs", max_concurrency),
+        "vLLM max_num_seqs",
+    )
+    if max_concurrency != 1 or max_num_seqs != 1:
+        raise RuntimeError(
+            "impl=quetzal currently requires max_concurrency=max_num_seqs=1"
+        )
+
+
+def _quetzal_variant(model_spec: dict) -> str:
+    device_type = model_spec.get("device_type")
+    if not isinstance(device_type, str):
+        raise RuntimeError("impl=quetzal requires a canonical device_type")
+    try:
+        return QUETZAL_VARIANT_BY_DEVICE[device_type.upper()]
+    except KeyError:
+        raise RuntimeError(
+            f"impl=quetzal does not support device_type={device_type!r}"
+        ) from None
+
+
+def admit_quetzal_bundle(model_spec: dict) -> None:
+    """Admit the selected Quetzal package before device use."""
+    if model_spec.get("impl", {}).get("impl_id") != QUETZAL_IMPL_ID:
+        return
+
+    selection = _quetzal_package_selection(model_spec)
+    package_root = selection.get("QUETZAL_PACKAGE_ROOT")
+    if not package_root:
+        raise RuntimeError(
+            "impl=quetzal requires QUETZAL_PACKAGE_ROOT (the content-addressed "
+            "package directory)"
+        )
+    root = Path(package_root)
+    if root.is_symlink() or not root.is_dir():
+        raise RuntimeError(f"QUETZAL_PACKAGE_ROOT is not a directory: {package_root}")
+
+    model_id = model_spec.get("hf_model_repo")
+    if not isinstance(model_id, str) or not model_id.strip():
+        raise RuntimeError("impl=quetzal requires a canonical hf_model_repo")
+
+    expected_sha256 = _quetzal_manifest_sha256(
+        selection.get("QUETZAL_BUNDLE_MANIFEST_SHA256")
+    )
+    context_len = _quetzal_runtime_context(model_spec)
+    _validate_quetzal_scheduler_capacity(model_spec)
+    expected_variant = _quetzal_variant(model_spec)
+    auxiliary_roots = _quetzal_auxiliary_roots(
+        selection.get("QUETZAL_AUXILIARY_ROOTS_JSON")
+    )
+    try:
+        from serving.artifact_discovery import resolve_package_artifacts
+    except Exception as error:  # pragma: no cover - depends on the runtime image
+        raise RuntimeError(
+            "impl=quetzal requires the tt-quetzalcoatlus serving package in the "
+            f"runtime image, but it could not be imported: {error}"
+        ) from error
+
+    result = resolve_package_artifacts(
+        root,
+        expected_manifest_sha256=expected_sha256,
+        model_id=model_id,
+        context_len=context_len,
+        expected_variant=expected_variant,
+        expected_batch_size=1,
+        auxiliary_roots=auxiliary_roots,
+    )
+    logger.info(
+        "Quetzal content-address admission succeeded: state=%s schema=%s files=%s "
+        "manifest_sha256=%s auxiliary=%s",
+        result.get("state"),
+        result.get("schema"),
+        result.get("total_files"),
+        result.get("manifest_sha256"),
+        result.get("auxiliary"),
+    )
 
 
 def parse_args():
@@ -190,7 +445,8 @@ def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
     """Resolve model_arg to an hf_model_repo key in model_specs.
 
     Tries exact match first, then falls back to matching the short model name
-    (last path segment) against all hf_model_repo keys.
+    (last path segment) against all hf_model_repo keys. An ambiguous basename
+    is rejected rather than resolved to the first key.
 
     Args:
         model_specs: Nested model specs dict keyed by hf_model_repo at top level
@@ -200,15 +456,26 @@ def _resolve_hf_repo(model_specs: dict, model_arg: str) -> str:
         The matching hf_model_repo key
 
     Raises:
-        ValueError: If no matching hf_model_repo is found
+        ValueError: If no matching hf_model_repo is found, or if the basename
+            matches more than one hf_model_repo
     """
     if model_arg in model_specs:
         return model_arg
 
     short_name = model_arg.split("/")[-1]
-    for hf_repo in model_specs:
-        if hf_repo.split("/")[-1] == short_name:
-            return hf_repo
+    matches = [
+        hf_repo for hf_repo in model_specs if hf_repo.split("/")[-1] == short_name
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        # Picking the first key would be an arbitrary choice of weights; fail
+        # like workflows.model_spec.resolve_model_spec does.
+        raise ValueError(
+            f"Model basename {short_name!r} is ambiguous; matching Hugging Face "
+            f"repositories: {sorted(matches)!r}; use the full Hugging Face "
+            "repository id"
+        )
 
     raise ValueError(
         f"No model spec found for model={model_arg}. "
@@ -358,6 +625,8 @@ def register_tt_models(impl_id=None):
                  "llama3_70b_galaxy", "qwen3_32b_galaxy"). If None, defaults to
                  "tt_transformers".
     """
+    from vllm import ModelRegistry
+
     impl_id = impl_id or "tt_transformers"
 
     # Llama path selection based on impl_id
@@ -548,25 +817,25 @@ def set_runtime_env_vars(model_spec_json):
 
     Both locations are checked and merged, with top-level taking precedence.
     """
-    env_vars = {}
-
-    # Check nested location first (device_model_spec.env_vars)
-    device_model_spec = model_spec_json.get("device_model_spec", {})
-    if isinstance(device_model_spec, dict):
-        nested_env_vars = device_model_spec.get("env_vars", {})
-        if nested_env_vars:
-            env_vars.update(nested_env_vars)
-
-    # Check top-level location (takes precedence)
-    top_level_env_vars = model_spec_json.get("env_vars", {})
-    if top_level_env_vars:
-        env_vars.update(top_level_env_vars)
+    env_vars = _model_spec_env_vars(model_spec_json)
+    preserve_package_env = (
+        model_spec_json.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID
+    )
 
     if not env_vars:
         logger.info("No env_vars found in model spec")
         return
 
     for key, value in env_vars.items():
+        if preserve_package_env and key in QUETZAL_EXTERNAL_PACKAGE_ENV:
+            selected = os.getenv(key)
+            if selected is not None:
+                logger.info(
+                    "preserving externally selected Quetzal package value: %s=%s",
+                    key,
+                    selected,
+                )
+                continue
         if not isinstance(key, str):
             key = str(key)
             logger.warning(
@@ -769,6 +1038,8 @@ def main():
     elif args.device:
         device_type = normalize_device_type(args.device)
 
+    admit_quetzal_bundle(model_spec)
+
     if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)
     # NOTE: In multihost deployments, model weights are expected to reside on shared
@@ -783,7 +1054,8 @@ def main():
 
     # Step 3: Register TT models (after lookup, with correct impl_id)
     impl_id = model_spec.get("impl", {}).get("impl_id")
-    register_tt_models(impl_id)
+    if impl_id != QUETZAL_IMPL_ID:
+        register_tt_models(impl_id)
 
     # Step 4: Set runtime environment variables and vLLM server args
     set_runtime_env_vars(model_spec)
@@ -791,6 +1063,7 @@ def main():
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
+    configure_quetzal_provider(model_spec)
 
     # Step 5: Start trace capture if needed
     start_trace_capture(

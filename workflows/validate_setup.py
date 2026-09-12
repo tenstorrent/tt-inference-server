@@ -8,9 +8,8 @@ import stat
 from pathlib import Path
 
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
-from workflows.workflow_dispatch import can_dispatch_to_engine
-from reference_config.evals.eval_config import EVAL_CONFIGS
 from workflows.model_spec import MODEL_SPECS
+from workflows.quetzal_package import resolve_quetzal_package_mount
 from workflows.utils import (
     MIN_SUPPORTED_IMAGE_VERSION,
     check_path_permissions_for_uid,
@@ -28,13 +27,34 @@ from workflows.workflow_types import (
     WorkflowType,
     WorkflowVenvType,
 )
+from workflows.workflow_dispatch import can_dispatch_to_engine
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
 
 
 def _uses_external_runtime_model_spec(runtime_config) -> bool:
-    return bool(runtime_config.runtime_model_spec_json)
+    """Whether the spec came from outside the catalog.
+
+    Both sources describe a model the catalog need not know about: an explicit
+    --runtime-model-spec-json, or a requirements document the spec was
+    synthesized from.
+    """
+    return bool(runtime_config.runtime_model_spec_json) or bool(
+        getattr(runtime_config, "requirements_json", None)
+    )
+
+
+def _has_eval_config(hf_model_repo: str) -> bool:
+    """Whether the active target pack defines evals for ``hf_model_repo``.
+
+    Goes through the pack rather than EVAL_CONFIGS directly so a
+    requirements-driven run is gated on the document's accuracy evals, which
+    is where its eval content comes from.
+    """
+    from workflow_module.target_pack import get_target_pack
+
+    return get_target_pack().eval_config(hf_model_repo) is not None
 
 
 def _swarmone_license_available() -> bool:
@@ -119,10 +139,11 @@ def validate_runtime_args(model_spec, runtime_config):
     assert not (args.docker_server and args.local_server), (
         "Cannot run --docker-server and --local-server"
     )
+    resolve_quetzal_package_mount(model_spec, runtime_config)
 
     if workflow_type == WorkflowType.EVALS:
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert _has_eval_config(model_spec.hf_model_repo), (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
     if (
         workflow_type == WorkflowType.BENCHMARKS
@@ -207,8 +228,8 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.RELEASE:
         # NOTE: fail fast for models without both defined evals and generated
         # benchmark tasks. A run_*.log file will be made for failed combinations.
-        assert model_spec.model_name in EVAL_CONFIGS, (
-            f"Model:={model_spec.model_name} not found in EVAL_CONFIGS"
+        assert _has_eval_config(model_spec.hf_model_repo), (
+            f"Model:={model_spec.hf_model_repo} not found in EVAL_CONFIGS"
         )
         if not can_dispatch_to_engine(model_spec, runtime_config):
             get_benchmark_config(model_spec)
@@ -483,6 +504,8 @@ def validate_bind_mount_permissions(args):
         checks.append(("--host-hf-cache", args.host_hf_cache, False))
     if getattr(args, "host_weights_dir", None):
         checks.append(("--host-weights-dir", args.host_weights_dir, False))
+    if getattr(args, "quetzal_package_root", None):
+        checks.append(("--quetzal-package-root", args.quetzal_package_root, False))
 
     for flag, host_path, need_write in checks:
         ok, reason = check_path_permissions_for_uid(

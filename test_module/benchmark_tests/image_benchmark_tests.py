@@ -21,7 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from workflows.utils import get_num_calls
+from workflow_module.context_helpers import get_num_calls
 
 from .._test_common import (
     MetricSpec,

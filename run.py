@@ -37,6 +37,12 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.requirements_cli import (
+    add_requirements_argument,
+    apply_requirements,
+    register_requirements_providers,
+    requirements_mode_in_argv,
+)
 from workflows.run_docker_server import (
     collect_tt_triage_logs,
     format_docker_command,
@@ -86,9 +92,9 @@ def _placeholder_llm(device):
     if device:
         want = device.lower()
         match = next((s for s in llms if s.device_type.name.lower() == want), None)
-        return (match.model_name, device) if match else None
+        return (match.hf_model_repo, device) if match else None
     spec = llms[0]
-    return spec.model_name, spec.device_type.name.lower()
+    return spec.hf_model_repo, spec.device_type.name.lower()
 
 
 def parse_arguments():
@@ -96,27 +102,49 @@ def parse_arguments():
     valid_devices = {device.name.lower() for device in DeviceTypes}
     valid_engines = {engine.to_string() for engine in InferenceEngine}
 
-    # Build valid models set, including full HF repo names for whisper models
+    # Build valid models set. The canonical model identifier is the full HF
+    # repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct"); the bare basename
+    # (e.g. "Llama-3.1-8B-Instruct") is still accepted for backwards
+    # compatibility. Only full repo ids are listed as "Available models".
+    full_repo_models = set()
     valid_models = set()
     for _, config in MODEL_SPECS.items():
+        full_repo_models.add(config.hf_model_repo)
+        valid_models.add(config.hf_model_repo)
         valid_models.add(config.model_name)
 
     valid_impls = {config.impl.impl_name for _, config in MODEL_SPECS.items()}
+
+    # A requirements-driven run supplies the model from the document, which may
+    # name a model the catalog has never heard of, so the ``choices`` gate is
+    # dropped when --requirements-json is present.
+    requirements_mode = requirements_mode_in_argv()
+
     # required
     parser = argparse.ArgumentParser(
         description="A CLI for running workflows with optional docker, device, and workflow-args.",
-        epilog="\nAvailable models:\n  " + "\n  ".join(valid_models),
+        epilog="\nAvailable models:\n  " + "\n  ".join(sorted(full_repo_models)),
         formatter_class=argparse.RawTextHelpFormatter,
     )
+    # Not required at the argparse level: prefill_decode serves a mock stack
+    # chosen by --served-model and only needs a placeholder spec. Every other
+    # workflow still requires it -- enforced after parsing, where the
+    # workflow is known.
     parser.add_argument(
         "--model",
         required=False,
         default=None,
-        choices=valid_models,
-        help="Model to run. Required for every workflow except prefill_decode, "
-        "which serves a mock stack chosen by --served-model and only needs a "
-        "placeholder spec (auto-picked when --model is omitted).",
+        choices=None if requirements_mode else valid_models,
+        # metavar because `choices` holds every full HF repo id; without it
+        # argparse prints all of them in the usage line.
+        metavar="MODEL",
+        help="Model to run (full HF repo id, e.g. meta-llama/Llama-3.1-8B-Instruct). "
+        "Required for every workflow except prefill_decode, which serves a mock "
+        "stack chosen by --served-model and only needs a placeholder spec "
+        "(auto-picked when --model is omitted). Defaults from the document "
+        "when --requirements-json is given.",
     )
+    add_requirements_argument(parser)
     parser.add_argument(
         "--workflow",
         required=True,
@@ -381,6 +409,16 @@ def parse_arguments():
         default=None,
         help="Host directory containing pre-downloaded model weights. "
         "For --local-server, tensor cache/logs still use the host volume path.",
+    )
+    parser.add_argument(
+        "--quetzal-package-root",
+        type=str,
+        default=None,
+        help=(
+            "Host path to the selected immutable Quetzal package directory. "
+            "Required with --impl quetzal for Docker and local servers; Docker "
+            "mounts it read-only at the model spec's QUETZAL_PACKAGE_ROOT."
+        ),
     )
     parser.add_argument(
         "--custom-weights",
@@ -676,6 +714,20 @@ def parse_arguments():
         help="Short chat-completion warmup requests sent before the spec-decode sweep "
         "(default: 4; 0 disables).",
     )
+    spec_decode_group.add_argument(
+        "--spec-decode-metrics-url",
+        type=str,
+        action="append",
+        default=None,
+        metavar="URL",
+        help="Worker /metrics endpoint with the vllm:spec_decode_* counters, scraped "
+        "directly by the spec-decode driver before/after each AIPerf run (load stays "
+        "on the frontend). Accepts a full URL, host:port, or host:port/metrics. "
+        "Repeatable for multi-worker deployments; before/after deltas are summed "
+        "across endpoints. Without it the scrape hits --service-port, which in a "
+        "Dynamo deployment is the spec-decode-unaware frontend and yields 0/null "
+        "acceptance metrics.",
+    )
 
     args = parser.parse_args()
 
@@ -685,6 +737,12 @@ def parse_arguments():
             "Use only one of them."
         )
     args.device = args.tt_device or args.device
+
+    # Before any model/device defaulting below: the document supplies both, and
+    # an off-catalog model would fail infer_default_device().
+    args.requirements_doc = None
+    if args.requirements_json:
+        apply_requirements(args, parser)
 
     if args.server_url and (args.docker_server or args.local_server):
         parser.error(
@@ -867,6 +925,7 @@ def handle_secrets(runtime_config):
         WorkflowType.SPEC_TESTS,
         WorkflowType.SERVING_BENCH,
         WorkflowType.PREFILL_DECODE,
+        WorkflowType.AGENTIC,
     }
     # --docker-server requires the HF_TOKEN env var to be available
     huggingface_required = (
@@ -970,6 +1029,7 @@ def format_cli_args_summary(runtime_config):
         f"  host_volume:                {runtime_config.host_volume}",
         f"  host_hf_cache:              {runtime_config.host_hf_cache}",
         f"  host_weights_dir:           {runtime_config.host_weights_dir}",
+        f"  quetzal_package_root:       {runtime_config.quetzal_package_root}",
         f"  custom_weights:             {runtime_config.custom_weights}"
         if runtime_config.custom_weights
         else None,
@@ -1014,14 +1074,49 @@ def resolve_runtime(args):
             f"{args.runtime_model_spec_json}"
         )
         model_spec = ModelSpec.from_json(args.runtime_model_spec_json)
-        runtime_config = RuntimeConfig.from_args(args)
-    else:
-        model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
-            model=args.model,
-            device=args.device,
-            engine=args.engine,
-            impl=args.impl,
+        runtime_config = RuntimeConfig.from_args(
+            args,
+            impl=model_spec.impl.impl_name,
+            engine=model_spec.inference_engine,
         )
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
+    else:
+        try:
+            model_spec, resolved_impl, resolved_engine = get_runtime_model_spec(
+                model=args.model,
+                device=args.device,
+                engine=args.engine,
+                impl=args.impl,
+            )
+        except ValueError:
+            # A requirements document may name a model the catalog has no entry
+            # for: wrap the registered provider with the requirements-backed one
+            # (which synthesizes a spec from the document's context length +
+            # concurrency) and register it for the rest of this process.
+            # Catalog models still resolve above, so non-requirements runs keep
+            # failing loudly.
+            if args.requirements_doc is None:
+                raise
+            from workflow_module.model_catalog import (
+                get_model_spec_provider,
+                register_model_spec_provider,
+            )
+            from workflows.requirements_target_pack import (
+                RequirementsModelSpecProvider,
+            )
+
+            provider = RequirementsModelSpecProvider(
+                get_model_spec_provider(), args.requirements_doc
+            )
+            register_model_spec_provider(provider)
+            model_spec = provider.resolve(args.model, args.device)
+            resolved_impl = model_spec.impl.impl_name
+            resolved_engine = model_spec.inference_engine
+        # Canonicalize bare --model to the HF identity so RuntimeConfig /
+        # run_command / report metadata all carry the same spelling.
+        if model_spec.hf_model_repo:
+            args.model = model_spec.hf_model_repo
         if args.custom_weights:
             # With --host-weights-dir, point vLLM's --model at the container
             # mount so weights load offline (the label is not a real HF repo).
@@ -1049,6 +1144,16 @@ def resolve_runtime(args):
     return runtime_config, model_spec
 
 
+def should_mount_runtime_model_spec(model_spec, runtime_config):
+    """Whether Docker must consume the exact spec resolved by this invocation."""
+    return bool(
+        runtime_config.dev_mode
+        or runtime_config.custom_weights
+        or runtime_config.runtime_model_spec_json
+        or model_spec.impl.impl_id == "quetzal"
+    )
+
+
 def handle_maintenance_args(args):
     if args.reset_venvs:
         venvs_dir = Path(os.path.dirname(os.path.abspath(__file__))) / ".workflow_venvs"
@@ -1063,6 +1168,11 @@ def handle_maintenance_args(args):
 def main():
     # step 00: handle maintenance args
     args = parse_arguments()
+    if args.requirements_doc is not None:
+        # Overlay the document before anything resolves a spec or looks up
+        # validation content; the dispatched child processes register it again
+        # from --requirements-json, which is forwarded in their argv.
+        register_requirements_providers(args.requirements_doc)
     handle_maintenance_args(args)
     # Export repo-root model_spec.json from pristine MODEL_SPECS
     repo_root = Path(__file__).resolve().parent
@@ -1152,9 +1262,10 @@ def main():
     server_launch = None
     if runtime_config.docker_server:
         docker_json_fpath = None
-        # dev mode and --custom-weights both need the container to use this spec
-        # rather than resolving --model against the baked catalog.
-        if runtime_config.dev_mode or runtime_config.custom_weights:
+        # A Quetzal launch must bind the exact host-resolved spec. The selected
+        # implementation can be absent from the image's baked catalog, and the
+        # immutable package identity belongs to this invocation.
+        if should_mount_runtime_model_spec(model_spec, runtime_config):
             docker_json_fpath = json_fpath
         if runtime_config.print_docker_cmd:
             if is_multihost_deployment(runtime_config):
