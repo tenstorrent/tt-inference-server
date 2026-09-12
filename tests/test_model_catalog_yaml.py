@@ -417,3 +417,32 @@ def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
     assert (
         int(env["DG_TRACE_REGION_SIZE"]) == additional_config["tt"]["trace_region_size"]
     )
+
+
+def test_quetzal_llama_1b_dev_spec_matches_qualified_b32_c131072_contract():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "llm.yaml")
+    template = next(
+        t
+        for t in templates
+        if t.weights == ["meta-llama/Llama-3.2-1B-Instruct"]
+        and t.impl is quetzal_impl
+    )
+    spec = template.expand_to_specs()[0]
+    device_spec = spec.device_model_spec
+
+    assert device_spec.device == DeviceTypes.P300X2
+    assert device_spec.max_context == 131072
+    assert device_spec.max_concurrency == 32
+    assert device_spec.max_tokens_all_users == 131072
+    assert device_spec.vllm_args["max_model_len"] == "131072"
+    assert device_spec.vllm_args["max_num_batched_tokens"] == "131072"
+    assert device_spec.vllm_args["max_num_seqs"] == "32"
+    assert device_spec.env_vars["QUETZAL_BUNDLE_MANIFEST_SHA256"] == (
+        "3cd4833c7e1432fb2a36d27844847e80faaf41673fb753b2b02adb514789c58a"
+    )
+    assert device_spec.override_tt_config == {
+        "sample_on_device_mode": "all",
+        "kv_cache_usable_tokens": 131072,
+        "l1_small_size": 16384,
+        "trace_region_size": 90000000,
+    }

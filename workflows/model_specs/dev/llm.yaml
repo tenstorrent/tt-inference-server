@@ -1655,13 +1655,16 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 1
-      max_context: 32768
+      max_concurrency: 32
+      max_context: 131072
+      # One request may consume the entire 131K envelope, while shorter
+      # requests share this same explicitly-qualified aggregate KV pool.
+      max_tokens_all_users_override: 131072
       default_impl: false
       env_vars:
         MESH_DEVICE: P150x4
         QUETZAL_VLLM: "1"
-        QUETZAL_BUNDLE_MANIFEST_SHA256: a1cadb5f5834752ce67b249d7844a4ebc940bcd91005e3c2598b5ff620ce6d69
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 3cd4833c7e1432fb2a36d27844847e80faaf41673fb753b2b02adb514789c58a
         QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
         VLLM_PLUGINS: quetzal_model_registry,tt
       vllm_args:
@@ -1671,6 +1674,7 @@ templates:
         tool_call_parser: llama3_json
       override_tt_config:
         sample_on_device_mode: all
+        kv_cache_usable_tokens: 131072
         l1_small_size: 16384      # Quetzal-generated runtime device contract
         trace_region_size: 90000000  # qualified Quetzal trace reservation
   status: EXPERIMENTAL
