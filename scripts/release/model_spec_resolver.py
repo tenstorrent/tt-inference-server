@@ -6,7 +6,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from workflows.model_spec import (
     MODEL_SPEC_CATALOG_FILES,
@@ -36,6 +36,9 @@ class ReleaseCombo:
     model_name: str
     engine: InferenceEngine
     device: DeviceTypes
+    # Optional CI impl selector (ImplSpec.impl_name) to pin one leaf when a
+    # (model, engine, device) hosts multiple implementations.
+    impl: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -134,11 +137,19 @@ def collect_release_combos(ci_config: dict) -> List[ReleaseCombo]:
                     f"for model {model_name!r}"
                 ) from exc
 
+            impl = implementation.get("impl")
+            if impl is not None and (not isinstance(impl, str) or not impl.strip()):
+                raise ValueError(
+                    f"Release impl must be a non-empty string for model "
+                    f"{model_name!r}, got {impl!r}"
+                )
+
             for raw_device in raw_devices:
                 combo = ReleaseCombo(
                     model_name=model_name,
                     engine=engine,
                     device=_release_device(raw_device),
+                    impl=impl,
                 )
                 if combo not in seen:
                     combos.append(combo)
@@ -191,9 +202,12 @@ def resolve_release_combo(
         model=combo.model_name,
         device=combo.device,
         engine=combo.engine,
+        impl=combo.impl,
         catalog_name="dev release catalog",
     )
-    if not model_spec.device_model_spec.default_impl:
+    # An explicit impl pins one leaf; without one, require the group default so
+    # resolution stays deterministic.
+    if combo.impl is None and not model_spec.device_model_spec.default_impl:
         raise ValueError(
             f"Release combo {combo!r} does not resolve to an explicit default "
             f"implementation; selected {model_spec_leaf_identity(model_spec)!r}"

@@ -83,6 +83,15 @@
                   "enum": ["vLLM", "MEDIA", "FORGE"],
                   "description": "The inference engine to use for this model"
                 },
+                "model_type": {
+                  "type": "string",
+                  "enum": ["TRAINING"],
+                  "description": "Optional. Marks a non-inference workload. Absent = regular inference model."
+                },
+                "impl": {
+                  "type": "string",
+                  "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. trainer-training-lora."
+                },
                 "ci": {
                   "type": "object",
                   "description": "CI configuration for different schedules. Must contain at least one schedule.",
@@ -122,6 +131,15 @@
                         "type": "string",
                         "enum": ["vLLM", "MEDIA", "FORGE"],
                         "description": "The inference engine for this implementation"
+                      },
+                      "model_type": {
+                        "type": "string",
+                        "enum": ["TRAINING"],
+                        "description": "Optional. Marks a non-inference workload. Absent = regular inference model."
+                      },
+                      "impl": {
+                        "type": "string",
+                        "description": "Optional. run.py --impl value (hyphenated impl_name), e.g. trainer-training-lora."
                       },
                       "ci": {
                         "type": "object",

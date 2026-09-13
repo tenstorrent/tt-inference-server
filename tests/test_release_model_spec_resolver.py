@@ -209,6 +209,7 @@ def test_real_release_scope_resolves_to_runtime_equivalent_dev_leaves():
             model=item.combo.model_name,
             device=item.combo.device,
             engine=item.combo.engine,
+            impl=item.combo.impl,
             catalog_name="test dev catalog",
         )
         assert runtime_spec is item.model_spec
@@ -243,6 +244,7 @@ def test_real_release_scope_matches_dev_runtime_subprocess():
                 model=combo.model_name,
                 device=combo.device.to_string(),
                 engine=combo.engine.value,
+                impl=combo.impl,
             )
             identities.append(model_spec_leaf_identity(spec))
         print(json.dumps(identities))
