@@ -237,8 +237,10 @@ def _quetzal_runtime_tt_metal_commit(model_spec: dict) -> str:
     catalog_declared = _model_spec_env_vars(model_spec).get(
         "QUETZAL_RUNTIME_TT_METAL_COMMIT"
     )
-    for source, value in (("runtime environment", declared),
-                          ("catalog", catalog_declared)):
+    for source, value in (
+        ("runtime environment", declared),
+        ("catalog", catalog_declared),
+    ):
         if value is not None and value != image_commit:
             raise RuntimeError(
                 f"impl=quetzal {source} tt-metal commit differs from the "
@@ -286,9 +288,7 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
     context_len = _quetzal_runtime_context(model_spec)
     batch_size = _quetzal_scheduler_capacity(model_spec)
     runtime_tt_metal_commit = (
-        _quetzal_runtime_tt_metal_commit(model_spec)
-        if batch_size > 1
-        else None
+        _quetzal_runtime_tt_metal_commit(model_spec) if batch_size > 1 else None
     )
     expected_variant = _quetzal_variant(model_spec)
     auxiliary_roots = _quetzal_auxiliary_roots(

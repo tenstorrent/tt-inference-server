@@ -349,8 +349,12 @@ def test_admit_quetzal_bundle_passes_matching_batched_capacity_to_resolver(
     ],
 )
 def test_batched_admission_rejects_unverified_runtime_revision(
-    monkeypatch, tmp_path, run_vllm_api_server_module,
-    image_commit, runtime_commit, expected_error,
+    monkeypatch,
+    tmp_path,
+    run_vllm_api_server_module,
+    image_commit,
+    runtime_commit,
+    expected_error,
 ):
     bundle = tmp_path / "bundle"
     bundle.mkdir()
