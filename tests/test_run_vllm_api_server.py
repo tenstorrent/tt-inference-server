@@ -235,7 +235,7 @@ def test_configure_quetzal_provider_rejects_missing_or_wrong_catalog_selection(
         ("digest", "lowercase SHA-256"),
         ("model", "canonical hf_model_repo"),
         ("context", "context identity"),
-        ("batch", "max_concurrency=max_num_seqs=1"),
+        ("batch", "max_concurrency and vLLM max_num_seqs to match"),
         ("device", "does not support device_type"),
         ("environment", "context identity"),
         ("auxiliary", "QUETZAL_AUXILIARY_ROOTS_JSON"),
@@ -310,6 +310,29 @@ def test_admit_quetzal_bundle_calls_public_runtime_resolver(
     )
     assert "weights.pt" not in repr(resolver.call_args)
     mock_logger.info.assert_called_once()
+
+
+def test_admit_quetzal_bundle_passes_matching_batched_capacity_to_resolver(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    _set_quetzal_bundle_env(monkeypatch, bundle)
+    spec = _quetzal_model_spec()
+    spec["device_model_spec"]["max_concurrency"] = 32
+    spec["device_model_spec"]["vllm_args"]["max_num_seqs"] = "32"
+    resolver = MagicMock(
+        return_value={
+            "schema": "ttq.artifact_bundle/v2",
+            "manifest_sha256": "a" * 64,
+            "auxiliary": {"references": 0},
+        }
+    )
+    _install_artifact_discovery_module(monkeypatch, resolver)
+
+    run_vllm_api_server_module.admit_quetzal_bundle(spec)
+
+    assert resolver.call_args.kwargs["expected_batch_size"] == 32
 
 
 def test_admit_quetzal_bundle_uses_catalog_package_fallback(
