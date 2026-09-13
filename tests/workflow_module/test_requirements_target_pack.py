@@ -19,6 +19,7 @@ from workflows.model_spec_provider import (
 from workflows.requirements_target_pack import (
     RequirementsModelSpecProvider,
     RequirementsTargetPack,
+    _goodput_constraints,
 )
 from workflows.target_pack_provider import TenstorrentTargetPack
 from workflows.workflow_types import DeviceTypes
@@ -488,3 +489,91 @@ def test_requirements_pack_agentic_traces_config_uses_template(pack):
     config = pack.agentic_traces_config(spec)
     assert config is not None
     assert config.model_id == spec.model_id
+
+
+# --- agentic sweep -----------------------------------------------------------
+
+
+def _agentic_pack(concurrencies, slo=None):
+    """A pack whose document sweeps ``concurrencies`` for an agentic workload."""
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    doc_dict = {
+        "schemaVersion": "2.6.0",
+        "document": {
+            "id": "d",
+            "model": {"name": "google/gemma-4-31B-it"},
+            "deployment": {"hardware": "SC24"},
+        },
+        "workloads": [
+            {
+                "kind": "agentic",
+                "id": "w1",
+                "slo": slo or {},
+                "agenticSweep": [{"concurrency": c} for c in concurrencies],
+            }
+        ],
+    }
+    return RequirementsTargetPack(
+        RequirementsDoc.from_dict(doc_dict), TenstorrentTargetPack()
+    )
+
+
+def _base_config():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        _REQUIREMENTS_TEMPLATE_MODEL_ID,
+    )
+
+    return AGENTIC_TRACES_CONFIGS[_REQUIREMENTS_TEMPLATE_MODEL_ID]
+
+
+def test_replace_agentic_runs_sweeps_every_concurrency():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    base = _base_config()
+
+    swept = replace_agentic_runs(base, [1, 8, 64])
+
+    assert [r.concurrency for r in swept.runs] == [
+        c for _ in base.runs for c in (1, 8, 64)
+    ]
+
+
+def test_replace_agentic_runs_leaves_config_alone_without_a_sweep():
+    """A document with no agentic sweep keeps the catalog's operating point."""
+    base = _base_config()
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    assert replace_agentic_runs(base, []) is base
+
+
+def test_agentic_concurrencies_are_deduplicated_and_ordered():
+    pack = _agentic_pack([16, 1, 8, 1])
+
+    assert pack._agentic_concurrencies() == [1, 8, 16]
+
+
+def test_agentic_goodput_needs_slos():
+    """goodputPct targets alone cannot be graded: nothing defines 'good'."""
+    assert _agentic_pack([1]).agentic_traces_goodput() is None
+
+
+def test_agentic_goodput_uses_aiperf_tag_names():
+    """AIPerf spells the bars out; vLLM's ttft/tpot/e2el keys are rejected."""
+    pack = _agentic_pack([1], slo={"ttftMs": 2000, "tpotMs": 20, "e2elMs": 20000})
+
+    assert pack.agentic_traces_goodput() == (
+        "time_to_first_token:2000 inter_token_latency:20 request_latency:20000"
+    )
+
+
+def test_vllm_goodput_keys_are_unchanged_by_the_aiperf_mapping():
+    """The benchmark sweep keeps naming the bars after the metrics themselves."""
+    (scenario,) = load_requirements(_FIXTURE).scenarios
+
+    assert _goodput_constraints(scenario) == "ttft:2000 tpot:20 e2el:20000"
