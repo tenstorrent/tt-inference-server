@@ -194,6 +194,10 @@ class TTModelRunnerPooling:
             input_ids=tokens,
             attention_mask=attention_mask,
         )
+        # A model that carries several heads returns them in a dict. Take the dense
+        # vectors, which is what a pooling request asks for.
+        if isinstance(embeddings, dict):
+            embeddings = embeddings["dense_vecs"]
 
         # Convert embeddings to list of tensors format expected by vLLM
         # embeddings shape: [batch_size, embedding_dim]

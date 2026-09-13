@@ -60,8 +60,12 @@ class TTQueueInterface(ABC):
         max_messages_to_get: int = 100,
         block: bool = True,
         timeout: Optional[float] = None,
+        linger: float = 0.0,
     ) -> List[Any]:
-        """Get multiple items from the queue."""
+        """Get multiple items from the queue.
+
+        ``linger`` optionally waits after the first item for the batch to fill.
+        """
         pass
 
     @abstractmethod

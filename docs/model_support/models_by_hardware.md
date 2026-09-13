@@ -201,6 +201,7 @@ This page lists all supported models organized by hardware type.
 | 🛠️ Experimental | CNN | [efficientnet](cnn/efficientnet_n300.md) |
 | 🛠️ Experimental | CNN | [unet](cnn/unet_n300.md) |
 | 🛠️ Experimental | Embedding | [bge-large-en-v1.5](embedding/bge-large-en-v1.5_n300.md) |
+| 🛠️ Experimental | Embedding | [bge-m3](embedding/bge-m3_n300.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_n300.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-8B](embedding/Qwen3-Embedding-8B_n300.md) |
 | 🛠️ Experimental | LLM | [AFM-4.5B](llm/AFM-4.5B_n300.md) |
