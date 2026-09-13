@@ -159,6 +159,10 @@ size_t sessionEvictionCount();
  * Default: defaults::MAX_TOKENS_TO_PREFILL_ON_DECODE. */
 size_t maxTokensToPrefillOnDecode();
 
+/** Seconds a session may remain IN_FLIGHT before eviction forces it to IDLE.
+ * 0 = disabled. From SESSION_IN_FLIGHT_TIMEOUT_S. Default: 1800 (30 min). */
+unsigned sessionInFlightTimeoutSeconds();
+
 /** Max context length (prompt + completion). Resolution order:
  *   1. `MAX_CONTEXT_LENGTH` env var (explicit operator override).
  *   2. `max_position_embeddings` in the model's HF `config.json`
