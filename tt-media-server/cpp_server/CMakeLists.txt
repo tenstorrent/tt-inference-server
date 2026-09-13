@@ -1708,63 +1708,17 @@ if(KAFKA_ENABLED)
         JsonCpp::JsonCpp
     )
 
-    # RemoteKVManagerAdapter - bridges IRemoteKVManager to MigrationClientInterface
-    # Only built when ENABLE_BLAZE is ON (requires tt-llm-engine headers)
-    # Note: disaggregation/migration/include is needed for migration_client.hpp
-    # which migration_client_interface.hpp includes for event types.
+    # Wire the Kafka-backed RemoteKVManager path (RemoteKVManagerImpl) into
+    # the PrefillScheduler factory (blaze_utils.hpp). The adapter/composite
+    # themselves live in `remote_kv_adapter`, which is built below outside
+    # this KAFKA_ENABLED gate so the ZMQ transport can reuse them without
+    # requiring librdkafka.
     if(ENABLE_BLAZE)
-        # CompositeMigrationClient joins the Kafka RemoteKVManagerAdapter (burst
-        # path) with the shmem/mock MigrationLayerClient (migrate/loopback
-        # path) behind a single MigrationClientInterface so the PrefillScheduler
-        # can still service ALLOCATE(migrate_from_slot) prefix-cache copies —
-        # the Kafka adapter intentionally throws on that entry point, so
-        # composing is what makes PREFILL_USE_REMOTE_KV_MANAGER safe.
-        add_library(remote_kv_adapter
-            src/services/remote_kv_manager_adapter.cpp
-            src/services/composite_migration_client.cpp
-        )
-        target_include_directories(remote_kv_adapter PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-        )
-        target_link_libraries(remote_kv_adapter PUBLIC
-            messaging
-            spdlog::spdlog
-        )
-        if(TARGET TtLlmEngine::Full)
-            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Full)
-        else()
-            target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Core)
-        endif()
-        message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
-
-        # Wire the Kafka-backed RemoteKVManagerAdapter into the PrefillScheduler factory (blaze_utils.hpp)
-        target_link_libraries(llm_runner_lib PUBLIC remote_kv_adapter)
+        target_link_libraries(llm_runner_lib PUBLIC messaging)
         target_compile_definitions(llm_runner_lib PUBLIC KAFKA_ENABLED)
         message(STATUS
-            "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER path ENABLED "
-            "(linked against remote_kv_adapter, KAFKA_ENABLED define set)")
-
-        # Unit test for CompositeMigrationClient. Uses two in-process
-        # FakeBackends (defined inline in the test) so it does not need
-        # Kafka or shmem; the whole point is to pin down the composite's
-        # routing / fan-out behavior in isolation. gtest_discover_tests
-        # registers each TEST() case with ctest individually so the PR
-        # gate picks them up (unlike some sibling Kafka unit tests in
-        # this file that are only built, not ctest-registered — a
-        # pre-existing gap that should be closed separately).
-        add_executable(composite_migration_client_test
-            tests/unit/services/composite_migration_client_test.cpp
-        )
-        target_link_libraries(composite_migration_client_test PRIVATE
-            remote_kv_adapter
-            GTest::gtest_main
-        )
-        target_include_directories(composite_migration_client_test PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-        )
-        gtest_discover_tests(composite_migration_client_test)
-    else()
-        message(STATUS "remote_kv_adapter: DISABLED (requires ENABLE_BLAZE=ON)")
+            "llm_runner_lib: PREFILL_USE_REMOTE_KV_MANAGER=kafka path ENABLED "
+            "(linked against messaging, KAFKA_ENABLED define set)")
     endif()
 
     # Migration worker library (for consumer instances)
@@ -1889,6 +1843,150 @@ if(KAFKA_ENABLED)
     )
 else()
     message(STATUS "Kafka support disabled (use -DKAFKA_ENABLED=ON to enable)")
+endif()
+
+# ---------------------------------------------------------------------------
+# Transport-agnostic RemoteKVManager plumbing.
+#
+# `remote_kv_adapter` (RemoteKVManagerAdapter + CompositeMigrationClient)
+# bridges any `IRemoteKVManager` to the PrefillScheduler-facing
+# `MigrationClientInterface`. Both sources are Kafka-free — they only include
+# `services/remote_kv_manager.hpp` (interface) and MigrationClientInterface —
+# so we build this library under `ENABLE_BLAZE` alone. That lets the ZMQ
+# transport (`kvm_zmq`, below) reuse the adapter/composite without dragging
+# in librdkafka.
+#
+# The Kafka concrete impl (RemoteKVManagerImpl) still lives in `messaging`
+# above, guarded by `KAFKA_ENABLED`. The ZMQ concrete impl
+# (RemoteKVManagerZmqImpl) lives in `kvm_zmq`, below. `blaze_utils.hpp`
+# picks between them at runtime on `PREFILL_KV_MANAGER_TRANSPORT`.
+# ---------------------------------------------------------------------------
+if(ENABLE_BLAZE)
+    add_library(remote_kv_adapter
+        src/services/remote_kv_manager_adapter.cpp
+        src/services/composite_migration_client.cpp
+        # logger.cpp bundled in so any consumer that only links this .a (e.g.
+        # composite_migration_client_test) has ZeroOverheadLogger::level and
+        # logImpl(Level,const char*) resolved. Matches the same pattern used by
+        # llm_runner_lib / transport_lib / messaging (which each also compile
+        # logger.cpp into their own archive); the linker de-dupes at final link
+        # time because the first .a in the group provides the symbols and the
+        # others' logger.o is simply not pulled in.
+        src/utils/logger.cpp
+    )
+    target_include_directories(remote_kv_adapter PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(remote_kv_adapter PUBLIC
+        spdlog::spdlog
+    )
+    if(TARGET TtLlmEngine::Full)
+        target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Full)
+    else()
+        target_link_libraries(remote_kv_adapter PUBLIC TtLlmEngine::Core)
+    endif()
+    target_link_libraries(llm_runner_lib PUBLIC remote_kv_adapter)
+    message(STATUS "remote_kv_adapter: ENABLED (ENABLE_BLAZE=ON)")
+
+    # ZMQ-backed RemoteKVManager: wire messages + ZMQ command transport +
+    # RemoteKVManagerZmqImpl. Depends only on cppzmq/libzmq (already fetched
+    # near the top of this file) and JsonCpp for the wire codec.
+    add_library(kvm_zmq
+        src/messaging/kvm_command_message.cpp
+        src/messaging/kvm_zmq_transport.cpp
+        src/services/remote_kv_manager_zmq_impl.cpp
+        # Same rationale as remote_kv_adapter above: kvm_command_message_test /
+        # remote_kv_manager_zmq_impl_test / kvm_zmq_transport_integration_test
+        # only link kvm_zmq (+ gtest), and the ZMQ .cpp files use LOG_* macros
+        # that inline ZeroOverheadLogger::level and logImpl into the caller's
+        # object files. Bundling logger.cpp here keeps every kvm_zmq consumer
+        # self-sufficient without having to also pull in llm_runner_lib or
+        # messaging just for the logger symbols.
+        src/utils/logger.cpp
+    )
+    target_include_directories(kvm_zmq PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${cppzmq_SOURCE_DIR}
+    )
+    target_link_libraries(kvm_zmq PUBLIC
+        spdlog::spdlog
+        JsonCpp::JsonCpp
+    )
+    if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+        target_link_libraries(kvm_zmq PUBLIC PkgConfig::ZMQ)
+    elseif(TARGET libzmq-static)
+        target_link_libraries(kvm_zmq PUBLIC libzmq-static)
+    elseif(TARGET libzmq)
+        target_link_libraries(kvm_zmq PUBLIC libzmq)
+    endif()
+    target_link_libraries(llm_runner_lib PUBLIC kvm_zmq)
+    message(STATUS "kvm_zmq: ENABLED (ENABLE_BLAZE=ON)")
+
+    # Unit test for CompositeMigrationClient. Uses two in-process
+    # FakeBackends (defined inline in the test) so it does not need any
+    # transport. gtest_discover_tests registers each TEST() case with ctest
+    # individually so the PR gate picks them up.
+    add_executable(composite_migration_client_test
+        tests/unit/services/composite_migration_client_test.cpp
+    )
+    target_link_libraries(composite_migration_client_test PRIVATE
+        remote_kv_adapter
+        GTest::gtest_main
+    )
+    target_include_directories(composite_migration_client_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    gtest_discover_tests(composite_migration_client_test)
+
+    # Unit test: KvmCommandMessage / KvmResponseMessage round-trip.
+    add_executable(kvm_command_message_test
+        tests/unit/messaging/kvm_command_message_test.cpp
+    )
+    target_link_libraries(kvm_command_message_test PRIVATE
+        kvm_zmq
+        GTest::gtest_main
+    )
+    target_include_directories(kvm_command_message_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    gtest_discover_tests(kvm_command_message_test)
+
+    # Unit test: RemoteKVManagerZmqImpl driven by an in-process fake
+    # IKvmZmqTransport (no real sockets).
+    add_executable(remote_kv_manager_zmq_impl_test
+        tests/unit/services/remote_kv_manager_zmq_impl_test.cpp
+    )
+    target_link_libraries(remote_kv_manager_zmq_impl_test PRIVATE
+        kvm_zmq
+        GTest::gtest_main
+    )
+    target_include_directories(remote_kv_manager_zmq_impl_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    gtest_discover_tests(remote_kv_manager_zmq_impl_test)
+
+    # Integration test: real KvmZmqTransport DEALER over TCP with a mock
+    # kv_manager ROUTER to exercise direct command/ack framing and
+    # RemoteKVManagerZmqImpl status transitions end-to-end.
+    add_executable(kvm_zmq_transport_integration_test
+        tests/integration/messaging/kvm_zmq_transport_integration_test.cpp
+    )
+    target_link_libraries(kvm_zmq_transport_integration_test PRIVATE
+        kvm_zmq
+        GTest::gtest_main
+    )
+    target_include_directories(kvm_zmq_transport_integration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${cppzmq_SOURCE_DIR}
+    )
+    if(ZMQ_FOUND AND TARGET PkgConfig::ZMQ)
+        target_link_libraries(kvm_zmq_transport_integration_test PRIVATE PkgConfig::ZMQ)
+    elseif(TARGET libzmq-static)
+        target_link_libraries(kvm_zmq_transport_integration_test PRIVATE libzmq-static)
+    elseif(TARGET libzmq)
+        target_link_libraries(kvm_zmq_transport_integration_test PRIVATE libzmq)
+    endif()
+    gtest_discover_tests(kvm_zmq_transport_integration_test)
 endif()
 
 # Source files that aren't provided by llm_runner_lib
