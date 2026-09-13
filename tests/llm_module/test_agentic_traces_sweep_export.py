@@ -21,9 +21,12 @@ ones that would silently break that comparison:
 
 from __future__ import annotations
 
+import json
+
 from llm_module.agentic_traces.sweep_export import (
     to_agentic_sweep,
     to_agentic_sweep_point,
+    write_agentic_sweep,
 )
 
 # Shaped like ``parse_aiperf_output`` output for a single completed run.
@@ -167,3 +170,212 @@ class TestToAgenticSweep:
 
     def test_empty_when_no_runs_completed(self):
         assert to_agentic_sweep([]) == []
+
+
+class TestWriteAgenticSweep:
+    def test_writes_a_list_even_for_one_point(self, tmp_path):
+        """A file written mid-sweep must not need special-casing to read."""
+        path = write_agentic_sweep([{**_METRICS, "concurrency": 4}], tmp_path)
+
+        assert json.loads(path.read_text()) == {
+            "agenticSweep": [to_agentic_sweep_point(_METRICS, concurrency=4)]
+        }
+
+    def test_orders_points_by_concurrency(self, tmp_path):
+        path = write_agentic_sweep(
+            [{**_METRICS, "concurrency": c} for c in (16, 1, 8)], tmp_path
+        )
+
+        points = json.loads(path.read_text())["agenticSweep"]
+        assert [p["concurrency"] for p in points] == [1, 8, 16]
+
+    def test_creates_the_output_directory(self, tmp_path):
+        path = write_agentic_sweep(
+            [{**_METRICS, "concurrency": 1}], tmp_path / "nested" / "dir"
+        )
+
+        assert path.exists()
+
+
+class TestGradeSweepPoint:
+    """Grading is the report's pass/fail, so pin its rules exactly."""
+
+    _EXPECTED = {
+        "concurrency": 1,
+        "ttftMeanMs": 800.0,
+        "tpotMeanMs": 3.0,
+        "e2elP95Ms": 20500.0,
+        "reqThroughputRps": 0.076,
+        "decodeThroughputTps": 150.0,
+        "goodputPct": 90.0,
+        "kvCacheHitRatePct": 94.6,
+        "inputTokensMean": 275639.0,
+        "outputTokensP95": 6905.0,
+    }
+
+    def test_latency_passes_at_or_below_target(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 799.9}, self._EXPECTED
+        )
+        assert self._field(verdict, "ttftMeanMs").passed is True
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 800.1}, self._EXPECTED
+        )
+        assert self._field(verdict, "ttftMeanMs").passed is False
+
+    def test_rate_passes_at_or_above_target(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "decodeThroughputTps": 150.0}, self._EXPECTED
+        )
+        assert self._field(verdict, "decodeThroughputTps").passed is True
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "decodeThroughputTps": 149.9}, self._EXPECTED
+        )
+        assert self._field(verdict, "decodeThroughputTps").passed is False
+
+    def test_exact_match_passes(self):
+        """Tolerance is 0, so equality must pass in both directions."""
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 800.0, "goodputPct": 90.0},
+            self._EXPECTED,
+        )
+        assert self._field(verdict, "ttftMeanMs").passed is True
+        assert self._field(verdict, "goodputPct").passed is True
+
+    def test_token_shape_fields_are_never_graded(self):
+        """ISL/OSL describe the trace mix, not the server -- wildly off is
+        still not a verdict."""
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "inputTokensMean": 1.0, "outputTokensP95": 1.0},
+            self._EXPECTED,
+        )
+        assert all(
+            v.field not in ("inputTokensMean", "outputTokensP95")
+            for v in verdict.verdicts
+        )
+
+    def test_unmeasured_field_is_ungraded_not_failed(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point({"concurrency": 1}, self._EXPECTED)
+        ttft = self._field(verdict, "ttftMeanMs")
+        assert ttft.measured is None
+        assert ttft.passed is None
+        assert verdict.graded == 0
+
+    def test_field_absent_from_the_document_is_not_graded(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        expected = {"concurrency": 1, "ttftMeanMs": 800.0}
+        verdict = grade_sweep_point({"concurrency": 1, "tpotMeanMs": 99.0}, expected)
+        assert [v.field for v in verdict.verdicts] == ["ttftMeanMs"]
+
+    def test_point_passes_only_when_every_graded_field_does(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        passing = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 1.0, "goodputPct": 100.0},
+            {"concurrency": 1, "ttftMeanMs": 800.0, "goodputPct": 90.0},
+        )
+        assert passing.passed is True
+
+        failing = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 1.0, "goodputPct": 10.0},
+            {"concurrency": 1, "ttftMeanMs": 800.0, "goodputPct": 90.0},
+        )
+        assert failing.met == 1 and failing.graded == 2
+        assert failing.passed is False
+
+    def test_a_point_with_no_declared_targets_is_ungraded_not_failed(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1, "ttftMeanMs": 100.0},
+            {"concurrency": 1},
+        )
+
+        assert verdict.verdicts == ()
+        assert verdict.graded == 0 and verdict.met == 0
+        assert verdict.passed is None
+
+    def test_declared_but_unmeasured_fields_fail_the_point(self):
+        from llm_module.agentic_traces.sweep_export import grade_sweep_point
+
+        verdict = grade_sweep_point(
+            {"concurrency": 1},
+            {"concurrency": 1, "ttftMeanMs": 800.0},
+        )
+
+        assert verdict.graded == 0 and verdict.verdicts != ()
+        assert verdict.passed is False
+
+    @staticmethod
+    def _field(verdict, name):
+        return next(v for v in verdict.verdicts if v.field == name)
+
+
+class TestGradeAgenticSweep:
+    def test_pairs_points_by_concurrency_and_reports_the_gap(self):
+        from llm_module.agentic_traces.sweep_export import grade_agentic_sweep
+
+        measured = [
+            {"concurrency": 4, "ttftMeanMs": 100.0},
+            {"concurrency": 1, "ttftMeanMs": 100.0},
+        ]
+        expected = [
+            {"concurrency": 1, "ttftMeanMs": 800.0},
+            {"concurrency": 4, "ttftMeanMs": 800.0},
+            {"concurrency": 16, "ttftMeanMs": 800.0},
+        ]
+
+        verdicts, missing = grade_agentic_sweep(measured, expected)
+
+        assert [v.concurrency for v in verdicts] == [1, 4]
+        assert all(v.passed for v in verdicts)
+        assert missing == [16]
+
+    def test_measured_points_the_document_does_not_expect_are_ignored(self):
+        from llm_module.agentic_traces.sweep_export import grade_agentic_sweep
+
+        verdicts, missing = grade_agentic_sweep(
+            [{"concurrency": 2, "ttftMeanMs": 100.0}],
+            [{"concurrency": 1, "ttftMeanMs": 800.0}],
+        )
+
+        assert verdicts == []
+        assert missing == [1]
+
+
+class TestExpectedSweepFromRecord:
+    def test_reads_the_attached_sweep(self):
+        from llm_module.agentic_traces.sweep_export import expected_sweep_from_record
+
+        sweep = [{"concurrency": 1, "ttftMeanMs": 800.0}, {"concurrency": 8}]
+        record = {"concurrency": 1, "expected_sweep": sweep}
+        assert expected_sweep_from_record(record) == sweep
+
+    def test_survives_the_block_merge_untouched(self):
+        """A list is not a mapping, so the generator's one-level flatten leaves
+        it alone -- the whole point of carrying the sweep as a list."""
+        from report_module.generator import _flatten_one_level
+        from llm_module.agentic_traces.sweep_export import expected_sweep_from_record
+
+        sweep = [{"concurrency": 1, "ttftMeanMs": 800.0}]
+        record = _flatten_one_level({"concurrency": 1, "expected_sweep": sweep})
+        assert expected_sweep_from_record(record) == sweep
+
+    def test_none_when_nothing_is_attached(self):
+        from llm_module.agentic_traces.sweep_export import expected_sweep_from_record
+
+        assert expected_sweep_from_record({"concurrency": 1}) is None
+        assert expected_sweep_from_record({"expected_sweep": []}) is None
