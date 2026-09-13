@@ -54,7 +54,7 @@ def _record(**overrides):
         "mean_effective_latency_ms": 22887.3,
         "p99_effective_latency_ms": 137522.2,
         "output_token_throughput_per_user": 110.8,
-        "e2e_output_token_throughput_per_user": 31.3,
+        "mean_e2e_norm_intvty": 31.3,
         "total_token_throughput": 4856.63,
         "output_token_throughput": 41.99,
         "request_throughput": 0.042,
