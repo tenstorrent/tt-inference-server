@@ -223,6 +223,31 @@ def _quetzal_scheduler_capacity(model_spec: dict) -> int:
     return max_concurrency
 
 
+def _quetzal_runtime_tt_metal_commit(model_spec: dict) -> str:
+    """Bind package admission to the exact tt-metal revision in this image."""
+    image_commit = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
+    if not isinstance(image_commit, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", image_commit
+    ):
+        raise RuntimeError(
+            "impl=quetzal batched serving requires the runtime image to be "
+            "built from an immutable lowercase 40-hex tt-metal commit"
+        )
+    declared = os.getenv("QUETZAL_RUNTIME_TT_METAL_COMMIT")
+    catalog_declared = _model_spec_env_vars(model_spec).get(
+        "QUETZAL_RUNTIME_TT_METAL_COMMIT"
+    )
+    for source, value in (("runtime environment", declared),
+                          ("catalog", catalog_declared)):
+        if value is not None and value != image_commit:
+            raise RuntimeError(
+                f"impl=quetzal {source} tt-metal commit differs from the "
+                "runtime image build"
+            )
+    os.environ["QUETZAL_RUNTIME_TT_METAL_COMMIT"] = image_commit
+    return image_commit
+
+
 def _quetzal_variant(model_spec: dict) -> str:
     device_type = model_spec.get("device_type")
     if not isinstance(device_type, str):
@@ -260,6 +285,11 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
     )
     context_len = _quetzal_runtime_context(model_spec)
     batch_size = _quetzal_scheduler_capacity(model_spec)
+    runtime_tt_metal_commit = (
+        _quetzal_runtime_tt_metal_commit(model_spec)
+        if batch_size > 1
+        else None
+    )
     expected_variant = _quetzal_variant(model_spec)
     auxiliary_roots = _quetzal_auxiliary_roots(
         selection.get("QUETZAL_AUXILIARY_ROOTS_JSON")
@@ -280,6 +310,7 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         expected_variant=expected_variant,
         expected_batch_size=batch_size,
         auxiliary_roots=auxiliary_roots,
+        runtime_tt_metal_commit=runtime_tt_metal_commit,
     )
     logger.info(
         "Quetzal content-address admission succeeded: state=%s schema=%s files=%s "

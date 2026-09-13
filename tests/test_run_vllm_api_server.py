@@ -307,6 +307,7 @@ def test_admit_quetzal_bundle_calls_public_runtime_resolver(
         expected_variant="p150x4",
         expected_batch_size=1,
         auxiliary_roots={"experts": str(auxiliary_root)},
+        runtime_tt_metal_commit=None,
     )
     assert "weights.pt" not in repr(resolver.call_args)
     mock_logger.info.assert_called_once()
@@ -321,6 +322,8 @@ def test_admit_quetzal_bundle_passes_matching_batched_capacity_to_resolver(
     spec = _quetzal_model_spec()
     spec["device_model_spec"]["max_concurrency"] = 32
     spec["device_model_spec"]["vllm_args"]["max_num_seqs"] = "32"
+    runtime_commit = "f" * 40
+    monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", runtime_commit)
     resolver = MagicMock(
         return_value={
             "schema": "ttq.artifact_bundle/v2",
@@ -333,6 +336,39 @@ def test_admit_quetzal_bundle_passes_matching_batched_capacity_to_resolver(
     run_vllm_api_server_module.admit_quetzal_bundle(spec)
 
     assert resolver.call_args.kwargs["expected_batch_size"] == 32
+    assert resolver.call_args.kwargs["runtime_tt_metal_commit"] == runtime_commit
+    assert os.environ["QUETZAL_RUNTIME_TT_METAL_COMMIT"] == runtime_commit
+
+
+@pytest.mark.parametrize(
+    ("image_commit", "runtime_commit", "expected_error"),
+    [
+        (None, None, "immutable lowercase 40-hex"),
+        ("v0.60.0", None, "immutable lowercase 40-hex"),
+        ("f" * 40, "e" * 40, "runtime environment tt-metal commit differs"),
+    ],
+)
+def test_batched_admission_rejects_unverified_runtime_revision(
+    monkeypatch, tmp_path, run_vllm_api_server_module,
+    image_commit, runtime_commit, expected_error,
+):
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    _set_quetzal_bundle_env(monkeypatch, bundle)
+    spec = _quetzal_model_spec()
+    spec["device_model_spec"]["max_concurrency"] = 32
+    spec["device_model_spec"]["vllm_args"]["max_num_seqs"] = "32"
+    if image_commit is None:
+        monkeypatch.delenv("TT_METAL_COMMIT_SHA_OR_TAG", raising=False)
+    else:
+        monkeypatch.setenv("TT_METAL_COMMIT_SHA_OR_TAG", image_commit)
+    if runtime_commit is None:
+        monkeypatch.delenv("QUETZAL_RUNTIME_TT_METAL_COMMIT", raising=False)
+    else:
+        monkeypatch.setenv("QUETZAL_RUNTIME_TT_METAL_COMMIT", runtime_commit)
+
+    with pytest.raises(RuntimeError, match=expected_error):
+        run_vllm_api_server_module.admit_quetzal_bundle(spec)
 
 
 def test_admit_quetzal_bundle_uses_catalog_package_fallback(
@@ -373,6 +409,7 @@ def test_admit_quetzal_bundle_uses_catalog_package_fallback(
         expected_variant="p150x4",
         expected_batch_size=1,
         auxiliary_roots={"experts": str(auxiliary_root)},
+        runtime_tt_metal_commit=None,
     )
 
 
