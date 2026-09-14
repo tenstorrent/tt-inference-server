@@ -475,3 +475,202 @@ def test_sweep_point_effective_slo_helper(tmp_path):
     assert scenario.sweep[0].effective_slo(scenario.slo) == Slo(
         ttft_ms=900, tpot_ms=22.2, e2el_ms=10000
     )
+
+
+# --- validation-plan exports (see _fold_validation_plan in requirements_schema.py) ---
+
+
+def _plan(*, items, workloads):
+    return {
+        "schemaVersion": "2.7.0",
+        "document": {
+            "id": "plan-1",
+            "meta": {"customer": "Acme"},
+            "model": {"name": "moonshotai/Kimi-K2.7-Code", "contextLength": 262144},
+            "deployment": {"hardware": "SC20", "maxConcurrencyPerInstance": 32},
+        },
+        "workloads": workloads,
+        "items": items,
+    }
+
+
+def _text_plan(**overrides):
+    plan = _plan(
+        workloads=[
+            {
+                "kind": "text",
+                "id": "s-text",
+                "name": "Agentic Coding Service",
+                "oslValues": [128],
+                "slo": {"ttftMs": 4100, "tpotMs": 22.2, "e2elMs": 10000},
+                "maxConcurrency": 32,
+            }
+        ],
+        items=[
+            {
+                "type": "operating_point",
+                "scenarioId": "s-text",
+                "scenarioName": "Agentic Coding Service",
+                "kind": "text",
+                "concurrency": c,
+                "isl": 128,
+                "osl": 128,
+                "targets": {
+                    "concurrency": c,
+                    "isl": 128,
+                    "osl": 128,
+                    "ttftMeanMs": 4100,
+                    "goodputPct": 90,
+                },
+                "slo": {"ttftMs": 4100} if c == 32 else {},
+                "methodology": "Run `vllm bench serve` ...",
+                "tools": ["vllm bench serve"],
+            }
+            for c in (1, 32)
+        ]
+        + [
+            {
+                "type": "accuracy_eval",
+                "spec": {"name": "GPQA-Diamond", "gpuReferenceScore": 88.4},
+                "acceptance": "≥ 83.98 %",
+                "methodology": "Run the eval's published harness ...",
+            }
+        ],
+    )
+    plan.update(overrides)
+    return plan
+
+
+def test_export_sweep_rows_are_folded_back_onto_their_scenario(tmp_path):
+    """The 'items' list is the scenario's sweep, expanded out. Put it back."""
+    doc = load_requirements(_write(tmp_path, _text_plan()))
+
+    (scenario,) = doc.scenarios
+    assert scenario.id == "s-text"
+    assert scenario.kind == "text"
+    assert scenario.osl_values == [128]
+    assert scenario.slo == Slo(ttft_ms=4100, tpot_ms=22.2, e2el_ms=10000)
+    assert [(p.isl, p.osl, p.concurrency) for p in scenario.sweep] == [
+        (128, 128, 1),
+        (128, 128, 32),
+    ]
+    # Each item's targets object *is* the row, measurements included.
+    assert scenario.sweep[0].reference["ttftMeanMs"] == 4100
+
+
+def test_export_item_slo_becomes_the_rows_own_override(tmp_path):
+    """An item's sibling slo is the effective per-row SLO the exporter merged."""
+    doc = load_requirements(_write(tmp_path, _text_plan()))
+
+    (scenario,) = doc.scenarios
+    assert scenario.sweep[0].slo is None  # exported as {} => nothing declared
+    assert scenario.sweep[1].slo == Slo(ttft_ms=4100)
+
+
+def test_export_eval_specs_are_unwrapped(tmp_path):
+    """accuracyEvals live one level deeper in an export, under items[].spec."""
+    doc = load_requirements(_write(tmp_path, _text_plan()))
+
+    assert [e.name for e in doc.accuracy_evals] == ["GPQA-Diamond"]
+    assert doc.accuracy_evals[0].gpu_reference_score == 88.4
+
+
+def test_export_agentic_items_carry_their_slo_inside_targets(tmp_path):
+    """An agentic item has no sibling slo; the row's own rides in targets."""
+    plan = _plan(
+        workloads=[
+            {
+                "kind": "agentic",
+                "id": "s-agentic",
+                "name": "Claude Code replay",
+                "oslValues": [],
+                "slo": {},
+                "maxConcurrency": 64,
+                "agenticWorkload": {"traces": [{"name": "AgentX"}]},
+            }
+        ],
+        items=[
+            {
+                "type": "agentic_operating_point",
+                "scenarioId": "s-agentic",
+                "concurrency": 1,
+                "targets": {
+                    "concurrency": 1,
+                    "ttftMeanMs": 798.82,
+                    "goodputPct": 90,
+                    "slo": {"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000},
+                },
+            },
+            {
+                "type": "agentic_operating_point",
+                "scenarioId": "s-agentic",
+                "concurrency": 64,
+                "targets": {"concurrency": 64, "goodputPct": 0},
+            },
+        ],
+    )
+
+    doc = load_requirements(_write(tmp_path, plan))
+
+    (workload,) = doc.agentic_workloads
+    assert [p.concurrency for p in workload.sweep] == [1, 64]
+    assert workload.max_concurrency == 64
+    assert workload.sweep[0].slo == Slo(ttft_ms=1000, tpot_ms=10, e2el_ms=20000)
+    assert workload.sweep[1].slo is None
+    assert doc.scenarios == []
+
+
+def test_export_keeps_an_inline_sweep_as_authoritative(tmp_path):
+    """A workload that kept its sweep is not second-guessed by the items list."""
+    plan = _plan(
+        workloads=[
+            {
+                "kind": "agentic",
+                "id": "s-agentic",
+                "agenticSweep": [{"concurrency": 7}],
+            }
+        ],
+        items=[
+            {
+                "type": "agentic_operating_point",
+                "scenarioId": "s-agentic",
+                "concurrency": 99,
+                "targets": {"concurrency": 99},
+            }
+        ],
+    )
+
+    doc = load_requirements(_write(tmp_path, plan))
+
+    assert [p.concurrency for p in doc.agentic_workloads[0].sweep] == [7]
+
+
+def test_export_folds_each_scenario_separately(tmp_path):
+    """Items are regrouped by scenarioId, not poured into one bucket."""
+    plan = _plan(
+        workloads=[
+            {"kind": "text", "id": "s-a", "oslValues": [128]},
+            {"kind": "text", "id": "s-b", "oslValues": [128]},
+        ],
+        items=[
+            {
+                "type": "operating_point",
+                "scenarioId": sid,
+                "targets": {"concurrency": c, "isl": 128, "osl": 128},
+            }
+            for sid, c in (("s-a", 1), ("s-b", 8), ("s-b", 16))
+        ],
+    )
+
+    doc = load_requirements(_write(tmp_path, plan))
+
+    by_id = {s.id: [p.concurrency for p in s.sweep] for s in doc.scenarios}
+    assert by_id == {"s-a": [1], "s-b": [8, 16]}
+
+
+def test_documents_without_items_take_no_detour(tmp_path):
+    """A canonical document must be unaffected by the fold."""
+    doc = load_requirements(_write(tmp_path, _canonical_doc()))
+
+    assert [s.id for s in doc.scenarios] == ["s-text"]
+    assert [w.id for w in doc.agentic_workloads] == ["s-agentic"]
