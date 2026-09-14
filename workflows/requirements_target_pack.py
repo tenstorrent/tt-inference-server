@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
 from workflow_module.model_catalog import ModelSpecProvider
@@ -40,22 +40,36 @@ from workflow_module.target_pack import TargetPack
 
 logger = logging.getLogger(__name__)
 
-# Human-facing accuracy-eval names (from the document) -> catalog task_name.
-# Matched case-insensitively after stripping whitespace. Extend as new evals
-# appear in requirement documents.
+# Human-facing accuracy-eval names (from the document) -> catalog task names,
+# most preferred first. Matched case-insensitively after stripping whitespace.
+# Extend as new evals appear in requirement documents.
+#
+# A tuple rather than a single name because the same benchmark is configured
+# under several task names, tuned per model family: GPQA Diamond is
+# ``gpqa_diamond_cot_zeroshot`` for some models and ``r1_gpqa_diamond`` for
+# others. A document names the *benchmark*, so any of its spellings satisfies
+# it -- and :meth:`_find_task_template` prefers whichever the document's own
+# model configures, because that one is tuned for it. The order here only
+# decides what to borrow when the model configures none of them.
+#
+# The Tau^3 spellings are listed out because ``_normalize_eval_name`` only
+# lowercases and collapses whitespace: it leaves "^" alone and does not strip a
+# trailing "benchmark". Keeping that normalizer dumb is deliberate -- teaching
+# it to fold "^" or drop "benchmark" would silently change matching for every
+# other key here.
 _EVAL_NAME_TO_TASK = {
-    "gpqa-diamond": "gpqa_diamond_cot_zeroshot",
-    "gpqa diamond": "gpqa_diamond_cot_zeroshot",
-    "swe-bench verified": "swe_bench_verified",
-    "swe-bench-verified": "swe_bench_verified",
-    "terminal-bench 2.0": "terminal_bench_2",
-    "terminal-bench 2": "terminal_bench_2",
-    "terminal-bench 2.1": "terminal_bench_2_1",
-    "tau^3-banking benchmark": "tau3_bench_banking",
-    "tau^3-banking": "tau3_bench_banking",
-    "tau3-banking benchmark": "tau3_bench_banking",
-    "tau3-banking": "tau3_bench_banking",
-    "tau3-bench banking": "tau3_bench_banking",
+    "gpqa-diamond": ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond"),
+    "gpqa diamond": ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond"),
+    "swe-bench verified": ("swe_bench_verified",),
+    "swe-bench-verified": ("swe_bench_verified",),
+    "terminal-bench 2.0": ("terminal_bench_2",),
+    "terminal-bench 2": ("terminal_bench_2",),
+    "terminal-bench 2.1": ("terminal_bench_2_1",),
+    "tau^3-banking benchmark": ("tau3_bench_banking",),
+    "tau^3-banking": ("tau3_bench_banking",),
+    "tau3-banking benchmark": ("tau3_bench_banking",),
+    "tau3-banking": ("tau3_bench_banking",),
+    "tau3-bench banking": ("tau3_bench_banking",),
 }
 
 # Scenario scalar-target metric -> PerformanceTarget attribute. Only these
@@ -225,14 +239,14 @@ class RequirementsTargetPack(TargetPack):
         return EvalConfig(hf_model_repo=self._doc.model.name, tasks=tasks)
 
     def _build_eval_task(self, ae: AccuracyEval) -> Any:
-        task_name = _EVAL_NAME_TO_TASK.get(_normalize_eval_name(ae.name))
-        if task_name is None:
+        candidates = _EVAL_NAME_TO_TASK.get(_normalize_eval_name(ae.name))
+        if candidates is None:
             available = sorted(set(_EVAL_NAME_TO_TASK))
             raise ValueError(
                 f"Requirements accuracy eval {ae.name!r} has no known catalog "
                 f"task mapping. Known eval names: {available}."
             )
-        template = self._find_task_template(task_name)
+        template, task_name = self._find_task_template(candidates)
         if template is None:
             return self._synthesize_eval_task(ae, task_name)
         if template.score is None:
@@ -350,25 +364,44 @@ class RequirementsTargetPack(TargetPack):
             return {}
         return {"agentic_eval_config": replace(cfg, **changes)}
 
-    def _find_task_template(self, task_name: str) -> Optional[Any]:
-        """Borrow a runnable EvalTask for ``task_name`` from the catalog.
+    def _find_task_template(
+        self, candidates: Sequence[str]
+    ) -> Tuple[Optional[Any], str]:
+        """A runnable EvalTask for the benchmark, and the task name it is.
 
-        Prefer the document model's own catalog entry (so any model-specific
-        harness tuning is preserved), then fall back to any model that defines
-        the task.
+        ``candidates`` are the task spellings that satisfy the document's eval,
+        most preferred first. The document model's *own* entry wins for any of
+        them, ahead of the preferred spelling borrowed from another model,
+        because an EvalTask carries that model's sampling configuration --
+        gen_kwargs, timeouts, the chat/completions class -- and those do not
+        transfer. Borrowing GPQA from a reasoning model, for instance, brings
+        its ``reasoning_effort`` along, which another server rejects, and its
+        two-hour request timeout, which turns the rejection into a stall.
+
+        Returns the preferred name with a ``None`` template when the catalog
+        defines none of them, so the caller can try synthesizing that task.
         """
         from reference_config.evals.eval_config import EVAL_CONFIGS
 
         preferred = EVAL_CONFIGS.get(self._doc.model.name)
         if preferred is not None:
-            for task in preferred.tasks:
-                if task.task_name == task_name:
-                    return task
-        for cfg in EVAL_CONFIGS.values():
-            for task in cfg.tasks:
-                if task.task_name == task_name:
-                    return task
-        return None
+            for name in candidates:
+                for task in preferred.tasks:
+                    if task.task_name == name:
+                        return task, name
+        for name in candidates:
+            for cfg in EVAL_CONFIGS.values():
+                for task in cfg.tasks:
+                    if task.task_name == name:
+                        if name != candidates[0]:
+                            logger.info(
+                                "No catalog model defines %r; borrowing %r for "
+                                "the same benchmark.",
+                                candidates[0],
+                                name,
+                            )
+                        return task, name
+        return None, candidates[0]
 
     def _synthesize_eval_task(self, ae: AccuracyEval, task_name: str) -> Any:
         """Build a neutral EvalTask for a known eval with no catalog template.

@@ -193,7 +193,9 @@ def test_eval_task_synthesized_with_neutral_defaults(doc, monkeypatch):
     # Terminal-Bench) cannot be synthesized and are covered by the test below.
     gpqa_only = replace(doc, accuracy_evals=[doc.accuracy_evals[0]])
     pack = RequirementsTargetPack(gpqa_only, TenstorrentTargetPack())
-    monkeypatch.setattr(pack, "_find_task_template", lambda task_name: None)
+    monkeypatch.setattr(
+        pack, "_find_task_template", lambda candidates: (None, candidates[0])
+    )
     cfg = pack.eval_config("acme/off-catalog-model")
     gpqa = next(t for t in cfg.tasks if t.task_name == "gpqa_diamond_cot_zeroshot")
 
@@ -241,7 +243,8 @@ def test_harness_concurrency_falls_back_when_document_is_silent(doc):
         for t in pack.eval_config(silent.model.name).tasks
         if t.task_name == "terminal_bench_2"
     )
-    borrowed = pack._find_task_template("terminal_bench_2")
+    borrowed, name = pack._find_task_template(("terminal_bench_2",))
+    assert name == "terminal_bench_2"
     assert (
         task.agentic_eval_config.n_concurrent_trials
         == borrowed.agentic_eval_config.n_concurrent_trials
@@ -251,7 +254,9 @@ def test_harness_concurrency_falls_back_when_document_is_silent(doc):
 def test_eval_task_synthesis_rejects_harness_backed_task(pack, monkeypatch):
     # SWE-bench needs its SWEbenchEvalConfig harness wiring, which cannot be
     # synthesized — with no catalog template it must fail loudly.
-    monkeypatch.setattr(pack, "_find_task_template", lambda task_name: None)
+    monkeypatch.setattr(
+        pack, "_find_task_template", lambda candidates: (None, candidates[0])
+    )
     with pytest.raises(ValueError, match="No catalog template or built-in profile"):
         pack.eval_config("acme/off-catalog-model")
 
@@ -663,7 +668,7 @@ def test_tau3_banking_maps_to_its_catalog_task(spelling):
     Without a mapping, ``unknown_eval_names`` rejects the whole document at
     parse time — the eval cannot be skipped, it aborts the run.
     """
-    assert _EVAL_NAME_TO_TASK[_normalize_eval_name(spelling)] == "tau3_bench_banking"
+    assert _EVAL_NAME_TO_TASK[_normalize_eval_name(spelling)] == ("tau3_bench_banking",)
 
 
 def test_merged_document_evals_are_all_mapped():
