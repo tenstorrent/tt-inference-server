@@ -139,7 +139,12 @@ class ScalarTarget:
 
 @dataclass(frozen=True)
 class Slo:
-    """Per-request service-level objectives for a scenario (all in ms)."""
+    """Per-request service-level objectives (all in ms).
+
+    Declared by a scenario/workload as its default, and optionally overridden
+    per sweep row. An unset field means "no bar for this metric", which is why
+    :meth:`merged_over` inherits rather than treating ``None`` as a value.
+    """
 
     ttft_ms: Optional[float] = None
     tpot_ms: Optional[float] = None
@@ -147,6 +152,10 @@ class Slo:
 
     @classmethod
     def from_dict(cls, data: Optional[Mapping[str, Any]]) -> Optional["Slo"]:
+        # An empty ``{}`` is indistinguishable from an absent key, and must
+        # stay that way: the upstream schema defaults a scenario's slo to
+        # ``{}``, so serialized documents routinely carry one, and it means
+        # "no SLOs declared" rather than "all bars present but unset".
         if not data:
             return None
         return cls(
@@ -155,20 +164,47 @@ class Slo:
             e2el_ms=_as_optional_float(data.get("e2elMs")),
         )
 
+    def merged_over(self, default: Optional["Slo"]) -> "Slo":
+        """This SLO layered over ``default``: a set field wins, unset inherits."""
+        if default is None:
+            return self
+        return Slo(
+            ttft_ms=self.ttft_ms if self.ttft_ms is not None else default.ttft_ms,
+            tpot_ms=self.tpot_ms if self.tpot_ms is not None else default.tpot_ms,
+            e2el_ms=self.e2el_ms if self.e2el_ms is not None else default.e2el_ms,
+        )
+
+
+def effective_slo(row: Optional[Slo], default: Optional[Slo]) -> Optional[Slo]:
+    """The SLOs in force for one sweep row: its own layered over the default.
+
+    Field-wise merge, row wins, unset inherits from default (mirrors
+    ``effectiveSlo`` in llm-gauntlet's schema package). Returns ``None`` when
+    nothing is declared either side.
+    """
+    merged = row.merged_over(default) if row is not None else default
+    if merged is None or (
+        merged.ttft_ms is None and merged.tpot_ms is None and merged.e2el_ms is None
+    ):
+        return None
+    return merged
+
 
 @dataclass(frozen=True)
 class SweepPoint:
     """One (ISL, OSL, concurrency) point in a benchmark sweep.
 
     Only the fields the engine consumes to *drive* a run (isl/osl/concurrency)
-    are typed; the remaining reference measurements from the document are kept
-    verbatim in :attr:`reference` for display/provenance.
+    and the optional per-row SLO override are typed; the remaining reference
+    measurements from the document are kept verbatim in :attr:`reference` for
+    display/provenance.
     """
 
     isl: int
     osl: int
     concurrency: int
     reference: Mapping[str, Any] = field(default_factory=dict)
+    slo: Optional[Slo] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SweepPoint":
@@ -180,7 +216,12 @@ class SweepPoint:
             osl=int(data["osl"]),
             concurrency=int(data["concurrency"]),
             reference=dict(data),
+            slo=Slo.from_dict(data.get("slo")),
         )
+
+    def effective_slo(self, default: Optional[Slo]) -> Optional[Slo]:
+        """SLOs in force for this point, its own override beating ``default``."""
+        return effective_slo(self.slo, default)
 
 
 @dataclass(frozen=True)
@@ -227,12 +268,21 @@ class AgenticSweepPoint:
 
     concurrency: int
     reference: Mapping[str, Any] = field(default_factory=dict)
+    slo: Optional[Slo] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AgenticSweepPoint":
         if data.get("concurrency") is None:
             raise RequirementsError("agenticSweep[]: missing required 'concurrency'")
-        return cls(concurrency=int(data["concurrency"]), reference=dict(data))
+        return cls(
+            concurrency=int(data["concurrency"]),
+            reference=dict(data),
+            slo=Slo.from_dict(data.get("slo")),
+        )
+
+    def effective_slo(self, default: Optional[Slo]) -> Optional[Slo]:
+        """SLOs in force for this point, its own override beating ``default``."""
+        return effective_slo(self.slo, default)
 
 
 @dataclass(frozen=True)
@@ -503,6 +553,7 @@ __all__ = [
     "AccuracyEval",
     "ScalarTarget",
     "Slo",
+    "effective_slo",
     "SweepPoint",
     "Scenario",
     "AgenticSweepPoint",

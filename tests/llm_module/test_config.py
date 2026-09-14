@@ -81,3 +81,37 @@ class TestDriverContext:
         b = DriverContext(output_dir=Path("/b"))
         a.extra_env["X"] = "1"
         assert b.extra_env == {}
+
+
+def test_render_goodput_spells_the_same_bars_per_tool():
+    """One SLO, two vocabularies: vLLM names the metrics, AIPerf spells them."""
+    from llm_module.goodput import (
+        AIPERF_GOODPUT_KEYS,
+        VLLM_GOODPUT_KEYS,
+        GoodputSlo,
+        render_goodput,
+    )
+
+    slo = GoodputSlo(ttft_ms=4100, tpot_ms=22.2, e2el_ms=10000)
+
+    assert render_goodput(slo, VLLM_GOODPUT_KEYS) == "ttft:4100 tpot:22.2 e2el:10000"
+    assert render_goodput(slo, AIPERF_GOODPUT_KEYS) == (
+        "time_to_first_token:4100 inter_token_latency:22.2 request_latency:10000"
+    )
+
+
+def test_render_goodput_omits_unset_bars():
+    """An unset metric is "no bar", not a bar of zero."""
+    from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
+
+    assert render_goodput(GoodputSlo(tpot_ms=10), AIPERF_GOODPUT_KEYS) == (
+        "inter_token_latency:10"
+    )
+
+
+def test_render_goodput_none_when_nothing_is_declared():
+    """None must stay distinguishable: goodput is unmeasurable, not zero."""
+    from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
+
+    assert render_goodput(None, AIPERF_GOODPUT_KEYS) is None
+    assert render_goodput(GoodputSlo(), AIPERF_GOODPUT_KEYS) is None
