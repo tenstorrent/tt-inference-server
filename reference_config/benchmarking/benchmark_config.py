@@ -7,7 +7,11 @@ import os
 from dataclasses import dataclass, replace
 from typing import Dict, Iterable, List, Tuple
 
-from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
+from workflows.utils_report import (
+    BenchmarkTaskParams,
+    BenchmarkTaskParamsCNN,
+    PerformanceTarget,
+)
 from workflows.workflow_types import (
     BenchmarkTaskType,
     DeviceTypes,
@@ -173,6 +177,28 @@ MODEL_EXPLICIT_TEXT_SWEEP: Dict[str, List[Tuple[int, int, int]]] = {
     ],
 }
 
+# Rev 0.11 section 3 targets for every Qwen3.8 explicit sweep point. ``tput``
+# is aggregate output throughput; ``tput_user`` is 1000 / mean TPOT. The
+# near-maximum 261892+252 point carries the CSV's 262144-ISL target because the
+# literal row exceeds the model's 262144-token prompt+generation context.
+MODEL_EXPLICIT_TEXT_TARGETS = {
+    "Qwen3.8-27B": {
+        (128, 252, 1): (60, 50, 50, 5100),
+        (1024, 252, 1): (150, 50, 50, 5190),
+        (4096, 252, 1): (500, 49, 49, 5643),
+        (16384, 252, 1): (1800, 47, 47, 7162),
+        (32768, 252, 1): (3500, 46, 46, 8978),
+        (65536, 252, 1): (8000, 43, 43, 13860),
+        (131072, 252, 1): (22000, 40, 40, 28300),
+        (261892, 252, 1): (60000, 34, 34, 67412),
+        (4096, 252, 8): (500, 34, 272, 7912),
+        (32768, 252, 8): (3500, 28, 224, 12500),
+        (131072, 252, 8): (22000, 22, 176, 33455),
+        (4096, 252, 16): (500, 32, 512, 8375),
+        (32768, 252, 16): (3500, 24, 384, 14000),
+    }
+}
+
 
 def _normalize_model_key(value: str) -> str:
     """Lowercase alphanumeric form of a model identifier.
@@ -190,6 +216,21 @@ _MODEL_EXPLICIT_TEXT_SWEEP_NORMALIZED = {
     _normalize_model_key(name): points
     for name, points in MODEL_EXPLICIT_TEXT_SWEEP.items()
 }
+_MODEL_EXPLICIT_TEXT_TARGETS_NORMALIZED = {
+    _normalize_model_key(name): {
+        point: {
+            "target": PerformanceTarget(
+                ttft_ms=values[0],
+                tput_user=values[1],
+                tput=values[2],
+                e2el_ms=values[3],
+                tolerance=0.0,
+            )
+        }
+        for point, values in targets.items()
+    }
+    for name, targets in MODEL_EXPLICIT_TEXT_TARGETS.items()
+}
 
 
 def get_explicit_text_sweep(model_spec) -> List[Tuple[int, int, int]]:
@@ -205,6 +246,21 @@ def get_explicit_text_sweep(model_spec) -> List[Tuple[int, int, int]]:
         if points:
             return points
     return None
+
+
+def get_explicit_text_targets(model_spec):
+    """Per-point requirements targets for an explicit model sweep."""
+    for candidate in (
+        getattr(model_spec, "model_name", None),
+        str(getattr(model_spec, "hf_model_repo", "") or "").rsplit("/", 1)[-1],
+        getattr(model_spec, "model_id", None),
+    ):
+        targets = _MODEL_EXPLICIT_TEXT_TARGETS_NORMALIZED.get(
+            _normalize_model_key(candidate)
+        )
+        if targets:
+            return targets
+    return {}
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -744,12 +800,14 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 ),
             )
             if explicit_points is not None:
+                explicit_targets = get_explicit_text_targets(model_spec)
                 text_sweep_params = [
                     BenchmarkTaskParams(
                         isl=isl,
                         osl=osl,
                         max_concurrency=concurrency,
                         num_prompts=get_num_prompts(isl, osl, concurrency),
+                        targets=explicit_targets.get((isl, osl, concurrency), {}),
                     )
                     for isl, osl, concurrency in explicit_points
                     if isl + osl <= max_context

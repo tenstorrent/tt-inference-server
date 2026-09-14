@@ -195,7 +195,8 @@ def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
     assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == "1"
 
     config = benchmark_config.get_benchmark_config(model_spec)
-    sweep = _extract_sweep_triplets(config.tasks[1].param_map[DeviceTypes.P300X2])
+    sweep_params = config.tasks[1].param_map[DeviceTypes.P300X2]
+    sweep = _extract_sweep_triplets(sweep_params)
     assert sweep == [
         (128, 252, 1),
         (1024, 252, 1),
@@ -206,6 +207,25 @@ def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
         (131072, 252, 1),
         (261892, 252, 1),
     ]
+    expected_targets = {
+        (128, 252, 1): (60, 50, 50, 5100),
+        (1024, 252, 1): (150, 50, 50, 5190),
+        (4096, 252, 1): (500, 49, 49, 5643),
+        (16384, 252, 1): (1800, 47, 47, 7162),
+        (32768, 252, 1): (3500, 46, 46, 8978),
+        (65536, 252, 1): (8000, 43, 43, 13860),
+        (131072, 252, 1): (22000, 40, 40, 28300),
+        (261892, 252, 1): (60000, 34, 34, 67412),
+    }
+    for params in sweep_params:
+        target = params.targets["target"]
+        assert (
+            target.ttft_ms,
+            target.tput_user,
+            target.tput,
+            target.e2el_ms,
+        ) == expected_targets[(params.isl, params.osl, params.max_concurrency)]
+        assert target.tolerance == 0.0
 
 
 def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
