@@ -936,6 +936,11 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
+      # Reuse the image built from the prior commit while overlaying the
+      # Python-only staged-weight resolver fix from this branch.
+      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_paths:
+        - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
