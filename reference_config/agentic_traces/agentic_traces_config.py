@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
@@ -512,7 +512,7 @@ def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesC
 def replace_agentic_runs(
     config: AgenticTracesConfig,
     concurrencies: Sequence[int],
-    goodput: str = "",
+    goodput: Union[str, Mapping[int, str]] = "",
     expected_sweep: Sequence[Mapping[str, Any]] = (),
 ) -> AgenticTracesConfig:
     """Replay ``config``'s runs at each of ``concurrencies``, grading ``goodput``.
@@ -523,19 +523,28 @@ def replace_agentic_runs(
     still sweeps both. An empty ``concurrencies`` leaves the config alone, so a
     document with no agentic sweep keeps the catalog's single operating point.
 
-    ``goodput`` applies to every run, since the SLOs are the workload's and do
-    not move with the operating point. Every run carries the whole
-    ``expected_sweep`` rather than only its own point, so the report can call
-    out the points a truncated sweep never measured.
+    ``goodput`` accepts a mapping of concurrency -> SLO string (per-row
+    overrides via ``requirements_schema.effective_slo``), or a plain string
+    broadcast to every run; an omitted concurrency keeps its run spec's own
+    ``goodput``.
+
+    Every run carries the whole ``expected_sweep``, so the report can call out
+    points a truncated sweep never measured.
     """
     if not concurrencies:
         return config
     expected = [dict(point) for point in expected_sweep]
+
+    def _goodput_for(concurrency: int) -> str:
+        if isinstance(goodput, Mapping):
+            return goodput.get(concurrency, "")
+        return goodput
+
     runs = tuple(
         replace(
             run,
             concurrency=concurrency,
-            goodput=goodput or run.goodput,
+            goodput=_goodput_for(concurrency) or run.goodput,
             expected_sweep=list(expected),
         )
         for run in config.runs

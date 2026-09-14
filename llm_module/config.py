@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from llm_module.goodput import GoodputSlo
+
 
 @dataclass(frozen=True)
 class LLMRunConfig:
@@ -46,9 +48,9 @@ class LLMRunConfig:
     # Per-metric severity keyed by PerformanceTarget attribute; lets a block
     # mixing must/should targets downgrade individual metric failures.
     target_priorities: Optional[dict] = field(default=None, compare=False)
-    # ``vllm bench serve --goodput`` SLO constraints for this sweep point
-    # ("ttft:2000 tpot:20 e2el:20000", milliseconds). None = not measured.
-    goodput: Optional[str] = field(default=None, compare=False)
+    # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
+    # own vocabulary. None = not measured.
+    goodput: Optional[GoodputSlo] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
