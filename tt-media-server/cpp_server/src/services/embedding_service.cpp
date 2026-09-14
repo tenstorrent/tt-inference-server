@@ -444,10 +444,32 @@ struct EmbeddingService::Impl {
     }
     awaitWorkersReady(std::move(spawned), warmupTimeoutMs);
 
+    // TEST-ONLY (do not merge): retry rounds for failed warmups. BGE-large's
+    // warmup PCC check is nondeterministic per attempt (~0.86-0.96 vs the
+    // 0.90 threshold on the pinned tt-metal), so without retries a 32-worker
+    // bring-up frequently loses workers before any testing can happen.
+    const unsigned maxRetries = tt::config::embeddingWarmupMaxRetries();
+    for (unsigned round = 1; round <= maxRetries && running.load(); ++round) {
+      std::vector<size_t> respawned;
+      for (size_t i = 0; i < numWorkers; ++i) {
+        if (workers[i]->isReady.load()) continue;
+        if (spawnWorkerAt(i)) respawned.push_back(i);
+      }
+      if (respawned.empty()) break;
+      TT_LOG_INFO(
+          "[EmbeddingService] Warmup retry round {}/{}: respawning {} failed "
+          "workers",
+          round, maxRetries, respawned.size());
+      awaitWorkersReady(std::move(respawned), warmupTimeoutMs);
+    }
+
     size_t readyCount = 0;
     for (const auto& w : workers) {
       if (w->isReady.load()) ++readyCount;
     }
+    // Covers the corner where every phase-1 candidate failed but a retry
+    // round later succeeded (phase 1 is the only other place this is set).
+    if (readyCount > 0) isReady = true;
     TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
                 readyCount, numWorkers);
   }
