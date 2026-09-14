@@ -753,6 +753,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                     )
                     for isl, osl, concurrency in explicit_points
                     if isl + osl <= max_context
+                    and concurrency <= model_max_concurrency
                 ]
             else:
                 text_sweep_params = [

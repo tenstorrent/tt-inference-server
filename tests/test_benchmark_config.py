@@ -182,6 +182,32 @@ def test_select_smoke_test_benchmark_config(
     assert smoke_config.tasks[0].param_map[device] == config.tasks[0].param_map[device]
 
 
+def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    model_id = _find_model_id(
+        model_name="Qwen3.8-27B",
+        device=DeviceTypes.P300X2,
+        impl_name="qwen38-autoport-b1",
+    )
+    model_spec = MODEL_SPECS[model_id]
+
+    assert model_spec.device_model_spec.max_concurrency == 1
+    assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == "1"
+
+    config = benchmark_config.get_benchmark_config(model_spec)
+    sweep = _extract_sweep_triplets(config.tasks[1].param_map[DeviceTypes.P300X2])
+    assert sweep == [
+        (128, 252, 1),
+        (1024, 252, 1),
+        (4096, 252, 1),
+        (16384, 252, 1),
+        (32768, 252, 1),
+        (65536, 252, 1),
+        (131072, 252, 1),
+        (261892, 252, 1),
+    ]
+
+
 def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
     monkeypatch,
 ):

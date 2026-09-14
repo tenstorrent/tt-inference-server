@@ -360,6 +360,15 @@ qwen38_autoport_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/qwen_qwen3_8_27b",
 )
+# Same implementation with a single-slot serving profile. The autoport captures
+# decode at max_num_seqs, so a B1 latency/throughput measurement must initialize
+# the server with max_num_seqs=1 rather than submit one request to a B32 server.
+qwen38_autoport_b1_impl = ImplSpec(
+    impl_id="qwen38_autoport_b1",
+    impl_name="qwen38-autoport-b1",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
 # Same tt-metal code as qwen36_blackhole; distinct impl_id only so the VLM (vision)
 # spec gets its own model_id and does not collide with the text spec on the same
 # (model_name, device). Selectable via --impl qwen36-blackhole-vlm.
@@ -414,6 +423,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen38_autoport": qwen38_autoport_impl,
+    "qwen38_autoport_b1": qwen38_autoport_b1_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
