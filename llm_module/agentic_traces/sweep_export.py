@@ -190,6 +190,17 @@ class MetricVerdict:
             return self.measured <= self.target
         return self.measured >= self.target
 
+    def to_dict(self) -> Dict[str, Any]:
+        """JSON-safe form for the report block; ``passed: None`` grades as a
+        gap in the measurement, not a failure."""
+        return {
+            "field": self.field,
+            "target": self.target,
+            "measured": self.measured,
+            "passed": self.passed,
+            "lower_is_better": self.lower_is_better,
+        }
+
 
 @dataclass(frozen=True)
 class PointVerdict:
@@ -219,6 +230,15 @@ class PointVerdict:
         if not self.verdicts:
             return None
         return self.graded > 0 and self.met == self.graded
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "concurrency": self.concurrency,
+            "met": self.met,
+            "graded": self.graded,
+            "passed": self.passed,
+            "verdicts": [v.to_dict() for v in self.verdicts],
+        }
 
 
 def grade_sweep_point(

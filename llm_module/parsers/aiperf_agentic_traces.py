@@ -19,11 +19,18 @@ this is the audit trail rather than the gate.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Mapping
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from report_module.schema import Block
+from utils.model_naming import slugify_name_parts
 
 from .base import LLMResultParser
+
+# Kind of the sweep-level grading block: one per sweep, holding the measured
+# points graded against the requirements document's expected ones. Separate
+# from the per-run ``agentic_traces`` kind so the acceptance criteria can find
+# the verdicts without re-deriving them.
+TARGETS_BLOCK_KIND = "agentic_traces_targets"
 
 
 class AIPerfAgenticTracesParser(LLMResultParser):
@@ -84,4 +91,53 @@ def _normalize_timestamp(raw_date: Any) -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-__all__ = ["AIPerfAgenticTracesParser"]
+def build_targets_block(
+    payloads: Sequence[Mapping[str, Any]], *, device: str = ""
+) -> Optional[Block]:
+    """Grade the measured sweep against the document's expected points.
+
+    Returns one sweep-level block holding the precomputed verdicts, so the
+    report renderer and the acceptance criteria read the same grading instead
+    of each deriving their own. Built from whatever runs succeeded, so a
+    sweep that lost a point still grades the rest -- the lost points are
+    named in ``missing_concurrencies``. None when no payload carries an
+    expected sweep: a catalog run has nothing to grade against and gets no
+    block.
+    """
+    from llm_module.agentic_traces.sweep_export import (
+        expected_sweep_from_record,
+        grade_agentic_sweep,
+        to_agentic_sweep,
+    )
+
+    expected_sweep: Optional[List[Dict[str, Any]]] = None
+    for payload in payloads:
+        expected_sweep = expected_sweep_from_record(payload)
+        if expected_sweep:
+            break
+    if not expected_sweep:
+        return None
+
+    verdicts, missing = grade_agentic_sweep(to_agentic_sweep(payloads), expected_sweep)
+    first = payloads[0]
+    model = str(first.get("model_id") or first.get("model") or "")
+    timestamp = _normalize_timestamp(first.get("date"))
+    targets: Dict[str, Any] = {}
+    if model:
+        targets["model"] = model
+    if device:
+        targets["device"] = device
+    if timestamp:
+        targets["timestamp"] = timestamp
+    return Block(
+        kind=TARGETS_BLOCK_KIND,
+        id=slugify_name_parts(model, device) or None,
+        data={
+            "points": [point.to_dict() for point in verdicts],
+            "missing_concurrencies": list(missing),
+        },
+        targets=targets,
+    )
+
+
+__all__ = ["AIPerfAgenticTracesParser", "TARGETS_BLOCK_KIND", "build_targets_block"]

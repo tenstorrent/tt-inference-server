@@ -411,3 +411,58 @@ class TestAgenticSweepFile:
             )
 
         assert [p["concurrency"] for p in self._sweep(tmp_path)] == [8]
+
+
+class TestTargetsBlock:
+    """The sweep-level grading block appended after the run blocks.
+
+    Requirements-driven runs carry the document's expected sweep on every
+    payload; the orchestrator must then emit one ``agentic_traces_targets``
+    block so the report renderer and the acceptance criteria read the same
+    precomputed verdicts. Catalog runs carry no expectations and get no block.
+    """
+
+    def _run(self, tmp_path, payload):
+        outcome = AgenticTracesDriverResult(
+            return_code=0, payload=payload, raw_path=None
+        )
+        patcher, _driver = _driver_returning(outcome)
+        with patcher:
+            return run_agentic_traces(
+                _ctx(tmp_path=tmp_path),
+                mode="ci",
+                trace_sources="inferencex_agentx",
+                inter_run_sleep_s=0,
+            )
+
+    def test_appended_when_payloads_carry_expected_sweep(self, tmp_path):
+        payload = {
+            **_ok_payload(),
+            "concurrency": 1,
+            "mean_ttft_ms": 100.0,
+            "expected_sweep": [
+                {"concurrency": 1, "ttftMeanMs": 200.0},
+                {"concurrency": 64, "ttftMeanMs": 700.0},
+            ],
+        }
+
+        result = self._run(tmp_path, payload)
+
+        assert [b.kind for b in result.blocks] == [
+            "agentic_traces",
+            "agentic_traces_targets",
+        ]
+        targets = result.blocks[1]
+        (point,) = targets.data["points"]
+        assert point["concurrency"] == 1 and point["passed"] is True
+        assert targets.data["missing_concurrencies"] == [64]
+        # the accumulator saw both blocks, run block first
+        assert [b.kind for b in get_default_accumulator().blocks] == [
+            "agentic_traces",
+            "agentic_traces_targets",
+        ]
+
+    def test_absent_without_expected_sweep(self, tmp_path):
+        result = self._run(tmp_path, {**_ok_payload(), "concurrency": 1})
+
+        assert [b.kind for b in result.blocks] == ["agentic_traces"]

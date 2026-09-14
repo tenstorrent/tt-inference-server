@@ -44,7 +44,10 @@ from llm_module.drivers.swo_bench_agentic_traces import (
 from llm_module.drivers.swo_bench_agentic_traces import (
     _invalid_result_reason as _swo_invalid_result_reason,
 )
-from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
+from llm_module.parsers.aiperf_agentic_traces import (
+    AIPerfAgenticTracesParser,
+    build_targets_block,
+)
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from reference_config.agentic_traces.agentic_traces_config import (
     AGENTIC_TRACES_CONFIGS,
@@ -56,6 +59,7 @@ from reference_config.agentic_traces.agentic_traces_config import (
     get_agentic_traces_config,
     resolve_run_specs,
 )
+from report_module.schema import Block
 from workflows.workflow_types import AgenticTracesMode
 
 KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
@@ -1006,6 +1010,92 @@ class TestParser:
         block = AIPerfAgenticTracesParser().parse({"model_id": "m"})
         assert "error_rate" not in block.data
         assert "submission_status" not in block.data
+
+
+class TestBuildTargetsBlock:
+    """The sweep-level grading block: verdicts precomputed into block data."""
+
+    _EXPECTED = (
+        {
+            "concurrency": 1,
+            "ttftMeanMs": 8000.0,  # measured 100 -> pass
+            "tpotMeanMs": 3.0,  # measured 11.8 -> fail
+            "goodputPct": 90.0,  # unmeasured -> ungraded
+            "inputTokensMean": 999999.0,  # never graded
+        },
+        {"concurrency": 64, "ttftMeanMs": 700.0},  # never measured -> missing
+    )
+
+    def _payload(self, concurrency=1, **overrides):
+        payload = {
+            "model_id": "moonshotai/Kimi-K2.7-Code",
+            "date": "20260727-120000",
+            "trace_source": "inferencex_agentx",
+            "concurrency": concurrency,
+            "mean_ttft_ms": 100.0,
+            "mean_tpot_ms": 11.8,
+            "expected_sweep": [dict(point) for point in self._EXPECTED],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_none_without_expectations(self):
+        block = build_targets_block([self._payload(expected_sweep=None)])
+
+        assert block is None
+
+    def test_block_shape_and_verdicts(self):
+        block = build_targets_block([self._payload()], device="super_cluster")
+
+        assert block is not None
+        assert block.kind == "agentic_traces_targets"
+        assert block.targets["model"] == "moonshotai/Kimi-K2.7-Code"
+        assert block.targets["device"] == "super_cluster"
+        assert block.targets["timestamp"] == "2026-07-27 12:00:00"
+        (point,) = block.data["points"]
+        assert point["concurrency"] == 1
+        assert point["met"] == 1
+        assert point["graded"] == 2
+        assert point["passed"] is False
+        verdicts = {v["field"]: v for v in point["verdicts"]}
+        assert verdicts["ttftMeanMs"]["passed"] is True
+        assert verdicts["tpotMeanMs"]["passed"] is False
+        assert verdicts["goodputPct"]["passed"] is None
+        assert "inputTokensMean" not in verdicts
+        assert block.data["missing_concurrencies"] == [64]
+
+    def test_data_survives_a_json_round_trip(self):
+        block = build_targets_block([self._payload()], device="super_cluster")
+
+        restored = Block.from_dict(json.loads(json.dumps(block.to_dict())))
+
+        assert restored.data == block.data
+
+    def test_grades_a_partial_sweep(self):
+        """A sweep that lost a point still grades the ones that ran."""
+        expected = [
+            dict(self._EXPECTED[0]),
+            {**self._EXPECTED[0], "concurrency": 4},
+            {"concurrency": 64, "ttftMeanMs": 700.0},
+        ]
+        payloads = [
+            self._payload(concurrency=1, expected_sweep=expected),
+            self._payload(concurrency=4, expected_sweep=expected),
+        ]
+        block = build_targets_block(payloads)
+
+        assert [p["concurrency"] for p in block.data["points"]] == [1, 4]
+        assert block.data["missing_concurrencies"] == [64]
+
+    def test_measured_points_without_an_expected_counterpart_are_not_graded(self):
+        """Grading needs a target; an extra measured point is simply ignored."""
+        payloads = [
+            self._payload(concurrency=1),
+            self._payload(concurrency=4),
+        ]
+        block = build_targets_block(payloads)
+
+        assert [p["concurrency"] for p in block.data["points"]] == [1]
 
 
 SWO_SCENARIO = "claude-code-swe-bench-python-kimi-k2.7-code"
