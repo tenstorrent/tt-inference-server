@@ -472,6 +472,12 @@ def _forward_requirements(cmd, runtime_config) -> None:
     The runtime-config JSON already carries the path, but the child needs it on
     the command line: argparse decides whether the catalog gate applies to
     --model and which target pack to register *before* that JSON is read.
+
+    Only the path is forwarded, never a "llm-gauntlet;<path>" scheme value or
+    the ref it was resolved at: apply_requirements() rewrites the value to the
+    resolved absolute path inside the clone before RuntimeConfig is built, so a
+    child is handed a plain file that already exists. There is nothing for it to
+    re-resolve, which is why no repo-ref flag is threaded through here.
     """
     _extend_if_set(
         cmd, "--requirements-json", getattr(runtime_config, "requirements_json", None)
