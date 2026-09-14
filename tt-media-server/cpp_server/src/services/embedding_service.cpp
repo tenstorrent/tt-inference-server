@@ -191,7 +191,6 @@ struct WorkerProcess {
 };
 
 struct EmbeddingService::Impl {
-  
   struct PendingRequest {
     domain::EmbeddingRequest request;
 
@@ -207,7 +206,7 @@ struct EmbeddingService::Impl {
   };
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
-  
+
   mutable std::mutex workersMutex;
   size_t numWorkers = 3;
 
@@ -219,7 +218,7 @@ struct EmbeddingService::Impl {
   std::atomic<bool> isReady{false};
 
   // Spawning and warmup run here so start() returns immediately and the HTTP
-  // server can answer health probes while the model loads 
+  // server can answer health probes while the model loads
   std::unique_ptr<std::thread> startupThread;
 
   size_t maxBatchSize = 1;
@@ -249,7 +248,6 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    
     // Set environment variables for the child process.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
     if (!cfg.python_model_name.empty()) {
@@ -759,7 +757,8 @@ void EmbeddingService::submitRequestAsync(
 
 domain::EmbeddingResponse EmbeddingService::produceResponse(
     domain::EmbeddingRequest request) {
-  // Unused in the embedding path, but present for compatibility with BaseSyncService.
+  // Unused in the embedding path, but present for compatibility with
+  // BaseSyncService.
   std::promise<domain::EmbeddingResponse> promise;
   auto future = promise.get_future();
   impl_->submitRequestAsync(std::move(request),
