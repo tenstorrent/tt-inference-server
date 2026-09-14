@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from typing import Any, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from workflow_module.model_catalog import ModelSpecProvider
 from workflow_module.requirements_schema import (
@@ -33,6 +33,7 @@ from workflow_module.requirements_schema import (
     AccuracyEval,
     RequirementsDoc,
     Scenario,
+    Slo,
 )
 from workflow_module.target_pack import TargetPack
 
@@ -492,18 +493,53 @@ class RequirementsTargetPack(TargetPack):
                 )
         return config
 
-    # --- agentic traces (delegated, with template fallback) ---
+    # --- agentic traces (document sweep over a catalog/template base) ---
     def agentic_traces_config(self, model_spec: Any) -> Optional[Any]:
-        # The document has no agentic-traces section, so content comes from the
-        # catalog; for an off-catalog (synthesized) spec, borrow the Kimi
-        # K2.7-Code template rather than refusing to run.
+        # The run *shape* (scenario, dataset, InferenceX pin) still comes from
+        # the catalog, or from the Kimi K2.7-Code template for an off-catalog
+        # (synthesized) spec rather than refusing to run. What the document
+        # contributes is the sweep: which concurrencies to replay it at.
         from reference_config.agentic_traces.agentic_traces_config import (
             get_agentic_traces_config_or_template,
+            replace_agentic_runs,
         )
 
-        return self._delegate.agentic_traces_config(
+        base = self._delegate.agentic_traces_config(
             model_spec
         ) or get_agentic_traces_config_or_template(model_spec)
+        if base is None:
+            return None
+        return replace_agentic_runs(
+            base,
+            self._agentic_concurrencies(),
+            goodput=self.agentic_traces_goodput() or "",
+        )
+
+    def _agentic_concurrencies(self) -> List[int]:
+        """Concurrencies the document's agentic workloads ask for, in order.
+
+        Deduplicated because two workloads may share an operating point, and
+        replaying the same concurrency twice would just burn an hour per
+        duplicate.
+        """
+        seen: Dict[int, None] = {}
+        for workload in self._doc.agentic_workloads:
+            for point in workload.sweep:
+                if point.concurrency > 0:
+                    seen.setdefault(point.concurrency, None)
+        return sorted(seen)
+
+    def agentic_traces_goodput(self) -> Optional[str]:
+        """AIPerf ``--goodput`` constraints from the agentic workloads' SLOs.
+
+        Without SLOs there is nothing defining a "good" request, so AIPerf can
+        report no goodput -- even when the document sets a goodputPct target.
+        """
+        for workload in self._doc.agentic_workloads:
+            constraints = _aiperf_slo_constraints(workload.slo)
+            if constraints:
+                return constraints
+        return None
 
     def resolve_agentic_run_specs(
         self,
@@ -603,25 +639,46 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
     return attach
 
 
-def _goodput_constraints(scenario: Scenario) -> Optional[str]:
-    """``vllm bench serve --goodput`` constraint string from the scenario's SLOs.
+def _slo_constraints(slo: Optional[Slo], keys: Mapping[str, str]) -> Optional[str]:
+    """``--goodput`` constraint string for a set of SLOs, using ``keys``.
 
-    vLLM's keys are ttft/tpot/e2el in milliseconds — exactly the document's
-    SLO metrics. Returns None when the scenario declares no SLOs, in which
-    case goodput cannot be measured.
+    Returns None when there are no SLOs, in which case goodput cannot be
+    measured: nothing defines a "good" request.
     """
-    slo = scenario.slo
     if slo is None:
         return None
-    parts = []
-    for key, value in (
-        ("ttft", slo.ttft_ms),
-        ("tpot", slo.tpot_ms),
-        ("e2el", slo.e2el_ms),
-    ):
-        if value is not None:
-            parts.append(f"{key}:{value:g}")
+    values = {"ttft": slo.ttft_ms, "tpot": slo.tpot_ms, "e2el": slo.e2el_ms}
+    parts = [
+        f"{keys[metric]}:{values[metric]:g}"
+        for metric in ("ttft", "tpot", "e2el")
+        if values[metric] is not None
+    ]
     return " ".join(parts) or None
+
+
+# vLLM names the per-request bars after the metrics themselves, so its keys are
+# the document's SLO metrics verbatim.
+_VLLM_GOODPUT_KEYS = {"ttft": "ttft", "tpot": "tpot", "e2el": "e2el"}
+
+# AIPerf spells the same three bars out in full, and has no per-output-token
+# tag: inter-token latency is the same measurement under another name, and a
+# request's end-to-end latency is its request latency. Both remain in ms, as
+# the document states them.
+_AIPERF_GOODPUT_KEYS = {
+    "ttft": "time_to_first_token",
+    "tpot": "inter_token_latency",
+    "e2el": "request_latency",
+}
+
+
+def _goodput_constraints(scenario: Scenario) -> Optional[str]:
+    """``vllm bench serve --goodput`` constraint string from a scenario's SLOs."""
+    return _slo_constraints(scenario.slo, _VLLM_GOODPUT_KEYS)
+
+
+def _aiperf_slo_constraints(slo: Optional[Slo]) -> Optional[str]:
+    """AIPerf ``--goodput`` constraint string for a set of SLOs."""
+    return _slo_constraints(slo, _AIPERF_GOODPUT_KEYS)
 
 
 def _scenario_targets_goodput(scenario: Scenario) -> bool:

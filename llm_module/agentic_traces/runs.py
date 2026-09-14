@@ -72,6 +72,8 @@ class AgenticTracesRun:
     use_server_token_count: bool
     gpu_telemetry: bool
     mode: AgenticTracesMode
+    # AIPerf ``--goodput`` SLO string; empty means this run measures none.
+    goodput: str = ""
     # SwarmOne swo-bench knobs. Unused by the InferenceX/AIPerf driver, so they
     # carry harmless defaults on ``inferencex_agentx`` runs.
     task: Optional[str] = None
@@ -188,6 +190,7 @@ def build_runs(
                 use_server_token_count=spec.use_server_token_count,
                 gpu_telemetry=spec.gpu_telemetry,
                 mode=mode,
+                goodput=spec.goodput,
                 task=spec.task,
                 resident=spec.resident,
                 cache_mode=spec.cache_mode,

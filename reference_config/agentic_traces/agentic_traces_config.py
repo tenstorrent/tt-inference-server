@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
@@ -81,6 +81,11 @@ class AgenticTracesRunSpec:
     # instead, ``vllm bench serve`` style.
     use_server_token_count: bool = True
     gpu_telemetry: bool = False
+    # AIPerf ``--goodput`` SLO string: space-separated TAG:VALUE bars deciding
+    # whether a request counts as good. Empty means the run measures no
+    # goodput, since AIPerf reports it only when the bars are passed. Catalog
+    # entries leave this empty; a requirements document supplies its SLOs.
+    goodput: str = ""
     # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
     # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
     # ``task`` selects a single task from a multi-task swo-bench scenario (its
@@ -400,6 +405,20 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
+    # only; no SwarmOne scenario is recorded for this model. Same InferenceX
+    # pin as Kimi above so numbers stay comparable across the two models.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=8,
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
@@ -485,6 +504,32 @@ def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesC
     return replace(template, model_id=model_id)
 
 
+def replace_agentic_runs(
+    config: AgenticTracesConfig,
+    concurrencies: Sequence[int],
+    goodput: str = "",
+) -> AgenticTracesConfig:
+    """Replay ``config``'s runs at each of ``concurrencies``, grading ``goodput``.
+
+    A requirements document sweeps concurrency while holding the run shape
+    fixed, so each configured run is duplicated once per concurrency rather
+    than replaced: a config carrying both an InferenceX and a SwarmOne spec
+    still sweeps both. An empty ``concurrencies`` leaves the config alone, so a
+    document with no agentic sweep keeps the catalog's single operating point.
+
+    ``goodput`` applies to every run, since the SLOs are the workload's and do
+    not move with the operating point.
+    """
+    if not concurrencies:
+        return config
+    runs = tuple(
+        replace(run, concurrency=concurrency, goodput=goodput or run.goodput)
+        for run in config.runs
+        for concurrency in concurrencies
+    )
+    return replace(config, runs=runs)
+
+
 def default_run_specs(
     config: AgenticTracesConfig,
 ) -> Tuple[AgenticTracesRunSpec, ...]:
@@ -550,5 +595,6 @@ __all__ = [
     "for_model_ids",
     "get_agentic_traces_config",
     "get_agentic_traces_config_or_template",
+    "replace_agentic_runs",
     "resolve_run_specs",
 ]
