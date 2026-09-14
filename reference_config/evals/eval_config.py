@@ -2019,12 +2019,10 @@ _eval_config_list = [
     #     NOT the terminal_bench_2 the sibling Qwen3.6-27B config runs. Picking the
     #     task to match the published dataset version is the point -- scoring a 2.1
     #     number against a 2.0 run would compare different task sets.
-    #   * SWE-bench Verified has NO published number for this checkpoint. The card
-    #     reports SWE-bench Pro 61.7 and QwenSWEBench 79.0, and neither is the
-    #     SWE-bench/SWE-bench_Verified dataset swe_bench_verified runs; AA's model
-    #     page does not break out a Verified score either. The task is still
-    #     configured (it is the third eval of the QB2 bring-up set) but with
-    #     published_score=None -- see that task for what that costs.
+    #   * The QB2 requirements CSV assigns 61.7 to swe_bench_verified and explicitly
+    #     records that this number came from SWE-bench Pro. Keep that provisional
+    #     cross-dataset gate for this requirements run, but do not treat it as a
+    #     measured SWE-bench Verified baseline.
     #
     # Unlike gemma-4 this needs no enable_thinking override: Qwen3.8's chat
     # template has thinking ON by default (card: "Thinking mode is on by default"),
@@ -2044,6 +2042,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    tolerance=0.05,
                     # NO gpu_reference_score: nobody has run this checkpoint on an
                     # H100 reference server yet. Consequence, via
                     # resolve_eval_reference() + compute_accuracy_check(): with no
@@ -2115,6 +2114,7 @@ _eval_config_list = [
                     # agent-matched to this config (terminal-bench-2-1 + terminus-2).
                     published_score=73.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    tolerance=0.05,
                     # NO gpu_reference_score: nobody has run this checkpoint on an
                     # H100 reference server. The check therefore falls back to
                     # `accuracy >= published * (1 - tolerance)` = >= 69.35%, a strict
@@ -2179,22 +2179,19 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # NO published_score EXISTS for this checkpoint on SWE-bench
-                    # Verified. Searched: the HF card (publishes SWE-bench Pro 61.7 and
-                    # QwenSWEBench 79.0 -- different datasets) and the Artificial
-                    # Analysis model page (no Verified breakout). Do NOT substitute the
-                    # Pro number: SWE-bench Pro is a harder, disjoint task set and
-                    # scoring a Verified run against it would read as a large false
-                    # regression.
-                    # Consequence, via resolve_eval_reference() + accept_eval_score():
-                    # with reference_score None the accuracy check returns None and the
-                    # report renders N/A -- the task still RUNS and still reports its
-                    # measured accuracy, it just cannot pass or fail. That is the same
-                    # shape the google/gemma-4-26B-A4B-it entries below use. Fill this
-                    # in from a measured H100 run (as gpu_reference_score) or from a
-                    # first-party number if Qwen publishes one.
-                    published_score=None,
-                    published_score_ref="TBD",
+                    # The QB2 requirements CSV requests 61.7 with -5% relative
+                    # tolerance, so the fallback acceptance threshold is 58.615%
+                    # (displayed as 58.6%). Its own footnote says 61.7 was measured on
+                    # SWE-bench Pro, while this harness runs SWE-bench Verified. This
+                    # is therefore a provisional requirements target, not an
+                    # apples-to-apples Verified reference; replace it once a Verified
+                    # baseline exists.
+                    published_score=61.7,
+                    published_score_ref=(
+                        "QB2 Model Support Requirements qwen3.8-27B rev 0.11 "
+                        "(SWE-bench Pro value provisionally applied to Verified)"
+                    ),
+                    tolerance=0.05,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
