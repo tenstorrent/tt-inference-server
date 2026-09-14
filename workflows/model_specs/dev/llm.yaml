@@ -903,80 +903,39 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  # Attribution only -- ImplSpec.code_path feeds the generated docs/report link,
-  # not the runner. Without it the release report credits these numbers to
-  # models/demos/blackhole/qwen36, i.e. the demo rather than the autoport.
-  impl: qwen36_autoport
+  impl: qwen38_autoport
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
     - text
   device_model_specs:
     - device: P300X2
-      # ASSUMED: concurrency, context and every tuning value below are copied from
-      # the Qwen3.6-27B P300X2 entry above and are not tuned for this checkpoint.
       max_concurrency: 32
       max_context: 262144
-      max_tokens_all_users_override: 525312
+      # Largest requirements point: 8 concurrent requests at ISL 131072 and
+      # OSL 252. Let the runner test the documented memory-fit claim directly.
+      max_tokens_all_users_override: 1050592
       default_impl: true
       env_vars:
-        # Deliberately left at qwen36_blackhole. The upstream plugin selector
-        # whitelists only that value and raises on anything else, so it must NOT
-        # be set to qwen36_autoport; the bundle below claims the architecture
-        # first and the built-in map then skips it.
-        TT_QWEN35_TEXT_VER: qwen36_blackhole
-        # Serves the autoport instead of the demo: the TT plugin registers every
-        # bundle found here ahead of its own built-in model map.
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
-        # The autoport defaults to Qwen/Qwen3.6-27B (tt/functional_decoder.py),
-        # so without these it would serve 3.6 weights under a 3.8 name. Revision
-        # is the one the bring-up validated.
-        QWEN_AUTOPORT_MODEL_ID: Qwen/Qwen3.8-27B
-        QWEN_AUTOPORT_MODEL_REVISION: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
-        # Prefill one request per model call. Multi-active-row prefill hangs in
-        # the server: at max_num_seqs 32, k=7 completes but k=15 and k=31 do
-        # not, with identical [32, S] shapes. Verified bit-identical to the
-        # batched path (PCC 1.0, same argmax) at k=7, and it fixes concurrency
-        # 32 end to end: 32/32 in 114 s where it previously never returned.
-        # Only prefill serialises; 32-way decode concurrency is unaffected.
-        QWEN36_PREFILL_PER_REQUEST: "1"
-        # Compile the requested cold-context lengths before steady-state timing.
-        # Complete allocation tracking protects retained decode traces.
-        TT_METAL_TRACE_ALLOC_TRACKING: "1"
-        TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: "0"
-        QWEN36_TRACE_REUSE: "1"
-        QWEN36_TRACE_REPORT: "1"
-        QWEN36_WARMUP_PREFILL_LENGTHS: "128,1024,4096,16384,32768,65536,131072,261892"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
-        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
+        block_size: "32"
         enable_auto_tool_choice: true
+        hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
       override_tt_config:
-        fabric_config: FABRIC_1D
-        # 1073741824 is subtracted PER BANK, i.e. 8.6 GB/device, and the engine
-        # then dies at startup: "Out of Memory: ... 476544000 B DRAM buffer
-        # across 8 banks ... bank size is 3198599552 B". 200 MB is what the
-        # autoport derives its serving capacity against. Measured on p300x2.
-        trace_region_size: 200000000
+        fabric_config: FABRIC_1D_RING
+        fabric_max_packet_payload_size_bytes: 8192
         l1_small_size: 24576
         sample_on_device_mode: all
-      # Run new autoport Python on a REUSED image instead of paying a ~1 h
-      # rebuild. The test stage never checks out tt-metal, so these paths are
-      # sparse-cloned on the runner and bind-mounted over the image's copy.
-      # Only sound for Python-only deltas: the image carries compiled tt-metal,
-      # so keep the paths narrow enough that a C++ change cannot ride along.
-      # Remove both keys once the image is rebuilt at a commit that has them.
-      # Fixed tag resolves to 4a02bf62cf5; --branch cloning accepts tags, not raw SHAs.
-      # Shared sampler Python is part of this checkpoint's serving repair.
-      tt_metal_source_ref: mvasiljevic/qwen38-warm-4a02bf62cf5
-      tt_metal_source_paths:
-        - models/autoports/qwen_qwen3_6_27b
-        - models/autoports/vllm_bundles
-        - models/common/sampling
+        trace_mode: decode_only
+        trace_region_size: 134217728
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:

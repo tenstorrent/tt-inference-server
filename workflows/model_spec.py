@@ -352,15 +352,13 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
-# Qwen3.8-27B served by the agentic-pipeline autoport rather than the
-# hand-written demo. Same architecture, different implementation: code_path is
-# under models/autoports/, like muse_glimmer, and it lives on a tt-metal branch
-# rather than on main.
-qwen36_autoport_impl = ImplSpec(
-    impl_id="qwen36_autoport",
-    impl_name="qwen36-autoport",
+# Qwen3.8-27B served by its dedicated agentic-pipeline autoport rather than the
+# Qwen3.6 compatibility implementation or hand-written demo.
+qwen38_autoport_impl = ImplSpec(
+    impl_id="qwen38_autoport",
+    impl_name="qwen38-autoport",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/autoports/qwen_qwen3_6_27b",
+    code_path="models/autoports/qwen_qwen3_8_27b",
 )
 # Same tt-metal code as qwen36_blackhole; distinct impl_id only so the VLM (vision)
 # spec gets its own model_id and does not collide with the text spec on the same
@@ -415,7 +413,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
-    "qwen36_autoport": qwen36_autoport_impl,
+    "qwen38_autoport": qwen38_autoport_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
