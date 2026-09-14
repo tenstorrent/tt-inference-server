@@ -191,19 +191,14 @@ struct WorkerProcess {
 };
 
 struct EmbeddingService::Impl {
-  // Carries the completion callback instead of a promise: nothing blocks
-  // waiting for the response, the dispatch thread that reads the worker pipe
-  // invokes onComplete directly. Every PendingRequest popped from the queue
-  // MUST have onComplete invoked exactly once on every path — a dropped
-  // callback leaves the HTTP client hanging until socket timeout (a dropped
-  // promise used to surface as broken_promise instead).
+  
   struct PendingRequest {
     domain::EmbeddingRequest request;
+
     std::function<void(domain::EmbeddingResponse&&)> onComplete;
-    // Anchors the batch-fill deadline in workerDispatchLoop: a batch departs
-    // once its oldest member is batchTimeout old, so no request is ever
-    // delayed by batching for more than batchTimeout.
+
     std::chrono::steady_clock::time_point enqueueTime;
+
     PendingRequest(domain::EmbeddingRequest req,
                    std::function<void(domain::EmbeddingResponse&&)> complete)
         : request(std::move(req)),
@@ -212,10 +207,7 @@ struct EmbeddingService::Impl {
   };
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
-  // Guards the vector's structure (populate in start, clear in stop) against
-  // health-endpoint snapshots. Element state is atomic and needs no lock;
-  // startup/dispatch threads index into the vector lock-free because it is
-  // fully sized before they exist and only cleared after they are joined.
+  
   mutable std::mutex workersMutex;
   size_t numWorkers = 3;
 
@@ -227,8 +219,7 @@ struct EmbeddingService::Impl {
   std::atomic<bool> isReady{false};
 
   // Spawning and warmup run here so start() returns immediately and the HTTP
-  // server can answer health probes while the model loads (parity with the
-  // Python server, whose /tt-liveness responds 405/503 during load).
+  // server can answer health probes while the model loads 
   std::unique_ptr<std::thread> startupThread;
 
   size_t maxBatchSize = 1;
@@ -258,12 +249,8 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    // Everything Python reads is exported here, in the child, before any
-    // Python import happens. Two reasons this must be the child and not the
-    // parent: the Python Settings singleton is built at import time and never
-    // re-reads the environment, and MODEL means something different to C++
-    // (config::model() throws on any non-LLM value), so the parent must never
-    // see an embedding model name.
+    
+    // Set environment variables for the child process.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
     if (!cfg.python_model_name.empty()) {
       setenv("MODEL", cfg.python_model_name.c_str(), 1);
@@ -386,8 +373,7 @@ struct EmbeddingService::Impl {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
 
     // Phase 1: warm up a single worker with exclusive cache access. If it
-    // fails, try the next one alone (a fast-failing worker doesn't burn the
-    // timeout: pipe EOF resolves the wait immediately).
+    // fails, try the next one alone
     size_t next = 0;
     bool haveReadyWorker = false;
     while (!haveReadyWorker && next < numWorkers && running.load()) {
@@ -427,11 +413,7 @@ struct EmbeddingService::Impl {
   /**
    * Wait for the READY handshake of every listed worker concurrently, via a
    * single poll() over all response pipes. Each worker becomes ready (and
-   * gets its dispatch thread) the moment its own sentinel arrives, so one
-   * stuck worker cannot mask the others the way a sequential per-worker wait
-   * would. Workers that fail warmup (pipe EOF) or exceed the timeout are
-   * terminated with an explicit log line. Phase 1 calls this with a single
-   * index; a lone fast-failing worker resolves immediately via pipe EOF.
+   * gets its dispatch thread) the moment its own sentinel arrives
    */
   void awaitWorkersReady(std::vector<size_t> pending, unsigned timeoutMs) {
     const auto deadline =
@@ -604,21 +586,6 @@ struct EmbeddingService::Impl {
         if (!worker->running.load() || !worker->isReady) break;
         if (requestQueue.empty()) continue;
 
-        // The queue is non-empty but the batch may not be full: within one
-        // client wave requests arrive ~40-80us apart, so grabbing immediately
-        // fragments the wave into batches of 1. Give every batch a full
-        // batchTimeout window to fill, measured from the arrival of its own
-        // oldest request — NOT from when this thread got here: that request
-        // may already have aged in the queue while all dispatch threads were
-        // busy, and must not be delayed by another full window. If a
-        // different thread drains the front while we sleep, the next pass
-        // re-anchors on the new front, which is the true first request of
-        // the batch this thread will take. The wait is bounded: a pass only
-        // repeats when the batch filled (while-condition exits) or the front
-        // changed (another worker made progress); with an unchanged front
-        // the deadline has passed and we break, so a partial batch departs
-        // exactly when its oldest member turns batchTimeout old. wait_until
-        // releases the mutex while sleeping, so producers keep enqueueing.
         if (maxBatchSize > 1 && batchTimeout.count() > 0) {
           while (requestQueue.size() < maxBatchSize) {
             const auto deadline =
@@ -792,9 +759,7 @@ void EmbeddingService::submitRequestAsync(
 
 domain::EmbeddingResponse EmbeddingService::produceResponse(
     domain::EmbeddingRequest request) {
-  // Compatibility adapter over the async path for BaseSyncService callers;
-  // the HTTP controller uses submitRequestAsync directly. The only allowed
-  // promise/future in the embedding path lives here.
+  // Unused in the embedding path, but present for compatibility with BaseSyncService.
   std::promise<domain::EmbeddingResponse> promise;
   auto future = promise.get_future();
   impl_->submitRequestAsync(std::move(request),
