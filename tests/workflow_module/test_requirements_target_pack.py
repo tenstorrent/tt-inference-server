@@ -19,6 +19,7 @@ from workflows.model_spec_provider import (
 from workflows.requirements_target_pack import (
     RequirementsModelSpecProvider,
     RequirementsTargetPack,
+    _goodput_constraints,
 )
 from workflows.target_pack_provider import TenstorrentTargetPack
 from workflows.workflow_types import DeviceTypes
@@ -391,3 +392,244 @@ def test_target_pack_delegates_unspecified_content(pack):
     assert pack.extra_spec_metadata_fields() == (
         TenstorrentTargetPack().extra_spec_metadata_fields()
     )
+
+
+# --- agentic traces: template fallback for off-catalog models ----------------
+
+_KIMI_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+
+
+def _synthesized_spec():
+    return TenstorrentModelSpecProvider().synthesize(
+        model_name="acme/tiny-llm",
+        hf_model_repo="acme/tiny-llm",
+        device="super_cluster",
+        max_context=8192,
+        max_concurrency=16,
+    )
+
+
+def test_agentic_traces_borrows_kimi_template_for_synthesized_spec():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        get_agentic_traces_config,
+        get_agentic_traces_config_or_template,
+    )
+
+    spec = _synthesized_spec()
+    # Strict lookup still refuses: the synthesized model_id has no entry.
+    assert get_agentic_traces_config(spec) is None
+
+    config = get_agentic_traces_config_or_template(spec)
+    template = AGENTIC_TRACES_CONFIGS[_KIMI_TEMPLATE_MODEL_ID]
+    assert config is not None
+    assert config.model_id == spec.model_id  # retargeted, not Kimi's id
+    assert config.runs == template.runs
+    assert config.inferencex_git_ref == template.inferencex_git_ref
+
+
+def test_agentic_traces_template_fallback_leaves_catalog_models_strict():
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        get_agentic_traces_config_or_template,
+    )
+
+    # A catalog spec with no entry still gets None outside requirements mode:
+    # a plain --workflow agentic_traces refuses rather than silently measuring
+    # against a borrowed run shape. (pytest's argv has no --requirements-json.)
+    spec = SimpleNamespace(
+        model_id="id_tt-transformers_Some-Model_t3k",
+        impl=SimpleNamespace(impl_id="tt-transformers"),
+    )
+    assert get_agentic_traces_config_or_template(spec) is None
+
+
+def test_agentic_traces_borrows_template_for_catalog_spec_in_requirements_mode(
+    monkeypatch,
+):
+    import sys
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        get_agentic_traces_config_or_template,
+    )
+
+    # Being in the catalog says the model can be served, not that it is
+    # onboarded to agentic traces -- a model added for evals has no entry. A
+    # requirements document that asks for an agentic sweep has already said it
+    # wants one, so it borrows rather than refusing.
+    spec = SimpleNamespace(
+        model_id="id_tt-transformers_Some-Model_t3k",
+        impl=SimpleNamespace(impl_id="tt-transformers"),
+    )
+    monkeypatch.setattr(sys, "argv", ["run.py", "--requirements-json", "doc.json"])
+    config = get_agentic_traces_config_or_template(spec)
+    assert config is not None
+    assert config.model_id == spec.model_id  # retargeted, not Kimi's id
+
+
+def test_agentic_traces_template_fallback_preserves_own_entry():
+    from types import SimpleNamespace
+
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        get_agentic_traces_config_or_template,
+    )
+
+    spec = SimpleNamespace(model_id=_KIMI_TEMPLATE_MODEL_ID, impl=None)
+    assert (
+        get_agentic_traces_config_or_template(spec)
+        is AGENTIC_TRACES_CONFIGS[_KIMI_TEMPLATE_MODEL_ID]
+    )
+
+
+def test_requirements_pack_agentic_traces_config_uses_template(pack):
+    spec = _synthesized_spec()
+    config = pack.agentic_traces_config(spec)
+    assert config is not None
+    assert config.model_id == spec.model_id
+
+
+# --- agentic sweep -----------------------------------------------------------
+
+
+def _agentic_pack(concurrencies, slo=None, sweep=None):
+    """A pack whose document sweeps ``concurrencies`` for an agentic workload."""
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    doc_dict = {
+        "schemaVersion": "2.6.0",
+        "document": {
+            "id": "d",
+            "model": {"name": "google/gemma-4-31B-it"},
+            "deployment": {"hardware": "SC24"},
+        },
+        "workloads": [
+            {
+                "kind": "agentic",
+                "id": "w1",
+                "slo": slo or {},
+                "agenticSweep": (
+                    sweep
+                    if sweep is not None
+                    else [{"concurrency": c} for c in concurrencies]
+                ),
+            }
+        ],
+    }
+    return RequirementsTargetPack(
+        RequirementsDoc.from_dict(doc_dict), TenstorrentTargetPack()
+    )
+
+
+def _base_config():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AGENTIC_TRACES_CONFIGS,
+        _REQUIREMENTS_TEMPLATE_MODEL_ID,
+    )
+
+    return AGENTIC_TRACES_CONFIGS[_REQUIREMENTS_TEMPLATE_MODEL_ID]
+
+
+def test_replace_agentic_runs_sweeps_every_concurrency():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    base = _base_config()
+
+    swept = replace_agentic_runs(base, [1, 8, 64])
+
+    assert [r.concurrency for r in swept.runs] == [
+        c for _ in base.runs for c in (1, 8, 64)
+    ]
+
+
+def test_replace_agentic_runs_leaves_config_alone_without_a_sweep():
+    """A document with no agentic sweep keeps the catalog's operating point."""
+    base = _base_config()
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    assert replace_agentic_runs(base, []) is base
+
+
+def test_agentic_concurrencies_are_deduplicated_and_ordered():
+    pack = _agentic_pack([16, 1, 8, 1])
+
+    assert pack._agentic_concurrencies() == [1, 8, 16]
+
+
+def test_agentic_goodput_needs_slos():
+    """goodputPct targets alone cannot be graded: nothing defines 'good'."""
+    assert _agentic_pack([1]).agentic_traces_goodput() is None
+
+
+def test_agentic_goodput_uses_aiperf_tag_names():
+    """AIPerf spells the bars out; vLLM's ttft/tpot/e2el keys are rejected."""
+    pack = _agentic_pack([1], slo={"ttftMs": 2000, "tpotMs": 20, "e2elMs": 20000})
+
+    assert pack.agentic_traces_goodput() == (
+        "time_to_first_token:2000 inter_token_latency:20 request_latency:20000"
+    )
+
+
+def test_vllm_goodput_keys_are_unchanged_by_the_aiperf_mapping():
+    """The benchmark sweep keeps naming the bars after the metrics themselves."""
+    (scenario,) = load_requirements(_FIXTURE).scenarios
+
+    assert _goodput_constraints(scenario) == "ttft:2000 tpot:20 e2el:20000"
+
+
+def test_replace_agentic_runs_attaches_the_expected_sweep_to_every_run():
+    """Every run carries the whole sweep, so the report can call out the
+    points a truncated sweep never measured."""
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    base = _base_config()
+    sweep = [{"concurrency": 1, "ttftMeanMs": 800.0}, {"concurrency": 8}]
+
+    swept = replace_agentic_runs(base, [1, 8], expected_sweep=sweep)
+
+    assert all(run.expected_sweep == sweep for run in swept.runs)
+
+
+def test_agentic_config_carries_the_documents_expected_sweep():
+    """The pack hands the run specs the document's expected points, so the
+    report can grade measured against expected field for field."""
+    from types import SimpleNamespace
+
+    sweep = [
+        {"concurrency": 1, "ttftMeanMs": 800.0, "goodputPct": 90.0},
+        {"concurrency": 8, "ttftMeanMs": 700.0, "goodputPct": 90.0},
+    ]
+    pack = _agentic_pack([], sweep=sweep)
+    spec = SimpleNamespace(
+        model_id="id_off-catalog",
+        impl=SimpleNamespace(impl_id="requirements_synthesized"),
+    )
+
+    config = pack.agentic_traces_config(spec)
+
+    assert config.runs
+    assert all(run.expected_sweep == sweep for run in config.runs)
+
+
+def test_agentic_expected_sweep_dedupes_first_workload_wins():
+    """Two workloads sharing an operating point grade against the first,
+    matching the concurrency dedupe that keeps the run from replaying twice."""
+    sweep = [
+        {"concurrency": 8, "ttftMeanMs": 700.0},
+        {"concurrency": 1, "ttftMeanMs": 800.0},
+        {"concurrency": 1, "ttftMeanMs": 999.0},
+    ]
+    pack = _agentic_pack([], sweep=sweep)
+
+    assert pack._agentic_expected_sweep() == [
+        {"concurrency": 1, "ttftMeanMs": 800.0},
+        {"concurrency": 8, "ttftMeanMs": 700.0},
+    ]
