@@ -267,6 +267,115 @@ def test_sweep_point_without_concurrency_rejected(tmp_path):
         load_requirements(_write(tmp_path, doc_dict))
 
 
+def _canonical_doc(*extra_scenarios):
+    """A canonical document: every workload is a scenarios[] entry with a kind.
+
+    This is the shape llm-gauntlet itself stores and exports (see
+    ``requirements/examples/acme-agentic-coding.json``) — there is no top-level
+    ``workloads`` key at all.
+    """
+    return {
+        "schemaVersion": "2.7.0",
+        "id": "canon-1",
+        "model": {"name": "moonshotai/Kimi-K2.7-Code", "contextLength": 262144},
+        "deployment": {"hardware": "SC20", "maxConcurrencyPerInstance": 32},
+        "scenarios": [
+            {
+                "kind": "text",
+                "id": "s-text",
+                "oslValues": [128],
+                "slo": {"ttftMs": 4100, "tpotMs": 22.2, "e2elMs": 10000},
+                "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}],
+            },
+            {
+                "kind": "agentic",
+                "id": "s-agentic",
+                "name": "Claude Code trace replay",
+                "oslValues": [],
+                "slo": {"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000},
+                "maxConcurrency": 64,
+                "agenticWorkload": {"traces": [{"name": "AgentX - Claude Code"}]},
+                "agenticSweep": [
+                    {"concurrency": 1, "e2elP90Ms": 16475.15},
+                    {"concurrency": 64},
+                ],
+            },
+            *extra_scenarios,
+        ],
+    }
+
+
+def test_canonical_agentic_scenario_drives_the_sweep(tmp_path):
+    """An agentic scenario in scenarios[] is an agentic workload, not a no-op."""
+    doc = load_requirements(_write(tmp_path, _canonical_doc()))
+
+    (workload,) = doc.agentic_workloads
+    assert workload.id == "s-agentic"
+    assert [p.concurrency for p in workload.sweep] == [1, 64]
+    assert workload.max_concurrency == 64
+    assert (workload.slo.ttft_ms, workload.slo.tpot_ms, workload.slo.e2el_ms) == (
+        1000,
+        10,
+        20000,
+    )
+    assert [t["name"] for t in workload.traces] == ["AgentX - Claude Code"]
+    assert workload.sweep[0].reference["e2elP90Ms"] == 16475.15
+
+
+def test_canonical_agentic_scenario_is_not_also_a_benchmark_scenario(tmp_path):
+    """It has a different home in the dataclass, so it must not be double-read.
+
+    Left in ``scenarios`` it would be a benchmark scenario with an empty sweep.
+    """
+    doc = load_requirements(_write(tmp_path, _canonical_doc()))
+
+    assert [s.id for s in doc.scenarios] == ["s-text"]
+
+
+@pytest.mark.parametrize("kind", ["multimodal", "some-future-kind"])
+def test_non_agentic_kinds_stay_benchmark_scenarios(tmp_path, kind):
+    """Only ``agentic`` is split out; the adapter decides what it can run.
+
+    Media kinds carry the same (ISL, OSL, concurrency) sweep, and an unknown
+    future kind has to keep loading — tolerant parsing is this loader's policy.
+    """
+    doc_dict = _canonical_doc({"kind": kind, "id": "s-other", "oslValues": [128]})
+
+    doc = load_requirements(_write(tmp_path, doc_dict))
+
+    assert [s.id for s in doc.scenarios] == ["s-text", "s-other"]
+    assert [s.kind for s in doc.scenarios] == ["text", kind]
+    assert [w.id for w in doc.agentic_workloads] == ["s-agentic"]
+
+
+def test_both_spellings_of_one_workload_replay_it_once(tmp_path):
+    """scenarios[] wins; a duplicate would replay every concurrency twice."""
+    doc_dict = _canonical_doc()
+    doc_dict["workloads"] = [
+        {
+            "kind": "agentic",
+            "id": "s-agentic",
+            "name": "stale export copy",
+            "agenticSweep": [{"concurrency": 999}],
+        }
+    ]
+
+    doc = load_requirements(_write(tmp_path, doc_dict))
+
+    (workload,) = doc.agentic_workloads
+    assert workload.name == "Claude Code trace replay"
+    assert [p.concurrency for p in workload.sweep] == [1, 64]
+
+
+def test_agentic_workload_needs_an_id_or_name(tmp_path):
+    doc_dict = _canonical_doc()
+    del doc_dict["scenarios"][1]["id"]
+    del doc_dict["scenarios"][1]["name"]
+
+    with pytest.raises(RequirementsError, match="agentic workload"):
+        load_requirements(_write(tmp_path, doc_dict))
+
+
 def test_flat_documents_still_load(tmp_path):
     """Earlier 2.x revisions put identity at the top level and have no sweep."""
     doc_dict = {

@@ -17,9 +17,12 @@ from workflows.model_spec_provider import (
     hardware_to_device_name,
 )
 from workflows.requirements_target_pack import (
+    _EVAL_NAME_TO_TASK,
     RequirementsModelSpecProvider,
     RequirementsTargetPack,
     _goodput_constraints,
+    _normalize_eval_name,
+    unknown_eval_names,
 )
 from workflows.target_pack_provider import TenstorrentTargetPack
 from workflows.workflow_types import DeviceTypes
@@ -633,3 +636,45 @@ def test_agentic_expected_sweep_dedupes_first_workload_wins():
         {"concurrency": 1, "ttftMeanMs": 800.0},
         {"concurrency": 8, "ttftMeanMs": 700.0},
     ]
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "Tau^3-Banking Benchmark",
+        "tau^3-banking benchmark",
+        "  Tau^3-Banking   Benchmark  ",
+        "Tau^3-Banking",
+        "Tau3-Banking Benchmark",
+        "tau3-banking",
+        "Tau3-Bench Banking",
+    ],
+)
+def test_tau3_banking_maps_to_its_catalog_task(spelling):
+    """The document's human name has to reach a runnable catalog task.
+
+    Without a mapping, ``unknown_eval_names`` rejects the whole document at
+    parse time — the eval cannot be skipped, it aborts the run.
+    """
+    assert _EVAL_NAME_TO_TASK[_normalize_eval_name(spelling)] == "tau3_bench_banking"
+
+
+def test_merged_document_evals_are_all_mapped():
+    """Every accuracy eval the Kimi K2.7-Code document names must be known."""
+    from workflow_module.requirements_schema import AccuracyEval, RequirementsDoc
+
+    names = [
+        "GPQA-Diamond",
+        "Terminal-Bench 2.1",
+        "SWE-bench Verified",
+        "Tau^3-Banking Benchmark",
+    ]
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "2.7.0",
+            "model": {"name": "moonshotai/Kimi-K2.7-Code"},
+            "accuracyEvals": [{"name": n, "gpuReferenceScore": 1.0} for n in names],
+        }
+    )
+    assert isinstance(doc.accuracy_evals[0], AccuracyEval)
+    assert unknown_eval_names(doc) == []
