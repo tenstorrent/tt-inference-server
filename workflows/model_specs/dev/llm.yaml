@@ -192,7 +192,13 @@ templates:
         # Sync default: the async submit/accept split is in place and coherent,
         # but block-output disables the steady-decode overlap (output_tokens set)
         # and dFlash's step is serially dependent, so async gives no gain yet.
-        # The real lever is reducing the ~135ms/iter vLLM host overhead.
+        # NOTE: an earlier version of this comment cited "~135ms/iter vLLM host
+        # overhead" as the lever. That figure was wrong (a per-STEP number read
+        # as per-iteration). Measured on the 31B dFlash P150X8 server by fitting
+        # step_time = H + (B/acceptance)*D across block sizes 64/32/8: H = 39.4 ms
+        # per vLLM STEP, D = 59.9 ms per spec iteration -- so a whole iteration is
+        # ~60 ms and 135 ms/iter was impossible. Most of H is wall-clock waiting
+        # (plugin CPU work is ~4 ms by viztracer), not compute.
         no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
