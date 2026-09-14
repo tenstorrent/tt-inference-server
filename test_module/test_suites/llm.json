@@ -15,6 +15,7 @@
                 "n300",
                 "t3k",
                 "galaxy",
+                "blackhole_galaxy",
                 "galaxy_t3k",
                 "gpu",
                 "p100",
@@ -55,6 +56,7 @@
             ],
             "devices": [
                 "galaxy",
+                "blackhole_galaxy",
                 "t3k",
                 "galaxy_t3k",
                 "p150x8",

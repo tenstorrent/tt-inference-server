@@ -28,7 +28,7 @@ import time
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 
 from llm_module import ServerConnection
 from llm_module.agentic_traces import (
@@ -37,13 +37,17 @@ from llm_module.agentic_traces import (
     summarize_runs,
     total_planned_seconds,
 )
+from llm_module.agentic_traces.sweep_export import write_agentic_sweep
 from llm_module.config import DriverContext
 from llm_module.drivers.aiperf_agentic_traces import (
     AgenticTracesDriverResult,
     AIPerfAgenticTracesDriver,
 )
 from llm_module.drivers.swo_bench_agentic_traces import SwoBenchAgenticTracesDriver
-from llm_module.parsers.aiperf_agentic_traces import AIPerfAgenticTracesParser
+from llm_module.parsers.aiperf_agentic_traces import (
+    AIPerfAgenticTracesParser,
+    build_targets_block,
+)
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
@@ -226,6 +230,7 @@ def run_agentic_traces(
         result.return_codes.append(1)
         return result
 
+    payloads: List[Dict[str, Any]] = []
     for i, run in enumerate(runs, 1):
         if server_controller is not None and not _server_still_healthy(
             server_controller, result
@@ -260,7 +265,30 @@ def run_agentic_traces(
             )
             continue
 
+        # InferenceX only, matching the driver's per-run file and the report
+        # section. ``agenticSweep`` is defined over AIPerf's metric set, and
+        # swo-bench measures a different one: no TPOT (its inter-token latency
+        # is unusable -- see the note in its driver), no p95s, no goodput. A
+        # swo-bench point would be half-empty in ways that read as measured
+        # zeroes against a document's expectations.
+        if run.trace_source is TraceSource.INFERENCEX_AGENTX:
+            payloads.append(outcome.payload)
         result.blocks.append(parser.parse(outcome.payload, device=device_label))
+
+    # The sweep as the requirements document states one: every point measured,
+    # ordered by concurrency. Written from whatever succeeded, so a sweep that
+    # lost a point still yields the rest rather than nothing.
+    if payloads and output_root is not None:
+        write_agentic_sweep(payloads, Path(output_root))
+
+    # The sweep-level grading block: the measured points graded against the
+    # document's expected ones, precomputed so the report renderer and the
+    # acceptance criteria read the same verdicts. None for catalog runs,
+    # which carry no expectations.
+    if payloads:
+        targets_block = build_targets_block(payloads, device=device_label)
+        if targets_block is not None:
+            result.blocks.append(targets_block)
 
     if not result.blocks:
         logger.error("[agentic-traces] No blocks produced -- sweep had zero successes.")

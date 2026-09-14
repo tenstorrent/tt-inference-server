@@ -29,7 +29,7 @@ bottom of this module).
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from report_module.markdown_table import build_markdown_table
 from report_module.renderers import _extract_records, _resolve_model_device, register
@@ -67,6 +67,7 @@ LATENCY_COLUMNS: List[Tuple[str, str]] = [
     ("p99_tpot_ms", "TPOT P99"),
     ("mean_e2el_ms", "E2EL Avg"),
     ("median_e2el_ms", "E2EL P50"),
+    ("p90_e2el_ms", "E2EL P90"),
     ("p99_e2el_ms", "E2EL P99"),
     ("mean_effective_latency_ms", "CO-Adj E2EL Avg"),
     ("p99_effective_latency_ms", "CO-Adj E2EL P99"),
@@ -79,7 +80,9 @@ LATENCY_COLUMNS: List[Tuple[str, str]] = [
 THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
     ("output_token_throughput_per_user", "Out Tok/s/User"),
     ("median_output_token_throughput_per_user", "Out Tok/s/User P50"),
-    ("e2e_output_token_throughput_per_user", "E2E Tok/s/User"),
+    ("mean_e2e_norm_intvty", "E2E Norm Intvty Avg"),
+    ("p75_e2e_norm_intvty", "E2E Norm Intvty P75"),
+    ("p90_e2e_norm_intvty", "E2E Norm Intvty P90"),
     ("output_token_throughput", "Output Tok/s"),
     ("total_token_throughput", "Total Tok/s"),
     ("active_throughput_tok_per_s", "Total Tok/s (Active)"),
@@ -166,7 +169,9 @@ _THROUGHPUT_KEYS = frozenset(
         "output_token_throughput",
         "output_token_throughput_per_user",
         "median_output_token_throughput_per_user",
-        "e2e_output_token_throughput_per_user",
+        "mean_e2e_norm_intvty",
+        "p75_e2e_norm_intvty",
+        "p90_e2e_norm_intvty",
         "total_token_throughput",
         "active_throughput_tok_per_s",
         "effective_prefill_throughput",
@@ -286,12 +291,17 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "**OSL Mismatch / OSL Diff %**: responses whose length did not match the "
     "trace's recorded output, and by how much. Non-zero means the replayed "
     "conversation diverged from what was recorded.",
-    "**Cache Hit %**: measured from the serving engine's own counters over the "
-    "profiling window, so the cache-priming warmup is excluded. **Theo. Cache "
-    "Hit %** is the reuse inherent to the traces, i.e. the upper bound the "
-    "engine was offered. A measured rate well below it means the cache was "
-    "evicting reuse the workload had available. Omitted when the server "
-    "exposes no such counters.",
+    "**Cache Hit %**: share of prompt tokens served from cache over the "
+    "profiling window, so the cache-priming warmup is excluded. Read from the "
+    "serving engine's own counters when `--agentic-traces-metrics-url` names a "
+    "worker exporting them, else from the server's per-response usage "
+    "accounting (`prompt_tokens_details.cached_tokens`), which is what a "
+    "prefix-unaware frontend can still report. **Theo. Cache Hit %** is the "
+    "reuse inherent to the traces, i.e. the upper bound the engine was "
+    "offered. A measured rate well below it means the cache was evicting reuse "
+    "the workload had available; above it means reuse the traces do not "
+    "themselves imply, e.g. a cache still warm from an earlier run. Omitted "
+    "when neither source is available.",
     "**Credit Drops**: requests the load generator could not dispatch on the "
     "trace's schedule. Non-zero means the recorded timing was not reproduced, "
     "usually because the server was saturated.",
@@ -571,18 +581,164 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
             f"can be traced back to what produced it.\n\n{config}"
         )
 
-    parts.append(_definitions_block(rows))
+    # The measured sweep in the document's own ``agenticSweep`` shape is not
+    # rendered: the tables above carry the numbers, the targets block grades
+    # them field for field, and the raw JSON is on disk for diffing.
+    if any(str(row.get("trace_source") or "") == INFERENCEX_SOURCE for row in rows):
+        parts.append(
+            "The measured sweep in the requirements document's own "
+            "`agenticSweep` shape is written alongside the raw results as "
+            "`agentic_sweep.json`."
+        )
+
+    # When a requirements document drove the run, the targets block renders
+    # right after this section; the glossary trails it instead of splitting
+    # the tables from their verdicts.
+    if not _carries_expected_sweep(rows):
+        parts.append(
+            _definitions_block(str(row.get("trace_source") or "") for row in rows)
+        )
 
     return "\n\n".join(parts)
 
 
-def _definitions_block(rows: Sequence[Mapping[str, Any]]) -> str:
+def _carries_expected_sweep(rows: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether any row carries a document's expected sweep (i.e. a targets
+    block follows this section)."""
+    # Imported here, not at module scope: llm_module imports report_module.schema,
+    # so a module-level import back would close the cycle.
+    from llm_module.agentic_traces.sweep_export import expected_sweep_from_record
+
+    return any(expected_sweep_from_record(row) for row in rows)
+
+
+def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> str:
+    """Render the sweep's grading against the requirements document's targets.
+
+    The verdicts are precomputed into the block by
+    :func:`llm_module.parsers.aiperf_agentic_traces.build_targets_block`, so
+    this section and the acceptance criteria read the same grading rather
+    than each deriving their own. Grading is exact (tolerance 0), matching
+    how the document grades benchmark targets: latencies gate at or below
+    the target, rates at or above. The token-shape fields (input/output
+    token mean/p95) describe the trace mix rather than the server, so they
+    are never graded.
+    """
+    del metadata  # the block carries everything it needs
+    # Same import-cycle guard as elsewhere in this module: llm_module imports
+    # report_module.schema, so a module-level import back would close the cycle.
+    from llm_module.agentic_traces.sweep_export import POINT_FIELDS
+
+    data = block.data if isinstance(block.data, Mapping) else {}
+    points = [p for p in data.get("points") or [] if isinstance(p, Mapping)]
+    missing = [c for c in data.get("missing_concurrencies") or []]
+    if not points and not missing:
+        return ""
+
+    parts = [
+        "#### Requirements Targets\n",
+        "Measured against the expected `agenticSweep` points from the "
+        "requirements document, exact (tolerance 0): latencies pass at or "
+        "below the target (↓), rates at or above (↑). Cells read "
+        "**measured** / target.",
+    ]
+
+    if points:
+        summary = "; ".join(
+            (
+                f"**c{point.get('concurrency')}**: no targets declared"
+                if point.get("passed") is None
+                else f"**c{point.get('concurrency')}**: "
+                f"{point.get('met')}/{point.get('graded')} targets met "
+                f"{'✅' if point.get('passed') else '❌'}"
+            )
+            for point in points
+        )
+        parts.append(summary)
+
+        headers = ["Metric"] + [
+            (
+                f"c{point.get('concurrency')} "
+                f"({point.get('met')}/{point.get('graded')})"
+                if point.get("passed") is not None
+                else f"c{point.get('concurrency')} (no targets)"
+            )
+            for point in points
+        ]
+        # Rows are the union of fields across points, in the document's
+        # canonical order: points may declare different field sets, and a
+        # field declared only at a later point must still render. A point
+        # that did not declare a field gets a dash -- distinct from the
+        # "N/A ➖" cell for a declared-but-unmeasured field.
+        present = {
+            v.get("field") for point in points for v in point.get("verdicts") or []
+        }
+        fields = [field for field in POINT_FIELDS if field in present]
+        fields += sorted(present.difference(POINT_FIELDS))
+        verdict_maps = [
+            {v.get("field"): v for v in point.get("verdicts") or []} for point in points
+        ]
+        table_rows: List[Dict[str, str]] = []
+        for field in fields:
+            per_point = [vmap.get(field) for vmap in verdict_maps]
+            # ``present`` guarantees at least one point graded this field.
+            first = next(v for v in per_point if v is not None)
+            entry: Dict[str, str] = {"Metric": _target_field_label(first)}
+            for header, verdict in zip(headers[1:], per_point):
+                entry[header] = _target_cell(verdict) if verdict is not None else "—"
+            table_rows.append(entry)
+        parts.append(build_markdown_table(table_rows))
+
+    if missing:
+        listed = ", ".join(f"c{concurrency}" for concurrency in missing)
+        parts.append(
+            f"The document also expects {listed}, which this sweep never "
+            "measured — those points are ungraded, not passed."
+        )
+
+    # The run section skips its glossary when this block follows (see
+    # ``render_agentic_traces``), so the definitions trail the verdicts here.
+    # A targets block only exists for InferenceX-graded sweeps; a mixed
+    # requirements run with SwarmOne rows loses the swo-bench bullets, which
+    # no requirements document exercises today.
+    parts.append(_definitions_block([INFERENCEX_SOURCE]))
+    return "\n\n".join(parts)
+
+
+def _target_field_label(verdict: Mapping[str, Any]) -> str:
+    direction = "↓" if verdict.get("lower_is_better") else "↑"
+    return f"`{verdict.get('field')}` {direction}"
+
+
+def _target_cell(verdict: Mapping[str, Any]) -> str:
+    measured_value = verdict.get("measured")
+    measured = (
+        _fmt_target_number(str(verdict.get("field")), measured_value)
+        if isinstance(measured_value, (int, float))
+        else NA
+    )
+    target = _fmt_target_number(str(verdict.get("field")), verdict.get("target"))
+    glyph = {True: "✅", False: "❌", None: "➖"}[verdict.get("passed")]
+    return f"**{measured}** / {target} {glyph}"
+
+
+def _fmt_target_number(field: str, value: Any) -> str:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return NA
+    if field.endswith("Ms"):
+        return f"{value:,.0f}" if abs(value) >= 100 else f"{value:,.2f}"
+    if field == "reqThroughputRps":
+        return f"{value:.3f}"
+    return f"{value:,.2f}"
+
+
+def _definitions_block(sources: Iterable[str]) -> str:
     """Emit only the metric definitions the report's sources actually produced."""
-    sources = {str(row.get("trace_source") or "") for row in rows}
+    present = {str(source) for source in sources}
     bullets = list(SHARED_DEFINITIONS)
-    if INFERENCEX_SOURCE in sources:
+    if INFERENCEX_SOURCE in present:
         bullets.extend(INFERENCEX_DEFINITIONS)
-    if SWARMONE_SOURCE in sources:
+    if SWARMONE_SOURCE in present:
         bullets.extend(SWARMONE_DEFINITIONS)
     body = "\n".join(f"> - {bullet}" for bullet in bullets)
     return f"**Metric definitions:**\n{body}"
@@ -591,3 +747,4 @@ def _definitions_block(rows: Sequence[Mapping[str, Any]]) -> str:
 # Register at import time so any code path that imports report_module picks the
 # renderer up.
 register("agentic_traces")(render_agentic_traces)
+register("agentic_traces_targets")(render_agentic_traces_targets)

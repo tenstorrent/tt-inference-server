@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = REPO_ROOT / "scripts" / "build_single_docker.sh"
 DOCKERFILE = REPO_ROOT / "vllm-tt-metal" / "vllm.tt-metal.src.dev.Dockerfile"
@@ -92,7 +91,7 @@ def test_quetzal_rebuild_pushes_when_remote_tag_already_exists(tmp_path):
     fake_docker = fake_bin / "docker"
     fake_docker.write_text(
         '#!/bin/bash\nprintf \'%s\\n\' "$*" >> "$DOCKER_LOG"\n'
-        'if [ "$1 $2" = "build --help" ]; then echo --secret; fi\n'
+        'if [ "$1 $2" = "build --help" ]; then echo --build-context; fi\n'
     )
     fake_docker.chmod(0o755)
     env = {
@@ -113,11 +112,17 @@ def test_quetzal_rebuild_pushes_when_remote_tag_already_exists(tmp_path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     docker_commands = docker_log.read_text().splitlines()
-    pushes = [line for line in docker_commands if line.startswith("push ")]
-    builds = [
+    quetzal_builds = [
         line
         for line in docker_commands
-        if line.startswith("build ") or line.startswith("buildx bake ")
+        if line.startswith("build ") and line != "build --help"
+    ]
+    assert len(quetzal_builds) == 1
+    assert "--build-context quetzal_source=" in quetzal_builds[0]
+    assert "--secret" not in quetzal_builds[0]
+    pushes = [line for line in docker_commands if line.startswith("push ")]
+    builds = [
+        line for line in docker_commands if line.startswith(("build ", "buildx bake "))
     ]
     assert builds
     assert len(pushes) == 1
@@ -127,8 +132,10 @@ def test_quetzal_rebuild_pushes_when_remote_tag_already_exists(tmp_path):
     docker_log.write_text("")
     native = _run_builder(worktree, "--push", env=env)
     assert native.returncode == 0, native.stdout + native.stderr
+    native_commands = docker_log.read_text().splitlines()
+    assert not any(line.startswith("push ") for line in native_commands)
     assert not any(
-        line.startswith("push ") for line in docker_log.read_text().splitlines()
+        "--build-context quetzal_source=" in line for line in native_commands
     )
 
 
@@ -137,7 +144,8 @@ def test_quetzal_image_build_contract_is_minimal_and_credential_free():
     dockerfile = DOCKERFILE.read_text()
 
     assert 'git -C "$TT_QUETZAL_SOURCE_DIR" archive --format=tar' in build_script
-    assert '--secret "id=quetzal_source,src=${QUETZAL_SOURCE_ARCHIVE}"' in build_script
+    assert '| tar -xf - -C "$QUETZAL_SOURCE_CONTEXT"' in build_script
+    assert '--build-context "quetzal_source=${QUETZAL_SOURCE_CONTEXT}"' in build_script
     assert 'QUETZAL_IMAGE_SUFFIX="-qz-${TT_QUETZAL_COMMIT_SHA:0:12}"' in build_script
     assert "DOCKER_BUILDKIT=1 docker build --help" in build_script
     assert "export DOCKER_BUILDKIT=1" in build_script
@@ -146,7 +154,10 @@ def test_quetzal_image_build_contract_is_minimal_and_credential_free():
     assert "build=true" in build_script
     assert "force_push=true" in build_script
 
-    assert "RUN --mount=type=secret,id=quetzal_source,required=false" in dockerfile
+    assert "FROM scratch AS quetzal_source" in dockerfile
+    assert "RUN --mount=type=bind,from=quetzal_source" in dockerfile
+    assert "target=/tmp/quetzal-source-ro,ro" in dockerfile
+    assert "cp -a /tmp/quetzal-source-ro/. /tmp/quetzal-source/" in dockerfile
     assert "uv build --wheel --out-dir /tmp/quetzal-wheel" in dockerfile
     assert 'uv pip install --no-cache-dir --no-deps "$1"' in dockerfile
     assert "import serving.artifact_discovery" in dockerfile
@@ -160,6 +171,8 @@ def test_quetzal_image_build_contract_is_minimal_and_credential_free():
     assert "TT_QUETZAL_COMMIT_SHA=${TT_QUETZAL_COMMIT_SHA}" in dockerfile
 
     combined = build_script + dockerfile
+    assert "--secret" not in combined
+    assert "type=secret" not in combined
     assert "tt-quetzalcoatlus.git" not in combined
     assert "mesh_graph_descriptor" not in combined
     assert "PATCHSET" not in combined
