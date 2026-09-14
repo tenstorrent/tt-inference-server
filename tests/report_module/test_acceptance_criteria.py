@@ -133,6 +133,58 @@ def test_benchmark_no_check_fields_blocks():
     assert "No *_check fields" in blockers["benchmarks:B.target_checks"]
 
 
+def test_zero_completed_requests_block_even_when_benchmark_is_ungraded():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "status": "na",
+            "num_requests": 0,
+            "error_request_count": 8,
+        },
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+
+    assert accepted is False
+    assert "benchmarks:B.requests" in blockers
+    assert "zero requests" in blockers["benchmarks:B.requests"]
+
+
+def test_failed_requests_block_even_when_benchmark_is_ungraded():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "status": "na",
+            "num_requests": 7,
+            "error_request_count": 1,
+        },
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+
+    assert accepted is False
+    assert "1 request(s) failed" in blockers["benchmarks:B.requests"]
+
+
+def test_clean_ungraded_benchmark_remains_non_blocking():
+    block = Block(
+        kind="benchmarks",
+        title="B",
+        data={
+            "status": "na",
+            "num_requests": 8,
+            "error_request_count": 0,
+        },
+    )
+
+    accepted, blockers, _ = acceptance_criteria_check(_schema(block))
+
+    assert accepted is True
+    assert blockers == {}
+
+
 # --- Evals ----------------------------------------------------------------
 
 
@@ -749,3 +801,69 @@ def test_build_acceptance_export_failure_defaults_model_status():
     assert export["acceptance_blockers"] == {"benchmarks:B": "bad"}
     assert export["acceptance_criteria_metadata"]["enforcement_result"] == "FAIL"
     assert export["acceptance_criteria_metadata"]["model_status"] == ""
+
+
+# --- Request failure edge cases -------------------------------------------
+
+
+def test_optional_request_failure_is_waived():
+    block = Block(
+        kind="benchmarks",
+        title="optional",
+        data={
+            "status": "na",
+            "priority": "should",
+            "num_requests": 7,
+            "error_request_count": 1,
+        },
+    )
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    assert accepted and not blockers
+    assert cats[0].waived and cats[0].failed == 0
+
+
+def test_skipped_request_point_is_not_an_execution_failure():
+    block = Block(kind="benchmarks", data={"status": "skip", "num_requests": 0})
+    accepted, blockers, cats = acceptance_criteria_check(_schema(block))
+    assert accepted and not blockers
+    assert cats[0].skipped == 1
+
+
+def test_repeated_benchmark_titles_keep_all_failure_reasons():
+    blocks = [
+        Block(
+            kind="benchmarks",
+            title="vLLM Benchmark",
+            data={"status": "na", "num_requests": 0, "requested_concurrency": n},
+        )
+        for n in [1, 2, 2]
+    ]
+    accepted, blockers, cats = acceptance_criteria_check(_schema(*blocks))
+    assert not accepted and len(blockers) == 3
+    assert cats[0].failed == 3
+    assert any("requested_concurrency=1" in key for key in blockers)
+
+
+def test_functional_pass_does_not_override_required_target_failure():
+    block = _bench({"functional": {"ttft_check": 2}, "target": {"ttft_check": 3}})
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(block), model_status="TOP_PERF"
+    )
+    assert not accepted and any("target.ttft_check" in key for key in blockers)
+    assert acceptance_criteria_check(_schema(block), model_status="FUNCTIONAL")[0]
+
+
+def test_missing_measurement_for_configured_required_target_blocks():
+    block = Block(
+        kind="benchmarks",
+        data={
+            "status": "na",
+            "num_requests": 8,
+            "target_checks": {"target": {"ttft": 100, "ttft_check": 1}},
+        },
+    )
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(block), model_status="TOP_PERF"
+    )
+    assert not accepted and blockers
+    assert acceptance_criteria_check(_schema(block), model_status="EXPERIMENTAL")[0]
