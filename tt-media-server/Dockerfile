@@ -295,26 +295,13 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 #
 # As a single COPY this produced ONE ~15GB layer - 66% of the image, new on every
 # build. A throttled `docker pull` from ghcr.io aborts and discards whatever of a
-# layer it had in flight, and Docker cannot resume a partial layer, so that one
-# layer either arrived in a single unbroken stretch or the whole pull failed.
-# tt-shield run 33613146896 lost 5 consecutive attempts to it (38 of 41 layers
-# landed in under a minute; the remaining big one never finished).
+# layer it had in flight, and Docker cannot resume a partial layer
 #
-# Split out ONLY paths this Dockerfile guarantees exist. A COPY of a missing path
-# is a hard build failure ("failed to compute cache key: ... not found"), and the
-# tt-metal tree is not ours - directories come and go with the metal commit.
+# Split out ONLY paths this Dockerfile guarantees exist
 #   python_env    create_venv.sh (line ~107), and PYTHON_ENV_DIR is used throughout
 #   audio_venv    created by `python3 -m venv` below
 #   build_Release `cmake --build build_Release` runs against it
 #   server        COPY "tt-media-server" lands here
-# Everything else - including tt-metal/runtime and the uv-python that
-# `create_venv.sh --bundle-python` sometimes produces and sometimes does not -
-# rides in the catch-all, where a missing directory is a no-op instead of a
-# failed build. Run 33697382092 died exactly this way on tt-metal/uv-python.
-#
-# Ordering is load-bearing: a layer counts as "Already exists" on a pull only if
-# everything BENEATH it is unchanged too, so the subtrees least likely to change
-# go first. Keep volatile subtrees last.
 #
 # Sizes at the time of writing (uncompressed, from `du -sh` inside the image):
 #   python_env 9.6G | build_Release 2.0G | audio_venv 1.6G | server 233M
@@ -335,8 +322,7 @@ COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} 
     /home/container_app_user/tt-metal/server ${TT_METAL_HOME}/server
 
 # --- everything else, minus what the layers above already hold ---
-# A catch-all (rather than an enumerated list) so a new directory in tt-metal
-# lands in the image on its own instead of silently going missing. The excludes
+# A catch-all so a new directory in tt-metal lands in the image on its own instead missing. The excludes
 # are mandatory: without them these subtrees would be stored twice and the image
 # would roughly double. `tt-metal/build` is a relative symlink to build_Release
 # and rides along here - it resolves because the target is copied above.
