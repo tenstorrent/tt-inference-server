@@ -369,6 +369,20 @@ qwen38_autoport_b1_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/qwen_qwen3_8_27b",
 )
+# Same batch-1 device implementation under distinct benchmark profile names.
+# Their model specs keep max_num_seqs=1 while selecting C8/C16 client loads.
+qwen38_autoport_b8_impl = ImplSpec(
+    impl_id="qwen38_autoport_b8",
+    impl_name="qwen38-autoport-b8",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
+qwen38_autoport_b16_impl = ImplSpec(
+    impl_id="qwen38_autoport_b16",
+    impl_name="qwen38-autoport-b16",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
 # Same tt-metal code as qwen36_blackhole; distinct impl_id only so the VLM (vision)
 # spec gets its own model_id and does not collide with the text spec on the same
 # (model_name, device). Selectable via --impl qwen36-blackhole-vlm.
@@ -424,6 +438,8 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen38_autoport": qwen38_autoport_impl,
     "qwen38_autoport_b1": qwen38_autoport_b1_impl,
+    "qwen38_autoport_b8": qwen38_autoport_b8_impl,
+    "qwen38_autoport_b16": qwen38_autoport_b16_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,

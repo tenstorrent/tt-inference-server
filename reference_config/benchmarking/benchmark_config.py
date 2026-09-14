@@ -199,6 +199,16 @@ MODEL_EXPLICIT_TEXT_TARGETS = {
     }
 }
 
+# Select one requirements concurrency per serving profile. The B8/B16 profiles
+# deliberately keep vLLM max_num_seqs at 1: the client holds 8 or 16 requests
+# outstanding while the device executes the same batch-1 path used by the C1
+# profile. This measures queued batch-1 service against the concurrent targets.
+_REQUIREMENTS_PROFILE_CONCURRENCY = {
+    "qwen38-autoport-b1": 1,
+    "qwen38-autoport-b8": 8,
+    "qwen38-autoport-b16": 16,
+}
+
 
 def _normalize_model_key(value: str) -> str:
     """Lowercase alphanumeric form of a model identifier.
@@ -261,6 +271,10 @@ def get_explicit_text_targets(model_spec):
         if targets:
             return targets
     return {}
+
+
+def get_requirements_profile_concurrency(model_spec):
+    return _REQUIREMENTS_PROFILE_CONCURRENCY.get(model_spec.impl.impl_name)
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -714,6 +728,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     max_context = model_spec.device_model_spec.max_context
     max_tokens_all_users = model_spec.device_model_spec.max_tokens_all_users
     perf_reference = model_spec.device_model_spec.perf_reference
+    profile_concurrency = get_requirements_profile_concurrency(model_spec)
 
     # SUPER_CLUSTER remote endpoints extend the sweep toward ~250K ISL; other
     # devices use the standard pairs. Per-model ``isl + osl <= max_context``
@@ -738,6 +753,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             model_spec.model_name,
         )
         for params in perf_reference
+        if profile_concurrency in (None, 1)
     ]
 
     # Create performance reference task with capped values
@@ -812,6 +828,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                     for isl, osl, concurrency in explicit_points
                     if isl + osl <= max_context
                     and concurrency <= model_max_concurrency
+                    and profile_concurrency in (None, concurrency)
                 ]
             else:
                 text_sweep_params = [

@@ -228,6 +228,42 @@ def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
         assert target.tolerance == 0.0
 
 
+@pytest.mark.parametrize(
+    "impl_name,concurrency,expected_sweep",
+    [
+        (
+            "qwen38-autoport-b8",
+            8,
+            [(4096, 252, 8), (32768, 252, 8), (131072, 252, 8)],
+        ),
+        (
+            "qwen38-autoport-b16",
+            16,
+            [(4096, 252, 16), (32768, 252, 16)],
+        ),
+    ],
+)
+def test_qwen38_concurrent_profiles_use_batch_one_server(
+    monkeypatch, impl_name, concurrency, expected_sweep
+):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    model_id = _find_model_id(
+        model_name="Qwen3.8-27B",
+        device=DeviceTypes.P300X2,
+        impl_name=impl_name,
+    )
+    model_spec = MODEL_SPECS[model_id]
+
+    assert model_spec.device_model_spec.max_concurrency == concurrency
+    assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == "1"
+
+    config = benchmark_config.get_benchmark_config(model_spec)
+    assert config.tasks[0].param_map[DeviceTypes.P300X2] == []
+    sweep_params = config.tasks[1].param_map[DeviceTypes.P300X2]
+    assert _extract_sweep_triplets(sweep_params) == expected_sweep
+    assert all(params.targets["target"] for params in sweep_params)
+
+
 def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
     monkeypatch,
 ):
