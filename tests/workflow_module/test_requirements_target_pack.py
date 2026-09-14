@@ -909,3 +909,41 @@ def test_replace_agentic_runs_still_broadcasts_a_plain_string():
     swept = replace_agentic_runs(_base_config(), [1, 8], goodput="a:1")
 
     assert {r.goodput for r in swept.runs} == {"a:1"}
+
+
+def test_harness_overrides_do_not_mutate_the_borrowed_config(doc):
+    """A borrowed harness config belongs to the process-wide eval catalog.
+
+    dataclasses.replace is shallow, so the template's agentic_eval_config is
+    that shared object: re-pointing it in place would change the donor's own
+    task for every later lookup in the process.
+    """
+    from dataclasses import dataclass, field
+    from typing import Dict
+
+    @dataclass(frozen=True)
+    class FakeHarness:
+        n_concurrent_trials: int = 4
+        environment_env: Dict[str, str] = field(default_factory=dict)
+        verifier_env: Dict[str, str] = field(default_factory=dict)
+
+    @dataclass(frozen=True)
+    class FakeTask:
+        agentic_eval_config: FakeHarness
+
+    shared = FakeHarness(
+        environment_env={"TAU2_USER_MODEL": "openai/donor/Donor-1"},
+        verifier_env={"TAU2_NL_ASSERTIONS_MODEL": "openai/donor/Donor-1"},
+    )
+    pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
+
+    overrides = pack._harness_overrides(FakeTask(shared), "tau3_bench_banking")
+
+    fixed = overrides["agentic_eval_config"]
+    want = f"openai/{doc.model.name}"
+    assert fixed.environment_env["TAU2_USER_MODEL"] == want
+    assert fixed.verifier_env["TAU2_NL_ASSERTIONS_MODEL"] == want
+    assert fixed.n_concurrent_trials == doc.deployment.max_concurrency_per_instance
+    # The donor's own config is untouched.
+    assert shared.environment_env == {"TAU2_USER_MODEL": "openai/donor/Donor-1"}
+    assert shared.verifier_env == {"TAU2_NL_ASSERTIONS_MODEL": "openai/donor/Donor-1"}
