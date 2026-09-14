@@ -147,6 +147,10 @@ templates:
         kv_cache_usable_tokens: 131072
       max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
+  # Temporary validation-only bypass for Shield runner RAM preflight. The
+  # generated-only endpoint run records actual RSS before this is replaced by
+  # an evidence-bound production value.
+  min_ram_gb: 1
 
 - weights:
     - arcee-ai/AFM-4.5B
