@@ -17,8 +17,9 @@ inside it. Unlike the pinned checkouts in ``workflows/workflow_venvs.py`` this
 tracks the remote's default branch: a requirements document is the customer's
 statement of intent, and a run should validate against what that statement says
 now, not against whatever it said when a pin was last bumped. Use
-``--requirements-repo-ref`` (or ``TT_LLM_GAUNTLET_REF``) to pin a branch or SHA
-when reproducibility matters more, which is what CI should do.
+``TT_LLM_GAUNTLET_REF`` to pin a branch or SHA when reproducibility matters
+more, which is what CI should do. The clone is over SSH; ``TT_LLM_GAUNTLET_REPO``
+swaps the transport.
 
 A value without the prefix is returned untouched, so an ordinary path costs
 nothing and reaches no git code at all.
@@ -41,11 +42,18 @@ LLM_GAUNTLET_PREFIX = "llm-gauntlet;"
 # Directory name the clone lands in, under the repo root.
 LLM_GAUNTLET_DIRNAME = "llm-gauntlet"
 
-DEFAULT_LLM_GAUNTLET_REPO = "https://github.com/tenstorrent/llm-gauntlet.git"
+# SSH, not HTTPS: llm-gauntlet is private, and anonymous HTTPS gets a 404
+# while HTTPS-with-credentials needs a token planted in a credential helper or
+# the URL. Every runner that can already check out tt-inference-server has an
+# SSH key that works here, since this repo's own remote is SSH too. The other
+# runtime clones in workflow_venvs.py use HTTPS because those repos do not need
+# credentials at all -- not a precedent for a private one.
+DEFAULT_LLM_GAUNTLET_REPO = "git@github.com:tenstorrent/llm-gauntlet.git"
 
 # Env overrides. The ref one matters because launchers re-exec with argv
 # verbatim and CI wants one setting to cover every child process; the repo one
-# lets an SSH-only operator swap the transport.
+# swaps the transport, e.g. back to HTTPS where a token is the available
+# credential and no SSH key is.
 LLM_GAUNTLET_REPO_ENV = "TT_LLM_GAUNTLET_REPO"
 LLM_GAUNTLET_REF_ENV = "TT_LLM_GAUNTLET_REF"
 
@@ -157,8 +165,11 @@ def resolve_requirements_location(
     if not checkout_repo_ref(dest, repo_url, resolved_ref):
         raise LLMGauntletError(
             f"Could not check out {repo_url} (ref={resolved_ref or 'default branch'}) "
-            f"into {dest}. llm-gauntlet is private, so git needs credentials for "
-            f"it; set {LLM_GAUNTLET_REPO_ENV} to use SSH instead of HTTPS."
+            f"into {dest}. llm-gauntlet is private, so git needs working "
+            f"credentials for it: an SSH key that can read the repo, or set "
+            f"{LLM_GAUNTLET_REPO_ENV} to an HTTPS URL where a token applies. "
+            f"Set {LLM_GAUNTLET_REF_ENV} if the document is not on the default "
+            f"branch."
         )
 
     target = (dest / rel).resolve()

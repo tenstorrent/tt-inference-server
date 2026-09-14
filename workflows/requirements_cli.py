@@ -41,9 +41,10 @@ REQUIREMENTS_HELP = (
     "from the document when omitted. Accepts 'llm-gauntlet;<path>' to name a "
     "document by its path inside the llm-gauntlet repo, which is then cloned "
     "into this repo root -- e.g. "
-    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. That clone tracks "
-    "the remote's default branch unless TT_LLM_GAUNTLET_REF names a branch, tag "
-    "or commit (set TT_LLM_GAUNTLET_REF in CI so a run is reproducible)."
+    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The clone is over SSH "
+    "(the repo is private) and tracks the remote's default branch unless "
+    "TT_LLM_GAUNTLET_REF names a branch, tag or commit; pin it in CI so a run is "
+    "reproducible. TT_LLM_GAUNTLET_REPO overrides the URL, e.g. for HTTPS."
 )
 
 

@@ -18,6 +18,7 @@ import pytest
 
 from workflows import llm_gauntlet_repo as gauntlet
 from workflows.llm_gauntlet_repo import (
+    DEFAULT_LLM_GAUNTLET_REPO,
     LLM_GAUNTLET_PREFIX,
     LLM_GAUNTLET_REF_ENV,
     LLM_GAUNTLET_REPO_ENV,
@@ -141,15 +142,25 @@ def test_ref_precedence_is_argument_then_env(monkeypatch):
     assert resolve_ref("from-arg") == "from-arg"
 
 
-def test_repo_url_comes_from_the_env_when_set(fake_clone, monkeypatch):
+def test_defaults_to_ssh_because_the_repo_is_private(fake_clone):
+    """Anonymous HTTPS 404s on a private repo; every runner has an SSH key."""
     calls, _ = fake_clone
-    monkeypatch.setenv(
-        LLM_GAUNTLET_REPO_ENV, "git@github.com:tenstorrent/llm-gauntlet.git"
-    )
 
     resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/x.json")
 
-    assert calls[0]["repo"] == "git@github.com:tenstorrent/llm-gauntlet.git"
+    assert calls[0]["repo"] == DEFAULT_LLM_GAUNTLET_REPO
+    assert calls[0]["repo"].startswith("git@")
+
+
+def test_repo_url_comes_from_the_env_when_set(fake_clone, monkeypatch):
+    """Escape hatch for a runner where a token, not a key, is the credential."""
+    calls, _ = fake_clone
+    https = "https://github.com/tenstorrent/llm-gauntlet.git"
+    monkeypatch.setenv(LLM_GAUNTLET_REPO_ENV, https)
+
+    resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/x.json")
+
+    assert calls[0]["repo"] == https
 
 
 def test_env_ref_reaches_the_checkout(fake_clone, monkeypatch):
