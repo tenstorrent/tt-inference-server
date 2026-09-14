@@ -101,6 +101,18 @@ _TASK_PROFILES = {
     },
 }
 
+# Harness env keys that name a *model* rather than a credential or endpoint.
+# tau3 runs the model under test as its own simulated user and NL-assertion
+# judge, so every catalog entry points these at its own repo -- which means a
+# borrowed harness config would send that traffic to the model it was borrowed
+# from. Extend this when a new model-valued harness env key appears; a key that
+# is missing here is silently inherited from the donor.
+_HARNESS_MODEL_ENV_KEYS = ("TAU2_USER_MODEL", "TAU2_NL_ASSERTIONS_MODEL")
+
+# LiteLLM selects its OpenAI-compatible provider on this prefix; the remainder
+# is the model id sent to the server (see llm_module/drivers/agentic.py).
+_LITELLM_OPENAI_PREFIX = "openai/"
+
 # Requests per sweep point = concurrency * this multiple, floored, so each
 # point issues enough requests to characterize steady state.
 _NUM_PROMPTS_CONCURRENCY_MULTIPLE = 8
@@ -252,45 +264,91 @@ class RequirementsTargetPack(TargetPack):
             template,
             score=new_score,
             priority=ae.priority,
-            **self._harness_concurrency_overrides(template, task_name),
+            **self._harness_overrides(template, task_name),
         )
 
-    def _harness_concurrency_overrides(
-        self, template: Any, task_name: str
-    ) -> Mapping[str, Any]:
-        """Re-point a borrowed harness config at the document's concurrency.
+    def _harness_overrides(self, template: Any, task_name: str) -> Mapping[str, Any]:
+        """Re-point a borrowed harness config at the document's own deployment.
 
         The template is borrowed from whichever catalog model happens to define
-        the task, so its ``n_concurrent_trials`` describes *that* model's
-        deployment -- and which model is borrowed is decided by catalog
-        iteration order, so inheriting it would make the trial count arbitrary.
-        ``deployment.maxConcurrencyPerInstance`` is the document's own statement
-        of what the instance under test serves concurrently, so it is the
-        honest trial count here.
+        the task (see :meth:`_find_task_template`), so anything in it that
+        describes *that* model's deployment has to be replaced or the run
+        silently validates against someone else's setup. Two such things:
 
-        Deliberately unclamped: the document is authoritative about the
-        deployment. A trial count the host cannot afford is a property of the
-        document, not something to silently correct.
+        ``n_concurrent_trials`` describes the donor's deployment, and which
+        donor gets borrowed is decided by catalog iteration order, so
+        inheriting it would make the trial count arbitrary.
+        ``deployment.maxConcurrencyPerInstance`` is the document's own
+        statement of what the instance under test serves concurrently.
+        Deliberately unclamped: the document is authoritative, and a trial
+        count the host cannot afford is a property of the document rather than
+        something to silently correct.
+
+        The harness env keys in :data:`_HARNESS_MODEL_ENV_KEYS` name a model,
+        not a credential -- tau3 runs the model under test as its own simulated
+        user and NL-assertion judge. Every catalog entry therefore points them
+        at its own repo, so a borrowed config would send that traffic to the
+        donor, on an endpoint that is not serving it.
         """
-        concurrency = self._doc.deployment.max_concurrency_per_instance
-        if not concurrency:
-            return {}
         cfg = getattr(template, "agentic_eval_config", None)
-        if cfg is None or cfg.n_concurrent_trials == concurrency:
+        if cfg is None:
             return {}
-        logger.info(
-            "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
-            "the requirements document's deployment.maxConcurrencyPerInstance.",
-            task_name,
-            cfg.n_concurrent_trials,
-            concurrency,
-        )
-        return {
-            "agentic_eval_config": replace(
-                cfg,
-                n_concurrent_trials=concurrency,
+        changes: Dict[str, Any] = {}
+
+        concurrency = self._doc.deployment.max_concurrency_per_instance
+        if concurrency and cfg.n_concurrent_trials != concurrency:
+            logger.info(
+                "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
+                "the requirements document's deployment.maxConcurrencyPerInstance.",
+                task_name,
+                cfg.n_concurrent_trials,
+                concurrency,
             )
-        }
+            changes["n_concurrent_trials"] = concurrency
+
+        for env_field in ("environment_env", "verifier_env"):
+            env = getattr(cfg, env_field, None) or {}
+            repointed = dict(env)
+            for key in _HARNESS_MODEL_ENV_KEYS:
+                donor = env.get(key)
+                if not donor:
+                    continue
+                # Keep the provider prefix the catalog wrote (LiteLLM selects
+                # its OpenAI provider on "openai/", see
+                # llm_module/drivers/agentic.py) and swap only the model. A
+                # value in some other shape is left alone and flagged, rather
+                # than guessed at.
+                if not donor.startswith(_LITELLM_OPENAI_PREFIX):
+                    logger.warning(
+                        "Task %s: borrowed %s[%s] is %r, which does not look "
+                        "like an %r model reference; leaving it alone. It may "
+                        "still name the model it was borrowed from.",
+                        task_name,
+                        env_field,
+                        key,
+                        donor,
+                        _LITELLM_OPENAI_PREFIX,
+                    )
+                    continue
+                ours = f"{_LITELLM_OPENAI_PREFIX}{self._doc.model.name}"
+                if donor == ours:
+                    continue
+                logger.info(
+                    "Task %s: re-pointing borrowed %s[%s] from %r to %r (the "
+                    "requirements document's model).",
+                    task_name,
+                    env_field,
+                    key,
+                    donor,
+                    ours,
+                )
+                repointed[key] = ours
+            if repointed != env:
+                changes[env_field] = repointed
+
+        if not changes:
+            return {}
+        return {"agentic_eval_config": replace(cfg, **changes)}
 
     def _find_task_template(self, task_name: str) -> Optional[Any]:
         """Borrow a runnable EvalTask for ``task_name`` from the catalog.
