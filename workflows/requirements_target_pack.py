@@ -127,6 +127,12 @@ _HARNESS_MODEL_ENV_KEYS = ("TAU2_USER_MODEL", "TAU2_NL_ASSERTIONS_MODEL")
 # is the model id sent to the server (see llm_module/drivers/agentic.py).
 _LITELLM_OPENAI_PREFIX = "openai/"
 
+# lm-eval classes whose streaming response parser is known broken: it raises
+# KeyError 'message' on every response (see the notes beside the
+# stream=false gen_kwargs in reference_config/evals/eval_config.py). Requests
+# for these must stay unstreamed even though that risks a proxy timeout.
+_NO_STREAMING_EVAL_CLASSES = frozenset({"local-chat-completions"})
+
 # Requests per sweep point = concurrency * this multiple, floored, so each
 # point issues enough requests to characterize steady state.
 _NUM_PROMPTS_CONCURRENCY_MULTIPLE = 8
@@ -278,8 +284,56 @@ class RequirementsTargetPack(TargetPack):
             template,
             score=new_score,
             priority=ae.priority,
+            **self._streaming_overrides(template, task_name),
             **self._harness_overrides(template, task_name),
         )
+
+    def _streaming_overrides(self, template: Any, task_name: str) -> Mapping[str, Any]:
+        """Stream an eval's generations, so a proxy cannot time the request out.
+
+        A requirements run validates a *deployed* endpoint, which is typically
+        reached through a gateway that gives the origin a fixed window to start
+        responding -- Cloudflare returns 524 after ~100s. An unstreamed
+        generation sends nothing until it finishes, so any eval whose answers
+        run to thousands of tokens (chain-of-thought reasoning, most of them)
+        exceeds that window and the request is killed at the edge, however
+        healthy the server is. Streaming makes the first token the response, so
+        the window is met and the generation runs to completion.
+
+        The catalog defaults to unstreamed because it is written for a server
+        reached directly, where there is no such deadline.
+
+        Not applied to :data:`_NO_STREAMING_EVAL_CLASSES`, where lm-eval cannot
+        parse a streamed response at all -- a timeout is recoverable, a parser
+        that drops every answer is not.
+        """
+        # Harbor-backed tasks (the agentic benchmarks) never read gen_kwargs:
+        # their requests come from the agent via LiteLLM, not from lm-eval, so
+        # setting stream here would claim a fix that is not happening.
+        if getattr(template, "agentic_eval_config", None) is not None:
+            return {}
+        gen_kwargs = dict(getattr(template, "gen_kwargs", None) or {})
+        eval_class = getattr(template, "eval_class", None)
+        if eval_class in _NO_STREAMING_EVAL_CLASSES:
+            if str(gen_kwargs.get("stream", "")).lower() != "true":
+                logger.info(
+                    "Task %s: leaving streaming off -- lm-eval's %r streaming "
+                    "parser cannot read the response. A long generation through "
+                    "a proxy may be cut off at the edge (HTTP 524); point "
+                    "--server-url at the origin if that happens.",
+                    task_name,
+                    eval_class,
+                )
+            return {}
+        if str(gen_kwargs.get("stream", "")).lower() == "true":
+            return {}
+        logger.info(
+            "Task %s: streaming its generations, so a gateway cannot time out "
+            "the request before the answer is complete.",
+            task_name,
+        )
+        gen_kwargs["stream"] = "true"
+        return {"gen_kwargs": gen_kwargs}
 
     def _harness_overrides(self, template: Any, task_name: str) -> Mapping[str, Any]:
         """Re-point a borrowed harness config at the document's own deployment.
