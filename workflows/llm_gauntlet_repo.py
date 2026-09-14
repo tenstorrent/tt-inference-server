@@ -18,8 +18,9 @@ tracks the remote's default branch: a requirements document is the customer's
 statement of intent, and a run should validate against what that statement says
 now, not against whatever it said when a pin was last bumped. Use
 ``TT_LLM_GAUNTLET_REF`` to pin a branch or SHA when reproducibility matters
-more, which is what CI should do. The clone is over SSH; ``TT_LLM_GAUNTLET_REPO``
-swaps the transport.
+more, which is what CI should do. The clone is over SSH by default; set
+``TT_LLM_GAUNTLET_TOKEN`` on a CI runner, which has a token rather than a key,
+and it switches to authenticated HTTPS.
 
 A value without the prefix is returned untouched, so an ordinary path costs
 nothing and reaches no git code at all.
@@ -27,6 +28,7 @@ nothing and reaches no git code at all.
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import shutil
@@ -42,20 +44,27 @@ LLM_GAUNTLET_PREFIX = "llm-gauntlet;"
 # Directory name the clone lands in, under the repo root.
 LLM_GAUNTLET_DIRNAME = "llm-gauntlet"
 
-# SSH, not HTTPS: llm-gauntlet is private, and anonymous HTTPS gets a 404
-# while HTTPS-with-credentials needs a token planted in a credential helper or
-# the URL. Every runner that can already check out tt-inference-server has an
-# SSH key that works here, since this repo's own remote is SSH too. The other
-# runtime clones in workflow_venvs.py use HTTPS because those repos do not need
-# credentials at all -- not a precedent for a private one.
+# llm-gauntlet is private, so anonymous access fails either way and the
+# transport is decided by which credential the host actually has. SSH by
+# default: a developer machine and any runner that checks this repo out over
+# SSH already has a usable key. A GitHub Actions runner usually has neither a
+# key nor a credential helper -- it authenticates with a token -- so setting
+# LLM_GAUNTLET_TOKEN_ENV switches to HTTPS, where a token applies.
 DEFAULT_LLM_GAUNTLET_REPO = "git@github.com:tenstorrent/llm-gauntlet.git"
+DEFAULT_LLM_GAUNTLET_REPO_HTTPS = "https://github.com/tenstorrent/llm-gauntlet.git"
 
 # Env overrides. The ref one matters because launchers re-exec with argv
 # verbatim and CI wants one setting to cover every child process; the repo one
-# swaps the transport, e.g. back to HTTPS where a token is the available
-# credential and no SSH key is.
+# forces a transport or points at a mirror.
 LLM_GAUNTLET_REPO_ENV = "TT_LLM_GAUNTLET_REPO"
 LLM_GAUNTLET_REF_ENV = "TT_LLM_GAUNTLET_REF"
+
+# A GitHub token with read access to llm-gauntlet contents. Setting it selects
+# HTTPS and authenticates the fetch. Deliberately a separate variable rather
+# than asking operators to embed the token in the URL: the token is sent as a
+# git *config* value through the environment, so it never appears in argv (and
+# therefore never in run_command's command log), and the URL stays printable.
+LLM_GAUNTLET_TOKEN_ENV = "TT_LLM_GAUNTLET_TOKEN"
 
 
 class LLMGauntletError(RuntimeError):
@@ -84,7 +93,47 @@ def resolve_ref(cli_ref: Optional[str] = None) -> Optional[str]:
     return cli_ref or os.getenv(LLM_GAUNTLET_REF_ENV) or None
 
 
-def checkout_repo_ref(dest: Path, repo: str, ref: Optional[str]) -> bool:
+def redact_url(url: str) -> str:
+    """``url`` with any embedded credential replaced, safe to log.
+
+    Covers an operator who put a token straight in
+    ``TT_LLM_GAUNTLET_REPO``; the token env var never reaches a URL at all.
+    """
+    scheme, sep, rest = url.partition("://")
+    if not sep or "@" not in rest:
+        return url
+    return f"{scheme}{sep}***@{rest.split('@', 1)[1]}"
+
+
+def _token_env(repo: str, token: Optional[str]) -> Optional[dict]:
+    """Git environment carrying ``token`` as an auth header, or None.
+
+    Uses ``GIT_CONFIG_*`` rather than an argv ``-c`` or a credential in the
+    URL, so the token stays out of the command line that ``run_command``
+    logs. This is the same ``http.<host>.extraheader`` mechanism
+    ``actions/checkout`` uses.
+    """
+    if not token or not repo.startswith("https://"):
+        return None
+    host = repo.split("://", 1)[1].split("/", 1)[0]
+    basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+    env = os.environ.copy()
+    env.update(
+        {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": f"http.https://{host}/.extraheader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: Basic {basic}",
+            # Never let git stop for a username/password prompt: on a runner
+            # that hangs the job until the step timeout instead of failing.
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+    )
+    return env
+
+
+def checkout_repo_ref(
+    dest: Path, repo: str, ref: Optional[str], token: Optional[str] = None
+) -> bool:
     """Materialize ``repo`` at ``ref`` (or its default branch) in ``dest``.
 
     Deliberately *not* ``workflow_venvs.checkout_pinned_repo``: that helper is
@@ -99,6 +148,11 @@ def checkout_repo_ref(dest: Path, repo: str, ref: Optional[str]) -> bool:
     """
     from workflow_module.proc import run_command
 
+    env = _token_env(repo, token)
+
+    def git(command: str) -> int:
+        return run_command(command, logger=logger, env=env)
+
     if not (dest / ".git").is_dir():
         if dest.exists():
             logger.info("Discarding non-git directory at %s", dest)
@@ -106,7 +160,7 @@ def checkout_repo_ref(dest: Path, repo: str, ref: Optional[str]) -> bool:
         branch = f" --branch {ref}" if ref else ""
         # Without --branch, --depth 1 clones the remote's default branch, so
         # there is no origin/HEAD lookup to get wrong.
-        if run_command(f"git clone --depth 1{branch} {repo} {dest}", logger=logger):
+        if git(f"git clone --depth 1{branch} {repo} {dest}"):
             return False
         if not ref:
             return True
@@ -120,7 +174,7 @@ def checkout_repo_ref(dest: Path, repo: str, ref: Optional[str]) -> bool:
         f"git -C {dest} checkout --detach --force FETCH_HEAD",
     )
     for step in steps:
-        if run_command(step, logger=logger):
+        if git(step):
             logger.error("Failed to check out %s in %s (%s)", ref or "HEAD", dest, step)
             return False
     return True
@@ -152,24 +206,33 @@ def resolve_requirements_location(
 
     dest = clone_dir()
     resolved_ref = resolve_ref(ref)
-    repo_url = repo or os.getenv(LLM_GAUNTLET_REPO_ENV) or DEFAULT_LLM_GAUNTLET_REPO
+    token = os.getenv(LLM_GAUNTLET_TOKEN_ENV) or None
+    # A token only authenticates HTTPS, so having one selects that transport --
+    # setting the token alone is enough, with no second variable to remember.
+    default_repo = (
+        DEFAULT_LLM_GAUNTLET_REPO_HTTPS if token else DEFAULT_LLM_GAUNTLET_REPO
+    )
+    repo_url = repo or os.getenv(LLM_GAUNTLET_REPO_ENV) or default_repo
     # Logged before the clone: this runs during argument parsing, so without it
     # a slow fetch looks like the CLI hanging before it has printed anything.
     logger.info(
-        "Resolving %s from llm-gauntlet (%s, ref=%s) into %s ...",
+        "Resolving %s from llm-gauntlet (%s, ref=%s, auth=%s) into %s ...",
         rel,
-        repo_url,
+        redact_url(repo_url),
         resolved_ref or "default branch",
+        "token" if token else "ssh/ambient",
         dest,
     )
-    if not checkout_repo_ref(dest, repo_url, resolved_ref):
+    if not checkout_repo_ref(dest, repo_url, resolved_ref, token=token):
         raise LLMGauntletError(
-            f"Could not check out {repo_url} (ref={resolved_ref or 'default branch'}) "
-            f"into {dest}. llm-gauntlet is private, so git needs working "
-            f"credentials for it: an SSH key that can read the repo, or set "
-            f"{LLM_GAUNTLET_REPO_ENV} to an HTTPS URL where a token applies. "
-            f"Set {LLM_GAUNTLET_REF_ENV} if the document is not on the default "
-            f"branch."
+            f"Could not check out {redact_url(repo_url)} "
+            f"(ref={resolved_ref or 'default branch'}) into {dest}. "
+            f"llm-gauntlet is private, so git needs credentials that can read "
+            f"it. On a CI runner set {LLM_GAUNTLET_TOKEN_ENV} to a GitHub token "
+            f"with contents:read on llm-gauntlet (this switches to HTTPS); "
+            f"elsewhere use an SSH key, or set {LLM_GAUNTLET_REPO_ENV} to "
+            f"another URL. Set {LLM_GAUNTLET_REF_ENV} if the document is not on "
+            f"the default branch."
         )
 
     target = (dest / rel).resolve()
@@ -187,14 +250,17 @@ def resolve_requirements_location(
 
 __all__ = [
     "DEFAULT_LLM_GAUNTLET_REPO",
+    "DEFAULT_LLM_GAUNTLET_REPO_HTTPS",
     "LLM_GAUNTLET_DIRNAME",
     "LLM_GAUNTLET_PREFIX",
     "LLM_GAUNTLET_REF_ENV",
     "LLM_GAUNTLET_REPO_ENV",
+    "LLM_GAUNTLET_TOKEN_ENV",
     "LLMGauntletError",
     "checkout_repo_ref",
     "clone_dir",
     "is_llm_gauntlet_ref",
+    "redact_url",
     "resolve_ref",
     "resolve_requirements_location",
 ]

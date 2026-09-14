@@ -42,14 +42,17 @@ def fake_clone(monkeypatch, tmp_path):
     dest = tmp_path / "llm-gauntlet"
     calls = []
 
-    def fake_checkout(d, repo, ref):
-        calls.append({"dest": d, "repo": repo, "ref": ref})
+    def fake_checkout(d, repo, ref, token=None):
+        calls.append({"dest": d, "repo": repo, "ref": ref, "token": token})
         (d / "specs" / "tt-internal" / "qwen3-32b").mkdir(parents=True, exist_ok=True)
         (d / "specs" / "tt-internal" / "qwen3-32b" / "x.json").write_text(
             json.dumps(_DOC)
         )
         return True
 
+    monkeypatch.delenv(gauntlet.LLM_GAUNTLET_TOKEN_ENV, raising=False)
+    monkeypatch.delenv(gauntlet.LLM_GAUNTLET_REF_ENV, raising=False)
+    monkeypatch.delenv(gauntlet.LLM_GAUNTLET_REPO_ENV, raising=False)
     monkeypatch.setattr(gauntlet, "clone_dir", lambda: dest)
     monkeypatch.setattr(gauntlet, "checkout_repo_ref", fake_checkout)
     return calls, dest
@@ -126,7 +129,9 @@ def test_rejects_empty_and_escaping_paths(fake_clone, value):
 
 def test_reports_a_failed_checkout(monkeypatch, tmp_path):
     monkeypatch.setattr(gauntlet, "clone_dir", lambda: tmp_path / "llm-gauntlet")
-    monkeypatch.setattr(gauntlet, "checkout_repo_ref", lambda d, repo, ref: False)
+    monkeypatch.setattr(
+        gauntlet, "checkout_repo_ref", lambda d, repo, ref, token=None: False
+    )
 
     with pytest.raises(LLMGauntletError, match="credentials"):
         resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/x.json")
@@ -245,3 +250,38 @@ def test_checkout_failure_is_reported(monkeypatch, tmp_path):
     )
 
     assert gauntlet.checkout_repo_ref(tmp_path / "llm-gauntlet", "REPO", None) is False
+
+
+def test_the_token_never_reaches_argv_or_the_log(monkeypatch, tmp_path, caplog):
+    """run_command logs every command it runs.
+
+    So a token passed on the command line -- via ``git -c`` or embedded in the
+    URL -- would be published into every CI log that runs this. It goes through
+    the environment as a git config value instead, and this test fails if that
+    ever changes.
+    """
+    secret = "ghp_SUPERSECRET"
+    cmds, captured = [], {}
+
+    def fake_run(cmd, logger=None, env=None, **kw):
+        cmds.append(cmd)
+        captured["env"] = env
+        if logger:
+            logger.info("Running command: %s", cmd)
+        return 0
+
+    monkeypatch.setattr("workflow_module.proc.run_command", fake_run)
+    monkeypatch.setenv(gauntlet.LLM_GAUNTLET_TOKEN_ENV, secret)
+    monkeypatch.setattr(gauntlet, "clone_dir", lambda: tmp_path / "llm-gauntlet")
+
+    with caplog.at_level("DEBUG"):
+        resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/x.json")
+
+    assert secret not in " ".join(cmds)
+    assert secret not in caplog.text
+    # Present where git will read it, and only there.
+    env = captured["env"]
+    assert env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+    assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
+    # A token also selects HTTPS, since it cannot authenticate SSH.
+    assert any(gauntlet.DEFAULT_LLM_GAUNTLET_REPO_HTTPS in c for c in cmds)
