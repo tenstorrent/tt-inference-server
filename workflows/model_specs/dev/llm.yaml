@@ -115,6 +115,39 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
+# Generated from immutable Quetzal handover 88b51cd3; review, do not hand-edit.
+- weights:
+    - openai/gpt-oss-120b
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 131072
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 90100992abf745cc666ce6f42096ff0cff4c4b3d142f143df5aec4c681c4cd52
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+        VLLM_PLUGINS: quetzal_model_registry,tt
+        TT_MESH_GRAPH_DESC_PATH: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+        QUETZAL_AUXILIARY_ROOTS_JSON: '{"openai_gpt-oss-120b-streamed-cache":"/home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c"}'
+      vllm_args:
+        revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+        tokenizer_revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+        enable_auto_tool_choice: true
+        tool_call_parser: openai
+        reasoning_parser: openai_gptoss
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 90000000
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        kv_cache_usable_tokens: 131072
+      max_tokens_all_users_override: 131072
+  status: EXPERIMENTAL
+
 - weights:
     - arcee-ai/AFM-4.5B
   impl: tt_transformers
