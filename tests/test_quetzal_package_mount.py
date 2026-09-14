@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import hashlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -40,6 +42,40 @@ def _model_spec(impl_id="quetzal", env_vars=None):
         subdevice_type=None,
         docker_image="ghcr.io/tenstorrent/tt-inference-server/test:latest",
     )
+
+
+def _make_v2_package(tmp_path, *, root_mode=0o555):
+    name = "openai_gpt-oss-120b-streamed-cache"
+    digest = "e" * 64
+    package_parent = tmp_path / "packages"
+    package = package_parent / "sha256-v2-test"
+    package.mkdir(parents=True)
+    auxiliary = package_parent / "auxiliary" / name / f"sha256-{digest}"
+    auxiliary.mkdir(parents=True)
+    auxiliary.chmod(root_mode)
+    manifest = {
+        "schema": "ttq.artifact_bundle/v2",
+        "auxiliary_references": [{
+            "name": name, "role": "streamed_cache", "sha256": digest,
+            "files": [],
+        }],
+    }
+    raw = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    (package / "manifest.json").write_bytes(raw)
+    manifest_sha256 = hashlib.sha256(raw).hexdigest()
+    runtime_root = (
+        "/home/container_app_user/quetzal/auxiliary/"
+        f"{name}/sha256-{digest}"
+    )
+    env = {
+        "QUETZAL_PACKAGE_ROOT": str(CATALOG_ROOT),
+        "QUETZAL_BUNDLE_MANIFEST_SHA256": manifest_sha256,
+        "QUETZAL_AUXILIARY_ROOTS_JSON": json.dumps(
+            {name: runtime_root}, sort_keys=True, separators=(",", ":")
+        ),
+        "VLLM_PLUGINS": "quetzal_model_registry,tt",
+    }
+    return package, auxiliary, env, runtime_root
 
 
 def _runtime(package, *, docker=False, local=False, impl="quetzal"):
@@ -143,6 +179,56 @@ def test_printable_docker_command_contains_readonly_package_mount(tmp_path):
 
     assert "--mount" in command
     assert f"src={package.resolve()},dst={CATALOG_ROOT},readonly" in command
+
+
+def test_printable_docker_command_derives_v2_auxiliary_mount(tmp_path):
+    package, auxiliary, env, runtime_root = _make_v2_package(tmp_path)
+    command, _ = generate_docker_run_command(
+        _model_spec(env_vars=env), _runtime(package, docker=True), str_cmd=True
+    )
+    assert f"src={auxiliary.resolve()},dst={runtime_root},readonly" in command
+    assert (
+        "QUETZAL_AUXILIARY_ROOTS_JSON=" + env["QUETZAL_AUXILIARY_ROOTS_JSON"]
+    ) in command
+
+
+def test_v2_auxiliary_root_must_exist(tmp_path):
+    package, auxiliary, env, _ = _make_v2_package(tmp_path)
+    auxiliary.chmod(0o755)
+    auxiliary.rename(auxiliary.with_name("unpublished"))
+    with pytest.raises(ValueError, match="absent or unpublished"):
+        resolve_quetzal_package_mount(
+            _model_spec(env_vars=env), _runtime(package, docker=True)
+        )
+
+
+def test_v2_auxiliary_root_must_not_be_symlink(tmp_path):
+    package, auxiliary, env, _ = _make_v2_package(tmp_path)
+    auxiliary.chmod(0o755)
+    real = auxiliary.with_name("real")
+    auxiliary.rename(real)
+    auxiliary.symlink_to(real, target_is_directory=True)
+    with pytest.raises(ValueError, match="absent or unpublished"):
+        resolve_quetzal_package_mount(
+            _model_spec(env_vars=env), _runtime(package, docker=True)
+        )
+
+
+def test_v2_auxiliary_root_must_be_read_only(tmp_path):
+    package, _, env, _ = _make_v2_package(tmp_path, root_mode=0o755)
+    with pytest.raises(ValueError, match="read-only real directory"):
+        resolve_quetzal_package_mount(
+            _model_spec(env_vars=env), _runtime(package, docker=True)
+        )
+
+
+def test_v2_auxiliary_mapping_is_required(tmp_path):
+    package, _, env, _ = _make_v2_package(tmp_path)
+    env.pop("QUETZAL_AUXILIARY_ROOTS_JSON")
+    with pytest.raises(ValueError, match="requires generated"):
+        resolve_quetzal_package_mount(
+            _model_spec(env_vars=env), _runtime(package, docker=True)
+        )
 
 
 def test_local_server_selects_host_package_without_asset_fanout(tmp_path, monkeypatch):
