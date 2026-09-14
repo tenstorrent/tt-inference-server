@@ -348,46 +348,39 @@ templates:
     # NOTE: dp=4 galaxy boots need the discovery-join timeout fix on the plugin
     # (TT_DP_DISCOVERY_JOIN_TIMEOUT_S; a 32-chip mesh needs 10-20 s to close).
     - device: BLACKHOLE_GALAXY
+      # Identical to the validated P150X8 dFlash entry above; the ONLY addition is
+      # data_parallel_size 4 (four physical-column (1,8) engines, each exactly a
+      # P150x8). Everything else -- context, token budget, CCL, fabric, vLLM args --
+      # is held at the LB values so any divergence is attributable to DP alone.
       max_concurrency: 128  # 32 users x 4 DP engines (max_num_seqs pins per-engine)
-      # Bring-up budget 128K/engine. The 262144 LB budget is NOT ported yet:
-      # 2026-09-03 galaxy runs found true-262k prompts degenerate on 31B
-      # (native column and emulated LB alike) -- raise only after a 131k-262k
-      # band walk validates the band on this box.
-      max_context: 65536  # BRING-UP: warm-cache pool (131072 needs a single-rank warm boot first)
+      max_context: 262144  # LB parity (spec <=131072, baseline above)
       env_vars:
-        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
-        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        GEMMA4_CCL_TOPOLOGY: "linear"  # baseline-galaxy value (main); not ours to change
         TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
-        GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
-        GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
-        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # inert at this ctx; keeps the capture-OOM guard if ctx is raised
-        GEMMA4_DFLASH_VERIFY: "5"  # V=5: in-tile packed verify (P_v=6) -- +75% high-ISL vs V=7, higher acceptance (V=7 drifts off greedy at large S_k), acc ~3.3 < 5 so no cap
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
+        GEMMA4_DFLASH_SERVE_BLOCK: "64"
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"
+        GEMMA4_DFLASH_VERIFY: "5"
         GEMMA4_DFLASH_SERVE_HORIZON: "2048"
-        # Explicit linear CCL: the native galaxy column ring is unmeasured (see
-        # the 31B tt_transformers BLACKHOLE_GALAXY entry).
-        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # BRING-UP pool
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
-        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
-        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (eager, tap-safe)
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
       override_tt_config:
-        fabric_config: FABRIC_1D
+        fabric_config: FABRIC_1D  # baseline-galaxy value (main)
         trace_region_size: 512000000
-        l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
-        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
       vllm_args:
-        data_parallel_size: 4
-        max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
-        async_scheduling: true  # batched-fallback overlap; async-safe adaptive block (see P150X8 entry)
+        data_parallel_size: 4  # four (1,8) column engines; max_concurrency above is whole-box
+        max_num_seqs: 32
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
-        # residual-tap hook sees the whole prompt (see P150X8 entry).
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
