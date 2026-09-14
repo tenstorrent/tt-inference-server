@@ -43,6 +43,12 @@
 #include <tt_llm_engine/pipeline/speechlm_wire_codec.hpp>
 #endif
 
+#if defined(TT_MEDIA_SERVER_HAS_TTS_SOCKET_PIPELINES) && \
+    __has_include(<tt_llm_engine/pipeline/multi_decoder_pipeline.hpp>)
+#define TT_MEDIA_SERVER_HAS_TTS_MULTI_DECODER 1
+#include <tt_llm_engine/pipeline/multi_decoder_pipeline.hpp>
+#endif
+
 // TCP encoder/decoder pipelines (tt-llm-engine 7a8c5199 and later). These live
 // in the engine's core library — pure POSIX sockets, no tt-metal — so they are
 // guarded separately from the shm socket pipelines above and are absent on
@@ -544,6 +550,17 @@ class DisabledEncoderPipeline final
 std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
     const tt::config::TtsConfig& config) {
   TT_LOG_INFO("makeTtsScheduler: constructing real TtsScheduler");
+  if (!config.decoderSocketPairs.empty() && config.decoderTransport != "socket") {
+    throw std::runtime_error(
+        "TTS_DECODER_SOCKET_PAIRS requires TTS_DECODER_TRANSPORT=socket");
+  }
+#if !defined(TT_MEDIA_SERVER_HAS_TTS_MULTI_DECODER)
+  if (config.decoderSocketPairs.size() > 1) {
+    throw std::runtime_error(
+        "Multiple TTS decoders require a tt-llm-engine built with "
+        "multi_decoder_pipeline.hpp; rebuild against the updated engine");
+  }
+#endif
   // The SpeechLM pipeline is built by TtsScheduler from this config rather
   // than injected: the scheduler derives the wire codec's page width from
   // TtsSchedulerParams::page_width, so a scheduler/codec width mismatch is
@@ -594,9 +611,25 @@ std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
         "decoder_tcp_pipeline.hpp (commit 7a8c5199 or later)");
 #endif
   } else {
-    decoder = std::make_unique<engine_pipeline::DecoderSocketPipeline>(
-        config.decoderSocketDescriptorPrefix,
-        config.decoderSocketDescriptorPrefix, config.connectTimeoutMs);
+    auto pairs = config.decoderSocketPairs;
+    if (pairs.empty()) {
+      pairs.push_back({config.decoderSocketDescriptorPrefix,
+                       config.decoderSocketDescriptorPrefix});
+    }
+    std::vector<std::unique_ptr<engine_pipeline::DecoderPipelineInterface>> decoders;
+    decoders.reserve(pairs.size());
+    for (const auto& pair : pairs) {
+      TT_LOG_INFO("makeTtsScheduler: decoder {} over shared memory, H2D='{}', D2H='{}'",
+                  decoders.size(), pair.h2dSocketId, pair.d2hSocketId);
+      decoders.push_back(std::make_unique<engine_pipeline::DecoderSocketPipeline>(
+          pair.h2dSocketId, pair.d2hSocketId, config.connectTimeoutMs));
+    }
+#if defined(TT_MEDIA_SERVER_HAS_TTS_MULTI_DECODER)
+    decoder = std::make_unique<engine_pipeline::MultiDecoderPipeline>(
+        std::move(decoders));
+#else
+    decoder = std::move(decoders.front());
+#endif
   }
 
   auto scheduler = std::make_unique<engine_tts::TtsScheduler>(

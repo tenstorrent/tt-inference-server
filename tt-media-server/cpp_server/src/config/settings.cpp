@@ -689,6 +689,14 @@ TtsConfig ttsEngineConfig() {
         envString("TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX",
                   defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX);
 
+    if (const char* pairs = std::getenv("TTS_DECODER_SOCKET_PAIRS")) {
+      cfg.decoderSocketPairs = parseTtsDecoderSocketPairs(pairs);
+      if (cfg.decoderTransport != "socket") {
+        throw std::runtime_error(
+            "TTS_DECODER_SOCKET_PAIRS requires TTS_DECODER_TRANSPORT=socket");
+      }
+    }
+
     return cfg;
   }();
   return cached;

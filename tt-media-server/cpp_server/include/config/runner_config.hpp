@@ -11,6 +11,7 @@
 
 #include "config/defaults.hpp"
 #include "config/types.hpp"
+#include "config/tts_decoder_config.hpp"
 
 namespace tt::config {
 
@@ -152,6 +153,8 @@ struct TtsConfig : RunnerConfigBase {
       defaults::TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX;
   std::string speechlmSocketDescriptorPrefix =
       defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX;
+  // Empty preserves the legacy single decoder prefix. List size is decoder count.
+  std::vector<TtsDecoderSocketPair> decoderSocketPairs;
   std::string decoderSocketDescriptorPrefix =
       defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX;
 };
