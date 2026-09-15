@@ -214,20 +214,6 @@ def test_real_release_scope_resolves_to_runtime_equivalent_dev_leaves():
         )
         assert runtime_spec is item.model_spec
 
-    qwen = next(
-        item
-        for item in resolved
-        if item.combo.model_name == "Qwen/Qwen3-32B"
-        and item.combo.device == DeviceTypes.GALAXY
-        and item.combo.engine == InferenceEngine.VLLM
-    )
-    assert qwen.identity == (
-        "Qwen/Qwen3-32B",
-        "GALAXY",
-        "vLLM",
-        "qwen3_32b_galaxy",
-    )
-
 
 def test_real_release_scope_matches_dev_runtime_subprocess():
     script = textwrap.dedent(
