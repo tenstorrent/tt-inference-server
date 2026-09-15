@@ -97,17 +97,17 @@ FC_P50_MS, FC_P95_MS, SC_DEADLINE_MS = 150.0, 350.0, 270.0
 TC_DEADLINE_MS = CHUNK_AUDIO_MS - 30.0
 
 TARGETS = {
-    # key: (label, axis name, per-request field, p50 target ms, p90 target ms)
+    # key: (label, axis name, per-request field, p50 target ms, p95 target ms)
+    # The second threshold is the P95 acceptance target (FC p95 <= 350 ms), not P90.
     "ttfb": ("TTFB", "TTFB — time to first audio chunk (ms)", "ttfb_s", 150.0, 350.0),
     "ttfs": ("TTFS", "TTFS — first->second chunk gap (ms)", "sc_s", 270.0, 270.0),
     "ttft": (
         "TTFT",
         "TTFT — steady-state inter-chunk gap (ms)",
-        # FIELD NAME MUST MATCH request(), which writes "gaps". It said "tc_gaps",
-        # so _metric_samples() got None for every request and TC p50/p90/p95 came
-        # out nan in every report ever produced -- a silent loss of one of the three
-        # acceptance metrics (deadline 570 ms).
-        "gaps",
+        # "tc_gaps" is the SERIALIZED name (_serializable renames gaps -> tc_gaps),
+        # and aggregate() always reads serialized records. _metric_samples also
+        # accepts the in-memory "gaps" so either shape works.
+        "tc_gaps",
         570.0,
         570.0,
     ),
@@ -573,7 +573,8 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         # same window filter as aggregate() -- run_closed/run_open now return every
         # record, so this numerator would otherwise include warmup and disagree with
         # the report built from the same run
-        ok = [r for r in recs if r["ok"] and w0 <= r["t_send"] < w1]
+        in_win = [r for r in recs if w0 <= r["t_send"] < w1]
+        ok = [r for r in in_win if r["ok"]]
         rps = len(ok) / (w1 - w0) if w1 > w0 else 0.0
         ttfbs = sorted(r["ttfb_s"] for r in ok if r["ttfb_s"] is not None)
         p50 = ttfbs[len(ttfbs) // 2] * 1000 if ttfbs else float("nan")
@@ -599,10 +600,12 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
             "[conc=%d] %d/%d ok  rps=%.2f  ttfb_p50=%.0fms  errors=%d%s",
             conc,
             len(ok),
-            len(recs),
+            len(in_win),
             rps,
             p50,
-            len(recs) - len(ok),
+            len(in_win) - len(ok),   # same cohort as the report; `recs` now carries
+                                     # warmup, so len(recs)-len(ok) called healthy
+                                     # warmup requests errors
             extra,
         )
 
@@ -649,9 +652,14 @@ def _metric_samples(ok_recs: list[dict], key: str) -> list[float]:
     sample, matching how the TC deadline was always evaluated (per gap, not per
     request), so one long request cannot hide many late chunks."""
     field_name = TARGETS[key][2]
+    # Records reach here in two shapes: in-memory (request() writes "gaps") and
+    # serialized (_serializable renames it to "tc_gaps"). Reading only one silently
+    # yielded zero TC samples and nan percentiles. Accept both.
+    aliases = {"tc_gaps": ("tc_gaps", "gaps"), "gaps": ("gaps", "tc_gaps")}
+    names = aliases.get(field_name, (field_name,))
     out = []
     for r in ok_recs:
-        v = r.get(field_name)
+        v = next((r[n] for n in names if r.get(n) is not None), None)
         if v is None:
             continue
         if isinstance(v, list):
@@ -896,7 +904,7 @@ def _render_charts(rows: list[dict], chars: int, args: argparse.Namespace) -> No
     import matplotlib.pyplot as plt
 
     def draw(ax, key, show_targets=True, colors=None):
-        label, xaxis, _field, t50, t90 = TARGETS[key]
+        label, xaxis, _field, t50, t95 = TARGETS[key]
         c50, c90 = colors or ("tab:blue", "tab:orange")
         ax.plot(
             [r[f"{key}_p50"] for r in rows],
@@ -907,11 +915,11 @@ def _render_charts(rows: list[dict], chars: int, args: argparse.Namespace) -> No
             zorder=3,
         )
         ax.plot(
-            [r[f"{key}_p90"] for r in rows],
+            [r[f"{key}_p95"] for r in rows],
             [r["mchar_h"] for r in rows],
             "--s",
             color=c90,
-            label=f"{label} p90",
+            label=f"{label} p95",
             zorder=3,
         )
         for r in rows:
@@ -930,13 +938,13 @@ def _render_charts(rows: list[dict], chars: int, args: argparse.Namespace) -> No
                 lw=1,
                 label=f"{label} p50 target {t50:.0f} ms",
             )
-            if t90 != t50:
+            if t95 != t50:
                 ax.axvline(
-                    t90,
+                    t95,
                     color="tab:orange",
                     ls=":",
                     lw=1,
-                    label=f"{label} p90 target {t90:.0f} ms",
+                    label=f"{label} p95 target {t95:.0f} ms",
                 )
         if args.mark_errors:
             err = [r for r in rows if r["n_err"]]
@@ -1130,7 +1138,7 @@ def dump(
 
     os.makedirs(outdir, exist_ok=True)
     rows = _dump_user_rows(ok, users)
-    tsv = _write_dump_tsvs(ok, rows, outdir, users, t_start)
+    tsv = _write_dump_tsvs(ok, rows, outdir, users, t_start, allrec, cut, measurement_end)
 
     # RPS MUST divide arrivals by the ARRIVAL window, not by a post-join window: the
     # latter includes the drain (~W seconds), which understated RPS -- and chunks/s and
@@ -1200,7 +1208,9 @@ def _dump_user_rows(ok: list[dict], users: int) -> list[dict]:
 
 
 def _write_dump_tsvs(
-    ok: list[dict], rows: list[dict], outdir: str, users: int, t_start: float
+    ok: list[dict], rows: list[dict], outdir: str, users: int, t_start: float,
+    allrec: list[dict] | None = None, w0: float | None = None,
+    w1: float | None = None,
 ) -> str:
     header = [
         "u",
@@ -1238,11 +1248,20 @@ def _write_dump_tsvs(
                 f"{r['wall_s']:.4f}\t{r['tail_s']:.4f}\t{r['nchunks']}\n"
             )
 
-    # occupancy trace over the scored set (for the tsv only; C uses every request)
+    # The exported trace must describe the SAME population as the reported C, or it
+    # cannot be used to check it. It was built from `ok` (scored requests only), so
+    # it excluded failures, short responses and warmup carryover -- and therefore
+    # integrated to a different number than the C printed beside it.
+    src = allrec if allrec is not None else ok
+    lo = w0 if w0 is not None else t_start
+    hi = w1 if w1 is not None else max((r["t_end"] or lo) for r in src)
     events = []
-    for r in ok:
-        events.append((r["t_send"], +1))
-        events.append((r["t_end"], -1))
+    for r in src:
+        a = max(r["t_send"], lo)
+        b = min(r.get("t_end") or hi, hi)
+        if b > a:
+            events.append((a, 1))
+            events.append((b, -1))
     events.sort()
     with open(os.path.join(outdir, "occupancy.tsv"), "w") as f:
         f.write("t_rel_s\tin_flight\n")
