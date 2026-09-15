@@ -5315,7 +5315,7 @@ _eval_config_list = [
                 # would render with the default enable_thinking=false.
                 use_chat_api=True,
                 model_kwargs={
-                    "max_length": 131072,
+                    "max_length": 204800,  # 131072 -> 204800: matches the SC16 deployment window (MAX_CONTEXT_LENGTH), 2026-09-15
                     # lm-eval default HTTP timeout is 1800s. Under
                     # num_concurrent=32, non-terminating / near-max_gen
                     # thinking gens share decode and hit that wall (~30min)
@@ -5327,12 +5327,12 @@ _eval_config_list = [
                 # temperature=1.0, top_p=0.95, top_k=20.
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
-                # max_gen_toks must stay strictly below max_length (131072)
+                # max_gen_toks must stay strictly below max_length (204800)
                 # minus the prompt (server 400s if output+prompt > ctx);
-                # 124K leaves ~4K headroom for prompt + chat template.
+                # 196K leaves ~4K headroom for prompt + chat template.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 124 * 1024,
+                    "max_gen_toks": 196 * 1024,
                     # Dynamo frontend rejects empty stop. HF tokenizer_config.json
                     # eos_token for google/gemma-4-31B-it (id 1; generation_config
                     # also stops on <end_of_turn> 106 and <|tool_response> 50).
@@ -5380,7 +5380,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=12,  # TODO increase back to 5 when batch > 1 is supported
+                    n_concurrent_trials=16,  # 12 -> 16: concurrency-16 experiment (SC16 blaze, n-slots 16), 2026-09-15
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     # QB2 release runners expose only 16 CPUs; docker compose
@@ -5464,7 +5464,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=12,
+                    n_concurrent_trials=16,  # 12 -> 16: concurrency-16 experiment (SC16 blaze, n-slots 16), 2026-09-15
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     agent_timeout_sec=2 * 60 * 60,
