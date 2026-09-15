@@ -114,6 +114,8 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
     ("osl_mismatch_count", "OSL Mismatch"),
     ("osl_mismatch_diff_pct", "OSL Diff %"),
     ("measured_prefix_cache_hit_pct", "Cache Hit %"),
+    ("measured_prefix_cache_hit_pct_prefill", "Cache Hit % (P)"),
+    ("measured_prefix_cache_hit_pct_decode", "Cache Hit % (D)"),
     ("theoretical_prefix_cache_hit_pct", "Theo. Cache Hit %"),
     ("credit_drop_count", "Credit Drops"),
     ("connection_reuse_rate", "Conn Reuse"),
@@ -181,6 +183,8 @@ _THROUGHPUT_KEYS = frozenset(
 _CACHE_HIT_KEYS = frozenset(
     {
         "measured_prefix_cache_hit_pct",
+        "measured_prefix_cache_hit_pct_prefill",
+        "measured_prefix_cache_hit_pct_decode",
         "theoretical_prefix_cache_hit_pct",
     }
 )
@@ -289,9 +293,16 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "**Cache Hit %**: share of prompt tokens served from cache over the "
     "profiling window, so the cache-priming warmup is excluded. Read from the "
     "serving engine's own counters when `--agentic-traces-metrics-url` names a "
-    "worker exporting them, else from the server's per-response usage "
-    "accounting (`prompt_tokens_details.cached_tokens`), which is what a "
-    "prefix-unaware frontend can still report. **Theo. Cache Hit %** is the "
+    "worker exporting them, else from the frontend's token accounting "
+    "(`dynamo_frontend_cached_tokens` over `dynamo_frontend_input_sequence_"
+    "tokens`), else from the server's per-response usage accounting "
+    "(`prompt_tokens_details.cached_tokens`). Prefer a named worker: usage "
+    "accounting divides the cached tokens only some responses report by the "
+    "prompt tokens all of them do, so it reads far low when the server omits "
+    "the field. **Cache Hit % (P)** / **(D)** split the rate by prefill and "
+    "decode worker, and appear only when the scraped workers tag themselves "
+    "with a `worker_type`; a frontend aggregates both roles and cannot be "
+    "split. **Theo. Cache Hit %** is the "
     "reuse inherent to the traces, i.e. the upper bound the engine was "
     "offered. A measured rate well below it means the cache was evicting reuse "
     "the workload had available; above it means reuse the traces do not "

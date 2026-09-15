@@ -25,7 +25,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..agentic_traces import AgenticTracesRun
 from ..config import DriverContext, ServerConnection
@@ -44,6 +44,25 @@ logger = logging.getLogger(__name__)
 # ``external_kv_transfer`` a KV-offload tier, ``local_compute`` the rest.
 PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = ("vllm:prompt_tokens_by_source",)
 _CACHE_HIT_TOKEN_SOURCE = "local_cache_hit"
+
+# A Dynamo frontend owns no prefix cache, but it does account for the tokens the
+# router resolved out of each prompt against the ones it forwarded. Both are
+# histograms whose ``stats.sum`` is the in-window token total, so the pair is a
+# share of a whole exactly like the token partition above. Requests the frontend
+# recorded no cached tokens for contribute 0 to the numerator and their full
+# prompt to the denominator, which is what a token-share should do.
+DYNAMO_CACHED_TOKENS_ALIASES: Tuple[str, ...] = ("dynamo_frontend_cached_tokens",)
+DYNAMO_PROMPT_TOKENS_ALIASES: Tuple[str, ...] = (
+    "dynamo_frontend_input_sequence_tokens",
+)
+
+# Which label names the worker a series belongs to, most specific first.
+# ``dynamo_component_router_worker_registered`` carries both: ``worker_id`` is
+# the router's own instance and ``router_worker_id`` is the backend worker its
+# ``worker_type`` describes, so reading ``worker_id`` there would file the
+# router under the role of whichever worker it happened to register.
+_WORKER_ID_LABELS: Tuple[str, ...] = ("router_worker_id", "worker_id")
+_WORKER_ROLES: Tuple[str, ...] = ("prefill", "decode")
 
 
 @dataclass(frozen=True)
@@ -489,14 +508,16 @@ def parse_aiperf_output(
 
     # Which measured hit rate wins depends on whether an endpoint was named.
     # ``--agentic-traces-metrics-url`` means the caller pointed us at the worker
-    # that owns the prefix cache, so its counters are authoritative. With no URL
-    # the only scrape is the load target, and a Dynamo frontend is
-    # prefix-unaware -- whatever counters it happens to expose describe the
-    # frontend, not the cache -- so the server's own per-response usage
-    # accounting is the trustworthy number instead.
+    # that owns the prefix cache, so its counters are authoritative; without it
+    # they are not read at all, since an unscoped scrape cannot tell a worker's
+    # counters from a frontend's copy of the same names. The frontend's own
+    # token accounting is always safe to read and beats the usage fallback,
+    # which divides the cached tokens only some responses report by the prompt
+    # tokens all of them do -- a live Kimi-K2.7 replay read 3.3% that way while
+    # the frontend's counters put the same window at 36.2%.
 
-    engine_metrics = (
-        _parse_prefix_cache_metrics(artifact_dir, metrics_urls) if metrics_urls else {}
+    engine_metrics = _parse_prefix_cache_metrics(
+        artifact_dir, metrics_urls, worker_counters=bool(metrics_urls)
     )
     if engine_metrics:
         metrics.update(engine_metrics)
@@ -537,8 +558,71 @@ def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
     return metrics
 
 
+def _canonical_worker_id(value: Any) -> Optional[str]:
+    """Normalize a worker id so hex and decimal spellings compare equal.
+
+    Dynamo writes the same 64-bit instance id both ways across its metrics --
+    ``6e78a0a54a4ff406`` on the router series is ``7960288973154153478`` on the
+    frontend's -- so a role map keyed on the raw string silently misses.
+    """
+    if not isinstance(value, str) or not value:
+        return None
+    for base in (10, 16):
+        try:
+            return str(int(value, base))
+        except ValueError:
+            continue
+    return None
+
+
+def _worker_roles(series_by_metric: Mapping[str, Any]) -> Dict[str, str]:
+    """Map worker id to its disaggregation role from Dynamo's own labels.
+
+    This is how a series is known to be prefill or decode: a disaggregated
+    Dynamo deployment tags every worker-scoped series with ``worker_type``, so
+    scanning the whole scrape once builds the map for counters that name a
+    worker but not its role. Returns ``{}`` for an aggregated deployment, which
+    has no roles to resolve.
+    """
+    roles: Dict[str, str] = {}
+    for metric in series_by_metric.values():
+        if not isinstance(metric, Mapping):
+            continue
+        for series in metric.get("series") or []:
+            if not isinstance(series, Mapping):
+                continue
+            labels = series.get("labels")
+            if not isinstance(labels, Mapping):
+                continue
+            role = labels.get("worker_type")
+            if role not in _WORKER_ROLES:
+                continue
+            worker_id = next(
+                (
+                    canonical
+                    for label in _WORKER_ID_LABELS
+                    if (canonical := _canonical_worker_id(labels.get(label)))
+                ),
+                None,
+            )
+            if worker_id is None:
+                continue
+            previous = roles.setdefault(worker_id, role)
+            if previous != role:
+                logger.warning(
+                    "Worker %s is labelled both %s and %s; leaving it %s.",
+                    worker_id,
+                    previous,
+                    role,
+                    previous,
+                )
+    return roles
+
+
 def _parse_prefix_cache_metrics(
-    artifact_dir: Path, metrics_urls: Sequence[str] = ()
+    artifact_dir: Path,
+    metrics_urls: Sequence[str] = (),
+    worker_counters: bool = True,
 ) -> Dict[str, Any]:
     """Measure the engine's prefix-cache hit rate from its own counters.
 
@@ -548,12 +632,20 @@ def _parse_prefix_cache_metrics(
     Read from the engine's token-source partition where it exposes one, falling
     back to its prefix-cache hit/query counters -- the order InferenceX's own
     aggregation uses, and for the same reason: the pair's denominator inflates
-    under load. See the comments at each branch.
+    under load -- and finally to the frontend's own token accounting. See the
+    comments at each branch.
 
     ``server_metrics_export.json`` is scoped to the profiling phase and
     pre-aggregates each counter's in-window delta into ``stats.total``, so the
     cache-priming warmup (which by design hits far less often) is excluded
-    without any delta arithmetic here.
+    without any delta arithmetic here. ``metrics`` is that window; the file's
+    ``warmup_metrics`` block holds the same series for the priming phase and is
+    deliberately not read.
+
+    ``worker_counters`` gates the two worker-scoped branches on the caller
+    having named the worker that owns the cache. The frontend branch is not
+    gated: it is scoped to the frontend by construction and so cannot be summed
+    with a worker's copy of the same numbers.
 
     When ``metrics_urls`` are given, only series from those endpoints count:
     AIPerf keeps scraping the load target too, and a frontend that also exports
@@ -587,7 +679,24 @@ def _parse_prefix_cache_metrics(
         endpoint = series.get("endpoint_url")
         return isinstance(endpoint, str) and _normalize_metrics_url(endpoint) in wanted
 
-    def _counter_total(aliases: Sequence[str]) -> Optional[float]:
+    roles_by_worker = _worker_roles(series_by_metric)
+
+    def _role_of(series: Mapping[str, Any]) -> Optional[str]:
+        labels = series.get("labels")
+        if not isinstance(labels, Mapping):
+            return None
+        for label in _WORKER_ID_LABELS:
+            worker_id = _canonical_worker_id(labels.get(label))
+            if worker_id is not None:
+                return roles_by_worker.get(worker_id)
+        return None
+
+    def _in_scope(series: Mapping[str, Any], role: Optional[str]) -> bool:
+        return _wanted(series) and (role is None or _role_of(series) == role)
+
+    def _counter_total(
+        aliases: Sequence[str], role: Optional[str] = None
+    ) -> Optional[float]:
         """Sum one counter across every in-scope endpoint and label set.
 
         Summing across endpoints before dividing keeps a multi-worker
@@ -604,13 +713,15 @@ def _parse_prefix_cache_metrics(
                 if isinstance(s, Mapping)
                 and isinstance(s.get("stats"), Mapping)
                 and isinstance(s["stats"].get("total"), (int, float))
-                and _wanted(s)
+                and _in_scope(s, role)
             ]
             if values:
                 return float(sum(values))
         return None
 
-    def _counter_total_by_label(aliases: Sequence[str], label: str) -> Dict[str, float]:
+    def _counter_total_by_label(
+        aliases: Sequence[str], label: str, role: Optional[str] = None
+    ) -> Dict[str, float]:
         """Sum one counter per distinct value of ``label``, across endpoints."""
         totals: Dict[str, float] = {}
         for alias in aliases:
@@ -618,7 +729,7 @@ def _parse_prefix_cache_metrics(
             if not isinstance(metric, Mapping):
                 continue
             for s in metric.get("series") or []:
-                if not isinstance(s, Mapping) or not _wanted(s):
+                if not isinstance(s, Mapping) or not _in_scope(s, role):
                     continue
                 stats = s.get("stats")
                 labels = s.get("labels")
@@ -632,6 +743,50 @@ def _parse_prefix_cache_metrics(
                 return totals
         return totals
 
+    def _histogram_sum(
+        aliases: Sequence[str], role: Optional[str] = None
+    ) -> Optional[float]:
+        """Sum a histogram's in-window ``stats.sum`` across in-scope series.
+
+        A token histogram's ``sum`` is the token total, not a sample count, so
+        summing it across endpoints is the same token-weighted aggregation
+        ``_counter_total`` does for counters.
+        """
+        for alias in aliases:
+            metric = series_by_metric.get(alias)
+            if not isinstance(metric, Mapping):
+                continue
+            values = [
+                s["stats"]["sum"]
+                for s in metric.get("series") or []
+                if isinstance(s, Mapping)
+                and isinstance(s.get("stats"), Mapping)
+                and isinstance(s["stats"].get("sum"), (int, float))
+                and _in_scope(s, role)
+            ]
+            if values:
+                return float(sum(values))
+        return None
+
+    def _per_role(
+        rate_for: Callable[[str], Optional[float]],
+    ) -> Dict[str, Any]:
+        """Per-role hit rates, on each role's own denominator.
+
+        Only reported when both roles resolve: a single role is the whole
+        measurement rather than a split of it, and would read as though the
+        other half had been measured at zero.
+        """
+        rates = {
+            role: rate for role in _WORKER_ROLES if (rate := rate_for(role)) is not None
+        }
+        if len(rates) < len(_WORKER_ROLES):
+            return {}
+        return {
+            f"measured_prefix_cache_hit_pct_{role}": rate
+            for role, rate in rates.items()
+        }
+
     def _with_endpoints(metrics: Dict[str, Any]) -> Dict[str, Any]:
         # The endpoints the rate was actually computed from, which is narrower
         # than everything AIPerf reached whenever explicit URLs scoped the sum.
@@ -644,52 +799,82 @@ def _parse_prefix_cache_metrics(
             metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
         return metrics
 
-    # Preferred, and what InferenceX's own aggregation reports
-    # (``utils/agentic/aggregation/backends/vllm.py``): the engine partitions the
-    # prompt tokens it scheduled by origin, so the cache's share is a share of a
-    # whole and cannot exceed 100%. The hits/queries pair below is its fallback,
-    # and is only equivalent while nothing queues -- a queued request is
-    # re-queried on every scheduling attempt, which inflated the denominator to
-    # 10.8x the tokens actually prefilled on a concurrency-8 replay and reported
-    # 8.9% for a cache serving 41.1%.
-    by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
-    prefilled_tokens = sum(by_source.values())
-    if prefilled_tokens > 0:
-        cached = by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0)
+    def _rate_by_source(role: Optional[str] = None) -> Optional[float]:
+        by_source = _counter_total_by_label(
+            PROMPT_TOKENS_BY_SOURCE_ALIASES, "source", role
+        )
+        prefilled = sum(by_source.values())
+        if prefilled <= 0:
+            return None
+        return 100.0 * by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0) / prefilled
+
+    def _rate_by_hits(role: Optional[str] = None) -> Optional[float]:
+        hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES, role)
+        queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES, role)
+        if hits is None or queries is None or queries <= 0:
+            return None
+        # Hits and queries are latched from independent series, so a lagging
+        # query scrape can read hits > queries; cap it as InferenceX does
+        # rather than publish an impossible rate.
+        return 100.0 * min(hits, queries) / queries
+
+    if worker_counters:
+        # Preferred, and what InferenceX's own aggregation reports
+        # (``utils/agentic/aggregation/backends/vllm.py``): the engine partitions
+        # the prompt tokens it scheduled by origin, so the cache's share is a
+        # share of a whole and cannot exceed 100%. The hits/queries pair below is
+        # its fallback, and is only equivalent while nothing queues -- a queued
+        # request is re-queried on every scheduling attempt, which inflated the
+        # denominator to 10.8x the tokens actually prefilled on a concurrency-8
+        # replay and reported 8.9% for a cache serving 41.1%.
+        by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
+        prefilled_tokens = sum(by_source.values())
+        if prefilled_tokens > 0:
+            cached = by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0)
+            return _with_endpoints(
+                {
+                    "measured_prefix_cache_hit_pct": 100.0 * cached / prefilled_tokens,
+                    "prefix_cache_hit_tokens_measured": cached,
+                    "prefix_cache_prompt_tokens_measured": prefilled_tokens,
+                    **_per_role(_rate_by_source),
+                }
+            )
+
+        hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
+        queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
+        if hits is not None and queries is not None and queries > 0:
+            return _with_endpoints(
+                {
+                    "measured_prefix_cache_hit_pct": 100.0 * min(hits, queries) / queries,
+                    "prefix_cache_hits_measured": hits,
+                    "prefix_cache_queries_measured": queries,
+                    **_per_role(_rate_by_hits),
+                }
+            )
+            
+    cached_tokens = _histogram_sum(DYNAMO_CACHED_TOKENS_ALIASES)
+    prompt_tokens = _histogram_sum(DYNAMO_PROMPT_TOKENS_ALIASES)
+    if cached_tokens is not None and prompt_tokens is not None and prompt_tokens > 0:
         return _with_endpoints(
             {
-                "measured_prefix_cache_hit_pct": 100.0 * cached / prefilled_tokens,
-                "prefix_cache_hit_tokens_measured": cached,
-                "prefix_cache_prompt_tokens_measured": prefilled_tokens,
+                "measured_prefix_cache_hit_pct": 100.0
+                * min(cached_tokens, prompt_tokens)
+                / prompt_tokens,
+                "prefix_cache_hit_tokens_measured": cached_tokens,
+                "prefix_cache_prompt_tokens_measured": prompt_tokens,
             }
         )
 
-    hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
-    queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
-    if hits is None or queries is None:
-        logger.warning(
-            "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) not "
-            "found in %s%s; the measured hit rate is omitted. Reachable endpoints "
-            "were %s -- point --agentic-traces-metrics-url at a worker that "
-            "exports them.",
-            export_path,
-            f" for the requested endpoint(s) {sorted(wanted)}" if wanted else "",
-            (export.get("summary") or {}).get("endpoints_successful") or "none",
-        )
-        return {}
-    if queries <= 0:
-        return {}
-
-    # Hits and queries are latched from independent series, so a lagging query
-    # scrape can read hits > queries; cap it as InferenceX does rather than
-    # publish an impossible rate.
-    return _with_endpoints(
-        {
-            "measured_prefix_cache_hit_pct": 100.0 * min(hits, queries) / queries,
-            "prefix_cache_hits_measured": hits,
-            "prefix_cache_queries_measured": queries,
-        }
+    logger.warning(
+        "No prefix-cache accounting (tt_prefix_cache_* / vllm:prefix_cache_* / "
+        "dynamo_frontend_cached_tokens) found in %s%s; falling back to the "
+        "server's per-response usage accounting. Reachable endpoints were %s -- "
+        "point --agentic-traces-metrics-url at a worker that exports them.",
+        export_path,
+        f" for the requested endpoint(s) {sorted(wanted)}" if wanted else "",
+        (export.get("summary") or {}).get("endpoints_successful") or "none",
     )
+    return {}
 
 
 def _summarize_errors(error_summary: List[Any]) -> List[Dict[str, Any]]:
