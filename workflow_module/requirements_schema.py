@@ -67,6 +67,57 @@ def _normalize_priority(value: Any, *, where: str) -> str:
 
 
 @dataclass(frozen=True)
+class EvalGenKwargs:
+    """Generation parameters one accuracy eval must be measured under.
+
+    A closed set, mirroring the document's own ``genKwargs``: a reference score
+    is only a bar if the graded run samples the way the reference run did, and
+    a misspelled parameter is a score measured under settings nobody chose.
+    ``None`` is the document saying nothing about that parameter, which leaves
+    whatever the harness already had for it.
+
+    The field names are the document's, transliterated to snake_case. They
+    coincide with what lm-eval calls these parameters because the document
+    names them from that vocabulary; mapping them onto a harness is still the
+    adapter's job, not this loader's.
+    """
+
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    max_gen_toks: Optional[int] = None
+    reasoning_effort: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "EvalGenKwargs":
+        return cls(
+            temperature=_as_optional_float(data.get("temperature")),
+            top_p=_as_optional_float(data.get("topP")),
+            top_k=_as_optional_int(data.get("topK")),
+            max_gen_toks=_as_optional_int(data.get("maxGenToks")),
+            reasoning_effort=(
+                str(data["reasoningEffort"])
+                if data.get("reasoningEffort") is not None
+                else None
+            ),
+        )
+
+    def stated(self) -> Dict[str, Any]:
+        """Only the parameters the document actually set, in field order."""
+        return {
+            name: value
+            for name, value in (
+                ("temperature", self.temperature),
+                ("top_p", self.top_p),
+                ("top_k", self.top_k),
+                ("max_gen_toks", self.max_gen_toks),
+                ("reasoning_effort", self.reasoning_effort),
+            )
+            if value is not None
+        }
+
+
+@dataclass(frozen=True)
 class AccuracyEval:
     """One accuracy benchmark to run, with the score reference that gates it."""
 
@@ -78,12 +129,19 @@ class AccuracyEval:
     tolerance: float = 0.05
     priority: str = PRIORITY_MUST
     unit: str = "%"
+    gen_kwargs: Optional[EvalGenKwargs] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AccuracyEval":
         name = data.get("name")
         if not name:
             raise RequirementsError("accuracyEvals[]: missing required 'name'")
+        raw_gen_kwargs = data.get("genKwargs")
+        gen_kwargs = (
+            EvalGenKwargs.from_dict(raw_gen_kwargs)
+            if isinstance(raw_gen_kwargs, Mapping)
+            else None
+        )
         return cls(
             name=str(name),
             task_category=data.get("taskCategory"),
@@ -95,6 +153,7 @@ class AccuracyEval:
                 data.get("priority"), where=f"accuracyEvals[{name!r}]"
             ),
             unit=str(data.get("unit", "%")),
+            gen_kwargs=gen_kwargs if gen_kwargs and gen_kwargs.stated() else None,
         )
 
 
@@ -620,6 +679,7 @@ __all__ = [
     "PRIORITY_SHOULD",
     "RequirementsError",
     "AccuracyEval",
+    "EvalGenKwargs",
     "ScalarTarget",
     "Slo",
     "effective_slo",

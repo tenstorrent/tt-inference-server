@@ -16,12 +16,14 @@ catalog:
   document's model + deployment metadata.
 - :class:`RequirementsTargetPack` — builds the eval config (from the document's
   ``accuracyEvals``, borrowing each task's runnable harness definition from the
-  catalog and re-gating it with the document's reference score/tolerance) and
-  the benchmark config (the document's sweep points + scalar targets / SLOs).
+  catalog, re-gating it with the document's reference score/tolerance and
+  measuring it under the document's ``genKwargs``) and the benchmark config
+  (the document's sweep points + scalar targets / SLOs).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -106,6 +108,24 @@ _TASK_PROFILES = {
 
 
 _HARNESS_MODEL_ENV_KEYS = ("TAU2_USER_MODEL", "TAU2_NL_ASSERTIONS_MODEL")
+
+# Sampling parameters that can be re-pointed inside a borrowed agentic config.
+#
+# The token budget is deliberately not among them. Its agentic spelling is
+# ``max_tokens``, and it is one half of a coupled constraint -- an agent sends
+# roughly ``max_input_tokens + max_output_tokens`` per request and the sum must
+# stay under the server's max_context -- so moving one number in isolation
+# turns a working budget into 400s mid-trial. An agent's budget is the agent's,
+# not a per-answer sampling choice.
+_AGENTIC_SAMPLING_KEYS = ("temperature", "top_p", "top_k", "reasoning_effort")
+
+# Agent kwargs whose value is a JSON *string* rather than a mapping, and which
+# therefore has to be parsed to be re-pointed. tau3 is the case: its adapter's
+# ``build_llm_args()`` sets only temperature, so every other parameter reaches
+# LiteLLM through this argument -- and it must stay a string, because the
+# adapter shlex-quotes the value onto the container command line, where a dict
+# raises TypeError.
+_JSON_STRING_ARG_SUFFIX = "_json"
 
 # LiteLLM selects its OpenAI-compatible provider on this prefix; the remainder
 # is the model id sent to the server (see llm_module/drivers/agentic.py).
@@ -253,43 +273,58 @@ class RequirementsTargetPack(TargetPack):
             template,
             score=new_score,
             priority=ae.priority,
-            **self._streaming_overrides(template, task_name),
-            **self._harness_overrides(template, task_name),
+            **self._gen_kwargs_overrides(template, task_name, ae),
+            **self._harness_overrides(template, task_name, ae),
         )
 
-    def _streaming_overrides(self, template: Any, task_name: str) -> Mapping[str, Any]:
-        """Stream an eval's generations, so a proxy cannot time the request out.
+    def _gen_kwargs_overrides(
+        self, template: Any, task_name: str, ae: AccuracyEval
+    ) -> Mapping[str, Any]:
+        """The gen_kwargs a borrowed template runs with: the document's, then streaming.
 
-        A requirements run validates a *deployed* endpoint, which is typically
-        reached through a gateway that gives the origin a fixed window to start
-        responding -- Cloudflare returns 524 after about 100s. An unstreamed
-        generation sends nothing until it finishes, so any eval whose answers
-        run to thousands of tokens (chain-of-thought reasoning, most of them)
-        exceeds that window and the request is killed at the edge, however
-        healthy the server is. Streaming makes the first token the response, so
-        the window is met and the generation runs to completion.
+        The document's ``genKwargs`` wins, per parameter and only per
+        parameter, over the borrowed template's own tuned sampling (token
+        budget, stop list, do_sample) so a document stating a temperature
+        doesn't discard a budget it never chose.
 
-        The catalog defaults to unstreamed because it is written for a server
-        reached directly, where there is no such deadline.
+        Then streaming, so a gateway in front of the deployed endpoint (e.g.
+        Cloudflare's ~100s window) can't time out a long chain-of-thought
+        answer before it starts responding. ``stream`` is deliberately not a
+        document parameter: which side of a gateway the run sits on is the
+        runner's knowledge, not the customer's contract.
 
-        Harbor-backed tasks (the agentic benchmarks) never read gen_kwargs:
-        their requests come from the agent via LiteLLM, not from lm-eval, so
-        setting stream here would claim a fix that is not happening.
+        Harbor-backed tasks (agentic benchmarks) never read gen_kwargs -- their
+        requests come from the agent via LiteLLM, not lm-eval; sampling is
+        re-pointed in the agent's own config by
+        :meth:`_repoint_agent_sampling`.
         """
         if getattr(template, "agentic_eval_config", None) is not None:
             return {}
-        gen_kwargs = dict(getattr(template, "gen_kwargs", None) or {})
-        if str(gen_kwargs.get("stream", "")).lower() == "true":
+        stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
+        original = dict(getattr(template, "gen_kwargs", None) or {})
+        gen_kwargs = dict(original)
+        if stated:
+            logger.info(
+                "Task %s: measuring under the document's genKwargs %r; the "
+                "borrowed template's other parameters are unchanged.",
+                task_name,
+                stated,
+            )
+            gen_kwargs.update(stated)
+        if str(gen_kwargs.get("stream", "")).lower() != "true":
+            logger.info(
+                "Task %s: streaming its generations, so a gateway cannot time "
+                "out the request before the answer is complete.",
+                task_name,
+            )
+            gen_kwargs["stream"] = "true"
+        if gen_kwargs == original:
             return {}
-        logger.info(
-            "Task %s: streaming its generations, so a gateway cannot time out "
-            "the request before the answer is complete.",
-            task_name,
-        )
-        gen_kwargs["stream"] = "true"
         return {"gen_kwargs": gen_kwargs}
 
-    def _harness_overrides(self, template: Any, task_name: str) -> Mapping[str, Any]:
+    def _harness_overrides(
+        self, template: Any, task_name: str, ae: AccuracyEval
+    ) -> Mapping[str, Any]:
         """Re-point a borrowed harness config at the document's own deployment.
 
         The template is borrowed from whichever catalog model happens to define
@@ -311,11 +346,19 @@ class RequirementsTargetPack(TargetPack):
         user and NL-assertion judge. Every catalog entry therefore points them
         at its own repo, so a borrowed config would send that traffic to the
         donor, on an endpoint that is not serving it.
+
+        Sampling is the third. The agent's own sampling is written into
+        ``agent_kwargs`` (``temperature``, ``top_p``, and a ``top_k`` that has
+        to ride in an ``extra_body`` to survive LiteLLM's ``drop_params``), and
+        those values are the donor's -- ``top_p`` alone is 0.95 for some
+        catalog models and 1.0 for others. The document's ``genKwargs`` replace
+        them where the agent has the knob; see :func:`_repoint_sampling`.
         """
         cfg = getattr(template, "agentic_eval_config", None)
         if cfg is None:
             return {}
         changes: Dict[str, Any] = {}
+        self._repoint_agent_sampling(cfg, task_name, ae, changes)
 
         concurrency = self._doc.deployment.max_concurrency_per_instance
         if concurrency and cfg.n_concurrent_trials != concurrency:
@@ -371,6 +414,47 @@ class RequirementsTargetPack(TargetPack):
         if not changes:
             return {}
         return {"agentic_eval_config": replace(cfg, **changes)}
+
+    def _repoint_agent_sampling(
+        self, cfg: Any, task_name: str, ae: AccuracyEval, changes: Dict[str, Any]
+    ) -> None:
+        """Apply the document's sampling to a borrowed agent, where it has the knob.
+
+        Adds nothing the agent does not already read, so a parameter it has no
+        knob for is reported rather than invented -- tau3 takes no ``top_k``
+        anywhere, and no agent takes the document's token budget under a name
+        this would recognise. Saying so matters more than it looks: the eval
+        still runs and still produces a score, and without the warning that
+        score reads as measured under parameters that never reached the server.
+        """
+        stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
+        if not stated:
+            return
+        sampling = {k: v for k, v in stated.items() if k in _AGENTIC_SAMPLING_KEYS}
+
+        found: set = set()
+        if sampling:
+            agent_kwargs = _repoint_sampling(cfg.agent_kwargs or {}, sampling, found)
+            if agent_kwargs != (cfg.agent_kwargs or {}):
+                logger.info(
+                    "Task %s: measuring under the document's genKwargs %r, "
+                    "replacing the borrowed agent's own sampling.",
+                    task_name,
+                    {k: v for k, v in sampling.items() if k in found},
+                )
+                changes["agent_kwargs"] = agent_kwargs
+
+        unhonoured = sorted(set(stated) - found)
+        if unhonoured:
+            logger.warning(
+                "Task %s: the document states %r, but this agent exposes no "
+                "such knob -- its config carries no place to put them, and "
+                "inventing one would guess at the agent's own schema. The run "
+                "samples the way the agent does, so its score is not measured "
+                "under those parameters.",
+                task_name,
+                {k: stated[k] for k in unhonoured},
+            )
 
     def _find_task_template(
         self, candidates: Sequence[str]
@@ -438,18 +522,22 @@ class RequirementsTargetPack(TargetPack):
         model_kwargs: dict = {"timeout": "3600"}
         if self._doc.model.context_length:
             model_kwargs["max_length"] = self._doc.model.context_length
+        stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
         logger.warning(
             "No catalog template for task %r; synthesizing with neutral "
             "defaults (max_length=%s from model.contextLength, streaming on, "
-            "no sampling overrides).",
+            "sampling: %s).",
             task_name,
             model_kwargs.get("max_length"),
+            stated or "the server's own defaults",
         )
         return EvalTask(
             task_name=task_name,
             # Streaming on by default for synthesized tasks (long generations
-            # against an OpenAI-compatible server); no sampling overrides.
-            gen_kwargs={"stream": "True"},
+            # against an OpenAI-compatible server). There is no template to
+            # inherit sampling from, so the document's parameters are all there
+            # is: whatever it does not state stays the server's own default.
+            gen_kwargs={"stream": "True", **stated},
             score=EvalTaskScore(
                 published_score=(
                     ae.published_score
@@ -770,6 +858,66 @@ class RequirementsTargetPack(TargetPack):
     # --- report metadata (delegated) ---
     def extra_spec_metadata_fields(self):
         return self._delegate.extra_spec_metadata_fields()
+
+
+def _repoint_sampling(node: Any, params: Mapping[str, Any], found: set) -> Any:
+    """``node`` with ``params`` replaced wherever the config already carries them.
+
+    Never adds a key. Each agent nests its sampling somewhere different --
+    mini-swe-agent under ``config.model.model_kwargs``, terminus-2 with
+    ``temperature`` at the top level but ``top_p`` inside ``llm_kwargs``, and
+    ``top_k`` inside an ``extra_body`` because LiteLLM's ``drop_params`` throws
+    away anything the OpenAI provider does not recognise. Encoding those
+    layouts here would mean carrying each agent's config schema and re-checking
+    it at every agent release.
+
+    Replacing only what is already present needs none of that: the borrowed
+    config demonstrates where its agent reads a parameter from, so the value is
+    changed exactly there. It also cannot produce the duplicate that terminus-2
+    breaks on -- a ``reasoning_effort`` in both the constructor args and
+    ``llm_kwargs`` reaches LiteLLM twice and raises TypeError -- because a key
+    that is absent stays absent.
+
+    ``found`` collects the parameters that landed somewhere, so the caller can
+    report the ones this agent has no knob for.
+    """
+    if isinstance(node, Mapping):
+        out = dict(node)
+        for key, value in node.items():
+            if key in params and not isinstance(value, (Mapping, list)):
+                out[key] = params[key]
+                found.add(key)
+            elif (
+                isinstance(key, str)
+                and key.endswith(_JSON_STRING_ARG_SUFFIX)
+                and isinstance(value, str)
+            ):
+                out[key] = _repoint_sampling_json(value, params, found)
+            else:
+                out[key] = _repoint_sampling(value, params, found)
+        return out
+    if isinstance(node, list):
+        return [_repoint_sampling(item, params, found) for item in node]
+    return node
+
+
+def _repoint_sampling_json(raw: str, params: Mapping[str, Any], found: set) -> str:
+    """Re-point sampling inside a JSON-string agent argument, keeping it a string."""
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Not re-pointing agent argument %r: it is not valid JSON, so the "
+            "sampling it carries is left as the donor wrote it.",
+            raw,
+        )
+        return raw
+    if not isinstance(parsed, dict):
+        return raw
+    repointed = _repoint_sampling(parsed, params, found)
+    if repointed == parsed:
+        return raw
+    return json.dumps(repointed)
 
 
 def _aggregate_priority(priorities: List[str]) -> Optional[str]:
