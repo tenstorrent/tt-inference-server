@@ -338,7 +338,11 @@ def run_closed(
         t.join(max(0, deadline - time.time()))
     cut = t_start + warmup
     with lock:
-        return [r for r in out if r["t_send"] >= cut], cut, w_end
+        # Return EVERY record. Filtering by arrival here also discarded the requests
+        # that were already in flight at `cut` -- at steady state that is ~C of them,
+        # so the occupancy integral lost ~C*W/2 request-seconds and read several
+        # percent low. Latency/throughput filters belong downstream, per metric.
+        return list(out), cut, w_end
 
 
 def run_open(
@@ -390,9 +394,14 @@ def run_open(
         logger.info("  in-flight ceiling: %d (%s when full)", cap, on_full)
 
     def fire() -> None:
-        rec = request(tgt)
+        # Register before sending so an arrival that is still in flight when the run
+        # ends is in the record set; otherwise unfinished requests vanish and the
+        # occupancy integral cannot see the work they represent.
+        rec = {"uid": -1, "t_send": time.time(), "t_end": None}
         with lock:
             out.append(rec)
+        request(tgt, -1, rec)
+        with lock:
             inflight[0] -= 1
 
     t_start = time.time()
@@ -441,7 +450,7 @@ def run_open(
                 break
         time.sleep(0.5)
     with lock:
-        return [r for r in out if r["t_send"] >= cut], cut, w_end, shed[0], lam
+        return list(out), cut, w_end, shed[0], lam   # every record; filter downstream
 
 
 def run_burst(tgt: Target, conc: int) -> tuple[list, float, float]:
@@ -689,9 +698,16 @@ def aggregate(doc: dict) -> tuple[list[dict], int]:
     rows = []
     for conc in sorted(by_conc):
         recs = by_conc[conc]
-        ok = [r for r in recs if r.get("ok")]
         meta = level_meta.get(conc, {})
         w0, w1 = meta.get("window_start"), meta.get("window_end")
+        # TWO COHORTS, deliberately different:
+        #  * `recs` (everything, incl. warmup carryover and unfinished) -> occupancy.
+        #    Those requests really were occupying the server inside the window.
+        #  * `ok` (clean completions that ARRIVED in the window) -> latency + RPS,
+        #    which must not be inflated by warmup arrivals now that run_closed and
+        #    run_open return the full record set instead of pre-filtering.
+        ok = [r for r in recs if r.get("ok")
+              and (w0 is None or w1 is None or w0 <= r["t_send"] < w1)]
         window = (meta.get("window_end", 0) - meta.get("window_start", 0)) or float(
             "nan"
         )
@@ -771,11 +787,13 @@ def box_table(rows: list[dict]) -> str:
     or under target -- ratios are value/target, so lower is better."""
     spec = [
         ("FC p50", "ttfb_p50", 150.0),
-        ("FC p90", "ttfb_p90", 350.0),
+        # P95, not P90: the acceptance target is FC p95 <= 350 ms. Passing p90 says
+        # nothing about p95, and a p90 check can report PASS on a level that misses.
+        ("FC p95", "ttfb_p95", 350.0),
         ("SC p50", "ttfs_p50", 270.0),
-        ("SC p90", "ttfs_p90", 270.0),
+        ("SC p95", "ttfs_p95", 270.0),
         ("TC p50", "ttft_p50", 570.0),
-        ("TC p90", "ttft_p90", 570.0),
+        ("TC p95", "ttft_p95", 570.0),
     ]
     heads = ["users", "chunks", "C"] + [n for n, _, _ in spec]
     widths = [7, 7, 7] + [8] * len(spec)
@@ -1049,8 +1067,12 @@ def dump(
     ok = [r for r in allrec
           if r.get("t_end") and not r["error"] and r["t_send"] >= cut
           and len(r["marks"]) >= 3]
-    n_fail = sum(1 for r in allrec if r["error"] and len(r["marks"]) < 3)
+    # ANY errored request is a failure, whatever it managed to deliver first. The
+    # old `and len(marks) < 3` meant an errored >=3-chunk stream was excluded from
+    # `ok` (correctly) but counted in no failure bucket either -- it just vanished.
+    n_fail = sum(1 for r in allrec if r["error"])
     n_short = sum(1 for r in allrec if not r["error"] and 0 < len(r["marks"]) < 3)
+    n_unfin = sum(1 for r in allrec if not r.get("t_end"))
     n_empty = sum(1 for r in allrec if not r["marks"])
     if not ok:
         raise SystemExit("no streams scored -- server too slow or refusing")
