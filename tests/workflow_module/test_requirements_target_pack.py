@@ -378,74 +378,179 @@ def test_top_k_is_repointed_inside_extra_body(doc):
     )
 
 
-# The real tau3 agent_kwargs shape (the task is dev-catalog only, so the
-# mechanism is exercised directly rather than through a catalog lookup).
-# ``llm_args_json`` must stay a JSON *string*: tau3's adapter sets only
-# temperature in build_llm_args(), so other parameters ride in this argument,
-# and it is shlex-quoted onto the container command line where a dict raises
-# TypeError.
-_TAU3_AGENT_KWARGS = {
-    "tau2_trial_index": 0,
-    "temperature": 1.0,
-    "llm_args_json": '{"top_p": 0.95}',
-    "max_steps": 200,
-}
-
-
-def _repoint_tau3(doc, gen_kwargs):
-    """Run the agentic sampling re-point over tau3's real agent_kwargs shape."""
-    from dataclasses import dataclass, field
+def _repoint_agent(doc, agent, agent_kwargs, gen_kwargs, task="tau3_bench_banking"):
+    """Run the agentic re-point over one agent's real agent_kwargs shape."""
+    import copy
+    from dataclasses import dataclass
     from typing import Any, Dict
 
     from workflow_module.requirements_schema import AccuracyEval
 
     @dataclass(frozen=True)
     class FakeHarness:
-        agent_kwargs: Dict[str, Any] = field(
-            default_factory=lambda: dict(_TAU3_AGENT_KWARGS)
-        )
+        agent: str
+        agent_kwargs: Dict[str, Any]
 
-    cfg = FakeHarness()
+    cfg = FakeHarness(agent=agent, agent_kwargs=copy.deepcopy(agent_kwargs))
     ae = AccuracyEval.from_dict(
-        {"name": "tau3-banking", "gpuReferenceScore": 50.0, "genKwargs": gen_kwargs}
+        {"name": "an eval", "gpuReferenceScore": 50.0, "genKwargs": gen_kwargs}
     )
     changes: dict = {}
     RequirementsTargetPack(doc, TenstorrentTargetPack())._repoint_agent_sampling(
-        cfg, "tau3_bench_banking", ae, changes
+        cfg, task, ae, changes
     )
     return changes, cfg
 
 
-def test_tau3_top_p_is_repointed_inside_its_json_string_argument(doc):
-    """tau3 takes top_p as a JSON *string*, and it has to stay one."""
+def test_tau3_json_args_are_constructed_when_the_donor_has_none(doc):
+    """Whether a donor carries llm_args_json is arbitrary, so build it.
+
+    The MiniMax tau3 entry has none and the Kimi one does, so without this the
+    same document has its top_p honoured or dropped depending on which model
+    the task happened to be borrowed from.
+    """
     import json
 
-    changes, cfg = _repoint_tau3(doc, {"temperature": 0.3, "topP": 0.9})
+    changes, _ = _repoint_agent(
+        doc,
+        "tau3_llm_agent",
+        {"tau2_trial_index": 0, "temperature": 1.0, "max_steps": 200},
+        {"temperature": 0.3, "topP": 0.9, "topK": 20},
+    )
     agent_kwargs = changes["agent_kwargs"]
 
     assert agent_kwargs["temperature"] == 0.3
     raw = agent_kwargs["llm_args_json"]
     assert isinstance(raw, str), "a dict here fails in the adapter's shlex.quote"
-    assert json.loads(raw)["top_p"] == 0.9
-    # The donor's shared config object is untouched.
-    assert cfg.agent_kwargs["llm_args_json"] == '{"top_p": 0.95}'
+    args = json.loads(raw)
+    assert args["top_p"] == 0.9
+    # top_k is not an OpenAI parameter, so drop_params discards it unless it
+    # rides in extra_body.
+    assert args["extra_body"] == {"top_k": 20}
 
 
-def test_agentic_parameters_the_agent_cannot_take_are_flagged(doc, caplog):
-    """No knob means say so, not invent one.
-
-    The eval still runs and still produces a score; without the warning that
-    score reads as measured under parameters that never reached the server.
-    """
+def test_tau3_json_args_keep_what_the_donor_already_carried(doc):
     import json
 
-    with caplog.at_level("WARNING"):
-        changes, _ = _repoint_tau3(doc, {"topK": 20, "maxGenToks": 4096})
+    changes, cfg = _repoint_agent(
+        doc,
+        "tau3_llm_agent",
+        {"temperature": 1.0, "llm_args_json": '{"top_p": 0.95, "seed": 7}'},
+        {"topP": 0.9},
+    )
 
-    assert "no such knob" in caplog.text
-    assert "top_k" in caplog.text and "max_gen_toks" in caplog.text
-    # Nothing was added anywhere to carry them.
-    assert "top_k" not in json.dumps(changes.get("agent_kwargs", {}))
+    args = json.loads(changes["agent_kwargs"]["llm_args_json"])
+    assert args["top_p"] == 0.9
+    assert args["seed"] == 7
+    # The donor's shared config object is untouched.
+    assert cfg.agent_kwargs["llm_args_json"] == '{"top_p": 0.95, "seed": 7}'
+
+
+def test_extra_body_is_built_where_the_agent_reads_it(doc):
+    """top_k is not an OpenAI parameter, so drop_params discards it elsewhere.
+
+    Six live terminus-2 entries carry it at ``llm_kwargs.extra_body``; a donor
+    that happens not to is no reason to drop the document's value.
+    """
+    changes, _ = _repoint_agent(
+        doc,
+        "terminus-2",
+        {"temperature": 1.0, "llm_kwargs": {"top_p": 1.0, "timeout": 3600}},
+        {"topK": 20},
+        task="terminal_bench_2_1",
+    )
+
+    llm_kwargs = changes["agent_kwargs"]["llm_kwargs"]
+    assert llm_kwargs["extra_body"] == {"top_k": 20}
+    assert llm_kwargs["timeout"] == 3600
+
+
+def test_reasoning_effort_reaches_extra_body_even_when_set_first_class(doc):
+    """The first-class argument alone is what drop_params discards.
+
+    LiteLLM drops reasoning_effort for an openai-provider model it does not
+    recognise as reasoning-capable, so updating the donor's first-class value
+    in place would change a number that never reaches the server.
+    """
+    changes, _ = _repoint_agent(
+        doc,
+        "terminus-2",
+        {"temperature": 1.0, "reasoning_effort": "low", "llm_kwargs": {"top_p": 1.0}},
+        {"reasoningEffort": "high"},
+        task="terminal_bench_2_1",
+    )
+    agent_kwargs = changes["agent_kwargs"]
+
+    assert agent_kwargs["reasoning_effort"] == "high"
+    assert agent_kwargs["llm_kwargs"]["extra_body"]["reasoning_effort"] == "high"
+
+
+def test_reasoning_effort_already_in_extra_body_is_not_duplicated(doc):
+    changes, _ = _repoint_agent(
+        doc,
+        "terminus-2",
+        {"llm_kwargs": {"extra_body": {"reasoning_effort": "low"}}},
+        {"reasoningEffort": "high"},
+        task="terminal_bench_2_1",
+    )
+
+    assert changes["agent_kwargs"] == {
+        "llm_kwargs": {"extra_body": {"reasoning_effort": "high"}}
+    }
+
+
+def test_agentic_parameters_with_nowhere_to_go_are_flagged(doc, caplog):
+    """An unknown agent has no documented place to build one, so say so.
+
+    The eval still runs and still produces a score, which without the warning
+    reads as measured under a parameter that never reached the server.
+    """
+    with caplog.at_level("WARNING"):
+        changes, _ = _repoint_agent(
+            doc, "some-new-agent", {"temperature": 1.0}, {"topK": 20}
+        )
+
+    assert "no knob" in caplog.text and "top_k" in caplog.text
+    assert "agent_kwargs" not in changes
+
+
+def test_agentic_budget_splits_the_document_context_window(doc):
+    """One requested budget sets the output cap and the input cap it implies.
+
+    The two must sum below the server's context, so raising the output cap
+    without shrinking the input one pushes requests past it mid-trial.
+    """
+    changes, _ = _repoint_agent(
+        doc,
+        "terminus-2",
+        {
+            "temperature": 1.0,
+            "model_info": {"max_input_tokens": 16384, "max_output_tokens": 4096},
+            "llm_kwargs": {"top_p": 1.0, "max_tokens": 4096},
+        },
+        {"maxGenToks": 65536},
+        task="terminal_bench_2_1",
+    )
+    agent_kwargs = changes["agent_kwargs"]
+
+    context = doc.model.context_length
+    assert agent_kwargs["model_info"]["max_output_tokens"] == 65536
+    assert agent_kwargs["model_info"]["max_input_tokens"] == context - 65536
+    assert agent_kwargs["llm_kwargs"]["max_tokens"] == 65536
+
+
+def test_agentic_budget_is_refused_when_it_leaves_no_room_for_a_prompt(doc, caplog):
+    with caplog.at_level("WARNING"):
+        changes, _ = _repoint_agent(
+            doc,
+            "terminus-2",
+            {"model_info": {"max_input_tokens": 16384, "max_output_tokens": 4096}},
+            {"maxGenToks": doc.model.context_length + 1},
+            task="terminal_bench_2_1",
+        )
+
+    assert "no room for a prompt" in caplog.text
+    assert "agent_kwargs" not in changes
 
 
 def test_an_eval_without_gen_kwargs_only_gets_streaming(doc, pack):
