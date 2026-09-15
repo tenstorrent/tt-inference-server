@@ -3210,6 +3210,34 @@ models:
                 value: '16'
               - name: MESH_DEVICE
                 value: P150
+          trainer_training_lora:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
+              tag: 0.22.0-a3a9fb4
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 20Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: ENABLE_JOB_PERSISTENCE
+                value: 'True'
+              - name: JOB_CLEANUP_INTERVAL_SECONDS
+                value: '10000'
+              - name: JOB_MAX_STUCK_TIME_SECONDS
+                value: '100000'
+              - name: MESH_DEVICE
+                value: P150
+              - name: MODEL_RUNNER
+                value: trainer-training-lora
+              - name: REQUEST_PROCESSING_TIMEOUT_SECONDS
+                value: '100000'
+              - name: TRAINING_MODEL
+                value: Llama-3.1-8B-Instruct
   Qwen2.5-Coder-32B-Instruct:
     vllm:
       t3k:

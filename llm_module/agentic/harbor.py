@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # we cannot see from here). Only feeds the deadline math; the stall watchdog is
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
+_OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
@@ -70,10 +71,8 @@ class HarborRunConfig:
     yes: bool = True
     debug: bool = False
     agent_import_path: Optional[str] = None
-    # Injected into the agent's container for the agent phase. Harbor's
-    # installed agents also fall back to the harbor host's ``os.environ``, so
-    # this is only needed to override the ambient value (or to be explicit
-    # about it) -- e.g. pointing one eval at a different endpoint.
+    # Per-agent overrides. OpenAI endpoint variables are filled from api_base
+    # unless explicitly set here, so stale host endpoints cannot take priority.
     agent_env: dict[str, str] = field(default_factory=dict)
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
@@ -145,24 +144,30 @@ def _apply_mini_swe_agent_defaults(
 
 
 def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
-    """Agent kwargs with the resolved endpoint added as ``api_base``.
-
-    Note that ``api_base`` is not how every agent learns the endpoint. Harbor's
-    in-container "installed" agents (mini-swe-agent among them) accept the kwarg
-    but ignore it, reading ``OPENAI_BASE_URL`` / ``OPENAI_API_BASE`` from the
-    agent env -- which falls back to the harbor host's environment, where
-    ``agentic_eval_tests._configure_openai_env`` has already exported them. Set
-    ``agent_env`` to override that per eval. Agents implemented in Harbor itself
-    (e.g. terminus-2) do read this kwarg, hence the unconditional default.
-
-    A deep copy is taken so the mini-swe-agent parity defaults never mutate the
-    shared, module-level eval config.
-    """
+    """Copy agent options without injecting connection arguments."""
     agent_kwargs = copy.deepcopy(dict(config.agent_kwargs))
-    agent_kwargs.setdefault("api_base", config.api_base)
     if config.agent == _MINI_SWE_AGENT and config.agent_import_path is None:
         _apply_mini_swe_agent_defaults(agent_kwargs, config)
     return agent_kwargs
+
+
+def _get_agent_endpoint(config: HarborRunConfig) -> str:
+    """Resolve explicit endpoint overrides without consulting the host env."""
+    values = [
+        config.agent_env[key] for key in _OPENAI_ENDPOINT_ENV if key in config.agent_env
+    ]
+    if any(not isinstance(value, str) or not value.strip() for value in values):
+        raise ValueError("Agent endpoint overrides must be non-empty strings")
+    if len(set(values)) > 1:
+        raise ValueError("Conflicting OpenAI endpoint overrides in agent env")
+    return values[0] if values else config.api_base
+
+
+def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
+    env = dict(config.agent_env)
+    endpoint = _get_agent_endpoint(config)
+    env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
+    return env
 
 
 def _format_kwarg(value: Any) -> str:
@@ -202,8 +207,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         agent_config["import_path"] = config.agent_import_path
     else:
         agent_config["name"] = config.agent
-    if config.agent_env:
-        agent_config["env"] = config.agent_env
+    agent_env = _get_agent_env(config)
+    if agent_env:
+        agent_config["env"] = agent_env
 
     if config.environment_env:
         environment_config["env"] = config.environment_env
@@ -328,6 +334,8 @@ def run(config: HarborRunConfig) -> int:
         agent_kwargs = _get_agent_kwargs(config)
         for key, value in agent_kwargs.items():
             cmd.extend(["--agent-kwarg", f"{key}={_format_kwarg(value)}"])
+        for key, value in _get_agent_env(config).items():
+            cmd.extend(["--agent-env", f"{key}={value}"])
 
     if config.debug:
         cmd.append("--debug")
@@ -341,10 +349,16 @@ def run(config: HarborRunConfig) -> int:
     per_task_budget = agent_timeout + config.per_task_overhead_sec
     # ``harbor_timeout_sec`` is an optional flat backstop kept from the unified
     # harness; the wave-aware stall/ceiling watchdog is the primary protection.
+    # Terminus calls LiteLLM in the Harbor process; installed agents call it
+    # inside the task container. Give both the same endpoint without changing
+    # the parent process environment.
+    process_env = os.environ.copy()
+    endpoint = _get_agent_endpoint(config)
+    process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(
         cmd,
         cwd=None,
-        env=os.environ.copy(),
+        env=process_env,
         probe=make_terminal_bench_probe(job_dir),
         label=config.task_name,
         per_task_budget_s=per_task_budget,

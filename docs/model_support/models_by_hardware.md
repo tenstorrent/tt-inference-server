@@ -111,6 +111,7 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | CNN | [yolox_nano](cnn/yolox_nano_p150.md) |
 | 🛠️ Experimental | LLM | [Falcon3-7B-Instruct](llm/Falcon3-7B-Instruct_p150.md) |
 | 🛠️ Experimental | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p150.md) |
+| 🛠️ Experimental | Training | [Llama-3.1-8B-Instruct](training/Llama-3.1-8B-Instruct_p150.md) |
 | 🛠️ Experimental | TTS | [speecht5_tts](tts/speecht5_tts_p150.md) |
 
 ## [WH LoudBox/QuietBox](https://tenstorrent.com/hardware/tt-loudbox)
