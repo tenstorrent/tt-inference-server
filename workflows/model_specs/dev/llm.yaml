@@ -1028,32 +1028,27 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 1  # package mode is batch 1; higher cannot be served
-      max_context: 8192  # equals the artifact's decode context_len
+      max_concurrency: 32
+      max_context: 262144
       default_impl: false
       env_vars:
         MESH_DEVICE: P150x4
         QUETZAL_VLLM: "1"
-        QUETZAL_BUNDLE_MANIFEST_SHA256: d71abb2865d94511a1aaafbb02fabe1adfc5bd658ff9b876412f5f558111db4a
+        QUETZAL_BUNDLE_MANIFEST_SHA256: cd1b1c8c53d798ab577938528c4c3432771a89b8d0a9c56e8d74a69d6b86e680
         QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
         VLLM_PLUGINS: quetzal_model_registry,tt
       vllm_args:
-        # From the artifact's own checkpoint_revision; no Hugging Face lookup.
         revision: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
         tokenizer_revision: 6a9e13bd6fc8f0983b9b99948120bc37f49c13e9
-        # NO tool_call_parser / reasoning_parser. Tool-use qualification is
-        # UNSUPPORTED for this row pending parser validation; ordinary evals do
-        # not require tool calling, so this is sufficient for a first
-        # EXPERIMENTAL evaluation run and for nothing beyond it.
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_coder
+        reasoning_parser: qwen3
       override_tt_config:
         sample_on_device_mode: all
-        l1_small_size: 16384  # from the artifact's parallelism_plan
-        # PROVISIONAL, inherited from the qwen36_blackhole P300X2 row above. NOT
-        # qualified performance evidence for the Quetzal artifact: that row was
-        # measured against a different implementation and a different context
-        # envelope (max_context 262144 against this artifact's 8192), so it
-        # over-reserves here. Replace once measured on this artifact's tuple.
-        trace_region_size: 1073741824
+        trace_region_size: 134217728
+        l1_small_size: 16384
+        kv_cache_usable_tokens: 262144
+      max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
 
 - weights:
