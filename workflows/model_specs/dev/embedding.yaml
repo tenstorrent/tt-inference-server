@@ -57,14 +57,7 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
         DEFAULT_THROTTLE_LEVEL: "0"
-        # Saturation probe: 512 in flight keeps all 32x8 server slots full
-        # with queue headroom (Little's law caps RPS at in_flight/E2EL; at
-        # exactly 256 any client micro-stall drains the queue and fragments
-        # batches). Split across 4 client processes: one saturates a CPU
-        # core at ~2k req/s.
         BENCHMARK_MAX_CONCURRENCY: "512"
-        # >= 10-20x concurrency so the startup transient (client ramp, single-
-        # request batches) is <2% of the run and the average measures steady state.
         BENCHMARK_NUM_PROMPTS: "20000"
         BENCHMARK_NUM_CLIENTS: "4"
         TT_METAL_INSPECTOR_RPC: "0"
@@ -235,8 +228,6 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         BENCHMARK_MAX_CONCURRENCY: "32"   # 4 workers x 8 seqs
         MAX_BATCH_SIZE: "8"
-        # Each worker sees a single chip, which tt-metal classifies as a CUSTOM
-        # cluster and refuses to init without an explicit descriptor.
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
         USE_DYNAMIC_BATCHER: "false"
         DEFAULT_THROTTLE_LEVEL: "0"
@@ -262,8 +253,6 @@ templates:
         VLLM__MAX_NUM_SEQS: "8"
         BENCHMARK_MAX_CONCURRENCY: "32"   # 4 workers x 8 seqs
         MAX_BATCH_SIZE: "8"
-        # Each worker sees a single chip, which tt-metal classifies as a CUSTOM
-        # cluster and refuses to init without an explicit descriptor.
         TT_MESH_GRAPH_DESC_PATH: "/home/container_app_user/app/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
         USE_DYNAMIC_BATCHER: "false"
         DEFAULT_THROTTLE_LEVEL: "0"

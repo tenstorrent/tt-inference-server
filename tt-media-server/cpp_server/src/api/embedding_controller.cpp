@@ -70,15 +70,8 @@ void EmbeddingController::createEmbedding(
 
   auto submitTime = std::chrono::steady_clock::now();
 
-  // No thread-pool hop: enqueue directly from the Drogon IO thread and let
-  // the worker dispatch thread deliver the response via this callback. The
-  // old pool capped in-flight requests at its thread count (each request
-  // blocked a pool thread on a future for the whole inference), which
-  // throttled arrivals to one per free worker and made batches of 1.
-  // `callback` is captured by copy on purpose: if submitRequestAsync throws,
-  // the request was never enqueued (the capacity check precedes the enqueue),
-  // so onComplete never fires and the catch blocks below still own a usable
-  // callback.
+  // Enqueue directly from the Drogon IO thread and let
+  // the worker dispatch thread deliver the response via this callback
   auto onComplete = [callback, reqNum, startTime,
                      submitTime](domain::EmbeddingResponse&& response) {
     auto gotResponseTime = std::chrono::steady_clock::now();

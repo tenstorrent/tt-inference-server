@@ -748,17 +748,12 @@ std::vector<tt::worker::WorkerInfo> EmbeddingService::getWorkerInfo() const {
 void EmbeddingService::submitRequestAsync(
     domain::EmbeddingRequest request,
     std::function<void(domain::EmbeddingResponse&&)> onComplete) {
-  // Capacity check runs synchronously on the caller's (IO) thread so
-  // back-pressure fails fast: QueueFullException propagates to the caller
-  // and is never delivered through onComplete.
   preProcess(request);
   impl_->submitRequestAsync(std::move(request), std::move(onComplete));
 }
 
 domain::EmbeddingResponse EmbeddingService::produceResponse(
     domain::EmbeddingRequest request) {
-  // Unused in the embedding path, but present for compatibility with
-  // BaseSyncService.
   std::promise<domain::EmbeddingResponse> promise;
   auto future = promise.get_future();
   impl_->submitRequestAsync(std::move(request),
