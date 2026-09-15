@@ -18,7 +18,6 @@ namespace tt::runners {
 
 namespace {
 
-
 std::string firstLine(const std::string& s) {
   const auto pos = s.find('\n');
   return pos == std::string::npos ? s : s.substr(0, pos);
@@ -76,7 +75,6 @@ struct EmbeddingRunner::Impl {
     // possible restart of this runner) may still need it.
   }
 
-
   void checkPythonBatchSize() const {
     const auto pythonBatch = py::module_::import("config.settings")
                                  .attr("settings")
@@ -96,7 +94,6 @@ struct EmbeddingRunner::Impl {
   }
 
   bool initialize() {
-
     const bool ownsInterpreter = !Py_IsInitialized();
     if (ownsInterpreter) {
       py::initialize_interpreter();
@@ -114,7 +111,6 @@ struct EmbeddingRunner::Impl {
 
         checkPythonBatchSize();
 
-       
         runner = py::module_::import("tt_model_runners.runner_fabric")
                      .attr("get_device_runner")(config.visible_devices);
         TT_LOG_INFO("[EmbeddingRunner] Created {} for device {}",
@@ -161,7 +157,6 @@ struct EmbeddingRunner::Impl {
 
       py::sequence results = runner.attr("run")(pyRequests);
 
-   
       for (size_t i = 0; i < results.size(); ++i) {
         py::object item = results[i];
         domain::EmbeddingResponse resp(requests[i].task_id);
