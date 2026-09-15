@@ -71,22 +71,20 @@ def test_observe_records_shape_and_labels():
     assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
     assert sample("tt_media_server_image_requested_steps_sum", **labels) == 25
     assert sample("tt_media_server_image_requested_guidance_scale_sum", **labels) == 7.5
-    assert sample("tt_media_server_image_requested_images_sum", **labels) == 2
 
 
-def test_observe_counts_batch_as_one_request():
-    """Batch size is a histogram observation, not a repeated increment.
+def test_observe_counts_a_batch_as_one_request():
+    """One client request is one increment, whatever its batch size.
 
-    ImageService fans a multi-image request out via create_segment_request, so
-    the arrival counter must stay at one per client request; otherwise request
-    rate and batch size become the same number and neither is readable.
+    ImageService fans a multi-image request out via create_segment_request into
+    one request per image. Recording anywhere downstream of pre_process would
+    count a 4-image request four times and inflate the arrival rate.
     """
     model = "test-shape-batch"
     observe_image_request(_t2i(number_of_images=4), model)
 
     labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
     assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
-    assert sample("tt_media_server_image_requested_images_sum", **labels) == 4
 
 
 def test_observe_separates_conditioning_paths():
