@@ -389,7 +389,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=16,  # 12 -> 16: concurrency-16 experiment, 2026-09-15
+                concurrency=8,  # 16 -> 8: SC20 speculative-decode deployment, 2026-09-15
             ),
         ),
     ),
