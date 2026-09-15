@@ -81,6 +81,11 @@ def _diffusiongemma_eval_task(task_name):
     return next(task for task in tasks if task.task_name == task_name)
 
 
+def _llama_3_2_1b_eval_task(task_name):
+    tasks = _eval_config_map["meta-llama/Llama-3.2-1B-Instruct"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
 def _build_eval_test_command(task):
     model_spec = SimpleNamespace(
         model_id="diffusiongemma-26B-A4B-it",
@@ -104,6 +109,25 @@ def _command_gen_kwargs(command):
 
 
 class TestEvalCommand:
+    @pytest.mark.parametrize(
+        "task_name",
+        [
+            "longbench_code_e",
+            "longbench_fewshot_e",
+            "longbench_multi_e",
+            "longbench_single_e",
+            "longbench_summarization_e",
+            "longbench_synthetic_e",
+        ],
+    )
+    def test_llama_3_2_1b_longbench_uses_qualified_context(self, task_name):
+        task = _llama_3_2_1b_eval_task(task_name)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+
+        assert task.min_context_required == 16384
+        assert "max_length=16384" in model_args.split(",")
+
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
         command = _build_eval_test_command(task)
