@@ -1,3 +1,6 @@
+# syntax=docker/dockerfile:1.7-labs
+# ^ Required for `COPY --exclude` in the runtime stage. A parser directive is only
+# honoured before the first comment or instruction, so this MUST stay on line 1.
 # SPDX-License-Identifier: Apache-2.0
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
@@ -232,7 +235,11 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
     && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
+    && rm -rf /usr/include \
+    `# Dangling symlinks left by the tt-metal build (e.g. umd/compile_commands.json).` \
+    `# Useless at runtime, and COPY --exclude in the runtime stage errors out when` \
+    `# one is present - see moby/buildkit#4946. Keep this before that COPY.` \
+    && find ${HOME_DIR} -xtype l -exec rm -f {} +
 
 
 # ==============================================================================
@@ -284,8 +291,46 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# Copy everything from builder
+# Copy the builder's home in several layers instead of one.
+#
+# As a single COPY this produced ONE ~15GB layer - 66% of the image, new on every
+# build. A throttled `docker pull` from ghcr.io aborts and discards whatever of a
+# layer it had in flight, and Docker cannot resume a partial layer
+#
+# Split out ONLY paths this Dockerfile guarantees exist
+#   python_env    create_venv.sh (line ~107), and PYTHON_ENV_DIR is used throughout
+#   audio_venv    created by `python3 -m venv` below
+#   build_Release `cmake --build build_Release` runs against it
+#   server        COPY "tt-media-server" lands here
+#
+# Sizes at the time of writing (uncompressed, from `du -sh` inside the image):
+#   python_env 9.6G | build_Release 2.0G | audio_venv 1.6G | server 233M
+#   catch-all ~800M (runtime 480M + uv-python 87M + the rest)
+#
+# --- least likely to change ---
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    /home/container_app_user/tt-metal/python_env ${PYTHON_ENV_DIR}
+# NB: AUDIO_VENV_DIR is set in the builder stage and ENV does not cross stages -
+# ${AUDIO_VENV_DIR} would expand to nothing here. Spell it from TT_METAL_HOME.
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    /home/container_app_user/tt-metal/audio_venv ${TT_METAL_HOME}/audio_venv
+
+# --- volatile: rebuilt on every metal / inference-server commit ---
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    /home/container_app_user/tt-metal/build_Release ${TT_METAL_HOME}/build_Release
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    /home/container_app_user/tt-metal/server ${TT_METAL_HOME}/server
+
+# --- everything else, minus what the layers above already hold ---
+# A catch-all so a new directory in tt-metal lands in the image on its own instead missing. The excludes
+# are mandatory: without them these subtrees would be stored twice and the image
+# would roughly double. `tt-metal/build` is a relative symlink to build_Release
+# and rides along here - it resolves because the target is copied above.
+COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    --exclude=tt-metal/python_env \
+    --exclude=tt-metal/audio_venv \
+    --exclude=tt-metal/build_Release \
+    --exclude=tt-metal/server \
     /home/container_app_user ${HOME_DIR}
 
 # Fix venv permissions (COPY --chown can break symlink permissions)
