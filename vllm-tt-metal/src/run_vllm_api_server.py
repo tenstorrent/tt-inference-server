@@ -129,6 +129,7 @@ def configure_quetzal_provider(model_spec: dict) -> None:
             "QUETZAL_HF_SNAPSHOT": str(Path(weights_dir).resolve()),
             "QUETZAL_MODEL": model_id,
             "MESH_DEVICE": mesh_device,
+            "QZ_TRACE_REGION_BYTES": str(_quetzal_trace_region_bytes(model_spec)),
         }
     )
 
@@ -204,6 +205,39 @@ def _quetzal_runtime_context(model_spec: dict) -> int:
             "to match"
         )
     return catalog_context
+
+
+def _quetzal_trace_region_bytes(model_spec: dict) -> int:
+    """Bind admission and the generated provider to vLLM's resolved TT config."""
+    device = model_spec.get("device_model_spec", {})
+    config = device.get("vllm_args", {}).get("additional_config")
+    if isinstance(config, str):
+        try:
+            config = json.loads(config)
+        except ValueError as error:
+            raise RuntimeError(
+                "impl=quetzal requires valid additional_config JSON"
+            ) from error
+    tt_config = config.get("tt") if isinstance(config, dict) else None
+    value = tt_config.get("trace_region_size") if isinstance(tt_config, dict) else None
+    if type(value) is not int or value <= 0:
+        raise RuntimeError(
+            "impl=quetzal requires a positive integer additional_config.tt.trace_region_size"
+        )
+    override = (device.get("override_tt_config") or {}).get("trace_region_size")
+    if override is not None and (type(override) is not int or override != value):
+        raise RuntimeError(
+            "impl=quetzal trace reservation conflicts with override_tt_config"
+        )
+    for source, inherited in (
+        ("environment", os.getenv("QZ_TRACE_REGION_BYTES")),
+        ("catalog", _model_spec_env_vars(model_spec).get("QZ_TRACE_REGION_BYTES")),
+    ):
+        if inherited is not None and str(inherited) != str(value):
+            raise RuntimeError(
+                f"impl=quetzal trace reservation conflicts with {source}"
+            )
+    return value
 
 
 def _quetzal_scheduler_capacity(model_spec: dict) -> int:
@@ -311,6 +345,7 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         expected_batch_size=batch_size,
         auxiliary_roots=auxiliary_roots,
         runtime_tt_metal_commit=runtime_tt_metal_commit,
+        trace_region_bytes=_quetzal_trace_region_bytes(model_spec),
     )
     logger.info(
         "Quetzal content-address admission succeeded: state=%s schema=%s files=%s "
