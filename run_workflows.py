@@ -420,6 +420,8 @@ def parse_args() -> argparse.Namespace:
             "(genai-perf via Docker), or 'guidellm'."
         ),
     )
+    parser.add_argument("--benchmark", choices=["custom-longbench"], default=None)
+    parser.add_argument("--dataset-path", default=None)
     parser.add_argument(
         "--goodput",
         type=str,
@@ -545,6 +547,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     args = parser.parse_args()
+    if args.benchmark:
+        if args.model not in ("GLM-5.3", "zai-org/GLM-5.3"):
+            parser.error(
+                "--benchmark custom-longbench requires --model GLM-5.3 and its matching tokenizer export."
+            )
+        if (
+            args.workflow != "benchmarks"
+            or args.tools != "vllm"
+            or args.prefix_cache
+            or args.spec_decode
+        ):
+            parser.error(
+                "--benchmark custom-longbench requires --workflow benchmarks --tools vllm without --prefix-cache/--spec-decode."
+            )
+        if not args.dataset_path:
+            parser.error("--benchmark custom-longbench requires --dataset-path.")
+    elif args.dataset_path:
+        parser.error("--dataset-path requires --benchmark custom-longbench.")
     if args.repeat < 1:
         parser.error("--repeat must be >= 1")
     args.requirements_doc = None

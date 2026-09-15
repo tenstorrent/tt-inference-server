@@ -59,6 +59,8 @@ def run_llm_bench(
     ctx: MediaContext,
     *,
     tools: str = "vllm",
+    benchmark: Optional[str] = None,
+    dataset_path: Optional[str] = None,
     auth_token: str = "",
     venv_python: Optional[Path] = None,
     goodput: Optional[str] = None,
@@ -74,6 +76,15 @@ def run_llm_bench(
     driver consumes it, so a warning is logged if it is set for another tool.
     """
     driver = _make_driver(tools, venv_python)
+    if benchmark and (
+        benchmark != "custom-longbench"
+        or tools != "vllm"
+        or not dataset_path
+        or ctx.model_spec.model_name != "GLM-5.3"
+    ):
+        raise ValueError(
+            "custom-longbench requires GLM-5.3, the vllm driver, and a matching tokenizer export"
+        )
 
     if goodput and tools != "aiperf":
         logger.warning(
@@ -104,6 +115,12 @@ def run_llm_bench(
         configs = get_llm_configs(
             ctx.model_spec, ctx.device, limit_samples_mode=limit_samples_mode
         )
+        if benchmark == "custom-longbench":
+            from llm_module.custom_longbench import build_longbench_configs
+
+            configs = build_longbench_configs(
+                configs, Path(dataset_path), Path(ctx.output_path) / "custom-longbench"
+            )
     if not configs:
         logger.error(
             "No LLM benchmark configs for model=%s device=%s; nothing to run.",

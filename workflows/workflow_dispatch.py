@@ -676,6 +676,8 @@ def _build_llm_bench_cmd(repo_root, model_spec, runtime_config, json_fpath, outp
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
     _extend_if_set(cmd, "--tools", runtime_config.tools)
+    _extend_if_set(cmd, "--benchmark", getattr(runtime_config, "benchmark", None))
+    _extend_if_set(cmd, "--dataset-path", getattr(runtime_config, "dataset_path", None))
     _extend_if_set(cmd, "--goodput", getattr(runtime_config, "goodput", None))
     _forward_jwt(cmd, runtime_config)
     return cmd

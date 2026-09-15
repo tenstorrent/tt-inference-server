@@ -353,6 +353,17 @@ def parse_arguments():
         "'guidellm' for GuideLLM (https://github.com/vllm-project/guidellm). ",
     )
     parser.add_argument(
+        "--benchmark",
+        choices=["custom-longbench"],
+        default=None,
+        help="Opt in to the custom LongBench subset of the existing vLLM sweep.",
+    )
+    parser.add_argument(
+        "--dataset-path",
+        default=None,
+        help="LongBench JSONL with prompt and input_tokens fields; requires --benchmark custom-longbench.",
+    )
+    parser.add_argument(
         "--goodput",
         type=str,
         default=None,
@@ -814,6 +825,28 @@ def parse_arguments():
 
     if args.eval_samples and args.limit_samples_mode:
         parser.error("--eval-samples and --limit-samples-mode are mutually exclusive.")
+
+    if args.benchmark:
+        if args.model != "GLM-5.3":
+            parser.error(
+                "--benchmark custom-longbench requires --model GLM-5.3 and its matching tokenizer export."
+            )
+        if (
+            args.workflow != "benchmarks"
+            or args.tools != "vllm"
+            or args.prefix_cache
+            or args.spec_decode
+        ):
+            parser.error(
+                "--benchmark custom-longbench requires --workflow benchmarks --tools vllm without --prefix-cache/--spec-decode."
+            )
+        if not args.dataset_path:
+            parser.error("--benchmark custom-longbench requires --dataset-path.")
+        args.dataset_path = str(
+            Path(args.dataset_path).expanduser().resolve(strict=True)
+        )
+    elif args.dataset_path:
+        parser.error("--dataset-path requires --benchmark custom-longbench.")
 
     if args.prefix_cache and args.workflow not in ("benchmarks", "release"):
         parser.error(

@@ -758,3 +758,56 @@ def test_engine_env_records_canonical_model_in_run_command(monkeypatch):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_custom_longbench_forwarding_is_opt_in():
+    repo_root = get_repo_root_path()
+    common = (repo_root, _spec(ModelType.LLM))
+    baseline = workflow_dispatch._build_llm_bench_cmd(
+        *common, _rc(tools="vllm"), "spec.json", Path("out")
+    )
+    custom = workflow_dispatch._build_llm_bench_cmd(
+        *common,
+        _rc(
+            tools="vllm",
+            benchmark="custom-longbench",
+            dataset_path="custom-longbench.jsonl",
+        ),
+        "spec.json",
+        Path("out"),
+    )
+    assert "--benchmark" not in baseline and "--dataset-path" not in baseline
+    index = custom.index("--benchmark")
+    assert custom[index : index + 4] == [
+        "--benchmark",
+        "custom-longbench",
+        "--dataset-path",
+        "custom-longbench.jsonl",
+    ]
+    assert custom[:index] + custom[index + 4 :] == baseline
+
+
+def test_custom_longbench_dispatch_is_accepted_by_workflow_cli(monkeypatch, tmp_path):
+    import sys
+    import run_workflows
+
+    monkeypatch.setattr(
+        run_workflows,
+        "get_model_spec_provider",
+        lambda: SimpleNamespace(model_names=lambda: ["GLM-5.3", "zai-org/GLM-5.3"]),
+    )
+    spec = _spec(ModelType.LLM, name="GLM-5.3", hf_model_repo="zai-org/GLM-5.3")
+    rc = _rc(
+        tools="vllm",
+        device="super_cluster",
+        benchmark="custom-longbench",
+        dataset_path=str(tmp_path / "custom-longbench.jsonl"),
+    )
+    argv = workflow_dispatch._build_llm_bench_cmd(
+        get_repo_root_path(), spec, rc, str(tmp_path / "spec.json"), tmp_path
+    )
+    monkeypatch.setattr(sys, "argv", argv)
+    args = run_workflows.parse_args()
+    assert args.model == "zai-org/GLM-5.3"
+    assert args.benchmark == "custom-longbench"
+    assert args.dataset_path == rc.dataset_path

@@ -143,6 +143,10 @@ class RuntimeConfig:
     run_id: Optional[str] = None
     runtime_model_spec: Optional[Dict] = field(default=None, repr=False)
 
+    # Append optional selection fields to preserve positional constructors.
+    benchmark: Optional[str] = None
+    dataset_path: Optional[str] = None
+
     @classmethod
     def from_args(
         cls,
@@ -178,6 +182,8 @@ class RuntimeConfig:
             runtime_model_spec_json=args.runtime_model_spec_json,
             requirements_json=getattr(args, "requirements_json", None),
             tools=args.tools,
+            benchmark=getattr(args, "benchmark", None),
+            dataset_path=getattr(args, "dataset_path", None),
             goodput=getattr(args, "goodput", None),
             disable_trace_capture=args.disable_trace_capture,
             disable_metal_timeout=args.disable_metal_timeout,

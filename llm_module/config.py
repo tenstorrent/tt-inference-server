@@ -49,6 +49,8 @@ class LLMRunConfig:
     # ``vllm bench serve --goodput`` SLO constraints for this sweep point
     # ("ttft:2000 tpot:20 e2el:20000", milliseconds). None = not measured.
     goodput: Optional[str] = field(default=None, compare=False)
+    # Custom LongBench must explicitly match random datasets' ignore-EOS default.
+    ignore_eos: bool = False
 
 
 @dataclass(frozen=True)
