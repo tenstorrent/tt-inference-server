@@ -715,6 +715,32 @@ class TestVllmOverrideCliArgs:
     def test_false_and_null_omitted(self):
         assert _vllm_override_cli_args('{"a": false, "b": null}') == []
 
+    def test_list_renders_one_token_per_item(self):
+        """vLLM's nargs='+' flags (--served-model-name, --api-key) take several
+        tokens. Rendering the list as a single JSON string makes argparse read
+        it as ONE value, so e.g. two aliases become one model literally named
+        '["a", "b"]'."""
+        assert _vllm_override_cli_args(
+            '{"served-model-name": ["Llama-3.1-8B-Instruct", "local-llm"]}'
+        ) == [
+            "--served-model-name",
+            "Llama-3.1-8B-Instruct",
+            "local-llm",
+        ]
+
+    def test_empty_list_emits_no_flag(self):
+        """A bare nargs='+' flag with no values is an argparse error, so an
+        empty list must not emit the flag at all."""
+        assert _vllm_override_cli_args('{"served-model-name": []}') == []
+
+    def test_dict_stays_a_single_json_token(self):
+        """dict-valued flags (--hf-overrides, --override-generation-config) are
+        nargs=None and expect one JSON string; splitting them would break."""
+        assert _vllm_override_cli_args('{"hf-overrides": {"max_seq_len": 4096}}') == [
+            "--hf-overrides",
+            '{"max_seq_len": 4096}',
+        ]
+
     def test_none_and_empty_and_malformed_return_empty(self):
         assert _vllm_override_cli_args(None) == []
         assert _vllm_override_cli_args("") == []
