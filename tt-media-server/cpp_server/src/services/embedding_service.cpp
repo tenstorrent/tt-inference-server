@@ -227,10 +227,6 @@ struct EmbeddingService::Impl {
 
   Impl() {
     numWorkers = tt::config::numWorkers();
-    // The cap must be the model's own limit: batches larger than
-    // max_batch_size make the model assert and every request in the batch
-    // fails with HTTP 500. It used to come from MAX_IN_FLIGHT_COUNT (default
-    // 32), which is unrelated to what the model can take.
     maxBatchSize = tt::config::embeddingEngineConfig().max_batch_size;
     batchTimeout = std::chrono::milliseconds(tt::config::batchTimeoutMs());
     maxQueueSize = tt::config::maxQueueSize();
@@ -248,37 +244,17 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    // The runner drives tt-metal directly, so no Python-side config exists
-    // to feed. What is exported here mirrors, item for item, what the Python
-    // server's BaseDeviceRunner/setup_runner_environment exported per worker:
-    // chip visibility, CPU thread caps, the matmul throttle, and the kernel
-    // cache path. Set in the child so sibling workers get their own values.
+    
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
 
-    // Mirror setup_cpu_threading_limits. Without these caps, torch/OpenMP in
-    // every worker defaults to one thread per host core, and 32 sibling
-    // workers oversubscribe the CPU so badly that the host-side part of each
-    // request cycle (tokenization, tensor prep, result extraction) dominates
-    // latency. Python's wide-pool variant (16 threads) only applies to its
-    // dynamic batcher, a vLLM scheduling mode that does not exist on this
-    // path - the C++ service always forms fixed-size batches - so the
-    // non-batcher sizing (2 OMP/MKL threads, 1 torch thread) applies
-    // unconditionally. The runner reads TORCH_NUM_THREADS back to call
-    // torch.set_num_threads, exactly like the Python worker did.
+   
     const char* cpuThreads = "2";
     const char* torchThreads = "1";
     setenv("OMP_NUM_THREADS", cpuThreads, 1);
     setenv("MKL_NUM_THREADS", cpuThreads, 1);
     setenv("TORCH_NUM_THREADS", torchThreads, 1);
 
-    // Mirror setup_cpu_threading_limits' throttle export. Python resolved
-    // settings.default_throttle_level as the DEFAULT_THROTTLE_LEVEL env var
-    // when set, else the (model, device) row in config/constants.py - which
-    // is int 0 for every embedding model, falsy, so nothing was exported.
-    // Deployments pass the env var (the model specs set
-    // DEFAULT_THROTTLE_LEVEL explicitly); any non-empty value is forwarded
-    // verbatim - including "0", which Python also forwarded (a truthy
-    // string) and which tt-metal reads as "no throttle".
+
     if (const char* throttle = std::getenv("DEFAULT_THROTTLE_LEVEL");
         throttle && *throttle) {
       setenv("TT_MM_THROTTLE_PERF", throttle, 1);
@@ -286,10 +262,8 @@ struct EmbeddingService::Impl {
 
     // Per-worker kernel cache, mirroring the Python server's
     // setup_runner_environment. Without it every worker JIT-compiles into
-    // the same ~/.cache/tt-metal-cache build-key directory and the parallel
-    // warmup races: one worker mmaps an ELF another is still writing
-    // ("cannot map elf file into memory: Invalid argument") or silently
-    // runs a corrupted kernel.
+    // the same directory - race conditions.
+ 
     if (const char* metalHome = std::getenv("TT_METAL_HOME");
         metalHome && *metalHome) {
       std::string deviceSuffix = visibleDevices;
@@ -386,10 +360,6 @@ struct EmbeddingService::Impl {
 
     TT_LOG_INFO("[EmbeddingService] Starting with {} worker processes",
                 numWorkers);
-
-    // Fully size the vector before any other thread can observe it: the
-    // startup thread, dispatch threads, and health snapshots all index into
-    // it concurrently, so it must never reallocate.
     {
       std::lock_guard lock(workersMutex);
       workers.reserve(numWorkers);
@@ -405,11 +375,8 @@ struct EmbeddingService::Impl {
 
   /**
    * Bring up worker 0 alone and wait for its READY handshake before spawning
-   * the rest. The first warmup on a cold volume generates the shared tensor
-   * cache (model_cache/.../tensor_cache_*); when all workers race to generate
-   * it concurrently they read each other's half-written .tensorbin files and
-   * crash with "file too small" / SIGBUS in memcpy_to_device. Once one worker
-   * has written the cache, the remaining workers warm up in parallel safely.
+   * the rest. The first warmup on a cold volume generates the shared tensor cache.
+   * Once one worker has written the cache, the remaining workers warm up in parallel safely.
    */
   void runStartup() {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
