@@ -109,22 +109,38 @@ _TASK_PROFILES = {
 
 _HARNESS_MODEL_ENV_KEYS = ("TAU2_USER_MODEL", "TAU2_NL_ASSERTIONS_MODEL")
 
-# Sampling parameters that can be re-pointed inside a borrowed agentic config.
-#
-# The token budget is deliberately not among them. Its agentic spelling is
-# ``max_tokens``, and it is one half of a coupled constraint -- an agent sends
-# roughly ``max_input_tokens + max_output_tokens`` per request and the sum must
-# stay under the server's max_context -- so moving one number in isolation
-# turns a working budget into 400s mid-trial. An agent's budget is the agent's,
-# not a per-answer sampling choice.
+# Document parameters that map to an agent key of the same name. The token
+# budget is handled separately: see :meth:`_agentic_budget`.
 _AGENTIC_SAMPLING_KEYS = ("temperature", "top_p", "top_k", "reasoning_effort")
 
-# Agent kwargs whose value is a JSON *string* rather than a mapping, and which
-# therefore has to be parsed to be re-pointed. tau3 is the case: its adapter's
-# ``build_llm_args()`` sets only temperature, so every other parameter reaches
-# LiteLLM through this argument -- and it must stay a string, because the
-# adapter shlex-quotes the value onto the container command line, where a dict
-# raises TypeError.
+# Agent-side key -> the document parameter it carries.
+_AGENTIC_KEY_SOURCE = {
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "top_k": "top_k",
+    "reasoning_effort": "reasoning_effort",
+    "max_output_tokens": "max_gen_toks",
+    "max_tokens": "max_gen_toks",
+    "max_input_tokens": "max_gen_toks",
+}
+
+# LiteLLM's drop_params discards anything the OpenAI provider does not know, so
+# these only survive inside extra_body, which it merges verbatim.
+_LITELLM_EXTRA_BODY_KEYS = ("top_k", "reasoning_effort")
+
+# Where each agent carries that extra_body, for building one the donor lacks.
+_AGENT_EXTRA_BODY_PATH = {
+    "terminus-2": ("llm_kwargs", "extra_body"),
+    "mini-swe-agent": ("config", "model", "model_kwargs", "extra_body"),
+}
+
+# tau3's adapter builds only temperature; everything else rides in this JSON
+# string, which the borrowed donor may or may not carry.
+_JSON_ARGS_AGENT = "tau3_llm_agent"
+_JSON_ARGS_KEY = "llm_args_json"
+
+# Such a value must stay a JSON string: the adapter shlex-quotes it onto the
+# container command line, where a dict raises TypeError.
 _JSON_STRING_ARG_SUFFIX = "_json"
 
 # LiteLLM selects its OpenAI-compatible provider on this prefix; the remainder
@@ -418,43 +434,100 @@ class RequirementsTargetPack(TargetPack):
     def _repoint_agent_sampling(
         self, cfg: Any, task_name: str, ae: AccuracyEval, changes: Dict[str, Any]
     ) -> None:
-        """Apply the document's sampling to a borrowed agent, where it has the knob.
+        """Apply the document's sampling and token budget to a borrowed agent.
 
-        Adds nothing the agent does not already read, so a parameter it has no
-        knob for is reported rather than invented -- tau3 takes no ``top_k``
-        anywhere, and no agent takes the document's token budget under a name
-        this would recognise. Saying so matters more than it looks: the eval
-        still runs and still produces a score, and without the warning that
-        score reads as measured under parameters that never reached the server.
+        A parameter with no knob and no known place to build one is reported,
+        not guessed: the eval still runs and still produces a score, which
+        without the warning reads as measured under parameters that never
+        reached the server.
         """
         stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
         if not stated:
             return
         sampling = {k: v for k, v in stated.items() if k in _AGENTIC_SAMPLING_KEYS}
 
-        found: set = set()
-        if sampling:
-            agent_kwargs = _repoint_sampling(cfg.agent_kwargs or {}, sampling, found)
-            if agent_kwargs != (cfg.agent_kwargs or {}):
-                logger.info(
-                    "Task %s: measuring under the document's genKwargs %r, "
-                    "replacing the borrowed agent's own sampling.",
-                    task_name,
-                    {k: v for k, v in sampling.items() if k in found},
-                )
-                changes["agent_kwargs"] = agent_kwargs
+        params = dict(sampling)
+        params.update(self._agentic_budget(stated, task_name))
 
-        unhonoured = sorted(set(stated) - found)
+        found: set = set()
+        original = cfg.agent_kwargs or {}
+        agent_kwargs = _repoint_sampling(original, params, found)
+        honoured = {_AGENTIC_KEY_SOURCE[k] for k in found}
+
+        agent = getattr(cfg, "agent", None)
+        missing = {k: v for k, v in stated.items() if k not in honoured}
+        # Landing one of these anywhere but an extra_body is not enough: the
+        # first-class argument is what drop_params discards.
+        for key in _LITELLM_EXTRA_BODY_KEYS:
+            if key in stated and not _in_extra_body(agent_kwargs, key):
+                missing[key] = stated[key]
+        if missing and agent == _JSON_ARGS_AGENT:
+            agent_kwargs = _build_json_args(agent_kwargs, missing, task_name)
+            honoured |= set(missing)
+        elif missing and agent in _AGENT_EXTRA_BODY_PATH:
+            buildable = {
+                k: v for k, v in missing.items() if k in _LITELLM_EXTRA_BODY_KEYS
+            }
+            if buildable:
+                agent_kwargs = _build_extra_body(
+                    agent_kwargs, _AGENT_EXTRA_BODY_PATH[agent], buildable, task_name
+                )
+                honoured |= set(buildable)
+
+        if agent_kwargs != original:
+            logger.info(
+                "Task %s: measuring under the document's genKwargs %r.",
+                task_name,
+                {k: stated[k] for k in sorted(honoured)},
+            )
+            changes["agent_kwargs"] = agent_kwargs
+
+        unhonoured = sorted(set(stated) - honoured)
         if unhonoured:
             logger.warning(
                 "Task %s: the document states %r, but this agent exposes no "
-                "such knob -- its config carries no place to put them, and "
-                "inventing one would guess at the agent's own schema. The run "
-                "samples the way the agent does, so its score is not measured "
-                "under those parameters.",
+                "knob for them. Its score is not measured under those.",
                 task_name,
                 {k: stated[k] for k in unhonoured},
             )
+
+    def _agentic_budget(
+        self, stated: Mapping[str, Any], task_name: str
+    ) -> Dict[str, int]:
+        """The agent-side budget keys for the document's requested output tokens.
+
+        An agent splits the context window between what it sends and what it
+        asks back, and the two must sum below it, so the requested budget only
+        makes sense paired with an input cap derived from the same context.
+        """
+        requested = stated.get("max_gen_toks")
+        if requested is None:
+            return {}
+        context = self._doc.model.context_length
+        if not context:
+            logger.warning(
+                "Task %s: not applying the document's maxGenToks %s -- it has "
+                "no model.contextLength to size the input budget against, and "
+                "raising the output cap alone can push a request past the "
+                "server's context.",
+                task_name,
+                requested,
+            )
+            return {}
+        if requested >= context:
+            logger.warning(
+                "Task %s: not applying the document's maxGenToks %s -- it "
+                "leaves no room for a prompt inside model.contextLength %s.",
+                task_name,
+                requested,
+                context,
+            )
+            return {}
+        return {
+            "max_output_tokens": requested,
+            "max_tokens": requested,
+            "max_input_tokens": context - requested,
+        }
 
     def _find_task_template(
         self, candidates: Sequence[str]
@@ -863,23 +936,12 @@ class RequirementsTargetPack(TargetPack):
 def _repoint_sampling(node: Any, params: Mapping[str, Any], found: set) -> Any:
     """``node`` with ``params`` replaced wherever the config already carries them.
 
-    Never adds a key. Each agent nests its sampling somewhere different --
-    mini-swe-agent under ``config.model.model_kwargs``, terminus-2 with
-    ``temperature`` at the top level but ``top_p`` inside ``llm_kwargs``, and
-    ``top_k`` inside an ``extra_body`` because LiteLLM's ``drop_params`` throws
-    away anything the OpenAI provider does not recognise. Encoding those
-    layouts here would mean carrying each agent's config schema and re-checking
-    it at every agent release.
-
-    Replacing only what is already present needs none of that: the borrowed
-    config demonstrates where its agent reads a parameter from, so the value is
-    changed exactly there. It also cannot produce the duplicate that terminus-2
-    breaks on -- a ``reasoning_effort`` in both the constructor args and
-    ``llm_kwargs`` reaches LiteLLM twice and raises TypeError -- because a key
-    that is absent stays absent.
-
-    ``found`` collects the parameters that landed somewhere, so the caller can
-    report the ones this agent has no knob for.
+    Never adds a key: each agent nests these differently, and the borrowed
+    config already shows where its agent reads them from. Adding one also risks
+    the duplicate terminus-2 breaks on -- a ``reasoning_effort`` in both the
+    constructor args and ``llm_kwargs`` reaches LiteLLM twice and raises
+    TypeError. ``found`` collects what landed, so the caller can report the
+    rest.
     """
     if isinstance(node, Mapping):
         out = dict(node)
@@ -899,6 +961,102 @@ def _repoint_sampling(node: Any, params: Mapping[str, Any], found: set) -> Any:
     if isinstance(node, list):
         return [_repoint_sampling(item, params, found) for item in node]
     return node
+
+
+def _in_extra_body(node: Any, key: str) -> bool:
+    """True if ``key`` sits inside an ``extra_body`` anywhere in ``node``."""
+    if isinstance(node, Mapping):
+        extra = node.get("extra_body")
+        if isinstance(extra, Mapping) and key in extra:
+            return True
+        for name, value in node.items():
+            if (
+                isinstance(name, str)
+                and name.endswith(_JSON_STRING_ARG_SUFFIX)
+                and isinstance(value, str)
+            ):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    continue
+            if _in_extra_body(value, key):
+                return True
+        return False
+    if isinstance(node, list):
+        return any(_in_extra_body(item, key) for item in node)
+    return False
+
+
+def _build_extra_body(
+    agent_kwargs: Mapping[str, Any],
+    path: Sequence[str],
+    params: Mapping[str, Any],
+    task_name: str,
+) -> Dict[str, Any]:
+    """Put ``params`` into the agent's extra_body, creating the path if needed."""
+    out = dict(agent_kwargs)
+    node = out
+    for key in path[:-1]:
+        child = node.get(key)
+        node[key] = dict(child) if isinstance(child, Mapping) else {}
+        node = node[key]
+    existing = node.get(path[-1])
+    node[path[-1]] = {
+        **(existing if isinstance(existing, Mapping) else {}),
+        **params,
+    }
+    logger.info(
+        "Task %s: carrying %r into %s, which is where this agent reads them.",
+        task_name,
+        dict(params),
+        ".".join(path),
+    )
+    return out
+
+
+def _build_json_args(
+    agent_kwargs: Mapping[str, Any], params: Mapping[str, Any], task_name: str
+) -> Dict[str, Any]:
+    """Put ``params`` into the agent's JSON-string LiteLLM arguments.
+
+    Constructed rather than only patched: whether a borrowed donor carries one
+    is arbitrary, so a document that states top_p would otherwise be honoured
+    or dropped depending on which model the task was borrowed from.
+    """
+    out = dict(agent_kwargs)
+    raw = out.get(_JSON_ARGS_KEY)
+    try:
+        args = json.loads(raw) if isinstance(raw, str) else {}
+    except ValueError:
+        logger.warning(
+            "Task %s: replacing %s, which is not valid JSON: %r",
+            task_name,
+            _JSON_ARGS_KEY,
+            raw,
+        )
+        args = {}
+    if not isinstance(args, dict):
+        args = {}
+
+    for key, value in params.items():
+        if key == "max_gen_toks":
+            args["max_tokens"] = value
+        elif key in _LITELLM_EXTRA_BODY_KEYS:
+            extra = args.get("extra_body")
+            args["extra_body"] = (
+                {**extra, key: value} if isinstance(extra, dict) else {key: value}
+            )
+        else:
+            args[key] = value
+
+    logger.info(
+        "Task %s: carrying %r into %s, which is where this agent reads them.",
+        task_name,
+        dict(params),
+        _JSON_ARGS_KEY,
+    )
+    out[_JSON_ARGS_KEY] = json.dumps(args)
+    return out
 
 
 def _repoint_sampling_json(raw: str, params: Mapping[str, Any], found: set) -> str:
