@@ -2124,7 +2124,7 @@ templates:
 # is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
 # no local TT serving is implied. Same weights as the VLLM gemma-4-31B-it
 # template above (P300X2 / GPU); this MEDIA entry is the SUPER_CLUSTER path.
-# Context is the 200K deployment window (MAX_CONTEXT_LENGTH 204800), not the 48K QB2 DRAM pool.
+# Context is the 128K deployment window of the SC20 speculative-decode server, not the 48K QB2 DRAM pool.
 - weights:
     - google/gemma-4-31B-it
   impl: tt_transformers
@@ -2132,7 +2132,7 @@ templates:
   device_model_specs:
     - device: SUPER_CLUSTER
       max_concurrency: 8  # 16 -> 8: SC20 speculative-decode deployment runs 8 concurrent users, 2026-09-15
-      max_context: 204800  # 200 * 1024: matches the SC16 deployment MAX_CONTEXT_LENGTH / MAX_ISL (was 131072), 2026-09-15
+      max_context: 131072  # 128 * 1024: the SC20 speculative-decode deployment serves a 128K window, 2026-09-15
       default_impl: true
   status: EXPERIMENTAL
   env_vars:
