@@ -2131,7 +2131,7 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 16  # 12 -> 16: concurrency-16 experiment on the SC16 blaze deployment (n-slots / PM_MAX_USERS 16), 2026-09-15
+      max_concurrency: 8  # 16 -> 8: SC20 speculative-decode deployment runs 8 concurrent users, 2026-09-15
       max_context: 204800  # 200 * 1024: matches the SC16 deployment MAX_CONTEXT_LENGTH / MAX_ISL (was 131072), 2026-09-15
       default_impl: true
   status: EXPERIMENTAL
