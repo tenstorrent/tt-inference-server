@@ -44,12 +44,8 @@ LLM_GAUNTLET_PREFIX = "llm-gauntlet;"
 # Directory name the clone lands in, under the repo root.
 LLM_GAUNTLET_DIRNAME = "llm-gauntlet"
 
-# llm-gauntlet is private, so anonymous access fails either way and the
-# transport is decided by which credential the host actually has. SSH by
-# default: a developer machine and any runner that checks this repo out over
-# SSH already has a usable key. A GitHub Actions runner usually has neither a
-# key nor a credential helper -- it authenticates with a token -- so setting
-# LLM_GAUNTLET_TOKEN_ENV switches to HTTPS, where a token applies.
+# SSH by default (llm-gauntlet is private); LLM_GAUNTLET_TOKEN_ENV switches to
+# HTTPS for token-only runners (e.g. CI).
 DEFAULT_LLM_GAUNTLET_REPO = "git@github.com:tenstorrent/llm-gauntlet.git"
 DEFAULT_LLM_GAUNTLET_REPO_HTTPS = "https://github.com/tenstorrent/llm-gauntlet.git"
 
@@ -59,11 +55,8 @@ DEFAULT_LLM_GAUNTLET_REPO_HTTPS = "https://github.com/tenstorrent/llm-gauntlet.g
 LLM_GAUNTLET_REPO_ENV = "TT_LLM_GAUNTLET_REPO"
 LLM_GAUNTLET_REF_ENV = "TT_LLM_GAUNTLET_REF"
 
-# A GitHub token with read access to llm-gauntlet contents. Setting it selects
-# HTTPS and authenticates the fetch. Deliberately a separate variable rather
-# than asking operators to embed the token in the URL: the token is sent as a
-# git *config* value through the environment, so it never appears in argv (and
-# therefore never in run_command's command log), and the URL stays printable.
+# A GitHub token; setting it authenticates fetches over HTTPS (see
+# `_token_env`). Kept out of the URL so it never appears in argv/logs.
 LLM_GAUNTLET_TOKEN_ENV = "TT_LLM_GAUNTLET_TOKEN"
 
 

@@ -41,22 +41,11 @@ from workflow_module.target_pack import TargetPack
 logger = logging.getLogger(__name__)
 
 # Human-facing accuracy-eval names (from the document) -> catalog task names,
-# most preferred first. Matched case-insensitively after stripping whitespace.
-# Extend as new evals appear in requirement documents.
-#
-# A tuple rather than a single name because the same benchmark is configured
-# under several task names, tuned per model family: GPQA Diamond is
-# ``gpqa_diamond_cot_zeroshot`` for some models and ``r1_gpqa_diamond`` for
-# others. A document names the *benchmark*, so any of its spellings satisfies
-# it -- and :meth:`_find_task_template` prefers whichever the document's own
-# model configures, because that one is tuned for it. The order here only
-# decides what to borrow when the model configures none of them.
-#
-# The Tau^3 spellings are listed out because ``_normalize_eval_name`` only
-# lowercases and collapses whitespace: it leaves "^" alone and does not strip a
-# trailing "benchmark". Keeping that normalizer dumb is deliberate -- teaching
-# it to fold "^" or drop "benchmark" would silently change matching for every
-# other key here.
+# most preferred first; matched case-insensitively after stripping whitespace.
+# A tuple, not a single name, because the same benchmark is configured under
+# several task names per model family (:meth:`_find_task_template` prefers
+# whichever the document's model configures). Tau^3 spellings are listed out
+# because ``_normalize_eval_name`` deliberately doesn't fold "^" or "benchmark".
 _EVAL_NAME_TO_TASK = {
     "gpqa-diamond": ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond"),
     "gpqa diamond": ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond"),
@@ -115,28 +104,12 @@ _TASK_PROFILES = {
     },
 }
 
-# Harness env keys that name a *model* rather than a credential or endpoint.
-# tau3 runs the model under test as its own simulated user and NL-assertion
-# judge, so every catalog entry points these at its own repo -- which means a
-# borrowed harness config would send that traffic to the model it was borrowed
-# from. Extend this when a new model-valued harness env key appears; a key that
-# is missing here is silently inherited from the donor.
+
 _HARNESS_MODEL_ENV_KEYS = ("TAU2_USER_MODEL", "TAU2_NL_ASSERTIONS_MODEL")
 
 # LiteLLM selects its OpenAI-compatible provider on this prefix; the remainder
 # is the model id sent to the server (see llm_module/drivers/agentic.py).
 _LITELLM_OPENAI_PREFIX = "openai/"
-
-# lm-eval classes whose streaming response parser is known broken: it raises
-# KeyError 'message' on every response (see the notes beside the
-# stream=false gen_kwargs in reference_config/evals/eval_config.py). Requests
-# for these must stay unstreamed even though that risks a proxy timeout.
-_NO_STREAMING_EVAL_CLASSES = frozenset({"local-chat-completions"})
-
-# Requests per sweep point = concurrency * this multiple, floored, so each
-# point issues enough requests to characterize steady state.
-_NUM_PROMPTS_CONCURRENCY_MULTIPLE = 8
-_MIN_NUM_PROMPTS = 16
 
 
 def _normalize_eval_name(name: str) -> str:
@@ -154,10 +127,6 @@ def unknown_eval_names(doc: RequirementsDoc) -> List[str]:
         for ae in doc.accuracy_evals
         if _normalize_eval_name(ae.name) not in _EVAL_NAME_TO_TASK
     ]
-
-
-def _num_prompts_for(concurrency: int) -> int:
-    return max(_MIN_NUM_PROMPTS, concurrency * _NUM_PROMPTS_CONCURRENCY_MULTIPLE)
 
 
 class RequirementsModelSpecProvider(ModelSpecProvider):
@@ -293,7 +262,7 @@ class RequirementsTargetPack(TargetPack):
 
         A requirements run validates a *deployed* endpoint, which is typically
         reached through a gateway that gives the origin a fixed window to start
-        responding -- Cloudflare returns 524 after ~100s. An unstreamed
+        responding -- Cloudflare returns 524 after about 100s. An unstreamed
         generation sends nothing until it finishes, so any eval whose answers
         run to thousands of tokens (chain-of-thought reasoning, most of them)
         exceeds that window and the request is killed at the edge, however
@@ -303,28 +272,13 @@ class RequirementsTargetPack(TargetPack):
         The catalog defaults to unstreamed because it is written for a server
         reached directly, where there is no such deadline.
 
-        Not applied to :data:`_NO_STREAMING_EVAL_CLASSES`, where lm-eval cannot
-        parse a streamed response at all -- a timeout is recoverable, a parser
-        that drops every answer is not.
+        Harbor-backed tasks (the agentic benchmarks) never read gen_kwargs:
+        their requests come from the agent via LiteLLM, not from lm-eval, so
+        setting stream here would claim a fix that is not happening.
         """
-        # Harbor-backed tasks (the agentic benchmarks) never read gen_kwargs:
-        # their requests come from the agent via LiteLLM, not from lm-eval, so
-        # setting stream here would claim a fix that is not happening.
         if getattr(template, "agentic_eval_config", None) is not None:
             return {}
         gen_kwargs = dict(getattr(template, "gen_kwargs", None) or {})
-        eval_class = getattr(template, "eval_class", None)
-        if eval_class in _NO_STREAMING_EVAL_CLASSES:
-            if str(gen_kwargs.get("stream", "")).lower() != "true":
-                logger.info(
-                    "Task %s: leaving streaming off -- lm-eval's %r streaming "
-                    "parser cannot read the response. A long generation through "
-                    "a proxy may be cut off at the edge (HTTP 524); point "
-                    "--server-url at the origin if that happens.",
-                    task_name,
-                    eval_class,
-                )
-            return {}
         if str(gen_kwargs.get("stream", "")).lower() == "true":
             return {}
         logger.info(
@@ -551,7 +505,7 @@ class RequirementsTargetPack(TargetPack):
                     scenario.kind,
                 )
                 continue
-            params.extend(self._scenario_params(scenario))
+            params.extend(self._scenario_params(scenario, device, model_spec))
 
         task = BenchmarkTask(
             param_map={device: params},
@@ -559,11 +513,30 @@ class RequirementsTargetPack(TargetPack):
         )
         return BenchmarkConfig(model_id=model_spec.model_id, tasks=[task])
 
-    def _scenario_params(self, scenario: Scenario) -> List[Any]:
+    def _scenario_params(
+        self, scenario: Scenario, device: Any, model_spec: Any
+    ) -> List[Any]:
+        from reference_config.benchmarking.benchmark_config import (
+            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE,
+            get_num_prompts,
+        )
         from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
+        from workflows.workflow_types import DeviceTypes
 
         if not scenario.sweep:
             return []
+
+        min_num_prompts = 0
+        if device == DeviceTypes.SUPER_CLUSTER:
+            model_max_concurrency = getattr(
+                getattr(model_spec, "device_model_spec", None),
+                "max_concurrency",
+                None,
+            )
+            if model_max_concurrency:
+                min_num_prompts = (
+                    SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
+                )
         # With per-row overrides in play, "the scenario has no SLOs" is no
         # longer the right predicate: a scenario can declare none itself and
         # still have every row supply its own.
@@ -626,7 +599,14 @@ class RequirementsTargetPack(TargetPack):
                     isl=point.isl,
                     osl=point.osl,
                     max_concurrency=point.concurrency,
-                    num_prompts=_num_prompts_for(point.concurrency),
+                    num_prompts=get_num_prompts(
+                        point.isl,
+                        point.osl,
+                        point.concurrency,
+                        min_num_prompts=(
+                            min_num_prompts if point.concurrency > 1 else 0
+                        ),
+                    ),
                     task_type="text",
                     targets=targets,
                     priority=_aggregate_priority(list(target_priorities.values())),
@@ -867,29 +847,11 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
 def _point_goodput_slo(point: Any, default: Optional[Slo]) -> Optional[GoodputSlo]:
     """Goodput bars in force at one sweep point -- none unless the row says so.
 
-    A scenario-level ``slo`` is not broadcast across the sweep, and the point's
-    own latency *targets* are not reused as bars either. Three reasons:
-
-    A single set of bars cannot hold across a sweep spanning orders of
-    magnitude of ISL and more than one OSL -- ``e2el`` 10s is comfortable at
-    128 output tokens and arithmetically impossible at 1024, where ``tpot``
-    22.2ms alone needs 22.7s. This module already takes that position for the
-    same field read as a *target*: see the capability-gate comment in
-    ``_scenario_params``, where a scenario-level SLO attaches to the single
-    best point rather than to all of them.
-
-    And a target is not a bar. A target constrains an aggregate ("mean TTFT
-    must be under 4100ms"); a bar is per-request, and goodput is the share of
-    requests clearing every bar. A run can meet the mean and still have a
-    third of its requests outside it. The document draws the same line in its
-    own methodology: "measured TTFT/TPOT/E2EL/throughput must meet these
-    values, and goodput counts only requests inside the SLO."
-
-    So bars come from the row's ``slo``, and a document that wants goodput
-    measured has to state them. A row declaring only some still inherits the
-    scenario's other fields, which is the override semantics the document
-    schema defines; what is refused is inventing bars for a row that declares
-    none.
+    A scenario-level ``slo`` is not broadcast across the sweep (a bar that
+    holds at ISL 128 can be unreachable at ISL 1024; see the capability-gate
+    comment in ``_scenario_params`` for the same field read as a target), and
+    a target (aggregate) is not a bar (per-request) either. A row declaring
+    only some fields still inherits the rest from the scenario.
     """
     if point.slo is None:
         return None
