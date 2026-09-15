@@ -87,6 +87,56 @@ def test_accuracy_evals_parsed_with_priorities():
     assert tb.gpu_reference_score == 41.5
 
 
+def test_eval_gen_kwargs_parsed_into_the_harness_vocabulary():
+    """The document's camelCase parameters, transliterated, and only those set."""
+    from workflow_module.requirements_schema import AccuracyEval
+
+    ae = AccuracyEval.from_dict(
+        {
+            "name": "GPQA-Diamond",
+            "gpuReferenceScore": 79.2,
+            "genKwargs": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "maxGenToks": 32768,
+                "reasoningEffort": "high",
+            },
+        }
+    )
+    assert ae.gen_kwargs.stated() == {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20,
+        "max_gen_toks": 32768,
+        "reasoning_effort": "high",
+    }
+    # Only the stated ones: an unset parameter is not a claim, so it must not
+    # reach a harness as a value the document never chose.
+    partial = AccuracyEval.from_dict(
+        {
+            "name": "GPQA-Diamond",
+            "gpuReferenceScore": 79.2,
+            "genKwargs": {"temperature": 0.6},
+        }
+    )
+    assert partial.gen_kwargs.stated() == {"temperature": 0.6}
+
+
+def test_eval_without_gen_kwargs_states_nothing():
+    """Absent, empty and unrecognised-only all mean the same: no claim."""
+    from workflow_module.requirements_schema import AccuracyEval
+
+    base = {"name": "GPQA-Diamond", "gpuReferenceScore": 79.2}
+    assert AccuracyEval.from_dict(base).gen_kwargs is None
+    assert AccuracyEval.from_dict({**base, "genKwargs": {}}).gen_kwargs is None
+    # Tolerant parsing (this loader ignores unknown keys so a newer minor
+    # revision still loads) must not turn an unknown key into an empty claim.
+    assert (
+        AccuracyEval.from_dict({**base, "genKwargs": {"seed": 42}}).gen_kwargs is None
+    )
+
+
 def test_scenario_sweep_and_targets_parsed():
     doc = load_requirements(_FIXTURE)
     assert len(doc.scenarios) == 1

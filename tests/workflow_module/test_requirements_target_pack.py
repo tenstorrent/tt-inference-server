@@ -211,6 +211,255 @@ def test_eval_task_synthesized_with_neutral_defaults(doc, monkeypatch):
     assert gpqa.priority == "must"
 
 
+def test_document_gen_kwargs_override_the_template_per_parameter(doc, caplog):
+    """The document states sampling; the borrowed template keeps the rest.
+
+    A template is borrowed from whichever catalog model defines the task, and
+    carries sampling tuned for that model. A document stating a temperature
+    must not silently discard a token budget it never chose.
+    """
+    from dataclasses import replace
+
+    from workflow_module.requirements_schema import AccuracyEval
+
+    tuned = AccuracyEval.from_dict(
+        {
+            "name": "GPQA-Diamond",
+            "gpuReferenceScore": 79.2,
+            "genKwargs": {"temperature": 0.6, "topP": 0.95},
+        }
+    )
+    pack = RequirementsTargetPack(
+        replace(doc, accuracy_evals=[tuned]), TenstorrentTargetPack()
+    )
+    template, _ = pack._find_task_template(
+        ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond")
+    )
+    assert template is not None, "this test needs a catalog template to borrow"
+
+    task = pack.eval_config(doc.model.name).tasks[0]
+
+    # Stated: the document wins, whether or not the template had an opinion.
+    assert task.gen_kwargs["temperature"] == 0.6
+    assert task.gen_kwargs["top_p"] == 0.95
+    # Unstated: every other parameter survives exactly as the template had it.
+    for key, value in template.gen_kwargs.items():
+        if key in ("temperature", "stream"):
+            continue
+        assert task.gen_kwargs[key] == value, key
+    # And streaming is still forced on afterwards (the gateway deadline).
+    assert task.gen_kwargs["stream"] == "true"
+
+
+def test_document_gen_kwargs_reach_a_synthesized_task(doc, monkeypatch):
+    """Off-catalog: there is no template, so the document is all there is."""
+    from dataclasses import replace
+
+    from workflow_module.requirements_schema import AccuracyEval
+
+    tuned = AccuracyEval.from_dict(
+        {
+            "name": "GPQA-Diamond",
+            "gpuReferenceScore": 79.2,
+            "genKwargs": {"temperature": 0.6, "maxGenToks": 32768},
+        }
+    )
+    pack = RequirementsTargetPack(
+        replace(doc, accuracy_evals=[tuned]), TenstorrentTargetPack()
+    )
+    monkeypatch.setattr(
+        pack, "_find_task_template", lambda candidates: (None, candidates[0])
+    )
+    task = pack.eval_config("acme/off-catalog-model").tasks[0]
+
+    assert task.gen_kwargs == {
+        "stream": "True",
+        "temperature": 0.6,
+        "max_gen_toks": 32768,
+    }
+
+
+def _agentic_task_for(doc, name, task, gen_kwargs):
+    """Build the eval task a document with ``gen_kwargs`` produces for ``task``."""
+    from dataclasses import replace
+
+    from workflow_module.requirements_schema import AccuracyEval
+
+    ae = AccuracyEval.from_dict(
+        {"name": name, "gpuReferenceScore": 50.0, "genKwargs": gen_kwargs}
+    )
+    pack = RequirementsTargetPack(
+        replace(doc, accuracy_evals=[ae]), TenstorrentTargetPack()
+    )
+    template, _ = pack._find_task_template((task,))
+    assert template is not None, f"this test needs a catalog template for {task}"
+    return pack.eval_config(doc.model.name).tasks[0], template
+
+
+def test_agentic_sampling_is_repointed_where_the_agent_nests_it(doc):
+    """Each agent keeps sampling somewhere different; re-point it in place.
+
+    mini-swe-agent reads it from ``config.model.model_kwargs``, terminus-2
+    takes ``temperature`` at the top level but ``top_p`` inside ``llm_kwargs``.
+    Both values are the *donor's* — ``top_p`` is 0.95 for some catalog models
+    and 1.0 for others — so a borrowed config otherwise samples as whoever the
+    donor was.
+    """
+    swe, swe_template = _agentic_task_for(
+        doc,
+        "SWE-bench Verified",
+        "swe_bench_verified",
+        {"temperature": 0.3, "topP": 0.9},
+    )
+    model_kwargs = swe.agentic_eval_config.agent_kwargs["config"]["model"][
+        "model_kwargs"
+    ]
+    assert model_kwargs["temperature"] == 0.3
+    assert model_kwargs["top_p"] == 0.9
+    # The donor's shared, module-level config is untouched.
+    donor = swe_template.agentic_eval_config.agent_kwargs["config"]["model"]
+    assert donor["model_kwargs"]["temperature"] == 1.0
+
+    tb, _ = _agentic_task_for(
+        doc, "Terminal-Bench 2.0", "terminal_bench_2", {"temperature": 0.3, "topP": 0.9}
+    )
+    agent_kwargs = tb.agentic_eval_config.agent_kwargs
+    assert agent_kwargs["temperature"] == 0.3
+    assert agent_kwargs["llm_kwargs"]["top_p"] == 0.9
+
+
+def test_top_k_is_repointed_inside_extra_body(doc):
+    """``top_k`` is not an OpenAI parameter, so it rides in ``extra_body``.
+
+    LiteLLM runs with ``drop_params=True`` and throws away anything the OpenAI
+    provider does not recognise; ``extra_body`` is merged into the request body
+    verbatim, so that is the only place top_k survives. It is nested two levels
+    below the sampling it belongs to, which is why re-pointing walks the whole
+    config instead of reading fixed paths — and why the thinking toggle sitting
+    beside it is left alone.
+    """
+    from workflows.requirements_target_pack import _repoint_sampling
+
+    mini_swe_agent = {
+        "version": "2.2.8",
+        "max_tokens": 32 * 1024,
+        "config": {
+            "model": {
+                "model_kwargs": {
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "extra_body": {
+                        "top_k": 20,
+                        "chat_template_kwargs": {"enable_thinking": True},
+                    },
+                }
+            }
+        },
+    }
+    found: set = set()
+
+    out = _repoint_sampling(
+        mini_swe_agent, {"temperature": 0.3, "top_p": 0.9, "top_k": 64}, found
+    )
+
+    model_kwargs = out["config"]["model"]["model_kwargs"]
+    assert model_kwargs["temperature"] == 0.3
+    assert model_kwargs["top_p"] == 0.9
+    assert model_kwargs["extra_body"]["top_k"] == 64
+    assert found == {"temperature", "top_p", "top_k"}
+    # The agent's own budget and its thinking toggle are not sampling.
+    assert out["max_tokens"] == 32 * 1024
+    assert model_kwargs["extra_body"]["chat_template_kwargs"] == {
+        "enable_thinking": True
+    }
+    # The donor's shared, module-level config is untouched.
+    assert (
+        mini_swe_agent["config"]["model"]["model_kwargs"]["extra_body"]["top_k"] == 20
+    )
+
+
+# The real tau3 agent_kwargs shape (the task is dev-catalog only, so the
+# mechanism is exercised directly rather than through a catalog lookup).
+# ``llm_args_json`` must stay a JSON *string*: tau3's adapter sets only
+# temperature in build_llm_args(), so other parameters ride in this argument,
+# and it is shlex-quoted onto the container command line where a dict raises
+# TypeError.
+_TAU3_AGENT_KWARGS = {
+    "tau2_trial_index": 0,
+    "temperature": 1.0,
+    "llm_args_json": '{"top_p": 0.95}',
+    "max_steps": 200,
+}
+
+
+def _repoint_tau3(doc, gen_kwargs):
+    """Run the agentic sampling re-point over tau3's real agent_kwargs shape."""
+    from dataclasses import dataclass, field
+    from typing import Any, Dict
+
+    from workflow_module.requirements_schema import AccuracyEval
+
+    @dataclass(frozen=True)
+    class FakeHarness:
+        agent_kwargs: Dict[str, Any] = field(
+            default_factory=lambda: dict(_TAU3_AGENT_KWARGS)
+        )
+
+    cfg = FakeHarness()
+    ae = AccuracyEval.from_dict(
+        {"name": "tau3-banking", "gpuReferenceScore": 50.0, "genKwargs": gen_kwargs}
+    )
+    changes: dict = {}
+    RequirementsTargetPack(doc, TenstorrentTargetPack())._repoint_agent_sampling(
+        cfg, "tau3_bench_banking", ae, changes
+    )
+    return changes, cfg
+
+
+def test_tau3_top_p_is_repointed_inside_its_json_string_argument(doc):
+    """tau3 takes top_p as a JSON *string*, and it has to stay one."""
+    import json
+
+    changes, cfg = _repoint_tau3(doc, {"temperature": 0.3, "topP": 0.9})
+    agent_kwargs = changes["agent_kwargs"]
+
+    assert agent_kwargs["temperature"] == 0.3
+    raw = agent_kwargs["llm_args_json"]
+    assert isinstance(raw, str), "a dict here fails in the adapter's shlex.quote"
+    assert json.loads(raw)["top_p"] == 0.9
+    # The donor's shared config object is untouched.
+    assert cfg.agent_kwargs["llm_args_json"] == '{"top_p": 0.95}'
+
+
+def test_agentic_parameters_the_agent_cannot_take_are_flagged(doc, caplog):
+    """No knob means say so, not invent one.
+
+    The eval still runs and still produces a score; without the warning that
+    score reads as measured under parameters that never reached the server.
+    """
+    import json
+
+    with caplog.at_level("WARNING"):
+        changes, _ = _repoint_tau3(doc, {"topK": 20, "maxGenToks": 4096})
+
+    assert "no such knob" in caplog.text
+    assert "top_k" in caplog.text and "max_gen_toks" in caplog.text
+    # Nothing was added anywhere to carry them.
+    assert "top_k" not in json.dumps(changes.get("agent_kwargs", {}))
+
+
+def test_an_eval_without_gen_kwargs_only_gets_streaming(doc, pack):
+    """No genKwargs is no sampling claim — the pre-existing behaviour stands."""
+    template, _ = pack._find_task_template(
+        ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond")
+    )
+    assert doc.accuracy_evals[0].gen_kwargs is None
+
+    task = pack.eval_config(doc.model.name).tasks[0]
+
+    assert task.gen_kwargs == {**template.gen_kwargs, "stream": "true"}
+
+
 def test_harness_concurrency_comes_from_the_document(doc, pack):
     """The borrowed template's trial count must not decide this deployment's.
 
@@ -1006,7 +1255,9 @@ def test_harness_overrides_do_not_mutate_the_borrowed_config(doc):
     )
     pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
 
-    overrides = pack._harness_overrides(FakeTask(shared), "tau3_bench_banking")
+    overrides = pack._harness_overrides(
+        FakeTask(shared), "tau3_bench_banking", doc.accuracy_evals[0]
+    )
 
     fixed = overrides["agentic_eval_config"]
     want = f"openai/{doc.model.name}"
