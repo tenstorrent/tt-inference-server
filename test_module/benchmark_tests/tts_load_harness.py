@@ -11,53 +11,39 @@ it by hand against any deployed TTS server.
     sweep    concurrency sweep, one of three arrival models -> results JSON
     report   that JSON -> summary table, FC/SC/TC box table, optional charts
     dump     one concurrency, per-chunk detail: occupancy, bubbles, per-user table
-    ladder   dump repeated across a concurrency ladder, with server-side spans
+    ladder   dump repeated across a concurrency ladder
 
     python tts_load_harness.py sweep --host d08u08 --concurrency 1,2,4,8,16 \\
         --duration 60 --warmup 20 --text-tokens 1024 --out results.json
     python tts_load_harness.py report --results results.json --target all \\
         --chart curve.png
     python tts_load_harness.py dump --users 64 --duration 90 --skip 25 --outdir dump_u64
-    python tts_load_harness.py ladder --users 16,32,64,128 --container tt-cpp-worker
+    python tts_load_harness.py ladder --users 16,32,64,128
 
 Requires Python 3.10+. Only matplotlib is non-stdlib, and only for ``--chart`` --
 every table works without it.
 
-ARRIVAL MODELS -- they answer different questions; say which one produced a number.
-  closed  fixed worker pool, each worker sends its next request on completion. Self
-          throttling: cannot overload the server. Concurrency is the input, request
-          rate the output. Answers "with N live sessions, what do they experience".
-  open    Poisson arrivals, as tts_sim models them:
-              lambda = target_concurrency / mean_service_time   (simulation.py:92)
-              inter_arrival ~ Exponential(lambda)               (simulation.py:266)
-          Does NOT self-throttle: past capacity the backlog grows without bound and
-          latency climbs with elapsed time rather than settling. Answers "what rate
-          can we serve at target latency". ``--rate`` pins lambda instead.
-  burst   every request at a level released at the same instant -- a thundering herd.
-          Worst-case simultaneous prefill demand. One shot per level, no steady state.
+Measurement definitions:
+  * Closed loop maintains a fixed worker pool. Open loop uses exponential sleeps
+    between launches; thread-launch overhead adds to the requested intervals.
+    A full in-flight cap either sheds arrivals or blocks the generator. Burst mode
+    releases one request per worker together.
+  * FC measures request start to the first complete audio chunk. SC is the second
+    chunk gap; TC covers later gaps. The client assumes one HTTP chunk per audio
+    chunk, a 44-byte WAV header, and mono 48 kHz, 16-bit PCM audio.
+  * Latencies use a monotonic clock. Occupancy uses wall-clock request intervals,
+    clipped to the measurement window, including failures and unfinished requests.
+    Wall-clock changes can affect C; it measures client requests, not device slots.
+  * Throughput is an arrival-cohort estimate: successful window arrivals divided
+    by window duration, following them through drain. Capped requests count toward
+    request rate but receive no character credit. It is not in-window completions.
+  * Sweep JSON retains only the first 200 TC gaps per request. Passing SC/TC P95
+    does not establish zero violations. Dump reports per-gap deadline violations.
+  * Legacy "bubbles" and "stall_ms" fields count long gaps and their excess over
+    one chunk's audio duration. They do not simulate buffered playback stalls.
+  * Short runs have weak tail-percentile estimates. Unfinished requests contribute
+    to occupancy but not successful-request latency; drain deadlines are bounded.
 
-MEASUREMENT NOTES
-  * TTFB/FC is send -> first AUDIO chunk. The server emits the 44-byte WAV header
-    BEFORE synthesis starts, so it is consumed and timed separately (``hdr_s``) and
-    never counted as audio. Timing the first body byte instead measures the HTTP
-    round trip (~2 ms) and is wrong.
-  * Chunk framing is parsed (transfer-encoding: chunked), never byte thresholds. The
-    server emits one HTTP chunk per audio chunk, so SC/TC live in the chunk
-    boundaries; http.client dechunks transparently and destroys them, hence the raw
-    socket. A byte-threshold mark silently measures the wrong chunk when header size
-    or token count drifts, and blocks across chunk boundaries inside recv().
-  * The response must be chunked. Sending "Connection: close" makes drogon delimit
-    the body by closing the socket instead, after which chunk boundaries (and so
-    SC/TC) are unrecoverable; requests are sent keep-alive and an unchunked response
-    is reported loudly rather than as silently empty audio.
-  * Latency is measured on a monotonic clock; occupancy integrals use wall clock,
-    because they must line up across threads and with server logs.
-  * Requests run to COMPLETION unless ``--max-chunks`` caps them. Do not cap the
-    output if the figure is meant to be characters/hour: a truncated request did not
-    process the characters you are claiming credit for.
-  * Thin levels lie. Fewer than ~20 completions makes p90/p99 a single outlier; the
-    box table says so. Cold IO threads pay a ~1.3 s tokenizer cache miss, which at
-    low arrival rates never warms out.
 """
 
 from __future__ import annotations
@@ -65,53 +51,58 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import math
 import os
 import random
 import re
 import socket
 import statistics as st
-import subprocess
 import sys
 import threading
 import time
 from dataclasses import dataclass, field
 
+
+# Support both direct execution and package imports.
+if __package__:
+    from . import tts_load_report as reporting
+else:
+    import tts_load_report as reporting
+
+SAMPLE_RATE = reporting.SAMPLE_RATE
+CHUNK_TOKENS = reporting.CHUNK_TOKENS
+CHUNK_AUDIO_S = reporting.CHUNK_AUDIO_S
+CHUNK_AUDIO_MS = reporting.CHUNK_AUDIO_MS
+FC_P50_MS = reporting.FC_P50_MS
+FC_P95_MS = reporting.FC_P95_MS
+SC_DEADLINE_MS = reporting.SC_DEADLINE_MS
+TC_DEADLINE_MS = reporting.TC_DEADLINE_MS
+TARGETS = reporting.TARGETS
+pct = reporting.pct
+_metric_samples = reporting._metric_samples
+_arrival_cohort = reporting._arrival_cohort
+_overlaps = reporting._overlaps
+_occupancy = reporting._occupancy
+aggregate = reporting.aggregate
+SUMMARY_COLS = reporting.SUMMARY_COLS
+summary_table = reporting.summary_table
+box_table = reporting.box_table
+print_report = reporting.print_report
+_render_charts = reporting._render_charts
+_dump_user_rows = reporting._dump_user_rows
+_write_dump_tsvs = reporting._write_dump_tsvs
+_pct_over = reporting._pct_over
+_latency_row = reporting._latency_row
+_dump_text = reporting._dump_text
+LADDER_COLS = reporting.LADDER_COLS
+ladder_table = reporting.ladder_table
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PATH = "/v1/audio/speech"
 DEFAULT_KEY = "your-secret-key"
-SAMPLE_RATE = 48000
 BYTES_PER_SAMPLE = 2
 WAV_HEADER_BYTES = 44
 MAX_TC_GAPS = 200  # cap the per-request gap list so a sweep's JSON stays manageable
-
-# Tokens per audio chunk must match the server's TTS_CHUNK_TOKENS: the underrun
-# threshold and the TC deadline both derive from the audio one chunk carries.
-CHUNK_TOKENS = int(os.environ.get("CHUNK_TOKENS", "30"))
-CHUNK_AUDIO_S = CHUNK_TOKENS * 960 / SAMPLE_RATE
-CHUNK_AUDIO_MS = CHUNK_AUDIO_S * 1000.0
-# SC deadline is the 0.3 s playback buffer; TC deadline is the audio a chunk
-# carries, less the 30 ms safety margin (tts_sim/config.py tc_deadline_ms).
-FC_P50_MS, FC_P95_MS, SC_DEADLINE_MS = 150.0, 350.0, 270.0
-TC_DEADLINE_MS = CHUNK_AUDIO_MS - 30.0
-
-TARGETS = {
-    # key: (label, axis name, per-request field, p50 target ms, p95 target ms)
-    # The second threshold is the P95 acceptance target (FC p95 <= 350 ms), not P90.
-    "ttfb": ("TTFB", "TTFB — time to first audio chunk (ms)", "ttfb_s", 150.0, 350.0),
-    "ttfs": ("TTFS", "TTFS — first->second chunk gap (ms)", "sc_s", 270.0, 270.0),
-    "ttft": (
-        "TTFT",
-        "TTFT — steady-state inter-chunk gap (ms)",
-        # "tc_gaps" is the SERIALIZED name (_serializable renames gaps -> tc_gaps),
-        # and aggregate() always reads serialized records. _metric_samples also
-        # accepts the in-memory "gaps" so either shape works.
-        "tc_gaps",
-        570.0,
-        570.0,
-    ),
-}
 
 
 @dataclass
@@ -124,8 +115,7 @@ class Target:
     key: str = DEFAULT_KEY
     timeout: float = 300.0
     text: str = ""
-    # OSL cap in audio chunks; 0 = uncapped. 34 -> OSL 1020 output tokens, keeping
-    # ISL+OSL inside CACHE_MAX_SEQ_LEN=2048. The client closes the socket at the cap.
+    # Client-side audio chunk cap; 0 = uncapped. This does not limit server decoding.
     max_chunks: int = 0
     request: bytes = field(default=b"", repr=False)
 
@@ -150,43 +140,36 @@ def build_text(nchars: int) -> str:
 
 
 def request(tgt: Target, uid: int = -1, rec: dict | None = None) -> dict:
-    """Issue one request over a raw socket, timing every audio chunk. Never raises.
+    """Read a chunked WAV response and retain timings even on failure.
 
-    A connect or protocol error must not make the request vanish: it still held a
-    server slot for real time, so dropping it biases the occupancy integral low and
-    hides the failure. Everything is recorded here and classified downstream.
-
-    Times are seconds since send, on a monotonic clock:
-      admit_s  response headers arrived        (admission proof)
-      hdr_s    44-byte WAV header consumed     (never counted as audio)
-      ttfb_s   first AUDIO chunk               (FC -- the listener's wait)
-      sc_s     chunk2 - chunk1                 (SC)
-      gaps     chunk[k+1] - chunk[k], k >= 2   (TC, steady-state gaps)
-    ``t_send``/``t_end`` are wall clock, for occupancy integrals.
+    FC/SC/TC use monotonic offsets from request start. Wall-clock t_send/t_end
+    delimit client occupancy. A supplied record is registered before execution.
     """
     # A caller may register the record BEFORE the send (see run_closed/dump), so that
     # a request still in flight when the join deadline expires is still in the record
     # set. In that case t_send is already stamped and must not be reset here.
     if rec is None:
         rec = {"uid": uid, "t_send": time.time()}
-    rec.update({
-        "t_end": None,
-        "admit_s": None,
-        "hdr_s": None,
-        "ttfb_s": None,
-        "sc_s": None,
-        "gaps": [],
-        "marks": [],
-        "nchunks": 0,
-        "gen_s": None,
-        "bytes": 0,
-        "audio_s": 0.0,
-        "chars": len(tgt.text),
-        "ok": False,
-        "capped": False,
-        "status": None,
-        "error": None,
-    })
+    rec.update(
+        {
+            "t_end": None,
+            "admit_s": None,
+            "hdr_s": None,
+            "ttfb_s": None,
+            "sc_s": None,
+            "gaps": [],
+            "marks": [],
+            "nchunks": 0,
+            "gen_s": None,
+            "bytes": 0,
+            "audio_s": 0.0,
+            "chars": len(tgt.text),
+            "ok": False,
+            "capped": False,
+            "status": None,
+            "error": None,
+        }
+    )
     t0 = time.perf_counter()
     sock = None
     marks: list[float] = rec["marks"]
@@ -210,10 +193,6 @@ def request(tgt: Target, uid: int = -1, rec: dict | None = None) -> dict:
         rec["status"] = int(head.split(b"\r\n", 1)[0].split()[1])
 
         if rec["status"] != 200:
-            # Record the server's OWN explanation, and do it BEFORE the chunked test:
-            # error responses are never chunked, so that test would otherwise report a
-            # misleading parse error and lose the one piece of evidence that says
-            # WHICH admission limit rejected this request.
             err_body = buf
             match = re.search(rb"content-length:\s*(\d+)", head, re.I)
             if match:
@@ -279,12 +258,7 @@ def request(tgt: Target, uid: int = -1, rec: dict | None = None) -> dict:
                 sock.close()
             except OSError:
                 pass
-        # Derive in the finally, so a stream that died mid-flight keeps the chunks it
-        # did receive: it held a server slot for real time, and dropping it biases an
-        # occupancy integral low and hides the failure. ``ok`` stays False for those.
-        # t_end likewise MUST be stamped here -- the early returns above (non-200,
-        # non-chunked) would otherwise leave it None, and those are exactly the records
-        # needed to account for rejected requests.
+        # Retain partial audio and stamp completion on every exit, including errors.
         rec["t_end"] = time.time()
         rec["nchunks"] = len(marks)
         rec["bytes"] = audio["bytes"] + (WAV_HEADER_BYTES - audio["hdr_left"])
@@ -320,7 +294,7 @@ def run_closed(
         while not stop.is_set():
             rec = {"uid": uid, "t_send": time.time(), "t_end": None}
             with lock:
-                out.append(rec)          # registered BEFORE the send, never vanishes
+                out.append(rec)  # registered BEFORE the send, never vanishes
             request(tgt, uid, rec)
 
     logger.info("  warmup %.0fs @ conc=%d ...", warmup, conc)
@@ -332,20 +306,14 @@ def run_closed(
         t.start()
     time.sleep(warmup + duration)  # steady-state window begins after warmup
     stop.set()
-    # Close the window the instant arrivals stop, BEFORE the join -- run_open already
-    # does this and explains why; run_closed was still stamping it post-join, so the
-    # drain inflated the denominator. Measured on the closed loop: RPS read 18.8% low
-    # (u=256: 12.90 vs a true 15.88) and the occupancy integral ~14% low with it.
+    # Exclude drain from the measurement window.
     w_end = time.time()
     deadline = time.time() + tgt.timeout + 5
     for t in threads:
         t.join(max(0, deadline - time.time()))
     cut = t_start + warmup
     with lock:
-        # Return EVERY record. Filtering by arrival here also discarded the requests
-        # that were already in flight at `cut` -- at steady state that is ~C of them,
-        # so the occupancy integral lost ~C*W/2 request-seconds and read several
-        # percent low. Latency/throughput filters belong downstream, per metric.
+        # Keep warmup carryover for occupancy; filter cohorts downstream.
         return list(out), cut, w_end
 
 
@@ -360,20 +328,11 @@ def run_open(
     on_full: str = "shed",
     max_inflight_mult: int = 4,
 ) -> tuple[list, float, float, int, float]:
-    """Open loop: Poisson arrivals, rate derived the way tts_sim derives it.
+    """Launch requests with exponential interarrival sleeps and an in-flight cap.
 
-    Unlike the closed loop this does NOT self-throttle, so two things are handled:
-
-      * in-flight is capped (``max_inflight``, else ``max_inflight_mult * conc``).
-        Past that, arrivals are SHED and counted -- an unbounded thread spawn would
-        measure the client's collapse, not the server's.
-      * the caller must check whether the level ever reached steady state; a
-        percentile from a non-converged window is an artifact of window length.
-
-    ``max_inflight`` turns this hybrid: paced arrivals with a hard ceiling, where
-    ``on_full="shed"`` drops the arrival (load-balancer reject) and ``"block"`` makes
-    it wait for a free slot (connection pool). Block degenerates to a closed loop as
-    lambda grows, and to a pure open loop as the ceiling grows.
+    Rate is explicit or calibrated from target concurrency / mean request duration.
+    At the cap, shed arrivals or block until a slot opens. Blocking introduces
+    completion feedback; neither mode proves that the server reached steady state.
     """
     lam = rate if rate else (conc / mean_service_s if mean_service_s > 0 else 1.0)
     logger.info(
@@ -384,7 +343,6 @@ def run_open(
         warmup,
     )
     rng = random.Random(42 + conc)  # tts_sim rng_seed default is 42
-    stop = threading.Event()
     out, lock = [], threading.Lock()
     inflight = [0]
     shed = [0]
@@ -398,9 +356,6 @@ def run_open(
         logger.info("  in-flight ceiling: %d (%s when full)", cap, on_full)
 
     def fire() -> None:
-        # Register before sending so an arrival that is still in flight when the run
-        # ends is in the record set; otherwise unfinished requests vanish and the
-        # occupancy integral cannot see the work they represent.
         rec = {"uid": -1, "t_send": time.time(), "t_end": None}
         with lock:
             out.append(rec)
@@ -409,14 +364,14 @@ def run_open(
             inflight[0] -= 1
 
     t_start = time.time()
-    while not stop.is_set():
+    while True:
         if time.time() - t_start >= warmup + duration:
             break
         with lock:
             busy = inflight[0]
         if busy >= cap and on_full == "block":
             t_blocked = time.time()
-            while not stop.is_set():
+            while True:
                 with lock:
                     if inflight[0] < cap:
                         break
@@ -454,7 +409,7 @@ def run_open(
                 break
         time.sleep(0.5)
     with lock:
-        return list(out), cut, w_end, shed[0], lam   # every record; filter downstream
+        return list(out), cut, w_end, shed[0], lam  # every record; filter downstream
 
 
 def run_burst(tgt: Target, conc: int) -> tuple[list, float, float]:
@@ -541,10 +496,6 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         "closed_loop": args.arrival == "closed",
         "started": time.time(),
     }
-    # Open loop needs a service-time estimate to derive lambda. Seed it from the
-    # preflight -- a single unloaded request, so it UNDERestimates W under load and
-    # therefore overestimates lambda -- then refine it after every level from the
-    # measured mean, which is what keeps later levels honest.
     mean_service_s = probe["gen_s"] or 1.0
     all_recs, levels_meta = [], []
     doc = {"meta": meta, "levels": levels_meta, "records": all_recs}
@@ -570,10 +521,7 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         else:
             recs, w0, w1 = run_closed(tgt, conc, args.duration, args.warmup)
 
-        # same window filter as aggregate() -- run_closed/run_open now return every
-        # record, so this numerator would otherwise include warmup and disagree with
-        # the report built from the same run
-        in_win = [r for r in recs if w0 <= r["t_send"] < w1]
+        in_win = _arrival_cohort(recs, w0, w1)
         ok = [r for r in in_win if r["ok"]]
         rps = len(ok) / (w1 - w0) if w1 > w0 else 0.0
         ttfbs = sorted(r["ttfb_s"] for r in ok if r["ttfb_s"] is not None)
@@ -603,9 +551,9 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
             len(in_win),
             rps,
             p50,
-            len(in_win) - len(ok),   # same cohort as the report; `recs` now carries
-                                     # warmup, so len(recs)-len(ok) called healthy
-                                     # warmup requests errors
+            len(in_win) - len(ok),  # same cohort as the report; `recs` now carries
+            # warmup, so len(recs)-len(ok) called healthy
+            # warmup requests errors
             extra,
         )
 
@@ -638,397 +586,6 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
 # ----------------------------------------------------------------- aggregate + report
 
 
-def pct(vals, p: float) -> float:
-    if not vals:
-        return float("nan")
-    v = sorted(vals)
-    k = (len(v) - 1) * p / 100.0
-    lo, hi = int(math.floor(k)), min(int(math.floor(k)) + 1, len(v) - 1)
-    return v[lo] + (v[hi] - v[lo]) * (k - lo)
-
-
-def _metric_samples(ok_recs: list[dict], key: str) -> list[float]:
-    """Milliseconds for one metric. ``tc_gaps`` is a LIST per request -- every gap is a
-    sample, matching how the TC deadline was always evaluated (per gap, not per
-    request), so one long request cannot hide many late chunks."""
-    field_name = TARGETS[key][2]
-    # Records reach here in two shapes: in-memory (request() writes "gaps") and
-    # serialized (_serializable renames it to "tc_gaps"). Reading only one silently
-    # yielded zero TC samples and nan percentiles. Accept both.
-    aliases = {"tc_gaps": ("tc_gaps", "gaps"), "gaps": ("gaps", "tc_gaps")}
-    names = aliases.get(field_name, (field_name,))
-    out = []
-    for r in ok_recs:
-        v = next((r[n] for n in names if r.get(n) is not None), None)
-        if v is None:
-            continue
-        if isinstance(v, list):
-            out.extend(x * 1000.0 for x in v)
-        else:
-            out.append(v * 1000.0)
-    return out
-
-
-def _occupancy(recs: list[dict], w0: float, w1: float) -> float:
-    """Time-average in-flight over [w0, w1], from arrival/departure events.
-
-    NOT assumed equal to the worker count: requests that start before the window or
-    run past it are clipped, so this is what the server actually carried. Cross-check
-    with Little's law, C = RPS * W.
-    """
-    if not (w0 and w1 and w1 > w0):
-        return float("nan")
-    events = []
-    for r in recs:
-        start = max(r["t_send"], w0)
-        end = min(r.get("t_end") or w1, w1)
-        if end > start:
-            events.append((start, 1))
-            events.append((end, -1))
-    events.sort()
-    area, cur, prev = 0.0, 0, w0
-    for t, delta in events:
-        area += cur * (t - prev)
-        prev = t
-        cur += delta
-    area += cur * (w1 - prev)
-    return area / (w1 - w0)
-
-
-def aggregate(doc: dict) -> tuple[list[dict], int]:
-    """One row per concurrency level.
-
-    Only completed requests count toward RPS. A request that errored, returned
-    non-200, or came back as a bare WAV header processed no characters and is
-    reported in the errors column instead -- a level that "went fast" by failing
-    cannot masquerade as throughput. This matters: a broken build can return HTTP 200
-    with an empty WAV in ~50 ms, which naive accounting scores as enormous throughput.
-    """
-    chars = doc["meta"]["chars_per_request"]
-    by_conc: dict[int, list[dict]] = {}
-    for r in doc["records"]:
-        by_conc.setdefault(r["conc"], []).append(r)
-    level_meta = {lvl["conc"]: lvl for lvl in doc.get("levels", [])}
-
-    rows = []
-    for conc in sorted(by_conc):
-        recs = by_conc[conc]
-        meta = level_meta.get(conc, {})
-        w0, w1 = meta.get("window_start"), meta.get("window_end")
-        # TWO COHORTS, deliberately different:
-        #  * `recs` (everything, incl. warmup carryover and unfinished) -> occupancy.
-        #    Those requests really were occupying the server inside the window.
-        #  * `ok` (clean completions that ARRIVED in the window) -> latency + RPS,
-        #    which must not be inflated by warmup arrivals now that run_closed and
-        #    run_open return the full record set instead of pre-filtering.
-        ok = [r for r in recs if r.get("ok")
-              and (w0 is None or w1 is None or w0 <= r["t_send"] < w1)]
-        window = (meta.get("window_end", 0) - meta.get("window_start", 0)) or float(
-            "nan"
-        )
-        rps = len(ok) / window if window and window == window else float("nan")
-        full = [r for r in ok if not r.get("capped")]   # uncapped -> full text spoken
-        ttfb = [r["ttfb_s"] * 1000 for r in ok if r.get("ttfb_s") is not None]
-        gen = [r["gen_s"] for r in ok if r.get("gen_s")]
-        audio = [r["audio_s"] for r in ok if r.get("audio_s")]
-        rtf = [
-            r["gen_s"] / r["audio_s"] for r in ok if r.get("audio_s") and r.get("gen_s")
-        ]
-        nchunks = [r["nchunks"] for r in ok if r.get("nchunks")]
-        # Count failures within the SAME cohort the successes come from. `recs` now
-        # carries warmup carryover, so `len(recs) - len(ok)` reported every healthy
-        # warmup request as an error (2 good requests -> n_ok=1, n_err=1, errors={}).
-        in_win = [r for r in recs
-                  if w0 is None or w1 is None or w0 <= r["t_send"] < w1]
-        errors: dict[str, int] = {}
-        for r in in_win:
-            if not r.get("ok"):
-                key = r.get("error") or "?"
-                errors[key] = errors.get(key, 0) + 1
-
-        row = {
-            "conc": conc,
-            "n_ok": len(ok),
-            "n_err": len(in_win) - len(ok),
-            "rps": rps,
-            "ttfb_p50": pct(ttfb, 50),
-            "ttfb_p90": pct(ttfb, 90),
-            "ttfb_p95": pct(ttfb, 95),   # the acceptance target is p95, not p90
-            "ttfb_p99": pct(ttfb, 99),
-            "gen_p50": pct(gen, 50) if gen else float("nan"),
-            "audio_p50": pct(audio, 50) if audio else float("nan"),
-            "rtf_p50": pct(rtf, 50) if rtf else float("nan"),
-            # Characters may only be credited for responses that delivered the WHOLE
-            # text. A client-capped response stopped early; crediting its full input
-            # inflates characters/hour by whatever it never spoke.
-            "mchar_h": (chars * (len(full) / window) * 3600.0 / 1e6
-                        if window and window == window else float("nan")),
-            "n_capped": sum(1 for r in ok if r.get("capped")),
-            "C": _occupancy(recs, w0, w1),
-            "chunks": (sum(nchunks) / len(nchunks)) if nchunks else float("nan"),
-            "errors": errors,
-        }
-        for key in TARGETS:
-            samples = _metric_samples(ok, key)
-            row[f"{key}_p50"] = pct(samples, 50)
-            row[f"{key}_p90"] = pct(samples, 90)
-            row[f"{key}_p95"] = pct(samples, 95)
-            row[f"{key}_p99"] = pct(samples, 99)
-            row[f"{key}_n"] = len(samples)
-        rows.append(row)
-    return rows, chars
-
-
-SUMMARY_COLS = [
-    ("conc", "users", 5),
-    ("rps", "RPS", 7),
-    ("mchar_h", "Mchar/h", 8),
-    ("ttfb_p50", "TTFB p50", 9),
-    ("ttfb_p90", "TTFB p90", 9),
-    ("ttfs_p50", "TTFS p50", 9),
-    ("ttfs_p90", "TTFS p90", 9),
-    ("ttft_p50", "TTFT p50", 9),
-    ("ttft_p90", "TTFT p90", 9),
-    ("rtf_p50", "RTF", 6),
-    ("n_ok", "ok", 6),
-    ("n_err", "err", 5),
-]
-
-
-def summary_table(rows: list[dict], chars: int, closed_loop) -> str:
-    """Throughput is Mchar/h = chars_per_request * RPS * 3600 / 1e6."""
-    out = [f"\nchars/request = {chars}   closed-loop = {closed_loop}"]
-    out.append("".join(h.rjust(w) for _, h, w in SUMMARY_COLS))
-    out.append("-" * sum(w for _, _, w in SUMMARY_COLS))
-    for r in rows:
-        line = ""
-        for key, _, w in SUMMARY_COLS:
-            v = r[key]
-            line += (f"{v:.2f}" if isinstance(v, float) else str(v)).rjust(w)
-        out.append(line)
-    return "\n".join(out)
-
-
-def box_table(rows: list[dict]) -> str:
-    """The FC/SC/TC target table: one box per concurrency level, with the agreed
-    deadlines and each metric's ratio to its target. A metric is ✓ only when it is at
-    or under target -- ratios are value/target, so lower is better."""
-    spec = [
-        ("FC p50", "ttfb_p50", 150.0),
-        # P95, not P90: the acceptance target is FC p95 <= 350 ms. Passing p90 says
-        # nothing about p95, and a p90 check can report PASS on a level that misses.
-        ("FC p95", "ttfb_p95", 350.0),
-        ("SC p50", "ttfs_p50", 270.0),
-        ("SC p95", "ttfs_p95", 270.0),
-        ("TC p50", "ttft_p50", 570.0),
-        ("TC p95", "ttft_p95", 570.0),
-    ]
-    heads = ["users", "chunks", "C"] + [n for n, _, _ in spec]
-    widths = [7, 7, 7] + [8] * len(spec)
-
-    def rule(left, mid, right):
-        return left + mid.join("─" * w for w in widths) + right
-
-    def row(cells):
-        return "│" + "│".join(c.center(w) for c, w in zip(cells, widths)) + "│"
-
-    out = []
-    for r in rows:
-        values = [str(r["conc"]), f"{r['chunks']:.1f}", f"{r['C']:.1f}"]
-        values += [f"{r[k]:.0f}ms" if r[k] == r[k] else "n/a" for _, k, _ in spec]
-        marks = []
-        for _, k, target in spec:
-            v = r[k]
-            marks.append(
-                "n/a"
-                if v != v
-                else ("✓ " if v <= target else "✗ ") + f"{v / target:.2f}×"
-            )
-        out.append(rule("┌", "┬", "┐"))
-        out.append(row(heads))
-        out.append(rule("├", "┼", "┤"))
-        out.append(row(values))
-        out.append(rule("├", "┼", "┤"))
-        out.append(row(["target", "", ""] + [f"≤{t:.0f}ms" for _, _, t in spec]))
-        out.append(rule("├", "┼", "┤"))
-        out.append(row(["", "", ""] + marks))
-        out.append(rule("└", "┴", "┘"))
-        if r["n_ok"] < 20:
-            out.append(
-                f"  ! only {r['n_ok']} completed requests at conc={r['conc']}: "
-                f"p90/p99 are "
-                f"dominated by single outliers (cold IO threads pay a ~1.3 s tokenizer "
-                f"cache miss). Treat p50 only."
-            )
-        out.append("")
-    return "\n".join(out)
-
-
-def print_report(doc: dict, args: argparse.Namespace) -> list[dict]:
-    rows, chars = aggregate(doc)
-    if not rows:
-        sys.exit("no records")
-
-    if getattr(args, "format", "table") == "csv":
-        print(",".join(k for k, _, _ in SUMMARY_COLS))
-        for r in rows:
-            print(
-                ",".join(
-                    f"{r[k]:.3f}" if isinstance(r[k], float) else str(r[k])
-                    for k, _, _ in SUMMARY_COLS
-                )
-            )
-    else:
-        print(summary_table(rows, chars, doc["meta"].get("closed_loop")))
-        print()
-        print(box_table(rows), end="")
-        bad = [r for r in rows if r["n_err"]]
-        if bad:
-            print("\nERRORS (excluded from RPS):")
-            for r in bad:
-                for err, n in sorted(r["errors"].items(), key=lambda x: -x[1]):
-                    print(f"  conc={r['conc']:<5} {n:>5} x {err}")
-
-    if getattr(args, "chart", None):
-        _render_charts(rows, chars, args)
-    return rows
-
-
-def _render_charts(rows: list[dict], chars: int, args: argparse.Namespace) -> None:
-    """TTFB/TTFS/TTFT (x) vs millions of characters per hour (y)."""
-    import textwrap
-
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    def draw(ax, key, show_targets=True, colors=None):
-        label, xaxis, _field, t50, t95 = TARGETS[key]
-        c50, c90 = colors or ("tab:blue", "tab:orange")
-        ax.plot(
-            [r[f"{key}_p50"] for r in rows],
-            [r["mchar_h"] for r in rows],
-            "-o",
-            color=c50,
-            label=f"{label} p50",
-            zorder=3,
-        )
-        ax.plot(
-            [r[f"{key}_p95"] for r in rows],
-            [r["mchar_h"] for r in rows],
-            "--s",
-            color=c90,
-            label=f"{label} p95",
-            zorder=3,
-        )
-        for r in rows:
-            ax.annotate(
-                str(r["conc"]),
-                (r[f"{key}_p50"], r["mchar_h"]),
-                textcoords="offset points",
-                xytext=(6, 5),
-                fontsize=8,
-            )
-        if show_targets:
-            ax.axvline(
-                t50,
-                color="tab:green",
-                ls=":",
-                lw=1,
-                label=f"{label} p50 target {t50:.0f} ms",
-            )
-            if t95 != t50:
-                ax.axvline(
-                    t95,
-                    color="tab:orange",
-                    ls=":",
-                    lw=1,
-                    label=f"{label} p95 target {t95:.0f} ms",
-                )
-        if args.mark_errors:
-            err = [r for r in rows if r["n_err"]]
-            if err:
-                ax.scatter(
-                    [r[f"{key}_p50"] for r in err],
-                    [r["mchar_h"] for r in err],
-                    s=140,
-                    facecolors="none",
-                    edgecolors="red",
-                    zorder=4,
-                    label="level had failed requests",
-                )
-        return xaxis
-
-    if args.no_subtitle:
-        sub = ""
-    else:
-        sub = args.subtitle or f"{chars} chars/request, closed-loop"
-        sub = "\n".join(textwrap.wrap(sub + "; point label = concurrent users", 88))
-    base, ext = os.path.splitext(args.chart)
-    ext = ext or ".png"
-
-    keys = ["ttfb", "ttfs", "ttft"] if args.target == "all" else [args.target]
-    written = []
-    for key in keys:
-        if not any(r[f"{key}_n"] for r in rows):
-            logger.warning(
-                "skipping %s: no samples (needs >= %d chunks/request)",
-                key,
-                2 if key == "ttfs" else 3,
-            )
-            continue
-        fig, ax = plt.subplots(figsize=(9.5, 6.5))
-        xaxis = draw(ax, key)
-        ax.set_xlabel(xaxis)
-        ax.set_ylabel("Throughput (millions of characters / hour)")
-        ax.set_title(f"{args.title}\n{sub}" if sub else args.title, fontsize=11)
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=9)
-        out = args.chart if len(keys) == 1 else f"{base}_{key}{ext}"
-        fig.tight_layout()
-        fig.savefig(out, dpi=150)
-        plt.close(fig)
-        written.append(out)
-
-    if args.target == "all":
-        # combined overlay: all three metrics share the latency axis
-        fig, ax = plt.subplots(figsize=(10, 6.8))
-        palette = {
-            "ttfb": ("tab:blue", "tab:cyan"),
-            "ttfs": ("tab:green", "yellowgreen"),
-            "ttft": ("tab:red", "salmon"),
-        }
-        for key in keys:
-            if any(r[f"{key}_n"] for r in rows):
-                draw(ax, key, show_targets=False, colors=palette[key])
-        for key in keys:
-            t50 = TARGETS[key][3]
-            ax.axvline(
-                t50,
-                ls=":",
-                lw=1,
-                color=palette[key][0],
-                label=f"{TARGETS[key][0]} target {t50:.0f} ms",
-            )
-        ax.set_xlabel("latency (ms) — TTFB / TTFS / TTFT")
-        ax.set_ylabel("Throughput (millions of characters / hour)")
-        title = (
-            args.title if args.no_subtitle else f"{args.title} — all latency targets"
-        )
-        ax.set_title(f"{title}\n{sub}" if sub else title, fontsize=11)
-        ax.grid(alpha=0.3)
-        ax.legend(fontsize=8, ncol=2)
-        out = f"{base}_combined{ext}"
-        fig.tight_layout()
-        fig.savefig(out, dpi=150)
-        plt.close(fig)
-        written.append(out)
-
-    for path in written:
-        logger.info("wrote %s", path)
-
-
 # ------------------------------------------------------------------- pipeline dump
 
 
@@ -1040,17 +597,7 @@ def dump(
     outdir: str,
     warm_requests: int = 24,
 ) -> dict:
-    """Closed-loop run at one concurrency, recording every chunk of every stream.
-
-    Answers "where do the bubbles live?": for every virtual user, the arrival time of
-    every HTTP chunk and the cadence derived from it.
-
-    A BUBBLE is a real-time underrun, not just a slow chunk. Each audio chunk carries
-    CHUNK_TOKENS tokens = 0.600 s of audio, and once playback has started the player
-    drains that much buffer between chunks, so an inter-chunk gap > 600 ms means the
-    pipeline produced audio slower than real time and the listener hears a stall.
-    gap / 600 ms is the local RTF.
-    """
+    """Closed-loop chunk diagnostics; legacy bubble fields measure long gaps."""
     streams: list[dict] = []
     lock, stop = threading.Lock(), threading.Event()
 
@@ -1078,10 +625,7 @@ def dump(
         t.start()
     time.sleep(duration)
     stop.set()
-    # Measurement ends the instant arrivals stop -- BEFORE the join. A post-join stamp
-    # includes the drain, during which workers finish without being replaced and
-    # occupancy falls to zero; integrating to it dragged C ~14% low (u=256 read 218.8
-    # against a Little's-law 254.9).
+    # Exclude drain from the measurement window.
     measurement_end = time.time()
     for t in threads:
         t.join(120)
@@ -1090,17 +634,17 @@ def dump(
     cut = t_start + skip
     with lock:
         allrec = list(streams)
-    # SCORED = completed cleanly. Accepting any >=3-chunk response let an errored
-    # stream count toward latency percentiles and throughput.
-    ok = [r for r in allrec
-          if r.get("t_end") and not r["error"] and r["t_send"] >= cut
-          and len(r["marks"]) >= 3]
-    # ANY errored request is a failure, whatever it managed to deliver first. The
-    # old `and len(marks) < 3` meant an errored >=3-chunk stream was excluded from
-    # `ok` (correctly) but counted in no failure bucket either -- it just vanished.
+    # Chunk diagnostics require clean responses with at least three chunks.
+    ok = [
+        r
+        for r in allrec
+        if r.get("t_end")
+        and not r["error"]
+        and r["t_send"] >= cut
+        and len(r["marks"]) >= 3
+    ]
     n_fail = sum(1 for r in allrec if r["error"])
     n_short = sum(1 for r in allrec if not r["error"] and 0 < len(r["marks"]) < 3)
-    n_unfin = sum(1 for r in allrec if not r.get("t_end"))
     n_empty = sum(1 for r in allrec if not r["marks"])
     if not ok:
         raise SystemExit("no streams scored -- server too slow or refusing")
@@ -1110,41 +654,27 @@ def dump(
         r["fc_ms"] = r["ttfb_s"] * 1000.0
         r["sc_ms"] = r["sc_s"] * 1000.0 if r["sc_s"] is not None else float("nan")
         r["gaps_ms"] = [g * 1000.0 for g in r["gaps"]]
-        # TIME IN SYSTEM -- what Little's law needs. audio_end_s stops at the last
-        # AUDIO chunk; the request still holds a slot until the chunked terminator is
-        # read and the socket closed, so using it for W understates C. Both are
-        # reported, with the tail between them, rather than picking one silently.
+        # Keep last-audio time and full client lifetime separate for tail diagnostics.
         r["audio_end_s"] = r["marks"][-1]
         r["wall_s"] = r["t_end"] - r["t_send"]
         r["tail_s"] = r["wall_s"] - r["audio_end_s"]
         r["rtf"] = r["audio_end_s"] / r["audio_s"] if r["audio_s"] else float("nan")
-        r["bubbles"] = [g for g in r["gaps_ms"] if g > CHUNK_AUDIO_MS]  # real underruns
+        r["bubbles"] = [
+            g for g in r["gaps_ms"] if g > CHUNK_AUDIO_MS
+        ]  # gaps longer than one chunk of audio
         r["stall_ms"] = sum(g - CHUNK_AUDIO_MS for g in r["bubbles"])
 
-    # C = total request-seconds overlapping the window / window seconds. The window is
-    # [cut, measurement_end]: after warmup, before drain. EVERY request that overlaps
-    # it counts -- failures, short responses, and requests that started during warmup
-    # and were still running at `cut` (clipped by the max/min below). Retaining those
-    # removes the ramp-in that would otherwise need a service-time offset. Validates
-    # against Little's law to <1%.
-    area = 0.0
-    for r in allrec:
-        lo = max(r["t_send"], cut)
-        # unfinished at measurement_end -> still occupying the server, clip it there
-        hi = min(r["t_end"] or measurement_end, measurement_end)
-        if hi > lo:
-            area += hi - lo
+    # All overlapping client requests contribute to C, including unfinished ones.
+    area = sum(end - start for start, end in _overlaps(allrec, cut, measurement_end))
     c_meas = area / (measurement_end - cut) if measurement_end > cut else 0.0
 
     os.makedirs(outdir, exist_ok=True)
     rows = _dump_user_rows(ok, users)
-    tsv = _write_dump_tsvs(ok, rows, outdir, users, t_start, allrec, cut, measurement_end)
+    tsv = _write_dump_tsvs(
+        ok, rows, outdir, users, t_start, allrec, cut, measurement_end
+    )
 
-    # RPS MUST divide arrivals by the ARRIVAL window, not by a post-join window: the
-    # latter includes the drain (~W seconds), which understated RPS -- and chunks/s and
-    # Mchar/h with it -- by ~24% at duration=90/skip=25/W=16 (u=256 read 12.90 RPS
-    # against a true 15.95, and Little's law then gave C=207 where the occupancy trace
-    # correctly said ~256).
+    # Arrival-cohort estimate using the configured arrival-window duration.
     elapsed = duration - skip
     summary = {
         "users": users,
@@ -1178,254 +708,16 @@ def dump(
     return summary
 
 
-def _dump_user_rows(ok: list[dict], users: int) -> list[dict]:
-    rows = []
-    for uid in range(users):
-        mine = [r for r in ok if r["uid"] == uid]
-        if not mine:
-            continue
-        gaps = [g for r in mine for g in r["gaps_ms"]]
-        bubbles = [g for r in mine for g in r["bubbles"]]
-        rows.append(
-            {
-                "u": uid,
-                "streams": len(mine),
-                "chunks": sum(r["nchunks"] for r in mine),
-                "admit_p50": pct([r["admit_ms"] for r in mine], 50),
-                "fc_p50": pct([r["fc_ms"] for r in mine], 50),
-                "fc_p90": pct([r["fc_ms"] for r in mine], 90),
-                "sc_p50": pct([r["sc_ms"] for r in mine], 50),
-                "tc_p50": pct(gaps, 50),
-                "tc_p90": pct(gaps, 90),
-                "tc_max": max(gaps) if gaps else float("nan"),
-                "bubbles": len(bubbles),
-                "bub_pct": 100.0 * len(bubbles) / len(gaps) if gaps else 0.0,
-                "stall_ms": sum(r["stall_ms"] for r in mine),
-                "rtf_p50": pct([r["rtf"] for r in mine], 50),
-            }
-        )
-    return rows
-
-
-def _write_dump_tsvs(
-    ok: list[dict], rows: list[dict], outdir: str, users: int, t_start: float,
-    allrec: list[dict] | None = None, w0: float | None = None,
-    w1: float | None = None,
-) -> str:
-    header = [
-        "u",
-        "streams",
-        "chunks",
-        "admit_p50",
-        "fc_p50",
-        "fc_p90",
-        "sc_p50",
-        "tc_p50",
-        "tc_p90",
-        "tc_max",
-        "bubbles",
-        "bub_pct",
-        "stall_ms",
-        "rtf_p50",
-    ]
-    tsv = os.path.join(outdir, f"pipeline_dump_u0_u{users - 1}.tsv")
-    with open(tsv, "w") as f:
-        f.write("\t".join(header) + "\n")
-        for r in rows:
-            f.write(
-                "\t".join(
-                    f"{r[h]:.2f}" if isinstance(r[h], float) else str(r[h])
-                    for h in header
-                )
-                + "\n"
-            )
-
-    with open(os.path.join(outdir, "timings.tsv"), "w") as f:
-        f.write("t_send\tt_end\tgen_s\twall_s\ttail_s\tnchunks\n")
-        for r in ok:
-            f.write(
-                f"{r['t_send']:.4f}\t{r['t_end']:.4f}\t{r['audio_end_s']:.4f}\t"
-                f"{r['wall_s']:.4f}\t{r['tail_s']:.4f}\t{r['nchunks']}\n"
-            )
-
-    # The exported trace must describe the SAME population as the reported C, or it
-    # cannot be used to check it. It was built from `ok` (scored requests only), so
-    # it excluded failures, short responses and warmup carryover -- and therefore
-    # integrated to a different number than the C printed beside it.
-    src = allrec if allrec is not None else ok
-    lo = w0 if w0 is not None else t_start
-    hi = w1 if w1 is not None else max((r["t_end"] or lo) for r in src)
-    events = []
-    for r in src:
-        a = max(r["t_send"], lo)
-        b = min(r.get("t_end") or hi, hi)
-        if b > a:
-            events.append((a, 1))
-            events.append((b, -1))
-    events.sort()
-    with open(os.path.join(outdir, "occupancy.tsv"), "w") as f:
-        f.write("t_rel_s\tin_flight\n")
-        cur = 0
-        for t, delta in events:
-            f.write(f"{t - t_start:.3f}\t{cur}\n")
-            cur += delta
-    return tsv
-
-
-def _pct_over(vals: list[float], deadline: float) -> float:
-    return 100.0 * sum(1 for v in vals if v > deadline) / max(1, len(vals))
-
-
-def _latency_row(label: str, vals: list[float], deadline: str) -> str:
-    """One percentile row of the dump's latency table."""
-    cells = "".join(f"{pct(vals, p):10.1f}" for p in (50, 90, 95, 99))
-    return f"{label:<11}{cells}{max(vals):11.1f}   {deadline}"
-
-
-def _dump_text(s: dict) -> str:
-    fc, sc, tc, admit = s["fc"], s["sc"], s["tc"], s["admit"]
-    stall_s = sum(g - CHUNK_AUDIO_MS for g in s["bubbles"]) / 1000.0
-    latency = "\n".join(
-        [
-            _latency_row("admission", admit, "--"),
-            _latency_row("FC", fc, f"{FC_P50_MS:.0f}/{FC_P95_MS:.0f}"),
-            _latency_row("SC", sc, f"{SC_DEADLINE_MS:.0f}"),
-            _latency_row("TC", tc, f"{TC_DEADLINE_MS:.0f}"),
-        ]
-    )
-    header = f"pipeline dump: {s['users']} users, {s['elapsed_s']:.0f}s scored"
-    fc_p50 = "MISS" if pct(fc, 50) > FC_P50_MS else "ok"
-    fc_p95 = "MISS" if pct(fc, 95) > FC_P95_MS else "ok"
-    return f"""
-================ {header} ================
-streams scored {s["scored"]}   chunks {s["chunks"]}   \
-chunks/s {s["chunks"] / s["elapsed_s"]:.1f}   chars/request {s["chars"]}
-requests recorded {s["recorded"]}   scored {s["scored"]}   failed {s["failed"]}   \
-short(1-2ch) {s["short"]}   empty {s["empty"]}
-arrival window {s["elapsed_s"]:.1f}s   C window {s["window_s"]:.1f}s   \
-(drain excluded; with drain it would be {s["drain_window_s"]:.1f}s)
-C (time-avg in-flight)  {s["C"]:.1f}          RPS {s["rps"]:.2f}
-  Little's law  C = RPS x W
-     W = gen_s  (to last audio chunk) {s["mean_gen_s"]:6.2f}s -> C \
-{s["rps"] * s["mean_gen_s"]:7.1f}
-     W = wall_s (to socket close)     {s["mean_wall_s"]:6.2f}s -> C \
-{s["rps"] * s["mean_wall_s"]:7.1f}
-     post-audio tail                  {s["mean_tail_s"]:6.2f}s
-
-                  p50       p90       p95       p99        max      deadline
-{latency}
-
-BUBBLES (inter-chunk gap > {CHUNK_AUDIO_MS:.0f} ms = audio underrun)
-  count {len(s["bubbles"])} / {len(tc)} gaps = \
-{100.0 * len(s["bubbles"]) / max(1, len(tc)):.1f}%
-  total stall {stall_s:.1f} s across {s["scored"]} streams
-  worst gap {max(tc):.0f} ms = {max(tc) / CHUNK_AUDIO_MS:.2f}x real time
-  users with >=1 bubble: {s["users_with_bubbles"]} / {s["n_users"]}
-  RTF p50 {pct(s["rtf"], 50):.3f}  p90 {pct(s["rtf"], 90):.3f}  (must stay < 1.0)
-
-DEADLINE VIOLATIONS
-  FC p50 {fc_p50}   FC p95 {fc_p95}
-  SC over {SC_DEADLINE_MS:.0f}ms: {_pct_over(sc, SC_DEADLINE_MS):.1f}%
-  TC over {TC_DEADLINE_MS:.0f}ms: {_pct_over(tc, TC_DEADLINE_MS):.1f}%
-
-wrote {s["tsv"]}
-      {os.path.join(s["outdir"], "occupancy.tsv")}
-"""
-
-
 # ------------------------------------------------------------------------- ladder
 
 
-def _docker_log_lines(container: str) -> int:
-    """Current log length, used to mark where this level's telemetry starts."""
-    try:
-        out = subprocess.run(
-            ["docker", "logs", container], capture_output=True, text=True
-        )
-        return len((out.stdout + out.stderr).splitlines())
-    except FileNotFoundError:
-        logger.warning("docker not found -- skipping server-side span capture")
-        return -1
-
-
-def _capture_spans(container: str, mark: int, path: str) -> None:
-    """Write this level's [tts-spans]/[tts-writer] lines and report their medians."""
-    if mark < 0:
-        return
-    out = subprocess.run(["docker", "logs", container], capture_output=True, text=True)
-    lines = [
-        line
-        for line in (out.stdout + out.stderr).splitlines()[mark:]
-        if "tts-spans" in line or "tts-writer" in line
-    ]
-    with open(path, "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-    device_us = [
-        float(m) for line in lines for m in re.findall(r"device_us=([\d.]+)", line)
-    ]
-    rows_avg = [
-        float(m) for line in lines for m in re.findall(r"rows_avg=([\d.]+)", line)
-    ]
-    if device_us:
-        logger.info(
-            "  spans: device_us_p50=%.0f rows_avg_p50=%.2f samples=%d",
-            pct(device_us, 50),
-            pct(rows_avg, 50) if rows_avg else float("nan"),
-            len(device_us),
-        )
-
-
-LADDER_COLS = [
-    ("users", 6),
-    ("scored", 8),
-    ("RPS", 8),
-    ("C", 8),
-    ("FC p50", 9),
-    ("FC p90", 9),
-    ("SC p50", 9),
-    ("TC p50", 9),
-    ("TC p90", 9),
-    ("bubble%", 9),
-    ("RTF p50", 9),
-    ("failed", 8),
-]
-
-
-def ladder_table(results: list[dict]) -> str:
-    out = [
-        "",
-        "".join(h.rjust(w) for h, w in LADDER_COLS),
-        "-" * sum(w for _, w in LADDER_COLS),
-    ]
-    for s in results:
-        tc = s["tc"]
-        cells = [
-            str(s["users"]),
-            str(s["scored"]),
-            f"{s['rps']:.2f}",
-            f"{s['C']:.1f}",
-            f"{pct(s['fc'], 50):.0f}",
-            f"{pct(s['fc'], 90):.0f}",
-            f"{pct(s['sc'], 50):.0f}",
-            f"{pct(tc, 50):.0f}",
-            f"{pct(tc, 90):.0f}",
-            f"{100.0 * len(s['bubbles']) / max(1, len(tc)):.1f}",
-            f"{pct(s['rtf'], 50):.3f}",
-            str(s["failed"]),
-        ]
-        out.append("".join(c.rjust(w) for c, (_, w) in zip(cells, LADDER_COLS)))
-    return "\n".join(out)
-
-
 def ladder(args: argparse.Namespace, tgt: Target) -> list[dict]:
-    """Run ``dump`` at each user count, capturing the server spans for that window."""
+    """Run ``dump`` at each user count and summarize the results."""
     levels = sorted({int(x) for x in args.users.split(",") if x.strip()})
     os.makedirs(args.outdir, exist_ok=True)
     results = []
     for users in levels:
         logger.info("=== %d users %s ===", users, time.strftime("%H:%M:%S"))
-        mark = _docker_log_lines(args.container) if args.container else -1
         summary = dump(
             tgt,
             users,
@@ -1434,10 +726,6 @@ def ladder(args: argparse.Namespace, tgt: Target) -> list[dict]:
             os.path.join(args.outdir, f"dump_u{users}"),
             args.warm_requests,
         )
-        if args.container:
-            _capture_spans(
-                args.container, mark, os.path.join(args.outdir, f"u{users}.server.log")
-            )
         results.append(summary)
         if users != levels[-1]:
             time.sleep(args.settle)
@@ -1459,21 +747,19 @@ def _add_target_args(p: argparse.ArgumentParser) -> None:
         "--text-tokens",
         type=int,
         default=None,
-        help="input length in TOKENS (ISL) instead of chars, converted at "
-        "--chars-per-token. Overrides --text-chars.",
+        help="Approximate input tokens; overrides --text-chars.",
     )
     p.add_argument(
         "--chars-per-token",
         type=float,
         default=3.46,
-        help="measured for this tokenizer/corpus: 3.46",
+        help="Characters per estimated input token.",
     )
     p.add_argument(
         "--max-chunks",
         type=int,
         default=0,
-        help="OSL cap in audio chunks (30 speech tokens each); 0 = uncapped. "
-        "34 -> OSL 1020, keeping ISL+OSL under CACHE_MAX_SEQ_LEN=2048.",
+        help="Client audio-chunk cap; 0 runs to completion.",
     )
 
 
@@ -1486,9 +772,7 @@ def _add_report_args(p: argparse.ArgumentParser) -> None:
         "--target",
         default="ttfb",
         choices=["ttfb", "ttfs", "ttft", "all"],
-        help="which latency metric on the chart's x axis. ttfb=first chunk "
-        "(FC), ttfs=first->second gap (SC), ttft=steady-state gap (TC), "
-        "all=one chart each plus a combined overlay",
+        help="Latency metric: FC, SC, TC, or all charts.",
     )
     p.add_argument("--title", default="TTS — latency vs throughput")
     p.add_argument("--subtitle", default="")
@@ -1500,8 +784,7 @@ def _add_report_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         "--mark-errors",
         action="store_true",
-        help="ring levels that had failed requests (off by default; failures "
-        "are always listed in the table regardless)",
+        help="Mark chart points with failed requests.",
     )
 
 
@@ -1548,27 +831,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--arrival",
         choices=["closed", "open", "burst"],
         default="closed",
-        help="see the module docstring: closed self-throttles, open is a "
-        "Poisson process that can overload, burst is a thundering herd",
+        help="Load model: closed workers, open arrivals, or one burst.",
     )
     p.add_argument(
         "--rate",
         type=float,
         default=None,
-        help="open loop: FIXED arrival rate in req/s, overriding the conc/W "
-        "derived lambda. Use for 'serve at RPS N' questions.",
+        help="Open-loop requests/s; overrides concurrency/service-time calibration.",
     )
     p.add_argument(
         "--max-inflight",
         type=int,
         default=0,
-        help="hybrid: hard ceiling on concurrent requests (0 = 4x conc)",
+        help="Open-loop cap; 0 uses 4x configured concurrency.",
     )
     p.add_argument(
         "--on-full",
         choices=["shed", "block"],
         default="shed",
-        help="at the ceiling: drop the arrival (shed) or make it wait (block)",
+        help="At the open-loop cap: shed arrivals or wait.",
     )
     p.add_argument(
         "--no-table", action="store_true", help="skip the tables after the sweep"
@@ -1600,12 +881,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--outdir", default="tts_ladder")
     p.add_argument("--warm-requests", type=int, default=24)
-    p.add_argument(
-        "--container",
-        default=os.environ.get("TTS_CONTAINER", ""),
-        help="docker container whose [tts-spans]/[tts-writer] telemetry is "
-        "captured per level; empty disables capture",
-    )
     return ap
 
 
