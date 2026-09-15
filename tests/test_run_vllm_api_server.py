@@ -54,6 +54,7 @@ def _build_catalog():
 
 @pytest.fixture
 def run_vllm_api_server_module(monkeypatch):
+    monkeypatch.delenv("QZ_TRACE_REGION_BYTES", raising=False)
     module_name = "test_run_vllm_api_server_module"
     spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
     module = importlib.util.module_from_spec(spec)
@@ -124,6 +125,9 @@ def _quetzal_model_spec(**overrides):
                 "max_num_seqs": "1",
                 "revision": "9" * 40,
                 "tokenizer_revision": "9" * 40,
+                "additional_config": json.dumps(
+                    {"tt": {"trace_region_size": 134217728}}
+                ),
             },
         },
     }
@@ -308,6 +312,7 @@ def test_admit_quetzal_bundle_calls_public_runtime_resolver(
         expected_batch_size=1,
         auxiliary_roots={"experts": str(auxiliary_root)},
         runtime_tt_metal_commit=None,
+        trace_region_bytes=134217728,
     )
     assert "weights.pt" not in repr(resolver.call_args)
     mock_logger.info.assert_called_once()
@@ -338,6 +343,56 @@ def test_admit_quetzal_bundle_passes_matching_batched_capacity_to_resolver(
     assert resolver.call_args.kwargs["expected_batch_size"] == 32
     assert resolver.call_args.kwargs["runtime_tt_metal_commit"] == runtime_commit
     assert os.environ["QUETZAL_RUNTIME_TT_METAL_COMMIT"] == runtime_commit
+    assert resolver.call_args.kwargs["trace_region_bytes"] == 134217728
+
+
+@pytest.mark.parametrize("value", [None, True, False, 0, -1, 1.5, "134217728"])
+def test_quetzal_trace_rejects_invalid_resolved_value(
+    value, run_vllm_api_server_module
+):
+    spec = _quetzal_model_spec()
+    spec["device_model_spec"]["vllm_args"]["additional_config"] = {
+        "tt": {"trace_region_size": value}
+    }
+    with pytest.raises(RuntimeError, match="positive integer"):
+        run_vllm_api_server_module._quetzal_trace_region_bytes(spec)
+
+
+@pytest.mark.parametrize("config", [None, {}, [], "{broken", '{"tt": null}'])
+def test_quetzal_trace_rejects_missing_or_malformed_config(
+    config, run_vllm_api_server_module
+):
+    spec = _quetzal_model_spec()
+    spec["device_model_spec"]["vllm_args"]["additional_config"] = config
+    with pytest.raises(RuntimeError):
+        run_vllm_api_server_module._quetzal_trace_region_bytes(spec)
+
+
+@pytest.mark.parametrize("source", ["override", "environment", "catalog"])
+def test_quetzal_trace_rejects_conflicting_sources(
+    source, monkeypatch, run_vllm_api_server_module
+):
+    spec = _quetzal_model_spec()
+    if source == "override":
+        spec["device_model_spec"]["override_tt_config"] = {
+            "trace_region_size": 90000000
+        }
+    elif source == "environment":
+        monkeypatch.setenv("QZ_TRACE_REGION_BYTES", "90000000")
+    else:
+        spec["env_vars"] = {"QZ_TRACE_REGION_BYTES": "90000000"}
+    with pytest.raises(RuntimeError, match="conflicts"):
+        run_vllm_api_server_module._quetzal_trace_region_bytes(spec)
+
+
+def test_quetzal_provider_exports_resolved_trace_for_bootstrap(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    spec = _quetzal_model_spec(env_vars=_quetzal_provider_env())
+    _set_quetzal_provider_runtime_env(monkeypatch, tmp_path)
+    spec["device_model_spec"]["override_tt_config"] = {"trace_region_size": 134217728}
+    run_vllm_api_server_module.configure_quetzal_provider(spec)
+    assert os.environ["QZ_TRACE_REGION_BYTES"] == "134217728"
 
 
 @pytest.mark.parametrize(
@@ -414,6 +469,7 @@ def test_admit_quetzal_bundle_uses_catalog_package_fallback(
         expected_batch_size=1,
         auxiliary_roots={"experts": str(auxiliary_root)},
         runtime_tt_metal_commit=None,
+        trace_region_bytes=134217728,
     )
 
 
