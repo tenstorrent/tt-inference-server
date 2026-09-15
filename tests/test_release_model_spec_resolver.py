@@ -18,7 +18,7 @@ from scripts.release.model_spec_resolver import (
     resolve_release_combo,
     resolve_release_combos,
 )
-from workflows.model_spec import MODEL_SPEC_CATALOG_FILES, resolve_model_spec
+from workflows.model_spec import MODEL_SPEC_CATALOG_FILES
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 
