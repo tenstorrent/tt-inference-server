@@ -221,20 +221,40 @@ templates:
   # 12B MTP speculative serving (google/gemma-4-12B-it-assistant KV-shared
   # drafter, K=5). Same B=1 profile as 31B MTP. 12B has no z-lab dFlash
   # checkpoint, so MTP is the only spec path for this size.
+  #
+  # KNOWN ISSUE (2026-09-14): this model emits DEGENERATE text on this stack --
+  # "The capital of France is" -> "11"; r1_gpqa_diamond (10 samples, seq=1)
+  # scores 0 with every response empty. It reproduces on the PLAIN BASELINE
+  # decode path too (4 concurrent requests, which take the adaptive baseline
+  # fallback, return "1.1111._...."), so it is NOT a speculation, block-output
+  # or adaptive-fallback bug -- it is upstream of all of them.
+  #   Ruled out: weights present (23 GB); weight-key prefix
+  #   model.language_model.* (identical to the working 31B); tie_word_embeddings
+  #   True with no lm_head tensor (also identical to 31B).
+  #   Suspect: ModelArgs/config resolution for the UNIFIED checkpoint --
+  #   model_type gemma4_unified, 48 layers, nested text_config, vision AND audio
+  #   embedders, vs the 31B's model_type gemma4.
+  # Benchmarks still sweep clean (rc=0, 35 points, 2.07x at osl=1024) because a
+  # throughput benchmark COUNTS tokens without reading them, and the evals
+  # workflow still reports Acceptance PASS because EXPERIMENTAL waives the eval
+  # block on a score of 0. Treat every 12B number here as a token RATE only.
+  # Fix the text path before trusting this entry.
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
-      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
-      max_context: 65536  # KNOWN ISSUE: 12B MTP serving hangs the device (RoPE decode, fetch-queue timeout) during the FIRST bootstrap capture at ANY context (same at 65536 pre-bounded-fix, 2026-09-06 log identical) -- 0 sessions ever; pre-existing, independent of the bounded page-table install (31B MTP validated to 256K). Debug separately before raising.
+      max_concurrency: 32  # adaptive engine: solo=MTP spec, batch=baseline
+      max_context: 262144  # full 256K bounded, same as the 31B MTP entry. The earlier device hang on the FIRST bootstrap capture did NOT reproduce on 2026-09-14: sessions arm and a 35-point 256K sweep runs rc=0.
       env_vars:
         MESH_DEVICE: "P150x8"
         # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
         # replaces the removed model-specific TT_GEMMA4_SPEC env.
-        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
         GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_SPEC_ASYNC: "1"  # enables the MTP supports_async_decode capability (default 0 = off)
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"  # pin bounded ON rather than relying on the >=131072 auto policy
         GEMMA4_MTP_SERVE_HORIZON: "2048"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "65536"  # B=1 x max_context pool
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"  # B=1 x max_context pool
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
         # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
@@ -248,8 +268,11 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
-        max_num_seqs: 1
-        no-async-scheduling: true
+        max_num_seqs: 32
+        # Async ON: MTP gates supports_async_decode on GEMMA4_SPEC_ASYNC (set
+        # below); both the env and this flag are required or the platform
+        # clears async_scheduling and warns.
+        async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
@@ -259,6 +282,44 @@ templates:
         # prefill / prefix caching split or skip the prefill forward, which
         # breaks the stateful drafter (empty taps -> request fails). The model
         # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+    # BH Galaxy (32x P150) native, DP=4: four physical-column (1,8) engines via
+    # the plugin's standard-DP discovery, mechanism identical to the 31B dFlash
+    # BLACKHOLE_GALAXY entry. Each engine runs exactly the P150X8 MTP profile
+    # above; the ONLY addition is data_parallel_size 4, so any divergence from
+    # the LB numbers is attributable to DP alone.
+    # NOTE: dp=4 galaxy boots need the discovery-join timeout fix on the plugin
+    # (TT_DP_DISCOVERY_JOIN_TIMEOUT_S; a 32-chip mesh needs 10-20 s to close).
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128  # 32 users x 4 DP engines (max_num_seqs pins per-engine)
+      max_context: 262144  # LB parity: full 256K bounded
+      env_vars:
+        GEMMA4_CCL_TOPOLOGY: "linear"  # baseline-galaxy value (main); not ours to change
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
+        GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_SPEC_ASYNC: "1"  # enables the MTP supports_async_decode capability (default 0 = off)
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"  # pin bounded ON rather than relying on the >=131072 auto policy
+        GEMMA4_MTP_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
+      override_tt_config:
+        fabric_config: FABRIC_1D  # baseline-galaxy value (main)
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4  # four (1,8) column engines; max_concurrency above is whole-box
+        max_num_seqs: 32
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
