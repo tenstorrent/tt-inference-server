@@ -214,19 +214,29 @@ def test_real_release_scope_resolves_to_runtime_equivalent_dev_leaves():
         )
         assert runtime_spec is item.model_spec
 
+    # A concrete anchor for the loop above: Qwen3-32B on GALAXY must resolve to
+    # the galaxy-specific impl, not the tt_transformers one. Asserted only while
+    # that combo is actually in the release scope -- models-ci-config.json is
+    # re-scoped every release (a training-only release ships no Qwen at all), so
+    # requiring it unconditionally turns any re-scope into an unrelated failure
+    # here. The loop above still covers whatever the current scope does contain.
     qwen = next(
-        item
-        for item in resolved
-        if item.combo.model_name == "Qwen/Qwen3-32B"
-        and item.combo.device == DeviceTypes.GALAXY
-        and item.combo.engine == InferenceEngine.VLLM
+        (
+            item
+            for item in resolved
+            if item.combo.model_name == "Qwen/Qwen3-32B"
+            and item.combo.device == DeviceTypes.GALAXY
+            and item.combo.engine == InferenceEngine.VLLM
+        ),
+        None,
     )
-    assert qwen.identity == (
-        "Qwen/Qwen3-32B",
-        "GALAXY",
-        "vLLM",
-        "qwen3_32b_galaxy",
-    )
+    if qwen is not None:
+        assert qwen.identity == (
+            "Qwen/Qwen3-32B",
+            "GALAXY",
+            "vLLM",
+            "qwen3_32b_galaxy",
+        )
 
 
 def test_real_release_scope_matches_dev_runtime_subprocess():
