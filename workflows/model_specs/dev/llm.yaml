@@ -115,7 +115,7 @@ templates:
       reasoning_parser_name: openai_gptoss
       tool_call_parser_name: openai
 
-# Generated from immutable Quetzal handover 88b51cd3; review, do not hand-edit.
+# Generated from immutable Quetzal handover ae4edba1; review, do not hand-edit.
 - weights:
     - openai/gpt-oss-120b
   impl: quetzal
@@ -128,7 +128,7 @@ templates:
       env_vars:
         MESH_DEVICE: P150x4
         QUETZAL_VLLM: "1"
-        QUETZAL_BUNDLE_MANIFEST_SHA256: 90100992abf745cc666ce6f42096ff0cff4c4b3d142f143df5aec4c681c4cd52
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 72fd7029a50f1ce446a5e9cd3391a4eabac9a4bb2a7aa3021fbfa5871eead049
         QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
         VLLM_PLUGINS: quetzal_model_registry,tt
         TT_MESH_GRAPH_DESC_PATH: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
