@@ -418,6 +418,38 @@ Six things to know when reading these:
   crediting no frames, since that span never closed. Every frame counted has a
   timed decode behind it, and the two series stay dividable.
 
+## Shipping metrics off the box (fleet aggregation)
+
+This stack is local by default: it scrapes one deployment and keeps the data in
+its own TSDB. That is enough to debug a single host and not enough to answer
+anything fleet-wide — there is no `remote_write`, so nothing leaves the box,
+and the per-job `instance` labels name which *process* a series came from
+(`tt_media_server`, `..._prefill`, `..._decode`, `prefill_gateway`,
+`..._host`), identically on every deployment. The dashboards filter on `role`
+and `service`, so that is fine locally and collides the moment two deployments
+write to one store: every host claims `instance="tt_media_server"`, a `sum()`
+across the fleet reads one series instead of N, and skew between instances
+cannot be computed at all.
+
+Two env vars turn it on, and both are required together:
+
+```bash
+REMOTE_WRITE_URL=https://<central-prometheus>/api/v1/write \
+DEPLOYMENT_NAME=sc16-aus \
+SERVER_TARGET=<your-inference-container-name>:8000 \
+  docker compose -f monitoring/docker-compose.yml up -d
+```
+
+`DEPLOYMENT_NAME` becomes the `deployment` external label, stamped on every
+remote-written series. Make it stable and unique per deployment — a site or
+cluster name. **Do not use the container hostname:** inside a container that is
+the container id, so it changes on every restart and each restart mints a new
+set of series.
+
+Setting `REMOTE_WRITE_URL` without `DEPLOYMENT_NAME` is refused at startup
+rather than silently shipping colliding series. Leaving both unset keeps the
+stack local, so a dev box never starts writing to a shared store by accident.
+
 ## Directory layout
 
 ```
