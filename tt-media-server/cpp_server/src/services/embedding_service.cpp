@@ -244,16 +244,13 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
 
-   
     const char* cpuThreads = "2";
     const char* torchThreads = "1";
     setenv("OMP_NUM_THREADS", cpuThreads, 1);
     setenv("MKL_NUM_THREADS", cpuThreads, 1);
     setenv("TORCH_NUM_THREADS", torchThreads, 1);
-
 
     if (const char* throttle = std::getenv("DEFAULT_THROTTLE_LEVEL");
         throttle && *throttle) {
@@ -263,7 +260,7 @@ struct EmbeddingService::Impl {
     // Per-worker kernel cache, mirroring the Python server's
     // setup_runner_environment. Without it every worker JIT-compiles into
     // the same directory - race conditions.
- 
+
     if (const char* metalHome = std::getenv("TT_METAL_HOME");
         metalHome && *metalHome) {
       std::string deviceSuffix = visibleDevices;
@@ -375,8 +372,9 @@ struct EmbeddingService::Impl {
 
   /**
    * Bring up worker 0 alone and wait for its READY handshake before spawning
-   * the rest. The first warmup on a cold volume generates the shared tensor cache.
-   * Once one worker has written the cache, the remaining workers warm up in parallel safely.
+   * the rest. The first warmup on a cold volume generates the shared tensor
+   * cache. Once one worker has written the cache, the remaining workers warm up
+   * in parallel safely.
    */
   void runStartup() {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
