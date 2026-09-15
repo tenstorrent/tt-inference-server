@@ -102,7 +102,7 @@ struct EmbeddingImpl {
 
   bool initialize() {
     // Boot the interpreter once per process. pybind11 leaves the GIL held
-    // after initialization; release it at the end of warmup-time 
+    // after initialization; release it at the end of warmup-time
     const bool ownsInterpreter = !Py_IsInitialized();
     if (ownsInterpreter) {
       py::initialize_interpreter();
@@ -248,7 +248,6 @@ struct EmbeddingImpl {
     tokenizer = py::object();
     device = py::object();
     ttnn = py::object();
-    
   }
 
  protected:
@@ -257,7 +256,6 @@ struct EmbeddingImpl {
   }
 
  private:
-  
   void openMeshDevice() {
     py::object meshShape = ttnn.attr("MeshShape")(py::cast(config.mesh_shape));
     py::dict params;
@@ -275,7 +273,6 @@ struct EmbeddingImpl {
                 device.attr("get_num_devices")().cast<size_t>());
   }
 
-  
   py::object tokenize(const py::object& texts) const {
     return tokenizer(texts, "padding"_a = true, "truncation"_a = true,
                      "max_length"_a = config.max_seq_len,

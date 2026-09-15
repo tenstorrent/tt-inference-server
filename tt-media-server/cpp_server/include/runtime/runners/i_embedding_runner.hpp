@@ -14,7 +14,8 @@ namespace tt::runners {
 
 /**
  * What an embedding worker needs from a runner, and nothing more.
- * EmbeddingService owns the loop and drives the runner directly with these three calls.
+ * EmbeddingService owns the loop and drives the runner directly with these
+ * three calls.
  */
 class IEmbeddingRunner {
  public:
@@ -25,7 +26,7 @@ class IEmbeddingRunner {
 
   /** One forward pass. responses[i] answers requests[i], positionally. */
   virtual std::vector<domain::EmbeddingResponse> run(
-      const std::vector<domain::EmbeddingRequest>&requests ) = 0;
+      const std::vector<domain::EmbeddingRequest>& requests) = 0;
 
   /** Release model/device resources. Safe to call more than once. */
   virtual void close() = 0;
