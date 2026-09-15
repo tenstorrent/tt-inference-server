@@ -454,11 +454,8 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
         if value is True:
             cli_args.append(flag)
         elif isinstance(value, list):
-            # nargs='+' flags (--served-model-name, --api-key) read several
-            # argv tokens, so each item has to be its own token. A single
-            # json.dumps() string would register one value literally named
-            # '["a", "b"]'. An empty list emits nothing: a bare nargs='+'
-            # flag is an argparse error.
+            # nargs='+' flags (--served-model-name, --api-key) read one token
+            # per value; a JSON string would be read as a single value.
             if not value:
                 logger.warning(
                     f"--vllm-override-args: {key!r}=[] emits no flag "
@@ -468,8 +465,7 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
             cli_args.append(flag)
             cli_args += [str(item) for item in value]
         elif isinstance(value, dict):
-            # dict-valued flags (--hf-overrides, --override-generation-config)
-            # are nargs=None and expect one JSON string.
+            # The flags taking these (--hf-overrides) are nargs=None: one JSON string.
             cli_args += [flag, json.dumps(value)]
         else:
             cli_args += [flag, str(value)]
