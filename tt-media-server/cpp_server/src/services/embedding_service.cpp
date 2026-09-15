@@ -193,16 +193,20 @@ struct WorkerProcess {
 struct EmbeddingService::Impl {
   struct PendingRequest {
     domain::EmbeddingRequest request;
-    std::promise<domain::EmbeddingResponse> promise;
-    explicit PendingRequest(domain::EmbeddingRequest req)
-        : request(std::move(req)) {}
+
+    std::function<void(domain::EmbeddingResponse&&)> onComplete;
+
+    std::chrono::steady_clock::time_point enqueueTime;
+
+    PendingRequest(domain::EmbeddingRequest req,
+                   std::function<void(domain::EmbeddingResponse&&)> complete)
+        : request(std::move(req)),
+          onComplete(std::move(complete)),
+          enqueueTime(std::chrono::steady_clock::now()) {}
   };
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
-  // Guards the vector's structure (populate in start, clear in stop) against
-  // health-endpoint snapshots. Element state is atomic and needs no lock;
-  // startup/dispatch threads index into the vector lock-free because it is
-  // fully sized before they exist and only cleared after they are joined.
+
   mutable std::mutex workersMutex;
   size_t numWorkers = 3;
 
@@ -214,8 +218,7 @@ struct EmbeddingService::Impl {
   std::atomic<bool> isReady{false};
 
   // Spawning and warmup run here so start() returns immediately and the HTTP
-  // server can answer health probes while the model loads (parity with the
-  // Python server, whose /tt-liveness responds 405/503 during load).
+  // server can answer health probes while the model loads
   std::unique_ptr<std::thread> startupThread;
 
   size_t maxBatchSize = 1;
@@ -245,28 +248,67 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    // Everything Python reads is exported here, in the child, before any
-    // Python import happens. Two reasons this must be the child and not the
-    // parent: the Python Settings singleton is built at import time and never
-    // re-reads the environment, and MODEL means something different to C++
-    // (config::model() throws on any non-LLM value), so the parent must never
-    // see an embedding model name.
+    // The runner drives tt-metal directly, so no Python-side config exists
+    // to feed. What is exported here mirrors, item for item, what the Python
+    // server's BaseDeviceRunner/setup_runner_environment exported per worker:
+    // chip visibility, CPU thread caps, the matmul throttle, and the kernel
+    // cache path. Set in the child so sibling workers get their own values.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
-    if (!cfg.python_model_name.empty()) {
-      setenv("MODEL", cfg.python_model_name.c_str(), 1);
-    }
-    setenv("DEVICE", cfg.device.c_str(), 1);
-    const std::string clientRunner =
-        tt::config::toClientRunnerName(cfg.runner_type);
-    if (!clientRunner.empty()) {
-      setenv("MODEL_RUNNER", clientRunner.c_str(), 1);
+
+    // Mirror setup_cpu_threading_limits. Without these caps, torch/OpenMP in
+    // every worker defaults to one thread per host core, and 32 sibling
+    // workers oversubscribe the CPU so badly that the host-side part of each
+    // request cycle (tokenization, tensor prep, result extraction) dominates
+    // latency. Python's wide-pool variant (16 threads) only applies to its
+    // dynamic batcher, a vLLM scheduling mode that does not exist on this
+    // path - the C++ service always forms fixed-size batches - so the
+    // non-batcher sizing (2 OMP/MKL threads, 1 torch thread) applies
+    // unconditionally. The runner reads TORCH_NUM_THREADS back to call
+    // torch.set_num_threads, exactly like the Python worker did.
+    const char* cpuThreads = "2";
+    const char* torchThreads = "1";
+    setenv("OMP_NUM_THREADS", cpuThreads, 1);
+    setenv("MKL_NUM_THREADS", cpuThreads, 1);
+    setenv("TORCH_NUM_THREADS", torchThreads, 1);
+
+    // Mirror setup_cpu_threading_limits' throttle export. Python resolved
+    // settings.default_throttle_level as the DEFAULT_THROTTLE_LEVEL env var
+    // when set, else the (model, device) row in config/constants.py - which
+    // is int 0 for every embedding model, falsy, so nothing was exported.
+    // Deployments pass the env var (the model specs set
+    // DEFAULT_THROTTLE_LEVEL explicitly); any non-empty value is forwarded
+    // verbatim - including "0", which Python also forwarded (a truthy
+    // string) and which tt-metal reads as "no throttle".
+    if (const char* throttle = std::getenv("DEFAULT_THROTTLE_LEVEL");
+        throttle && *throttle) {
+      setenv("TT_MM_THROTTLE_PERF", throttle, 1);
     }
 
+    // Per-worker kernel cache, mirroring the Python server's
+    // setup_runner_environment. Without it every worker JIT-compiles into
+    // the same ~/.cache/tt-metal-cache build-key directory and the parallel
+    // warmup races: one worker mmaps an ELF another is still writing
+    // ("cannot map elf file into memory: Invalid argument") or silently
+    // runs a corrupted kernel.
+    if (const char* metalHome = std::getenv("TT_METAL_HOME");
+        metalHome && *metalHome) {
+      std::string deviceSuffix = visibleDevices;
+      std::replace(deviceSuffix.begin(), deviceSuffix.end(), ',', '_');
+      const std::string metalCache =
+          std::string(metalHome) + "/built/" + deviceSuffix;
+      setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
+    }
+
+    const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
+    const char* throttleEnv = std::getenv("TT_MM_THROTTLE_PERF");
     TT_LOG_INFO(
         "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
-        "MODEL={}, DEVICE={}, max_batch_size={})",
+        "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={}, OMP_NUM_THREADS={}, "
+        "TORCH_NUM_THREADS={}, TT_MM_THROTTLE_PERF={})",
         workerId, getpid(), tt::config::toString(cfg.runner_type),
-        visibleDevices, cfg.python_model_name, cfg.device, cfg.max_batch_size);
+        visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)", cfg.device,
+        cfg.max_batch_size, cpuThreads, torchThreads,
+        throttleEnv ? throttleEnv : "(unset)");
 
     std::unique_ptr<runners::IEmbeddingRunner> runner;
     try {
@@ -373,8 +415,7 @@ struct EmbeddingService::Impl {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
 
     // Phase 1: warm up a single worker with exclusive cache access. If it
-    // fails, try the next one alone (a fast-failing worker doesn't burn the
-    // timeout: pipe EOF resolves the wait immediately).
+    // fails, try the next one alone
     size_t next = 0;
     bool haveReadyWorker = false;
     while (!haveReadyWorker && next < numWorkers && running.load()) {
@@ -403,10 +444,32 @@ struct EmbeddingService::Impl {
     }
     awaitWorkersReady(std::move(spawned), warmupTimeoutMs);
 
+    // TEST-ONLY (do not merge): retry rounds for failed warmups. BGE-large's
+    // warmup PCC check is nondeterministic per attempt (~0.86-0.96 vs the
+    // 0.90 threshold on the pinned tt-metal), so without retries a 32-worker
+    // bring-up frequently loses workers before any testing can happen.
+    const unsigned maxRetries = tt::config::embeddingWarmupMaxRetries();
+    for (unsigned round = 1; round <= maxRetries && running.load(); ++round) {
+      std::vector<size_t> respawned;
+      for (size_t i = 0; i < numWorkers; ++i) {
+        if (workers[i]->isReady.load()) continue;
+        if (spawnWorkerAt(i)) respawned.push_back(i);
+      }
+      if (respawned.empty()) break;
+      TT_LOG_INFO(
+          "[EmbeddingService] Warmup retry round {}/{}: respawning {} failed "
+          "workers",
+          round, maxRetries, respawned.size());
+      awaitWorkersReady(std::move(respawned), warmupTimeoutMs);
+    }
+
     size_t readyCount = 0;
     for (const auto& w : workers) {
       if (w->isReady.load()) ++readyCount;
     }
+    // Covers the corner where every phase-1 candidate failed but a retry
+    // round later succeeded (phase 1 is the only other place this is set).
+    if (readyCount > 0) isReady = true;
     TT_LOG_INFO("[EmbeddingService] Startup finished: {}/{} workers ready",
                 readyCount, numWorkers);
   }
@@ -414,11 +477,7 @@ struct EmbeddingService::Impl {
   /**
    * Wait for the READY handshake of every listed worker concurrently, via a
    * single poll() over all response pipes. Each worker becomes ready (and
-   * gets its dispatch thread) the moment its own sentinel arrives, so one
-   * stuck worker cannot mask the others the way a sequential per-worker wait
-   * would. Workers that fail warmup (pipe EOF) or exceed the timeout are
-   * terminated with an explicit log line. Phase 1 calls this with a single
-   * index; a lone fast-failing worker resolves immediately via pipe EOF.
+   * gets its dispatch thread) the moment its own sentinel arrives
    */
   void awaitWorkersReady(std::vector<size_t> pending, unsigned timeoutMs) {
     const auto deadline =
@@ -538,12 +597,33 @@ struct EmbeddingService::Impl {
         w->dispatchThread->join();
       w->terminate();
     }
+    // All consumers are gone; anything still queued would leave its HTTP
+    // client hanging forever, so answer every request with an error now.
+    drainQueue("Server shutting down");
     {
       std::lock_guard lock(workersMutex);
       workers.clear();
     }
     isReady = false;
     TT_LOG_INFO("[EmbeddingService] Stopped");
+  }
+
+  /** Fail every request still waiting in the queue. Callbacks are invoked
+   * outside the queue lock: they build HTTP responses and must not serialize
+   * against submitters. */
+  void drainQueue(const std::string& error) {
+    std::queue<std::shared_ptr<PendingRequest>> drained;
+    {
+      std::lock_guard lock(queueMutex);
+      std::swap(drained, requestQueue);
+    }
+    while (!drained.empty()) {
+      auto& p = drained.front();
+      domain::EmbeddingResponse err(p->request.task_id);
+      err.error = error;
+      p->onComplete(std::move(err));
+      drained.pop();
+    }
   }
 
   void workerDispatchLoop(size_t workerIdx) {
@@ -569,6 +649,23 @@ struct EmbeddingService::Impl {
 
         if (!worker->running.load() || !worker->isReady) break;
         if (requestQueue.empty()) continue;
+
+        if (maxBatchSize > 1 && batchTimeout.count() > 0) {
+          while (requestQueue.size() < maxBatchSize) {
+            const auto deadline =
+                requestQueue.front()->enqueueTime + batchTimeout;
+            if (std::chrono::steady_clock::now() >= deadline) break;
+            queueCv.wait_until(lock, deadline, [this, &worker] {
+              return requestQueue.size() >= maxBatchSize ||
+                     requestQueue.empty() || !worker->running.load() ||
+                     !worker->isReady;
+            });
+            if (!worker->running.load() || !worker->isReady) break;
+            if (requestQueue.empty()) break;
+          }
+          if (!worker->running.load() || !worker->isReady) break;
+          if (requestQueue.empty()) continue;
+        }
 
         while (batch.size() < maxBatchSize && !requestQueue.empty()) {
           batch.push_back(requestQueue.front());
@@ -614,6 +711,22 @@ struct EmbeddingService::Impl {
     TT_LOG_INFO(
         "[EmbeddingService] Worker {} dispatch thread exiting (isReady={})",
         workerIdx, worker->isReady.load());
+
+    // If this was the last ready worker, the queue has no consumer left and
+    // queued callbacks would never fire. During shutdown some workers are
+    // still marked ready (stop() only clears `running`), so this drain is
+    // skipped there and stop()'s own drain handles the remainder.
+    bool anyReady = false;
+    {
+      std::lock_guard lock(workersMutex);
+      for (const auto& w : workers) {
+        if (w && w->isReady.load()) {
+          anyReady = true;
+          break;
+        }
+      }
+    }
+    if (!anyReady) drainQueue("No workers available");
   }
 
   void dispatchBatchToWorker(
@@ -646,11 +759,11 @@ struct EmbeddingService::Impl {
     for (auto& pending : batch) {
       auto it = responseMap.find(pending->request.task_id);
       if (it != responseMap.end()) {
-        pending->promise.set_value(std::move(it->second));
+        pending->onComplete(std::move(it->second));
       } else {
         domain::EmbeddingResponse err(pending->request.task_id);
         err.error = "Response not found for task_id";
-        pending->promise.set_value(std::move(err));
+        pending->onComplete(std::move(err));
       }
     }
   }
@@ -660,22 +773,20 @@ struct EmbeddingService::Impl {
     for (auto& p : batch) {
       domain::EmbeddingResponse err(p->request.task_id);
       err.error = error;
-      p->promise.set_value(std::move(err));
+      p->onComplete(std::move(err));
     }
   }
 
-  std::future<domain::EmbeddingResponse> submitRequest(
-      domain::EmbeddingRequest request) {
-    auto pending = std::make_shared<PendingRequest>(std::move(request));
-    auto future = pending->promise.get_future();
-
+  void submitRequestAsync(
+      domain::EmbeddingRequest request,
+      std::function<void(domain::EmbeddingResponse&&)> onComplete) {
+    auto pending = std::make_shared<PendingRequest>(std::move(request),
+                                                    std::move(onComplete));
     {
       std::lock_guard lock(queueMutex);
       requestQueue.push(pending);
     }
     queueCv.notify_all();
-
-    return future;
   }
 };
 
@@ -700,9 +811,21 @@ std::vector<tt::worker::WorkerInfo> EmbeddingService::getWorkerInfo() const {
   return impl_->workerInfoSnapshot();
 }
 
+void EmbeddingService::submitRequestAsync(
+    domain::EmbeddingRequest request,
+    std::function<void(domain::EmbeddingResponse&&)> onComplete) {
+  preProcess(request);
+  impl_->submitRequestAsync(std::move(request), std::move(onComplete));
+}
+
 domain::EmbeddingResponse EmbeddingService::produceResponse(
     domain::EmbeddingRequest request) {
-  auto future = impl_->submitRequest(std::move(request));
+  std::promise<domain::EmbeddingResponse> promise;
+  auto future = promise.get_future();
+  impl_->submitRequestAsync(std::move(request),
+                            [&promise](domain::EmbeddingResponse&& resp) {
+                              promise.set_value(std::move(resp));
+                            });
   return future.get();
 }
 
