@@ -103,7 +103,11 @@ TARGETS = {
     "ttft": (
         "TTFT",
         "TTFT — steady-state inter-chunk gap (ms)",
-        "tc_gaps",
+        # FIELD NAME MUST MATCH request(), which writes "gaps". It said "tc_gaps",
+        # so _metric_samples() got None for every request and TC p50/p90/p95 came
+        # out nan in every report ever produced -- a silent loss of one of the three
+        # acceptance metrics (deadline 570 ms).
+        "gaps",
         570.0,
         570.0,
     ),
@@ -566,7 +570,10 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         else:
             recs, w0, w1 = run_closed(tgt, conc, args.duration, args.warmup)
 
-        ok = [r for r in recs if r["ok"]]
+        # same window filter as aggregate() -- run_closed/run_open now return every
+        # record, so this numerator would otherwise include warmup and disagree with
+        # the report built from the same run
+        ok = [r for r in recs if r["ok"] and w0 <= r["t_send"] < w1]
         rps = len(ok) / (w1 - w0) if w1 > w0 else 0.0
         ttfbs = sorted(r["ttfb_s"] for r in ok if r["ttfb_s"] is not None)
         p50 = ttfbs[len(ttfbs) // 2] * 1000 if ttfbs else float("nan")
@@ -712,6 +719,7 @@ def aggregate(doc: dict) -> tuple[list[dict], int]:
             "nan"
         )
         rps = len(ok) / window if window and window == window else float("nan")
+        full = [r for r in ok if not r.get("capped")]   # uncapped -> full text spoken
         ttfb = [r["ttfb_s"] * 1000 for r in ok if r.get("ttfb_s") is not None]
         gen = [r["gen_s"] for r in ok if r.get("gen_s")]
         audio = [r["audio_s"] for r in ok if r.get("audio_s")]
@@ -719,8 +727,13 @@ def aggregate(doc: dict) -> tuple[list[dict], int]:
             r["gen_s"] / r["audio_s"] for r in ok if r.get("audio_s") and r.get("gen_s")
         ]
         nchunks = [r["nchunks"] for r in ok if r.get("nchunks")]
+        # Count failures within the SAME cohort the successes come from. `recs` now
+        # carries warmup carryover, so `len(recs) - len(ok)` reported every healthy
+        # warmup request as an error (2 good requests -> n_ok=1, n_err=1, errors={}).
+        in_win = [r for r in recs
+                  if w0 is None or w1 is None or w0 <= r["t_send"] < w1]
         errors: dict[str, int] = {}
-        for r in recs:
+        for r in in_win:
             if not r.get("ok"):
                 key = r.get("error") or "?"
                 errors[key] = errors.get(key, 0) + 1
@@ -728,15 +741,21 @@ def aggregate(doc: dict) -> tuple[list[dict], int]:
         row = {
             "conc": conc,
             "n_ok": len(ok),
-            "n_err": len(recs) - len(ok),
+            "n_err": len(in_win) - len(ok),
             "rps": rps,
             "ttfb_p50": pct(ttfb, 50),
             "ttfb_p90": pct(ttfb, 90),
+            "ttfb_p95": pct(ttfb, 95),   # the acceptance target is p95, not p90
             "ttfb_p99": pct(ttfb, 99),
             "gen_p50": pct(gen, 50) if gen else float("nan"),
             "audio_p50": pct(audio, 50) if audio else float("nan"),
             "rtf_p50": pct(rtf, 50) if rtf else float("nan"),
-            "mchar_h": chars * rps * 3600.0 / 1e6 if rps == rps else float("nan"),
+            # Characters may only be credited for responses that delivered the WHOLE
+            # text. A client-capped response stopped early; crediting its full input
+            # inflates characters/hour by whatever it never spoke.
+            "mchar_h": (chars * (len(full) / window) * 3600.0 / 1e6
+                        if window and window == window else float("nan")),
+            "n_capped": sum(1 for r in ok if r.get("capped")),
             "C": _occupancy(recs, w0, w1),
             "chunks": (sum(nchunks) / len(nchunks)) if nchunks else float("nan"),
             "errors": errors,
@@ -745,6 +764,7 @@ def aggregate(doc: dict) -> tuple[list[dict], int]:
             samples = _metric_samples(ok, key)
             row[f"{key}_p50"] = pct(samples, 50)
             row[f"{key}_p90"] = pct(samples, 90)
+            row[f"{key}_p95"] = pct(samples, 95)
             row[f"{key}_p99"] = pct(samples, 99)
             row[f"{key}_n"] = len(samples)
         rows.append(row)
