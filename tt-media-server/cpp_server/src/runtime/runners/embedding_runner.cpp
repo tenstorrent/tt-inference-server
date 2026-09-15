@@ -18,17 +18,11 @@ namespace tt::runners {
 
 namespace {
 
-// Take the first line of a Python error (the "ValueError: ..." part); the
-// full traceback is logged separately and is too long for a response field.
 std::string firstLine(const std::string& s) {
   const auto pos = s.find('\n');
   return pos == std::string::npos ? s : s.substr(0, pos);
 }
 
-// Prepend the given env var's value to sys.path if present and not already
-// there. Deliberate pinning: the embedded interpreter must resolve tt-metal
-// model code and tt-media-server modules from configured locations, not from
-// whatever the launching shell happened to have in PYTHONPATH.
 void prependEnvToSysPath(py::list& sysPath, const char* envName) {
   const char* value = std::getenv(envName);
   if (!value || !*value) return;
@@ -43,8 +37,7 @@ void prependEnvToSysPath(py::list& sysPath, const char* envName) {
 void ensureSysPath() {
   py::list sysPath = py::module_::import("sys").attr("path");
   prependEnvToSysPath(sysPath, "TT_METAL_HOME");
-  // TT_PYTHON_PATH (the tt-media-server checkout) may also come from config
-  // defaults rather than the environment, so use the resolved config value.
+
   const std::string mediaServerPath = tt::config::pythonPath();
   if (!mediaServerPath.empty()) {
     bool present = false;
@@ -82,11 +75,6 @@ struct EmbeddingRunner::Impl {
     // possible restart of this runner) may still need it.
   }
 
-  // Python's ModelConfigs table is authoritative for max_batch_size, but the
-  // service needs the number before Python exists in order to cap batches, so
-  // the C++ table mirrors it. Compare the two as soon as Python is importable:
-  // a silent mismatch means oversized batches and an assertion inside the
-  // model later, which is far harder to read than failing here.
   void checkPythonBatchSize() const {
     const auto pythonBatch = py::module_::import("config.settings")
                                  .attr("settings")
@@ -106,9 +94,6 @@ struct EmbeddingRunner::Impl {
   }
 
   bool initialize() {
-    // Boot the interpreter once per process. pybind11 leaves the GIL held
-    // after initialization; release it at the end of warmup-time setup so
-    // every later entry point can acquire
     const bool ownsInterpreter = !Py_IsInitialized();
     if (ownsInterpreter) {
       py::initialize_interpreter();
@@ -126,9 +111,6 @@ struct EmbeddingRunner::Impl {
 
         checkPythonBatchSize();
 
-        // Which class implements the model is Python's business: the fabric
-        // maps settings.model_runner (from the MODEL_RUNNER we exported) to a
-        // runner class, so onboarding a model needs no class name in C++.
         runner = py::module_::import("tt_model_runners.runner_fabric")
                      .attr("get_device_runner")(config.visible_devices);
         TT_LOG_INFO("[EmbeddingRunner] Created {} for device {}",
@@ -175,8 +157,6 @@ struct EmbeddingRunner::Impl {
 
       py::sequence results = runner.attr("run")(pyRequests);
 
-      // results[i] is the answer to requests[i]: the Python responses carry no
-      // identity of their own, so the pairing is positional by contract.
       for (size_t i = 0; i < results.size(); ++i) {
         py::object item = results[i];
         domain::EmbeddingResponse resp(requests[i].task_id);
