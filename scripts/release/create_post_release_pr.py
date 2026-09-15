@@ -70,6 +70,29 @@ from scripts.release.release_scope import (  # noqa: E402
 from utils.model_naming import ci_job_matches_device  # noqa: E402
 from workflows.workflow_types import DeviceTypes  # noqa: E402
 
+# Which tt-shield workflow ran a released entry's jobs. Deliberately duplicated
+# in scripts/release/build_release_artifacts.py rather than shared, so each
+# release script stays self-contained; keep the two copies in step.
+RELEASE_KIND = "release"
+TRAINING_KIND = "training_tests"
+
+
+def workflow_kind(model_spec) -> str:
+    """Which tt-shield workflow ran this entry's jobs.
+
+    TRAINING models run under ``training_tests``; everything else under
+    ``release``. Total and duck-typed: a missing, ``None`` or unrecognised
+    ``model_type`` (and ``None`` itself) yields ``release``, so entries without
+    the field behave exactly as before.
+    """
+    model_type = getattr(model_spec, "model_type", None)
+    if model_type is None:
+        return RELEASE_KIND
+    name = getattr(model_type, "name", None) or str(model_type)
+    is_training = str(name).rsplit(".", 1)[-1].strip().upper() == "TRAINING"
+    return TRAINING_KIND if is_training else RELEASE_KIND
+
+
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
 DEFAULT_PROD_DIR = REPO_ROOT / "workflows" / "model_specs" / "prod"
@@ -195,7 +218,15 @@ def fetch_job_log(repo: str, job_id, token: str) -> str | None:
     return proc.stdout.decode("utf-8", errors="replace")
 
 
-def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
+def _matching_ci_jobs(
+    jobs, *, identity, scope_identities, workflow=RELEASE_KIND
+) -> list[dict]:
+    """The tt-shield job for one release identity.
+
+    ``workflow`` is the tt-shield workflow that ran it -- TRAINING entries run
+    under ``training_tests``, so hardcoding ``release`` here would silently miss
+    their job and render the CI link as UNKNOWN.
+    """
     if not jobs:
         return []
     other_repos = [candidate[0] for candidate in scope_identities]
@@ -204,7 +235,7 @@ def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
         for job in jobs
         if ci_job_matches_device(
             job.get("name", ""),
-            "release",
+            workflow,
             identity[0],
             identity[1],
             other_repos,
@@ -217,12 +248,21 @@ def _matching_ci_jobs(jobs, *, identity, scope_identities) -> list[dict]:
 # ---------------------------------------------------------------------------
 def build_rows(scope, current_prod, base_prod, jobs, tt_shield_repo, run_id, version):
     identities = tuple(item.identity for item in scope)
+    # getattr: the deriver is total, so a scope item carrying no model_spec
+    # (older callers, tests) keeps the previous release-workflow behaviour.
+    workflows = {
+        item.identity: workflow_kind(getattr(item, "model_spec", None))
+        for item in scope
+    }
     job_urls: dict = {}
     job_owners: dict = {}
     if jobs and run_id:
         for identity in identities:
             matches = _matching_ci_jobs(
-                jobs, identity=identity, scope_identities=identities
+                jobs,
+                identity=identity,
+                scope_identities=identities,
+                workflow=workflows[identity],
             )
             if len(matches) > 1:
                 raise ValueError(
@@ -270,6 +310,7 @@ def build_rows(scope, current_prod, base_prod, jobs, tt_shield_repo, run_id, ver
                 "status_before": before.status if before else None,
                 "status_after": current.status,
                 "ci_url": job_urls.get(identity),
+                "workflow": workflows[identity],
             }
         )
     return rows
@@ -405,7 +446,13 @@ def resolve_galaxy_sw_versions(rows, jobs, tt_shield_repo, run_id, token) -> dic
     galaxy = next((r["identity"] for r in rows if _is_galaxy(r["device"])), None)
     if galaxy is None:
         return blank
-    matches = _matching_ci_jobs(jobs, identity=galaxy, scope_identities=identities)
+    workflow = next(
+        (r.get("workflow", RELEASE_KIND) for r in rows if r["identity"] == galaxy),
+        RELEASE_KIND,
+    )
+    matches = _matching_ci_jobs(
+        jobs, identity=galaxy, scope_identities=identities, workflow=workflow
+    )
     if not matches:
         return blank
     log = fetch_job_log(tt_shield_repo, matches[0]["id"], token)

@@ -94,7 +94,42 @@ from scripts.release.model_spec_resolver import (  # noqa: E402
 from scripts.release.release_scope import extract_bundle_identity  # noqa: E402
 from utils.model_naming import model_name_variants, slugify_model_id  # noqa: E402
 
-ARTIFACT_PREFIX = "workflow_logs_release_"
+# Which tt-shield workflow ran a released entry's jobs. Deliberately duplicated
+# in scripts/release/create_post_release_pr.py rather than shared, so each
+# release script stays self-contained; keep the two copies in step.
+RELEASE_KIND = "release"
+TRAINING_KIND = "training_tests"
+
+
+def workflow_kind(model_spec) -> str:
+    """Which tt-shield workflow produced this entry's logs bundle and job.
+
+    TRAINING models run under ``training_tests``; everything else under
+    ``release``. Total and duck-typed: a missing, ``None`` or unrecognised
+    ``model_type`` (and ``None`` itself) yields ``release``, so entries without
+    the field behave exactly as before.
+    """
+    model_type = getattr(model_spec, "model_type", None)
+    if model_type is None:
+        return RELEASE_KIND
+    name = getattr(model_type, "name", None) or str(model_type)
+    is_training = str(name).rsplit(".", 1)[-1].strip().upper() == "TRAINING"
+    return TRAINING_KIND if is_training else RELEASE_KIND
+
+
+def artifact_prefix(kind: str = RELEASE_KIND) -> str:
+    """``workflow_logs_<kind>_`` -- the prefix tt-shield gives a logs bundle."""
+    return f"workflow_logs_{kind}_"
+
+
+def job_marker(kind: str = RELEASE_KIND) -> str:
+    """``run-<kind>-`` -- the job-name prefix for that workflow."""
+    return f"run-{kind}-"
+
+
+# The release prefix. Still used for the inner-zip filenames inside the produced
+# bundle, which are a downstream contract and deliberately left unchanged.
+ARTIFACT_PREFIX = artifact_prefix()
 DEFAULT_REPO = "tenstorrent/tt-shield"
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
@@ -114,6 +149,7 @@ def resolve_configured_scope(ci_config: dict, dev_dir: Path):
     )
     expected = {}
     models = {}
+    kinds: dict[str, list[str]] = {}
     archive_owners = {}
     for item in resolved:
         model = item.identity[0]
@@ -136,7 +172,14 @@ def resolve_configured_scope(ci_config: dict, dev_dir: Path):
         models.setdefault(model, [])
         if device not in models[model]:
             models[model].append(device)
-    return models, expected
+        # The same HF model can be released under both a serving impl and a
+        # TRAINING impl, which tt-shield runs in different workflows -- so the
+        # kinds are collected per model, not assumed to be one.
+        kind = workflow_kind(item.model_spec)
+        kinds.setdefault(model, [])
+        if kind not in kinds[model]:
+            kinds[model].append(kind)
+    return models, expected, kinds
 
 
 # ---------------------------------------------------------------------------
@@ -176,36 +219,41 @@ def list_jobs(repo: str, run_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 # runner / device resolution
 # ---------------------------------------------------------------------------
-def runner_of(artifact_name: str, model: str) -> str:
-    """workflow_logs_release_<model>_<runner>_<suffix>  ->  <runner>.
+def runner_of(artifact_name: str, model: str, kind: str = RELEASE_KIND) -> str:
+    """workflow_logs_<kind>_<model>_<runner>_<suffix>  ->  <runner>.
 
     Assumes a single-token suffix (e.g. ``default``). `model` is matched
     exactly, so models that share a prefix (foo vs foo-turbo) are unambiguous
     because of the underscore boundary after the model name.
     """
-    token = artifact_model_token(artifact_name, model)
+    token = artifact_model_token(artifact_name, model, kind)
     if token is None:
         raise ValueError(f"Artifact {artifact_name!r} does not match model {model!r}")
-    rest = artifact_name[len(ARTIFACT_PREFIX) + len(token) + 1 :]
+    rest = artifact_name[len(artifact_prefix(kind)) + len(token) + 1 :]
     return rest.rsplit("_", 1)[0]
 
 
-def artifact_model_token(artifact_name: str, model: str) -> str | None:
+def artifact_model_token(
+    artifact_name: str, model: str, kind: str = RELEASE_KIND
+) -> str | None:
+    prefix = artifact_prefix(kind)
     matches = [
         token
         for token in model_name_variants(model)
-        if artifact_name.startswith(f"{ARTIFACT_PREFIX}{token}_")
+        if artifact_name.startswith(f"{prefix}{token}_")
     ]
     return max(matches, key=len) if matches else None
 
 
-def device_from_jobs(jobs: list[dict], model: str, runner: str) -> str | None:
+def device_from_jobs(
+    jobs: list[dict], model: str, runner: str, kind: str = RELEASE_KIND
+) -> str | None:
     """Find the device a (model, runner) pair ran on, from the job name
-    pattern ``run-release-<model>-<runner>-<device>``."""
+    pattern ``run-<kind>-<model>-<runner>-<device>``."""
     for job in jobs:
         name = job.get("name", "").strip()
         for token in model_name_variants(model):
-            marker = f"run-release-{token}-{runner}-"
+            marker = f"{job_marker(kind)}{token}-{runner}-"
             idx = name.find(marker)
             if idx != -1:
                 tail = name[idx + len(marker) :].strip()
@@ -286,25 +334,51 @@ def resolve_model(
     tmp: Path,
     cache: dict[int, Path],
     expected_identities: dict[tuple[str, str], tuple] | None = None,
+    kinds: list[str] | None = None,
 ) -> dict[str, dict]:
     """Return {device: artifact} for the requested devices of one model."""
     expected_identities = expected_identities or {}
-    candidates = [
-        artifact
-        for artifact in artifacts
-        if artifact_model_token(artifact["name"], model) is not None
-    ]
+    kinds = list(kinds) if kinds else [RELEASE_KIND]
+    # Remember which kind each candidate matched: the runner and job-name
+    # lookups below need the same prefix the artifact was found under.
+    kind_of: dict[str, str] = {}
+    candidates = []
+    for artifact in artifacts:
+        for kind in kinds:
+            if artifact_model_token(artifact["name"], model, kind) is not None:
+                kind_of[artifact["name"]] = kind
+                candidates.append(artifact)
+                break
     if not candidates:
+        # Every token a producer may have used is tried, for every kind in play
+        # (the canonical token is the '__' form -- GitHub forbids '/' in artifact
+        # names), so a miss here is almost never a naming mismatch: it means the
+        # run produced no logs bundle of that kind for this model. List what it
+        # did produce so that is obvious.
+        tried = ", ".join(
+            f"{artifact_prefix(k)}{t}_*"
+            for k in kinds
+            for t in model_name_variants(model)
+        )
+        present = sorted(
+            a["name"] for a in artifacts if a["name"].startswith("workflow_logs_")
+        )
+        listed = "\n".join(f"         - {n}" for n in present) or "         (none)"
         sys.exit(
-            f"ERROR: no '{ARTIFACT_PREFIX}{model}_*' artifacts found for model '{model}'.\n"
-            f"       Check the model name and that the run produced its bundle."
+            f"ERROR: no {'/'.join(kinds)} workflow-logs artifact for model '{model}'.\n"
+            f"       Tried: {tried}\n"
+            f"       workflow_logs_* artifacts present in this run:\n{listed}\n"
+            f"       If those are all for another workflow kind, this run did not\n"
+            f"       execute the {'/'.join(kinds)} jobs for this model - check that\n"
+            f"       --run-id points at a tt-shield run whose jobs actually ran."
         )
 
     # Primary: map each candidate's runner -> device via the run's job names.
     by_device: dict[str, list[dict]] = {}
     for a in candidates:
-        runner = runner_of(a["name"], model)
-        dev = device_from_jobs(jobs, model, runner)
+        kind = kind_of[a["name"]]
+        runner = runner_of(a["name"], model, kind)
+        dev = device_from_jobs(jobs, model, runner, kind)
         if dev:
             by_device.setdefault(dev, []).append(a)
 
@@ -323,7 +397,9 @@ def resolve_model(
     for d in devices:
         if d not in by_device:
             found = ", ".join(sorted(by_device)) or "none"
-            runners = ", ".join(runner_of(a["name"], model) for a in candidates)
+            runners = ", ".join(
+                runner_of(a["name"], model, kind_of[a["name"]]) for a in candidates
+            )
             sys.exit(
                 f"ERROR: could not find an artifact for model '{model}' device '{d}'.\n"
                 f"       Devices resolved for this model: {found}.\n"
@@ -461,6 +537,7 @@ def main() -> None:
     if args.model:
         models = parse_model_specs(args.model)
         expected_identities = {}
+        model_kinds = {}
         print(
             "WARNING: manual --model scope does not perform final exact-identity "
             "verification.",
@@ -473,7 +550,7 @@ def main() -> None:
         except FileNotFoundError:
             sys.exit(f"ERROR: CI config not found: {ci_config_path}")
         try:
-            models, expected_identities = resolve_configured_scope(
+            models, expected_identities, model_kinds = resolve_configured_scope(
                 ci_config,
                 Path(args.dev_dir).expanduser(),
             )
@@ -493,7 +570,9 @@ def main() -> None:
     print(f"Version: {args.version}")
     print("Scope:")
     for m, devs in models.items():
-        print(f"  - {m}: {', '.join(devs)}")
+        kinds = model_kinds.get(m) or [RELEASE_KIND]
+        suffix = "" if kinds == [RELEASE_KIND] else f"  [{'/'.join(kinds)}]"
+        print(f"  - {m}: {', '.join(devs)}{suffix}")
     print()
 
     print("Fetching artifact and job listings ...")
@@ -517,6 +596,7 @@ def main() -> None:
                 tmp_dir,
                 cache,
                 expected_identities,
+                model_kinds.get(model),
             )
             for device in devices:
                 artifact = chosen[device]
