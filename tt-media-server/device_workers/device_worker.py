@@ -185,6 +185,7 @@ def device_worker(
             max_messages_to_get=settings.max_batch_size,
             block=True,
             timeout=0.2,  # 200ms timeout - the batch queue will handle optimal batching
+            linger=settings.batch_linger_seconds,
         )
         if requests is None or len(requests) == 0:
             continue

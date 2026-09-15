@@ -6,6 +6,10 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
+`bge-m3` is also supported on hardware:
+
+- [N300](bge-m3_n300.md)
+
 ## Quickstart - Deploy bge-m3 Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
