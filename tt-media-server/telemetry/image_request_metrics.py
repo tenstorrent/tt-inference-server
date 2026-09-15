@@ -6,9 +6,12 @@
 
 Complements :mod:`telemetry.image_metrics`, which times what the engine *did*
 (denoise loop, VAE decode, conditioning). This module records what was
-*requested* — conditioning path, denoising steps, guidance scale, batch size —
-so a shift in the timing metrics can be attributed to a change in the incoming
+*requested* — conditioning path, denoising steps and guidance scale — so a
+shift in the timing metrics can be attributed to a change in the incoming
 workload rather than to the engine.
+
+Batch size is deliberately absent: `batch` is already a label on the denoise,
+VAE and conditioning metrics in :mod:`telemetry.image_metrics`.
 
 Recorded once per client request in :meth:`ImageService.pre_process`, before
 segmentation. ``create_segment_request`` fans a multi-image request out into
@@ -67,9 +70,6 @@ _GUIDANCE_BUCKETS = (
     float("inf"),
 )
 
-# number_of_images is validated to 1..4.
-_BATCH_BUCKETS = (1, 2, 3, 4, 8, float("inf"))
-
 requests_by_shape_total = Counter(
     "tt_media_server_image_requests_by_shape_total",
     "Image generation requests by conditioning path",
@@ -88,13 +88,6 @@ requested_guidance_scale = Histogram(
     "Guidance scale requested per image request",
     _LABELS,
     buckets=_GUIDANCE_BUCKETS,
-)
-
-requested_images = Histogram(
-    "tt_media_server_image_requested_images",
-    "Images requested per image request (batch size before segmentation)",
-    _LABELS,
-    buckets=_BATCH_BUCKETS,
 )
 
 
@@ -141,8 +134,5 @@ def observe_image_request(request: ImageGenerateRequest, model_type: str) -> Non
         if guidance is not None:
             requested_guidance_scale.labels(*labels).observe(guidance)
 
-        count = getattr(request, "number_of_images", None)
-        if count:
-            requested_images.labels(*labels).observe(count)
     except Exception:  # pragma: no cover - defensive
         logger.warning("image request metrics: failed to record request shape")
