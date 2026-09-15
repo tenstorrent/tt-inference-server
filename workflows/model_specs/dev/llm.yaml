@@ -147,6 +147,12 @@ templates:
         kv_cache_usable_tokens: 131072
       max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
+  # Provisional operational gate generated from the exact B1/C131072 endpoint
+  # observation (Slurm 102800): summed process HWM 7.183 GiB and host
+  # MemAvailable floor 135.54 GiB. The row remains EXPERIMENTAL because the
+  # cgroup included charged file cache and its peak predated the observation;
+  # a clean-cgroup target-context run is still required for qualification.
+  min_ram_gb: 128
 
 - weights:
     - arcee-ai/AFM-4.5B
