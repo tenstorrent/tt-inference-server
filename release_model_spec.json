@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.21.0",
+  "release_version": "0.22.0",
   "model_specs": {
     "openai/gpt-oss-120b": {
       "T3K": {
@@ -10404,6 +10404,139 @@
             "metadata": {
               "tool_call_parser_name": "llama3_json"
             },
+            "cli_args": {}
+          }
+        },
+        "forge": {
+          "trainer_training_lora": {
+            "model_id": "id_trainer-training-lora_Llama-3.1-8B-Instruct_p150",
+            "impl": {
+              "impl_id": "trainer_training_lora",
+              "impl_name": "trainer-training-lora",
+              "repo_url": "https://github.com/tenstorrent/tt-inference-server",
+              "code_path": "tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py"
+            },
+            "hf_model_repo": "meta-llama/Llama-3.1-8B-Instruct",
+            "model_name": "Llama-3.1-8B-Instruct",
+            "inference_engine": "forge",
+            "device_type": "P150",
+            "device_model_spec": {
+              "device": "P150",
+              "max_concurrency": 1,
+              "max_context": 1024,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": false,
+              "perf_reference": [
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": null,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 300.0,
+                      "tput_user": 3.7,
+                      "tput": 3.7,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 60.0,
+                      "tput_user": 18.5,
+                      "tput": 18.5,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 30.0,
+                      "tput_user": 37.0,
+                      "tput": 37.0,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null,
+                  "priority": null,
+                  "target_priorities": null,
+                  "goodput": null
+                }
+              ],
+              "vllm_args": {
+                "model": "meta-llama/Llama-3.1-8B-Instruct",
+                "block_size": "64",
+                "max_model_len": "1024",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "1024",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {}}"
+              },
+              "override_tt_config": {},
+              "env_vars": {
+                "MESH_DEVICE": "P150",
+                "ARCH_NAME": "blackhole"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "MODEL_RUNNER": "trainer-training-lora",
+              "TRAINING_MODEL": "Llama-3.1-8B-Instruct",
+              "ENABLE_JOB_PERSISTENCE": true,
+              "JOB_CLEANUP_INTERVAL_SECONDS": 10000,
+              "JOB_MAX_STUCK_TIME_SECONDS": 100000,
+              "REQUEST_PROCESSING_TIMEOUT_SECONDS": 100000,
+              "MESH_DEVICE": "P150",
+              "ARCH_NAME": "blackhole"
+            },
+            "tt_metal_commit": "a3a9fb4",
+            "vllm_commit": null,
+            "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
+            "param_count": 8,
+            "min_disk_gb": 36,
+            "min_ram_gb": 20.0,
+            "model_type": "TRAINING",
+            "repacked": 0,
+            "version": "0.22.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.22.0-a3a9fb4",
+            "status": "EXPERIMENTAL",
+            "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/a3a9fb4/tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
+            "override_tt_config": {},
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": false,
+            "has_builtin_warmup": false,
+            "metadata": {},
             "cli_args": {}
           }
         }
