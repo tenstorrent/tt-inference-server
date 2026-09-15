@@ -5315,7 +5315,7 @@ _eval_config_list = [
                 # would render with the default enable_thinking=false.
                 use_chat_api=True,
                 model_kwargs={
-                    "max_length": 204800,  # 131072 -> 204800: matches the SC16 deployment window (MAX_CONTEXT_LENGTH), 2026-09-15
+                    "max_length": 131072,  # SC20 speculative-decode deployment serves a 128K window, 2026-09-15
                     # lm-eval default HTTP timeout is 1800s. Under
                     # num_concurrent=32, non-terminating / near-max_gen
                     # thinking gens share decode and hit that wall (~30min)
@@ -5327,12 +5327,12 @@ _eval_config_list = [
                 # temperature=1.0, top_p=0.95, top_k=20.
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
-                # max_gen_toks must stay strictly below max_length (204800)
+                # max_gen_toks must stay strictly below max_length (131072)
                 # minus the prompt (server 400s if output+prompt > ctx);
-                # 196K leaves ~4K headroom for prompt + chat template.
+                # 124K leaves ~4K headroom for prompt + chat template.
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 196 * 1024,
+                    "max_gen_toks": 124 * 1024,
                     # Dynamo frontend rejects empty stop. HF tokenizer_config.json
                     # eos_token for google/gemma-4-31B-it (id 1; generation_config
                     # also stops on <end_of_turn> 106 and <|tool_response> 50).
@@ -5402,12 +5402,12 @@ _eval_config_list = [
                             # 196K (~8K headroom for chat template + tool defs).
                             # SWE/Terminal prompts rarely approach 200K, so the
                             # 256K->200K cap should not affect scores.
-                            "max_input_tokens": 128 * 1024,
-                            "max_output_tokens": 64 * 1024,
+                            "max_input_tokens": 88 * 1024,  # 128K -> 88K: SC20 spec-decode window is 128K; 88K + 32K out = 120K (~8K headroom), 2026-09-15
+                            "max_output_tokens": 32 * 1024,  # 64K -> 32K for the 128K window, 2026-09-15
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 64 * 1024,
+                            "max_tokens": 32 * 1024,  # 64K -> 32K for the 128K window, 2026-09-15
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
