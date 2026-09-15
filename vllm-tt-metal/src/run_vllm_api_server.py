@@ -206,7 +206,7 @@ def _quetzal_runtime_context(model_spec: dict) -> int:
     return catalog_context
 
 
-def _validate_quetzal_scheduler_capacity(model_spec: dict) -> None:
+def _quetzal_scheduler_capacity(model_spec: dict) -> int:
     device_spec = model_spec.get("device_model_spec", {})
     max_concurrency = _quetzal_positive_int(
         device_spec.get("max_concurrency"), "max_concurrency"
@@ -215,10 +215,39 @@ def _validate_quetzal_scheduler_capacity(model_spec: dict) -> None:
         device_spec.get("vllm_args", {}).get("max_num_seqs", max_concurrency),
         "vLLM max_num_seqs",
     )
-    if max_concurrency != 1 or max_num_seqs != 1:
+    if max_concurrency != max_num_seqs:
         raise RuntimeError(
-            "impl=quetzal currently requires max_concurrency=max_num_seqs=1"
+            "impl=quetzal requires catalog max_concurrency and vLLM "
+            "max_num_seqs to match"
         )
+    return max_concurrency
+
+
+def _quetzal_runtime_tt_metal_commit(model_spec: dict) -> str:
+    """Bind package admission to the exact tt-metal revision in this image."""
+    image_commit = os.getenv("TT_METAL_COMMIT_SHA_OR_TAG")
+    if not isinstance(image_commit, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", image_commit
+    ):
+        raise RuntimeError(
+            "impl=quetzal batched serving requires the runtime image to be "
+            "built from an immutable lowercase 40-hex tt-metal commit"
+        )
+    declared = os.getenv("QUETZAL_RUNTIME_TT_METAL_COMMIT")
+    catalog_declared = _model_spec_env_vars(model_spec).get(
+        "QUETZAL_RUNTIME_TT_METAL_COMMIT"
+    )
+    for source, value in (
+        ("runtime environment", declared),
+        ("catalog", catalog_declared),
+    ):
+        if value is not None and value != image_commit:
+            raise RuntimeError(
+                f"impl=quetzal {source} tt-metal commit differs from the "
+                "runtime image build"
+            )
+    os.environ["QUETZAL_RUNTIME_TT_METAL_COMMIT"] = image_commit
+    return image_commit
 
 
 def _quetzal_variant(model_spec: dict) -> str:
@@ -257,7 +286,10 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         selection.get("QUETZAL_BUNDLE_MANIFEST_SHA256")
     )
     context_len = _quetzal_runtime_context(model_spec)
-    _validate_quetzal_scheduler_capacity(model_spec)
+    batch_size = _quetzal_scheduler_capacity(model_spec)
+    runtime_tt_metal_commit = (
+        _quetzal_runtime_tt_metal_commit(model_spec) if batch_size > 1 else None
+    )
     expected_variant = _quetzal_variant(model_spec)
     auxiliary_roots = _quetzal_auxiliary_roots(
         selection.get("QUETZAL_AUXILIARY_ROOTS_JSON")
@@ -276,8 +308,9 @@ def admit_quetzal_bundle(model_spec: dict) -> None:
         model_id=model_id,
         context_len=context_len,
         expected_variant=expected_variant,
-        expected_batch_size=1,
+        expected_batch_size=batch_size,
         auxiliary_roots=auxiliary_roots,
+        runtime_tt_metal_commit=runtime_tt_metal_commit,
     )
     logger.info(
         "Quetzal content-address admission succeeded: state=%s schema=%s files=%s "
