@@ -384,3 +384,32 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# Own impl, not tt_transformers: vision tower, host splice and M-RoPE are model-owned.
+- weights:
+    - PaddlePaddle/PaddleOCR-VL-1.6
+  impl: paddleocr_vl_blackhole
+  inference_engine: VLLM
+  model_type: VLM
+  supported_modalities:
+    - text
+    - image
+  device_model_specs:
+    - device: P150
+      # Vision tower runs one image per forward; multimodal batching is unsupported.
+      max_concurrency: 1
+      max_context: 8192
+      default_impl: true
+      env_vars:
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos/blackhole/paddleocr_vl/vllm_bundle"
+        # Required: a single die reports cluster type CUSTOM, so a 1x1 mesh will not open.
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
+      vllm_args:
+        limit-mm-per-prompt: '{"image": 1}'
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        l1_small_size: 24576
+        trace_region_size: 402653184  # vision-tower buckets plus the decode trace
+  status: EXPERIMENTAL
+  # Compiles its own vision buckets in warmup, so /tmp/ready is unused; readiness is /health.
+  has_builtin_warmup: true
