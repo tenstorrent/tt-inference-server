@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from workflow_module.requirements_schema import load_requirements
+from workflow_module.requirements_schema import Slo, load_requirements
 from workflows.model_spec import MODEL_SPECS
 from workflows.model_spec_provider import (
     TenstorrentModelSpecProvider,
@@ -347,13 +347,69 @@ def test_benchmark_config_per_metric_priorities(pack, doc):
     assert all(set(p.target_priorities.values()) == {"must"} for p in others)
 
 
-def test_benchmark_config_goodput_constraints_from_slos(pack, doc):
-    """Scenario SLOs become the vllm --goodput constraint string on each point."""
+def test_scenario_slo_alone_is_not_broadcast_as_goodput_bars(pack, doc, caplog):
+    """A scenario-level SLO is a capability gate, not a bar for every point.
+
+    One set of bars cannot hold across a sweep: e2el that is comfortable at
+    128 output tokens is unreachable at 1024. The fixture declares a scenario
+    SLO and no row SLOs, so nothing is measured -- and it says so.
+    """
     provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
     spec = provider.resolve(doc.model.name, "super_cluster")
+    with caplog.at_level("WARNING"):
+        points = (
+            pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+        )
+
+    assert {p.goodput for p in points} == {None}
+    assert "capability gate" in caplog.text
+    # It still does its other job: gating its own capability point's targets.
+    light = next(
+        p for p in points if p.isl == 128 and p.osl == 128 and p.max_concurrency == 1
+    )
+    assert light.targets["target"].ttft_ms == 2000
+
+
+def test_row_slos_become_the_goodput_bars_per_point(doc):
+    """Bars come from the row, so they can differ per (ISL, OSL)."""
+    from dataclasses import replace
+
+    scenario = doc.scenarios[0]
+    rows = [
+        replace(
+            p,
+            slo=Slo(ttft_ms=2000, tpot_ms=20, e2el_ms=10000 if p.osl == 128 else 30000),
+        )
+        for p in scenario.sweep
+    ]
+    with_rows = replace(doc, scenarios=[replace(scenario, sweep=rows, slo=None)])
+    pack = RequirementsTargetPack(with_rows, TenstorrentTargetPack())
+    provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), with_rows)
+    spec = provider.resolve(with_rows.model.name, "super_cluster")
+
     points = pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+
+    by_osl = {p.osl: p.goodput for p in points}
+    assert by_osl[128] == GoodputSlo(ttft_ms=2000, tpot_ms=20, e2el_ms=10000)
+    assert by_osl[1024] == GoodputSlo(ttft_ms=2000, tpot_ms=20, e2el_ms=30000)
+
+
+def test_a_partial_row_slo_inherits_the_scenario_default(doc):
+    """Row-wins is field-wise, matching effectiveSlo upstream."""
+    from dataclasses import replace
+
+    scenario = doc.scenarios[0]
+    rows = [replace(p, slo=Slo(e2el_ms=30000)) for p in scenario.sweep]
+    merged = replace(doc, scenarios=[replace(scenario, sweep=rows)])
+    pack = RequirementsTargetPack(merged, TenstorrentTargetPack())
+    provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), merged)
+    spec = provider.resolve(merged.model.name, "super_cluster")
+
+    points = pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+
+    # e2el from the row; ttft/tpot inherited from the scenario.
     assert {p.goodput for p in points} == {
-        GoodputSlo(ttft_ms=2000, tpot_ms=20, e2el_ms=20000)
+        GoodputSlo(ttft_ms=2000, tpot_ms=20, e2el_ms=30000)
     }
 
 
@@ -373,7 +429,7 @@ def test_benchmark_config_goodput_unmeasurable_without_slos(doc, caplog):
             pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
         )
     assert {p.goodput for p in points} == {None}
-    assert "no sweep point yields SLOs" in caplog.text
+    assert "no sweep point declares its own SLOs" in caplog.text
     # The goodput expectation stays on its capability point's targets (it
     # grades NA, visibly).
     light = next(
@@ -766,6 +822,14 @@ def test_benchmark_params_carry_the_bars_tool_neutrally(doc):
         render_goodput,
     )
 
+    from dataclasses import replace
+
+    scenario = doc.scenarios[0]
+    rows = [
+        replace(p, slo=Slo(ttft_ms=2000, tpot_ms=20, e2el_ms=20000))
+        for p in scenario.sweep
+    ]
+    doc = replace(doc, scenarios=[replace(scenario, sweep=rows)])
     provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
     spec = provider.resolve(doc.model.name, "super_cluster")
     pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
