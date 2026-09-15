@@ -88,20 +88,12 @@ struct EmbeddingImpl {
 
   // ---- virtual steps (per model) -----------------------------------------
 
-  /** Import path of the tt-metal module holding the generator class. */
   virtual const char* modelModule() const = 0;
 
-  /** Generator class name inside modelModule(). */
   virtual const char* modelClass() const = 0;
 
-  /** Add the constructor kwargs that differ per model (dtypes, location
-   * generator). The shared device/max_batch_size/max_seq_len/model_name
-   * kwargs are already set when this is called; the GIL is held and `ttnn`
-   * is imported. */
   virtual void addModelKwargs(py::dict& kwargs) const = 0;
 
-  /** Pull the dense embedding tensor out of forward()'s result. Default:
-   * forward() returns the tensor itself. */
   virtual py::object extractDense(const py::object& result) const {
     return result;
   }
@@ -110,8 +102,7 @@ struct EmbeddingImpl {
 
   bool initialize() {
     // Boot the interpreter once per process. pybind11 leaves the GIL held
-    // after initialization; release it at the end of warmup-time setup so
-    // every later entry point can acquire it.
+    // after initialization; release it at the end of warmup-time 
     const bool ownsInterpreter = !Py_IsInitialized();
     if (ownsInterpreter) {
       py::initialize_interpreter();
@@ -134,12 +125,6 @@ struct EmbeddingImpl {
         TT_LOG_INFO("[EmbeddingRunner] Tokenizer loaded for {}",
                     config.hf_model_id);
 
-        // The Python runner exported HF_MODEL before loading; tt-metal's
-        // tt_transformers config resolves the checkpoint from it (the Qwen
-        // path asserts without it). This must go through os.environ, not C
-        // setenv(): Python snapshots the environment when the interpreter
-        // starts, so C-level writes made after that are invisible to
-        // os.getenv.
         py::module_::import("os").attr("environ")[py::str("HF_MODEL")] =
             py::str(config.hf_model_id);
 
@@ -217,7 +202,6 @@ struct EmbeddingImpl {
       }
 
       // Row i of the (possibly batch-padded) result answers requests[i];
-      // the pairing is positional by contract.
       for (size_t i = 0; i < requests.size(); ++i) {
         domain::EmbeddingResponse resp(requests[i].task_id);
         resp.model = requests[i].model;
@@ -264,21 +248,16 @@ struct EmbeddingImpl {
     tokenizer = py::object();
     device = py::object();
     ttnn = py::object();
-    // The interpreter itself is never finalized: other components (and a
-    // possible restart of this runner) may still need it.
+    
   }
 
  protected:
-  /** The identity model_location_generator the Python runners passed: the
-   * models resolve weights straight from the HuggingFace id. */
   py::object identityLocationGenerator() const {
     return py::cpp_function([](py::object version) { return version; });
   }
 
  private:
-  // Mirrors BaseMetalDeviceRunner._mesh_device for the embedding models:
-  // none of them set dispatch knobs, so DispatchCoreConfig gets all-None
-  // (defaults), and fabric config is never used on this path.
+  
   void openMeshDevice() {
     py::object meshShape = ttnn.attr("MeshShape")(py::cast(config.mesh_shape));
     py::dict params;
@@ -296,8 +275,7 @@ struct EmbeddingImpl {
                 device.attr("get_num_devices")().cast<size_t>());
   }
 
-  // Same call the Python EmbeddingTokenizer made, so token streams are
-  // byte-identical to the Python server's.
+  
   py::object tokenize(const py::object& texts) const {
     return tokenizer(texts, "padding"_a = true, "truncation"_a = true,
                      "max_length"_a = config.max_seq_len,

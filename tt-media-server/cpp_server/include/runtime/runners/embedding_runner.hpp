@@ -14,13 +14,15 @@
 namespace tt::runners {
 
 namespace detail {
-// Template-method base for the per-model implementations (defined in
-// embedding_runner.cpp). It owns the shared pipeline - device open,
-// tokenizer, warmup, tokenize->forward->extract, close - and each model
-// subclass overrides only the steps that differ: which tt-metal module and
-// class to load, the constructor kwargs, and how to pull the dense vectors
-// out of forward()'s result. Kept behind this forward declaration so pybind11
-// types never leak into headers.
+/**
+ * Template-method base for the per-model implementations (defined in
+ * embedding_runner.cpp). It owns the shared pipeline - device open,
+ * tokenizer, warmup, tokenize->forward->extract, close - and each model
+ * subclass overrides only the steps that differ: which tt-metal module and
+ * class to load, the constructor kwargs, and how to pull the dense vectors
+ * out of forward()'s result. Kept behind this forward declaration so pybind11
+ * types never leak into headers.
+ */
 struct EmbeddingImpl;
 }  // namespace detail
 
@@ -28,8 +30,8 @@ struct EmbeddingImpl;
  * Embedding runner that drives tt-metal directly.
  *
  * Uses pybind11 (embedded interpreter) to import ttnn and the model's
- * generator class from tt-metal's models.demos - there is no tt-media-server
- * Python layer involved. Tokenization goes through the model's HuggingFace
+ * generator class from tt-metal's models.demos.
+ * Tokenization goes through the model's HuggingFace
  * AutoTokenizer for exact parity with the Python server. Python errors are
  * captured with full tracebacks and surfaced as per-request error responses
  * rather than swallowed.
