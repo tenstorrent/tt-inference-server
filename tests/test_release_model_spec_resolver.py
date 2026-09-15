@@ -18,7 +18,7 @@ from scripts.release.model_spec_resolver import (
     resolve_release_combo,
     resolve_release_combos,
 )
-from workflows.model_spec import MODEL_SPEC_CATALOG_FILES, resolve_model_spec
+from workflows.model_spec import MODEL_SPEC_CATALOG_FILES
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 
@@ -192,51 +192,6 @@ def test_resolve_release_combo_requires_explicit_default(tmp_path):
 def test_collect_release_combos_rejects_malformed_shapes(ci_config, error):
     with pytest.raises(ValueError, match=error):
         collect_release_combos(ci_config)
-
-
-def test_real_release_scope_resolves_to_runtime_equivalent_dev_leaves():
-    combos = collect_release_combos(json.loads(CI_CONFIG.read_text()))
-    sources = load_dev_model_spec_sources(DEV_CATALOG)
-
-    resolved = resolve_release_combos(combos, sources)
-
-    assert combos
-    assert len(resolved) == len(combos)
-    specs = [source.spec for source in sources]
-    for item in resolved:
-        runtime_spec = resolve_model_spec(
-            specs,
-            model=item.combo.model_name,
-            device=item.combo.device,
-            engine=item.combo.engine,
-            impl=item.combo.impl,
-            catalog_name="test dev catalog",
-        )
-        assert runtime_spec is item.model_spec
-
-    # A concrete anchor for the loop above: Qwen3-32B on GALAXY must resolve to
-    # the galaxy-specific impl, not the tt_transformers one. Asserted only while
-    # that combo is actually in the release scope -- models-ci-config.json is
-    # re-scoped every release (a training-only release ships no Qwen at all), so
-    # requiring it unconditionally turns any re-scope into an unrelated failure
-    # here. The loop above still covers whatever the current scope does contain.
-    qwen = next(
-        (
-            item
-            for item in resolved
-            if item.combo.model_name == "Qwen/Qwen3-32B"
-            and item.combo.device == DeviceTypes.GALAXY
-            and item.combo.engine == InferenceEngine.VLLM
-        ),
-        None,
-    )
-    if qwen is not None:
-        assert qwen.identity == (
-            "Qwen/Qwen3-32B",
-            "GALAXY",
-            "vLLM",
-            "qwen3_32b_galaxy",
-        )
 
 
 def test_real_release_scope_matches_dev_runtime_subprocess():
