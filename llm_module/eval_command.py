@@ -241,6 +241,17 @@ def build_eval_command(
         )
 
     optional_model_args = []
+    # The common lm-eval API adapter otherwise defaults to a 2048-token
+    # client window, even when the server advertises a larger context.
+    # Preserve task-specific windows (including reference-protocol limits).
+    if (
+        task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        and "max_length" not in task.model_kwargs
+        and device_max_context is not None
+    ):
+        if type(device_max_context) is not int or device_max_context <= 0:
+            raise ValueError("device max_context must be a positive integer")
+        optional_model_args.append(f"max_length={device_max_context}")
     if effective_max_concurrent:
         optional_model_args.append(f"num_concurrent={effective_max_concurrent}")
     # Fast-fail 4xx when DeviceModelSpec opts in (forge LLMs at tight

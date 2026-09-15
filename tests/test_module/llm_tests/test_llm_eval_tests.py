@@ -104,6 +104,21 @@ def _command_gen_kwargs(command):
 
 
 class TestEvalCommand:
+    def test_common_harness_uses_device_context(self):
+        task = EvalTask(task_name="long_context", workflow_venv_type=WorkflowVenvType.EVALS_COMMON)
+        command = _build_eval_test_command(task)
+        args = command[command.index("--model_args") + 1]
+        assert "max_length=262144" in args.split(",")
+        assert "max_length" not in task.model_kwargs
+
+    def test_common_harness_preserves_explicit_task_context(self):
+        task = EvalTask(task_name="bounded_context", workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                        model_kwargs={"max_length": 8192})
+        command = _build_eval_test_command(task)
+        args = command[command.index("--model_args") + 1]
+        assert "max_length=8192" in args.split(",")
+        assert args.count("max_length=") == 1
+
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
         command = _build_eval_test_command(task)
