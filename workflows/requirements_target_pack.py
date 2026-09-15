@@ -568,14 +568,21 @@ class RequirementsTargetPack(TargetPack):
         # longer the right predicate: a scenario can declare none itself and
         # still have every row supply its own.
         if _scenario_targets_goodput(scenario) and not any(
-            p.effective_slo(scenario.slo) for p in scenario.sweep
+            _point_goodput_slo(p, scenario.slo) for p in scenario.sweep
         ):
             logger.warning(
                 "Scenario %r declares goodput expectations but no sweep point "
-                "yields SLOs (neither the scenario default nor any row "
-                "override); goodput is only measured when SLOs provide the "
-                "--goodput constraints, so those targets will grade as NA.",
+                "declares its own SLOs, so goodput is not measured and those "
+                "targets grade as NA.%s Bars belong on the rows: one set "
+                "cannot hold across a sweep, since a bar that is satisfiable "
+                "at one (ISL, OSL) is unreachable at another.",
                 scenario.id,
+                (
+                    " The scenario-level slo is used as a capability gate on "
+                    "the sweep's best point, not as goodput bars."
+                    if scenario.slo is not None
+                    else ""
+                ),
             )
 
         # Scenario-level gates (SLOs, scalar targets) are *capability* gates:
@@ -624,7 +631,7 @@ class RequirementsTargetPack(TargetPack):
                     targets=targets,
                     priority=_aggregate_priority(list(target_priorities.values())),
                     target_priorities=target_priorities or None,
-                    goodput=_goodput_slo(point.effective_slo(scenario.slo)),
+                    goodput=_point_goodput_slo(point, scenario.slo),
                 )
             )
         _warn_on_duplicate_shapes(scenario)
@@ -733,7 +740,9 @@ class RequirementsTargetPack(TargetPack):
             for point in workload.sweep:
                 if point.concurrency <= 0:
                     continue
-                constraints = _aiperf_slo_constraints(point.slo)
+                constraints = _aiperf_slo_constraints(
+                    point.effective_slo(workload.slo) if point.slo else None
+                )
                 if not constraints:
                     continue
                 existing = by_concurrency.get(point.concurrency)
@@ -853,6 +862,38 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
             priority,
         )
     return attach
+
+
+def _point_goodput_slo(point: Any, default: Optional[Slo]) -> Optional[GoodputSlo]:
+    """Goodput bars in force at one sweep point -- none unless the row says so.
+
+    A scenario-level ``slo`` is not broadcast across the sweep, and the point's
+    own latency *targets* are not reused as bars either. Three reasons:
+
+    A single set of bars cannot hold across a sweep spanning orders of
+    magnitude of ISL and more than one OSL -- ``e2el`` 10s is comfortable at
+    128 output tokens and arithmetically impossible at 1024, where ``tpot``
+    22.2ms alone needs 22.7s. This module already takes that position for the
+    same field read as a *target*: see the capability-gate comment in
+    ``_scenario_params``, where a scenario-level SLO attaches to the single
+    best point rather than to all of them.
+
+    And a target is not a bar. A target constrains an aggregate ("mean TTFT
+    must be under 4100ms"); a bar is per-request, and goodput is the share of
+    requests clearing every bar. A run can meet the mean and still have a
+    third of its requests outside it. The document draws the same line in its
+    own methodology: "measured TTFT/TPOT/E2EL/throughput must meet these
+    values, and goodput counts only requests inside the SLO."
+
+    So bars come from the row's ``slo``, and a document that wants goodput
+    measured has to state them. A row declaring only some still inherits the
+    scenario's other fields, which is the override semantics the document
+    schema defines; what is refused is inventing bars for a row that declares
+    none.
+    """
+    if point.slo is None:
+        return None
+    return _goodput_slo(point.effective_slo(default))
 
 
 def _goodput_slo(slo: Optional[Slo]) -> Optional[GoodputSlo]:

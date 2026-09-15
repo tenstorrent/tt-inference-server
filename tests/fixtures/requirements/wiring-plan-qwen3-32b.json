@@ -264,7 +264,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -296,7 +300,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -328,7 +336,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -360,7 +372,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -392,7 +408,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -424,7 +444,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -456,7 +480,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -488,7 +516,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -520,7 +552,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -552,7 +588,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -584,7 +624,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -616,7 +660,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -648,7 +696,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -680,7 +732,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -712,7 +768,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -744,7 +804,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -776,7 +840,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -808,7 +876,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -840,7 +912,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -872,7 +948,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -904,7 +984,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -936,7 +1020,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -968,7 +1056,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1000,7 +1092,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1032,7 +1128,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1064,7 +1164,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1096,7 +1200,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1128,7 +1236,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1160,7 +1272,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1192,7 +1308,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1224,7 +1344,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1256,7 +1380,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1288,7 +1416,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1320,7 +1452,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1352,7 +1488,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1384,7 +1524,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1416,7 +1560,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1448,7 +1596,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1480,7 +1632,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1512,7 +1668,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1544,7 +1704,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1576,7 +1740,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1608,7 +1776,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1640,7 +1812,11 @@
         "reqThroughputRps": 10,
         "goodputPct": 90
       },
-      "slo": {},
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
       "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
@@ -1652,6 +1828,8 @@
         "name": "GPQA-Diamond",
         "taskCategory": "reasoning",
         "unit": "%",
+        "publishedScore": 89.6,
+        "publishedScoreUrl": "https://artificialanalysis.ai/evaluations/gpqa-diamond",
         "gpuReferenceScore": 88.4,
         "tolerance": 0.05,
         "priority": "must"
@@ -1665,6 +1843,8 @@
         "name": "Terminal-Bench 2.1",
         "taskCategory": "agentic",
         "unit": "%",
+        "publishedScore": 67.4,
+        "publishedScoreUrl": "https://artificialanalysis.ai/evaluations/terminalbench-v2-1",
         "gpuReferenceScore": 65.2,
         "tolerance": 0.05,
         "priority": "must"
@@ -1691,6 +1871,8 @@
         "name": "Tau^3-Banking Benchmark",
         "taskCategory": "agentic",
         "unit": "%",
+        "publishedScore": 18.1,
+        "publishedScoreUrl": "https://artificialanalysis.ai/evaluations/tau3-banking",
         "gpuReferenceScore": 11.3,
         "tolerance": 0.05,
         "priority": "must"
