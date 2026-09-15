@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -81,12 +82,17 @@ def _parse_embedding_benchmark_output(output: str) -> dict:
     return metrics
 
 
-def _aggregate_client_metrics(all_metrics: list[dict]) -> dict:
+def _aggregate_client_metrics(all_metrics: list[dict], end_times: list[float]) -> dict:
     """Combine metric dicts from benchmark clients that ran in parallel.
 
-    Token and request counts add up across clients; the wall-clock window is
-    the slowest client's duration (they start together); mean latency is
-    weighted by each client's successful request count.
+    Token and request counts add up across clients; mean latency is weighted
+    by each client's successful request count. The wall-clock window is
+    ``max(end) - min(start)`` so throughput is not overstated when clients
+    start with a skew: each client's start is recovered as its process end
+    time minus its self-reported benchmark duration (the client's own clock
+    covers exactly the request phase, excluding startup and dataset
+    generation, so the recovered window errs only by the post-benchmark
+    teardown, which is shared by all clients).
     """
     if len(all_metrics) == 1:
         return all_metrics[0]
@@ -94,7 +100,9 @@ def _aggregate_client_metrics(all_metrics: list[dict]) -> dict:
     successful = sum(int(m.get("Successful requests", 0)) for m in all_metrics)
     failed = sum(int(m.get("Failed requests", 0)) for m in all_metrics)
     total_tokens = sum(float(m.get("Total input tokens", 0)) for m in all_metrics)
-    duration = max(float(m.get("Benchmark duration", 1.0)) for m in all_metrics)
+    durations = [float(m.get("Benchmark duration", 1.0)) for m in all_metrics]
+    start_times = [end - dur for end, dur in zip(end_times, durations)]
+    duration = max(end_times) - min(start_times)
     mean_e2el = (
         sum(
             float(m.get("Mean E2EL", 0.0)) * int(m.get("Successful requests", 0))
@@ -194,8 +202,16 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
 
     # Read every client's pipes concurrently: a sequential communicate() on
     # client 0 would let client 1 fill its 64KB pipe buffer and stall.
+    # Stamp each client's exit so the aggregation can reconstruct the true
+    # combined wall-clock window even if the clients started with a skew.
+    def _drain(p: subprocess.Popen) -> tuple[tuple[str, str], float]:
+        output = p.communicate()
+        return output, time.monotonic()
+
     with ThreadPoolExecutor(max_workers=num_clients) as pool:
-        outputs = list(pool.map(lambda p: p.communicate(), procs))
+        results = list(pool.map(_drain, procs))
+    outputs = [output for output, _ in results]
+    end_times = [end for _, end in results]
 
     all_metrics: list[dict] = []
     for i, (proc, (stdout, stderr)) in enumerate(zip(procs, outputs)):
@@ -212,7 +228,7 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
                 proc.returncode, cmds[i], output=stdout, stderr=stderr
             )
         all_metrics.append(_parse_embedding_benchmark_output(stdout))
-    return _aggregate_client_metrics(all_metrics)
+    return _aggregate_client_metrics(all_metrics, end_times)
 
 
 def _embedding_target_checks(
