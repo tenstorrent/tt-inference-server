@@ -101,7 +101,12 @@
           "kvCacheHitRatePct": 98.6972174156267,
           "e2eNormIntvtyP75Tps": 170.108412861143,
           "e2eNormIntvtyP90Tps": 102.433475750155,
-          "goodputPct": 90
+          "goodputPct": 90,
+          "slo": {
+            "ttftMs": 10000,
+            "tpotMs": 25,
+            "e2elMs": 15000
+          }
         },
         {
           "concurrency": 4,
@@ -127,7 +132,12 @@
           "kvCacheHitRatePct": 97.1940661916114,
           "e2eNormIntvtyP75Tps": 181.80849073356,
           "e2eNormIntvtyP90Tps": 117.549595971253,
-          "goodputPct": 90
+          "goodputPct": 90,
+          "slo": {
+            "ttftMs": 10000,
+            "tpotMs": 25,
+            "e2elMs": 15000
+          }
         },
         {
           "concurrency": 8,
@@ -153,7 +163,12 @@
           "kvCacheHitRatePct": 96.6451234929271,
           "e2eNormIntvtyP75Tps": 159.200154728955,
           "e2eNormIntvtyP90Tps": 112.851894526235,
-          "goodputPct": 90
+          "goodputPct": 90,
+          "slo": {
+            "ttftMs": 10000,
+            "tpotMs": 25,
+            "e2elMs": 15000
+          }
         },
         {
           "concurrency": 12,
@@ -179,7 +194,12 @@
           "kvCacheHitRatePct": 94.0754144693319,
           "e2eNormIntvtyP75Tps": 143.198440373396,
           "e2eNormIntvtyP90Tps": 97.5228153385464,
-          "goodputPct": 90
+          "goodputPct": 90,
+          "slo": {
+            "ttftMs": 10000,
+            "tpotMs": 25,
+            "e2elMs": 15000
+          }
         },
         {
           "concurrency": 32,
@@ -205,7 +225,12 @@
           "kvCacheHitRatePct": 28.6350384245175,
           "e2eNormIntvtyP75Tps": 24.185894697726,
           "e2eNormIntvtyP90Tps": 10.5953375242601,
-          "goodputPct": 90
+          "goodputPct": 90,
+          "slo": {
+            "ttftMs": 10000,
+            "tpotMs": 25,
+            "e2elMs": 15000
+          }
         }
       ],
       "agenticSweepGeneration": {
