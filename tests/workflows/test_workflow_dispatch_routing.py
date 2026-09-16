@@ -11,7 +11,7 @@ import pytest
 
 from workflows import workflow_dispatch
 from workflows.utils import get_repo_root_path
-from workflows.workflow_types import ModelType, WorkflowType
+from workflows.workflow_types import ModelType, WorkflowType, WorkflowVenvType
 
 
 def _spec(model_type, name="Llama-3.1-8B-Instruct", hf_model_repo=None):
@@ -391,6 +391,46 @@ def test_llm_benchmark_builds_launcher_command(monkeypatch, tmp_path):
     assert command.argv[command.argv.index("--server-url") + 1] == (
         "https://console.example.com"
     )
+
+
+def test_agentic_only_evals_builds_agentic_launcher_command(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="evals")
+    task = SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC)
+    monkeypatch.setattr(
+        workflow_dispatch,
+        "_eval_config_for",
+        lambda model_spec: SimpleNamespace(tasks=[task]),
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    command = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0]
+
+    assert command.venv_type is None
+    assert "run_agentic.py" in command.argv[0]
+    assert command.argv[command.argv.index("--workflow") + 1] == "agentic"
+
+
+def test_mixed_evals_keep_standard_workflow(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="evals")
+    tasks = [
+        SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC),
+        SimpleNamespace(workflow_venv_type=WorkflowVenvType.EVALS_COMMON),
+    ]
+    monkeypatch.setattr(
+        workflow_dispatch,
+        "_eval_config_for",
+        lambda model_spec: SimpleNamespace(tasks=tasks),
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    command = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0]
+
+    assert "run_workflows.py" in command.argv[0]
+    assert command.argv[command.argv.index("--workflow") + 1] == "evals"
 
 
 def test_agentic_traces_routes_to_engine_for_any_model_type():
