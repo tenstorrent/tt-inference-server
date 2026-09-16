@@ -2744,3 +2744,84 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# Second implementation for 31B dFlash, alongside gemma4_dflash above. BOTH are
+# kept on purpose: the contract rail cannot serve the adaptive engine's conc>1
+# half at parity yet, because upstream vLLM refuses async scheduling for
+# method=custom_class and that is where the block rail's batched throughput
+# comes from. Measured on p150x8 31B: conc-1 median 0.91x the block rail
+# (better TTFT), conc>1 median 0.62x. Retire this pair in favour of the
+# contract entry once async is available to it.
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_dflash_contract
+  # 31B dFlash on the PLUGIN CONTRACT rail: B=1, greedy, synchronous, one K.
+  # The runner supplies the candidate block and owns the accept walk, so
+  # output_tokens_per_step is 1 and there is no internal block.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      # MATCHES the gemma4_dflash entry except concurrency: same context, same
+      # env, same device params, so the sweep shapes are identical and the
+      # comparison is apples to apples.
+      #
+      # Concurrency is admitted because the adapter's spec_plan overrides the
+      # inherited max_num_seqs > 1 refusal: the fused verify packs its
+      # candidate positions into one batch row, which is a statement about a
+      # SOLO step, not about the server. A batched step declines every row
+      # (DraftOutput.num_valid) and commits one token per row through a
+      # draft-less verify, so the launch serves the same mix as the dFlash
+      # entry: spec at conc-1, plain decode above.
+      max_concurrency: 32  # dFlash-entry parity: spec at conc-1, plain decode above
+      max_context: 262144  # dFlash-entry parity
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        # Generic serving-class override, same mechanism the MTP entries use.
+        # Every Gemma4 alias is listed: the override is keyed on the
+        # architecture the CHECKPOINT resolves to, and naming one alias leaves
+        # the others on the default class.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashContractForCausalLM"
+        GEMMA4_DFLASH_DRAFTER: "/home/tt-admin/.cache/huggingface/hub/models--z-lab--gemma-4-31B-it-DFlash/snapshots/eabd648301ce28583cc14757912e5e0f84e152e1"
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
+        GEMMA4_DFLASH_VERIFY: "5"
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # dFlash-entry parity
+        # Async scheduling is NOT available on this rail, so this stays off.
+        # Upstream vLLM hard-fails it for any speculative_config whose method
+        # is not EAGLE/MTP/draft_model/dspark (config/vllm.py:1038), and the
+        # contract requires method=custom_class. The block-rail entry gets
+        # async because it sets no speculative_config at all -- its block
+        # output is a TT-only mechanism vLLM never inspects -- so that setting
+        # cannot be ported here.
+        GEMMA4_CONTRACT_ASYNC: "0"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"  # the KV pool must match max_model_len, or vLLM
+          # refuses the launch: "220.0 GiB KV cache is needed, larger than the available 29.22 GiB"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
+      override_tt_config:
+        fabric_config: FABRIC_1D  # the P150x8 MGD provides MESH; the physical cluster defaults to TORUS_XY
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        # dFlash-entry parity, and the batched step's dominant cost without it:
+        # the contract wants argmax_ids, so a draft-less batched step that reads
+        # LOGITS pulls [32, 262144] floats (33.6 MB) to host and argmaxes 8.4M
+        # of them synchronously, per step. Measured ~57 ms/step at conc-32,
+        # which is the whole conc>1 gap against the block rail. On device the
+        # same step returns [32] ids.
+        sample_on_device_mode: decode_only
+      vllm_args:
+        max_num_seqs: 32  # dFlash-entry parity
+        speculative-config: '{"method":"custom_class","model":"vllm_tt_plugin.model_owned_drafter","num_speculative_tokens":5}'
+        no-enable-prefix-caching: true
+        enable_chunked_prefill: false
+        # Refused upstream for method=custom_class; see GEMMA4_CONTRACT_ASYNC.
+        no-async-scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        max_num_batched_tokens: 65536  # dFlash-entry parity
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
