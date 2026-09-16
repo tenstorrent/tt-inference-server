@@ -2002,110 +2002,12 @@ _eval_config_list = [
             ),
         ],
     ),
-    # QB2 bring-up config for Qwen3.8-27B. Exists first of all because
-    # `--workflow release` hard-asserts `model_name in EVAL_CONFIGS` in
-    # workflows/validate_setup.py, so the dispatch dies at setup (after the docker
-    # build) without one.
-    #
-    # Task choice: r1_gpqa_diamond, copied from the google/gemma-4-31B-it config
-    # rather than the terminal_bench_2 task of the sibling Qwen3.6-27B config above.
-    #   * It runs on EVALS_COMMON (lm-eval), so it costs minutes rather than the
-    #     3-hour agent timeout the agentic suites carry -- the right size for a
-    #     first bring-up run.
-    #   * Qwen3.8-27B's own model card publishes GPQA Diamond = 89.2, so the
-    #     baseline is a real number for THIS checkpoint, nothing transplanted.
-    #   * The card's Terminal Bench number is *2.1* = 73.0, so the agentic task
-    #     configured below is terminal_bench_2_1 (dataset terminal-bench-2-1),
-    #     NOT the terminal_bench_2 the sibling Qwen3.6-27B config runs. Picking the
-    #     task to match the published dataset version is the point -- scoring a 2.1
-    #     number against a 2.0 run would compare different task sets.
-    #   * The QB2 requirements CSV assigns 61.7 to swe_bench_verified and explicitly
-    #     records that this number came from SWE-bench Pro. Keep that provisional
-    #     cross-dataset gate for this requirements run, but do not treat it as a
-    #     measured SWE-bench Verified baseline.
-    #
-    # Unlike gemma-4 this needs no enable_thinking override: Qwen3.8's chat
-    # template has thinking ON by default (card: "Thinking mode is on by default"),
-    # and its recommended thinking-mode sampling -- temperature 1.0 / top_p 0.95 /
-    # top_k 20 -- is exactly what gen_kwargs sets below.
+    # QB2 Qwen3.8-27B dispatch config. This dispatch-only branch selects
+    # only Terminal-Bench 2.1, so evals without --ci-mode run that full cohort
+    # independently. The requirements branch retains all three eval tasks.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.8-27B",
         tasks=[
-            EvalTask(
-                # R1-style zero-shot reasoning GPQA Diamond: the model emits
-                # reasoning then a final answer, and the task's own extractor
-                # scores exact_match,none. Do NOT switch to
-                # gpqa_diamond_generative_n_shot -- its 5-shot examples
-                # demonstrate bare "(C)" answers and suppress reasoning (that
-                # cost gemma-4 ~30 points).
-                task_name="r1_gpqa_diamond",
-                score=EvalTaskScore(
-                    published_score=89.2,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    tolerance=0.05,
-                    # NO gpu_reference_score: nobody has run this checkpoint on an
-                    # H100 reference server yet. Consequence, via
-                    # resolve_eval_reference() + compute_accuracy_check(): with no
-                    # GPU baseline the check falls back to
-                    # `accuracy >= published_score * (1 - tolerance)`, i.e. it must
-                    # score >= 84.74% on TT silicon. That is a STRICT bar and this
-                    # eval should be expected to FAIL on early runs -- published
-                    # numbers are consistently optimistic against a real serving
-                    # stack (gemma-4-31B publishes 84.3 but measured 83.33 on an
-                    # H100). At EXPERIMENTAL evals are informational
-                    # (ModelStatusTypes.evals_enforced is False), so a failure here
-                    # does not block acceptance; it becomes a real gate at
-                    # FUNCTIONAL and above. Replace this with a measured
-                    # gpu_reference_score before promoting the status.
-                    #
-                    # Also deliberately no mode_reference_scores: under --ci-mode
-                    # the subset score is therefore compared against the FULL-set
-                    # 89.2, and the ci-nightly doc_ids are harder than average (the
-                    # gemma-4 entry measures ~8 points lower on its subset than on
-                    # the full set), so expect CI-mode runs to read low until a
-                    # subset reference is measured.
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Use the chat endpoint so the server applies the chat template
-                # (which is what carries thinking mode); client-side
-                # apply_chat_template on /v1/completions would bypass it.
-                use_chat_api=True,
-                model_kwargs={
-                    # Matches the P300X2 spec's max_context (262144), not gemma's
-                    # 131072.
-                    "max_length": 262144,
-                },
-                gen_kwargs={
-                    # stream=false is REQUIRED: lm-eval's local-chat-completions
-                    # streaming parser raises KeyError 'message' on every response.
-                    "stream": "false",
-                    # 80K output budget: the value Qwen's own docs use for this
-                    # family (mirrored in the Qwen3.6-27B agent config above as
-                    # max_output_tokens=80*1024). Well clear of max_length so
-                    # prompt+output cannot exceed the context and 400 the server.
-                    "max_gen_toks": 80 * 1024,
-                    "until": [],
-                    "do_sample": "true",
-                    # Qwen3.8 card, thinking mode: temp 1.0 / top_p 0.95 / top_k 20.
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                # Reasoning eval served at low batch: samples run effectively
-                # sequentially and dominate CI runtime, so keep the CI subset small
-                # (same rationale as the gemma-4-31B-it entry).
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
             EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
@@ -2168,61 +2070,6 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
-                },
-            ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    # The QB2 requirements CSV requests 61.7 with -5% relative
-                    # tolerance, so the fallback acceptance threshold is 58.615%
-                    # (displayed as 58.6%). Its own footnote says 61.7 was measured on
-                    # SWE-bench Pro, while this harness runs SWE-bench Verified. This
-                    # is therefore a provisional requirements target, not an
-                    # apples-to-apples Verified reference; replace it once a Verified
-                    # baseline exists.
-                    published_score=61.7,
-                    published_score_ref=(
-                        "QB2 Model Support Requirements qwen3.8-27B rev 0.11 "
-                        "(SWE-bench Pro value provisionally applied to Verified)"
-                    ),
-                    tolerance=0.05,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    max_workers=8,
-                    n_tasks=None,  # full dataset
-                    temperature=1.0,
-                    top_p=0.95,
-                    # 160K + 32K = 192K, inside the P300X2 spec's 262144 max_context.
-                    max_input_tokens=160 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
-                        },
-                    },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
                         ],
                     },
                 ),
