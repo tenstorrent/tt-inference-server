@@ -48,7 +48,7 @@ def _parse_agentic_benchmark(value: str) -> tuple:
 
     Recognized aliases map to task-name prefixes/exact names; anything else is
     treated as a raw task name matched exactly. Returns empty matchers for
-    "all"/blank so callers can skip filtering.
+    "all"/blank to select the default campaign.
     """
     prefixes: list[str] = []
     exacts: set = set()
@@ -68,7 +68,9 @@ def _filter_agentic_tasks_by_benchmark(agentic: list, selection: str) -> list:
     """Keep only the EVALS_AGENTIC tasks selected by --agentic-benchmark."""
     prefixes, exacts = _parse_agentic_benchmark(selection)
     if not prefixes and not exacts:
-        return agentic
+        return [
+            t for t in agentic if not getattr(t, "requires_explicit_selection", False)
+        ]
     selected = [
         t
         for t in agentic
@@ -121,9 +123,9 @@ def _select_agentic_tasks(ctx: MediaContext) -> list:
             [t.task_name for t in non_agentic],
         )
     selection = getattr(getattr(ctx, "runtime_config", None), "agentic_benchmark", None)
-    if isinstance(selection, str) and selection.strip():
-        agentic = _filter_agentic_tasks_by_benchmark(agentic, selection)
-    return agentic
+    return _filter_agentic_tasks_by_benchmark(
+        agentic, selection if isinstance(selection, str) else ""
+    )
 
 
 def _server_connection(ctx: MediaContext) -> ServerConnection:

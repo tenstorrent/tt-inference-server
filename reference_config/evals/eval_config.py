@@ -360,6 +360,9 @@ class EvalTask:
     # Off by default: the host is the CI runner, not containerized.
     allow_code_execution: bool = False
     agentic_eval_config: Optional[HarborEvalConfig] = None
+    # Agentic additions can require their name/alias without expanding the
+    # existing default campaign, including --agentic-benchmark all.
+    requires_explicit_selection: bool = False
     # Acceptance severity for this eval ("must"/"should"). "must" failures block
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
@@ -942,6 +945,48 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                requires_explicit_selection=True,
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified@1.0",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=500,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            # Bound trials by time, independent of API prices.
+                            # v2.2.8 ignores CLI --cost-limit 0; set it here.
+                            "agent": {"cost_limit": 0},
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                },
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.SMOKE_TEST: ["pytest-dev__pytest-5262"],
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                    EvalLimitMode.CI_NIGHTLY: 5,
                 },
             ),
         ],

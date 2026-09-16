@@ -548,8 +548,8 @@ def parse_arguments():
         help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
         "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
         "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
-        "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
-        "for the model.",
+        "accepted. Unset/'all' runs the model's default agentic tasks; opt-in "
+        "tasks require their name or alias.",
     )
 
     agentic_traces_group = parser.add_argument_group(
