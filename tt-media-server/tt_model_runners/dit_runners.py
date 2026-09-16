@@ -47,7 +47,16 @@ from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
 )
-from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+
+try:
+    from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+except ImportError:
+    # tt_dit's Mochi pipeline is the only one here that imports
+    # diffusers.pipelines.* (for linear_quadratic_schedule), so it is the only
+    # one that breaks when diffusers and huggingface_hub are mismatched in the
+    # image. Same containment as Flux1-Kontext above: keep the other runners
+    # loadable and let TTMochi1Runner.create_pipeline report the real cause.
+    MochiPipeline = None
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
@@ -505,6 +514,13 @@ class TTMochi1Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
+        if MochiPipeline is None:
+            raise ImportError(
+                "Mochi-1 requires models.tt_dit.pipelines.mochi.pipeline_mochi, "
+                "which failed to import in this image -- typically a diffusers / "
+                "huggingface_hub version mismatch, since it is the only tt_dit "
+                "pipeline that imports diffusers.pipelines."
+            )
         try:
             return MochiPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
