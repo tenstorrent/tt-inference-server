@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 *_server_*.log
+
+# tt-metal runtime output (fabric mesh descriptors, inspector dumps)
+generated/
