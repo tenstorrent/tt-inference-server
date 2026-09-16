@@ -1,10 +1,14 @@
 # Runbook — LTX-2.3 distilled (audio+video) on Galaxy
 
 Serve the LTX-2.3 distilled text→audio-video pipeline through `tt-media-server` on a
-Blackhole Galaxy (32 chips). Verified end-to-end: 1080p h264+aac, ~11s served latency (warm).
+Blackhole Galaxy (32 chips). Verified end-to-end: 1080p h264+aac, **153 frames @ 25 fps**
+(6.12s clip), ~11s served latency (warm).
 
 ## Sources
-- **tt-metal**: branch `main` @ `3a73746196f` (LTX code is upstream — no fork needed).
+- **tt-metal**: branch `rsalman/ltx-25fps-1080p-6s` @ `502f19726e5` (main + the conv3d and
+  matmul blockings swept for this shape). **Not optional**: without the conv3d entries for
+  latent T=20's chain (T=22/41/79/155) the two-stage decode falls back to channel-only
+  blocking and a generation takes 12.1s instead of ~6.7s.
 - **tt-inference-server**: branch `rsalman/ltx-2.3-distilled-runner`.
 - **Python env**: use the media server's own `python_env` (`tt-media-server/python_env`);
   it has `uvicorn`/`fastapi` + `ttnn`. The tt-metal repo's `python_env` does NOT.
@@ -22,6 +26,19 @@ Blackhole Galaxy (32 chips). Verified end-to-end: 1080p h264+aac, ~11s served la
    - `google/gemma-3-12b-it-qat-q4_0-unquantized`
 4. Own every path (owner-writable dirs): `TT_METAL_HOME`, `TT_DIT_CACHE_DIR`,
    `TT_VIDEO_OUTPUT_DIR`. Pointing any at another user's dir → permission errors.
+
+## Served shape (fixed)
+
+1080p / 153 frames / 25 fps is baked into the runner
+(`LTX_NUM_FRAMES`/`LTX_HEIGHT`/`LTX_WIDTH`/`LTX_FPS` in `tt_model_runners/dit_runners.py`) and
+into the captured traces, so a request cannot change it — `/generations` takes a prompt and a
+seed, nothing else.
+
+| | value | why |
+|---|---|---|
+| frames | 153 (6.12s) | `(num_frames - 1) % 8 == 0` is required; 6s × 25 = 150 is illegal, 153 is the nearest legal value (erring long, not short) |
+| height × width | 1088 × 1920 | both must be `% 64`; 1080 is not, so round up — post-crop 8 rows if you need exactly 1080 |
+| fps | 25 | real conditioning, not a container label (see Gotchas) |
 
 ## Serve
 
@@ -89,23 +106,43 @@ curl -s -H "$AUTH" -o out.mp4 localhost:$PORT/v1/videos/generations/$JOB/downloa
   hardcodes `l1_small_size=32768` (without it the audio vocoder OOMs: `bank size is 0 B`).
 - **ModelConfigs key**: `DEVICE=galaxy` → `DeviceTypes.GALAXY` (NOT `BLACKHOLE_GALAXY`);
   wrong key silently falls back to the SDXL default runner.
+- **`fps` must reach `create_pipeline`, not just `generate()`**: it sets the audio latent length
+  (`audio_frames = round(num_frames / fps * 25)` → exactly 153 here, 1:1 with video frames) and
+  scales the A/V cross-PE temporal axis into seconds, both baked into the traces. Pass it in only
+  one place and the model builds a 24 fps timeline while the container claims 25 — lip sync drifts
+  ~0.24s across the clip. `generate()` validates the per-request value against the pipeline's, so a
+  mismatch raises `ValueError` on the first generation rather than silently desyncing.
 - **DIT weight cache** ignores topology in its key — a cache built under a different
   topology loads as a false hit (`LoadingError: shape mismatch`). Clear
   `$TT_DIT_CACHE_DIR/ltx-2.3-*` to regenerate.
 
 ## Optional: on-device sanity test (no server)
+This is the exact command that exercises the served shape standalone — run it from the tt-metal
+checkout, with the media-server env's `pytest` on `PATH` (`python_env/bin`):
+
 ```bash
 cd <tt-metal>
-TT_METAL_HOME=<tt-metal> TT_DIT_CACHE_DIR=<owned>/tt_dit_cache \
-OUTPUT_PATH=<owned>/ltx_test.mp4 LTX_YUV_EXPORT=1 RUN_VBENCH=0 RUN_CLIP=0 \
-NUM_FRAMES=145 HEIGHT=1088 WIDTH=1920 LTX_TRACED=1 \
-./tt-inference-server/tt-media-server/python_env/bin/python3 -m pytest -svq --timeout=0 \
-  models/tt_dit/tests/models/ltx/test_pipeline_ltx_distilled.py::test_pipeline_distilled \
-  -k "4x8sp1tp0nl2_ring_is_fsdp0"
+HF_HOME=/mnt/models/huggingface TT_METAL_SHM_TRACKING_DISABLED=1 TT_METAL_INSPECTOR=0 \
+TT_METAL_LOGS_PATH=$HOME/tt-logs TT_DIT_CACHE_DIR=$HOME/.cache/tt-dit \
+RUN_WARMUP=1 LTX_TRACED=1 NO_PROMPT=1 RUN_VBENCH=0 RUN_CLIP=0 \
+NUM_FRAMES=153 FPS=25 HEIGHT=1088 WIDTH=1920 SEED=68 \
+pytest models/tt_dit/tests/models/ltx/test_pipeline_ltx_distilled.py \
+  -k "blackhole-4x8sp1tp0nl2_ring_is_fsdp0-True" -x -s --timeout 7200 2>&1
 ```
 
-## Perf (1080p, 145f, traced, steady-state)
-~6–7s compute/gen (`LTX_YUV_EXPORT=1` ~13% faster). Audio decode dominates the untraced path.
+- The test's own defaults are **145 frames @ 24 fps**, so `NUM_FRAMES=153 FPS=25` are what make
+  this the served shape; drop them and you are measuring the old one.
+- `RUN_WARMUP=1 LTX_TRACED=1` mirror the server: an untraced compile gen first, traces captured
+  on it, then timed steady-state gens. `NO_PROMPT=1` skips the interactive prompt loop.
+- The `-k` id picks the (4,8) ring / 2-link / no-FSDP / no-dynamic-load entry; the trailing
+  `-True` is the `no_prompt` parameter.
+- Output lands in the cwd as `ltx_av_fast_1920x1088_<n>.mp4` unless you set `OUTPUT_PATH`. Add
+  `LTX_YUV_EXPORT=1` to use the server's faster yuv420p export path.
+
+## Perf (1080p, 153f @ 25 fps, traced, steady-state)
+~6.7s compute/gen — parity with the old 145-frame shape (6.72s), given the conv3d blockings from
+the tt-metal branch above. `LTX_YUV_EXPORT=1` is ~13% faster than the default export; audio
+decode dominates the untraced path. Warmup is ~176s on a cold DIT cache.
 
 ## Implementation (this branch)
 `config/constants.py` (LTX `ModelNames`/`SupportedModels`/`ModelRunners` + video-service &
