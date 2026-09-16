@@ -10,8 +10,9 @@ import hashlib
 import json
 import re
 import stat
+import unicodedata
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 
 QUETZAL_IMPL_ID = "quetzal"
@@ -37,6 +38,31 @@ class QuetzalPackageMount:
     runtime_root: Path
     manifest_sha256: str
     auxiliary: tuple[QuetzalAuxiliaryMount, ...] = ()
+
+
+def _safe_auxiliary_name(value: object) -> str:
+    """Accept Quetzal's canonical single-segment names, not a smaller regex.
+
+    Package admission already treats the manifest as untrusted input. Keep the
+    same portable-path contract as Quetzal's ``_safe_name`` while explicitly
+    rejecting control characters before a name reaches Docker's mount syntax.
+    """
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\\" in value
+        or any(unicodedata.category(character) == "Cc" for character in value)
+    ):
+        raise ValueError(f"Quetzal auxiliary reference has unsafe name: {value!r}")
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or len(path.parts) != 1
+        or path.parts[0] in (".", "..")
+        or path.as_posix() != value
+    ):
+        raise ValueError(f"Quetzal auxiliary reference has unsafe name: {value!r}")
+    return value
 
 
 def _manifest_auxiliary_mounts(
@@ -91,10 +117,8 @@ def _manifest_auxiliary_mounts(
     for reference in references:
         if not isinstance(reference, dict):
             raise ValueError("Quetzal auxiliary reference must be a mapping")
-        name = reference.get("name")
+        name = _safe_auxiliary_name(reference.get("name"))
         digest = reference.get("sha256")
-        if not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
-            raise ValueError(f"Quetzal auxiliary reference has unsafe name: {name!r}")
         if name in expected_names:
             raise ValueError(f"Quetzal auxiliary reference name is duplicated: {name}")
         expected_names.add(name)

@@ -44,8 +44,10 @@ def _model_spec(impl_id="quetzal", env_vars=None):
     )
 
 
-def _make_v2_package(tmp_path, *, root_mode=0o555):
-    name = "openai_gpt-oss-120b-streamed-cache"
+def _make_v2_package(
+    tmp_path, *, root_mode=0o555,
+    name="openai_gpt-oss-120b-streamed-cache",
+):
     digest = "e" * 64
     package_parent = tmp_path / "packages"
     package = package_parent / "sha256-v2-test"
@@ -190,6 +192,34 @@ def test_printable_docker_command_derives_v2_auxiliary_mount(tmp_path):
     assert (
         "QUETZAL_AUXILIARY_ROOTS_JSON=" + env["QUETZAL_AUXILIARY_ROOTS_JSON"]
     ) in command
+
+
+def test_v2_auxiliary_accepts_canonical_single_segment_edge_name(tmp_path):
+    package, auxiliary, env, runtime_root = _make_v2_package(
+        tmp_path, name="cache+bf4@rev:1"
+    )
+    command, _ = generate_docker_run_command(
+        _model_spec(env_vars=env), _runtime(package, docker=True), str_cmd=True
+    )
+    assert f"src={auxiliary.resolve()},dst={runtime_root},readonly" in command
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "../cache",
+        "cache/subdir",
+        "cache\\windows",
+        "cache\ncontrol",
+        "cache\u0085control",
+    ],
+)
+def test_v2_auxiliary_rejects_unsafe_or_control_name(tmp_path, name):
+    package, _, env, _ = _make_v2_package(tmp_path, name=name)
+    with pytest.raises(ValueError, match="unsafe name"):
+        resolve_quetzal_package_mount(
+            _model_spec(env_vars=env), _runtime(package, docker=True)
+        )
 
 
 def test_v2_auxiliary_root_must_exist(tmp_path):
