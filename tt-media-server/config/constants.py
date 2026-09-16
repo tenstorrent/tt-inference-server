@@ -998,8 +998,8 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        # LTX 1080p ~6s AV generation (145 frames) plus first-request trace
-        # capture during warmup; give it a generous ceiling.
+        # LTX 1080p ~6s AV generation (153 frames @ 25 fps) plus first-request
+        # trace capture during warmup; give it a generous ceiling.
         "request_processing_timeout_seconds": 7200,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
