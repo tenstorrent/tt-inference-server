@@ -92,6 +92,9 @@ struct EmbeddingService::Impl {
 
   ~Impl() { stop(); }
 
+  /** Allocate the worker table and hand spawning/warmup to the startup
+   * thread, so start() returns immediately and health probes get answers
+   * while the model loads. */
   void start() {
     if (running.exchange(true)) return;
 
@@ -111,10 +114,10 @@ struct EmbeddingService::Impl {
   }
 
   /**
-   * Bring up worker 0 alone and wait for its READY handshake before spawning
-   * the rest. The first warmup on a cold volume generates the shared tensor
-   * cache. Once one worker has written the cache, the remaining workers warm up
-   * in parallel safely.
+   * Bring up one worker alone and wait for its READY handshake before
+   * spawning the rest. The first warmup on a cold volume generates the shared
+   * tensor cache; once one worker has written it, the remaining workers warm
+   * up in parallel safely.
    */
   void runStartup() {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
