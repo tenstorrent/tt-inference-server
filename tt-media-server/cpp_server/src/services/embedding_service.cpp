@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+#include "services/embedding_service.hpp"
+
 #include <poll.h>
 #include <signal.h>
 
@@ -19,7 +21,6 @@
 #include "profiling/tracy.hpp"
 #include "services/embedding_codec.hpp"
 #include "services/embedding_pipe.hpp"
-#include "services/embedding_service.hpp"
 #include "services/embedding_worker_main.hpp"
 #include "services/embedding_worker_process.hpp"
 #include "utils/logger.hpp"
@@ -368,8 +369,7 @@ struct EmbeddingService::Impl {
     std::vector<std::shared_ptr<PendingRequest>> batch;
     std::unique_lock lock(queueMutex);
     queueCv.wait_for(lock, std::chrono::milliseconds(100), [this, &worker] {
-      return !requestQueue.empty() || !worker.running.load() ||
-             !worker.isReady;
+      return !requestQueue.empty() || !worker.running.load() || !worker.isReady;
     });
 
     if (!worker.running.load() || !worker.isReady) return batch;
@@ -441,13 +441,12 @@ struct EmbeddingService::Impl {
       dispatchBatchToWorker(*worker, batch);
       const auto dispatchEnd = std::chrono::steady_clock::now();
 
-      stats.record(workerIdx, batch.size(),
-                   std::chrono::duration<double, std::milli>(queueEnd -
-                                                             queueStart)
-                       .count(),
-                   std::chrono::duration<double, std::milli>(dispatchEnd -
-                                                             dispatchStart)
-                       .count());
+      stats.record(
+          workerIdx, batch.size(),
+          std::chrono::duration<double, std::milli>(queueEnd - queueStart)
+              .count(),
+          std::chrono::duration<double, std::milli>(dispatchEnd - dispatchStart)
+              .count());
     }
 
     TT_LOG_INFO(

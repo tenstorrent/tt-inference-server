@@ -65,8 +65,8 @@ void exportWorkerEnvironment(int workerId,
       "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
       "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={}, OMP_NUM_THREADS={}, "
       "TORCH_NUM_THREADS={}, TT_MM_THROTTLE_PERF={})",
-      workerId, getpid(), tt::config::toString(cfg.runner_type),
-      visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)", cfg.device,
+      workerId, getpid(), tt::config::toString(cfg.runner_type), visibleDevices,
+      metalCacheEnv ? metalCacheEnv : "(default)", cfg.device,
       cfg.max_batch_size, cpuThreads, torchThreads,
       throttleEnv ? throttleEnv : "(unset)");
 }
