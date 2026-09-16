@@ -30,9 +30,19 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
-    Flux1KontextPipeline,
-)
+
+try:
+    from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
+        Flux1KontextPipeline,
+    )
+except ImportError:
+    # tt-metal does not ship models/tt_dit/pipelines/flux1/pipeline_flux1_kontext
+    # yet (absent on main as of 2026-09-16). This module-scope import previously
+    # took down every runner defined here -- Wan, Flux, SD3.5, Mochi, Motif,
+    # QwenImage, MiniMax -- because one optional pipeline was missing. Degrade to
+    # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
+    # precise error if the Kontext runner is actually requested.
+    Flux1KontextPipeline = None
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -357,6 +367,13 @@ class TTFluxKontextRunner(TTDiTRunner):
         return None, 1.0
 
     def create_pipeline(self):
+        if Flux1KontextPipeline is None:
+            raise ImportError(
+                "Flux1-Kontext requires models.tt_dit.pipelines.flux1."
+                "pipeline_flux1_kontext, which this tt-metal build does not "
+                "provide. Use a tt-metal revision that ships the Kontext "
+                "pipeline to run this model."
+            )
         try:
             lora_path, lora_scale = self._active_lora()
             if lora_path:
