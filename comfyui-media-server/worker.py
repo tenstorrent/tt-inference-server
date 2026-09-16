@@ -138,7 +138,9 @@ def device_worker_process(
     - SD35Config  → SD35Runner  (2x4 mesh, single worker)
     - SDXLConfig  → SDXLRunner  (1x1 mesh, one worker per device)
     - WanConfig   → WanRunner   (board-derived mesh, single worker)
-    - LTXConfig   → LTXRunner   (board-derived mesh, single worker)
+    - LTXConfig    → LTXRunner    (board-derived mesh, single worker)
+    - LTXProConfig → LTXProRunner (same, guided one-stage sampler; checked first
+      because it subclasses LTXConfig)
 
     All runner/ttnn imports are deferred to this function so the main server
     process never initializes ttnn (which would conflict with the child
@@ -160,10 +162,18 @@ def device_worker_process(
         # Determine model type and set up environment + runner
         # Imports are deferred here to avoid ttnn initialization in the main process
         from ltx_config import LTXConfig
+        from ltx_pro_config import LTXProConfig
         from sd35_config import SD35Config
         from wan_config import WanConfig
 
-        if isinstance(config, LTXConfig):
+        # LTXProConfig subclasses LTXConfig, so it must be tested first or a Pro
+        # server would silently come up running the distilled pipeline.
+        if isinstance(config, LTXProConfig):
+            setup_ltx_worker_environment(worker_id, config)
+            from ltx_pro_runner import LTXProRunner
+
+            runner = LTXProRunner(worker_id, config)
+        elif isinstance(config, LTXConfig):
             setup_ltx_worker_environment(worker_id, config)
             from ltx_runner import LTXRunner
 

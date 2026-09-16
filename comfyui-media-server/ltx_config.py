@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import ClassVar, Optional, Tuple
 import os
 
 from device_specs import DeviceClass, get_board_spec, get_deployment
@@ -16,6 +16,10 @@ class LTXConfig:
     Topology fields (num_workers, device_mesh_shape, device_ids, fabric) are
     derived from device_specs.DEPLOYMENTS based on `board`.
     """
+
+    # device_specs deployment to resolve topology from. Overridden by LTXProConfig,
+    # which shares every field here but runs a different pipeline on its own row.
+    deployment_key: ClassVar[str] = "ltx"
 
     # Required: which Tenstorrent board this server is running on.
     board: DeviceClass = None  # set explicitly via CLI; validated in __post_init__
@@ -77,7 +81,7 @@ class LTXConfig:
         if self.board is None:
             raise ValueError("LTXConfig.board is required (pass --board on the CLI)")
 
-        dep = get_deployment("ltx", self.board)
+        dep = get_deployment(self.deployment_key, self.board)
         self.num_workers = dep.num_workers
         self.device_mesh_shape = dep.mesh_shape
         self.device_ids = dep.device_ids

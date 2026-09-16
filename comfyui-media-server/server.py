@@ -36,8 +36,8 @@ def parse_args():
         "--model",
         type=str,
         default="sdxl",
-        choices=["sdxl", "sd35", "wan22", "ltx"],
-        help="Model to serve: 'sdxl', 'sd35', or 'wan22'",
+        choices=["sdxl", "sd35", "wan22", "ltx", "ltx_pro"],
+        help="Model to serve: 'sdxl', 'sd35', 'wan22', 'ltx' (distilled AV) or 'ltx_pro' (guided AV)",
     )
     parser.add_argument(
         "--board",
@@ -59,7 +59,7 @@ def parse_args():
     args = parser.parse_args()
 
     # --board is required for SDXL and Wan2.2; SD3.5 keeps its current flag-less invocation.
-    if args.model in ("sdxl", "wan22", "ltx"):
+    if args.model in ("sdxl", "wan22", "ltx", "ltx_pro"):
         if args.board is None:
             parser.error(f"--board is required when --model {args.model} (e.g. --board p300x2)")
         try:
@@ -88,6 +88,8 @@ if args.dev:
         os.environ["WAN_DEV_MODE"] = "true"
     elif args.model == "ltx":
         os.environ["LTX_DEV_MODE"] = "true"
+    elif args.model == "ltx_pro":
+        os.environ["LTX_PRO_DEV_MODE"] = "true"
 
 # Build the appropriate config
 if args.model == "sd35":
@@ -109,6 +111,12 @@ elif args.model == "ltx":
     model_label = "LTX-2.3 AV"
     # "video" so the video endpoint gating applies; LTX additionally serves
     # /video/av_generations, which returns a muxed MP4 with audio.
+    model_kind = "video"
+elif args.model == "ltx_pro":
+    from ltx_pro_config import LTXProConfig
+
+    config = LTXProConfig(board=args.board)
+    model_label = "LTX-2.3 Pro AV"
     model_kind = "video"
 else:
     from sdxl_config import SDXLConfig
@@ -282,8 +290,12 @@ class AVGenerateRequest(BaseModel):
     Geometry is fixed when the server builds the pipeline (the latent upsampler
     pins its GroupNorm to T*H*W), so num_frames/height/width are accepted only so
     a client can assert the server's shape; a mismatch is rejected rather than
-    silently ignored. negative_prompt is accepted and ignored: the distilled
-    pipeline runs without CFG.
+    silently ignored.
+
+    The sampling fields below are honoured by --model ltx_pro and ignored by
+    --model ltx: the distilled pipeline has no CFG and its step count is baked
+    into the sigma schedules as module constants. Left unset, each falls back to
+    the server's configured default. negative_prompt is likewise live only on Pro.
     """
 
     prompt: str
@@ -292,6 +304,12 @@ class AVGenerateRequest(BaseModel):
     num_frames: Optional[int] = Field(None, ge=1, le=1000)
     height: Optional[int] = Field(None, ge=64, le=2048)
     width: Optional[int] = Field(None, ge=64, le=2048)
+    num_inference_steps: Optional[int] = Field(None, ge=1, le=200)
+    video_cfg_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
+    audio_cfg_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
+    video_stg_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
+    audio_stg_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
+    stg_block: Optional[int] = Field(None, ge=0, le=47)
 
 
 class AVGenerateResponse(BaseModel):
@@ -844,11 +862,11 @@ async def video_vae_decode(request: VideoVaeDecodeRequest):
 
 
 def _require_av_support():
-    """AV generation is served only by the LTX runner."""
-    if args.model != "ltx":
+    """AV generation is served only by the LTX runners (distilled and Pro)."""
+    if args.model not in ("ltx", "ltx_pro"):
         raise HTTPException(
             status_code=400,
-            detail=f"AV generation is only supported for --model ltx, not '{args.model}'.",
+            detail=f"AV generation is only supported for --model ltx or ltx_pro, not '{args.model}'.",
         )
 
 

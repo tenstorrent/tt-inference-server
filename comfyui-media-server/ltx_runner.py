@@ -114,6 +114,26 @@ class LTXRunner:
         if kernel_ready_queue is not None:
             kernel_ready_queue.put(self.worker_id)
 
+    def _reject_shape_mismatch(self, request) -> None:
+        """Reject a shape that does not match what the pipeline was built for.
+
+        Better than letting the latent upsampler's pinned GroupNorm assert
+        mid-generation, which is how this fails otherwise. Shared with the Pro
+        runner, whose geometry is pinned for the same reason.
+        """
+        for key, pinned in (
+            ("num_frames", self.config.num_frames),
+            ("height", self.config.height),
+            ("width", self.config.width),
+        ):
+            got = request.get(key)
+            if got is not None and int(got) != pinned:
+                raise ValueError(
+                    f"{key}={got} does not match this server's pinned shape "
+                    f"({self.config.width}x{self.config.height}, {self.config.num_frames} frames). "
+                    "Restart the server with the shape you want."
+                )
+
     def run_inference(self, requests, on_event=None) -> list:
         """Generate one AV clip. Returns [mp4_bytes].
 
@@ -132,20 +152,7 @@ class LTXRunner:
         if request.get("negative_prompt"):
             self.logger.info("negative_prompt supplied but ignored (distilled pipeline has no CFG)")
 
-        # Reject a shape that does not match what the pipeline was built for, rather
-        # than letting the upsampler's pinned GroupNorm assert mid-generation.
-        for key, pinned in (
-            ("num_frames", self.config.num_frames),
-            ("height", self.config.height),
-            ("width", self.config.width),
-        ):
-            got = request.get(key)
-            if got is not None and int(got) != pinned:
-                raise ValueError(
-                    f"{key}={got} does not match this server's pinned shape "
-                    f"({self.config.width}x{self.config.height}, {self.config.num_frames} frames). "
-                    "Restart the server with the shape you want."
-                )
+        self._reject_shape_mismatch(request)
 
         self.logger.info(
             f"Running AV inference: prompt='{prompt[:80]}', "

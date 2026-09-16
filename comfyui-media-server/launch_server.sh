@@ -23,8 +23,9 @@ for arg in "$@"; do
     fi
 done
 
-if [ "$MODEL" != "sdxl" ] && [ "$MODEL" != "sd35" ] && [ "$MODEL" != "wan22" ] && [ "$MODEL" != "ltx" ]; then
-    echo "Error: --model must be 'sdxl', 'sd35', 'wan22', or 'ltx' (got: '$MODEL')"
+if [ "$MODEL" != "sdxl" ] && [ "$MODEL" != "sd35" ] && [ "$MODEL" != "wan22" ] \
+   && [ "$MODEL" != "ltx" ] && [ "$MODEL" != "ltx_pro" ]; then
+    echo "Error: --model must be 'sdxl', 'sd35', 'wan22', 'ltx' or 'ltx_pro' (got: '$MODEL')"
     exit 1
 fi
 
@@ -212,7 +213,7 @@ elif [ "$MODEL" = "wan22" ]; then
     # --board is required and is passed through to server.py.
     echo "Wan2.2: topology is board-derived (--board). No shell-level device pinning."
 
-elif [ "$MODEL" = "ltx" ]; then
+elif [ "$MODEL" = "ltx" ] || [ "$MODEL" = "ltx_pro" ]; then
     # LTX-2.3 is board-aware like Wan: setup_ltx_worker_environment derives
     # TT_VISIBLE_DEVICES / TT_MESH_GRAPH_DESC_PATH from --board via device_specs,
     # so no shell-level device pinning is needed.
@@ -221,13 +222,13 @@ elif [ "$MODEL" = "ltx" ]; then
     # (~40s startup becomes minutes). The worker also exports it, but set it here
     # so it is visible in the server log.
     export TT_DIT_CACHE_DIR="${TT_DIT_CACHE_DIR:-${HOME}/.cache/tt-dit}"
-    echo "LTX-2.3: topology is board-derived (--board). No shell-level device pinning."
-    echo "LTX-2.3: TT_DIT_CACHE_DIR=${TT_DIT_CACHE_DIR}"
+    echo "${MODEL}: topology is board-derived (--board). No shell-level device pinning."
+    echo "${MODEL}: TT_DIT_CACHE_DIR=${TT_DIT_CACHE_DIR}"
     # Gemma-3-12B is the text encoder and lives in a gated HF repo. Weights are
     # normally already in HF_HOME; pass a token through if the environment has one.
     if [ -n "${HF_TOKEN:-}" ]; then
         export HF_TOKEN
-        echo "LTX-2.3: HF_TOKEN present"
+        echo "${MODEL}: HF_TOKEN present"
     fi
 fi
 
@@ -269,10 +270,11 @@ for arg in "$@"; do
             # it reduces steps/frames and disables trace. Nothing to set here.
             echo ""
             echo "*** Wan2.2 DEV MODE: Reduced steps/frames, no trace capture ***"
-        elif [ "$MODEL" = "ltx" ]; then
-            # LTX dev mode (LTX_DEV_MODE) is set by server.py from --dev; it
-            # shortens the clip to 25 frames. Step count is fixed by the
-            # distilled sigma schedules and is not configurable.
+        elif [ "$MODEL" = "ltx" ] || [ "$MODEL" = "ltx_pro" ]; then
+            # LTX dev mode (LTX_DEV_MODE / LTX_PRO_DEV_MODE) is set by server.py
+            # from --dev; it shortens the clip to 25 frames. On the distilled
+            # server the step count is fixed by the sigma schedules; on Pro it is
+            # a per-request parameter.
             echo ""
             echo "*** LTX-2.3 DEV MODE: 25-frame clip ***"
         fi
@@ -322,7 +324,7 @@ done
 echo ""
 if [ "$DEV_MODE" = "true" ]; then
     echo "Starting ${MODEL} server in DEV MODE..."
-    if [ "$MODEL" = "ltx" ]; then
+    if [ "$MODEL" = "ltx" ] || [ "$MODEL" = "ltx_pro" ]; then
         echo "This will take about a minute (untraced; warm weight cache)."
     elif [ "$MODEL" = "sd35" ] || [ "$MODEL" = "wan22" ]; then
         echo "This will take 2-5 minutes (no trace capture in dev mode)."
@@ -331,7 +333,7 @@ if [ "$DEV_MODE" = "true" ]; then
     fi
 else
     echo "Starting ${MODEL} server..."
-    if [ "$MODEL" = "ltx" ]; then
+    if [ "$MODEL" = "ltx" ] || [ "$MODEL" = "ltx_pro" ]; then
         echo "This will take ~1 minute with a warm weight cache, or several minutes cold."
     elif [ "$MODEL" = "sd35" ] || [ "$MODEL" = "wan22" ]; then
         echo "This will take 15-25 minutes for first-run trace capture."
