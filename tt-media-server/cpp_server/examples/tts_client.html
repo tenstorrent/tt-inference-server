@@ -95,6 +95,14 @@
   /* Load-test KPIs are a fixed 3 x 4: FC / SC / TC rows over p50, p95, max,
      then the run-level row. auto-fit would reflow them and break the reading. */
   .metrics.grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Generate & play: all five tiles on one row. auto-fit would wrap them by width. */
+  .metrics.grid5 { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .metrics.grid5 .metric { padding: 10px 8px; }
+  .metrics.grid5 .value { font-size: 1.05rem; }
+  .metrics.grid5 .label { font-size: 0.64rem; }
+  @media (max-width: 720px) {
+    .metrics.grid5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   @media (max-width: 560px) { .metrics.grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .metric .label .tgt { text-transform: none; letter-spacing: 0; opacity: 0.75; }
   audio { width: 100%; margin-top: 14px; }
@@ -221,7 +229,7 @@
       <span id="statusText">Idle</span>
     </div>
 
-    <div class="metrics">
+    <div class="metrics grid5">
       <div class="metric">
         <div class="value" id="mTtfc">–</div>
         <div class="label">Time to First Chunk</div>
@@ -230,10 +238,6 @@
         <div class="value" id="mChunks">–</div>
         <div class="label">Chunks Received</div>
       </div>
-      <!-- Row break. A <br> here does not work: .metrics is a CSS grid, so the <br>
-           becomes a grid ITEM and just consumes a cell. A zero-height item spanning
-           every column ends the row, so the next tile starts at column 1. -->
-      <div style="grid-column:1/-1;height:0;"></div>
       <div class="metric">
         <div class="value" id="mTotal">–</div>
         <div class="label">Total Time</div>
@@ -471,11 +475,13 @@
     // tts_load_harness.py does and republishes on every completed chunk.
     let srvTimer = null;
     let srvOk = false;          // true once the proxy's measurement has been applied
+    let srvM = null;            // the proxy's last measurement for this request
     async function pollServer() {
       try {
         const m = await (await fetch(`/api/stream?id=${req.reqId}`)).json();
         if (m && m.fc_ms !== null && m.fc_ms !== undefined) {
           srvOk = true;
+          srvM = m;
           metricEls.ttfc.textContent = fmtMs(m.fc_ms);
           metricEls.chunks.textContent = String(m.chunks);
           // RTF from the server's own clock: the browser's total time carries network
@@ -566,7 +572,9 @@
                 log(
                   `server-measured: FC ${m.fc_ms} ms, ${m.chunks} chunks` +
                   (m.sc_ms !== null ? `, SC ${m.sc_ms} ms` : "") +
-                  (m.tc_max_ms !== null ? `, TC max ${m.tc_max_ms} ms` : ""));
+                  (m.tc_max_ms !== null ? `, TC max ${m.tc_max_ms} ms` : "") +
+                  `, stall ${m.stall_ms} ms over ${m.bubbles} gap(s) ` +
+                  `(real-time line ${m.chunk_audio_ms} ms)`);
               }
             } catch (e) { /* the polled value already stands */ }
           }
@@ -634,8 +642,13 @@
       playerEl.src = lastObjectUrl; // available for replay/seek; already played live
 
       log(
-        `[req ${index + 1}] done: ${chunkCount} chunks, ${totalAudioBytes} audio bytes, ` +
-          `${totalSeconds.toFixed(3)}s total, ${audioDurationSeconds.toFixed(3)}s audio.`
+        srvM
+          ? `[req ${index + 1}] done: ${srvM.chunks} chunks, ${totalAudioBytes} audio ` +
+            `bytes, ${(srvM.total_ms / 1000).toFixed(3)}s total, ` +
+            `${srvM.audio_s.toFixed(3)}s audio.`
+          : `[req ${index + 1}] done: ${chunkCount} chunks, ${totalAudioBytes} audio ` +
+            `bytes, ${totalSeconds.toFixed(3)}s total (browser clock), ` +
+            `${audioDurationSeconds.toFixed(3)}s audio.`
       );
     }
 
@@ -646,6 +659,7 @@
       totalSeconds,
       audioDurationSeconds,
       rtf,
+      srvTotalMs: srvM ? srvM.total_ms : null,
     };
   }
 
@@ -681,9 +695,13 @@
     let ttfcCount = 0;
     let sumRtf = 0;
     let rtfCount = 0;
+    let lastSrvTotalMs = null;   // the proxy's total for the request that plays
 
     function onOneDone(result) {
       completed += 1;
+      if (result.srvTotalMs !== null && result.srvTotalMs !== undefined) {
+        lastSrvTotalMs = result.srvTotalMs;
+      }
       if (!result.ok) {
         if (!result.aborted) failed += 1;
       } else {
@@ -707,7 +725,9 @@
     await Promise.allSettled(tasks);
 
     const wallSeconds = (performance.now() - batchStartAt) / 1000;
-    log(`Done in ${wallSeconds.toFixed(3)}s${failed ? ` (${failed} failed)` : ""}.`);
+    // Prefer the server's figure; the browser's wall time includes the round trip.
+    const srvTotal = lastSrvTotalMs !== null ? lastSrvTotalMs / 1000 : null;
+    log(`Done in ${(srvTotal !== null ? srvTotal : wallSeconds).toFixed(3)}s.`);
     setStatus(failed > 0 ? "Completed with errors" : "Done", failed > 0 ? "err" : "ok");
     finishUi();
   }
@@ -823,9 +843,15 @@
     }
     if (st.state === "running" || st.state === "starting") {
       ltProg.style.width = `${st.pct || 0}%`;
+      // Past the wall clock the elapsed/total pair is meaningless (it reads
+      // 2:10 / 2:00), and the drain has no known end. Show the phase alone.
+      if (st.phase === "Draining") {
+        ltSetStatus("Draining", "busy");
+        return;
+      }
       const left = Math.max(0, (st.total_s || 0) - (st.elapsed_s || 0));
       ltSetStatus(
-        `${st.phase || "running"} — ${fmtClock(st.elapsed_s || 0)} / ` +
+        `${st.phase || "Running"} — ${fmtClock(st.elapsed_s || 0)} / ` +
         `${fmtClock(st.total_s || 0)}${left > 0 ? ` (${fmtClock(left)} left)` : ""}`,
         "busy");
       return;
@@ -836,8 +862,7 @@
       ltProg.style.width = "100%";
       ltFillTiles(st.kpi);
       ltSetStatus(
-        `Done — ${st.kpi.n_ok} requests at ${st.kpi.rps} req/s` +
-        (st.kpi.n_err ? `, ${st.kpi.n_err} errors` : ""),
+        `Done — ${st.kpi.n_ok} requests at ${st.kpi.rps} req/s`,
         st.kpi.kpi_pass ? "ok" : "err");
     } else if (st.state === "error") {
       // Show the harness's own last words rather than a generic failure.
