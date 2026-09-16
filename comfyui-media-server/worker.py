@@ -77,6 +77,28 @@ def setup_wan_worker_environment(worker_id: int, config):
     os.environ.update(get_board_spec(config.board).extra_env_vars)
 
 
+def setup_ltx_worker_environment(worker_id: int, config):
+    """LTX-2.3: a single worker owns the full mesh. Topology is board-derived
+    via device_specs, same as Wan.
+    """
+    from device_specs import descriptor_path, get_board_spec
+
+    os.environ.setdefault("TT_METAL_HOME", os.getcwd())
+    os.environ.setdefault("PYTHONPATH", os.getcwd())
+
+    device_ids_str = ",".join(map(str, config.device_ids))
+    os.environ["TT_VISIBLE_DEVICES"] = device_ids_str
+    os.environ["TT_METAL_VISIBLE_DEVICES"] = device_ids_str
+
+    os.environ["TT_MESH_GRAPH_DESC_PATH"] = descriptor_path(config.board)
+    os.environ.update(get_board_spec(config.board).extra_env_vars)
+
+    # launch_server.sh does not export this. Unset, every tilized weight load is a
+    # cache miss and startup goes from ~40s to minutes.
+    os.environ["TT_DIT_CACHE_DIR"] = config.tt_dit_cache_dir
+    os.environ["LTX_QUANT"] = config.quant
+
+
 def setup_sd35_worker_environment(worker_id: int, config):
     """
     Set worker-specific environment variables for SD3.5 (LoudBox, single worker
@@ -112,9 +134,11 @@ def device_worker_process(
     """
     Main worker process function that handles image generation inference tasks.
 
-    Supports both SDXL and SD3.5 via config type dispatch:
+    Supports SDXL, SD3.5, Wan2.2 and LTX-2.3 via config type dispatch:
     - SD35Config  → SD35Runner  (2x4 mesh, single worker)
     - SDXLConfig  → SDXLRunner  (1x1 mesh, one worker per device)
+    - WanConfig   → WanRunner   (board-derived mesh, single worker)
+    - LTXConfig   → LTXRunner   (board-derived mesh, single worker)
 
     All runner/ttnn imports are deferred to this function so the main server
     process never initializes ttnn (which would conflict with the child
@@ -135,10 +159,16 @@ def device_worker_process(
     try:
         # Determine model type and set up environment + runner
         # Imports are deferred here to avoid ttnn initialization in the main process
+        from ltx_config import LTXConfig
         from sd35_config import SD35Config
         from wan_config import WanConfig
 
-        if isinstance(config, WanConfig):
+        if isinstance(config, LTXConfig):
+            setup_ltx_worker_environment(worker_id, config)
+            from ltx_runner import LTXRunner
+
+            runner = LTXRunner(worker_id, config)
+        elif isinstance(config, WanConfig):
             setup_wan_worker_environment(worker_id, config)
             from wan_runner import WanRunner
 
@@ -184,6 +214,37 @@ def device_worker_process(
                     images = runner.run_inference([request])
                     inference_time = time.time() - start_time
                     result_queue.put({"task_id": task_id, "op": op, "images": images, "inference_time": inference_time})
+                elif op == "av_generate":
+                    # LTX-2.3: audio+video in one call. The runner returns encoded MP4
+                    # bytes rather than frames, because the clip carries synchronized
+                    # audio and the frames contract here has no audio channel.
+                    if not hasattr(runner, "run_inference"):
+                        raise RuntimeError(f"Runner {type(runner).__name__} does not support 'av_generate'")
+                    av_kwargs = {}
+                    # Same opt-in as denoise: stream only when the request asked for it
+                    # and the runner accepts on_event, since the blocking endpoint never
+                    # drains progress_queue.
+                    if progress_queue is not None and request.get("stream_progress"):
+                        import inspect
+
+                        if "on_event" in inspect.signature(runner.run_inference).parameters:
+
+                            def _on_av_event(event, _tid=task_id):
+                                ev = _serialize_pipeline_event(event)
+                                if ev is None:
+                                    return
+                                ev["task_id"] = _tid
+                                try:
+                                    progress_queue.put_nowait(ev)
+                                except Exception:
+                                    pass
+
+                            av_kwargs["on_event"] = _on_av_event
+                    video = runner.run_inference([request], **av_kwargs)[0]
+                    inference_time = time.time() - start_time
+                    result_queue.put(
+                        {"task_id": task_id, "op": op, "video": video, "inference_time": inference_time}
+                    )
                 elif op in ("denoise", "vae_decode", "vae_encode"):
                     # Additive staged ops (currently SDXL only).
                     if not hasattr(runner, op):

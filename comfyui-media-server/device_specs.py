@@ -157,7 +157,7 @@ BOARD_SPECS: Dict[DeviceClass, BoardSpec] = {
         descriptor_filename="p300_x2_mesh_graph_descriptor.textproto",
         arch="blackhole",
         chip_count=4,
-        supports_models=frozenset({"sdxl", "wan22"}),
+        supports_models=frozenset({"sdxl", "wan22", "ltx"}),
         core_grid_override=None,
         l1_small_size=38000,
         trace_region_size=56_000_000,  # BH SDXL trace ~41MB measured; round up for headroom.
@@ -230,6 +230,14 @@ DEPLOYMENTS: Dict[Tuple[str, DeviceClass], DeploymentSpec] = {
         fabric_config="FABRIC_1D",
     ),
     ("wan22", DeviceClass.P300X2): DeploymentSpec(
+        num_workers=1,
+        mesh_shape=(2, 2),
+        device_ids=(0, 1, 2, 3),
+        fabric_config="FABRIC_1D",
+    ),
+    # LTX-2.3 is SP=2/TP=2 on the native 2x2 mesh. A 1x4 open would give SP=1,
+    # which video self-attention does not support.
+    ("ltx", DeviceClass.P300X2): DeploymentSpec(
         num_workers=1,
         mesh_shape=(2, 2),
         device_ids=(0, 1, 2, 3),

@@ -36,7 +36,7 @@ def parse_args():
         "--model",
         type=str,
         default="sdxl",
-        choices=["sdxl", "sd35", "wan22"],
+        choices=["sdxl", "sd35", "wan22", "ltx"],
         help="Model to serve: 'sdxl', 'sd35', or 'wan22'",
     )
     parser.add_argument(
@@ -59,7 +59,7 @@ def parse_args():
     args = parser.parse_args()
 
     # --board is required for SDXL and Wan2.2; SD3.5 keeps its current flag-less invocation.
-    if args.model in ("sdxl", "wan22"):
+    if args.model in ("sdxl", "wan22", "ltx"):
         if args.board is None:
             parser.error(f"--board is required when --model {args.model} (e.g. --board p300x2)")
         try:
@@ -86,6 +86,8 @@ if args.dev:
         os.environ["SD35_DEV_MODE"] = "true"
     elif args.model == "wan22":
         os.environ["WAN_DEV_MODE"] = "true"
+    elif args.model == "ltx":
+        os.environ["LTX_DEV_MODE"] = "true"
 
 # Build the appropriate config
 if args.model == "sd35":
@@ -99,6 +101,14 @@ elif args.model == "wan22":
 
     config = WanConfig(board=args.board)
     model_label = "Wan2.2 T2V"
+    model_kind = "video"
+elif args.model == "ltx":
+    from ltx_config import LTXConfig
+
+    config = LTXConfig(board=args.board)
+    model_label = "LTX-2.3 AV"
+    # "video" so the video endpoint gating applies; LTX additionally serves
+    # /video/av_generations, which returns a muxed MP4 with audio.
     model_kind = "video"
 else:
     from sdxl_config import SDXLConfig
@@ -264,6 +274,41 @@ class VideoDenoiseRequest(BaseModel):
     # No-op: accepted for API consistency with DenoiseRequest; WAN uses per-expert
     # scale, not a UNet/CLIP split.
     lora_scale_clip: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+
+
+class AVGenerateRequest(BaseModel):
+    """LTX-2.3 audio-video generation request.
+
+    Geometry is fixed when the server builds the pipeline (the latent upsampler
+    pins its GroupNorm to T*H*W), so num_frames/height/width are accepted only so
+    a client can assert the server's shape; a mismatch is rejected rather than
+    silently ignored. negative_prompt is accepted and ignored: the distilled
+    pipeline runs without CFG.
+    """
+
+    prompt: str
+    negative_prompt: Optional[str] = ""
+    seed: Optional[int] = Field(None, ge=0)
+    num_frames: Optional[int] = Field(None, ge=1, le=1000)
+    height: Optional[int] = Field(None, ge=64, le=2048)
+    width: Optional[int] = Field(None, ge=64, le=2048)
+
+
+class AVGenerateResponse(BaseModel):
+    """A muxed MP4 (h264 video + AAC audio) as base64.
+
+    The frames-plus-client-side-mux contract used by /video/generations cannot
+    carry audio, and would be ~290MB of base64 PNG at 1080p/145f against ~2.5MB
+    for the encoded MP4.
+    """
+
+    video_b64: str
+    num_frames: int
+    height: int
+    width: int
+    fps: int
+    inference_time: float
+    model: str
 
 
 class VideoVaeDecodeRequest(BaseModel):
@@ -603,8 +648,8 @@ def _submit_and_wait(request_dict: dict, timeout_seconds: Optional[float] = None
     raise HTTPException(status_code=408, detail="Request timeout")
 
 
-def _stream_denoise_response(req: dict, *, timeout_seconds: float = None):
-    """Enqueue a denoise task and stream progress events as NDJSON.
+def _stream_denoise_response(req: dict, *, timeout_seconds: float = None, op: str = "denoise", result_builder=None):
+    """Enqueue a task and stream its progress events as NDJSON.
 
     Shared by /video/denoise_stream and /latent/denoise_stream. Sets
     stream_progress=True so the worker publishes DenoiseStep/Section events to
@@ -612,11 +657,14 @@ def _stream_denoise_response(req: dict, *, timeout_seconds: float = None):
 
     Yields one JSON object per line:
       - progress events: {"type": "section_start"|"section_end"|"denoise_step", ...}
-      - terminal event:  {"type": "result", "latent": <b64npy>, "inference_time": float}
+      - terminal event:  {"type": "result", ...} — shaped by ``result_builder``,
+        which defaults to the staged-denoise latent payload
       - on failure:      {"type": "error", "detail": str}
+
+    ``op`` selects the worker branch ("denoise", or "av_generate" for LTX).
     """
     task_id = str(uuid.uuid4())
-    req["op"] = "denoise"
+    req["op"] = op
     req["stream_progress"] = True
     try:
         task_queue.put((task_id, req), timeout=5)
@@ -647,15 +695,17 @@ def _stream_denoise_response(req: dict, *, timeout_seconds: float = None):
 
             if result is not None:
                 if result.get("task_id") == task_id:
-                    yield json.dumps(
-                        {
+                    if result_builder is not None:
+                        payload = result_builder(result)
+                    else:
+                        payload = {
                             "type": "result",
                             "latent": ndarray_to_b64npy(result["tensor"]),
                             "inference_time": result.get("inference_time", 0.0),
                             "model": model_label,
                             "lora": result.get("lora"),
                         }
-                    ) + "\n"
+                    yield json.dumps(payload) + "\n"
                     return
                 else:
                     # Belongs to another task — put it back for its handler.
@@ -790,6 +840,52 @@ async def video_vae_decode(request: VideoVaeDecodeRequest):
         image=ndarray_to_b64npy(result["tensor"]),
         inference_time=result.get("inference_time", 0.0),
         model=model_label,
+    )
+
+
+def _require_av_support():
+    """AV generation is served only by the LTX runner."""
+    if args.model != "ltx":
+        raise HTTPException(
+            status_code=400,
+            detail=f"AV generation is only supported for --model ltx, not '{args.model}'.",
+        )
+
+
+def _av_result_payload(result: dict) -> dict:
+    return {
+        "type": "result",
+        "video_b64": base64.b64encode(result["video"]).decode("ascii"),
+        "num_frames": config.num_frames,
+        "height": config.height,
+        "width": config.width,
+        "fps": config.fps,
+        "inference_time": result.get("inference_time", 0.0),
+        "model": model_label,
+    }
+
+
+@app.post("/video/av_generations", response_model=AVGenerateResponse)
+async def generate_av(request: AVGenerateRequest):
+    """Generate a synchronized audio+video clip (LTX-2.3). Returns a muxed MP4."""
+    _require_av_support()
+    req = request.dict()
+    req["op"] = "av_generate"
+    result = _submit_and_wait(req, timeout_seconds=max(config.inference_timeout_seconds, 3600.0))
+    payload = _av_result_payload(result)
+    payload.pop("type", None)
+    return AVGenerateResponse(**payload)
+
+
+@app.post("/video/av_generations_stream")
+async def generate_av_stream(request: AVGenerateRequest):
+    """Streaming variant of /video/av_generations (NDJSON progress + terminal result)."""
+    _require_av_support()
+    return _stream_denoise_response(
+        request.dict(),
+        timeout_seconds=max(config.inference_timeout_seconds, 3600.0),
+        op="av_generate",
+        result_builder=_av_result_payload,
     )
 
 
