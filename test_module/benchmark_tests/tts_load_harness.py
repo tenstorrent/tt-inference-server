@@ -424,9 +424,13 @@ def run_burst(tgt: Target, conc: int) -> tuple[list, float, float]:
 
     def worker(uid: int) -> None:
         start_gate.wait()  # release every thread together
-        rec = request(tgt, uid)
+        # register before sending, as run_closed/run_open do: a request still in
+        # flight when join() times out must stay in the record set, or the occupancy
+        # integral silently loses the work it represents
+        rec = {"uid": uid, "t_send": time.time(), "t_end": None}
         with lock:
             recs.append(rec)
+        request(tgt, uid, rec)
 
     threads = [
         threading.Thread(target=worker, args=(u,), daemon=True) for u in range(conc)
