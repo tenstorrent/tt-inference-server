@@ -166,7 +166,7 @@
       Closed loop: <b id="ltUsersEcho">500</b> simulated users, each sending its next request
       the moment the previous one finishes. Concurrency is the input; throughput and latency
       are measured. ISL = 1020, OSL = 1020
-      <br><br>
+      <br /><br />
     </p>
     <div class="row">
       <div style="flex:1;">
@@ -399,6 +399,99 @@
     };
   }
 
+  // ---------------------------------------------------------------- crossfade
+  // The server emits fixed 600 ms chunks and the seams between them are NOT
+  // continuous: measured on a 12-chunk clip, |x[i]-x[i-1]| at the joins averaged
+  // 2342 against 393 elsewhere, with individual joins up to 7566 -- audible clicks.
+  //
+  // This is ffmpeg's `acrossfade=d=F:c1=tri:c2=tri` applied at every seam: the last
+  // F samples of a chunk are linearly mixed with the first F of the next, so total
+  // length shrinks by F per join. 1 s (the ffmpeg example) is impossible here -- it
+  // exceeds the 600 ms chunk and would consume the whole stream; a few ms removes
+  // the step without audibly shortening anything. It runs ONCE on the byte stream
+  // and feeds both live playback and the replay blob, so the two cannot diverge.
+  function makeCrossfader(chunkBytes, fadeSamples, channels) {
+    const frameBytes = channels * 2;
+    const chunkFrames = Math.floor(chunkBytes / frameBytes);
+    const F = Math.min(fadeSamples, Math.floor(chunkFrames / 4));  // never > 1/4 chunk
+    let posInChunk = 0;          // frames consumed of the current chunk
+    let tail = null;             // held last F frames of the previous chunk
+    let carry = new Uint8Array(0);
+    function toI16(u8) {
+      return new Int16Array(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.length));
+    }
+    return {
+      enabled: F > 0 && chunkFrames > 0,
+      push(u8) {
+        if (!(F > 0 && chunkFrames > 0)) return u8;
+        const all = concatBytes(carry, u8);
+        const usable = all.length - (all.length % frameBytes);
+        carry = all.slice(usable);
+        if (usable === 0) return new Uint8Array(0);
+        const inp = toI16(all.slice(0, usable));
+        const out = [];
+        let i = 0;
+        while (i < inp.length) {
+          if (tail && posInChunk === 0) {
+            // head of a new chunk: mix F frames against the held tail
+            const have = Math.min(F * channels - (tail.used || 0), inp.length - i);
+            const mixed = new Int16Array(have);
+            for (let k = 0; k < have; k++) {
+              const idx = (tail.used || 0) + k;
+              const t = Math.floor(idx / channels) / F;      // 0 -> 1 across the fade
+              mixed[k] = Math.max(-32768, Math.min(32767,
+                Math.round(tail.data[idx] * (1 - t) + inp[i + k] * t)));
+            }
+            out.push(mixed);
+            tail.used = (tail.used || 0) + have;
+            i += have;
+            if (tail.used >= F * channels) { tail = null; posInChunk = F; }
+            continue;
+          }
+          // body of the chunk, stopping F frames short so the tail can be held
+          const bodyEnd = (chunkFrames - F) * channels;
+          const take = Math.min(bodyEnd - posInChunk * channels, inp.length - i);
+          if (take > 0) {
+            out.push(inp.slice(i, i + take));
+            i += take; posInChunk += take / channels;
+          }
+          if (posInChunk >= chunkFrames - F) {
+            // hold the seam
+            const need = F * channels - (tail ? tail.data.length : 0);
+            const grab = Math.min(need, inp.length - i);
+            if (grab <= 0) break;
+            const held = inp.slice(i, i + grab);
+            tail = tail ? {data: concatI16(tail.data, held)} : {data: held};
+            i += grab; posInChunk += grab / channels;
+            if (posInChunk >= chunkFrames) posInChunk = 0;
+          }
+        }
+        return i16ListToBytes(out);
+      },
+      flush() {
+        // the final seam has no successor: emit it unfaded rather than drop audio
+        const parts = [];
+        if (tail && tail.data) {
+          const used = tail.used || 0;
+          if (used < tail.data.length) parts.push(tail.data.slice(used));
+        }
+        tail = null;
+        return i16ListToBytes(parts);
+      },
+    };
+  }
+  function concatI16(a, b) {
+    const out = new Int16Array(a.length + b.length);
+    out.set(a, 0); out.set(b, a.length); return out;
+  }
+  function i16ListToBytes(list) {
+    const n = list.reduce((s, a) => s + a.length, 0);
+    const i16 = new Int16Array(n);
+    let o = 0;
+    for (const a of list) { i16.set(a, o); o += a.length; }
+    return new Uint8Array(i16.buffer, 0, n * 2);
+  }
+
   // Buffers any leftover partial audio frame until enough bytes arrive to
   // fill a whole frame, since network reads can split mid-sample.
   function feedRealtime(bytes, sampleRateHz, channels) {
@@ -523,6 +616,21 @@
     // fixed CHUNK_AUDIO_S-long chunks, so every CHUNK_BYTES of audio completes one.
     const CHUNK_AUDIO_S = 0.6;     // CHUNK_TOKENS(30) * 960 / 48000, per tts_load_report
     let chunkBytes = 0;            // set once the WAV header gives us the format
+    // Post-processing feeds playback and replay; metrics stay on the RAW stream so
+    // the crossfade cannot move FC/chunk counts.
+    let xfade = null;
+    let playBytes = 0;
+    const xfadeOn = true;
+    const xfadeMs = 5;   // measured: seam step 2342 -> 243, below the 387 interior mean
+    function emitPlayable(u8) {
+      if (!u8 || u8.length === 0) return;
+      if (playAudio) { audioParts.push(u8); feedRealtime(u8, sampleRateHz, channels); }
+      playBytes += u8.length;
+    }
+    function processed(u8) {
+      if (!xfade) return u8;
+      return xfade.push(u8);
+    }
     function onAudioBytes(bytes) {
       if (playAudio) audioParts.push(bytes);
       totalAudioBytes += bytes.length;
@@ -562,6 +670,7 @@
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
+          if (xfade) emitPlayable(xfade.flush());
           flushFinalChunk();
           if (srvTimer) { clearInterval(srvTimer); srvTimer = null; }
           if (playAudio && req.reqId) {
@@ -599,14 +708,23 @@
                 `${parsed.bitsPerSample}-bit`
             );
           }
+          if (xfadeOn && xfadeMs > 0) {
+            const cb = Math.round(CHUNK_AUDIO_S * sampleRateHz) * channels * 2;
+            xfade = makeCrossfader(cb, Math.round(xfadeMs * sampleRateHz / 1000), channels);
+            if (playAudio) {
+              log(`crossfade: ${xfadeMs} ms (tri) at every ${CHUNK_AUDIO_S * 1000} ms `
+                  + `chunk seam${xfade.enabled ? "" : " -- DISABLED, fade too long"}`);
+            }
+            if (!xfade.enabled) xfade = null;
+          }
           const rest = combined.slice(44);
           if (rest.length > 0) {
-            onAudioBytes(rest);
-            if (playAudio) feedRealtime(rest, sampleRateHz, channels);
+            onAudioBytes(rest);          // metrics: raw stream
+            emitPlayable(processed(rest));
           }
         } else {
-          onAudioBytes(value);
-          if (playAudio) feedRealtime(value, sampleRateHz, channels);
+          onAudioBytes(value);          // metrics: raw stream
+          emitPlayable(processed(value));
         }
       }
     } catch (e) {
@@ -636,7 +754,9 @@
     }
     if (playAudio) {
 
-      const fixedHeader = finalizeWavHeader(headerBytes, totalAudioBytes);
+      // playBytes, not totalAudioBytes: a crossfade consumes F frames per seam, so
+      // the assembled WAV is shorter than the raw stream and its header must say so.
+      const fixedHeader = finalizeWavHeader(headerBytes, playBytes || totalAudioBytes);
       const blob = new Blob([fixedHeader, ...audioParts], { type: "audio/wav" });
       lastObjectUrl = URL.createObjectURL(blob);
       playerEl.src = lastObjectUrl; // available for replay/seek; already played live
