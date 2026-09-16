@@ -1,41 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
-#include "utils/id_generator.hpp"
 // SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 #include <poll.h>
 #include <signal.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <thread>
-#include <unordered_map>
 
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
 #include "profiling/tracy.hpp"
-#include "runtime/runners/i_embedding_runner.hpp"
 #include "services/embedding_codec.hpp"
 #include "services/embedding_pipe.hpp"
 #include "services/embedding_service.hpp"
+#include "services/embedding_worker_main.hpp"
 #include "services/embedding_worker_process.hpp"
 #include "utils/logger.hpp"
-#include "utils/scoped_fd.hpp"
 
 namespace tt::services {
 
 using embedding_detail::pipeReadBinary;
-using embedding_detail::pipeReadString;
-using embedding_detail::pipeWrite;
-using embedding_detail::WORKER_READY_SENTINEL;
 using embedding_detail::WorkerProcess;
 
 struct EmbeddingService::Impl {
@@ -85,120 +76,6 @@ struct EmbeddingService::Impl {
   }
 
   ~Impl() { stop(); }
-
-  [[noreturn]] static void workerProcessMain(int workerId, int readFd,
-                                             int writeFd) {
-    const size_t wid = static_cast<size_t>(workerId);
-    const auto cfg = tt::config::embeddingEngineConfig();
-    const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
-
-    setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
-
-    const char* cpuThreads = "2";
-    const char* torchThreads = "1";
-    setenv("OMP_NUM_THREADS", cpuThreads, 1);
-    setenv("MKL_NUM_THREADS", cpuThreads, 1);
-    setenv("TORCH_NUM_THREADS", torchThreads, 1);
-
-    if (const char* throttle = std::getenv("DEFAULT_THROTTLE_LEVEL");
-        throttle && *throttle) {
-      setenv("TT_MM_THROTTLE_PERF", throttle, 1);
-    }
-
-    // Per-worker kernel cache, mirroring the Python server's
-    // setup_runner_environment. Without it every worker JIT-compiles into
-    // the same directory - race conditions.
-
-    if (const char* metalHome = std::getenv("TT_METAL_HOME");
-        metalHome && *metalHome) {
-      std::string deviceSuffix = visibleDevices;
-      std::replace(deviceSuffix.begin(), deviceSuffix.end(), ',', '_');
-      const std::string metalCache =
-          std::string(metalHome) + "/built/" + deviceSuffix;
-      setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
-    }
-
-    const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
-    const char* throttleEnv = std::getenv("TT_MM_THROTTLE_PERF");
-    TT_LOG_INFO(
-        "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
-        "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={}, OMP_NUM_THREADS={}, "
-        "TORCH_NUM_THREADS={}, TT_MM_THROTTLE_PERF={})",
-        workerId, getpid(), tt::config::toString(cfg.runner_type),
-        visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)", cfg.device,
-        cfg.max_batch_size, cpuThreads, torchThreads,
-        throttleEnv ? throttleEnv : "(unset)");
-
-    std::unique_ptr<runners::IEmbeddingRunner> runner;
-    try {
-      auto workerCfg = cfg;
-      workerCfg.worker_id = wid;
-      workerCfg.visible_devices = visibleDevices;
-      runner = runners::makeEmbeddingRunner(workerCfg);
-    } catch (const std::exception& e) {
-      TT_LOG_ERROR("[Worker {}] Could not build runner: {}", workerId,
-                   e.what());
-      _exit(1);
-    }
-
-    if (!runner->warmup()) {
-      TT_LOG_ERROR("[Worker {}] Warmup failed!", workerId);
-      _exit(1);
-    }
-
-    // Tell the parent we can serve; until this arrives the parent keeps the
-    // worker marked not-ready and won't dispatch to it.
-    if (!pipeWrite(writeFd, WORKER_READY_SENTINEL,
-                   sizeof(WORKER_READY_SENTINEL) - 1)) {
-      TT_LOG_ERROR("[Worker {}] Failed to send ready signal", workerId);
-      _exit(1);
-    }
-    TT_LOG_INFO("[Worker {}] Ready", workerId);
-
-    while (true) {
-      std::string requestJson = pipeReadString(readFd);
-      if (requestJson.empty()) break;
-
-      Json::Value reqJson;
-      Json::CharReaderBuilder builder;
-      std::istringstream iss(requestJson);
-      std::string errors;
-      if (!Json::parseFromStream(builder, iss, &reqJson, &errors)) {
-        TT_LOG_ERROR("[Worker {}] Failed to parse request: {}", workerId,
-                     errors);
-        continue;
-      }
-
-      auto taskIdFromJson = [](const Json::Value& j) -> uint32_t {
-        return (j.isMember("task_id") && j["task_id"].isUInt())
-                   ? j["task_id"].asUInt()
-                   : tt::utils::TaskIDGenerator::generate();
-      };
-
-      std::vector<domain::EmbeddingRequest> batch;
-      if (reqJson.isArray()) {
-        for (const auto& item : reqJson)
-          batch.push_back(
-              domain::EmbeddingRequest::fromJson(item, taskIdFromJson(item)));
-      } else {
-        batch.push_back(domain::EmbeddingRequest::fromJson(
-            reqJson, taskIdFromJson(reqJson)));
-      }
-
-      TT_LOG_INFO("[Worker {}] Processing batch of {} requests", workerId,
-                  batch.size());
-
-      auto responses = runner->run(batch);
-      auto buf = embedding_codec::encodeResponses(batch, responses);
-
-      if (!pipeWrite(writeFd, buf.data(), buf.size())) {
-        TT_LOG_ERROR("[Worker {}] Failed to write response", workerId);
-      }
-    }
-
-    runner->close();
-    _exit(0);
-  }
 
   void start() {
     if (running.exchange(true)) return;
@@ -340,8 +217,9 @@ struct EmbeddingService::Impl {
 
   bool spawnWorkerAt(size_t idx) {
     const int wid = static_cast<int>(idx);
-    return workers[idx]->spawn(
-        wid, [wid](int rd, int wr) { workerProcessMain(wid, rd, wr); });
+    return workers[idx]->spawn(wid, [wid](int rd, int wr) {
+      embedding_detail::workerProcessMain(wid, rd, wr);
+    });
   }
 
   void launchDispatchThread(size_t idx) {
