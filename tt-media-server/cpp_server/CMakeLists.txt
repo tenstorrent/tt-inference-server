@@ -1325,6 +1325,7 @@ target_include_directories(worker_manager_test PRIVATE
 set(SERVICE_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_pipe.cpp
+    src/services/embedding_worker_process.cpp
     src/services/embedding_service.cpp
     src/services/image_service.cpp
     src/services/tts_service.cpp
@@ -1399,6 +1400,7 @@ target_include_directories(tts_service_test PRIVATE
 set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/llm_service.cpp
     src/services/embedding_pipe.cpp
+    src/services/embedding_worker_process.cpp
     src/services/embedding_service.cpp
     src/services/model_service_registration.cpp
     src/services/session_manager.cpp
@@ -1929,6 +1931,7 @@ set(SOURCES
     src/runtime/runners/mock_embedding_runner.cpp
     src/runtime/runners/embedding_runner_factory.cpp
     src/services/embedding_pipe.cpp
+    src/services/embedding_worker_process.cpp
     src/services/embedding_service.cpp
     src/api/image_controller.cpp
     src/runtime/runners/sdxl/sdxl_runner.cpp

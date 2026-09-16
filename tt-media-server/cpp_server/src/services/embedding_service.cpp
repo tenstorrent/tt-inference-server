@@ -26,6 +26,7 @@
 #include "services/embedding_codec.hpp"
 #include "services/embedding_pipe.hpp"
 #include "services/embedding_service.hpp"
+#include "services/embedding_worker_process.hpp"
 #include "utils/logger.hpp"
 #include "utils/scoped_fd.hpp"
 
@@ -35,117 +36,7 @@ using embedding_detail::pipeReadBinary;
 using embedding_detail::pipeReadString;
 using embedding_detail::pipeWrite;
 using embedding_detail::WORKER_READY_SENTINEL;
-
-struct WorkerProcess {
-  int workerId = -1;
-  // Atomic because health snapshots read it while the startup thread spawns.
-  std::atomic<pid_t> pid{-1};
-  tt::utils::ScopedFd writeFd;  // parent → child (request pipe write end)
-  tt::utils::ScopedFd readFd;   // child → parent (response pipe read end)
-  std::atomic<bool> isReady{false};
-  std::atomic<bool> running{false};
-  std::unique_ptr<std::thread> dispatchThread;
-
-  bool spawn(int wid, std::function<void(int readFd, int writeFd)> childMain) {
-    workerId = wid;
-
-    int reqRaw[2] = {-1, -1};
-    if (pipe(reqRaw) < 0) {
-      TT_LOG_ERROR("[EmbeddingService] Failed to create pipes for worker {}",
-                   wid);
-      return false;
-    }
-    tt::utils::ScopedFd reqRead(reqRaw[0]), reqWrite(reqRaw[1]);
-
-    int respRaw[2] = {-1, -1};
-    if (pipe(respRaw) < 0) {
-      TT_LOG_ERROR("[EmbeddingService] Failed to create pipes for worker {}",
-                   wid);
-      return false;  // reqRead + reqWrite auto-close
-    }
-    tt::utils::ScopedFd respRead(respRaw[0]), respWrite(respRaw[1]);
-
-    pid_t child = fork();
-    if (child < 0) {
-      TT_LOG_ERROR("[EmbeddingService] Failed to fork worker {}", wid);
-      return false;  // all 4 FDs auto-close
-    }
-
-    if (child == 0) {
-      // Child: close parent ends, run child main.
-      reqWrite.reset();
-      respRead.reset();
-      childMain(reqRead.release(), respWrite.release());
-      _exit(0);  // childMain is [[noreturn]], but just in case
-    }
-
-    // Parent: close child ends, transfer ownership to members. The worker is
-    // NOT ready yet: isReady only flips once the child sends the READY
-    // sentinel after warmup (see awaitWorkersReady).
-    reqRead.reset();
-    respWrite.reset();
-    pid.store(child);
-    writeFd = std::move(reqWrite);
-    readFd = std::move(respRead);
-    running.store(true);
-
-    TT_LOG_INFO(
-        "[EmbeddingService] Spawned worker {} with PID {} "
-        "(TT_VISIBLE_DEVICES={}) writeFd={} readFd={}",
-        wid, child, tt::config::visibleDevicesForWorker(wid), writeFd.get(),
-        readFd.get());
-    return true;
-  }
-
-  bool checkAlive() {
-    const pid_t p = pid.load();
-    if (p <= 0) return false;
-    int status;
-    pid_t result = waitpid(p, &status, WNOHANG);
-    if (result != p) return true;
-
-    if (WIFEXITED(status)) {
-      TT_LOG_ERROR("[EmbeddingService] Worker {} exited with code {}", workerId,
-                   WEXITSTATUS(status));
-    } else if (WIFSIGNALED(status)) {
-      TT_LOG_ERROR("[EmbeddingService] Worker {} killed by signal {}", workerId,
-                   WTERMSIG(status));
-    }
-    isReady.store(false);
-    return false;
-  }
-
-  bool sendRequest(const std::string& json) {
-    if (!pipeWrite(writeFd.get(), json.data(), json.size())) {
-      TT_LOG_ERROR("[EmbeddingService] Worker {} pipe write failed: {}",
-                   workerId, strerror(errno));
-      isReady.store(false);
-      return false;
-    }
-    return true;
-  }
-
-  std::vector<uint8_t> receiveResponse() {
-    auto buf = pipeReadBinary(readFd.get());
-    if (buf.empty()) {
-      TT_LOG_ERROR("[EmbeddingService] Worker {} response read failed",
-                   workerId);
-      isReady.store(false);
-    }
-    return buf;
-  }
-
-  void terminate() {
-    const pid_t p = pid.load();
-    if (p > 0) {
-      kill(p, SIGTERM);
-      waitpid(p, nullptr, 0);
-      TT_LOG_INFO("[EmbeddingService] Worker {} terminated", workerId);
-    }
-    writeFd.reset();
-    readFd.reset();
-  }
-};
+using embedding_detail::WorkerProcess;
 
 struct EmbeddingService::Impl {
   struct PendingRequest {
