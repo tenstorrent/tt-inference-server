@@ -936,9 +936,9 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      # Reuse the image built from the prior commit while overlaying the
-      # Python-only staged-weight resolver fix from this branch.
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      # Reuse the published image while overlaying the final Stage 11
+      # Qwen3.8 implementation from its immutable tt-metal commit.
+      tt_metal_source_ref: 0ba1d3d46eb922cbc3e05117eedbe50a5df0e6c1
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -982,7 +982,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_ref: 0ba1d3d46eb922cbc3e05117eedbe50a5df0e6c1
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1027,7 +1027,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_ref: 0ba1d3d46eb922cbc3e05117eedbe50a5df0e6c1
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1071,7 +1071,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_ref: 0ba1d3d46eb922cbc3e05117eedbe50a5df0e6c1
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
