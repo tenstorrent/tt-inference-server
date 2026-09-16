@@ -24,59 +24,17 @@
 #include "profiling/tracy.hpp"
 #include "runtime/runners/i_embedding_runner.hpp"
 #include "services/embedding_codec.hpp"
+#include "services/embedding_pipe.hpp"
 #include "services/embedding_service.hpp"
 #include "utils/logger.hpp"
 #include "utils/scoped_fd.hpp"
 
 namespace tt::services {
 
-namespace {
-
-// Sent by a worker child over its response pipe once warmup succeeds, so the
-// parent can distinguish "forked" from "actually able to serve requests".
-constexpr char WORKER_READY_SENTINEL[] = "READY";
-
-// Length-prefixed pipe write: [len:u32][data].  Returns false on failure.
-bool pipeWrite(int fd, const void* data, size_t len) {
-  uint32_t header = static_cast<uint32_t>(len);
-  if (write(fd, &header, sizeof(header)) != sizeof(header)) return false;
-  return write(fd, data, len) == static_cast<ssize_t>(len);
-}
-
-// Length-prefixed pipe read.  Returns empty vector on failure.
-std::vector<uint8_t> pipeReadBinary(int fd) {
-  uint32_t len = 0;
-  ssize_t n = read(fd, &len, sizeof(len));
-  if (n != sizeof(len) || len > tt::config::defaults::EMBEDDING_MAX_PIPE_BYTES)
-    return {};
-
-  std::vector<uint8_t> buf(len);
-  size_t total = 0;
-  while (total < len) {
-    n = read(fd, buf.data() + total, len - total);
-    if (n <= 0) return {};
-    total += static_cast<size_t>(n);
-  }
-  return buf;
-}
-
-// Length-prefixed pipe read into string.
-std::string pipeReadString(int fd) {
-  uint32_t len = 0;
-  ssize_t n = read(fd, &len, sizeof(len));
-  if (n <= 0) return {};
-
-  std::string data(len, '\0');
-  size_t total = 0;
-  while (total < len) {
-    n = read(fd, data.data() + total, len - total);
-    if (n <= 0) return {};
-    total += static_cast<size_t>(n);
-  }
-  return data;
-}
-
-}  // namespace
+using embedding_detail::pipeReadBinary;
+using embedding_detail::pipeReadString;
+using embedding_detail::pipeWrite;
+using embedding_detail::WORKER_READY_SENTINEL;
 
 struct WorkerProcess {
   int workerId = -1;
@@ -458,10 +416,7 @@ struct EmbeddingService::Impl {
         }
         if (pfds[k].revents & POLLIN) {
           const auto msg = pipeReadBinary(workers[i]->readFd.get());
-          constexpr size_t sentinelLen = sizeof(WORKER_READY_SENTINEL) - 1;
-          if (msg.size() == sentinelLen &&
-              std::memcmp(msg.data(), WORKER_READY_SENTINEL, sentinelLen) ==
-                  0) {
+          if (embedding_detail::isReadySentinel(msg)) {
             workers[i]->isReady.store(true);
             TT_LOG_INFO("[EmbeddingService] Worker {} reported ready", i);
             launchDispatchThread(i);
