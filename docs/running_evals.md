@@ -81,6 +81,9 @@ python run.py \
   --dev-mode
 ```
 
+For the optional real-text benchmark, see
+[Added: custom LongBench benchmark](#added-custom-longbench-benchmark) below.
+
 AgentX (agentic traces)
 
 ```bash
@@ -332,3 +335,47 @@ Both workflows write under `workflow_logs/` in the repository root (or under
 - **`ModuleNotFoundError: No module named 'yaml'`.** `run.py` was started with an
   interpreter that does not have PyYAML, see the prerequisites.
 
+---
+
+> [!NOTE]
+>
+> The following section documents our additions or changes in this evaluation campaign.
+
+## Custom LongBench benchmark
+
+Use `--benchmark custom-longbench` to run the GLM-5.3 benchmark with real-text
+LongBench prompts. It uses the same 28 input/output-length, concurrency and
+request-count conditions as the standard `--workflow benchmarks` sweep; only
+the input dataset changes. Without this selector, the workflow runs random
+inputs only.
+
+From the repository root, add these two arguments to the standard command:
+
+```bash
+python run.py \
+  --model GLM-5.3 \
+  --workflow benchmarks \
+  --benchmark custom-longbench \
+  --dataset-path "$PWD/datasets/custom-longbench/custom-longbench.jsonl" \
+  --device super_cluster \
+  --server-url https://<endpoint>:443 \
+  --skip-system-sw-validation \
+  --dev-mode
+```
+
+- **Data:** the bundled JSONL contains 368 prompts from public LongBench V1/V2,
+  covering all 12 input lengths from 128 to 255,872 tokens, including 10,000 and
+  196,608. See the [dataset README](../datasets/custom-longbench/README.md) for
+  source sample IDs and preparation, including official middle-truncation code.
+- **Execution:** the client selects rows by input length and invokes
+  `vllm bench serve --dataset-name custom`. The full sweep requests 373 responses
+  with a total output budget of 112,256 tokens. Insufficient rows cause an error;
+  the client does not repeat rows to fill a condition.
+- **Server:** disable prefix caching on both Prefill and Decode for both datasets.
+  This is a server setting; the client arguments above do not change it.
+- **Reports:** use a fresh `CACHE_ROOT` for each run. TT Markdown/JSON reports
+  appear under `$CACHE_ROOT/workflow_logs/reports_output/benchmarks/`. Compare
+  matching conditions; random-input performance targets do not grade custom results.
+
+Other evaluation workflows are unchanged. See [Custom LongBench](custom_longbench.md)
+for input format and driver options.

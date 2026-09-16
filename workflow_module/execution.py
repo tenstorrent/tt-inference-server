@@ -184,6 +184,8 @@ class LLMBenchOptions:
     # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs). Only the
     # aiperf driver consumes it; other tools ignore it.
     goodput: Optional[str] = None
+    benchmark: Optional[str] = None
+    dataset_path: Optional[str] = None
 
 
 @dataclass(frozen=True)

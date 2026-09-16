@@ -37,6 +37,8 @@ generated_modules
 *_params.pt
 *.json
 *.jsonl
+# Bundled input for the opt-in custom LongBench serving benchmark.
+!datasets/custom-longbench/custom-longbench.jsonl
 # Curated assets shipped with the v2 prefix-cache benchmark need to escape the
 # wildcards above so CI runs can use them out of the box.
 !llm_module/prefix_cache/manifest.json

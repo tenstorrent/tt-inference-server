@@ -82,6 +82,9 @@ def build_vllm_bench_serve_argv(
         # it the result JSON gains request_goodput (good requests/sec).
         cmd.extend(["--goodput", *config.goodput.split()])
 
+    if config.ignore_eos:
+        cmd.append("--ignore-eos")
+
     if config.custom_dataset_path is not None:
         cmd.extend(
             [
@@ -92,8 +95,7 @@ def build_vllm_bench_serve_argv(
                 "--custom-output-len",
                 str(config.osl),
                 "--disable-shuffle",
-                # The custom file contains raw chat content sized so the server's
-                # single template application reaches the requested ISL.
+                # Leave chat templating to the serving endpoint.
                 "--skip-chat-template",
             ]
         )

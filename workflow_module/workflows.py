@@ -418,6 +418,8 @@ class BenchmarksWorkflow(WorkflowExecution):
             lambda: run_llm_bench(
                 self.ctx,
                 tools=opts.tools,
+                benchmark=opts.benchmark,
+                dataset_path=opts.dataset_path,
                 auth_token=opts.auth_token,
                 venv_python=venv_python,
                 goodput=opts.goodput,

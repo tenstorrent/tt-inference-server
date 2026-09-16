@@ -266,6 +266,8 @@ def _build_llm_bench_options(args: argparse.Namespace) -> Optional[LLMBenchOptio
         return None
     return LLMBenchOptions(
         tools=getattr(args, "tools", None) or "vllm",
+        benchmark=getattr(args, "benchmark", None),
+        dataset_path=getattr(args, "dataset_path", None),
         auth_token=_resolve_auth_token(args),
         venv_python=_release_bench_venv_python(args),
         goodput=getattr(args, "goodput", None),
