@@ -291,6 +291,7 @@ class RequirementsTargetPack(TargetPack):
             priority=ae.priority,
             **self._gen_kwargs_overrides(template, task_name, ae),
             **self._harness_overrides(template, task_name, ae),
+            **self._max_length_override(template, task_name),
         )
 
     def _gen_kwargs_overrides(
@@ -337,6 +338,23 @@ class RequirementsTargetPack(TargetPack):
         if gen_kwargs == original:
             return {}
         return {"gen_kwargs": gen_kwargs}
+
+    def _max_length_override(self, template: Any, task_name: str) -> Mapping[str, Any]:
+        """Point a borrowed template's context at the document's model."""
+        if getattr(template, "agentic_eval_config", None) is not None:
+            return {}
+        context = self._doc.model.context_length
+        model_kwargs = dict(getattr(template, "model_kwargs", None) or {})
+        if not context or model_kwargs.get("max_length") == context:
+            return {}
+        logger.info(
+            "Task %s: max_length %s -> %s, the document's model.contextLength.",
+            task_name,
+            model_kwargs.get("max_length"),
+            context,
+        )
+        model_kwargs["max_length"] = context
+        return {"model_kwargs": model_kwargs}
 
     def _harness_overrides(
         self, template: Any, task_name: str, ae: AccuracyEval
