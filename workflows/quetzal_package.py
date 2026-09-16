@@ -51,6 +51,7 @@ def _safe_auxiliary_name(value: object) -> str:
         not isinstance(value, str)
         or not value
         or "\\" in value
+        or "," in value
         or any(unicodedata.category(character) == "Cc" for character in value)
     ):
         raise ValueError(f"Quetzal auxiliary reference has unsafe name: {value!r}")

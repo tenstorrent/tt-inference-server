@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ from workflows.quetzal_package import resolve_quetzal_package_mount
 from workflows.run_docker_server import generate_docker_run_command
 from workflows.run_local_server import generate_local_run_command
 from workflows.runtime_config import RuntimeConfig
+from workflows.validate_setup import validate_bind_mount_permissions
 
 CATALOG_ROOT = Path("/opt/quetzal/package")
 MANIFEST_SHA256 = "a" * 64
@@ -210,6 +212,7 @@ def test_v2_auxiliary_accepts_canonical_single_segment_edge_name(tmp_path):
         "../cache",
         "cache/subdir",
         "cache\\windows",
+        "cache,option",
         "cache\ncontrol",
         "cache\u0085control",
     ],
@@ -250,6 +253,28 @@ def test_v2_auxiliary_root_must_be_read_only(tmp_path):
         resolve_quetzal_package_mount(
             _model_spec(env_vars=env), _runtime(package, docker=True)
         )
+
+
+@pytest.mark.parametrize(
+    ("root_mode", "missing_access"),
+    [(0o111, "read permission"), (0o444, "execute/traverse permission")],
+)
+def test_v2_auxiliary_root_must_be_accessible_to_container_uid(
+    tmp_path, root_mode, missing_access
+):
+    package, auxiliary, env, _ = _make_v2_package(tmp_path, root_mode=root_mode)
+    runtime = _runtime(package, docker=True)
+    runtime.image_user = str(os.getuid())
+    mount = resolve_quetzal_package_mount(_model_spec(env_vars=env), runtime)
+
+    try:
+        with pytest.raises(ValueError, match="Bind mount permission check failed") as error:
+            validate_bind_mount_permissions(runtime, mount)
+        assert missing_access in str(error.value)
+        # Admission must not mutate an immutable published auxiliary to fix it.
+        assert auxiliary.stat().st_mode & 0o777 == root_mode
+    finally:
+        auxiliary.chmod(0o755)
 
 
 def test_v2_auxiliary_mapping_is_required(tmp_path):
