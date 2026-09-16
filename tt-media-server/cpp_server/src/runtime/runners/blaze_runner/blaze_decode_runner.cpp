@@ -672,12 +672,27 @@ void BlazeDecodeRunner::handleSchedulerOutput(const ds::OutputMessage& output) {
 void BlazeDecodeRunner::checkOutputHang() {
   auto currentTime = std::chrono::steady_clock::now();
 
-  for (const auto& slot : slotManager.getSlots()) {
+  for (uint32_t slotId = 0; slotId < config.maxUsers; ++slotId) {
+    auto& slot = slotManager.getSlotContext(slotId);
     const char* hangKind = nullptr;
     switch (slot.state) {
-      case SlotState::RUNNING:
-        hangKind = "no model output (decode/TTFT stall)";
+      case SlotState::RUNNING: {
+        // Prefill runs on the decode pipeline via token injection and yields
+        // no OutputMessage until the last prompt token is in, so a long prompt
+        // legitimately goes minutes without output (a 60K prompt at a few
+        // hundred tok/s/slot under concurrency). The scheduler's KV position
+        // for the slot advances with every injected chunk: treat that as
+        // progress so a slow-but-healthy prefill is not reported as a stall.
+        const uint32_t position = decodeScheduler->get_current_position(slotId);
+        if (position != slot.lastObservedPosition) {
+          slot.lastObservedPosition = position;
+          slot.lastProgressTime = currentTime;
+        }
+        hangKind =
+            "no model output and no KV position advance (prefill/decode "
+            "stall)";
         break;
+      }
       case SlotState::AWAITING_STOP_ACK:
         hangKind = "no STOP ack from scheduler";
         break;
@@ -697,21 +712,26 @@ void BlazeDecodeRunner::checkOutputHang() {
 
     TT_LOG_CRITICAL(
         "[BlazeRunner] Hang detected on Slot {} in state {}: {} for {} ms "
-        "(threshold {} ms). Total in-flight generations: {}. "
-        "Self-terminating worker for infrastructure restart.",
+        "(threshold {} ms). KV position {} (generated {} tokens). Total "
+        "in-flight generations: {}. Self-terminating worker for "
+        "infrastructure restart.",
         slot.slotId,                        // Which slot broke?
         toString(slot.state),               // What was it waiting on?
         hangKind,                           // Human-readable cause
         stalledFor.count(),                 // How bad is it?
         outputHangTimeout.count(),          // What was the limit?
+        slot.lastObservedPosition,          // Where in the sequence?
+        slot.tokensGenerated,               // Prefill or decode?
         slotManager.activeRunningCount());  // Global context
     std::stringstream ss;
     decodeScheduler->dump_diagnostics(ss);
 
     TT_LOG_CRITICAL("[BlazeRunner] State dump\n{}",
                     slotManager.dumpSlotStates(ss.str()));
-    shutdownScheduler();
-    std::abort();
+    utils::abortAfterBoundedShutdown(
+        "BlazeRunner", [this] { shutdownScheduler(); },
+        std::chrono::milliseconds(
+            tt::config::defaults::OUTPUT_HANG_SHUTDOWN_GRACE_MS));
   }
 }
 
@@ -768,6 +788,10 @@ void BlazeDecodeRunner::handleTask(
         return;
       }
       utils::initSlotForRun(slotContext, *task, *decodeScheduler);
+      // Baseline for the hang detector's prefill-progress check; the first
+      // injected chunk moves it.
+      slotContext.lastObservedPosition =
+          decodeScheduler->get_current_position(slotId);
       slotManager.bindTaskToSlot(task->taskId, slotId);
       slotManager.setSlotState(slotId, SlotState::RUNNING);
       auto& metrics = tt::worker::SingleProcessWorkerMetrics::instance();

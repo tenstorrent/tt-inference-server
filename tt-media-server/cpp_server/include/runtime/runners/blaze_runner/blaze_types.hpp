@@ -53,6 +53,11 @@ struct SlotContext {
   std::optional<ds::ISRequest> deferredEvict = std::nullopt;
   std::unique_ptr<tt::domain::llm::Sequence> deferredContinue = nullptr;
   uint32_t currentPosition = 0;
+  // Scheduler-side KV position as last sampled by checkOutputHang(). Prefill
+  // on the decode pipeline happens via token injection and emits no output
+  // until the whole prompt is in, so a change here is the only sign of
+  // progress for a long prompt.
+  uint32_t lastObservedPosition = 0;
   std::chrono::steady_clock::time_point lastProgressTime;
 
   void setState(SlotState newState) {

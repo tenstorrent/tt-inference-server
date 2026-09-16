@@ -285,9 +285,11 @@ std::string prefillAckChannelName();
  * From WARMUP_TIMEOUT_MS. Default: defaults::WARMUP_TIMEOUT_MS. */
 unsigned warmupTimeoutMs();
 
-/** Max time (ms) without any model output while at least one request is in
- * flight before the runner self-terminates the worker process. From
- * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
+/** Max time (ms) a running slot may go without progress before the runner
+ * self-terminates the worker process. On the decode runner progress is a
+ * model output token or, during prefill via token injection, an advance of
+ * the slot's KV position. From OUTPUT_HANG_TIMEOUT_MS. Default:
+ * defaults::OUTPUT_HANG_TIMEOUT_MS. */
 unsigned outputHangTimeoutMs();
 
 /** Warmup budget (ms) per embedding startup phase (fork to READY handshake).

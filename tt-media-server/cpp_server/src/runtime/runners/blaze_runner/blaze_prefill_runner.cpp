@@ -684,8 +684,10 @@ void BlazePrefillRunner::checkOutputHang() {
   prefillScheduler->dump_diagnostics(ss);
   TT_LOG_CRITICAL("[BlazePrefillRunner] Scheduler internal dump:\n{}",
                   ss.str());
-  shutdownScheduler();
-  std::abort();
+  utils::abortAfterBoundedShutdown(
+      "BlazePrefillRunner", [this] { shutdownScheduler(); },
+      std::chrono::milliseconds(
+          tt::config::defaults::OUTPUT_HANG_SHUTDOWN_GRACE_MS));
 }
 
 void BlazePrefillRunner::shutdownScheduler() {

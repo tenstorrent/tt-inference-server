@@ -5,8 +5,11 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <future>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include "config/runner_config.hpp"
 #include "domain/llm/sequence.hpp"
@@ -468,6 +471,33 @@ makeDecodeMigrationClientInterface(const tt::config::BlazeConfig& config) {
     default:
       throw std::runtime_error("Invalid blaze decode runner type");
   }
+}
+
+// Self-termination path of the output-hang detectors. Runs `shutdown` (the
+// scheduler's stop()) on a helper thread, waits at most `grace` for it and
+// aborts the process either way. DecodeScheduler::stop() joins its worker
+// threads and then barriers on the H2D/D2H sockets; with the reader thread
+// gone and pages still unread on the device side (or a genuinely wedged
+// pipeline) that barrier never completes, which used to turn the
+// "Self-terminating worker" log line into a silent hang that kept the whole
+// device pipeline back-pressured instead of letting the infra restart us.
+[[noreturn]] inline void abortAfterBoundedShutdown(
+    const char* runnerName, std::function<void()> shutdown,
+    std::chrono::milliseconds grace) {
+  auto done = std::make_shared<std::promise<void>>();
+  auto finished = done->get_future();
+  std::thread helper([done, shutdown = std::move(shutdown)] {
+    shutdown();
+    done->set_value();
+  });
+  helper.detach();
+  if (finished.wait_for(grace) == std::future_status::timeout) {
+    TT_LOG_CRITICAL(
+        "[{}] Scheduler shutdown did not complete within {} ms (device "
+        "pipeline wedged or pages still in flight); aborting anyway.",
+        runnerName, grace.count());
+  }
+  std::abort();
 }
 
 }  // namespace tt::runners::blaze::utils

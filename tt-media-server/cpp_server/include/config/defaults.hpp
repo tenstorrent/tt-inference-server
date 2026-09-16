@@ -96,6 +96,12 @@ constexpr unsigned WARMUP_TIMEOUT_MS = 150000;
  * the crash and restart the server instead of hanging silently.
  */
 constexpr unsigned OUTPUT_HANG_TIMEOUT_MS = 150000;
+/** Max time (ms) the hang detector waits for the scheduler shutdown that
+ * precedes its std::abort(). Scheduler::stop() ends in device socket
+ * barriers that never return when the pipeline is wedged or still has
+ * unread pages in flight; without a bound the self-termination itself
+ * hangs and the worker is never restarted. */
+constexpr unsigned OUTPUT_HANG_SHUTDOWN_GRACE_MS = 10000;
 constexpr size_t TTS_VOICE_SAMPLE_CACHE_SIZE = 1024;
 
 constexpr const char* MODEL = "deepseek-ai/DeepSeek-R1-0528";
