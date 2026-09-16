@@ -227,10 +227,6 @@ struct EmbeddingService::Impl {
 
   Impl() {
     numWorkers = tt::config::numWorkers();
-    // The cap must be the model's own limit: batches larger than
-    // max_batch_size make the model assert and every request in the batch
-    // fails with HTTP 500. It used to come from MAX_IN_FLIGHT_COUNT (default
-    // 32), which is unrelated to what the model can take.
     maxBatchSize = tt::config::embeddingEngineConfig().max_batch_size;
     batchTimeout = std::chrono::milliseconds(tt::config::batchTimeoutMs());
     maxQueueSize = tt::config::maxQueueSize();
@@ -248,23 +244,42 @@ struct EmbeddingService::Impl {
     const auto cfg = tt::config::embeddingEngineConfig();
     const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
 
-    // Set environment variables for the child process.
     setenv("TT_VISIBLE_DEVICES", visibleDevices.c_str(), 1);
-    if (!cfg.python_model_name.empty()) {
-      setenv("MODEL", cfg.python_model_name.c_str(), 1);
-    }
-    setenv("DEVICE", cfg.device.c_str(), 1);
-    const std::string clientRunner =
-        tt::config::toClientRunnerName(cfg.runner_type);
-    if (!clientRunner.empty()) {
-      setenv("MODEL_RUNNER", clientRunner.c_str(), 1);
+
+    const char* cpuThreads = "2";
+    const char* torchThreads = "1";
+    setenv("OMP_NUM_THREADS", cpuThreads, 1);
+    setenv("MKL_NUM_THREADS", cpuThreads, 1);
+    setenv("TORCH_NUM_THREADS", torchThreads, 1);
+
+    if (const char* throttle = std::getenv("DEFAULT_THROTTLE_LEVEL");
+        throttle && *throttle) {
+      setenv("TT_MM_THROTTLE_PERF", throttle, 1);
     }
 
+    // Per-worker kernel cache, mirroring the Python server's
+    // setup_runner_environment. Without it every worker JIT-compiles into
+    // the same directory - race conditions.
+
+    if (const char* metalHome = std::getenv("TT_METAL_HOME");
+        metalHome && *metalHome) {
+      std::string deviceSuffix = visibleDevices;
+      std::replace(deviceSuffix.begin(), deviceSuffix.end(), ',', '_');
+      const std::string metalCache =
+          std::string(metalHome) + "/built/" + deviceSuffix;
+      setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
+    }
+
+    const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
+    const char* throttleEnv = std::getenv("TT_MM_THROTTLE_PERF");
     TT_LOG_INFO(
         "[Worker {}] Started (PID {}, runner_type={}, TT_VISIBLE_DEVICES={}, "
-        "MODEL={}, DEVICE={}, max_batch_size={})",
+        "TT_METAL_CACHE={}, DEVICE={}, max_batch_size={}, OMP_NUM_THREADS={}, "
+        "TORCH_NUM_THREADS={}, TT_MM_THROTTLE_PERF={})",
         workerId, getpid(), tt::config::toString(cfg.runner_type),
-        visibleDevices, cfg.python_model_name, cfg.device, cfg.max_batch_size);
+        visibleDevices, metalCacheEnv ? metalCacheEnv : "(default)", cfg.device,
+        cfg.max_batch_size, cpuThreads, torchThreads,
+        throttleEnv ? throttleEnv : "(unset)");
 
     std::unique_ptr<runners::IEmbeddingRunner> runner;
     try {
@@ -342,10 +357,6 @@ struct EmbeddingService::Impl {
 
     TT_LOG_INFO("[EmbeddingService] Starting with {} worker processes",
                 numWorkers);
-
-    // Fully size the vector before any other thread can observe it: the
-    // startup thread, dispatch threads, and health snapshots all index into
-    // it concurrently, so it must never reallocate.
     {
       std::lock_guard lock(workersMutex);
       workers.reserve(numWorkers);
@@ -362,10 +373,8 @@ struct EmbeddingService::Impl {
   /**
    * Bring up worker 0 alone and wait for its READY handshake before spawning
    * the rest. The first warmup on a cold volume generates the shared tensor
-   * cache (model_cache/.../tensor_cache_*); when all workers race to generate
-   * it concurrently they read each other's half-written .tensorbin files and
-   * crash with "file too small" / SIGBUS in memcpy_to_device. Once one worker
-   * has written the cache, the remaining workers warm up in parallel safely.
+   * cache. Once one worker has written the cache, the remaining workers warm up
+   * in parallel safely.
    */
   void runStartup() {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
