@@ -13,7 +13,6 @@
 #include <condition_variable>
 #include <cstdlib>
 #include <cstring>
-#include <future>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -759,17 +758,6 @@ void EmbeddingService::submitRequestAsync(
     std::function<void(domain::EmbeddingResponse&&)> onComplete) {
   preProcess(request);
   impl_->submitRequestAsync(std::move(request), std::move(onComplete));
-}
-
-domain::EmbeddingResponse EmbeddingService::produceResponse(
-    domain::EmbeddingRequest request) {
-  std::promise<domain::EmbeddingResponse> promise;
-  auto future = promise.get_future();
-  impl_->submitRequestAsync(std::move(request),
-                            [&promise](domain::EmbeddingResponse&& resp) {
-                              promise.set_value(std::move(resp));
-                            });
-  return future.get();
 }
 
 }  // namespace tt::services

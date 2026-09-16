@@ -16,13 +16,11 @@ namespace tt::services {
  * Service for handling embedding requests.
  *
  * Uses a multiprocess scheduler with EmbeddingRunner workers.
- * The HTTP controller uses the asynchronous path (submitRequestAsync): the
- * request is queued and the caller returns immediately; the worker dispatch
- * thread invokes the completion callback with the response. The inherited
- * synchronous submitRequest still works via an adapter and blocks the caller.
+ * The request path is asynchronous only (submitRequestAsync): the request is
+ * queued and the caller returns immediately; the worker dispatch thread
+ * invokes the completion callback with the response.
  */
-class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
-                                                domain::EmbeddingResponse> {
+class EmbeddingService : public RequestPipeline<domain::EmbeddingRequest> {
  public:
   EmbeddingService();
   ~EmbeddingService() override;
@@ -52,9 +50,6 @@ class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
    * this the health endpoints report an empty worker list and external
    * harnesses see "0/0 workers ready". */
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
-
-  domain::EmbeddingResponse produceResponse(
-      domain::EmbeddingRequest request) override;
 
  private:
   struct Impl;
