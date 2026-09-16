@@ -33,10 +33,20 @@ templates:
         data_parallel_size: 4
     # Mirrors the GALAXY entry above; Blackhole Galaxy has no bring-up
     # validation yet, so this is a starting point, not a measured config.
+    # MESH_DEVICE override required: without it, the bare inferred "BH-Galaxy"
+    # string isn't recognized as a splittable multi-device shape by
+    # tt/platform.py, which silently falls back to single-process "lane-DP"
+    # (TT_VISIBLE_DEVICES=None) instead of the real 4-column DP split. That
+    # fallback halves the effective TP degree and produces a paged KV-cache
+    # geometry mismatch (kv_heads=1 allocated vs kv_heads=2 computed) that
+    # crashes engine-core init. Confirmed via a real bh-galaxy dispatch
+    # (tt-shield run 35106897592) before this override was added.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 128  # 32 * 4
       max_context: 131072  # 128 * 1024
       default_impl: true
+      env_vars:
+        MESH_DEVICE: "(4, 8)"  # Override default BH-Galaxy name to use (4,8) mesh grid; see note above
       vllm_args:
         data_parallel_size: 4
   status: EXPERIMENTAL
@@ -83,12 +93,17 @@ templates:
           task_name: gpqa_diamond_cot_zeroshot
           reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
     # Mirrors the GALAXY entry above (same DP=4 whole-box topology, 32x chips).
-    # No MESH_DEVICE override: unlike WH Galaxy's TG default, BH Galaxy's
-    # inferred "BH-Galaxy" mesh string already carves the native (4,8) columns
-    # (see the BLACKHOLE_GALAXY precedent on other galaxy-scale models in this
-    # file). Blackhole Galaxy has no bring-up validation yet (tracked as a gap
-    # in the models-ci dashboard), so this is a starting point, not a measured
-    # config.
+    # MESH_DEVICE override required: without it, the bare inferred "BH-Galaxy"
+    # string isn't recognized as a splittable multi-device shape by
+    # tt/platform.py, which silently falls back to single-process "lane-DP"
+    # (TT_VISIBLE_DEVICES=None) instead of the real 4-column DP split. That
+    # fallback halves the effective TP degree and produces a paged KV-cache
+    # geometry mismatch (kv_heads=1 allocated vs kv_heads=2 computed) that
+    # crashes engine-core init -- confirmed on gpt-oss-20b via a real
+    # bh-galaxy dispatch (tt-shield run 35106897592); same fallback applies
+    # here since it's the same gpt_oss impl. Blackhole Galaxy still has no
+    # bring-up validation beyond that (tracked as a gap in the models-ci
+    # dashboard), so this remains a starting point, not a measured config.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # currently limiting client-side max_concurrency=32 to allow workflows to
       # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
@@ -96,6 +111,7 @@ templates:
       default_impl: true
       tensor_cache_timeout: 5400.0
       env_vars:
+        MESH_DEVICE: "(4, 8)"  # Override default BH-Galaxy name to use (4,8) mesh grid; see note above
         TT_MM_THROTTLE_PERF: 2
       vllm_args:
         data_parallel_size: 4
