@@ -92,6 +92,11 @@
   }
   .metric .value { font-size: 1.25rem; font-weight: 700; }
   .metric .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  /* Load-test KPIs are a fixed 3 x 4: FC / SC / TC rows over p50, p95, max,
+     then the run-level row. auto-fit would reflow them and break the reading. */
+  .metrics.grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 560px) { .metrics.grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .metric .label .tgt { text-transform: none; letter-spacing: 0; opacity: 0.75; }
   audio { width: 100%; margin-top: 14px; }
   .log {
     background: #0f172a;
@@ -104,6 +109,19 @@
     overflow-y: auto;
     white-space: pre-wrap;
   }
+  /* An empty .log still paints its dark background + padding, showing up as a
+     stray black bar under the grid. Collapse it until it actually has output. */
+  .log:empty { display: none; }
+  .progress {
+    height: 8px; margin-top: 10px; border-radius: 999px; overflow: hidden;
+    background: var(--bg); border: 1px solid var(--border);
+  }
+  .progress > .bar {
+    height: 100%; width: 0%; background: var(--accent);
+    /* Matches the 1s poll: the bar glides to the next value instead of stepping. */
+    transition: width 1s linear;
+  }
+  .log { margin-top: 14px; }
   .log .err-line { color: #fca5a5; }
   .note {
     font-size: 0.78rem;
@@ -131,23 +149,62 @@
     <span>Powered by Tenstorrent</span>
   </div>
   <h1>TTS Streaming Client</h1>
-  <p class="subtitle">Talks to <code>POST /v1/audio/speech</code> (see <code>tts_controller.hpp</code>).</p>
+  <p class="subtitle"> <code>POST /v1/audio/speech</code>.</p>
 
+  <!-- ===================== LOAD TEST (closed loop) ===================== -->
   <section class="panel">
-    <label for="endpoint">Endpoint (host + port)</label>
-    <input type="text" id="endpoint" value="http://localhost:8000" placeholder="http://localhost:8000" />
-
+    <h2 style="margin:0 0 6px;font-size:1.05rem;">Load test</h2>
+    <p class="subtitle" style="margin-top:0;">
+      Closed loop: <b id="ltUsersEcho">500</b> simulated users, each sending its next request
+      the moment the previous one finishes. Concurrency is the input; throughput and latency
+      are measured. ISL = 1020, OSL = 1020
+      <br><br>
+    </p>
     <div class="row">
-      <div>
-        <label for="apiKey">API Key (Bearer token)</label>
-        <input type="password" id="apiKey" value="your-secret-key" />
+      <div style="flex:1;">
+        <label for="ltUsers">Users (concurrency)</label>
+        <input type="number" id="ltUsers" value="500" min="1" max="2000" />
       </div>
-      <div>
-        <label for="concurrency">Concurrent Requests</label>
-        <input type="number" id="concurrency" value="1" min="1" max="350" />
+      <div style="flex:1;">
+        <label for="ltMinutes">Duration (minutes)</label>
+        <input type="number" id="ltMinutes" value="5" min="1" max="60" step="1" />
       </div>
     </div>
+    <div class="actions">
+      <button type="button" class="primary" id="launchBtn">Launch</button>
+      <button type="button" class="secondary" id="ltStopBtn" disabled>Stop</button>
+    </div>
+    <br>
+    <div class="status-line" style="margin-top:14px;">
+      <span class="dot" id="ltDot"></span>
+      <span id="ltStatus">Idle</span>
+    </div>
+    <div class="progress" id="ltProgWrap" hidden><div class="bar" id="ltProg"></div></div>
 
+    <div class="metrics grid3">
+      <div class="metric"><div class="value" id="kFc50">–</div><div class="label">FC P50 <span class="tgt">(&le;150 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kFc95">–</div><div class="label">FC P95 <span class="tgt">(&le;350 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kFcMax">–</div><div class="label">FC Pmax <span class="tgt">(&le;350 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kSc50">–</div><div class="label">SC P50 <span class="tgt">(&le;270 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kSc95">–</div><div class="label">SC P95 <span class="tgt">(&le;270 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kScMax">–</div><div class="label">SC Pmax <span class="tgt">(&le;270 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kTc50">–</div><div class="label">TC P50 <span class="tgt">(&le;570 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kTc95">–</div><div class="label">TC P95 <span class="tgt">(&le;570 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kTcMax">–</div><div class="label">TC Pmax <span class="tgt">(&le;570 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kC">–</div><div class="label">C (measured)</div></div>
+      <div class="metric"><div class="value" id="kMchar">–</div><div class="label">Mchar/h</div></div>
+      <div class="metric"><div class="value" id="kVerdict">–</div><div class="label">KPI / strict</div></div>
+    </div>
+  </section>
+
+
+  <section class="panel">
+    <h2 style="margin:0 0 6px;font-size:1.05rem;">Generate &amp; play</h2>
+    <p class="subtitle" style="margin-top:0;">
+      One request, streamed and played back as it arrives. Use it to hear the voice and
+      sanity-check the stack; the numbers below are a single sample, not a benchmark
+      &mdash; use Load test for that.
+    </p>
     <label for="text">Text</label>
     <textarea id="text">The quick brown fox jumps over the lazy dog.</textarea>
 
@@ -158,32 +215,25 @@
       <button type="button" class="primary" id="submitBtn">Generate &amp; Play</button>
       <button type="button" class="secondary" id="stopBtn" disabled>Stop</button>
     </div>
-  </section>
-
-  <section class="panel">
-    <div class="status-line">
+    <br>
+    <div class="status-line" style="margin-top:14px;">
       <span class="dot" id="statusDot"></span>
       <span id="statusText">Idle</span>
     </div>
 
-    <p class="subtitle" style="margin-top:14px;">Sample request (request #1 — the only one whose audio plays)</p>
     <div class="metrics">
       <div class="metric">
         <div class="value" id="mTtfc">–</div>
         <div class="label">Time to First Chunk</div>
       </div>
       <div class="metric">
-        <div class="value" id="mAvgGap">–</div>
-        <div class="label">Avg Time Between Chunks</div>
-      </div>
-      <div class="metric">
         <div class="value" id="mChunks">–</div>
         <div class="label">Chunks Received</div>
       </div>
-      <div class="metric">
-        <div class="value" id="mRtf">–</div>
-        <div class="label">RTF (total &divide; audio)</div>
-      </div>
+      <!-- Row break. A <br> here does not work: .metrics is a CSS grid, so the <br>
+           becomes a grid ITEM and just consumes a cell. A zero-height item spanning
+           every column ends the row, so the next tile starts at column 1. -->
+      <div style="grid-column:1/-1;height:0;"></div>
       <div class="metric">
         <div class="value" id="mTotal">–</div>
         <div class="label">Total Time</div>
@@ -192,66 +242,31 @@
         <div class="value" id="mAudioDur">–</div>
         <div class="label">Audio Duration</div>
       </div>
-    </div>
-
-    <p class="subtitle" style="margin-top:14px;">Batch summary (all concurrent requests)</p>
-    <div class="metrics">
       <div class="metric">
-        <div class="value" id="bDone">–</div>
-        <div class="label">Requests Done</div>
-      </div>
-      <div class="metric">
-        <div class="value" id="bFailed">–</div>
-        <div class="label">Requests Failed</div>
-      </div>
-      <div class="metric">
-        <div class="value" id="bAvgTtfc">–</div>
-        <div class="label">Avg Time to First Chunk</div>
-      </div>
-      <div class="metric">
-        <div class="value" id="bAvgRtf">–</div>
-        <div class="label">Avg RTF</div>
-      </div>
-      <div class="metric">
-        <div class="value" id="bWallTime">–</div>
-        <div class="label">Batch Wall Time</div>
-      </div>
-      <div class="metric">
-        <div class="value" id="bThroughput">–</div>
-        <div class="label">Throughput</div>
+        <div class="value" id="mRtf">–</div>
+        <div class="label">RTF</div>
       </div>
     </div>
 
+    <br>
+    <p class="subtitle" style="margin-top:14px;color:var(--text);"><b>Replay</b></p>
     <audio id="player" controls></audio>
 
     <div class="log" id="log"></div>
 
-    <div class="note">
-      This page must be served from (or CORS-allowed by) the same origin as
-      the TTS server, since the request needs a custom
-      <code>Authorization</code> header. Opening this file directly
-      (<code>file://</code>) against a remote host will fail with a
-      network/CORS error in the browser console. "Chunks received" counts
-      distinct reads of audio bytes off the HTTP stream on the client side —
-      the closest thing observable from the browser to the server's internal
-      audio chunks. Audio is played in real time via the Web Audio API as
-      chunks arrive (with a small lead buffer to absorb network jitter); the
-      player below holds the fully assembled clip for replay/seeking. With
-      "Concurrent Requests" &gt; 1, all requests run in parallel (tested up
-      to 350) but only the first one drives the sample metrics and audio
-      playback — the rest only contribute to the batch summary.
-    </div>
   </section>
 </main>
 
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const endpointEl = $("endpoint");
-  const apiKeyEl = $("apiKey");
+  // Endpoint and key were inputs; they are fixed now. The page is served by
+  // tts_bench_server.py, which reverse-proxies /v1/* to the inference server,
+  // so the request is same-origin and needs no CORS preflight.
+  const BASE_URL = window.location.origin;
+  const API_KEY = "your-secret-key";
   const textEl = $("text");
   const descriptionEl = $("description");
-  const concurrencyEl = $("concurrency");
   const submitBtn = $("submitBtn");
   const stopBtn = $("stopBtn");
   const statusDot = $("statusDot");
@@ -259,24 +274,13 @@
   const playerEl = $("player");
   const logEl = $("log");
 
-  const MAX_CONCURRENCY = 350;
 
   const metricEls = {
     ttfc: $("mTtfc"),
-    avgGap: $("mAvgGap"),
     chunks: $("mChunks"),
     rtf: $("mRtf"),
     total: $("mTotal"),
     audioDur: $("mAudioDur"),
-  };
-
-  const batchEls = {
-    done: $("bDone"),
-    failed: $("bFailed"),
-    avgTtfc: $("bAvgTtfc"),
-    avgRtf: $("bAvgRtf"),
-    wallTime: $("bWallTime"),
-    throughput: $("bThroughput"),
   };
 
   let batchAbortController = null;
@@ -306,10 +310,6 @@
 
   function resetMetrics() {
     Object.values(metricEls).forEach((el) => (el.textContent = "–"));
-  }
-
-  function resetBatchMetrics() {
-    Object.values(batchEls).forEach((el) => (el.textContent = "–"));
   }
 
   function fmtMs(ms) {
@@ -410,9 +410,12 @@
   }
 
   function buildRequest(baseUrl, apiKey, text, description) {
+    // The proxy measures this stream server-side and files the result under this id.
+    const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const headers = {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
+      "X-Req-Id": reqId,
     };
     const payload = { text };
     if (description) payload.description = description;
@@ -420,6 +423,7 @@
       url: `${baseUrl.replace(/\/+$/, "")}/v1/audio/speech`,
       headers,
       body: JSON.stringify(payload),
+      reqId,
     };
   }
 
@@ -463,6 +467,33 @@
 
     if (playAudio) setStatus("Streaming…", "busy");
 
+    // Server-side measurement, polled live. The proxy scores the stream exactly as
+    // tts_load_harness.py does and republishes on every completed chunk.
+    let srvTimer = null;
+    let srvOk = false;          // true once the proxy's measurement has been applied
+    async function pollServer() {
+      try {
+        const m = await (await fetch(`/api/stream?id=${req.reqId}`)).json();
+        if (m && m.fc_ms !== null && m.fc_ms !== undefined) {
+          srvOk = true;
+          metricEls.ttfc.textContent = fmtMs(m.fc_ms);
+          metricEls.chunks.textContent = String(m.chunks);
+          // RTF from the server's own clock: the browser's total time carries network
+          // latency, which inflates the ratio the harness computes as gen_s/audio_s.
+          // Total time AND audio duration from the server, so the pair -- and the
+          // RTF that divides them -- all come off one clock. Mixing a server total
+          // with a browser-side duration can make total look larger than audio.
+          metricEls.total.textContent = fmtSec(m.total_ms / 1000);
+          if (m.audio_s > 0) metricEls.audioDur.textContent = fmtSec(m.audio_s);
+          if (m.audio_s > 0) metricEls.rtf.textContent = (m.total_ms / 1000 / m.audio_s).toFixed(3);
+        }
+      } catch (e) { /* transient; next tick retries */ }
+    }
+    if (playAudio && req.reqId) {
+      metricEls.ttfc.textContent = "…";
+      srvTimer = setInterval(pollServer, 250);
+    }
+
     const reader = response.body.getReader();
     let headerCarry = new Uint8Array(0);
     let headerBytes = null; // parsed once we have 44 bytes
@@ -475,33 +506,72 @@
     let firstChunkAt = null;
     let lastChunkAt = null;
     let chunkCount = 0;
-    let gapsCount = 0;
-    let sumGaps = 0;
 
+    // --- chunk accounting, matched to tts_load_harness.py --------------------
+    // The harness parses HTTP chunked framing itself, so one mark = one server
+    // audio chunk, stamped when that chunk is COMPLETE, and FC = marks[0].
+    // fetch() hides chunk boundaries: reader.read() returns whatever the browser
+    // happened to buffer, which merges or splits server chunks. Counting reads
+    // therefore measures the network, not the model.
+    // Instead we rebuild the harness's marks from the byte count: the server emits
+    // fixed CHUNK_AUDIO_S-long chunks, so every CHUNK_BYTES of audio completes one.
+    const CHUNK_AUDIO_S = 0.6;     // CHUNK_TOKENS(30) * 960 / 48000, per tts_load_report
+    let chunkBytes = 0;            // set once the WAV header gives us the format
     function onAudioBytes(bytes) {
       if (playAudio) audioParts.push(bytes);
       totalAudioBytes += bytes.length;
       const now = performance.now();
-      if (firstChunkAt === null) {
-        firstChunkAt = now;
-        if (playAudio) {
-          metricEls.ttfc.textContent = fmtMs(firstChunkAt - sentAt);
-          log(`First chunk received after ${(firstChunkAt - sentAt).toFixed(0)} ms`);
-        }
-      } else {
-        sumGaps += now - lastChunkAt;
-        gapsCount += 1;
-        if (playAudio) metricEls.avgGap.textContent = fmtMs(sumGaps / gapsCount);
+      if (!chunkBytes) {
+        chunkBytes = Math.round(
+          CHUNK_AUDIO_S * sampleRateHz * channels * (bitsPerSample / 8));
       }
-      lastChunkAt = now;
+      // One read can complete several chunks; they all landed at the same instant.
+      while (chunkBytes > 0 && (chunkCount + 1) * chunkBytes <= totalAudioBytes) {
+        chunkCount += 1;
+        if (firstChunkAt === null) {
+          firstChunkAt = now;
+          // FC is NOT reported from here. The browser's arrival time includes network
+          // latency to the cluster and fetch() buffering, which read ~600ms against
+          // the harness's ~87ms. The proxy's server-side figure is polled instead.
+        }
+        lastChunkAt = now;
+        if (playAudio) metricEls.chunks.textContent = String(chunkCount);
+      }
+    }
+
+    // The final chunk is usually short. The harness counts it (it counts frames,
+    // not bytes), so count it too rather than dropping audio the user can hear.
+    function flushFinalChunk() {
+      if (!chunkBytes || totalAudioBytes <= chunkCount * chunkBytes) return;
       chunkCount += 1;
-      if (playAudio) metricEls.chunks.textContent = String(chunkCount);
+      const now = performance.now();
+      if (firstChunkAt === null) firstChunkAt = now;
+      lastChunkAt = now;
+      if (playAudio) {
+        metricEls.chunks.textContent = String(chunkCount);
+      }
     }
 
     try {
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          flushFinalChunk();
+          if (srvTimer) { clearInterval(srvTimer); srvTimer = null; }
+          if (playAudio && req.reqId) {
+            await pollServer();
+            try {
+              const m = await (await fetch(`/api/stream?id=${req.reqId}`)).json();
+              if (m && m.fc_ms !== null) {
+                log(
+                  `server-measured: FC ${m.fc_ms} ms, ${m.chunks} chunks` +
+                  (m.sc_ms !== null ? `, SC ${m.sc_ms} ms` : "") +
+                  (m.tc_max_ms !== null ? `, TC max ${m.tc_max_ms} ms` : ""));
+              }
+            } catch (e) { /* the polled value already stands */ }
+          }
+          break;
+        }
         if (!value || value.length === 0) continue;
 
         if (headerBytes === null) {
@@ -549,10 +619,14 @@
       totalAudioBytes / (sampleRateHz * channels * bytesPerSample);
     const rtf = audioDurationSeconds > 0 ? totalSeconds / audioDurationSeconds : null;
 
-    if (playAudio) {
+    if (playAudio && !srvOk) {
+      // Fallback only: no server measurement came back for this request. These are
+      // browser-side, so Total Time carries network latency and RTF is inflated.
       metricEls.total.textContent = fmtSec(totalSeconds);
       metricEls.audioDur.textContent = fmtSec(audioDurationSeconds);
       if (rtf !== null) metricEls.rtf.textContent = rtf.toFixed(3);
+    }
+    if (playAudio) {
 
       const fixedHeader = finalizeWavHeader(headerBytes, totalAudioBytes);
       const blob = new Blob([fixedHeader, ...audioParts], { type: "audio/wav" });
@@ -576,21 +650,15 @@
   }
 
   async function runBatch() {
-    const baseUrl = endpointEl.value.trim();
+    const baseUrl = BASE_URL;
     const text = textEl.value.trim();
     const description = descriptionEl.value.trim();
-    const apiKey = apiKeyEl.value;
+    const apiKey = API_KEY;
+    const count = 1;
 
-    let count = parseInt(concurrencyEl.value, 10);
-    if (!Number.isFinite(count) || count < 1) count = 1;
-    count = Math.min(count, MAX_CONCURRENCY);
-    concurrencyEl.value = count;
-
-    if (!baseUrl) { log("Endpoint is required", true); return; }
     if (!text) { log("Text is required", true); return; }
 
     resetMetrics();
-    resetBatchMetrics();
     logEl.textContent = "";
     stopRealtimePlayback();
     if (lastObjectUrl) {
@@ -603,13 +671,8 @@
     batchAbortController = new AbortController();
     submitBtn.disabled = true;
     stopBtn.disabled = false;
-    setStatus(count > 1 ? `Running ${count} requests…` : "Sending request…", "busy");
-    log(
-      count > 1
-        ? `Launching ${count} concurrent requests to ${req.url} ` +
-            `(audio playback follows request #1 only)`
-        : `POST ${req.url}`
-    );
+    setStatus("Sending request…", "busy");
+    log(`POST ${req.url}`);
 
     const batchStartAt = performance.now();
     let completed = 0;
@@ -633,13 +696,6 @@
           rtfCount += 1;
         }
       }
-      const wallSeconds = (performance.now() - batchStartAt) / 1000;
-      batchEls.done.textContent = `${completed} / ${count}`;
-      batchEls.failed.textContent = String(failed);
-      if (ttfcCount > 0) batchEls.avgTtfc.textContent = fmtMs(sumTtfc / ttfcCount);
-      if (rtfCount > 0) batchEls.avgRtf.textContent = (sumRtf / rtfCount).toFixed(3);
-      batchEls.wallTime.textContent = fmtSec(wallSeconds);
-      batchEls.throughput.textContent = `${(completed / wallSeconds).toFixed(2)} req/s`;
     }
 
     const tasks = Array.from({ length: count }, (_, i) =>
@@ -651,10 +707,7 @@
     await Promise.allSettled(tasks);
 
     const wallSeconds = (performance.now() - batchStartAt) / 1000;
-    log(
-      `Batch done: ${completed}/${count} completed, ${failed} failed, ` +
-        `${wallSeconds.toFixed(3)}s wall time.`
-    );
+    log(`Done in ${wallSeconds.toFixed(3)}s${failed ? ` (${failed} failed)` : ""}.`);
     setStatus(failed > 0 ? "Completed with errors" : "Done", failed > 0 ? "err" : "ok");
     finishUi();
   }
@@ -676,6 +729,162 @@
   stopBtn.addEventListener("click", () => {
     if (batchAbortController) batchAbortController.abort();
     stopRealtimePlayback();
+  });
+
+  // ----------------------------------------------------------------- load test
+  // The browser cannot exec the harness, so Launch POSTs to this page's own
+  // origin and tts_bench_server.py runs tts_load_harness.py on the server host.
+  // KPIs come back from aggregating the harness's own JSON -- the page never
+  // recomputes a metric, so what it shows is what the harness measured.
+  const ltUsers = $("ltUsers"), ltMinutes = $("ltMinutes");
+  const launchBtn = $("launchBtn"), ltStopBtn = $("ltStopBtn");
+  const ltDot = $("ltDot"), ltStatus = $("ltStatus");
+  const ltProgWrap = $("ltProgWrap"), ltProg = $("ltProg");
+  const ltUsersEcho = $("ltUsersEcho");
+  const kEls = {
+    fc50: $("kFc50"), fc95: $("kFc95"), fcmax: $("kFcMax"),
+    sc50: $("kSc50"), sc95: $("kSc95"), scmax: $("kScMax"),
+    tc50: $("kTc50"), tc95: $("kTc95"), tcmax: $("kTcMax"),
+    C: $("kC"), mchar: $("kMchar"),
+  };
+  // Same numbers the labels advertise; used only to colour a tile pass/fail.
+  const KPI_TARGET = {
+    fc50: 150, fc95: 350, fcmax: 350, sc50: 270, sc95: 270,
+    scmax: 270, tc50: 570, tc95: 570, tcmax: 570,
+  };
+  let ltTimer = null;
+  // A single failed poll is not a dead run: the server may have been restarted, or
+  // a connection refused under load. Giving up on the first failure abandoned a run
+  // that was still going. Tolerate a few in a row before declaring it lost.
+  let ltMisses = 0;
+  const LT_MAX_MISSES = 8;
+
+  ltUsers.addEventListener("input", () => {
+    ltUsersEcho.textContent = ltUsers.value || "0";
+  });
+
+  function ltSetStatus(text, cls) {
+    ltStatus.textContent = text;
+    ltDot.className = "dot" + (cls ? " " + cls : "");
+  }
+
+  function ltClearTiles() {
+    Object.values(kEls).forEach((el) => {
+      el.textContent = "–";
+      el.style.color = "";
+    });
+    $("kVerdict").textContent = "–";
+    $("kVerdict").style.color = "";
+  }
+
+  function ltFillTiles(k) {
+    for (const [key, el] of Object.entries(kEls)) {
+      const v = k[key];
+      if (v === null || v === undefined) { el.textContent = "–"; continue; }
+      el.textContent = key === "C" ? v.toFixed(1)
+        : key === "mchar" ? v.toFixed(1)
+        : `${Math.round(v)} ms`;
+      const t = KPI_TARGET[key];
+      if (t !== undefined) el.style.color = v <= t ? "var(--ok)" : "var(--err)";
+    }
+    const v = $("kVerdict");
+    v.textContent = `${k.kpi_pass ? "PASS" : "FAIL"} / ${k.strict_pass ? "PASS" : "FAIL"}`;
+    v.style.color = k.kpi_pass ? "var(--ok)" : "var(--err)";
+  }
+
+  function ltUi(running) {
+    launchBtn.disabled = running;
+    ltStopBtn.disabled = !running;
+    ltUsers.disabled = running;
+    ltMinutes.disabled = running;
+    ltProgWrap.hidden = !running;
+  }
+
+  function fmtClock(s) {
+    s = Math.max(0, Math.round(s));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  async function ltPoll() {
+    let st;
+    try {
+      st = await (await fetch("/api/status", { cache: "no-store" })).json();
+      ltMisses = 0;
+    } catch (e) {
+      ltMisses += 1;
+      if (ltMisses < LT_MAX_MISSES) {
+        ltSetStatus(
+          `Reconnecting to the run server… (${ltMisses}/${LT_MAX_MISSES})`, "busy");
+        return;
+      }
+      ltSetStatus(`Lost contact with the run server: ${e.message}`, "err");
+      clearInterval(ltTimer); ltTimer = null; ltUi(false);
+      return;
+    }
+    if (st.state === "running" || st.state === "starting") {
+      ltProg.style.width = `${st.pct || 0}%`;
+      const left = Math.max(0, (st.total_s || 0) - (st.elapsed_s || 0));
+      ltSetStatus(
+        `${st.phase || "running"} — ${fmtClock(st.elapsed_s || 0)} / ` +
+        `${fmtClock(st.total_s || 0)}${left > 0 ? ` (${fmtClock(left)} left)` : ""}`,
+        "busy");
+      return;
+    }
+    clearInterval(ltTimer); ltTimer = null;
+    ltUi(false);
+    if (st.state === "done" && st.kpi) {
+      ltProg.style.width = "100%";
+      ltFillTiles(st.kpi);
+      ltSetStatus(
+        `Done — ${st.kpi.n_ok} requests at ${st.kpi.rps} req/s` +
+        (st.kpi.n_err ? `, ${st.kpi.n_err} errors` : ""),
+        st.kpi.kpi_pass ? "ok" : "err");
+    } else if (st.state === "error") {
+      // Show the harness's own last words rather than a generic failure.
+      const tail = (st.log || []).slice(-3).join(" | ");
+      ltSetStatus(`Run failed: ${tail || "see server log"}`, "err");
+    } else {
+      ltSetStatus("Stopped", "err");
+    }
+  }
+
+  launchBtn.addEventListener("click", async () => {
+    ltClearTiles();
+    ltMisses = 0;
+    ltProg.style.width = "0%";
+    ltUi(true);
+    ltSetStatus("Starting…", "busy");
+    try {
+      const r = await fetch("/api/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          users: parseInt(ltUsers.value, 10) || 1,
+          minutes: parseFloat(ltMinutes.value) || 1,
+        }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        ltSetStatus(`Could not start: ${e.error || r.status}`, "err");
+        ltUi(false);
+        return;
+      }
+    } catch (e) {
+      ltSetStatus(`Could not reach the run server: ${e.message}`, "err");
+      ltUi(false);
+      return;
+    }
+    ltTimer = setInterval(ltPoll, 1000);
+    ltPoll();
+  });
+
+  ltStopBtn.addEventListener("click", async () => {
+    ltSetStatus("Stopping…", "busy");
+    await fetch("/api/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => {});
   });
 })();
 </script>
