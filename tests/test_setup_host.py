@@ -400,6 +400,43 @@ class TestSetupHostRunSetup:
         assert setup_config.host_model_volume_root is None
         assert setup_config.host_model_weights_mount_dir is None
 
+    def test_admitted_package_skips_hf_weight_setup_and_ram_heuristic(
+        self, tiny_model_spec, temp_dir
+    ):
+        """A package-backed launch uses package weights, not the HF host path."""
+        with patch.object(
+            HostSetupManager, "check_ram", side_effect=AssertionError("must not run")
+        ), patch.object(
+            HostSetupManager,
+            "setup_weights_huggingface",
+            side_effect=AssertionError("must not download"),
+        ):
+            setup_config = setup_host(
+                model_spec=tiny_model_spec,
+                jwt_secret="test_jwt_secret_123",
+                hf_token="",
+                automatic_setup=True,
+                host_volume=str(temp_dir / "persistent_volume"),
+                package_provides_weights=True,
+            )
+
+        assert setup_config.model_source == ModelSource.NOACTION.value
+        assert setup_config.host_model_weights_mount_dir is None
+
+    def test_native_host_volume_still_enforces_ram_heuristic(
+        self, tiny_model_spec, temp_dir
+    ):
+        """The package exception must not weaken native/HF launch checks."""
+        with patch.object(HostSetupManager, "check_ram", return_value=False):
+            with pytest.raises(AssertionError, match="Insufficient host RAM"):
+                setup_host(
+                    model_spec=tiny_model_spec,
+                    jwt_secret="test_jwt_secret_123",
+                    hf_token="hf_test_token_123456",
+                    automatic_setup=True,
+                    host_volume=str(temp_dir / "persistent_volume"),
+                )
+
     def test_host_volume_mode_calls_setup_weights(
         self,
         tiny_model_spec,
