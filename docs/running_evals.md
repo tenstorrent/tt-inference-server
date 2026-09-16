@@ -380,12 +380,11 @@ python run.py \
 Other evaluation workflows are unchanged. See [Custom LongBench](custom_longbench.md)
 for input format and driver options.
 
-## Opt-in GLM-5.3 SWE-bench
+## GLM-5.3 SWE-bench
 
-Add `--agentic-benchmark swebench` to the Agentic command to run SWE-bench
-Verified v1.0 (500 tasks) with mini-swe-agent 2.2.8, C8 and one attempt.
-Omitting the selector, or using `all`, still runs only Terminal-Bench and Banking
-for GLM-5.3. Other models retain their existing task selection.
+GLM-5.3 uses TT's existing SWE-bench workflow with mini-swe-agent.
+Select `swebench` explicitly; the default GLM-5.3 agentic tasks remain
+Terminal-Bench and Banking. The agentic prerequisites above apply.
 
 ```bash
 python run.py \
@@ -397,28 +396,3 @@ python run.py \
   --skip-system-sw-validation \
   --dev-mode
 ```
-
-This uses TT's existing SWE-bench runner and the GLM-5.2 agent settings:
-chat completions, temperature 1.0, top-p 0.95, at most 65,536 output tokens per
-request, a 600-second request timeout and a two-hour agent timeout per task.
-GLM-5.3 uses C8 and has no accuracy reference borrowed from another model.
-
-Docker and Compose run on the client host; task containers must reach the model
-endpoint. Bootstrap the agentic venv using the Python snippet above, then log in
-to Docker Hub and prepare just the SWE tasks and their base images:
-
-```bash
-.workflow_venvs/.venv_evals_agentic/bin/python scripts/prepare_swebench.py \
-  --manifest "$CACHE_ROOT/swebench-images.json"
-```
-
-This preparation uses Harbor's task cache and records source revisions and image
-IDs. Harbor builds each task environment and installs the agent and grader when
-the task starts. The older image bootstrap wrapper references a missing
-`pull_agentic_docker_images.py`; use the SWE preparation command above for this run.
-
-For a short check, add `--limit-samples-mode smoke-test` to both preparation and
-evaluation: it selects only `pytest-dev__pytest-5262`. Set `HARBOR_TIMEOUT_SEC=900`
-to bound the Harbor job to 15 minutes. A timeout produces partial results, not a
-completed score. Use a fresh `CACHE_ROOT`; TT reports remain under
-`$CACHE_ROOT/workflow_logs/reports_output/agentic/`.

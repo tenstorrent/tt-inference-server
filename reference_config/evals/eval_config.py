@@ -951,6 +951,15 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 requires_explicit_selection=True,
+                score=EvalTaskScore(
+                    published_score=95.4,
+                    published_score_ref="https://www.vals.ai/benchmarks/swebench",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
@@ -971,7 +980,6 @@ _eval_config_list = [
                         },
                     },
                     task_names_map={
-                        EvalLimitMode.SMOKE_TEST: ["pytest-dev__pytest-5262"],
                         EvalLimitMode.CI_NIGHTLY: [
                             "django__django-12143",
                             "pytest-dev__pytest-5262",
@@ -982,8 +990,7 @@ _eval_config_list = [
                     },
                 ),
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 1,
-                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],
