@@ -398,11 +398,10 @@ python run.py \
   --dev-mode
 ```
 
-The agent uses chat completions, temperature 1.0, top-p 0.95, at most 65,536
-output tokens per request, a 600-second request timeout and a two-hour agent
-timeout per task. API-price cost limits are explicitly disabled in the mini
-config: [v2.2.8's CLI ignores zero](https://github.com/SWE-agent/mini-swe-agent/blob/v2.2.8/src/minisweagent/run/mini.py#L65-L74).
-No accuracy reference from another model is applied.
+This uses TT's existing SWE-bench runner and the GLM-5.2 agent settings:
+chat completions, temperature 1.0, top-p 0.95, at most 65,536 output tokens per
+request, a 600-second request timeout and a two-hour agent timeout per task.
+GLM-5.3 uses C8 and has no accuracy reference borrowed from another model.
 
 Docker and Compose run on the client host; task containers must reach the model
 endpoint. Bootstrap the agentic venv using the Python snippet above, then log in

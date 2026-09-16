@@ -952,19 +952,16 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 requires_explicit_selection=True,
                 agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified@1.0",
+                    dataset="swebench-verified",
                     agent="mini-swe-agent",
                     n_concurrent_trials=8,
                     n_attempts=1,
-                    n_tasks=500,
+                    n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         "max_tokens": 64 * 1024,
                         "config": {
-                            # Bound trials by time, independent of API prices.
-                            # v2.2.8 ignores CLI --cost-limit 0; set it here.
-                            "agent": {"cost_limit": 0},
                             "model": {
                                 "model_kwargs": {
                                     "temperature": 1.0,

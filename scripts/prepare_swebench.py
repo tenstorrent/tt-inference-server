@@ -1,16 +1,17 @@
-#!/usr/bin/env python3
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+#
 # SPDX-License-Identifier: Apache-2.0
 """Cache the GLM-5.3 SWE-bench tasks and pull their Docker base images."""
 
 import argparse
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import fnmatch
 import json
-from pathlib import Path
 import shlex
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -28,35 +29,50 @@ def base_image(dockerfile: Path) -> str:
 
 def pull_image(image: str) -> dict:
     inspect = ["docker", "image", "inspect", image]
-    cached = subprocess.run(inspect, capture_output=True).returncode == 0
+    cached = subprocess.run(inspect, capture_output=True, check=False).returncode == 0
     if not cached:
         subprocess.run(["docker", "pull", image], check=True, timeout=600)
     info = json.loads(subprocess.check_output(inspect))[0]
-    return {"image": image, "id": info["Id"], "digests": info.get("RepoDigests", []), "cached": cached}
+    return {
+        "image": image,
+        "id": info["Id"],
+        "digests": info.get("RepoDigests", []),
+        "cached": cached,
+    }
 
 
 async def prepare(args) -> None:
     from harbor.registry.client.factory import RegistryClientFactory
     from harbor.tasks.client import TaskClient
+
     from reference_config.evals.eval_config import _eval_config_map
     from workflows.workflow_types import EvalLimitMode
 
     task = next(
-        t for t in _eval_config_map["zai-org/GLM-5.3"].tasks
+        t
+        for t in _eval_config_map["zai-org/GLM-5.3"].tasks
         if t.task_name == "swe_bench_verified"
     )
     config = task.agentic_eval_config
-    mode = EvalLimitMode.from_string(args.limit_samples_mode) if args.limit_samples_mode else None
+    mode = (
+        EvalLimitMode.from_string(args.limit_samples_mode)
+        if args.limit_samples_mode
+        else None
+    )
     names = config.task_names_map.get(mode, config.task_names)
     count = task.limit_samples_map.get(mode, config.n_tasks)
     metadata = await RegistryClientFactory.create().get_dataset_metadata(config.dataset)
     ids = metadata.task_ids
     if names:
-        ids = [t for t in ids if any(fnmatch.fnmatch(t.path.name, name) for name in names)]
-    if len(ids) != count:
+        ids = [
+            t for t in ids if any(fnmatch.fnmatch(t.path.name, name) for name in names)
+        ]
+    if count is not None and len(ids) != count:
         raise ValueError(f"Expected {count} configured tasks, resolved {len(ids)}")
     downloaded = await TaskClient().download_tasks(task_ids=ids)
-    images = sorted({base_image(path / "environment/Dockerfile") for path in downloaded.paths})
+    images = sorted(
+        {base_image(path / "environment/Dockerfile") for path in downloaded.paths}
+    )
     print(f"Preparing {len(ids)} tasks and {len(images)} base images", flush=True)
     with ThreadPoolExecutor(max_workers=args.max_workers) as pool:
         image_info = list(pool.map(pull_image, images))
