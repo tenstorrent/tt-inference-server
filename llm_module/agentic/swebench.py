@@ -123,6 +123,7 @@ import re
 from swebench.harness.test_spec import TestSpec
 
 _ORIGINAL_GET_INSTANCE_CONTAINER_NAME = TestSpec.get_instance_container_name
+_ORIGINAL_SETUP_ENV_SCRIPT = TestSpec.setup_env_script.fget
 
 
 def _get_safe_instance_container_name(self, run_id=None):
@@ -133,6 +134,20 @@ def _get_safe_instance_container_name(self, run_id=None):
 
 
 TestSpec.get_instance_container_name = _get_safe_instance_container_name
+
+
+def _setup_env_script_with_classic_conda_solver(self):
+    script = _ORIGINAL_SETUP_ENV_SCRIPT(self)
+    return script.replace(
+        "set -euxo pipefail\n",
+        "set -euxo pipefail\nexport CONDA_SOLVER=classic\n",
+        1,
+    )
+
+
+# libmamba's libsolv can abort while resolving the large Matplotlib SWE-bench
+# environment. The classic solver is slower but avoids that native assertion.
+TestSpec.setup_env_script = property(_setup_env_script_with_classic_conda_solver)
 
 
 # The epoch-research SWE-bench fork's build_image() pushes every freshly built
