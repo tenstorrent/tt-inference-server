@@ -12,7 +12,10 @@ scientific notation.
 
 from __future__ import annotations
 
-from report_module.agentic_traces_renderer import render_agentic_traces
+from report_module.agentic_traces_renderer import (
+    render_agentic_traces,
+    render_agentic_traces_targets,
+)
 from report_module.renderers import get_renderer
 from report_module.schema import Block
 
@@ -54,7 +57,7 @@ def _record(**overrides):
         "mean_effective_latency_ms": 22887.3,
         "p99_effective_latency_ms": 137522.2,
         "output_token_throughput_per_user": 110.8,
-        "e2e_output_token_throughput_per_user": 31.3,
+        "mean_e2e_norm_intvty": 31.3,
         "total_token_throughput": 4856.63,
         "output_token_throughput": 41.99,
         "request_throughput": 0.042,
@@ -445,3 +448,199 @@ class TestMixedSweep:
         out = _render(_swo_record(), _record())
         latency = out.split("#### Per-run Throughput")[0]
         assert latency.index("| inferencex_agentx ") < latency.index("| swarmone ")
+
+
+class TestMeasuredAgenticSweep:
+    """The measured sweep JSON is not rendered in the report.
+
+    The tables carry the numbers, the targets block grades them field for
+    field, and the raw JSON is written to ``agentic_sweep.json`` on disk --
+    an 80-line blob in the report itself is noise. A pointer to the file
+    remains for provenance.
+    """
+
+    def test_sweep_json_is_not_rendered(self):
+        out = _render(_record())
+
+        assert "#### Measured `agenticSweep`" not in out
+        assert "```json" not in out
+
+    def test_a_pointer_to_the_on_disk_sweep_file_remains(self):
+        out = _render(_record())
+
+        assert "agentic_sweep.json" in out
+
+    def test_no_pointer_without_inferencex_rows(self):
+        """The sweep file is InferenceX-only; a swo-bench run leaves no file."""
+        out = _render(_swo_record())
+
+        assert "agentic_sweep.json" not in out
+
+
+class TestDefinitionsPlacement:
+    """The glossary trails the targets section when one follows, so the
+    tables are not split from their verdicts."""
+
+    def test_catalog_run_keeps_definitions_in_the_run_section(self):
+        out = _render(_record())
+
+        assert "**Metric definitions:**" in out
+
+    def test_requirements_run_defers_definitions_to_the_targets_section(self):
+        out = _render(
+            _record(expected_sweep=[{"concurrency": 1, "ttftMeanMs": 8000.0}])
+        )
+
+        assert "**Metric definitions:**" not in out
+
+
+class TestRequirementsTargets:
+    """The targets block renders its precomputed verdicts.
+
+    Grading happens in ``build_targets_block`` at parse time; this renderer
+    only lays out what the block carries, so the report and the acceptance
+    criteria can never disagree about the verdicts.
+    """
+
+    _POINT = {
+        "concurrency": 1,
+        "met": 1,
+        "graded": 2,
+        "passed": False,
+        "verdicts": [
+            {
+                "field": "ttftMeanMs",
+                "target": 8000.0,
+                "measured": 7868.93,
+                "passed": True,
+                "lower_is_better": True,
+            },
+            {
+                "field": "tpotMeanMs",
+                "target": 3.0,
+                "measured": 11.8,
+                "passed": False,
+                "lower_is_better": True,
+            },
+            {
+                "field": "goodputPct",
+                "target": 90.0,
+                "measured": None,
+                "passed": None,
+                "lower_is_better": False,
+            },
+        ],
+    }
+
+    def _block(self, points=(_POINT,), missing=()):
+        return Block(
+            kind="agentic_traces_targets",
+            id="kimi_super_cluster",
+            data={
+                "points": [dict(point) for point in points],
+                "missing_concurrencies": list(missing),
+            },
+        )
+
+    def test_kind_resolves_to_this_renderer(self):
+        assert get_renderer("agentic_traces_targets") is render_agentic_traces_targets
+
+    def test_run_renderer_no_longer_emits_the_section(self):
+        """Even with expectations attached, grading lives in its own block."""
+        out = _render(
+            _record(expected_sweep=[{"concurrency": 1, "ttftMeanMs": 8000.0}])
+        )
+
+        assert "#### Requirements Targets" not in out
+
+    def test_renders_the_stored_verdicts(self):
+        out = render_agentic_traces_targets(self._block(), METADATA)
+
+        assert "#### Requirements Targets" in out
+        assert "**c1**: 1/2 targets met ❌" in out
+        # latency passes at/below target; rate-style fields at/above
+        assert "**7,869** / 8,000 ✅" in out
+        assert "**11.80** / 3.00 ❌" in out
+        # expected but unmeasured reads as a gap, not a failure
+        assert "**N/A** / 90.00 ➖" in out
+
+    def test_unmeasured_document_points_are_called_out(self):
+        """A truncated sweep must not read as a complete one that scored less."""
+        out = render_agentic_traces_targets(self._block(missing=(64,)), METADATA)
+
+        assert "c64" in out
+        assert "never measured" in out
+
+    def test_each_measured_point_renders_its_own_column(self):
+        point4 = {**self._POINT, "concurrency": 4}
+        out = render_agentic_traces_targets(
+            self._block(points=(self._POINT, point4)), METADATA
+        )
+
+        assert "c1 (1/2)" in out and "c4 (1/2)" in out
+
+    def test_points_declaring_different_fields_render_the_union(self):
+        """A field only a later point declares must still get its own row."""
+        point4 = {
+            "concurrency": 4,
+            "met": 2,
+            "graded": 2,
+            "passed": True,
+            "verdicts": [
+                {
+                    "field": "ttftMeanMs",
+                    "target": 8000.0,
+                    "measured": 100.0,
+                    "passed": True,
+                    "lower_is_better": True,
+                },
+                {
+                    "field": "e2elP90Ms",
+                    "target": 30000.0,
+                    "measured": 25000.0,
+                    "passed": True,
+                    "lower_is_better": True,
+                },
+            ],
+        }
+        out = render_agentic_traces_targets(
+            self._block(points=(self._POINT, point4)), METADATA
+        )
+
+        assert "`e2elP90Ms` ↓" in out
+        # the point that did not declare the field reads as a dash, not N/A
+        row = next(line for line in out.splitlines() if "e2elP90Ms" in line)
+        cells = [cell.strip() for cell in row.strip("|").split("|")]
+        assert cells[1] == "—"
+        assert "30,000" in cells[2]
+
+    def test_a_point_with_no_declared_targets_is_not_failed(self):
+        empty = {
+            "concurrency": 4,
+            "met": 0,
+            "graded": 0,
+            "passed": None,
+            "verdicts": [],
+        }
+        out = render_agentic_traces_targets(
+            self._block(points=(self._POINT, empty)), METADATA
+        )
+
+        assert "**c4**: no targets declared" in out
+        assert "c4 (no targets)" in out
+
+    def test_empty_block_renders_nothing(self):
+        assert (
+            render_agentic_traces_targets(self._block(points=(), missing=()), METADATA)
+            == ""
+        )
+
+    def test_the_glossary_trails_the_verdicts(self):
+        """The run section defers its metric definitions to this section."""
+        out = render_agentic_traces_targets(self._block(), METADATA)
+
+        assert "**Metric definitions:**" in out
+        # the InferenceX set, since a targets block only exists for
+        # InferenceX-graded sweeps
+        assert "**TPOT**: inter-token latency" in out
+        assert "Ready Starved" not in out

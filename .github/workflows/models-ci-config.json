@@ -17,11 +17,6 @@
                     "devices": [
                         "P300X2"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ]
                 }
             }
         },
@@ -63,6 +58,23 @@
                     "inference_engine": "FORGE",
                     "ci": {
                         "nightly": {
+                            "devices": [
+                                "P150"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "inference_engine": "FORGE",
+                    "model_type": "TRAINING",
+                    "impl": "trainer-training-lora",
+                    "ci": {
+                        "nightly": {
+                            "devices": [
+                                "P150"
+                            ]
+                        },
+                        "release": {
                             "devices": [
                                 "P150"
                             ]
@@ -277,11 +289,6 @@
                                 "GALAXY",
                                 "BH_GALAXY",
                                 "P300X2"
-                            ]
-                        },
-                        "release": {
-                            "devices": [
-                                "GALAXY"
                             ]
                         },
                         "weekly": {

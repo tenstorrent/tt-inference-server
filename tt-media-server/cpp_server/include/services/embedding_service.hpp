@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "domain/embedding_request.hpp"
@@ -15,7 +16,10 @@ namespace tt::services {
  * Service for handling embedding requests.
  *
  * Uses a multiprocess scheduler with EmbeddingRunner workers.
- * Synchronous: submit_request blocks until the embedding is computed.
+ * The HTTP controller uses the asynchronous path (submitRequestAsync): the
+ * request is queued and the caller returns immediately; the worker dispatch
+ * thread invokes the completion callback with the response. The inherited
+ * synchronous submitRequest still works via an adapter and blocks the caller.
  */
 class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
                                                 domain::EmbeddingResponse> {
@@ -29,6 +33,17 @@ class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
   void start() override;
   void stop() override;
   bool isModelReady() const override;
+
+  /**
+   * Enqueue the request and return immediately; a worker dispatch thread
+   * invokes onComplete (exactly once) with the response, from that dispatch
+   * thread. The queue-capacity check runs synchronously here, so
+   * QueueFullException propagates to the caller (mapped to HTTP 429) and is
+   * never reported through onComplete.
+   */
+  void submitRequestAsync(
+      domain::EmbeddingRequest request,
+      std::function<void(domain::EmbeddingResponse&&)> onComplete);
 
  protected:
   size_t currentQueueSize() const override;

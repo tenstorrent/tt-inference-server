@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
@@ -17,6 +18,9 @@ from .status import TestStatus, glyph_for_label
 KIND_BENCHMARKS = "benchmarks"
 KIND_EVALS = "evals"
 KIND_SPEC_TESTS = "spec_tests"
+# Sweep-level grading block from the agentic-traces runner, present only
+# when a requirements document stated expected sweep points to grade against.
+KIND_AGENTIC_TRACES_TARGETS = "agentic_traces_targets"
 
 TARGET_LEVELS = ("functional", "complete", "target")
 CHECK_SUFFIX = "_check"
@@ -75,6 +79,7 @@ def _status_badge(status: str) -> str:
 CATEGORY_BENCHMARKS = "Benchmarks"
 CATEGORY_EVALS = "Evals"
 CATEGORY_SPEC_TESTS = "Spec Tests"
+CATEGORY_AGENTIC_TARGETS = "Agentic Targets"
 
 INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integration"})
 
@@ -120,6 +125,7 @@ def acceptance_criteria_check(
         _check_benchmarks(schema, model_status),
         _check_evals(schema, known_issues, model_status),
         _check_spec_tests(schema),
+        _check_agentic_targets(schema),
     ]
     blockers: Dict[str, str] = {}
     for category in categories:
@@ -290,10 +296,50 @@ def _check_benchmarks(
     failed = 0
     skipped = 0
     na = 0
-    for block in benchmark_blocks:
+    key_counts = Counter(_block_key(block) for block in benchmark_blocks)
+    for index, block in enumerate(benchmark_blocks, start=1):
         block_key = _block_key(block)
+        if key_counts[block_key] > 1:
+            dimensions = ",".join(
+                f"{key}={_resolve_nested(block.data, key)}"
+                for key in (
+                    "requested_concurrency",
+                    "requested_input_sequence_length",
+                    "requested_output_sequence_length",
+                    "concurrency",
+                    "input_sequence_length",
+                    "output_sequence_length",
+                )
+                if _resolve_nested(block.data, key) is not None
+            )
+            block_key += f"[point={index}{',' + dimensions if dimensions else ''}]"
 
         explicit = _explicit_status(block)
+        if explicit is TestStatus.SKIP:
+            skipped += 1
+            continue
+
+        request_failure = _request_failure(block)
+        if request_failure is not None:
+            if _block_priority(block) == PRIORITY_SHOULD:
+                waived[block_key] = f"{request_failure} {_should_priority_suffix()}"
+            else:
+                blockers[f"{block_key}.requests"] = request_failure
+                failed += 1
+            continue
+
+        target_checks = _resolve_nested(block.data, "target_checks")
+        if (
+            explicit is TestStatus.NA
+            and isinstance(target_checks, Mapping)
+            and any(
+                name.endswith(CHECK_SUFFIX) and _has_target(level, name)
+                for level in target_checks.values()
+                if isinstance(level, Mapping)
+                for name in level
+            )
+        ):
+            explicit = None
         if explicit is not None:
             if explicit.is_blocking and _block_priority(block) == PRIORITY_SHOULD:
                 waived[block_key] = (
@@ -305,17 +351,12 @@ def _check_benchmarks(
                     f"{block.title or block.kind} reported status={explicit.value}"
                 )
                 failed += 1
-            elif explicit is TestStatus.SKIP:
-                skipped += 1
             elif explicit is TestStatus.NA:
                 na += 1
             continue
 
         block_blockers: Dict[str, str] = {}
         block_informational: Dict[str, str] = {}
-        # Per-metric severities stamped by apply_target_checks (requirements-
-        # driven runs mixing must/should targets in one sweep point), keyed by
-        # target_checks field name (e.g. "goodput").
         metric_priorities = (
             block.data.get("target_priorities")
             if isinstance(block.data, Mapping)
@@ -323,17 +364,10 @@ def _check_benchmarks(
         )
         if not isinstance(metric_priorities, Mapping):
             metric_priorities = {}
-        target_checks = _resolve_nested(block.data, "target_checks")
         if not isinstance(target_checks, Mapping):
             block_blockers[f"{block_key}.target_checks"] = (
                 "Missing target_checks in benchmark block."
             )
-        elif any(
-            isinstance(target_checks.get(lvl), Mapping)
-            and _level_passes(target_checks[lvl])
-            for lvl in TARGET_LEVELS
-        ):
-            pass
         else:
             any_check_seen = False
             for lvl in TARGET_LEVELS:
@@ -344,11 +378,19 @@ def _check_benchmarks(
                     if not check_name.endswith(CHECK_SUFFIX):
                         continue
                     any_check_seen = True
-                    if not _passes_check(check_value):
+                    missing_measurement = (
+                        _has_target(level_checks, check_name)
+                        and _check_state(check_value) == STATUS_NA
+                    )
+                    if missing_measurement or not _passes_check(check_value):
                         metric = check_name[: -len(CHECK_SUFFIX)]
                         failure = _format_benchmark_failure(
                             lvl, check_name, metric, level_checks
                         )
+                        if missing_measurement:
+                            failure = (
+                                f"{lvl} {metric}: configured target has no measurement."
+                            )
                         key = f"{block_key}.{lvl}.{check_name}"
                         if lvl not in enforced_tiers:
                             block_informational[key] = failure
@@ -356,9 +398,6 @@ def _check_benchmarks(
                             str(metric_priorities.get(metric, "")).strip().lower()
                             == PRIORITY_SHOULD
                         ):
-                            # A "should" metric failure is informational even in
-                            # an enforced tier; the point's other (must) metrics
-                            # still block.
                             block_informational[key] = (
                                 f"{failure} {_should_priority_suffix()}"
                             )
@@ -552,6 +591,89 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
     )
 
 
+def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
+    """Grade the agentic-traces targets blocks from requirements-driven runs.
+
+    Each block carries the sweep's precomputed verdicts (see
+    ``build_targets_block``): one entry per measured concurrency plus the
+    document points the sweep never reached. The count is per measured point
+    (``2/3 passed`` reads as "two concurrencies met their targets"), and a
+    point blocks when any graded metric missed. A point where the document
+    declared no targets (``passed`` is None) is skipped entirely -- an empty
+    point promises nothing, so there is nothing to fail. Unmeasured document
+    points block too -- a partial sweep is not a passed one -- but stay out
+    of the count: never-measured is a different story from measured-and-
+    missed, and the blocker names them. No blocks means the run had no
+    expectations to grade against (a catalog run), so the category is NA
+    rather than PASS.
+    """
+    targets_blocks = [
+        b
+        for b in schema.sections
+        if b.kind == KIND_AGENTIC_TRACES_TARGETS and isinstance(b.data, Mapping)
+    ]
+    if not targets_blocks:
+        return CategoryResult(CATEGORY_AGENTIC_TARGETS, STATUS_NA, 0, 0)
+
+    blockers: Dict[str, str] = {}
+    total = 0
+    failed = 0
+    any_missing = False
+    for block in targets_blocks:
+        block_key = _block_key(block)
+        data = block.data
+        points = [p for p in data.get("points") or [] if isinstance(p, Mapping)]
+        missing = [c for c in data.get("missing_concurrencies") or []]
+        for point in points:
+            passed = point.get("passed")
+            if passed is None:
+                # The document declared no gradable targets at this
+                # concurrency: nothing to pass or fail, so the point stays
+                # out of the count and raises no blocker.
+                continue
+            total += 1
+            if passed:
+                continue
+            failed += 1
+            concurrency = point.get("concurrency")
+            met = point.get("met") or 0
+            graded = point.get("graded") or 0
+            if not graded:
+                # Targets were declared but the run produced none of them:
+                # the gap is the run's, not the document's.
+                blockers[f"{block_key}.c{concurrency}"] = (
+                    f"Agentic targets at concurrency {concurrency}: the run "
+                    "produced none of the declared metrics."
+                )
+                continue
+            offenders = [
+                str(v.get("field"))
+                for v in point.get("verdicts") or []
+                if isinstance(v, Mapping) and v.get("passed") is False
+            ]
+            suffix = f" ({', '.join(offenders[:3])}, ...)" if offenders else ""
+            blockers[f"{block_key}.c{concurrency}"] = (
+                f"Agentic targets missed at concurrency {concurrency}: "
+                f"{met}/{graded} targets met{suffix}."
+            )
+        if missing:
+            any_missing = True
+            listed = ", ".join(f"c{concurrency}" for concurrency in missing)
+            blockers[f"{block_key}.missing"] = (
+                f"Requirements document expects agentic sweep points {listed}, "
+                "which were never measured."
+            )
+
+    status = STATUS_FAIL if failed or any_missing else STATUS_PASS
+    return CategoryResult(
+        CATEGORY_AGENTIC_TARGETS,
+        status,
+        total,
+        failed,
+        blockers=blockers,
+    )
+
+
 def _format_metric_value(value: Any) -> str:
     if isinstance(value, bool):
         return str(value)
@@ -618,6 +740,26 @@ def _level_passes(level_checks: Mapping[str, Any]) -> bool:
     return bool(check_values) and all(_passes_check(v) for v in check_values)
 
 
+def _has_target(level: Mapping[str, Any], check_name: str) -> bool:
+    value = level.get(check_name[: -len(CHECK_SUFFIX)])
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+
+
+def _request_failure(block: Block) -> str | None:
+    """Return a blocker when a benchmark did not complete every request."""
+    completed = _resolve_nested(block.data, "num_requests")
+    failed = _resolve_nested(block.data, "error_request_count")
+    if (
+        isinstance(completed, (int, float))
+        and not isinstance(completed, bool)
+        and completed <= 0
+    ):
+        return "Benchmark completed zero requests; at least one is required."
+    if isinstance(failed, (int, float)) and not isinstance(failed, bool) and failed > 0:
+        return f"{int(failed)} request(s) failed at this point; zero are required."
+    return None
+
+
 def _resolve_nested(data: Any, key: str) -> Any:
     if not isinstance(data, Mapping):
         return None
@@ -676,11 +818,13 @@ __all__ = [
     "KIND_BENCHMARKS",
     "KIND_EVALS",
     "KIND_SPEC_TESTS",
+    "KIND_AGENTIC_TRACES_TARGETS",
     "STATUS_PASS",
     "STATUS_FAIL",
     "STATUS_NA",
     "CATEGORY_BENCHMARKS",
     "CATEGORY_EVALS",
     "CATEGORY_SPEC_TESTS",
+    "CATEGORY_AGENTIC_TARGETS",
     "INFRA_TASK_TYPES",
 ]

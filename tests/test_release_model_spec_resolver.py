@@ -18,7 +18,7 @@ from scripts.release.model_spec_resolver import (
     resolve_release_combo,
     resolve_release_combos,
 )
-from workflows.model_spec import MODEL_SPEC_CATALOG_FILES, resolve_model_spec
+from workflows.model_spec import MODEL_SPEC_CATALOG_FILES
 from workflows.workflow_types import DeviceTypes, InferenceEngine
 
 
@@ -194,40 +194,6 @@ def test_collect_release_combos_rejects_malformed_shapes(ci_config, error):
         collect_release_combos(ci_config)
 
 
-def test_real_release_scope_resolves_to_runtime_equivalent_dev_leaves():
-    combos = collect_release_combos(json.loads(CI_CONFIG.read_text()))
-    sources = load_dev_model_spec_sources(DEV_CATALOG)
-
-    resolved = resolve_release_combos(combos, sources)
-
-    assert combos
-    assert len(resolved) == len(combos)
-    specs = [source.spec for source in sources]
-    for item in resolved:
-        runtime_spec = resolve_model_spec(
-            specs,
-            model=item.combo.model_name,
-            device=item.combo.device,
-            engine=item.combo.engine,
-            catalog_name="test dev catalog",
-        )
-        assert runtime_spec is item.model_spec
-
-    qwen = next(
-        item
-        for item in resolved
-        if item.combo.model_name == "Qwen/Qwen3-32B"
-        and item.combo.device == DeviceTypes.GALAXY
-        and item.combo.engine == InferenceEngine.VLLM
-    )
-    assert qwen.identity == (
-        "Qwen/Qwen3-32B",
-        "GALAXY",
-        "vLLM",
-        "qwen3_32b_galaxy",
-    )
-
-
 def test_real_release_scope_matches_dev_runtime_subprocess():
     script = textwrap.dedent(
         """\
@@ -243,6 +209,7 @@ def test_real_release_scope_matches_dev_runtime_subprocess():
                 model=combo.model_name,
                 device=combo.device.to_string(),
                 engine=combo.engine.value,
+                impl=combo.impl,
             )
             identities.append(model_spec_leaf_identity(spec))
         print(json.dumps(identities))

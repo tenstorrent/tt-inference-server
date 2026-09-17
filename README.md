@@ -23,6 +23,7 @@ Browse models by type:
 - [TTS Models](docs/model_support/tts/README.md) - Text-to-speech models
 - [Embedding Models](docs/model_support/embedding/README.md) - Text embedding models
 - [CNN Models](docs/model_support/cnn/README.md) - Convolutional Neural Networks
+- [Training Models](docs/model_support/training/README.md) - Training models
 
 ### Models by Hardware Configuration
 
