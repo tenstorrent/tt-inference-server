@@ -1388,7 +1388,9 @@ llm_templates = [
                 max_context=128 * 1024,
                 default_impl=True,
                 override_tt_config={
-                    "trace_region_size": 54000000,
+                    # tt-metal 80180b9 needs >60MB for batched prefill traces;
+                    # the 54MB carried over from the 0.9.0 spec aborts capture.
+                    "trace_region_size": 128 * 1024 * 1024,
                 },
                 # Wormhole validated at FW 19.1.0.0 / KMD 2.6.0; the template-level
                 # ">=19.2.0" floor applies to Blackhole only.
