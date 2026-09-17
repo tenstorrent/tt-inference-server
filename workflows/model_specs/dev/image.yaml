@@ -101,6 +101,13 @@ templates:
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true
+    # BH QuietBox 2 (2x P300 cards = 4 chips), driven as a 1x4 row with tp=4.
+    # Requires the (1, 4) _PRESETS entry in the tt-metal SD3.5 pipeline and the
+    # ring-fabric/50MB-trace device params in TTSD35Runner.
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
   status: COMPLETE
 
 - weights:
