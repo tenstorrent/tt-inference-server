@@ -1128,8 +1128,11 @@ jobs:
           while IFS=',' read -r model engine device; do
             echo "--- Validating: $model / $engine / $device"
             # Satisfies the chart's fail-closed auth check for media/forge rows,
-            # and renders the Secret's key branch for kubeconform.
-            RENDERED=$(helm template ci-test charts/tt-inference-server \
+            # and renders the Secret's key branch for kubeconform. The floor is
+            # waived here (and in the shape checks below) so every row stays in
+            # the matrix: what is under test is the manifest, not whether the
+            # row's pinned image is new enough. The floor has its own step.
+            RENDERED=$(helm template ci-test charts/tt-inference-server --set imageFloor.enforce=false \
                 --set "model=$model" \
                 --set "engine=$engine" \
                 --set "device=$device" \
@@ -1152,7 +1155,7 @@ jobs:
           for pair in n300:1 t3k:4 galaxy:32; do
             device="${pair%%:*}"; want="${pair##*:}"
             echo "--- DRA structure: Llama-3.1-8B-Instruct / $device (expect count $want)"
-            RENDERED=$(helm template ttis charts/tt-inference-server \
+            RENDERED=$(helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
               --set model=Llama-3.1-8B-Instruct --set device="$device")
             echo "$RENDERED" | grep -qE '^[[:space:]]*kind: ResourceClaimTemplate$' \
               || { echo "::error::ResourceClaimTemplate missing for $device"; exit 1; }
@@ -1174,37 +1177,37 @@ jobs:
           # media/forge fall back to the image's built-in key when API_KEY is
           # unset, so the chart fails closed until the operator picks.
           echo "--- media/forge with neither auth.apiKey nor auth.disabled must fail"
-          if helm template ttis charts/tt-inference-server \
+          if helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
               --set model=Qwen3-Embedding-4B --set device=n150 >/dev/null 2>&1; then
             echo "::error::a forge row rendered with no auth values — the fail-closed auth check is gone"
             exit 1
           fi
 
           echo "--- auth.apiKey -> API_KEY in the Secret (media/forge)"
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Qwen3-Embedding-4B --set device=n150 --set auth.apiKey=k \
             --show-only templates/secret.yaml | grep -qE '^[[:space:]]*API_KEY: "k"$' \
             || { echo "::error::auth.apiKey did not land as API_KEY for a forge row"; exit 1; }
 
           echo "--- auth.disabled -> NO_AUTH in the ConfigMap (media/forge)"
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
             --show-only templates/configmap.yaml | grep -qE '^[[:space:]]*NO_AUTH: "1"$' \
             || { echo "::error::auth.disabled did not set NO_AUTH for a forge row"; exit 1; }
 
           echo "--- auth.apiKey -> VLLM_API_KEY in the Secret (vllm)"
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Qwen3-8B --set device=n150 --set engine=vllm --set auth.apiKey=k \
             --show-only templates/secret.yaml | grep -qE '^[[:space:]]*VLLM_API_KEY: "k"$' \
             || { echo "::error::auth.apiKey did not land as VLLM_API_KEY for a vllm row"; exit 1; }
 
           echo "--- HF_HOME points at the persistent cache volume (media/forge only)"
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Qwen3-Embedding-4B --set device=n150 --set auth.disabled=true \
             --show-only templates/configmap.yaml \
             | grep -qE '^[[:space:]]*HF_HOME: "/home/container_app_user/cache_root/huggingface"$' \
             || { echo "::error::HF_HOME must point into the cache volume, or weights are re-downloaded on every restart"; exit 1; }
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Qwen3-8B --set device=n150 --set engine=vllm --set auth.apiKey=k \
             | grep -qE '^[[:space:]]*HF_HOME:' \
             && { echo "::error::HF_HOME set for a vllm row — those images own their weight location"; exit 1; } || true
@@ -1215,22 +1218,22 @@ jobs:
           # One 1Gi page per ASIC, from deviceChipCounts. device:expected
           for pair in n150:1Gi n300:2Gi t3k:8Gi galaxy:32Gi; do
             device="${pair%%:*}"; want="${pair##*:}"
-            helm template ttis charts/tt-inference-server \
+            helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
               --set model=Llama-3.1-8B-Instruct --set device="$device" \
               | grep -qE "^[[:space:]]*hugepages-1Gi: ${want}\$" \
               || { echo "::error::$device must request $want of hugepages"; exit 1; }
           done
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Llama-3.1-8B-Instruct --set device=n150 --set hugepages.size=4Gi \
             | grep -qE '^[[:space:]]*hugepages-1Gi: 4Gi$' \
             || { echo "::error::hugepages.size did not override the per-device size"; exit 1; }
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Llama-3.1-8B-Instruct --set device=n150 --set hugepages.enabled=false \
             | grep -q hugepages \
             && { echo "::error::hugepages.enabled=false left a hugepages reference"; exit 1; } || true
 
           echo "--- contradictory auth values must fail"
-          if helm template ttis charts/tt-inference-server \
+          if helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
               --set model=Qwen3-Embedding-4B --set device=n150 \
               --set auth.apiKey=k --set auth.disabled=true >/dev/null 2>&1; then
             echo "::error::auth.apiKey together with auth.disabled rendered instead of failing"
@@ -1238,7 +1241,7 @@ jobs:
           fi
 
           echo "--- sizing hugepages through resources must fail (request/limit must match)"
-          if helm template ttis charts/tt-inference-server \
+          if helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
               --set model=Llama-3.1-8B-Instruct --set device=n150 \
               --set defaults.resources.requests.hugepages-1Gi=64Gi >/dev/null 2>&1; then
             echo "::error::resources.requests.hugepages-1Gi rendered instead of pointing at hugepages.size"
@@ -1246,7 +1249,7 @@ jobs:
           fi
 
           echo "--- a non-Tenstorrent device gets no hugepages plumbing at all"
-          helm template ttis charts/tt-inference-server \
+          helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
             --set model=Llama-3.1-8B-Instruct --set device=gpu | grep -qi hugepage \
             && { echo "::error::a gpu row still references hugepages"; exit 1; } || true
 
@@ -1259,12 +1262,60 @@ jobs:
           for triple in gpt-oss-20b:t3k:360 gpt-oss-120b:t3k:480; do
             model="${triple%%:*}"; rest="${triple#*:}"; device="${rest%%:*}"; want="${rest##*:}"
             echo "--- startupProbe: $model / $device (expect failureThreshold $want)"
-            RENDERED=$(helm template ttis charts/tt-inference-server \
+            RENDERED=$(helm template ttis charts/tt-inference-server --set imageFloor.enforce=false \
               --set model="$model" --set device="$device")
             echo "$RENDERED" | grep -qE '^[[:space:]]*startupProbe:$' \
               || { echo "::error::startupProbe missing for $model/$device"; exit 1; }
             echo "$RENDERED" | grep -qE "^[[:space:]]*failureThreshold: ${want}\$" \
               || { echo "::error::$model/$device startupProbe.failureThreshold must be $want"; exit 1; }
+          done
+
+      - name: Verify the image-release floor and the version label
+        run: |
+          set -e
+          # The only step that renders with the floor left on.
+          # The tags are forced rather than taken from the catalogue: every release
+          # regenerates values.yaml, and a refreshed pin would otherwise turn this
+          # step red and blame the chart.
+          echo "--- a vllm row below 0.11.0 must fail, and say how to override"
+          if OUT=$(helm template ttis charts/tt-inference-server \
+              --set model=Qwen3-8B --set device=n150 --set engine=vllm \
+              --set models.Qwen3-8B.vllm.n150.impls.tt_transformers.image.tag=0.9.0-floor-test 2>&1); then
+            echo "::error::a pre-0.11.0 vllm row rendered — the image-release floor is not enforced"
+            exit 1
+          fi
+          echo "$OUT" | grep -q "floor of 0.11.0" \
+            || { echo "::error::the failure is not the floor check; got: $OUT"; exit 1; }
+          echo "$OUT" | grep -q "imageFloor.enforce=false" \
+            || { echo "::error::the floor failure does not name the override; got: $OUT"; exit 1; }
+
+          echo "--- auth.disabled on a media/forge row below 0.15.0 must fail (no NO_AUTH)"
+          if OUT=$(helm template ttis charts/tt-inference-server \
+              --set model=Qwen3-8B --set device=n150 --set engine=forge \
+              --set models.Qwen3-8B.forge.n150.impls.forge_vllm_plugin.image.tag=0.2.0-floor-test \
+              --set auth.disabled=true 2>&1); then
+            echo "::error::auth.disabled rendered on an image that predates NO_AUTH"
+            exit 1
+          fi
+          echo "$OUT" | grep -q "NO_AUTH, which the 'forge' server only honours from release 0.15.0" \
+            || { echo "::error::the failure is not the NO_AUTH floor check; got: $OUT"; exit 1; }
+
+          echo "--- the same row renders once the floor is waived"
+          helm template ttis charts/tt-inference-server \
+            --set model=Qwen3-8B --set device=n150 --set engine=vllm \
+            --set models.Qwen3-8B.vllm.n150.impls.tt_transformers.image.tag=0.9.0-floor-test \
+            --set imageFloor.enforce=false >/dev/null \
+            || { echo "::error::imageFloor.enforce=false did not waive the floor"; exit 1; }
+
+          echo "--- app.kubernetes.io/version carries the row's resolved image tag"
+          for pair in Llama-3.2-1B-Instruct:n150 gpt-oss-120b:t3k; do
+            model="${pair%%:*}"; device="${pair##*:}"
+            RENDERED=$(helm template ttis charts/tt-inference-server \
+              --set model="$model" --set device="$device")
+            TAG=$(echo "$RENDERED" | grep -oE 'image: ghcr\.io/[^[:space:]]+' | head -1 | sed 's/.*://')
+            [ -n "$TAG" ] || { echo "::error::could not read the image tag for $model/$device"; exit 1; }
+            echo "$RENDERED" | grep -qE "^[[:space:]]*app\.kubernetes\.io/version: \"${TAG}\"\$" \
+              || { echo "::error::$model/$device version label does not match its image tag ($TAG)"; exit 1; }
           done
 
   # Install gate (kind, no hardware). Sibling of helm-chart-validate: that job
