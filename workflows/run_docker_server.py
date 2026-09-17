@@ -8,6 +8,7 @@ import logging
 import os
 import shlex
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -116,6 +117,53 @@ def _get_cpp_media_server_docker_env_vars(model_spec):
         f"IS_GALAXY={is_galaxy}, DEVICE_IDS={device_ids}"
     )
     return env_vars
+
+
+def _tt_metal_source_mounts(model_spec, user_home_path) -> List[str]:
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    ref = getattr(device_spec, "tt_metal_source_ref", None)
+    paths = list(getattr(device_spec, "tt_metal_source_paths", []) or [])
+    if not ref or not paths:
+        return []
+
+    repo = getattr(
+        device_spec,
+        "tt_metal_source_repo",
+        "https://github.com/tenstorrent/tt-metal",
+    )
+    checkout = Path(tempfile.mkdtemp(prefix="tt-metal-src-"))
+    logger.info(f"tt-metal source override: {repo}@{ref} paths={paths} -> {checkout}")
+    subprocess.run(
+        [
+            "git", "clone", "--depth", "1", "--filter=blob:none", "--sparse",
+            "--branch", ref, repo, str(checkout),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(checkout), "sparse-checkout", "set", *paths],
+        check=True,
+    )
+    resolved = subprocess.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    logger.info(f"tt-metal source override resolved {ref} -> {resolved}")
+
+    mounts: List[str] = []
+    for entry in paths:
+        src = checkout / entry
+        if not src.is_dir():
+            raise ValueError(
+                f"tt_metal_source_paths entry {entry!r} is not a directory at {repo}@{ref}"
+            )
+        mounts += [
+            "--mount",
+            f"type=bind,src={src},dst={user_home_path}/tt-metal/{entry},readonly",
+        ]
+    return mounts
 
 
 def _media_server_dev_mounts(repo_root_path, user_home_path, model_spec) -> List[str]:
@@ -423,6 +471,8 @@ def generate_docker_run_command(
                 )
 
     user_home_path = "/home/container_app_user"
+    docker_command += _tt_metal_source_mounts(model_spec, user_home_path)
+
     if runtime_config.dev_mode:
         if json_fpath:
             container_model_spec_dir = Path(f"{user_home_path}/model_specs")
