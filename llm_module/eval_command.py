@@ -249,6 +249,8 @@ def build_eval_command(
     eval_max_retries = getattr(
         getattr(model_spec, "device_model_spec", None), "eval_max_retries", None
     )
+    if getattr(task, "max_attempts", None) is not None:
+        eval_max_retries = task.max_attempts
     if (
         eval_max_retries is not None
         and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON

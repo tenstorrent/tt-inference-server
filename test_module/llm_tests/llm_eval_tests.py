@@ -501,6 +501,20 @@ def _score_task(
         sample_counts,
         elapsed_seconds=elapsed_seconds,
     )
+    if rc:
+        # A deadline kill (rc 124 from the bounded runner) is a different
+        # failure from a crashed subprocess, and neither may be scored as a
+        # pass off whatever partial files happen to be on disk.
+        reason = (
+            "execution deadline exceeded; incomplete"
+            if rc == 124
+            else "evaluation subprocess failed"
+        )
+        failure = _fail_block(
+            ctx, task, f"{reason} (rc={rc}); partial files preserved"
+        )
+        failure.data["subprocess_rc"] = rc
+        return [failure]
     if task_blocks:
         return task_blocks
     # Ran but scored nothing (command failed or results unparseable) —

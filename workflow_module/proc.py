@@ -12,10 +12,13 @@ re-exports these for pre-extraction callers.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import shlex
+import signal
 import subprocess
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +37,7 @@ def run_command(
     copy_env=True,
     env=None,
     check=False,
+    timeout_seconds=None,
 ):
     """
     This function is a wrapper around subprocess.Popen and subprocess.run.
@@ -71,6 +75,22 @@ def run_command(
         command = shlex.split(command)
 
     assert isinstance(command, list), "Command must be a list of cmd arguments."
+
+    if timeout_seconds is not None:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be finite and positive")
+        if os.name != "posix":
+            raise NotImplementedError("Bounded process-tree execution requires POSIX")
+        return_code = _run_bounded_command(
+            command, logger, env, shell, log_file_path, timeout_seconds
+        )
+        if check and return_code:
+            raise RuntimeError(f"Bounded command failed with return code {return_code}")
+        return return_code
 
     logger.info(f"Running command: {shlex.join(command)}")
 
@@ -132,3 +152,64 @@ def run_command(
                 + "\nThis command is optional or can be recovered from failure (check=False set). Continuing ...\n"
             )
     return return_code
+
+
+def _run_bounded_command(command, logger, env, shell, log_file_path, timeout_seconds):
+    """Bound the complete process group, including children holding log pipes.
+
+    Preserve emitted logs/files. Exit 124 denotes an incomplete timed-out task,
+    not an evaluation score. Existing callers remain unbounded unless opted in.
+    """
+    log_file = open(log_file_path, "a", buffering=1) if log_file_path else None
+    process = None
+    readers = []
+    deadline = time.monotonic() + timeout_seconds
+    try:
+        process = subprocess.Popen(
+            command,
+            shell=shell,
+            env=env,
+            start_new_session=True,
+            stdout=log_file or subprocess.PIPE,
+            stderr=log_file or subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        if not log_file:
+            for pipe, level in (
+                (process.stdout, logging.DEBUG),
+                (process.stderr, logging.INFO),
+            ):
+                reader = threading.Thread(
+                    target=stream_subprocess_output,
+                    args=(pipe, logger, level),
+                    daemon=True,
+                )
+                reader.start()
+                readers.append(reader)
+        try:
+            process.wait(timeout=max(0, deadline - time.monotonic()))
+            for reader in readers:
+                reader.join(timeout=max(0, deadline - time.monotonic()))
+            if any(reader.is_alive() for reader in readers):
+                raise subprocess.TimeoutExpired(command, timeout_seconds)
+            return process.returncode
+        except subprocess.TimeoutExpired:
+            logger.error(
+                "Evaluation execution deadline exceeded (%ss); incomplete, rc=124",
+                timeout_seconds,
+            )
+            return 124
+    finally:
+        # Kill the owned process group even if its leader exited before children.
+        # No host-wide process matching, and no inference server termination.
+        if process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+        for reader in readers:
+            reader.join(timeout=2)
+        if log_file:
+            log_file.close()

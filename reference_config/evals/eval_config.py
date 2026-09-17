@@ -335,6 +335,9 @@ class EvalTask:
     # reaches scoring; the eval launcher gates lm-eval via
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
+    # Execution policy only; does not reduce samples, context, or output tokens.
+    wall_clock_timeout_seconds: Optional[int] = None
+    max_attempts: Optional[int] = None
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
     # opt out of receiving it as an OpenAI request sampling parameter.
@@ -376,6 +379,15 @@ class EvalTask:
     device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
+        for name in ("wall_clock_timeout_seconds", "max_attempts"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value <= 0):
+                raise ValueError(f"{name} must be a positive integer")
+        if (
+            self.max_attempts is not None
+            and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON
+        ):
+            raise ValueError("max_attempts currently requires EVALS_COMMON")
         self.validate_data()
         self._infer_data()
 
