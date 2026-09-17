@@ -315,7 +315,24 @@ class TTSD35Runner(TTDiTRunner):
             raise
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 32768, "trace_region_size": 25000000}
+        params = {"l1_small_size": 32768, "trace_region_size": 25000000}
+
+        # BH QuietBox 2 runs SD3.5 as a native 1x4 row (tp=4). That config needs a
+        # ring fabric and a bigger trace region than the multi-axis meshes:
+        # test_pipeline_sd35.py pairs its 1x4cfg0sp0tp1 case with
+        # ring_params (FabricConfig.FABRIC_1D_RING) and trace_region_size=50000000,
+        # while the default fabric here is FABRIC_1D (linear). Without both, the
+        # 1x4 path either builds a linear fabric for a mesh that needs ring, or
+        # dies with "Creating trace buffers of size ... but only 25000000B is
+        # allocated".
+        #
+        # The matching tt-metal side is the (1, 4) entry in the SD3.5 pipeline
+        # _PRESETS table, which pins ttnn.Topology.Ring for this shape.
+        if tuple(self.settings.device_mesh_shape) == (1, 4):
+            params["trace_region_size"] = 50000000
+            params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+
+        return params
 
 
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.
