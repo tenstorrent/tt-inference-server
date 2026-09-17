@@ -1499,7 +1499,7 @@ _eval_config_list = [
                     },
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
+                            "scikit-learn__scikit-learn-14629",
                         ],
                     },
                 ),
