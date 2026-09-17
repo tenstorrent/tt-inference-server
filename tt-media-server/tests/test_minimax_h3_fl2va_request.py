@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -65,3 +66,15 @@ class TestFL2VAFramePos:
                     ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=1),
                 ],
             )
+
+    @patch("domain.video_i2v_generate_request.get_settings")
+    def test_sp_runner_with_fl2va_model_rejects_mid_clip(self, mock_settings):
+        mock_settings.return_value.model_runner = "sp_runner"
+        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
+            with pytest.raises(ValidationError, match="0 \\(first\\) or -1"):
+                VideoI2VGenerateRequest(
+                    prompt="brad pitt",
+                    image_prompts=[
+                        ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=40),
+                    ],
+                )

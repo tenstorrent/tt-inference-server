@@ -841,6 +841,79 @@ class TestMiniMaxH3NumInferenceSteps:
             )
 
 
+class TestMiniMaxH3DurationAdmission:
+    """H3 duration 4-15 must 422 at parse time, including on sp_runner.
+
+    A 30s request that reaches the worker is counted as a worker error and
+    can restart the process to death. The shared Field is still 1-60 for Wan.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _stub_h3_duration_allowlist(self):
+        import tt_model_runners.minimax_h3_policy as policy
+
+        policy.MINIMAX_H3_DURATIONS_S = tuple(range(4, 16))
+        yield
+        delattr(policy, "MINIMAX_H3_DURATIONS_S")
+
+    @pytest.mark.parametrize(
+        "runner",
+        [
+            "tt-minimax-h3-t2va",
+            "tt-minimax-h3-fl2va",
+            "tt-minimax-h3-ref2va",
+        ],
+    )
+    @patch("domain.video_generate_request.get_settings")
+    def test_in_process_runner_rejects_duration_30(self, mock_settings, runner):
+        from pydantic import ValidationError
+
+        mock_settings.return_value.model_runner = runner
+        with pytest.raises(ValidationError, match="duration_seconds"):
+            VideoGenerateRequest(prompt="a fox", duration_seconds=30)
+
+    @pytest.mark.parametrize(
+        "runner",
+        [
+            "tt-minimax-h3-t2va",
+            "tt-minimax-h3-fl2va",
+            "tt-minimax-h3-ref2va",
+        ],
+    )
+    @patch("domain.video_generate_request.get_settings")
+    def test_in_process_runner_accepts_duration_5(self, mock_settings, runner):
+        mock_settings.return_value.model_runner = runner
+        request = VideoGenerateRequest(prompt="a fox", duration_seconds=5)
+        assert request.duration_seconds == 5
+
+    @pytest.mark.parametrize(
+        "model",
+        ["MiniMax-H3", "MiniMax-H3-FL2VA", "MiniMax-H3-Ref2VA"],
+    )
+    @patch("domain.video_generate_request.get_settings")
+    def test_sp_runner_with_h3_model_rejects_duration_30(self, mock_settings, model):
+        from pydantic import ValidationError
+
+        mock_settings.return_value.model_runner = "sp_runner"
+        with patch.dict(os.environ, {"MODEL": model}):
+            with pytest.raises(ValidationError, match="duration_seconds"):
+                VideoGenerateRequest(prompt="a fox", duration_seconds=30)
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_sp_runner_without_model_keeps_generic_range(self, mock_settings):
+        mock_settings.return_value.model_runner = "sp_runner"
+        with patch.dict(os.environ, {}, clear=True):
+            request = VideoGenerateRequest(prompt="a fox", duration_seconds=30)
+        assert request.duration_seconds == 30
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_wan_runner_ignores_stale_h3_model_env(self, mock_settings):
+        mock_settings.return_value.model_runner = "tt-wan2.2"
+        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
+            request = VideoGenerateRequest(prompt="a fox", duration_seconds=30)
+        assert request.duration_seconds == 30
+
+
 class TestResponseContent:
     """Tests for response content structure"""
 

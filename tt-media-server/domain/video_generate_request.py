@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from typing import Optional
 
 from config.constants import (
@@ -96,13 +97,33 @@ class VideoGenerateRequest(BaseRequest):
 
 # TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
-    from config.constants import ModelRunners
+    from config.constants import ModelNames, ModelRunners
 
     try:
-        return get_settings().model_runner in {
-            ModelRunners.TT_MINIMAX_H3_T2VA.value,
-            ModelRunners.TT_MINIMAX_H3_FL2VA.value,
-            ModelRunners.TT_MINIMAX_H3_REF2VA.value,
-        }
+        runner = get_settings().model_runner
     except Exception:  # noqa: BLE001 - settings unavailable (tests, tooling): do not gate on it
+        return False
+
+    if runner in {
+        ModelRunners.TT_MINIMAX_H3_T2VA.value,
+        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
+        ModelRunners.TT_MINIMAX_H3_REF2VA.value,
+    }:
+        return True
+
+    # sp_runner is a SHM proxy and does not load weights. MODEL is the same
+    # peer signal the video API already uses for T2VA / FL2VA / Ref2VA routing;
+    # without it a 30s request would 202 and then fail as a worker error.
+    if runner != ModelRunners.SP_RUNNER.value:
+        return False
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        return ModelNames(model_env) in {
+            ModelNames.MINIMAX_H3,
+            ModelNames.MINIMAX_H3_FL2VA,
+            ModelNames.MINIMAX_H3_REF2VA,
+        }
+    except ValueError:
         return False

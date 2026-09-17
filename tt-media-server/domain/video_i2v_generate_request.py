@@ -16,9 +16,10 @@ validators below) is the single source of truth in
 ``config.constants.WAN22_NUM_FRAMES``.
 """
 
+import os
 from typing import List
 
-from config.constants import WAN22_NUM_FRAMES, ModelRunners
+from config.constants import WAN22_NUM_FRAMES, ModelNames, ModelRunners
 from config.settings import get_settings
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
@@ -108,6 +109,17 @@ class VideoI2VGenerateRequest(VideoGenerateRequest):
 
 def _is_minimax_h3_fl2va() -> bool:
     try:
-        return get_settings().model_runner == ModelRunners.TT_MINIMAX_H3_FL2VA.value
+        runner = get_settings().model_runner
     except Exception:  # noqa: BLE001
+        return False
+    if runner == ModelRunners.TT_MINIMAX_H3_FL2VA.value:
+        return True
+    if runner != ModelRunners.SP_RUNNER.value:
+        return False
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        return ModelNames(model_env) is ModelNames.MINIMAX_H3_FL2VA
+    except ValueError:
         return False
