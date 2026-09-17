@@ -113,6 +113,11 @@ BENCHMARK_ISL_OSL_PAIRS = [
 SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
     (196608, 128),  # 192K
     (256000 - 128, 128),  # 240K
+    # 1M, and exactly isl + osl == max_context for a 1,048,576-context model, which is
+    # the largest prompt the engine admits (a prompt OF max_seq_len leaves no position
+    # to generate into). Reaches GLM-5.2/5.3, Kimi-K3 and MiniMax-M3; filtered out for
+    # every shorter-context model by the isl + osl <= max_context check below.
+    (1048576 - 128, 128),  # 1M
 ]
 # Remote SUPER_CLUSTER endpoints serve high-ISL sweep points at full
 # concurrency, but get_num_prompts scales prompts as a small multiple of
