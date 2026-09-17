@@ -381,6 +381,22 @@ def test_llm_benchmark_builds_launcher_command(monkeypatch, tmp_path):
     )
 
 
+def test_agentic_only_evals_builds_agentic_launcher_command(monkeypatch, tmp_path):
+    spec, rc = _spec(ModelType.LLM), _rc(workflow="evals")
+    monkeypatch.setattr(
+        workflow_dispatch, "_llm_evals_are_agentic_only", lambda *_args: True
+    )
+    monkeypatch.setattr(
+        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+
+    command = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0]
+
+    assert command.venv_type is None
+    assert "run_agentic.py" in command.argv[0]
+    assert command.argv[command.argv.index("--workflow") + 1] == "agentic"
+
+
 def test_agentic_traces_routes_to_engine_for_any_model_type():
     # Like agentic evals, agentic traces is engine-only: it has no v1 driver, so
     # it must route regardless of model_type.
