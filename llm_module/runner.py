@@ -14,7 +14,9 @@ Mirrors v1 ``benchmarking/run_benchmarks.py`` orchestration:
    (:func:`llm_module.target_checks.apply_target_checks`).
 
 Returns the list of Blocks plus any nonzero driver exit codes the
-caller should surface.
+caller should surface. ``run(on_block=...)`` also streams each graded
+Block to the caller as it is produced, so a sweep that is killed
+part-way has already handed over everything it finished.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import requests
 
@@ -77,6 +79,7 @@ class LLMPerformanceRunner:
         context: DriverContext,
         *,
         skip_trace_capture: bool = False,
+        on_block: Optional[Callable[[Block], None]] = None,
     ) -> RunnerResult:
         result = RunnerResult()
         if not configs:
@@ -157,5 +160,19 @@ class LLMPerformanceRunner:
             block = self.driver.parse(outcome.raw, device=context.device)
             block = apply_target_checks(block, cfg)
             result.blocks.append(block)
+            # Hand the Block over point by point, not once at the end: a sweep
+            # this long is routinely killed mid-flight (CI cancel, job timeout),
+            # and a callback that has already persisted the finished points is
+            # the difference between a partial report and no report at all.
+            if on_block is not None:
+                try:
+                    on_block(block)
+                except Exception:
+                    logger.exception(
+                        "on_block callback failed for sweep point %d/%d "
+                        "(continuing sweep)",
+                        i,
+                        total,
+                    )
 
         return result
