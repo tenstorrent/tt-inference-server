@@ -437,6 +437,90 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
     return WAN22_RESOLUTION_SMALL_MESH
 
 
+# --- LTX-2.3 distilled inference shape policy ---------------------------------
+# Console target shape for the (4, 8) Galaxy ring config: 1080p, ~6s, 25 fps
+# (validated on-device 2026-08-19). H/W must be %64 and (num_frames-1)%8 == 0.
+#
+# 6s x 25fps = 150 is not 8k+1, so 153 frames (6.12s) is the nearest legal value --
+# advertised as 6s, erring long rather than short. 145f@25 (5.80s) would under-deliver.
+#
+# 25 fps is real conditioning, not a container label: it sets the audio latent length
+# (audio_frames = round(num_frames / fps * 25), so exactly 153 here -- 1:1 with video
+# frames) and scales the A/V cross-PE temporal axis into seconds. It must therefore be
+# passed to create_pipeline, not only to generate(), or the model builds a 24 fps
+# timeline while the container claims 25 and lip sync drifts ~0.24s across the clip.
+#
+# 153f depends on conv3d blocking entries added to models/tt_dit/utils/conv3d.py for
+# latent T=20's chain (T=22/41/79/155). Without them the decode falls back to
+# channel-only blocking: 12.1s per generation instead of 6.7s. See plan doc 6a.
+#
+# The shape is baked into the captured traces at create_pipeline() time, so it is a
+# load-time property of the process, not a per-request one. A request may only ask
+# for the shape this process already serves; see ltx_served_shape() below.
+
+
+class VideoShapeConfig(NamedTuple):
+    """One servable video generation shape. Fixed at pipeline construction."""
+
+    num_frames: int
+    height: int
+    width: int
+    fps: float
+
+
+# Mirrors TEMPORAL_COMPRESSION in models/tt_dit/utils/ltx.py: the latent grid is
+# (num_frames - 1) // 8 + 1, so only 8k+1 frame counts round-trip exactly. Asserted
+# nowhere in tt-metal -- a non-8k+1 count silently truncates -- hence snap_num_frames.
+LTX_TEMPORAL_COMPRESSION = 8
+# LTXDistilledPipeline.generate() asserts height % 64 == 0 and width % 64 == 0.
+LTX_SPATIAL_MULTIPLE = 64
+
+LTX_SHAPE_1080P_6S_25FPS = VideoShapeConfig(
+    num_frames=153, height=1088, width=1920, fps=25.0
+)
+
+# Catalogue of shapes the LTX pipeline may be *built* with. Distinct from the one
+# shape a given process actually serves: validated at startup (which shape is this
+# deployment for), not per request. One entry today; the split is the seam for adding
+# a second without accidentally accepting a shape no trace exists for.
+LTX_ACCEPTED_SHAPES = frozenset({LTX_SHAPE_1080P_6S_25FPS})
+
+# Thin aliases so create_pipeline's call site reads the same as before the move.
+LTX_NUM_FRAMES = LTX_SHAPE_1080P_6S_25FPS.num_frames
+LTX_HEIGHT = LTX_SHAPE_1080P_6S_25FPS.height
+LTX_WIDTH = LTX_SHAPE_1080P_6S_25FPS.width
+LTX_FPS = LTX_SHAPE_1080P_6S_25FPS.fps
+
+# Fixed by the distilled sigma schedules in pipeline_ltx_distilled.py:
+# len(DISTILLED_SIGMA_VALUES) - 1 = 8 (stage 1) + len(STAGE_2_DISTILLED_SIGMA_VALUES)
+# - 1 = 3 (stage 2). The pipeline takes no step count, so this is the only truthful
+# value to report -- and it sits below the 12-step floor the other video models use.
+LTX_NUM_INFERENCE_STEPS = 11
+
+
+def ltx_served_shape() -> VideoShapeConfig:
+    """The shape this process's pipeline was built with (and captured traces for).
+
+    Per-request validation compares against this, not against LTX_ACCEPTED_SHAPES:
+    the accepted set says what the model *can* be built for, this says what the
+    running process can actually replay a trace for.
+    """
+    return LTX_SHAPE_1080P_6S_25FPS
+
+
+def snap_num_frames(n: int) -> int:
+    """Snap a frame count to the nearest legal LTX value, i.e. (n - 1) % 8 == 0.
+
+    This is the rule that picked 153 over 150 for the 6s @ 25fps target: a duration
+    in seconds rarely lands on a legal count, so callers convert with
+    ``snap_num_frames(round(duration * fps))`` and compare the result.
+    """
+    if n < 1:
+        return 1
+    k = round((n - 1) / LTX_TEMPORAL_COMPRESSION)
+    return k * LTX_TEMPORAL_COMPRESSION + 1
+
+
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
 
 # TTS formats that require ffmpeg for encoding (WAV does not)

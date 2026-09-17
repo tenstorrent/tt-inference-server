@@ -17,10 +17,21 @@ Use these exact branches and commits:
 The server uses `TT_METAL_HOME=$HOME/tt-metal`. The `tt-metal`
 checkout must already be built for this branch.
 
-The served shape is fixed by the runner: 153 frames at 25 fps, 1088x1920
-generation, exported as MP4. Requests should only provide prompt parameters
-such as `prompt`, `negative_prompt`, `num_inference_steps`, and `seed`; do not
-try to override frame count, resolution, or fps per request.
+The served shape is fixed at pipeline construction: 153 frames at 25 fps,
+1088x1920 generation (6.12s), exported as MP4. The shape is baked into the
+captured traces, so it cannot vary per request.
+
+Shape parameters *are* accepted -- `duration` (seconds), `fps`, `height`,
+`width`, and `num_frames` -- but they are validated against the served shape
+rather than honoured as free variables. Omit them to get the served defaults;
+pass them and a mismatch is a 422 naming the shape this deployment serves.
+`duration` is snapped to the nearest legal frame count ((num_frames - 1) % 8
+== 0) before the check, so both `6` and `6.12` resolve to 153 frames.
+
+`num_inference_steps` is not accepted for this model: the distilled pipeline
+runs a fixed 11-step schedule (8 stage-1 + 3 stage-2) and takes no step count.
+Passing any other value is a 422. It used to be accepted and silently ignored,
+which made the job record report a step count that never ran.
 
 ## Create the Media Server Python Env
 
@@ -159,6 +170,16 @@ JOB=$(
 )
 
 echo "$JOB"
+```
+
+The shape fields may be passed explicitly; this is equivalent to the above:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/videos/generations \
+  -H "$AUTH" \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"a cinematic shot of a futuristic city at sunset","seed":10,
+       "duration":6,"fps":25,"height":1088,"width":1920}'
 ```
 
 Poll until `status` becomes `completed`:

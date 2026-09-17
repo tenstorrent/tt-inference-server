@@ -12,6 +12,10 @@ from pathlib import Path
 
 import ttnn
 from config.constants import (
+    LTX_FPS,
+    LTX_HEIGHT,
+    LTX_NUM_FRAMES,
+    LTX_WIDTH,
     WAN22_NUM_FRAMES,
     ModelRunners,
     ModelServices,
@@ -1049,25 +1053,11 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 # LTX-2.3 distilled text->audio-video
 # ---------------------------------------------------------------------------
 
-# Console target shape for the (4, 8) Galaxy ring config: 1080p, ~6s, 25 fps
-# (validated on-device 2026-08-19). H/W must be %64 and (num_frames-1)%8 == 0.
-#
-# 6s x 25fps = 150 is not 8k+1, so 153 frames (6.12s) is the nearest legal value --
-# advertised as 6s, erring long rather than short. 145f@25 (5.80s) would under-deliver.
-#
-# 25 fps is real conditioning, not a container label: it sets the audio latent length
-# (audio_frames = round(num_frames / fps * 25), so exactly 153 here -- 1:1 with video
-# frames) and scales the A/V cross-PE temporal axis into seconds. It must therefore be
-# passed to create_pipeline, not only to generate(), or the model builds a 24 fps
-# timeline while the container claims 25 and lip sync drifts ~0.24s across the clip.
-#
-# 153f depends on conv3d blocking entries added to models/tt_dit/utils/conv3d.py for
-# latent T=20's chain (T=22/41/79/155). Without them the decode falls back to
-# channel-only blocking: 12.1s per generation instead of 6.7s. See plan doc 6a.
-LTX_NUM_FRAMES = 153
-LTX_HEIGHT = 1088
-LTX_WIDTH = 1920
-LTX_FPS = 25
+# The served shape (153f @ 1088x1920, 25 fps) now lives in config.constants
+# alongside LTX_ACCEPTED_SHAPES / ltx_served_shape(), so the request layer can
+# validate against it without importing this module (and with it the whole
+# tt-metal LTX pipeline). The rationale for each number is documented there.
+
 # (4, 8) BH Galaxy ring defaults (mirrors LTXPipeline.create_pipeline's own 4x8
 # device_configs entry): dynamic_load off, Ring topology, 2 links.
 LTX_DYNAMIC_LOAD = False
@@ -1173,14 +1163,18 @@ class TTLTX23DistilledRunner(TTDiTRunner):
         LTX_VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(LTX_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
         # generate() writes the AV MP4 to output_path and returns that path.
+        # VideoGenerateRequest._validate_shape has already pinned these to the
+        # served shape, so the request is the source of truth here. The fallback
+        # covers the one path that skips validation: warmup builds its request
+        # with model_construct(), which runs no validators.
         result_path = self.pipeline.generate(
             request.prompt,
             output_path=output_path,
-            num_frames=LTX_NUM_FRAMES,
-            height=LTX_HEIGHT,
-            width=LTX_WIDTH,
+            num_frames=getattr(request, "num_frames", None) or LTX_NUM_FRAMES,
+            height=getattr(request, "height", None) or LTX_HEIGHT,
+            width=getattr(request, "width", None) or LTX_WIDTH,
             seed=int(request.seed or 0),
-            fps=LTX_FPS,
+            fps=getattr(request, "fps", None) or LTX_FPS,
         )
         self.logger.debug(f"Device {self.device_id}: LTX inference completed")
         if self._warming_up:

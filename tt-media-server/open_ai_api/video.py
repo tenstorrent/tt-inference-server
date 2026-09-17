@@ -103,14 +103,35 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
+# "basic" deliberately omits num_inference_steps and every shape field: the
+# defaults resolve per-model, so the example stays valid on any deployment. A
+# fixed step count would 422 on LTX, which runs a fixed distilled schedule.
 _T2V_EXAMPLES = {
     "basic": {
-        "summary": "Text-to-video",
+        "summary": "Text-to-video (server defaults)",
         "value": {
             "prompt": "A serene mountain landscape with flowing water",
             "negative_prompt": "blurry, low quality",
-            "num_inference_steps": 20,
             "seed": 42,
+        },
+    },
+    "explicit_shape": {
+        "summary": "Text-to-video pinning the served shape explicitly",
+        "description": (
+            "Shape fields are validated against the shape this deployment "
+            "serves, not honoured as free variables -- the pipeline's traces "
+            "are captured for one shape at startup. A mismatch is a 422 that "
+            "names the served shape. `duration` is in seconds and is snapped to "
+            "the nearest legal frame count ((num_frames - 1) %% 8 == 0) before "
+            "the check, so 6 and 6.12 both resolve to 153 frames at 25 fps."
+        ),
+        "value": {
+            "prompt": "A serene mountain landscape with flowing water",
+            "seed": 42,
+            "duration": 6,
+            "fps": 25,
+            "height": 1088,
+            "width": 1920,
         },
     },
 }
