@@ -48,6 +48,9 @@ class LTXProRunner(LTXRunner):
             f"stg: video={self.config.video_stg_scale} audio={self.config.audio_stg_scale} "
             f"block={self.config.stg_block}"
         )
+        self.logger.info(
+            f"  lora_enabled: {self.config.lora_enabled}, lora_cache_capacity: {self.config.lora_cache_capacity}"
+        )
         self.logger.info(f"  tt_dit_cache: {os.environ['TT_DIT_CACHE_DIR']}")
 
         # Geometry is fixed here for the same reason as the distilled pipeline, and
