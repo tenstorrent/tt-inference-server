@@ -397,21 +397,10 @@ gemma4_dflash_impl = ImplSpec(
     code_path="models/demos/gemma4",
 )
 
-# 31B dFlash on the plugin's speculative CONTRACT rail: the runner supplies the
-# candidate block and owns the accept walk. Registered alongside gemma4_dflash,
-# not instead of it -- see the llm.yaml entry for why both are kept.
-gemma4_dflash_contract_impl = ImplSpec(
-    impl_id="gemma4_dflash_contract",
-    impl_name="gemma4-dflash-contract",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/gemma4",
-)
-
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,
     "gemma4_dflash": gemma4_dflash_impl,
-    "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
