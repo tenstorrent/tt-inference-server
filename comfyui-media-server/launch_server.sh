@@ -42,6 +42,10 @@ echo "Logging to: $LOG_FILE"
 # ---------------------------------------------------------------------------
 # Resolve directories.
 #   SERVER_DIR    — where this server's code lives (this script's directory).
+#   Geometry (video servers): --height N --width N --frames N are forwarded to server.py and
+#   override the model's default clip shape. LTX pins geometry when the pipeline is built, so
+#   this is the only way to change it; e.g. --height 1088 --width 1920 --frames 121.
+#
 #   TT_METAL_HOME — a SEPARATE, already-built tt-metal checkout. Since this server
 #                   was relocated out of the tt-metal root, it no longer lives
 #                   inside tt-metal; TT_METAL_HOME MUST come from the environment

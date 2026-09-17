@@ -55,6 +55,11 @@ def parse_args():
     parser.add_argument("--steps", type=int, help="Override number of inference steps")
     parser.add_argument("--guidance", type=float, help="Override guidance scale")
     parser.add_argument("--port", type=int, help="Override server port")
+    # Clip geometry for the video servers. It is fixed when the pipeline is built (the LTX latent
+    # upsampler pins its GroupNorm to T*H*W), so this is the only place to change it.
+    parser.add_argument("--height", type=int, help="Video height in pixels (LTX: multiple of 64)")
+    parser.add_argument("--width", type=int, help="Video width in pixels (LTX: multiple of 64)")
+    parser.add_argument("--frames", type=int, help="Frame count (LTX: (frames - 1) divisible by 8)")
     parser.add_argument("--host", type=str, help="Override server host")
     args = parser.parse_args()
 
@@ -136,6 +141,20 @@ if args.port is not None:
     config.server_port = args.port
 if args.host is not None:
     config.server_host = args.host
+if any(v is not None for v in (args.height, args.width, args.frames)):
+    if not hasattr(config, "num_frames"):
+        parser.error(f"--height/--width/--frames do not apply to --model {args.model}")
+    if args.height is not None:
+        config.height = args.height
+    if args.width is not None:
+        config.width = args.width
+    if args.frames is not None:
+        config.num_frames = args.frames
+    # The dataclass validated geometry at construction; overrides land after that, so re-check.
+    if config.height % 64 or config.width % 64:
+        parser.error(f"height and width must be divisible by 64 (got {config.height}x{config.width})")
+    if (config.num_frames - 1) % 8:
+        parser.error(f"(frames - 1) must be divisible by 8 (got {config.num_frames})")
 
 logger = setup_logger("Server")
 if config.dev_mode:
