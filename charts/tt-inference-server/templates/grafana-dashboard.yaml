@@ -1,0 +1,26 @@
+{{- $dashboard := .Values.grafanaDashboard | default dict }}
+{{- if dig "enabled" false $dashboard }}
+{{- include "tt-inference-server.validateValues" . }}
+{{- $engine := include "tt-inference-server.resolvedEngine" . }}
+{{- $file := ternary "dashboards/vllm.json" "dashboards/media.json" (eq $engine "vllm") }}
+# One dashboard per engine, picked from the resolved engine: media and forge run
+# the same server (the forge image is built from tt-media-server), so they share
+# one. The Grafana dashboard sidecar discovers this by the labels below; nothing
+# reads it on a cluster without that sidecar.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tt-inference-server.fullname" . }}-grafana-dashboard
+  namespace: {{ dig "namespace" "" $dashboard | default .Release.Namespace }}
+  labels:
+    {{- /* merge so user labels add to, but never duplicate, the standard label keys. */ -}}
+    {{- $labels := merge (include "tt-inference-server.labels" . | fromYaml) (dig "labels" (dict) $dashboard) }}
+    {{- toYaml $labels | nindent 4 }}
+  {{- with dig "annotations" (dict) $dashboard }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{ base $file }}: |
+{{ .Files.Get $file | indent 4 }}
+{{- end }}
