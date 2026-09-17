@@ -452,34 +452,39 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  impl: qwen36_blackhole
+  impl: qwen38_autoport
   inference_engine: VLLM
   model_type: LLM
   supported_modalities:
     - text
   device_model_specs:
     - device: P300X2
-      # ASSUMED: concurrency, context and every tuning value below are copied from
-      # the Qwen3.6-27B P300X2 entry above and are not tuned for this checkpoint.
-      max_concurrency: 32
+      max_concurrency: 1
       max_context: 262144
-      max_tokens_all_users_override: 525312
       default_impl: true
       env_vars:
-        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
-        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
+        block_size: "32"
         enable_auto_tool_choice: true
+        hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
       override_tt_config:
-        fabric_config: FABRIC_1D
-        trace_region_size: 1073741824
+        fabric_config: FABRIC_1D_RING
+        fabric_max_packet_payload_size_bytes: 8192
         l1_small_size: 24576
-        sample_on_device_mode: decode_only
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        trace_region_size: 134217728
+      tt_metal_source_ref: mvasiljevic/qwen38-full-bringup
+      tt_metal_source_paths:
+        - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
