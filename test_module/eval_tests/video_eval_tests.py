@@ -20,6 +20,24 @@ from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
+MINIMAX_H3_MODEL_NAME = "MiniMax-H3"
+MINIMAX_H3_EVAL_TARGETS = {
+    "samples_per_prompt": 1,
+    "sample_count": 8,
+    "enable_clip": False,
+    "poll_timeout": 1800,
+    "download_timeout": 600,
+}
+
+
+def _run_minimax_h3_eval(ctx: MediaContext) -> Block:
+    """Run the MiniMax-specific V1 generation and quality evaluator."""
+
+    from .minimax_h3_video_quality_test import run_minimax_h3_video_quality
+
+    logger.info("Running MiniMax-H3 V1 video quality evaluation.")
+    return run_minimax_h3_video_quality(ctx, targets=MINIMAX_H3_EVAL_TARGETS)
+
 
 def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
@@ -144,6 +162,8 @@ def run_video_eval(ctx: MediaContext) -> Block:
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
+    if ctx.model_spec.model_name == MINIMAX_H3_MODEL_NAME:
+        return _run_minimax_h3_eval(ctx)
 
     try:
         eval_result = _run_video_generation_eval(ctx)

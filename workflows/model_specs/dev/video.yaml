@@ -254,3 +254,77 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: FUNCTIONAL
+
+# MiniMax-H3 t2va runs on one single-host 4x8 Blackhole Galaxy mesh.
+- weights:
+    - MiniMax-H3
+  impl: tt_transformers
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  min_disk_gb: 220  # ~120 GB snapshot + ~68 GB persistent ttnn cache + overhead
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-t2va
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    # Line-cabled deployments set this to "linear"; omitted defaults to "ring".
+    # MINIMAX_H3_FABRIC_TOPOLOGY: linear
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: FUNCTIONAL
+
+# MiniMax-H3 fl2va: same weights and mesh as t2va -- `task="t2va"` serves both -- but its own
+# runner, because a process serves one task and the warm shapes differ (a keyframe adds a frame of
+# conditioning rows plus an equal vision block, so t2va's warmup does not cover it).
+- weights:
+    - MiniMax-H3-FL2VA
+  impl: tt_transformers
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  min_disk_gb: 220
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-fl2va
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: FUNCTIONAL
+
+# MiniMax-H3 ref2va loads the `transformer_ref/` partition instead, so the snapshot is larger and
+# the download must not exclude it. Device open uses a smaller l1_small_size; the runner sets that.
+- weights:
+    - MiniMax-H3-Ref2VA
+  impl: tt_transformers
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  min_disk_gb: 290  # +62 GB for transformer_ref/ on top of the t2va footprint
+  model_type: VIDEO
+  inference_engine: MEDIA
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-ref2va
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: FUNCTIONAL
