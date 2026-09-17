@@ -407,6 +407,8 @@ templates:
       vllm_args:
         limit-mm-per-prompt: '{"image": 1}'
         mm-processor-cache-gb: 0
+        # Top vision bucket; the 1003520 default loses small print, higher loops the decoder.
+        mm-processor-kwargs: '{"max_pixels": 1204224}'
       override_tt_config:
         l1_small_size: 24576
         trace_region_size: 402653184  # vision-tower buckets plus the decode trace
