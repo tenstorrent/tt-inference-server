@@ -734,9 +734,14 @@ class SPRunner(BaseDeviceRunner):
             negative_prompt=request.negative_prompt or "",
             num_inference_steps=request.num_inference_steps or 20,
             seed=int(request.seed or 0),
-            height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
-            width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
-            num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
+            # `or DEFAULT`, not just a getattr default: these fields now exist on
+            # VideoGenerateRequest (defaulting to None = "use the served config"),
+            # so getattr finds the attribute and returns None rather than falling
+            # back. Only LTX pins them, and LTX does not use this SHM path.
+            height=getattr(request, "height", None) or DEFAULT_VIDEO_HEIGHT,
+            width=getattr(request, "width", None) or DEFAULT_VIDEO_WIDTH,
+            num_frames=getattr(request, "num_frames", None)
+            or DEFAULT_VIDEO_NUM_FRAMES,
             guidance_scale=getattr(
                 request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE
             ),
