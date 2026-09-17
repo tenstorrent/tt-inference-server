@@ -63,6 +63,8 @@ class LTXProRunner(LTXRunner):
             num_frames=self.config.num_frames,
             height=self.config.height,
             width=self.config.width,
+            lora_enabled=self.config.lora_enabled,
+            lora_cache_capacity=self.config.lora_cache_capacity,
         )
 
         pc = self.pipeline.parallel_config
@@ -87,6 +89,7 @@ class LTXProRunner(LTXRunner):
         seed = request.get("seed")
         seed = int(seed) if seed is not None else 0
 
+        self._apply_request_lora(request)
         self._reject_shape_mismatch(request)
 
         # Per-request guidance overrides, falling back to the server's defaults.

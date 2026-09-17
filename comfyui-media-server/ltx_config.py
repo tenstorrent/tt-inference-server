@@ -70,6 +70,17 @@ class LTXConfig:
     # per stage and a resident trace fights that.
     use_trace: bool = False
 
+    # Build the DiT with LoRA-aware Linears so adapters can be bound per request on a
+    # running server. Fuse mode keeps the delta in weight.data, so a request with no
+    # adapter takes the same forward path as a non-LoRA build.
+    lora_enabled: bool = True
+
+    # How many adapters keep their device-side factors resident, per Linear. This must
+    # cover the whole simultaneously-bound stack: the cache evicts from the LRU end, so
+    # a capacity below the stack depth re-uploads the members that fall off on every
+    # bind and unbind. bind_stack raises it if a request asks for more.
+    lora_cache_capacity: int = 4
+
     # Queue settings
     max_queue_size: int = 4
     inference_timeout_seconds: int = 1800  # AV video gen is slow

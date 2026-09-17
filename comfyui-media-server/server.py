@@ -284,6 +284,17 @@ class VideoDenoiseRequest(BaseModel):
     lora_scale_clip: Optional[float] = Field(default=None, ge=0.0, le=2.0)
 
 
+class LoraAdapterSpec(BaseModel):
+    """One LoRA adapter to bind, as a server-readable path plus its strength.
+
+    Several may be supplied and are applied together, innermost first: their
+    deltas sum on device. ``scale`` of 0 disables that entry.
+    """
+
+    path: str
+    scale: float = Field(default=1.0, ge=0.0, le=2.0)
+
+
 class AVGenerateRequest(BaseModel):
     """LTX-2.3 audio-video generation request.
 
@@ -310,6 +321,9 @@ class AVGenerateRequest(BaseModel):
     video_stg_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
     audio_stg_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
     stg_block: Optional[int] = Field(None, ge=0, le=47)
+    # LoRA adapters to bind for this request, innermost first. Honoured by both
+    # LTX servers. Omitted or empty restores the base weights.
+    lora_adapters: Optional[List[LoraAdapterSpec]] = None
 
 
 class AVGenerateResponse(BaseModel):
@@ -327,6 +341,8 @@ class AVGenerateResponse(BaseModel):
     fps: int
     inference_time: float
     model: str
+    # Per-adapter LoRA application status. None when no adapter was requested.
+    lora: Optional[Dict[str, Any]] = None
 
 
 class VideoVaeDecodeRequest(BaseModel):
@@ -880,6 +896,7 @@ def _av_result_payload(result: dict) -> dict:
         "fps": config.fps,
         "inference_time": result.get("inference_time", 0.0),
         "model": model_label,
+        "lora": result.get("lora"),
     }
 
 

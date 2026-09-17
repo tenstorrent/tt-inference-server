@@ -253,7 +253,15 @@ def device_worker_process(
                     video = runner.run_inference([request], **av_kwargs)[0]
                     inference_time = time.time() - start_time
                     result_queue.put(
-                        {"task_id": task_id, "op": op, "video": video, "inference_time": inference_time}
+                        {
+                            "task_id": task_id,
+                            "op": op,
+                            "video": video,
+                            "inference_time": inference_time,
+                            # Per-adapter LoRA status. The staged-op branch below
+                            # attaches this too, but does not cover av_generate.
+                            "lora": getattr(runner, "_last_lora_status", None),
+                        }
                     )
                 elif op in ("denoise", "vae_decode", "vae_encode"):
                     # Additive staged ops (currently SDXL only).

@@ -34,6 +34,16 @@ class LTXRunner:
         self.parent_mesh = None
         self.pipeline = None
         self._fabric_config = None
+        # Registered adapters, keyed by resolved path. Registration is not
+        # idempotent -- the pipeline appends to a host-side bank every time and
+        # offers no way to free it -- so a path is registered once per process and
+        # the handle reused. Scale is applied at bind time, so it is not part of
+        # the key: retuning strength never re-registers.
+        self._lora_handles = {}
+        # The (path, scale) tuple currently bound, to skip redundant re-binds.
+        self._active_lora_key = None
+        # Per-adapter application status, read back by the worker.
+        self._last_lora_status = None
 
     def initialize_device(self):
         rows, cols = self.config.device_mesh_shape
@@ -80,6 +90,9 @@ class LTXRunner:
         self.logger.info(f"  gemma: {gemma}")
         self.logger.info(f"  size: {self.config.width}x{self.config.height}, frames: {self.config.num_frames}")
         self.logger.info(f"  quant: {self.config.quant}, use_trace: {self.config.use_trace}")
+        self.logger.info(
+            f"  lora_enabled: {self.config.lora_enabled}, lora_cache_capacity: {self.config.lora_cache_capacity}"
+        )
         self.logger.info(f"  tt_dit_cache: {os.environ['TT_DIT_CACHE_DIR']}")
 
         # Geometry is fixed here (the upsampler pins its GroupNorm to T*H*W).
@@ -97,6 +110,8 @@ class LTXRunner:
             num_frames=self.config.num_frames,
             height=self.config.height,
             width=self.config.width,
+            lora_enabled=self.config.lora_enabled,
+            lora_cache_capacity=self.config.lora_cache_capacity,
         )
 
         pc = self.pipeline.parallel_config
@@ -113,6 +128,73 @@ class LTXRunner:
 
         if kernel_ready_queue is not None:
             kernel_ready_queue.put(self.worker_id)
+
+    def _apply_request_lora(self, request) -> None:
+        """Bind the request's LoRA stack on device, or clear it.
+
+        ``lora_adapters`` is a list of ``{"path", "scale"}``, innermost first;
+        several may be active at once, which is how a style adapter and the
+        distillation adapter combine. Absent or empty restores the base weights.
+
+        Shared with the Pro runner: both pipelines inherit the same on-device
+        LoRA API from LTXPipeline.
+        """
+        adapters = request.get("lora_adapters") or []
+        # An explicit 0 strength means "off" -- drop it rather than binding a
+        # no-op delta and paying for the merge.
+        wanted = []
+        for a in adapters:
+            path = (a.get("path") or "").strip() if isinstance(a, dict) else str(a).strip()
+            scale = a.get("scale") if isinstance(a, dict) else None
+            scale = 1.0 if scale is None else float(scale)
+            if path and scale != 0.0:
+                wanted.append((path, scale))
+
+        # Probe the flag, not hasattr: the LoRA methods are always present on
+        # LTXPipeline, and they raise when the pipeline was built without
+        # lora_enabled -- including the unbind path, so an unconditional clear
+        # on a non-LoRA pipeline would crash.
+        if not getattr(self.pipeline, "lora_enabled", False):
+            if wanted:
+                self.logger.warning(
+                    "LoRA requested but the pipeline was built with lora_enabled=False; ignoring. "
+                    "Restart the server with LTXConfig.lora_enabled=True to use adapters."
+                )
+            self._last_lora_status = None
+            return
+
+        key = tuple(wanted)
+        if key == self._active_lora_key:
+            return  # already bound on device
+
+        if not wanted:
+            self.logger.info("Clearing active LoRA (request has no adapters)")
+            self.pipeline.set_active_loras([])
+            self._active_lora_key = key
+            self._last_lora_status = None
+            return
+
+        stack, status = [], []
+        for path, scale in wanted:
+            handle = self._lora_handles.get(path)
+            if handle is None:
+                self.logger.info(f"Registering LoRA {path!r}")
+                try:
+                    handle = self.pipeline.register_lora_adapter(path, scale=scale, name=os.path.basename(path))
+                except (RuntimeError, ValueError, OSError) as e:
+                    # Wrong-model adapters land here: the loader raises when it
+                    # finds no A/B pairs, or no key that maps onto an LTX module.
+                    self.logger.error(f"LoRA {path!r} could not be loaded: {e}")
+                    status.append({"requested": path, "scale": scale, "applied": False, "skipped_reason": str(e)})
+                    continue
+                self._lora_handles[path] = handle
+            stack.append((handle, scale))
+            status.append({"requested": path, "scale": scale, "applied": True, "skipped_reason": None})
+
+        self.pipeline.set_active_loras(stack)
+        self._active_lora_key = key
+        self._last_lora_status = {"adapters": status, "count": len(stack)}
+        self.logger.info(f"Bound {len(stack)} LoRA adapter(s): {[(p, s) for p, s in wanted][:4]}")
 
     def _reject_shape_mismatch(self, request) -> None:
         """Reject a shape that does not match what the pipeline was built for.
@@ -152,6 +234,7 @@ class LTXRunner:
         if request.get("negative_prompt"):
             self.logger.info("negative_prompt supplied but ignored (distilled pipeline has no CFG)")
 
+        self._apply_request_lora(request)
         self._reject_shape_mismatch(request)
 
         self.logger.info(
