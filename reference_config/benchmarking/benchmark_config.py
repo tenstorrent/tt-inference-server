@@ -122,6 +122,17 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
+# Models characterized single-stream only: every ISL/OSL pair still runs, but the
+# batched leg (max_concurrency = the spec's max_concurrency) is dropped, as are the
+# structured-output runs. Prefix-matched against model_spec.model_name, the model
+# weights basename, so one entry covers a family's point releases.
+#
+# GLM-5.x is here because its batched leg measures the harness, not the model: the
+# spec says max_concurrency 80 while the engine seats 32, so 48 of every 80 requests
+# queue and TTFT becomes queueing time (tt-shield run 35095803588: mean TTFT
+# 1,206,839 ms at isl 131072, ~98% of it waiting). Concurrency 1 isolates prefill and
+# decode cleanly. Drop the entry once slots and max_concurrency agree.
+MODEL_SINGLE_STREAM_ONLY = ("GLM-5.",)
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -160,6 +171,7 @@ def _expand_text_sweep_params(
     max_tokens_all_users: int,
     model_max_concurrency: int,
     min_num_prompts: int = 0,
+    single_stream_only: bool = False,
 ) -> List[BenchmarkTaskParams]:
     if isl + osl > max_context:
         return []
@@ -168,7 +180,7 @@ def _expand_text_sweep_params(
         isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
     concurrencies = [1]
-    if allowed_max_concurrency > 1:
+    if allowed_max_concurrency > 1 and not single_stream_only:
         concurrencies.append(allowed_max_concurrency)
 
     return [
@@ -587,6 +599,10 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
         )
 
+    single_stream_only = (model_spec.model_name or "").startswith(
+        MODEL_SINGLE_STREAM_ONLY
+    )
+
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
@@ -662,6 +678,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             max_tokens_all_users=max_tokens_all_users,
                             model_max_concurrency=model_max_concurrency,
                             min_num_prompts=sweep_min_num_prompts,
+                            single_stream_only=single_stream_only,
                         )
                     ]
                     + (
@@ -691,7 +708,10 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: llms and vlms, can be extended
-    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    structured_output_eligible = (
+        model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+        and not single_stream_only
+    )
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(

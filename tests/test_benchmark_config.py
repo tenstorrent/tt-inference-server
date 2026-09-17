@@ -379,3 +379,38 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
         * spec_max_concurrency
     )
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
+
+
+def test_glm_runs_every_pair_at_concurrency_1_only():
+    """GLM keeps the full ISL/OSL sweep but drops the batched leg.
+
+    The batched leg measures the harness, not the model, while the spec's
+    max_concurrency (80) exceeds the slots the engine seats.
+    """
+    from reference_config.benchmarking.benchmark_config import (
+        BENCHMARK_ISL_OSL_PAIRS,
+        SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS,
+        _expand_text_sweep_params,
+    )
+
+    pairs = list(BENCHMARK_ISL_OSL_PAIRS) + list(SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS)
+    single, both = [], []
+    for isl, osl in pairs:
+        kwargs = dict(
+            isl=isl,
+            osl=osl,
+            max_context=1048576,
+            max_tokens_all_users=1048576 * 80,
+            model_max_concurrency=80,
+            min_num_prompts=160,
+        )
+        single += _expand_text_sweep_params(**kwargs, single_stream_only=True)
+        both += _expand_text_sweep_params(**kwargs)
+
+    # Every pair survives; only the concurrency dimension collapses.
+    assert len(single) == len(pairs)
+    assert {p.max_concurrency for p in single} == {1}
+    assert [(p.isl, p.osl) for p in single] == pairs
+    # Without the flag the same pairs yield two runs each.
+    assert len(both) == 2 * len(pairs)
+    assert {p.max_concurrency for p in both} == {1, 80}
