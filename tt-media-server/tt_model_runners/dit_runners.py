@@ -301,6 +301,11 @@ class TTSD35Runner(TTDiTRunner):
 
     def create_pipeline(self):
         try:
+            # Enable the validated bf8 weight/activation path (~7.1s @ 1024x1024
+            # on the BH QuietBox 2x2 mesh) instead of silently falling back to
+            # the bf16 baseline (~10.6s). setdefault keeps any deployment-
+            # provided value. See models/tt_dit/models/StableDiffusion35.md.
+            os.environ.setdefault("SD35_QUANT", "bf8")
             return StableDiffusion3Pipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=SupportedModels.STABLE_DIFFUSION_3_5_LARGE.value,
@@ -315,7 +320,11 @@ class TTSD35Runner(TTDiTRunner):
             raise
 
     def get_pipeline_device_params(self):
-        return {"l1_small_size": 32768, "trace_region_size": 25000000}
+        # trace_region_size matches the validated BH QuietBox 2x2 (4-chip)
+        # traced config (models/tt_dit/tests/models/sd35/test_pipeline_sd35.py);
+        # the prior 25MB value was sized for the older T3K/Galaxy (Wormhole)
+        # configs and is too small for the 4-chip BH trace.
+        return {"l1_small_size": 32768, "trace_region_size": 50000000}
 
 
 # Runner for Flux.1 dev and schnell. Model weights from settings.model_weights_path determine the exact model variant.

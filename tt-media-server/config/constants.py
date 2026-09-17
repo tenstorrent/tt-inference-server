@@ -803,6 +803,17 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    # BH QuietBox (2x2 mesh, 4 chips) — the optimized cfg1/sp2/tp2/num_links2
+    # config validated on Blackhole (~7.1s @ 1024x1024 with SD35_QUANT=bf8; see
+    # TTSD35Runner in dit_runners.py). Same mesh/device-id pattern as the other
+    # DiT P300X2 entries below (Flux/Motif/Mochi/Wan2.2).
+    (ModelRunners.TT_SD3_5, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
