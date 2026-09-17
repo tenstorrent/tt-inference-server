@@ -294,6 +294,11 @@ def build_aiperf_cmd(
     if run.streaming:
         cmd.append("--streaming")
         cmd.extend(["--prefill-concurrency", str(run.concurrency)])
+        # With the default 8 RecordProcessors, 4 never received the dataset
+        # configuration and aborted after 1800 s, which fails the whole run
+        # (aiperf exits non-zero and their records are lost). 4 is plenty for
+        # agentic request rates.
+        cmd.extend(["--record-processors", "4"])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:

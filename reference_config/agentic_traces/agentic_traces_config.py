@@ -430,8 +430,19 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
-                public_dataset="semianalysis_cc_traces_weka_062126",
-                concurrency=64,
+                # The 256K-capped variant the other models use; the uncapped set
+                # peaks at 993K tokens, far beyond any served window.
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                # Lanes must not exceed the worker's slot/session count: extra lanes
+                # fail allocation ("max session count reached") and trip the 10%
+                # failed-request threshold. Validated at 63/63 on a single galaxy.
+                concurrency=63,
+                # Must match the KV window blaze actually allocates (TT_M3_MAX_SEQ_LEN,
+                # 128K at 63 slots; the sparse layer's single-bank KV cache OOMs at
+                # 63 x 256K), not the ModelSpec's 1M max_context: aiperf drops traces
+                # whose peak context exceeds this instead of sending them to a worker
+                # that cannot serve them.
+                max_context_length=128000,
             ),
         ),
     ),
