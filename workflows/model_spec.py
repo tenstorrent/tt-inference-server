@@ -294,6 +294,12 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+qwen38_autoport_impl = ImplSpec(
+    impl_id="qwen38_autoport",
+    impl_name="qwen38-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
 training_lora_impl = ImplSpec(
     impl_id="training_lora",
     impl_name="training-lora",
@@ -338,6 +344,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "qwen38_autoport": qwen38_autoport_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
     "muse_glimmer": muse_glimmer_impl,
@@ -406,6 +413,20 @@ class DeviceModelSpec:
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
+
+    # Bind-mount tt-metal source over the image's copy instead of rebuilding.
+    # The test stage checks out tt-shield and tt-inference-server fresh but never
+    # tt-metal, which enters only through the image at --tt-metal-commit, so a
+    # one-line Python change otherwise costs a full image build. Setting a ref
+    # here makes run_docker_server sparse-clone the listed paths and mount them.
+    #
+    # ONLY sound for Python-only deltas. The image carries compiled tt-metal, so
+    # mounting a tree whose C++ also changed pairs new Python with older
+    # binaries -- a confusing failure rather than a loud one. Keep the paths
+    # narrow (models/autoports/<model>) so a C++ change cannot ride along.
+    tt_metal_source_ref: Optional[str] = None
+    tt_metal_source_paths: List[str] = field(default_factory=list)
+    tt_metal_source_repo: str = "https://github.com/tenstorrent/tt-metal"
 
     def __post_init__(self):
         self.validate_data()
@@ -1056,6 +1077,9 @@ class ModelSpecTemplate:
                     system_requirements=device_model_spec.system_requirements,
                     known_issues=device_model_spec.known_issues,
                     eval_max_retries=device_model_spec.eval_max_retries,
+                    tt_metal_source_ref=device_model_spec.tt_metal_source_ref,
+                    tt_metal_source_paths=device_model_spec.tt_metal_source_paths,
+                    tt_metal_source_repo=device_model_spec.tt_metal_source_repo,
                 )
                 spec = ModelSpec(
                     # Core identity
