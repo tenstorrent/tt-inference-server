@@ -151,6 +151,16 @@ def _assemble_release_markdown(
         f"```json\n{metadata_json}\n```"
     )
     preamble = [header, metadata_block]
+    if schema.metadata.get("report_partial"):
+        # A checkpointed report is real data but not a finished measurement, and the
+        # file itself no longer tells a reader which it is -- say so above the fold.
+        blocks = schema.metadata.get("report_blocks", "?")
+        preamble.insert(
+            1,
+            f"> ⚠️ **Partial report.** The workflow did not finish; {blocks} block(s) "
+            "were written before it stopped. Values here are measured, coverage is not "
+            "complete.",
+        )
     acceptance_md = str(
         schema.metadata.get("acceptance_summary_markdown") or ""
     ).strip()
