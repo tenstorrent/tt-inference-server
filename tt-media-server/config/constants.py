@@ -803,14 +803,12 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
-    # BH QuietBox (4 chips). Targeting Gio's (1,4) ring-topology preset
-    # (cfg1/sp1/tp4/num_links2, ttnn.Topology.Ring) added in
-    # pipeline_stable_diffusion_35_large.py's _PRESETS. NOT YET VALIDATED
-    # end-to-end from this checkout — see flag sent to Gio/Dalar: as of this
-    # commit, the (1,4) preset entry (and preset["topology"] consumption in
-    # StableDiffusion3PipelineConfig.default()) was not present in the
-    # sd35-bh-qb-enable tt-metal checkout available here. Confirm the tt-metal
-    # commit/branch carrying that change before running this config.
+    # BH QuietBox (4 chips), native 1x4 row: cfg1/sp1/tp4, Ring CCL topology,
+    # bf16 (bf8 quant reverted per Dalar), 20 steps @ 1024x1024. Validated
+    # end-to-end on hardware: 6.76s total pipeline time (nkira/sd35-bh-4chip-perf,
+    # models/tt_dit/models/StableDiffusion3_nadim_optim.md). Ring fabric_config
+    # is set in TTSD35Runner.get_pipeline_device_params() (dit_runners.py) to
+    # match this mesh shape.
     (ModelRunners.TT_SD3_5, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
