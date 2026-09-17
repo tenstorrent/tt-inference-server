@@ -482,7 +482,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-bringup
+      tt_metal_source_ref: mvasiljevic/qwen38-ci-weight-fix
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
