@@ -32,17 +32,14 @@ using embedding_detail::WorkerProcess;
 
 struct EmbeddingService::Impl {
   /**
-   * One queued request plus its completion callback. Invariant: every
-   * PendingRequest taken off the queue gets EXACTLY ONE onComplete call, on
-   * every path (dispatch success, failBatch, drainQueue) — a dropped callback
-   * is an HTTP request that hangs forever.
+   * One queued request plus its completion callback.
    */
   struct PendingRequest {
     domain::EmbeddingRequest request;
 
     std::function<void(domain::EmbeddingResponse&&)> onComplete;
 
-    /// Arrival time; anchors the batch-fill deadline in collectBatch.
+    // Arrival time; anchors the batch-fill deadline in collectBatch.
     std::chrono::steady_clock::time_point enqueueTime;
 
     PendingRequest(domain::EmbeddingRequest req,
@@ -52,8 +49,10 @@ struct EmbeddingService::Impl {
           enqueueTime(std::chrono::steady_clock::now()) {}
   };
 
-  /// Complete one pending request with an error response (the onComplete
-  /// exactly-once contract: this must be the request's only completion).
+  /**
+   * Complete one pending request with an error response (the onComplete
+   * exactly-once contract: this must be the request's only completion).
+   */
   static void completeWithError(PendingRequest& p, const std::string& error) {
     domain::EmbeddingResponse err(p.request.task_id);
     err.error = error;
@@ -359,10 +358,7 @@ struct EmbeddingService::Impl {
    * Block until requests arrive or the worker must exit, then take up to
    * maxBatchSize requests off the queue. When the queue is non-empty but a
    * full batch has not formed, wait (mutex released) until batchTimeout past
-   * the OLDEST queued request's arrival: under load requests arrive
-   * microseconds apart, so this small anchored wait turns 1-request batches
-   * into full ones without delaying requests that already waited in the
-   * queue. An empty result means "re-check the loop conditions".
+   * the OLDEST queued request's arrival
    */
   std::vector<std::shared_ptr<PendingRequest>> collectBatch(
       WorkerProcess& worker) {
