@@ -126,6 +126,17 @@ class SourceReport:
         return str(self.schema.metadata.get("generated_at") or "")
 
     @property
+    def is_partial(self) -> bool:
+        """True for a report whose workflow never finished.
+
+        ``checkpoint_report`` re-renders after every sweep point and marks each
+        render ``report_partial``; ``inject_metadata`` clears it on the final
+        report. So a source still carrying the flag was written by a run that
+        was cancelled or killed.
+        """
+        return bool(self.schema.metadata.get("report_partial"))
+
+    @property
     def identity(self) -> str:
         """What makes two reports "the same test", for de-duplication.
 
@@ -468,6 +479,30 @@ def merge_reports(
             ", ".join(missing_tests),
         )
 
+    # A checkpointed report is real data but not a complete measurement: the
+    # category checks see only the sweep points that finished, so a run
+    # cancelled at point 25 of 28 would otherwise be graded as if it had run
+    # them all.
+    partial = [source for source in sources if source.is_partial]
+    if partial:
+        blockers = {
+            **blockers,
+            **{
+                f"exabox:partial_report:{source.workflow or source.path.name}": (
+                    f"{source.path.name} is a checkpoint, not a finished report "
+                    f"({source.schema.metadata.get('report_blocks', '?')} block(s)) "
+                    "— its workflow was cancelled or killed."
+                )
+                for source in partial
+            },
+        }
+        accepted = False
+        logger.warning(
+            "%d merged report(s) are checkpoints from an unfinished run: %s",
+            len(partial),
+            ", ".join(source.path.name for source in partial),
+        )
+
     # Nothing merged means nothing was assessed. Left as accepted, a run in
     # which every test failed would be indistinguishable from a clean one.
     if not sources:
@@ -492,6 +527,7 @@ def merge_reports(
         ],
         "sections": len(schema.sections),
         "missing_tests": list(missing_tests),
+        "partial_reports": [source.path.name for source in partial],
         "model_status": model_status,
         "accepted": accepted,
         "blockers": len(blockers),
