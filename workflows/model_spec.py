@@ -1276,15 +1276,6 @@ llm_templates = [
         inference_engine=InferenceEngine.VLLM.value,
         device_model_specs=[
             DeviceModelSpec(
-                device=DeviceTypes.T3K,
-                max_concurrency=32,
-                max_context=128 * 1024,
-                default_impl=True,
-                override_tt_config={
-                    "trace_region_size": 54000000,
-                },
-            ),
-            DeviceModelSpec(
                 device=DeviceTypes.GALAXY_T3K,
                 max_concurrency=32,
                 max_context=128 * 1024,
@@ -1390,6 +1381,27 @@ llm_templates = [
                 override_tt_config={
                     "trace_region_size": 384 * 1024 * 1024,
                 },
+            ),
+            DeviceModelSpec(
+                device=DeviceTypes.T3K,
+                max_concurrency=32,
+                max_context=128 * 1024,
+                default_impl=True,
+                override_tt_config={
+                    "trace_region_size": 54000000,
+                },
+                # Wormhole validated at FW 19.1.0.0 / KMD 2.6.0; the template-level
+                # ">=19.2.0" floor applies to Blackhole only.
+                system_requirements=SystemRequirements(
+                    firmware=VersionRequirement(
+                        specifier=">=19.1.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                    kmd=VersionRequirement(
+                        specifier=">=2.5.0",
+                        mode=VersionMode.STRICT,
+                    ),
+                ),
             ),
         ],
         status=ModelStatusTypes.FUNCTIONAL,
