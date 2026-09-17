@@ -161,6 +161,7 @@ def build_local_server_env(
     env["PATH"] = _prepend_env_path(python_env_dir / "bin", env.get("PATH", ""))
     env["CACHE_ROOT"] = str(cache_root)
     env["TT_CACHE_PATH"] = str(tt_cache_path)
+    env["TT_METAL_CACHE"] = str(tt_cache_path / "tt_metal_cache")
     env["TT_METAL_LOGS_PATH"] = str(logs_path)
     env["RUNTIME_MODEL_SPEC_JSON_PATH"] = str(Path(json_fpath).resolve())
 

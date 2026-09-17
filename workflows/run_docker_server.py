@@ -554,9 +554,11 @@ def generate_docker_run_command(
             setup_config.host_model_volume_root
             and setup_config.container_tt_metal_cache_dir
         ):
-            docker_env_vars["TT_CACHE_PATH"] = (
+            tt_cache_path = (
                 setup_config.container_tt_metal_cache_dir / device_cache_dir
             )
+            docker_env_vars["TT_CACHE_PATH"] = tt_cache_path
+            docker_env_vars["TT_METAL_CACHE"] = tt_cache_path / "tt_metal_cache"
         # CI: persist tt-triage logs to the cache_root volume via a dedicated var,
         # leaving TT_METAL_LOGS_PATH (tt-metal's Inspector/watcher logs) on the
         # writable ephemeral default rather than the host-owned volume. See #4255.

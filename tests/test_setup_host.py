@@ -582,6 +582,7 @@ class TestSetupHostDockerCommand:
         assert "--volume" in docker_command
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
         assert _find_env_var(docker_command, "TT_CACHE_PATH") is None
+        assert _find_env_var(docker_command, "TT_METAL_CACHE") is None
 
     def test_host_volume_mode_docker_command(
         self, tiny_model_spec, mock_cli_args, temp_dir
@@ -601,6 +602,7 @@ class TestSetupHostDockerCommand:
         cmd_str = _join_docker_cmd(docker_command)
         assert f"type=bind,src={config.host_model_volume_root}" in cmd_str
         assert _find_env_var(docker_command, "TT_CACHE_PATH") is not None
+        assert _find_env_var(docker_command, "TT_METAL_CACHE") is not None
         # No separate readonly weights mount (weights in the cache_root volume)
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
 

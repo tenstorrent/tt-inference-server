@@ -330,7 +330,7 @@ def ensure_weights_available(model_spec: dict) -> Path:
 
 
 def set_cache_paths(model_spec: dict, device_type: str):
-    """Set TT_CACHE_PATH and MESH_DEVICE for model-specific cache directory.
+    """Set runtime cache paths and MESH_DEVICE for the model and device.
 
     Args:
         model_spec: The model specification dictionary
@@ -348,6 +348,22 @@ def set_cache_paths(model_spec: dict, device_type: str):
     tt_cache_path.mkdir(parents=True, exist_ok=True)
     os.environ["TT_CACHE_PATH"] = str(tt_cache_path)
     logger.info(f"Set TT_CACHE_PATH to {tt_cache_path}")
+
+    set_tt_metal_cache(tt_cache_path)
+
+
+def set_tt_metal_cache(tt_cache_path: Path):
+    """Default TT-Metal's program cache under the persistent model cache."""
+
+    # TT_CACHE_PATH holds model tensors, while TT-Metal otherwise puts compiled
+    # programs under the container user's ephemeral home directory. Persist the
+    # program cache alongside the model cache so repeated prompt shapes do not
+    # pay the JIT cost again after every server restart. Respect an explicit
+    # override for deployments that manage this cache separately.
+    tt_metal_cache = tt_cache_path / "tt_metal_cache"
+    tt_metal_cache.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("TT_METAL_CACHE", str(tt_metal_cache))
+    logger.info(f"Using TT_METAL_CACHE at {os.environ['TT_METAL_CACHE']}")
 
 
 def register_tt_models(impl_id=None):
@@ -771,6 +787,10 @@ def main():
 
     if device_type and not os.getenv("TT_CACHE_PATH"):
         set_cache_paths(model_spec, device_type)
+    elif os.getenv("TT_CACHE_PATH"):
+        # Docker launchers commonly provide TT_CACHE_PATH before this process
+        # starts. Ensure that path also makes TT-Metal's program cache durable.
+        set_tt_metal_cache(Path(os.environ["TT_CACHE_PATH"]))
     # NOTE: In multihost deployments, model weights are expected to reside on shared
     # storage (e.g., NFS) and are read directly by each worker via model-specific
     # environment variables (e.g., DEEPSEEK_V3_HF_MODEL). Users are responsible for

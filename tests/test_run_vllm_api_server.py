@@ -51,6 +51,51 @@ def _build_catalog():
     }
 
 
+def test_set_cache_paths_persists_tt_metal_cache(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    cache_dir = tmp_path / "model-cache"
+    monkeypatch.delenv("TT_METAL_CACHE", raising=False)
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "get_container_cache_dir",
+        lambda _spec, device: cache_dir,
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "get_mesh_device_name",
+        lambda device: "P300x2",
+    )
+
+    run_vllm_api_server_module.set_cache_paths({}, "P300x2")
+
+    assert os.environ["TT_CACHE_PATH"] == str(cache_dir)
+    assert os.environ["TT_METAL_CACHE"] == str(cache_dir / "tt_metal_cache")
+    assert (cache_dir / "tt_metal_cache").is_dir()
+
+
+def test_set_cache_paths_respects_explicit_tt_metal_cache(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    cache_dir = tmp_path / "model-cache"
+    override = tmp_path / "program-cache"
+    monkeypatch.setenv("TT_METAL_CACHE", str(override))
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "get_container_cache_dir",
+        lambda _spec, device: cache_dir,
+    )
+    monkeypatch.setattr(
+        run_vllm_api_server_module,
+        "get_mesh_device_name",
+        lambda device: "P300x2",
+    )
+
+    run_vllm_api_server_module.set_cache_paths({}, "P300x2")
+
+    assert os.environ["TT_METAL_CACHE"] == str(override)
+
+
 @pytest.fixture
 def run_vllm_api_server_module(monkeypatch):
     module_name = "test_run_vllm_api_server_module"
