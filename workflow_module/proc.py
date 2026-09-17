@@ -160,6 +160,9 @@ def _run_bounded_command(command, logger, env, shell, log_file_path, timeout_sec
     Preserve emitted logs/files. Exit 124 denotes an incomplete timed-out task,
     not an evaluation score. Existing callers remain unbounded unless opted in.
     """
+    logger.info("Running command: %s", shlex.join(command))
+    if log_file_path:
+        logger.info("Logging output to: %s ...", log_file_path)
     log_file = open(log_file_path, "a", buffering=1) if log_file_path else None
     process = None
     readers = []
