@@ -324,6 +324,13 @@ gemma4_31b_autoport_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/google_gemma_4_31b",
 )
+# Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765.
+gemma4_31b_qb2_impl = ImplSpec(
+    impl_id="gemma4_31b_qb2",
+    impl_name="gemma4-31b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4_31b_qb2",
+)
 # DiffusionGemma 26B-A4B. Reuses the gemma4 MoE text backbone unchanged; the net-new
 # part is the block-diffusion decode loop. Exists on the tt-metal branch
 # `diffusion-gemma-all` (main carries only the foundation layer, no e2e demo).
@@ -350,6 +357,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
     "muse_glimmer": muse_glimmer_impl,
     "gemma4_31b_autoport": gemma4_31b_autoport_impl,
+    "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "diffusion_gemma": diffusion_gemma_impl,
 }
 
