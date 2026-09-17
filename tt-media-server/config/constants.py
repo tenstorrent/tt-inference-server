@@ -803,6 +803,18 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    # BH QuietBox 2 (QB2): 4 Blackhole chips exposed as a single 1x4 row.
+    # Mesh is (1, 4) rather than the (2, 2) every other P300X2 entry uses, so the
+    # SD3.5 pipeline must carry a matching _PRESETS key in tt-metal
+    # (models/tt_dit/pipelines/stable_diffusion_35_large): the preset table is
+    # keyed on mesh shape and a missing key raises KeyError on preset["cfg"].
+    (ModelRunners.TT_SD3_5, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     (ModelRunners.TT_FLUX_1_DEV, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
