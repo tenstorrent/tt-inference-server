@@ -104,6 +104,19 @@ def _command_gen_kwargs(command):
 
 
 class TestEvalCommand:
+    @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
+    @pytest.mark.parametrize("value", [0, -1, True, 1.5])
+    def test_invalid_execution_policy(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            EvalTask(task_name="aime25", **{field: value})
+
+    def test_task_attempt_budget_overrides_device_default(self):
+        task = EvalTask(task_name="aime25", max_attempts=1)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+        assert "max_retries=1" in model_args
+        assert "max_retries=0" not in model_args
+
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
         command = _build_eval_test_command(task)
@@ -416,8 +429,15 @@ class TestRunLLMEval:
         )
         assert len(out) == 1
         assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
-        assert "no eval results parsed" in out[0].data["error"]
+        assert "evaluation subprocess failed" in out[0].data["error"]
         run_task.assert_called_once()
+
+    def test_deadline_cannot_score_partial_results_as_pass(self):
+        out, _, score_task, _ = self._run([_task()], blocks=[MagicMock()], run_rc=124)
+        score_task.assert_not_called()
+        assert out[0].data["subprocess_rc"] == 124
+        assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "incomplete" in out[0].data["error"]
 
     def test_min_context_skip(self):
         # Task needs more context than the device provides: not run, but now a
@@ -461,6 +481,12 @@ class TestEvalsWorkflowLLMOverride:
             outcomes = wf.run_tasks()
         assert outcomes[0].exit_code == 0
         assert outcomes[0].block_kind is None
+
+    def test_incomplete_subprocess_is_nonzero_workflow(self):
+        wf = self._wf("llm")
+        block = SimpleNamespace(kind="evals", data={"subprocess_rc": 124})
+        with patch(f"{_MOD}.run_llm_eval", return_value=[block]):
+            assert wf.run_tasks()[0].exit_code == 1
 
     def test_llm_raises_fails_task(self):
         wf = self._wf("llm")
