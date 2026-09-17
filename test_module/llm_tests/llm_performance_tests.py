@@ -7,11 +7,10 @@
 Bridges ``test_module`` to ``llm_module``: builds an
 ``LLMPerformanceRunner`` from a (driver, server_controller) pair,
 executes the sweep defined by ``configs``, and forwards each resulting
-``Block`` to ``workflow_module`` for downstream processing (report
-rendering, artifact upload, etc.). Blocks are forwarded point by point
-and the report is re-checkpointed after each one, so a sweep killed
-mid-flight still leaves a report for the finished points. The driver carries its own
-parser, so command-build, execute, and parse stay selected as one unit.
+``Block`` to ``workflow_module`` as it is produced, re-checkpointing the
+report after each one, so a sweep killed mid-flight still leaves a report
+for the points that finished. The driver carries its own parser, so
+command-build, execute, and parse stay selected as one unit.
 
 The caller is the only place in test_module that knows about
 llm_module's internals; everything else (drivers, runner
@@ -99,17 +98,15 @@ def run_llm_performance(
         server_controller=server_controller,
     )
 
-    # The envelope is built BEFORE the sweep so every per-point accept carries
-    # it: `generated_at` is recorded once and synthesises the report_id, which
-    # in turn names the report files -- so all checkpoints and the final report
-    # overwrite one another instead of littering the output dir.
+    # Built before the sweep: `generated_at` is recorded once and synthesises
+    # the report_id that names the report files, so the checkpoints and the
+    # final report overwrite one another.
     envelope = {
         **report_model_fields(ctx.model_spec),
         "device": device_label,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    # Same directory WorkflowExecution.generate_report writes to.
-    report_dir = Path(ctx.output_path).parent
+    report_dir = Path(ctx.output_path).parent  # WorkflowExecution's report dir
 
     def _persist(block) -> None:
         accept_blocks([block], envelope=envelope)
@@ -128,9 +125,6 @@ def run_llm_performance(
             len(result.return_codes),
         )
 
-    # No bulk accept here: _persist already handed every Block to the
-    # accumulator as it was produced. Accepting again would duplicate every
-    # sweep point in the report.
     return result
 
 

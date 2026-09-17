@@ -127,12 +127,10 @@ class SourceReport:
 
     @property
     def is_partial(self) -> bool:
-        """True for a report whose workflow never finished.
+        """True for a checkpoint: a report whose workflow never finished.
 
-        ``checkpoint_report`` re-renders after every sweep point and marks each
-        render ``report_partial``; ``inject_metadata`` clears it on the final
-        report. So a source still carrying the flag was written by a run that
-        was cancelled or killed.
+        ``inject_metadata`` clears the flag on the final report, so a source
+        still carrying it was written by a cancelled or killed run.
         """
         return bool(self.schema.metadata.get("report_partial"))
 
@@ -479,10 +477,8 @@ def merge_reports(
             ", ".join(missing_tests),
         )
 
-    # A checkpointed report is real data but not a complete measurement: the
-    # category checks see only the sweep points that finished, so a run
-    # cancelled at point 25 of 28 would otherwise be graded as if it had run
-    # them all.
+    # Graded as complete, a run cancelled at point 25 of 28 would read exactly
+    # like one that ran all 28.
     partial = [source for source in sources if source.is_partial]
     if partial:
         blockers = {

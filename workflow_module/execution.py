@@ -404,9 +404,6 @@ class WorkflowExecution(ABC):
     def inject_metadata(self, schema: ReportSchema) -> None:
         meta = schema.metadata
         meta["workflow"] = self.name
-        # Overwrites the marker every checkpoint_report() left behind: a report
-        # still carrying report_partial=True is one whose workflow never
-        # reached this point (cancelled, timed out, killed).
         meta["report_partial"] = False
         meta["report_blocks"] = len(schema.sections)
         m = self.orchestrator_metadata
