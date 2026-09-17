@@ -4810,26 +4810,16 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Deliberately NOT use_chat_api, unlike r1_gpqa_diamond above:
-                # the server-side chat rendering inserts a stray space token
-                # at the system-turn boundary for conversations with system
-                # content, and this checkpoint degenerates into repeated-token
-                # output on that malformed prompt (bringup run 33842850459
-                # scored 30.95 because 29/42 responses collapsed; replaying
-                # the server-rendered token ids reproduces it exactly, while
-                # the reference rendering of the same conversation reasons
-                # correctly and stops on its own). The completions path with
-                # the classic no-thinking 5-shot CoT methodology -- the same
-                # shape every other model's mmlu_pro entry uses -- answered
-                # correctly and deterministically in local replays. Note the
-                # published 85.2 may assume thinking, so expect this score to
-                # undershoot it; grade as indicative.
+                # Match tt-agentic-bringup-qb2 run 33842850459 exactly: use the
+                # chat endpoint with server-side thinking and non-streaming
+                # responses for this 5-shot MMLU-Pro sweep.
+                use_chat_api=True,
                 model_kwargs={
                     "max_length": 49152,
                     "timeout": "3600",
                 },
                 gen_kwargs={
-                    "stream": "true",
+                    "stream": "false",
                     "max_gen_toks": 8192,
                     "until": [],
                     "do_sample": "true",
