@@ -70,3 +70,19 @@ def test_success_and_checked_timeout():
             timeout_seconds=0.1,
             check=True,
         )
+
+
+def test_bounded_execution_keeps_command_and_log_provenance(tmp_path, caplog):
+    log_path = tmp_path / "client.log"
+    with caplog.at_level(logging.INFO):
+        assert (
+            run_command(
+                [sys.executable, "-c", "pass"],
+                logging.getLogger(),
+                timeout_seconds=2,
+                log_file_path=str(log_path),
+            )
+            == 0
+        )
+    assert "Running command:" in caplog.text
+    assert str(log_path) in caplog.text
