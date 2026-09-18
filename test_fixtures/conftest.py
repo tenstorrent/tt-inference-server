@@ -63,6 +63,18 @@ def pytest_addoption(parser):
         default="unknown-task",
         help="Name of the test task, used to name the output report file",
     )
+    parser.addoption(
+        "--chat-template-kwargs",
+        default="{}",
+        help="Explicit JSON chat-template defaults; recorded in the test report",
+    )
+
+
+def _chat_template_defaults(request):
+    value = json.loads(request.config.getoption("--chat-template-kwargs"))
+    if not isinstance(value, dict):
+        raise ValueError("--chat-template-kwargs must be a JSON object")
+    return value
 
 
 @pytest.fixture(scope="session")
@@ -97,6 +109,7 @@ def results_report(request, output_path):
         "model_name": request.config.getoption("--model-name"),
         "model_impl": request.config.getoption("--model-impl"),
         "task_name": task_name,
+        "chat_template_kwargs": _chat_template_defaults(request),
         "results": {},
     }
     yield report_data
@@ -131,6 +144,7 @@ def api_client(endpoint_url, request):
         headers["Authorization"] = f"Bearer {authorization}"
 
     model_name = request.config.getoption("--model-name", default=None)
+    chat_defaults = _chat_template_defaults(request)
 
     def _make_request(
         json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
@@ -140,6 +154,15 @@ def api_client(endpoint_url, request):
         try:
             kwargs = {"headers": headers, "timeout": timeout, "stream": stream}
             if json_payload is not None:
+                # Explicit test settings win. No sampling control is changed.
+                if chat_defaults and "messages" in json_payload:
+                    explicit = json_payload.get("chat_template_kwargs", {})
+                    if not isinstance(explicit, dict):
+                        raise ValueError("chat_template_kwargs must be a JSON object")
+                    json_payload = {
+                        **json_payload,
+                        "chat_template_kwargs": {**chat_defaults, **explicit},
+                    }
                 # Inject model name when missing so multi-model endpoints (e.g.
                 # the Tenstorrent console) can route the request correctly.
                 if model_name and "model" not in json_payload:
