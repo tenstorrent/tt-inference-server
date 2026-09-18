@@ -32,6 +32,22 @@ def test_defaults_are_explicit_and_request_settings_win(monkeypatch):
     assert "chat_template_kwargs" not in sent[-1]["json"]
 
 
+def test_unconfigured_chat_requests_preserve_existing_payload(monkeypatch):
+    sent = []
+    monkeypatch.setattr(fixtures, "_get_bearer_token", lambda: None)
+    monkeypatch.setattr(fixtures.requests, "post", lambda url, **kwargs: (
+        sent.append(kwargs) or SimpleNamespace(
+            raise_for_status=lambda: None, json=lambda: {})))
+    client = fixtures.api_client.__wrapped__(
+        "http://example/v1/chat/completions", _request("{}"))
+    payload = {"model": "org/model", "messages": [], "temperature": 0.9,
+               "max_tokens": 1024, "seed": 1234}
+    client(payload, timeout=None)
+    assert sent[-1]["json"] == payload
+    assert "chat_template_kwargs" not in sent[-1]["json"]
+    assert sent[-1]["timeout"] is None
+
+
 @pytest.mark.parametrize("value", ["[]", "null", '"false"'])
 def test_non_object_defaults_rejected(value):
     with pytest.raises(ValueError, match="JSON object"):
