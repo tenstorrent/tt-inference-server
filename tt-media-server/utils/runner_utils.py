@@ -18,6 +18,30 @@ _BH_DEVICE_MESH_DESCRIPTORS = {
     "p300": "p150_mesh_graph_descriptor.textproto",
     "p300x2": "p150_mesh_graph_descriptor.textproto",
     "p100": "p100_mesh_graph_descriptor.textproto",
+    # No "bh-galaxy" entry: the default descriptor already maps a healthy BH
+    # Galaxy, so there is nothing to override. tt-metal picks
+    # single_bh_galaxy_mesh_graph_descriptor.textproto (device_topology
+    # dims [8, 4], channels RELAXED) for ClusterType::BLACKHOLE_GALAXY, and
+    # (4, 8), (8, 4) and (1, 4) all open on it. Set TT_MESH_GRAPH_DESC_PATH
+    # explicitly only to change the fabric shape, e.g.
+    #
+    #   single_bh_galaxy_torus_xy_graph_descriptor.textproto
+    #       dims [8, 4], dim_types [RING, RING], channels STRICT
+    #
+    # which is the wrap-around torus variant. Measured on g11blx01 (32 chips,
+    # every chip degree 4), both the default and the torus_xy descriptor open
+    # (4, 8), (8, 4) and (1, 4), and carve (1, 4) / (1, 8) / (2, 4) / (4, 1)
+    # submeshes out of a (4, 8) parent. Note the descriptors declare [8, 4]
+    # (8 rows x 4 cols) while the mesh is requested as (4, 8); tt-metal rotates
+    # between the two, so both orientations are accepted.
+    #
+    # An earlier revision of this comment claimed the BH Galaxy "does not form
+    # a 2D grid" and that the single_bh_galaxy descriptors could not map. That
+    # was a broken-fabric artifact, not a topology fact: 7 chips had only 2
+    # neighbours and 8 of 12 eth channels were DOWN (degrees {2:7, 3:4, 4:21}).
+    # After `tt-smi -glx_reset` the degree histogram became {4: 32} and every
+    # shape above mapped with no errors. Check connectivity with
+    # ./build_Release/tools/umd/system_health before blaming a descriptor.
 }
 
 
@@ -89,7 +113,13 @@ def setup_cpu_threading_limits(cpu_threads: str, num_torch_threads: int = 1):
 
 
 def _setup_blackhole_mesh_config(tt_metal_home: str):
-    """Configure mesh graph descriptors for Blackhole hardware"""
+    """Configure mesh graph descriptors for Blackhole hardware.
+
+    Devices absent from _BH_DEVICE_MESH_DESCRIPTORS (notably "bh-galaxy") are
+    left alone so tt-metal resolves the descriptor from the detected cluster
+    type. See the note on _BH_DEVICE_MESH_DESCRIPTORS for the BH Galaxy
+    measurements and for the torus_xy override.
+    """
     device = (settings.device or "").lower()
     descriptor = _BH_DEVICE_MESH_DESCRIPTORS.get(device)
     if descriptor:

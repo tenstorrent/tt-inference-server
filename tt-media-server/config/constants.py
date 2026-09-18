@@ -803,6 +803,59 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
+    # Blackhole Galaxy (32 chips on one host), driven as a 1x4 row.
+    #
+    # 1x4 is a capacity choice, not a topology limit. (4, 8) is the native BH
+    # Galaxy shape and it does map: tt-metal resolves
+    # ClusterType::BLACKHOLE_GALAXY to
+    # single_bh_galaxy_mesh_graph_descriptor.textproto (device_topology dims
+    # [8, 4]) and the tech report describes the box as 32 devices, 8x4.
+    # Measured on g11blx01 with a healthy fabric (degree histogram {4: 32}),
+    # both under the default descriptor and under
+    # TT_MESH_GRAPH_DESC_PATH=.../single_bh_galaxy_torus_xy_graph_descriptor.textproto:
+    #
+    #   open_mesh_device((4, 8))   OK, 32 devices
+    #   open_mesh_device((8, 4))   OK, 32 devices
+    #   open_mesh_device((1, 4))   OK,  4 devices
+    #
+    # and create_submeshes on a (4, 8) parent yields 8x (1, 4), 4x (1, 8),
+    # 4x (2, 4), 8x (4, 1). So a 1x4 submesh of a (4, 8) parent resolves fine;
+    # SD3.5 simply asks for (1, 4) at open time instead.
+    #
+    # 1x4 is the same layout QB2 uses, so it reuses the (1, 4) _PRESETS entry
+    # (tp=4, num_links=2, Ring) and the ring fabric + 50MB trace that
+    # TTSD35Runner.get_pipeline_device_params applies on that shape. Only 4 of
+    # the 32 chips carry the model; the rest are unused. Moving SD3.5 to (4, 8)
+    # here is a pipeline question (the (4, 8) _PRESETS entry and its AGMM
+    # blockings), not a mesh-mapping one.
+    #
+    # device_ids is the full 32-device group rather than "(0,1,2,3)" on purpose.
+    # setup_runner_environment turns device_ids into TT_VISIBLE_DEVICES, and
+    # hiding chips breaks the mapping even though the shape itself is valid:
+    # the surviving chips lose the neighbours the descriptor expects, so
+    # topology_mapper.cpp fails its TT_FATAL(mapping_result.success) with
+    # "Graph specified in MGD could not fit in the discovered physical
+    # topology". Measured with open_mesh_device((1, 4)) under torus_xy:
+    #
+    #   TT_VISIBLE_DEVICES unset / 0..31   32 visible   OK
+    #   TT_VISIBLE_DEVICES=0..7             8 visible   FAIL topology_mapper
+    #   TT_VISIBLE_DEVICES=0,1,2,3          4 visible   FAIL topology_mapper
+    #
+    # Keep all 32 chips visible and let the (1, 4) request pick its own slice.
+    # (An earlier note here reported the 4-chip case as "system mesh 2x1 /
+    # only 2 devices available" and claimed no 2D shape maps at all. Both were
+    # artifacts of a degraded fabric -- 7 chips at degree 2, 8 of 12 eth
+    # channels DOWN -- which `tt-smi -glx_reset` repaired. Re-check
+    # ./build_Release/tools/umd/system_health before trusting a mapping
+    # failure. Note -glx_reset needs BMC >= v0.05.22; below that it falls back
+    # to a legacy retimer reset that can drop NVMe off the PCIe bus.)
+    (ModelRunners.TT_SD3_5, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+    },
     # BH QuietBox 2 (QB2): 4 Blackhole chips exposed as a single 1x4 row.
     # Mesh is (1, 4) rather than the (2, 2) every other P300X2 entry uses, so the
     # SD3.5 pipeline must carry a matching _PRESETS key in tt-metal

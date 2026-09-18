@@ -10,8 +10,46 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 class BaseMetalDeviceRunner(BaseDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        # Set when the mesh is carved out of a larger parent mesh; see
+        # get_parent_mesh_plan. The parent owns the hardware, so it is the
+        # handle close_device has to release.
+        self._parent_mesh_device = None
 
     def get_pipeline_device_params(self):
+        return None
+
+    def get_parent_mesh_plan(self):
+        """Return (parent_shape, submesh_shape, reshape_to) or None.
+
+        Default None means "open settings.device_mesh_shape directly", which is
+        right whenever the requested mesh is the whole system.
+
+        On a torus-wired box (BH Galaxy) a partial mesh cannot bring up fabric:
+        the routers on the selected chips try to handshake with physical
+        neighbours that are outside the mesh, so no partner kernel answers and
+        fabric init dies with "Fabric Router Sync: Timeout ... expected status
+        0xa2b2c2d2 (LOCAL_HANDSHAKE_COMPLETE)". Measured on g11blx01 with a
+        healthy fabric (8 UP eth links on all 32 chips) under FABRIC_1D:
+
+            (4, 8) OK    (8, 4) OK    (1, 32) OK      <- cover all 32 chips
+            (1, 4) FAIL  (1, 8) FAIL  (2, 4)  FAIL    <- partial, RouterSync
+
+        FABRIC_1D and FABRIC_1D_RING fail identically on (1, 4), so this is
+        about coverage, not ring vs linear topology.
+
+        Returning a plan opens the full system mesh first (every router finds
+        its partner), then slices the shape the model wants out of it. This
+        mirrors models/tt_dit/tests/models/sd35/run_sd35_submesh.py in
+        tt-metal, whose header records the same finding: "Opening a bare 2x2
+        mesh on a Galaxy fails fabric router sync (neighbours outside the mesh
+        never come up), so open the full system mesh with fabric and slice a
+        2x2 submesh out of it."
+
+        reshape_to is the optional relabel that turns a compact block into the
+        row a preset expects -- a (2, 2) submesh reshaped to (1, 4) renumbers
+        in ring order (device ids 0, 1, 5, 4), which keeps every hop between
+        adjacent tp neighbours physical.
+        """
         return None
 
     def set_device(self):
@@ -24,7 +62,17 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
     def close_device(self):
         try:
             self.logger.info(f"Device {self.device_id}: Closing mesh device...")
-            if self.ttnn_device is not None:
+            # Submeshes are views onto their parent, so releasing the parent is
+            # what frees the hardware. Closing the submesh first would leave the
+            # parent holding the devices.
+            if self._parent_mesh_device is not None:
+                ttnn.close_mesh_device(self._parent_mesh_device)
+                self._parent_mesh_device = None
+                self.ttnn_device = None
+                self.logger.info(
+                    f"Device {self.device_id}: Successfully closed parent mesh device"
+                )
+            elif self.ttnn_device is not None:
                 ttnn.close_mesh_device(self.ttnn_device)
                 self.logger.info(
                     f"Device {self.device_id}: Successfully closed mesh device"
@@ -106,7 +154,37 @@ class BaseMetalDeviceRunner(BaseDeviceRunner):
 
     def _initialize_mesh_device(self, mesh_shape, device_params, fabric_config):
         try:
-            mesh_device = ttnn.open_mesh_device(mesh_shape=mesh_shape, **device_params)
+            plan = self.get_parent_mesh_plan()
+            if plan is None:
+                mesh_device = ttnn.open_mesh_device(
+                    mesh_shape=mesh_shape, **device_params
+                )
+            else:
+                parent_shape, submesh_shape, reshape_to = plan
+                self.logger.info(
+                    f"Device {self.device_id}: opening parent mesh {tuple(parent_shape)} "
+                    f"then slicing {tuple(submesh_shape)}"
+                    + (f" reshaped to {tuple(reshape_to)}" if reshape_to else "")
+                    + " (partial meshes cannot initialize fabric on a torus-wired box)"
+                )
+                parent = ttnn.open_mesh_device(
+                    mesh_shape=ttnn.MeshShape(*parent_shape), **device_params
+                )
+                try:
+                    mesh_device = parent.create_submeshes(
+                        ttnn.MeshShape(*submesh_shape)
+                    )[0]
+                    if reshape_to is not None:
+                        mesh_device.reshape(ttnn.MeshShape(*reshape_to))
+                except Exception:
+                    ttnn.close_mesh_device(parent)
+                    raise
+                # Keep the parent alive for the life of the submesh.
+                self._parent_mesh_device = parent
+                self.logger.info(
+                    f"Device {self.device_id}: submesh {mesh_device.shape} "
+                    f"of parent {parent.shape}"
+                )
         except Exception as e:
             try:
                 if fabric_config:

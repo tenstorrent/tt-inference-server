@@ -17,6 +17,7 @@ from config.constants import (
     WAN22_DISTILL_NUM_STEPS,
     WAN22_LIGHTNING_NUM_STEPS,
     WAN22_NUM_FRAMES,
+    DeviceTypes,
     ModelRunners,
     ModelServices,
     SupportedModels,
@@ -295,9 +296,40 @@ class TTDiTRunner(BaseMetalDeviceRunner):
         )
 
 
+# On a BH Galaxy the 32 chips are torus-wired, so a partial mesh cannot bring
+# up fabric: routers on the selected chips wait on physical neighbours that are
+# outside the mesh and fabric init fails with "Fabric Router Sync: Timeout".
+# (1, 4) is still the parallelism we want -- it reuses QB2's tp=4 Ring preset --
+# so open the full (4, 8) system mesh, carve a compact (2, 2) block, then relabel
+# it to a (1, 4) row. The reshape renumbers in ring order (device ids 0, 1, 5, 4)
+# so each tp hop stays a physical link. Same approach as
+# models/tt_dit/tests/models/sd35/run_sd35_submesh.py layout "1x4c" in tt-metal.
+#
+# Keyed by the mesh shape the model asks for, value is
+# (parent_shape, submesh_shape, reshape_to).
+SD35_BH_GALAXY_PARENT_MESH_PLANS = {
+    (1, 4): ((4, 8), (2, 2), (1, 4)),
+}
+
+
 class TTSD35Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+
+    def get_parent_mesh_plan(self):
+        """Slice (1, 4) out of the full (4, 8) mesh on a BH Galaxy.
+
+        Only applies when the box really is a 32-chip Blackhole Galaxy. On QB2
+        the 4 chips are the entire system, so the direct open works and must be
+        left alone.
+        """
+        if not is_blackhole():
+            return None
+        if self.settings.device != DeviceTypes.BLACKHOLE_GALAXY.value:
+            return None
+        return SD35_BH_GALAXY_PARENT_MESH_PLANS.get(
+            tuple(self.settings.device_mesh_shape)
+        )
 
     def create_pipeline(self):
         try:
