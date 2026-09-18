@@ -1236,9 +1236,10 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
     """
     kwargs = dict(data)
     if env != "prod" and (docker_image := data.get("docker_image")) is not None:
-        if not isinstance(docker_image, str) or re.fullmatch(
-            r"[^\s@]+@sha256:[0-9a-f]{64}", docker_image
-        ) is None:
+        if (
+            not isinstance(docker_image, str)
+            or re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", docker_image) is None
+        ):
             raise ValueError(
                 "dev docker_image must be an immutable OCI repo@sha256 digest"
             )
