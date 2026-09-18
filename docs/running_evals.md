@@ -422,44 +422,17 @@ python run.py \
 
 ## 3. Tau3 Banking evaluator dependency
 
-Repair a missing dependency in the Banking task's `main` image.
-This is a recent tau2 regression, introduced on September 10, 2026.
+This change only fixes an evaluator startup bug. It does not change test
+cases, model settings, or scoring rules.
 
-- Harbor's [task Dockerfile](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/src/tau3_bench/task-template/environment/Dockerfile)
-  clones tau2's default branch without a commit pin and installs `tau2[knowledge]`.
-  A later image build can therefore pick up new tau2 code without any client change.
 - [tau2 PR #523](https://github.com/sierra-research/tau2-bench/pull/523), merged
-  September 10, added a voice import to `src/tau2/data_model/simulation.py`.
-  Importing the evaluator now reaches code that requires `websockets`.
-  The [dependency declaration](https://github.com/sierra-research/tau2-bench/blob/825183ad5963c7cbfdbf7862c5626f594f505bbe/pyproject.toml)
-  still lists it only under the `voice` extra, not `knowledge`.
-- With the same Python 3.12 dependencies and no `websockets`, evaluator import
-  passed at the preceding commit, `b351ed5`, and failed at the merge, `825183a`.
-  The error was `ModuleNotFoundError: No module named 'websockets'`.
-  A grading failure can produce `used_tau2_evaluator: false` and reward 0.
-  That reward is not a valid model score.
-
-The fix is limited to the evaluation client:
-
+  September 10, 2026, made the evaluator import voice code that needs `websockets`.
+  Harbor installs `tau2[knowledge]`, which
+  [does not include that dependency](https://github.com/sierra-research/tau2-bench/blob/825183ad5963c7cbfdbf7862c5626f594f505bbe/pyproject.toml).
+  The evaluator then fails with `ModuleNotFoundError`.
 - [`llm_module/agentic/banking_docker.py`](../llm_module/agentic/banking_docker.py),
-  `docker_command()`, adds a Compose build overlay for Banking tasks only.
-  It installs `websockets==17.1` in `main` and checks
-  `import tau2.evaluator.evaluator` during the build.
+  `docker_command()`, adds `websockets==17.1` to the Banking task's `main` image.
+  It checks that the evaluator imports successfully during the build.
 - [`llm_module/agentic/harbor.py`](../llm_module/agentic/harbor.py), `run()`,
-  enables the adapter only for Docker runs of `sierra-research/tau3-bench`.
-  The adapter applies only to the Harbor subprocess.
-  No manual `PATH` change or server installation is required.
+  applies the fix automatically to Tau3 Docker runs. Other tasks are unchanged.
   Remove any previously configured external Banking Docker wrapper.
-- Task files, the user-simulator image, and scoring rules stay unchanged.
-  Other tasks pass through to Docker unchanged. Kubernetes images are not patched.
-  [Adapter tests](../tests/llm_module/test_banking_docker.py) check task selection,
-  argument forwarding, and the merged Compose configuration.
-
-Compose must support `dockerfile_inline`. The adapter saves overlays beside the
-Harbor job under `<job-name>_banking_docker/overlays/`.
-After a run, check each Banking trial's `verifier/result.json` for
-`used_tau2_evaluator: true`. The build check verifies imports only.
-
-This fix does not change server-side tool-argument parsing or pin tau2.
-The main and runtime images still clone upstream independently.
-Revalidate the dependency fix when changing tau2 or the task package.
