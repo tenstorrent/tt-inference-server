@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -70,6 +71,20 @@ def test_invalid_chat_template_defaults_rejected():
     test = VLLMParamConformanceTest(TestConfig({"chat_template_kwargs": []}), {})
     with pytest.raises(ValueError, match="JSON object"):
         test._extra_pytest_args()
+
+
+def test_template_policy_survives_wrapper_report(monkeypatch):
+    test = _make_test(_fake_ctx(hf_model_repo="org/model"))
+
+    async def run_suite(*args):
+        return {
+            "chat_template_kwargs": {"enable_thinking": False},
+            "results": {},
+        }
+
+    monkeypatch.setattr(test, "_run_pytest_suite", run_suite)
+    report = asyncio.run(test._run_specific_test_async())
+    assert report["chat_template_kwargs"] == {"enable_thinking": False}
 
 
 def test_diffusiongemma_suite_receives_catalog_max_context():
