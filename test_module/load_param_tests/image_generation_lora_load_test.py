@@ -72,8 +72,14 @@ class ImageGenerationLoraLoadTest(BaseTest):
 
     """Concurrent load test mixing baseline and LoRA image-generation requests."""
 
-    def __init__(self, config: TestConfig, targets: dict, description: str = ""):
-        super().__init__(config, targets, description)
+    def __init__(
+        self,
+        config: TestConfig,
+        targets: dict,
+        description: str = "",
+        ctx: Optional["MediaContext"] = None,
+    ):
+        super().__init__(config, targets, description, ctx=ctx)
 
     async def _run_specific_test_async(self) -> dict:
         lora_configs = self._parse_lora_configs()
