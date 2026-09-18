@@ -6,13 +6,6 @@
 - [Search other embedding models](./README.md)
 - [Search other models by model type](../../../README.md#models-by-model-type)
 
-`Qwen3-Embedding-4B` is also supported on hardware:
-
-- [WH Galaxy](Qwen3-Embedding-4B_galaxy.md)
-- [WH LoudBox/QuietBox](Qwen3-Embedding-4B_t3k.md)
-- [N150](Qwen3-Embedding-4B_n150.md)
-- [N300](Qwen3-Embedding-4B_n300.md)
-
 ## Quickstart - Deploy Qwen3-Embedding-4B Inference Server on BH QuietBox 2
 
 See [prerequisites](../../prerequisites.md) for system software setup, e.g. for first-run or when experiencing issues.
