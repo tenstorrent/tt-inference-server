@@ -450,11 +450,9 @@ def test_agentic_sweep_point_slo_is_typed(tmp_path):
     ],
 )
 def test_effective_slo_merges_field_wise_row_wins(row, default, expected):
-    """Mirrors effectiveSlo in llm-gauntlet packages/schema/src/derive/sweep.ts.
-
-    The document's own schema calls a row slo a "per-row goodput SLO override;
-    unset fields inherit the scenario default", so this merge is the contract,
-    not a convenience.
+    """The document schema defines a row slo as a per-row override whose unset
+    fields inherit the scenario default, so this merge is the contract rather
+    than a convenience.
     """
     assert effective_slo(row, default) == expected
 

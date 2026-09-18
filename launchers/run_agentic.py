@@ -55,8 +55,14 @@ def main() -> int:
         # This is a separate process from run.py, so the document has to be
         # loaded again for the provider to synthesize an off-catalog spec.
         from workflow_module.requirements_schema import load_requirements
+        from workflows.llm_gauntlet_repo import resolve_requirements_location
         from workflows.requirements_cli import register_requirements_providers
 
+        # run.py resolves a "llm-gauntlet;<path>" value before forwarding, so
+        # this normally gets a plain path. Resolve anyway, so the launcher stays
+        # runnable by hand with the same spelling an operator copied out of a
+        # log; a second resolution is an idempotent no-op fetch.
+        args.requirements_json = resolve_requirements_location(args.requirements_json)
         register_requirements_providers(load_requirements(args.requirements_json))
     # EVALS_AGENTIC setup depends on the model, so resolve the spec first.
     model_spec = get_model_spec_provider().resolve(model=args.model, device=args.device)
