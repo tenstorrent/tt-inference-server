@@ -161,11 +161,11 @@ class TestModelSpecTemplateSystem:
         )
         assert template.repacked == 0
         assert template.status == ModelStatusTypes.EXPERIMENTAL
-        # The base (dev) template has no pin fields; they live on
-        # ProdModelSpecTemplate only.
+        # Source/build release pins remain prod-only. Dev may carry a reviewed
+        # immutable image digest, but has no image by default.
         assert not hasattr(template, "version")
         assert not hasattr(template, "tt_metal_commit")
-        assert not hasattr(template, "docker_image")
+        assert template.docker_image is None
         # Directly-constructed templates default to pinned so they are never
         # dropped from IMAGE_PINNED_MODEL_SPECS.
         assert template.image_pinned is True
@@ -205,6 +205,13 @@ class TestModelSpecTemplateSystem:
 
         # dev: no pins → not image-pinned
         assert _build_template(dict(base), env="dev").image_pinned is False
+        dev_image = {
+            **base,
+            "docker_image": "ghcr.io/x/y@sha256:" + "a" * 64,
+        }
+        built_dev_image = _build_template(dev_image, env="dev")
+        assert built_dev_image.image_pinned is True
+        assert built_dev_image.docker_image == dev_image["docker_image"]
         # prod: version is required and present → image-pinned
         prod = {**base, "version": "0.10.0", "tt_metal_commit": "abc1234"}
         assert _build_template(prod, env="prod").image_pinned is True
