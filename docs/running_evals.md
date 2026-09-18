@@ -165,9 +165,12 @@ python run.py \
 
 On this fork, Docker-based Tau3 runs automatically add `websockets==17.1`
 to the Banking task's `main` image and check
-`import tau2.evaluator.evaluator` during the image build. The task installs
-`tau2[knowledge]`, but the evaluator also imports voice code whose `websockets`
-dependency is absent. Without it, grading can fail with
+`import tau2.evaluator.evaluator` during the image build. Harbor's
+[task Dockerfile](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/src/tau3_bench/task-template/environment/Dockerfile)
+clones the unpinned tau2 default branch and installs `tau2[knowledge]`.
+[tau2 PR #523](https://github.com/sierra-research/tau2-bench/pull/523), merged
+September 10, 2026, added an eager voice import to that evaluation path without
+adding `websockets` to the knowledge dependencies. Without it, grading can fail with
 `used_tau2_evaluator: false` and reward 0; that is not a valid model score.
 
 The client applies a Compose build overlay through a Docker adapter scoped to
@@ -181,6 +184,9 @@ the Harbor job under `<job-name>_banking_docker/overlays/`.
 After the run, check every Banking trial's `verifier/result.json` for
 `used_tau2_evaluator: true`. The build check verifies imports, not successful
 grading. This client fix does not repair server-side tool-argument parsing.
+It also does not pin tau2 or make task builds reproducible: the main and runtime
+images still clone upstream independently. Revalidate the workaround when
+changing the task package or tau2 revision.
 
 ### Terminal-Bench 2.1
 
