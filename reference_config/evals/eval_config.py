@@ -1509,7 +1509,7 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
                         ],
                     },
                 ),
