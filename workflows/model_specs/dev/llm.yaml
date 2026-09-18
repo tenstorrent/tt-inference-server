@@ -2703,6 +2703,7 @@ templates:
   - Qwen/Qwen3.8-27B
   impl: quetzal
   inference_engine: VLLM
+  has_builtin_warmup: true
   device_model_specs:
   - device: P300X2
     max_concurrency: 32
@@ -2714,9 +2715,12 @@ templates:
       QUETZAL_BUNDLE_MANIFEST_SHA256: 7b764baa4dacc11549bff5d19e491e2eafa5756dfa5a1fdf5248ef1b3b139bd9
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
     vllm_args:
       revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
       tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+      block_size: 64
       enable_auto_tool_choice: true
       tool_call_parser: qwen3_coder
       reasoning_parser: qwen3
