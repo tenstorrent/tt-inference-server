@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     device_ids: str = DeviceIds.DEVICE_IDS_32.value
     is_galaxy: bool = True  # used for graph device split and class init
     device_mesh_shape: tuple = (1, 1)
+    # Seconds the device worker waits for a batch to reach max_batch_size after the
+    # first request arrives. A fixed-shape forward costs the same for 1 request as
+    # for max_batch_size, so waiting raises throughput. 0.0 disables the wait.
+    batch_linger_seconds: float = 0.0
     reset_device_command: str = "tt-smi -r"
     reset_device_sleep_time: float = 5.0
     allow_deep_reset: bool = False

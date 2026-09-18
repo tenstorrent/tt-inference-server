@@ -64,5 +64,21 @@ def register_models():
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 
+    # Register BGE-M3 embedding model (TTXLMRobertaModel)
+    # BGE-M3 reports the architecture XLMRobertaModel, and platform.py prepends "TT".
+    try:
+        ModelRegistry.register_model(
+            "TTXLMRobertaModel",
+            "models.demos.wormhole.bge_m3.demo.generator_vllm:BgeM3ForEmbedding",
+        )
+        print("Registered BGE-M3 embedding model")
+    except Exception as e:
+        import logging
+
+        logging.warning(
+            f"Failed to register TTXLMRobertaModel (BGE-M3): {e}. "
+            "BGE-M3 model may not be available. Ensure tt-metal is in Python path."
+        )
+
     # Add additional model registrations here as needed
     # ModelRegistry.register_model("AnotherModel", "path.to:ModelClass")
