@@ -1025,7 +1025,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
 | `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
-| `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
+| `TT_VIDEO_EXPORT_PRESET` | `"veryfast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `veryfast`, `fast`, `medium`). `veryfast` is ~2.5x smaller than `ultrafast` at the same CRF with negligible extra encode time |
 
 ## Operational TT Settings
 
