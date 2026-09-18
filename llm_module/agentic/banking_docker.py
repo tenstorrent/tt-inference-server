@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Supply the missing tau2 evaluator dependency in Banking task images."""
+"""Pin Banking task images to the tau2 revision before the voice import regression."""
 
 from __future__ import annotations
 
@@ -14,6 +14,29 @@ from pathlib import Path
 import shlex
 import shutil
 import sys
+
+TAU2_REVISION = "b351ed5f9281d4bdfa5629262f54c8781da0d5be"
+
+
+def _pinned_dockerfile(path: Path) -> str:
+    original = path.read_text()
+    clone = 'git clone --depth=1 "${TAU2_BENCH_REPO}" "${TAU2_BENCH_ROOT}"'
+    if (
+        "ENV TAU2_BENCH_ROOT=/opt/tau2-bench" not in original
+        or original.count(clone) != 1
+    ):
+        raise ValueError(
+            f"Unrecognized Banking Dockerfile: {path}; inspect before continuing"
+        )
+    checkout = (
+        'git init "${TAU2_BENCH_ROOT}"'
+        ' && git -C "${TAU2_BENCH_ROOT}" fetch --depth=1'
+        f' "${{TAU2_BENCH_REPO}}" {TAU2_REVISION}'
+        ' && git -C "${TAU2_BENCH_ROOT}" checkout --detach FETCH_HEAD'
+    )
+    return original.replace(clone, checkout) + (
+        "\nRUN python3 -c 'import tau2.evaluator.evaluator'\n"
+    )
 
 
 def prepare_docker_path(directory: Path, interpreter: Path, path: str) -> str:
@@ -56,28 +79,29 @@ def docker_command(args: list[str], docker: str, overlay_dir: Path) -> list[str]
     if not name.startswith("sierra-research/tau3-bench__tau3-banking_knowledge-task-"):
         return [docker, *args]
 
-    original = (directory / "Dockerfile").read_text()
-    if "ENV TAU2_BENCH_ROOT=/opt/tau2-bench" not in original:
-        raise ValueError("Unrecognized Banking Dockerfile; inspect before continuing")
-    dockerfile = original + (
-        "\nRUN python3 -m pip install --no-cache-dir websockets==17.1"
-        " && python3 -c 'import tau2.evaluator.evaluator'\n"
-    )
-    digest = hashlib.sha256(dockerfile.encode()).hexdigest()
-    overlay_dir.mkdir(parents=True, exist_ok=True)
-    overlay = overlay_dir / f"{digest}.json"
     contents = (
         json.dumps(
             {
                 "services": {
-                    "main": {
-                        "build": {"dockerfile_inline": dockerfile.replace("$", "$$")}
+                    service: {
+                        "build": {
+                            "dockerfile_inline": _pinned_dockerfile(path).replace(
+                                "$", "$$"
+                            )
+                        }
                     }
+                    for service, path in (
+                        ("main", directory / "Dockerfile"),
+                        ("tau3-runtime", directory / "runtime-server/Dockerfile"),
+                    )
                 }
             }
         )
         + "\n"
     )
+    digest = hashlib.sha256(contents.encode()).hexdigest()
+    overlay_dir.mkdir(parents=True, exist_ok=True)
+    overlay = overlay_dir / f"{digest}.json"
     # Concurrent trials may use the same Dockerfile. Publish complete JSON only.
     candidate = overlay_dir / f".{digest}.{os.getpid()}.json"
     candidate.write_text(contents)

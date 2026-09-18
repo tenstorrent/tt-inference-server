@@ -13,7 +13,16 @@ import sys
 import pytest
 
 from llm_module.agentic import harbor
-from llm_module.agentic.banking_docker import docker_command, prepare_docker_path
+from llm_module.agentic.banking_docker import (
+    TAU2_REVISION,
+    docker_command,
+    prepare_docker_path,
+)
+
+DOCKERFILE = (
+    "FROM python:3.12-slim\nENV TAU2_BENCH_ROOT=/opt/tau2-bench\n"
+    'RUN git clone --depth=1 "${TAU2_BENCH_REPO}" "${TAU2_BENCH_ROOT}"\n'
+)
 
 
 @pytest.fixture
@@ -43,12 +52,15 @@ def docker_adapter(tmp_path):
     return run, directory
 
 
-def task_compose(tmp_path, name, dockerfile="ENV TAU2_BENCH_ROOT=/opt/tau2-bench\n"):
+def task_compose(tmp_path, name, dockerfile=DOCKERFILE):
     task = tmp_path / name
     environment = task / "environment"
     environment.mkdir(parents=True)
     (task / "task.toml").write_text(f'[task]\nname = "{name}"\n')
     (environment / "Dockerfile").write_text(dockerfile)
+    runtime = environment / "runtime-server"
+    runtime.mkdir()
+    (runtime / "Dockerfile").write_text(DOCKERFILE)
     return [
         "compose",
         "--project-directory",
@@ -62,7 +74,7 @@ def task_compose(tmp_path, name, dockerfile="ENV TAU2_BENCH_ROOT=/opt/tau2-bench
 
 def test_banking_build_overlay_and_concurrent_commands(tmp_path, docker_adapter):
     run, directory = docker_adapter
-    original = 'FROM example\nENV TAU2_BENCH_ROOT=/opt/tau2-bench\nRUN echo "$HOME"\n'
+    original = DOCKERFILE + 'RUN echo "$HOME"\n'
     args = task_compose(
         tmp_path,
         "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
@@ -86,12 +98,18 @@ def test_banking_build_overlay_and_concurrent_commands(tmp_path, docker_adapter)
         overlay = current
         assert forwarded[len(args) + 2 :] == command
     contents = json.loads(overlay.read_text())
-    assert set(contents["services"]) == {"main"}
+    assert set(contents["services"]) == {"main", "tau3-runtime"}
     dockerfile = contents["services"]["main"]["build"]["dockerfile_inline"]
-    assert dockerfile.startswith(original.replace("$", "$$"))
-    assert "pip install --no-cache-dir websockets==17.1" in dockerfile
-    assert "&& python3 -c 'import tau2.evaluator.evaluator'" in dockerfile
+    assert 'RUN echo "$$HOME"' in dockerfile
+    for service in contents["services"].values():
+        pinned = service["build"]["dockerfile_inline"]
+        assert f'fetch --depth=1 "$${{TAU2_BENCH_REPO}}" {TAU2_REVISION}' in pinned
+        assert "checkout --detach FETCH_HEAD" in pinned
+        assert "git clone" not in pinned
+        assert "websockets" not in pinned
+        assert "RUN python3 -c 'import tau2.evaluator.evaluator'" in pinned
     assert (Path(args[2]) / "Dockerfile").read_text() == original
+    assert (Path(args[2]) / "runtime-server/Dockerfile").read_text() == DOCKERFILE
     assert len(list((directory / "overlays").iterdir())) == 1
 
 
@@ -132,10 +150,8 @@ def test_unknown_banking_image_fails_before_docker(tmp_path, docker_adapter):
 @pytest.mark.skipif(
     shutil.which("docker") is None, reason="Docker CLI is not installed"
 )
-def test_compose_accepts_overlay_without_changing_other_services(tmp_path):
-    original = (
-        'FROM python:3.12\nENV TAU2_BENCH_ROOT=/opt/tau2-bench\nRUN echo "$HOME"\n'
-    )
+def test_compose_accepts_overlay_without_changing_task_configuration(tmp_path):
+    original = DOCKERFILE + 'RUN echo "$HOME"\n'
     args = task_compose(
         tmp_path,
         "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
@@ -150,8 +166,14 @@ def test_compose_accepts_overlay_without_changing_other_services(tmp_path):
         "      context: .\n"
         "    environment:\n"
         "      TAU2_USER_MODEL: example\n"
-        "  user-simulator:\n"
-        "    image: example/user-simulator:unchanged\n"
+        "  tau3-runtime:\n"
+        "    build:\n"
+        "      context: ./runtime-server\n"
+        "    environment:\n"
+        "      TAU2_USER_MODEL: example\n"
+        "    command: [python3, server.py]\n"
+        "  unrelated:\n"
+        "    image: example/unchanged\n"
     )
     # Compose config validates and merges files without starting Docker containers.
     command = docker_command(
@@ -162,13 +184,32 @@ def test_compose_accepts_overlay_without_changing_other_services(tmp_path):
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     services = json.loads(result.stdout)["services"]
-    assert services["user-simulator"]["image"] == "example/user-simulator:unchanged"
+    assert services["unrelated"]["image"] == "example/unchanged"
     assert services["main"]["environment"] == {"TAU2_USER_MODEL": "example"}
+    assert services["tau3-runtime"]["environment"] == {"TAU2_USER_MODEL": "example"}
+    assert services["tau3-runtime"]["command"] == ["python3", "server.py"]
+    assert services["tau3-runtime"]["build"]["context"] == str(
+        environment / "runtime-server"
+    )
     assert services["main"]["build"]["context"] == str(environment)
     dockerfile = services["main"]["build"]["dockerfile_inline"]
     # Compose's serialized config retains dollar escaping for round trips.
-    assert dockerfile.startswith(original.replace("$", "$$"))
-    assert "websockets==17.1" in dockerfile
+    assert 'RUN echo "$$HOME"' in dockerfile
+    assert TAU2_REVISION in dockerfile
+    assert TAU2_REVISION in services["tau3-runtime"]["build"]["dockerfile_inline"]
+
+
+def test_changed_runtime_dockerfile_fails_before_docker(tmp_path, docker_adapter):
+    run, directory = docker_adapter
+    args = task_compose(
+        tmp_path, "sierra-research/tau3-bench__tau3-banking_knowledge-task-001"
+    )
+    (Path(args[2]) / "runtime-server/Dockerfile").write_text("FROM changed\n")
+    result = run([*args, "build"])
+    assert result.returncode != 0
+    assert "Unrecognized Banking Dockerfile" in result.stderr
+    assert not result.stdout
+    assert not (directory / "overlays").exists()
 
 
 @pytest.mark.parametrize(

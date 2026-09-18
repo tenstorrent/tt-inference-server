@@ -344,10 +344,9 @@ Both workflows write under `workflow_logs/` in the repository root (or under
 > This section summarizes campaign additions and benchmark fixes applied to
 > [the base branch, `ipastalTT/glm-5.3-c8`](https://github.com/tenstorrent/tt-inference-server/tree/ipastalTT/glm-5.3-c8).
 > They add model validation and repair benchmark failures.
-> Existing test configurations remain unchanged. We preserve the base branch's
-> test definitions, sampling settings, concurrency, and scoring rules.
-> Additional tests require explicit selection. The Tau3 fix repairs the
-> evaluator's container dependencies so the existing test can run.
+> Client requests, test cases, sampling settings, concurrency, and scoring rules
+> remain unchanged. Additional tests require explicit selection. The Tau3 fix
+> pins a working benchmark revision so the existing test can run.
 
 <a id="added-custom-longbench-benchmark"></a>
 <a id="custom-longbench-benchmark"></a>
@@ -420,19 +419,25 @@ python run.py \
 
 <a id="banking-evaluator-dependency"></a>
 
-## 3. Tau3 Banking evaluator dependency
+## 3. Tau3 Banking runtime pin
 
-This change only fixes an evaluator startup bug. It does not change test
-cases, model settings, or scoring rules.
+Harbor did not pin the Tau3 Banking runtime source. New image builds picked up
+an upstream bug. We pin the runtime to the commit before that bug.
+Client requests, test cases, model settings, and scoring rules are unchanged.
 
-- [tau2 PR #523](https://github.com/sierra-research/tau2-bench/pull/523), merged
-  September 10, 2026, made the evaluator import voice code that needs `websockets`.
-  Harbor installs `tau2[knowledge]`, which
-  [does not include that dependency](https://github.com/sierra-research/tau2-bench/blob/825183ad5963c7cbfdbf7862c5626f594f505bbe/pyproject.toml).
-  The evaluator then fails with `ModuleNotFoundError`.
-- [`llm_module/agentic/banking_docker.py`](../llm_module/agentic/banking_docker.py),
-  `docker_command()`, adds `websockets==17.1` to the Banking task's `main` image.
-  It checks that the evaluator imports successfully during the build.
+- tt-inference-server runs Tau3 Banking through Harbor. The
+  [Tau3 implementation and evaluator](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/README.md#overview)
+  live in `sierra-research/tau2-bench`; the Python package is still named `tau2`.
+- Harbor's [Dockerfile](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/src/tau3_bench/task-template/environment/Dockerfile)
+  cloned the latest default branch. [PR #523](https://github.com/sierra-research/tau2-bench/pull/523),
+  merged September 10, 2026, made the evaluator import voice code requiring
+  `websockets`. The installed `knowledge` extra omitted that dependency, so
+  evaluator import failed even without a tt-inference-server code change.
+- [`llm_module/agentic/banking_docker.py`](../llm_module/agentic/banking_docker.py)
+  pins both the evaluator and user-simulator images to
+  [`b351ed5`](https://github.com/sierra-research/tau2-bench/commit/b351ed5f9281d4bdfa5629262f54c8781da0d5be),
+  the preceding commit. It checks evaluator import during each image build.
+  The extra `websockets` installation is removed.
 - [`llm_module/agentic/harbor.py`](../llm_module/agentic/harbor.py), `run()`,
-  applies the fix automatically to Tau3 Docker runs. Other tasks are unchanged.
-  Remove any previously configured external Banking Docker wrapper.
+  applies the pin automatically to Banking tasks in Tau3 Docker runs.
+  Other tasks are unchanged. Remove any external Banking Docker wrapper.
