@@ -124,6 +124,7 @@ from swebench.harness.test_spec import TestSpec
 
 _ORIGINAL_GET_INSTANCE_CONTAINER_NAME = TestSpec.get_instance_container_name
 _ORIGINAL_SETUP_ENV_SCRIPT = TestSpec.setup_env_script.fget
+_ORIGINAL_EVAL_SCRIPT = TestSpec.eval_script.fget
 
 
 def _get_safe_instance_container_name(self, run_id=None):
@@ -148,6 +149,25 @@ def _setup_env_script_with_classic_conda_solver(self):
 # libmamba's libsolv can abort while resolving the large Matplotlib SWE-bench
 # environment. The classic solver is slower but avoids that native assertion.
 TestSpec.setup_env_script = property(_setup_env_script_with_classic_conda_solver)
+
+
+def _eval_script_with_compatible_matplotlib_versioning(self):
+    script = _ORIGINAL_EVAL_SCRIPT(self)
+    if self.instance_id != "matplotlib__matplotlib-25332":
+        return script
+    return script.replace(
+        "python -m pip install -e .\\n",
+        "python -m pip install -e .\\n"
+        "python -m pip install 'setuptools_scm==7.1.0'\\n",
+        1,
+    )
+
+
+# Matplotlib 3.7 uses the release-branch-semver version scheme. Newer
+# setuptools_scm delegates that scheme to vcs_versioning, which emits a
+# deprecation warning that this legacy test suite promotes to an exception.
+# Restore the contemporary version helper before running the official tests.
+TestSpec.eval_script = property(_eval_script_with_compatible_matplotlib_versioning)
 
 
 # The epoch-research SWE-bench fork's build_image() pushes every freshly built
