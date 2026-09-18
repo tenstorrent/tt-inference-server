@@ -337,11 +337,16 @@ Both workflows write under `workflow_logs/` in the repository root (or under
 
 ---
 
+# Evaluation campaign additions and changes
+
 > [!NOTE]
 >
 > The following section documents our additions or changes in this evaluation campaign.
 
-## Custom LongBench benchmark
+<a id="added-custom-longbench-benchmark"></a>
+<a id="custom-longbench-benchmark"></a>
+
+## 1. Custom LongBench benchmark
 
 Use `--benchmark custom-longbench` to run the GLM-5.3 benchmark with real-text
 LongBench prompts. It uses the same 28 input/output-length, concurrency and
@@ -380,7 +385,9 @@ python run.py \
 Other evaluation workflows are unchanged. See [Custom LongBench](custom_longbench.md)
 for input format and driver options.
 
-## GLM-5.3 SWE-bench
+<a id="glm-53-swe-bench"></a>
+
+## 2. GLM-5.3 SWE-bench
 
 GLM-5.3 uses TT's existing SWE-bench workflow with mini-swe-agent.
 Select `swebench` explicitly; the default GLM-5.3 agentic tasks remain
@@ -397,7 +404,9 @@ python run.py \
   --dev-mode
 ```
 
-## Banking evaluator dependency
+<a id="banking-evaluator-dependency"></a>
+
+## 3. Banking evaluator dependency
 
 On this fork, Docker-based Tau3 runs automatically add `websockets==17.1`
 to the Banking task's `main` image and check
