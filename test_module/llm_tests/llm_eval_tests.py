@@ -405,7 +405,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
 
     if ctx.remote_server:
         server = RemoteOpenAIController(
-            base_url=ctx.server_url,
+            base_url=ctx.base_url,
             auth_token=auth_token,
         )
     else:
