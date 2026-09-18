@@ -803,9 +803,9 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
     },
-    # Blackhole Galaxy (32 chips on one host), driven as a 1x4 row.
+    # Blackhole Galaxy (32 chips on one host), driven as a 4x1 column.
     #
-    # 1x4 is a capacity choice, not a topology limit. (4, 8) is the native BH
+    # Four chips is a capacity choice, not a topology limit. (4, 8) is the native BH
     # Galaxy shape and it does map: tt-metal resolves
     # ClusterType::BLACKHOLE_GALAXY to
     # single_bh_galaxy_mesh_graph_descriptor.textproto (device_topology dims
@@ -822,12 +822,25 @@ ModelConfigs = {
     # 4x (2, 4), 8x (4, 1). So a 1x4 submesh of a (4, 8) parent resolves fine;
     # SD3.5 simply asks for (1, 4) at open time instead.
     #
-    # 1x4 is the same layout QB2 uses, so it reuses the (1, 4) _PRESETS entry
-    # (tp=4, num_links=2, Ring) and the ring fabric + 50MB trace that
-    # TTSD35Runner.get_pipeline_device_params applies on that shape. Only 4 of
-    # the 32 chips carry the model; the rest are unused. Moving SD3.5 to (4, 8)
-    # here is a pipeline question (the (4, 8) _PRESETS entry and its AGMM
-    # blockings), not a mesh-mapping one.
+    # (4, 1) rather than QB2's (1, 4) on purpose. Both are "four chips in a
+    # line" with tp=4, num_links=2 and a Ring fabric -- _PRESETS[(4, 1)] puts tp
+    # on axis 0 and _PRESETS[(1, 4)] on axis 1 -- but on a Galaxy a (4, 1)
+    # column is a complete axis of the (4, 8) parent, so its chips are
+    # physically adjacent and need no relabel. Taking a (2, 2) corner and
+    # reshaping it to (1, 4) instead renumbers to device ids 0, 1, 5, 4, and the
+    # CCL fused-norm stats barrier then hangs in
+    # get_fused_norm_stats_buffer -> ttnn.synchronize_device during trace
+    # capture. run_sd35_submesh.py records the same constraint ("a native 1x4
+    # row hangs in CCLs") and defaults to layout "4x1tp", i.e. MeshShape(4, 1)
+    # with no reshape. tt-metal calls _PRESETS[(4, 1)] "the fastest 4-chip
+    # layout measured (0.233 s/step bf16)".
+    #
+    # TTSD35Runner.get_parent_mesh_plan opens the full (4, 8) mesh and slices
+    # the column out of it; get_pipeline_device_params applies the ring fabric
+    # and 50MB trace to both (1, 4) and (4, 1). Only 4 of the 32 chips carry the
+    # model; the rest are unused. Moving SD3.5 to (4, 8) here is a pipeline
+    # question (the (4, 8) _PRESETS entry and its AGMM blockings), not a
+    # mesh-mapping one.
     #
     # device_ids is the full 32-device group rather than "(0,1,2,3)" on purpose.
     # setup_runner_environment turns device_ids into TT_VISIBLE_DEVICES, and
@@ -850,7 +863,7 @@ ModelConfigs = {
     # failure. Note -glx_reset needs BMC >= v0.05.22; below that it falls back
     # to a legacy retimer reset that can drop NVMe off the PCIe bus.)
     (ModelRunners.TT_SD3_5, DeviceTypes.BLACKHOLE_GALAXY): {
-        "device_mesh_shape": (1, 4),
+        "device_mesh_shape": (4, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,

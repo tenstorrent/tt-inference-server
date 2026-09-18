@@ -299,16 +299,31 @@ class TTDiTRunner(BaseMetalDeviceRunner):
 # On a BH Galaxy the 32 chips are torus-wired, so a partial mesh cannot bring
 # up fabric: routers on the selected chips wait on physical neighbours that are
 # outside the mesh and fabric init fails with "Fabric Router Sync: Timeout".
-# (1, 4) is still the parallelism we want -- it reuses QB2's tp=4 Ring preset --
-# so open the full (4, 8) system mesh, carve a compact (2, 2) block, then relabel
-# it to a (1, 4) row. The reshape renumbers in ring order (device ids 0, 1, 5, 4)
-# so each tp hop stays a physical link. Same approach as
-# models/tt_dit/tests/models/sd35/run_sd35_submesh.py layout "1x4c" in tt-metal.
+# Open the full (4, 8) system mesh first so every router finds its partner, then
+# take a (4, 1) column out of it.
+#
+# (4, 1) is a complete axis of the parent mesh, so the chips in it are physically
+# adjacent and no relabel is needed. That matters for CCLs: a (2, 2) corner
+# reshaped to (1, 4) renumbers to device ids 0, 1, 5, 4, and the fused-norm stats
+# barrier in CCLManager (models/tt_dit/parallel/manager.py) then waits forever on
+# peers the fabric does not route that way -- the pipeline hangs in
+# get_fused_norm_stats_buffer -> ttnn.synchronize_device during trace capture,
+# burning CPU with no output. run_sd35_submesh.py says the same thing: "On a
+# Galaxy only the 2x2 corner is a physically closed ring of 4 chips (a native 1x4
+# row hangs in CCLs)", and its default layout is "4x1tp" -- MeshShape(4, 1) with
+# no reshape and tp on axis 0 -- not the reshaped "1x4c".
+#
+# The matching tt-metal preset is _PRESETS[(4, 1)] in
+# models/tt_dit/pipelines/stable_diffusion_35_large: cfg=(1, 0), sp=(1, 1),
+# tp=(4, 0), num_links=2, described there as "Four chips in a line (a Galaxy
+# column / row or a QuietBox relabeled): tensor parallel x4, CFG as batch 2, no
+# sequence parallelism. The fastest 4-chip layout measured (0.233 s/step bf16)."
+# So tp is on axis 0 here, unlike QB2's (1, 4) where tp is on axis 1.
 #
 # Keyed by the mesh shape the model asks for, value is
 # (parent_shape, submesh_shape, reshape_to).
 SD35_BH_GALAXY_PARENT_MESH_PLANS = {
-    (1, 4): ((4, 8), (2, 2), (1, 4)),
+    (4, 1): ((4, 8), (4, 1), None),
 }
 
 
@@ -317,11 +332,11 @@ class TTSD35Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def get_parent_mesh_plan(self):
-        """Slice (1, 4) out of the full (4, 8) mesh on a BH Galaxy.
+        """Slice a (4, 1) column out of the full (4, 8) mesh on a BH Galaxy.
 
         Only applies when the box really is a 32-chip Blackhole Galaxy. On QB2
-        the 4 chips are the entire system, so the direct open works and must be
-        left alone.
+        the 4 chips are the entire system and its native shape is (1, 4), so the
+        direct open works there and must be left alone.
         """
         if not is_blackhole():
             return None
@@ -360,7 +375,14 @@ class TTSD35Runner(TTDiTRunner):
         #
         # The matching tt-metal side is the (1, 4) entry in the SD3.5 pipeline
         # _PRESETS table, which pins ttnn.Topology.Ring for this shape.
-        if tuple(self.settings.device_mesh_shape) == (1, 4):
+        #
+        # (4, 1) is the same four-chips-in-a-line config with tp on axis 0
+        # instead of axis 1: _PRESETS[(4, 1)] is also cfg=(1, 0) tp=4
+        # num_links=2, so it needs the same ring fabric and trace region. A BH
+        # Galaxy uses it because a (4, 1) column is a complete axis of the
+        # parent mesh and needs no relabel; see
+        # SD35_BH_GALAXY_PARENT_MESH_PLANS.
+        if tuple(self.settings.device_mesh_shape) in ((1, 4), (4, 1)):
             params["trace_region_size"] = 50000000
             params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
 
