@@ -20,10 +20,10 @@ from workflows.requirements_target_pack import (
     _EVAL_NAME_TO_TASK,
     RequirementsModelSpecProvider,
     RequirementsTargetPack,
-    _goodput_constraints,
     _normalize_eval_name,
     unknown_eval_names,
 )
+from llm_module.goodput import GoodputSlo
 from workflows.target_pack_provider import TenstorrentTargetPack
 from workflows.workflow_types import DeviceTypes
 
@@ -347,7 +347,9 @@ def test_benchmark_config_goodput_constraints_from_slos(pack, doc):
     provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
     spec = provider.resolve(doc.model.name, "super_cluster")
     points = pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
-    assert {p.goodput for p in points} == {"ttft:2000 tpot:20 e2el:20000"}
+    assert {p.goodput for p in points} == {
+        GoodputSlo(ttft_ms=2000, tpot_ms=20, e2el_ms=20000)
+    }
 
 
 def test_benchmark_config_goodput_unmeasurable_without_slos(doc, caplog):
@@ -366,7 +368,7 @@ def test_benchmark_config_goodput_unmeasurable_without_slos(doc, caplog):
             pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
         )
     assert {p.goodput for p in points} == {None}
-    assert "no SLOs" in caplog.text
+    assert "no sweep point yields SLOs" in caplog.text
     # The goodput expectation stays on its capability point's targets (it
     # grades NA, visibly).
     light = next(
@@ -567,23 +569,28 @@ def test_agentic_concurrencies_are_deduplicated_and_ordered():
 
 def test_agentic_goodput_needs_slos():
     """goodputPct targets alone cannot be graded: nothing defines 'good'."""
-    assert _agentic_pack([1]).agentic_traces_goodput() is None
+    assert _agentic_pack([1])._agentic_goodput_by_concurrency() == {}
 
 
 def test_agentic_goodput_uses_aiperf_tag_names():
     """AIPerf spells the bars out; vLLM's ttft/tpot/e2el keys are rejected."""
-    pack = _agentic_pack([1], slo={"ttftMs": 2000, "tpotMs": 20, "e2elMs": 20000})
-
-    assert pack.agentic_traces_goodput() == (
-        "time_to_first_token:2000 inter_token_latency:20 request_latency:20000"
+    pack = _agentic_pack(
+        [],
+        sweep=[
+            {"concurrency": 1, "slo": {"ttftMs": 2000, "tpotMs": 20, "e2elMs": 20000}}
+        ],
     )
+
+    assert pack._agentic_goodput_by_concurrency() == {
+        1: "time_to_first_token:2000 inter_token_latency:20 request_latency:20000"
+    }
 
 
 def test_vllm_goodput_keys_are_unchanged_by_the_aiperf_mapping():
     """The benchmark sweep keeps naming the bars after the metrics themselves."""
     (scenario,) = load_requirements(_FIXTURE).scenarios
 
-    assert _goodput_constraints(scenario) == "ttft:2000 tpot:20 e2el:20000"
+    assert _vllm_bars(scenario.sweep[0], scenario) == "ttft:2000 tpot:20 e2el:20000"
 
 
 def test_replace_agentic_runs_attaches_the_expected_sweep_to_every_run():
@@ -678,3 +685,227 @@ def test_merged_document_evals_are_all_mapped():
     )
     assert isinstance(doc.accuracy_evals[0], AccuracyEval)
     assert unknown_eval_names(doc) == []
+
+
+# --- per-point goodput -------------------------------------------------------
+
+
+def _vllm_bars(point, scenario):
+    """The bars in force at ``point``, in vLLM's spelling, via the real path."""
+    from llm_module.goodput import VLLM_GOODPUT_KEYS, render_goodput
+    from workflows.requirements_target_pack import _goodput_slo
+
+    return render_goodput(
+        _goodput_slo(point.effective_slo(scenario.slo)), VLLM_GOODPUT_KEYS
+    )
+
+
+def _per_point_pack(sweep, scenario_slo=None):
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "2.7.0",
+            "id": "d",
+            "model": {"name": "google/gemma-4-31B-it", "contextLength": 131072},
+            "deployment": {"hardware": "SC24", "maxConcurrencyPerInstance": 32},
+            "scenarios": [
+                {
+                    "kind": "text",
+                    "id": "s1",
+                    "oslValues": [128],
+                    "slo": scenario_slo or {},
+                    "sweep": sweep,
+                }
+            ],
+        }
+    )
+    return RequirementsTargetPack(doc, TenstorrentTargetPack()), doc.scenarios[0]
+
+
+def test_goodput_is_graded_per_point_not_per_scenario():
+    """A row override must move the bars for its own point only."""
+    _, scenario = _per_point_pack(
+        [
+            {"isl": 128, "osl": 128, "concurrency": 1},
+            {"isl": 128, "osl": 128, "concurrency": 32, "slo": {"ttftMs": 9000}},
+        ],
+        scenario_slo={"ttftMs": 4100, "tpotMs": 22.2, "e2elMs": 10000},
+    )
+
+    assert [_vllm_bars(p, scenario) for p in scenario.sweep] == [
+        "ttft:4100 tpot:22.2 e2el:10000",
+        # tpot/e2el inherit; only ttft moved.
+        "ttft:9000 tpot:22.2 e2el:10000",
+    ]
+
+
+def test_row_slos_apply_without_any_scenario_default():
+    """A scenario can declare no SLOs and still have every row supply its own."""
+    _, scenario = _per_point_pack(
+        [
+            {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 500}},
+            {"isl": 128, "osl": 128, "concurrency": 32},
+        ]
+    )
+
+    assert _vllm_bars(scenario.sweep[0], scenario) == "ttft:500"
+    assert _vllm_bars(scenario.sweep[1], scenario) is None
+
+
+def test_benchmark_params_carry_the_bars_tool_neutrally(doc):
+    """One carried SLO, renderable into either tool's vocabulary."""
+    from llm_module.goodput import (
+        AIPERF_GOODPUT_KEYS,
+        VLLM_GOODPUT_KEYS,
+        render_goodput,
+    )
+
+    provider = RequirementsModelSpecProvider(TenstorrentModelSpecProvider(), doc)
+    spec = provider.resolve(doc.model.name, "super_cluster")
+    pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
+    points = pack.benchmark_config(spec).tasks[0].param_map[DeviceTypes.SUPER_CLUSTER]
+
+    slo = points[0].goodput
+    assert render_goodput(slo, VLLM_GOODPUT_KEYS) == "ttft:2000 tpot:20 e2el:20000"
+    assert render_goodput(slo, AIPERF_GOODPUT_KEYS) == (
+        "time_to_first_token:2000 inter_token_latency:20 request_latency:20000"
+    )
+
+
+def test_duplicate_sweep_shapes_are_flagged(caplog):
+    """Downstream configs are keyed by shape, so a duplicate is last-wins."""
+    pack, scenario = _per_point_pack(
+        [
+            {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 500}},
+            {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 900}},
+        ]
+    )
+    from workflows.requirements_target_pack import _warn_on_duplicate_shapes
+
+    with caplog.at_level("WARNING"):
+        _warn_on_duplicate_shapes(scenario)
+
+    assert "same (isl=128, osl=128, concurrency=1)" in caplog.text
+
+
+# --- agentic per-concurrency goodput ----------------------------------------
+
+
+def test_agentic_rows_do_not_inherit_the_workload_slo(caplog):
+    """An agentic document targets goodput per operating point, not service-wide.
+
+    A row that states no SLOs of its own gets no bars, even when another row
+    in the same workload does -- inheriting a workload default would grade
+    that point against a contract the document never made for it.
+    """
+    pack = _agentic_pack(
+        [],
+        slo={"ttftMs": 9999, "tpotMs": 99, "e2elMs": 99999},
+        sweep=[
+            {"concurrency": 1, "slo": {"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000}},
+            {"concurrency": 16},
+        ],
+    )
+
+    with caplog.at_level("WARNING"):
+        result = pack._agentic_goodput_by_concurrency()
+
+    assert result == {
+        1: "time_to_first_token:1000 inter_token_latency:10 request_latency:20000"
+    }
+    assert 16 not in result
+
+
+def test_agentic_workload_slo_without_row_slos_is_ignored_loudly(caplog):
+    """Bars put only at workload level are the old broadcast bug; say so."""
+    pack = _agentic_pack(
+        [],
+        slo={"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000},
+        sweep=[{"concurrency": 1}, {"concurrency": 16}],
+    )
+
+    with caplog.at_level("WARNING"):
+        result = pack._agentic_goodput_by_concurrency()
+
+    assert result == {}
+    assert "graded per operating point" in caplog.text
+
+
+def test_agentic_goodput_omits_concurrencies_with_no_bars():
+    """No bars anywhere => leave that run on its own run spec's goodput."""
+    pack = _agentic_pack(
+        [], sweep=[{"concurrency": 1, "slo": {"ttftMs": 900}}, {"concurrency": 8}]
+    )
+
+    assert pack._agentic_goodput_by_concurrency() == {1: "time_to_first_token:900"}
+
+
+def test_agentic_goodput_collision_warns_and_keeps_the_first(caplog):
+    """An SLO set is a contract, not a lattice: do not reconcile, do say so."""
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "2.7.0",
+            "id": "d",
+            "model": {"name": "google/gemma-4-31B-it"},
+            "deployment": {"hardware": "SC24"},
+            "workloads": [
+                {
+                    "kind": "agentic",
+                    "id": "w1",
+                    "agenticSweep": [{"concurrency": 8, "slo": {"ttftMs": 1000}}],
+                },
+                {
+                    "kind": "agentic",
+                    "id": "w2",
+                    "agenticSweep": [{"concurrency": 8, "slo": {"ttftMs": 4000}}],
+                },
+            ],
+        }
+    )
+    pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
+
+    with caplog.at_level("WARNING"):
+        result = pack._agentic_goodput_by_concurrency()
+
+    assert result == {8: "time_to_first_token:1000"}
+    assert "'w1' and 'w2'" in caplog.text
+    assert "concurrency 8" in caplog.text
+
+
+def test_replace_agentic_runs_accepts_a_per_concurrency_mapping():
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    base = _base_config()
+    swept = replace_agentic_runs(base, [1, 8], goodput={1: "a:1", 8: "b:2"})
+
+    assert {(r.concurrency, r.goodput) for r in swept.runs} == {(1, "a:1"), (8, "b:2")}
+
+
+def test_replace_agentic_runs_leaves_unmapped_concurrencies_alone():
+    """A concurrency the mapping omits keeps its run spec's own goodput."""
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    base = _base_config()
+    swept = replace_agentic_runs(base, [1, 8], goodput={8: "b:2"})
+
+    by_concurrency = {r.concurrency: r.goodput for r in swept.runs}
+    assert by_concurrency[8] == "b:2"
+    assert by_concurrency[1] == base.runs[0].goodput
+
+
+def test_replace_agentic_runs_still_broadcasts_a_plain_string():
+    """The single-SLO-set form stays supported for catalog callers."""
+    from reference_config.agentic_traces.agentic_traces_config import (
+        replace_agentic_runs,
+    )
+
+    swept = replace_agentic_runs(_base_config(), [1, 8], goodput="a:1")
+
+    assert {r.goodput for r in swept.runs} == {"a:1"}

@@ -16,6 +16,8 @@ from workflow_module.requirements_schema import (
     PRIORITY_SHOULD,
     RequirementsError,
     RequirementsDoc,
+    Slo,
+    effective_slo,
     load_requirements,
 )
 
@@ -389,3 +391,87 @@ def test_flat_documents_still_load(tmp_path):
     assert doc.model.name == "a/b"
     assert doc.deployment.hardware == "SC8"
     assert doc.agentic_workloads == []
+
+
+# --- per-row SLO overrides ---------------------------------------------------
+
+
+def test_sweep_point_slo_is_typed_and_empty_means_absent(tmp_path):
+    """An empty {} is how a serialized document spells "no SLOs declared"."""
+    doc_dict = _canonical_doc()
+    doc_dict["scenarios"][0]["sweep"] = [
+        {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 900}},
+        {"isl": 128, "osl": 128, "concurrency": 32, "slo": {}},
+        {"isl": 256, "osl": 128, "concurrency": 1},
+    ]
+
+    (scenario,) = load_requirements(_write(tmp_path, doc_dict)).scenarios
+
+    assert scenario.sweep[0].slo == Slo(ttft_ms=900)
+    assert scenario.sweep[1].slo is None
+    assert scenario.sweep[2].slo is None
+    # The raw row survives for provenance either way.
+    assert scenario.sweep[0].reference["slo"] == {"ttftMs": 900}
+
+
+def test_agentic_sweep_point_slo_is_typed(tmp_path):
+    doc_dict = _canonical_doc()
+    doc_dict["scenarios"][1]["agenticSweep"] = [
+        {"concurrency": 1, "slo": {"tpotMs": 5}},
+        {"concurrency": 64},
+    ]
+
+    (workload,) = load_requirements(_write(tmp_path, doc_dict)).agentic_workloads
+
+    assert workload.sweep[0].slo == Slo(tpot_ms=5)
+    assert workload.sweep[1].slo is None
+
+
+@pytest.mark.parametrize(
+    "row, default, expected",
+    [
+        (None, None, None),
+        (Slo(), None, None),
+        (Slo(), Slo(), None),
+        (None, Slo(ttft_ms=1), Slo(ttft_ms=1)),
+        (Slo(ttft_ms=2), None, Slo(ttft_ms=2)),
+        # A row override wins field by field...
+        (
+            Slo(ttft_ms=2, tpot_ms=3),
+            Slo(ttft_ms=1, tpot_ms=1),
+            Slo(ttft_ms=2, tpot_ms=3),
+        ),
+        # ...and a field the row leaves unset inherits, rather than clearing it.
+        (
+            Slo(ttft_ms=9000),
+            Slo(ttft_ms=4100, tpot_ms=22.2, e2el_ms=10000),
+            Slo(ttft_ms=9000, tpot_ms=22.2, e2el_ms=10000),
+        ),
+    ],
+)
+def test_effective_slo_merges_field_wise_row_wins(row, default, expected):
+    """Mirrors effectiveSlo in llm-gauntlet packages/schema/src/derive/sweep.ts.
+
+    The document's own schema calls a row slo a "per-row goodput SLO override;
+    unset fields inherit the scenario default", so this merge is the contract,
+    not a convenience.
+    """
+    assert effective_slo(row, default) == expected
+
+
+def test_effective_slo_none_keeps_unmeasurable_distinguishable():
+    """All-None must collapse to None so callers can still say "no bars"."""
+    assert effective_slo(Slo(ttft_ms=1), Slo()) == Slo(ttft_ms=1)
+
+
+def test_sweep_point_effective_slo_helper(tmp_path):
+    doc_dict = _canonical_doc()
+    doc_dict["scenarios"][0]["sweep"] = [
+        {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 900}}
+    ]
+
+    (scenario,) = load_requirements(_write(tmp_path, doc_dict)).scenarios
+
+    assert scenario.sweep[0].effective_slo(scenario.slo) == Slo(
+        ttft_ms=900, tpot_ms=22.2, e2el_ms=10000
+    )
