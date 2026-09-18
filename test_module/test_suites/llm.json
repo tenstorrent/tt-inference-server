@@ -5,7 +5,12 @@
         {
             "models": ["Qwen/Qwen3.8-27B"],
             "devices": ["p300x2"],
-            "test_cases": [{"template": "VLLMParamConformanceTest", "enabled": true}]
+            "test_cases": [{
+                "template": "VLLMParamConformanceTest",
+                "enabled": true,
+                "description": "Answer-text conformance with explicit recorded non-thinking template",
+                "test_config": {"chat_template_kwargs": {"enable_thinking": false}}
+            }]
         },
         {
             "models": [
