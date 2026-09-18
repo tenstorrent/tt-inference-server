@@ -3,6 +3,11 @@
     "_category": "LLM",
     "test_matrices": [
         {
+            "models": ["Qwen/Qwen3.8-27B"],
+            "devices": ["p300x2"],
+            "test_cases": [{"template": "VLLMParamConformanceTest", "enabled": true}]
+        },
+        {
             "models": [
                 "qwen3_32b",
                 "llama_3_1_8b",
