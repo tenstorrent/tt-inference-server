@@ -994,7 +994,7 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  # Concurrency-8 load with eight device slots and a shared 1M-token KV pool.
+  # Latency experiment: concurrency-8 client load, two device slots.
   impl: qwen38_autoport_b8
   inference_engine: VLLM
   model_type: LLM
@@ -1016,7 +1016,7 @@ templates:
         enable_auto_tool_choice: true
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
-        max_num_seqs: "8"
+        max_num_seqs: "2"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1039,7 +1039,7 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  # Concurrency-16 load with sixteen device slots.
+  # Latency experiment: concurrency-16 client load, four device slots.
   impl: qwen38_autoport_b16
   inference_engine: VLLM
   model_type: LLM
@@ -1061,7 +1061,7 @@ templates:
         enable_auto_tool_choice: true
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
-        max_num_seqs: "16"
+        max_num_seqs: "4"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder

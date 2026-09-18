@@ -229,22 +229,24 @@ def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "impl_name,concurrency,expected_sweep",
+    "impl_name,concurrency,device_batch,expected_sweep",
     [
         (
             "qwen38-autoport-b8",
             8,
+            2,
             [(4096, 252, 8), (32768, 252, 8), (131072, 252, 8)],
         ),
         (
             "qwen38-autoport-b16",
             16,
+            4,
             [(4096, 252, 16), (32768, 252, 16)],
         ),
     ],
 )
-def test_qwen38_concurrent_profiles_use_matching_device_batch(
-    monkeypatch, impl_name, concurrency, expected_sweep
+def test_qwen38_concurrent_profiles_use_smaller_device_batch(
+    monkeypatch, impl_name, concurrency, device_batch, expected_sweep
 ):
     benchmark_config = _import_benchmark_config(monkeypatch)
     model_id = _find_model_id(
@@ -255,7 +257,7 @@ def test_qwen38_concurrent_profiles_use_matching_device_batch(
     model_spec = MODEL_SPECS[model_id]
 
     assert model_spec.device_model_spec.max_concurrency == concurrency
-    assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == str(concurrency)
+    assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == str(device_batch)
     assert (
         model_spec.device_model_spec.env_vars["QWEN_VLLM_KV_POOL_TOKENS"] == "1050592"
     )
