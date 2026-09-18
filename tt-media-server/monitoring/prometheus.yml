@@ -2,6 +2,26 @@ global:
   scrape_interval: 5s
   evaluation_interval: 5s
 
+  # Identity of THIS deployment, stamped onto every series on remote_write.
+  #
+  # Without it these metrics cannot be aggregated across hosts. The per-job
+  # `instance` labels below name which PROCESS in one stack a series came from
+  # (regular / prefill / decode / gateway / host) — they are identical on every
+  # box, deliberately, because the dashboards filter on `role` and `service`.
+  # That is fine for a single-host view and collides the moment two deployments
+  # ship to one store: every host claims instance="tt_media_server", so
+  # sum()/max() across the fleet reads one series instead of N and skew across
+  # instances cannot be computed at all.
+  #
+  # Set DEPLOYMENT_NAME to something stable and unique per deployment (a site
+  # or cluster name, NOT the container hostname — that is the container id and
+  # changes on every restart, which would mint a new series each time).
+  # Left empty for a local-only stack: Prometheus treats an empty label value
+  # as absent. Enabling REMOTE_WRITE_URL without setting this is refused at
+  # startup rather than silently shipping colliding series.
+  external_labels:
+    deployment: "__DEPLOYMENT_NAME__"
+
 # Recording + alerting rules. Matched glob; safe when the directory is empty
 # or absent (Prometheus logs a notice but keeps running).
 rule_files:
