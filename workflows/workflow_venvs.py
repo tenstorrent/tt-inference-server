@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
 
+from workflow_module.engine_types import TAU3_TASKS_DIRNAME
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.utils import (
     get_repo_root_path,
@@ -32,10 +33,17 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 
 # Tenstorrent fork of Harbor carrying the provider-neutral `kubernetes`
 # environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
-# used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
+# used to schedule agentic-eval trial pods on our clusters, plus the tau2-bench
+# pin the generated tau3 tasks build from. Branched from the previous
+# dcvijeticTT pin, so the kubernetes work is unchanged. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "1d4c2fe1f5f4d23f4cdbb9642039d5a0f82e9e88"
+HARBOR_REPO = "https://github.com/ipastalTT/harbor.git"
+HARBOR_REF = "f3c8f19cba023b8d436b47abcc1f33fe63ccd319"
+
+# tau3-bench domains generated into the EVALS_AGENTIC venv. Only the banking
+# domain is evaluated today; generating the other three would clone the same
+# tau2 data for tasks nothing runs.
+TAU3_DOMAINS = ("banking_knowledge",)
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -209,6 +217,9 @@ def setup_evals_agentic(
     Harbor is cloned and installed editable so its top-level ``adapters/`` directory
     is available on disk. The adapters are not part of the Harbor wheel and live
     outside ``src/``, so a ``.pth`` file exposes the repo root to Python imports.
+
+    tau3-bench tasks are additionally generated from that adapter rather than
+    downloaded from the registry -- see ``_generate_tau3_tasks``.
     """
     harbor_dir = venv_config.venv_path / "harbor"
     if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
@@ -226,7 +237,59 @@ def setup_evals_agentic(
     if return_code != 0:
         return False
 
-    return _write_harbor_adapters_pth(venv_config, harbor_dir)
+    if not _write_harbor_adapters_pth(venv_config, harbor_dir):
+        return False
+
+    return _generate_tau3_tasks(venv_config, harbor_dir)
+
+
+def get_tau3_tasks_path(venv_config: VenvConfig) -> Path:
+    """Directory of tau3-bench tasks generated into the EVALS_AGENTIC venv."""
+    return venv_config.venv_path / TAU3_TASKS_DIRNAME
+
+
+def _generate_tau3_tasks(venv_config: VenvConfig, harbor_dir: Path) -> bool:
+    """Build tau3-bench tasks from the pinned adapter instead of the registry.
+
+    The published ``sierra-research/tau3-bench`` package builds its task image
+    from a Dockerfile that clones tau2-bench at an unpinned ``main``. Docker
+    keys a RUN layer on the instruction text, not on what the clone returns, so
+    each host froze that clone whenever it first built: runners whose layer
+    predates tau2 825183ad5 score normally, while any that built after it fail
+    every trial with ``No module named 'websockets'`` (the import chain now
+    reaches tau2's voice provider, which lives in an extra the image does not
+    install). Generating here puts that Dockerfile -- pinned, with websockets
+    installed -- under the same pin as the rest of the harbor checkout.
+
+    The adapter clones tau2-bench (~900MB, the benchmark's own task data) into
+    ``<harbor_dir>/.cache`` on first run and reuses it afterwards.
+    """
+    adapter_main = (
+        harbor_dir / "adapters" / "tau3-bench" / "src" / "tau3_bench" / "main.py"
+    )
+    if not adapter_main.is_file():
+        logger.error("tau3-bench adapter entry point not found at %s", adapter_main)
+        return False
+
+    # Cleared rather than merged into: self-hosted runners keep the venv between
+    # jobs, and harbor runs every task directory it finds. Tasks left by an
+    # earlier pin or a wider TAU3_DOMAINS would otherwise still be scored.
+    tasks_path = get_tau3_tasks_path(venv_config)
+    if tasks_path.exists():
+        shutil.rmtree(tasks_path)
+
+    return_code = run_command(
+        f"{venv_config.venv_python} {adapter_main} "
+        f"--output-dir {tasks_path} "
+        f"--domains {' '.join(TAU3_DOMAINS)} "
+        "--overwrite",
+        logger=logger,
+    )
+    if return_code != 0:
+        logger.error("Failed to generate tau3-bench tasks into %s", tasks_path)
+        return False
+    logger.info("Generated tau3-bench tasks into %s", tasks_path)
+    return True
 
 
 def _write_harbor_adapters_pth(

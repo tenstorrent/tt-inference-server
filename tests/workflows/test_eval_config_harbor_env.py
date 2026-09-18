@@ -31,8 +31,16 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 
 
 def test_harbor_checkout_uses_reachable_prebuilt_mirror_revision():
-    assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "1d4c2fe1f5f4d23f4cdbb9642039d5a0f82e9e88"
+    """The pin carries the prebuilt-mirror work *and* the tau2-bench pin.
+
+    ``f3c8f19c`` is branched directly from the previous pin
+    (dcvijeticTT ``1d4c2fe1``), so every kubernetes/registry revision this
+    suite relies on is still reachable; it only adds the tau3 task changes.
+    Moving the pin to a revision that is not a descendant of ``1d4c2fe1``
+    would silently drop the mirror support the cluster path needs.
+    """
+    assert HARBOR_REPO == "https://github.com/ipastalTT/harbor.git"
+    assert HARBOR_REF == "f3c8f19cba023b8d436b47abcc1f33fe63ccd319"
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):

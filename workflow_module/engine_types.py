@@ -16,6 +16,12 @@ for backward compatibility.
 from enum import IntEnum, auto
 from typing import List, Optional
 
+# Directory under the EVALS_AGENTIC venv holding tau3-bench tasks generated from
+# the pinned Harbor adapter. Named here because the producer (venv setup, in
+# ``workflows/``) and the consumer (the agentic driver, in ``llm_module/``) sit
+# on opposite sides of the engine boundary and must not drift.
+TAU3_TASKS_DIRNAME = "tau3-tasks"
+
 
 class WorkflowType(IntEnum):
     BENCHMARKS = auto()

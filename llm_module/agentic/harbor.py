@@ -63,6 +63,13 @@ class HarborRunConfig:
     agent_setup_timeout_multiplier: Optional[float] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
+    # Local directory of task dirs to run instead of the registry package named
+    # by ``dataset``. Harbor filters a path dataset on the task *directory*
+    # name, unlike a package dataset which filters on the ``org/name`` declared
+    # in task.toml, so ``task_names`` must be given in directory form when this
+    # is set. ``result.json`` reports the task.toml name either way, so reports
+    # do not change.
+    dataset_path: Optional[Path] = None
     # Rich Live progress: quiet=True shows only the loading bar; quiet=False
     # adds per-trial stage spinners (env start, agent start, verification).
     # In CI (non-TTY) Rich degrades Live to static line-by-line output, which
@@ -182,7 +189,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    dataset_config: dict[str, Any] = (
+        {"path": str(config.dataset_path)}
+        if config.dataset_path is not None
+        else {"name": config.dataset}
+    )
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:
@@ -249,7 +260,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        config.agent_timeout_sec is not None
+        # `harbor run -d` names a dataset; a local task directory is only
+        # expressible as datasets[].path in the config file.
+        config.dataset_path is not None
+        or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
         or bool(config.agent_env)

@@ -270,6 +270,12 @@ class HarborEvalConfig:
     n_tasks: Optional[int] = None
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
+    # Run tasks generated from this Harbor adapter at venv-provisioning time
+    # instead of the registry package named by ``dataset``. Harbor matches
+    # ``task_names`` against the task *directory* name for a local dataset
+    # (against ``org/name`` from task.toml for a package), so the filters below
+    # must be written in directory form when this is set.
+    local_task_adapter: Optional[str] = None
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
     override_cpus: Optional[int] = None
@@ -1216,7 +1222,15 @@ _eval_config_list = [
                     dataset="sierra-research/tau3-bench",
                     agent="tau3_llm_agent",
                     agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
-                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # Generated locally from the pinned Harbor adapter instead
+                    # of the published package, whose Dockerfile clones
+                    # tau2-bench at an unpinned `main`: runners that first built
+                    # that layer after tau2 825183ad5 fail every trial on a
+                    # missing `websockets`, while older ones score normally.
+                    # Names are in directory form because a local dataset
+                    # filters on the task directory, not the task.toml name.
+                    local_task_adapter="tau3-bench",
+                    task_names=["tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
                     n_concurrent_trials=32,
@@ -1261,12 +1275,13 @@ _eval_config_list = [
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/moonshotai/Kimi-K2.7-Code",
                     },
                     task_names_map={
+                        # One short task: nightly is here to prove the verifier
+                        # runs end to end, not to measure accuracy. task-006
+                        # finished in 1.3 min against a 4.1 min mean over the
+                        # full 97 (run 105659461748), and the full set stays the
+                        # measurement path.
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-001",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-022",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-050",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-075",
-                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-100",
+                            "tau3-banking_knowledge-task-006",
                         ],
                     },
                 ),

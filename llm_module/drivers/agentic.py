@@ -166,6 +166,34 @@ def _agentic_venv_python() -> Optional[Path]:
         return None
 
 
+def _local_dataset_path(cfg: Any) -> Optional[Path]:
+    """Directory of locally generated tasks for configs that opt in.
+
+    ``local_task_adapter`` names a Harbor adapter whose tasks the EVALS_AGENTIC
+    venv generates at provisioning time, in place of downloading the published
+    registry package (see ``workflow_venvs._generate_tau3_tasks``).
+    """
+    adapter = getattr(cfg, "local_task_adapter", None)
+    if adapter is None:
+        return None
+    if adapter != "tau3-bench":
+        raise RuntimeError(
+            f"Unknown local_task_adapter {adapter!r}; only 'tau3-bench' is generated."
+        )
+
+    from workflow_module.engine_types import TAU3_TASKS_DIRNAME, WorkflowVenvType
+    from workflow_module.venv_provisioner import get_venv_provisioner
+
+    venv_path = Path(get_venv_provisioner().venv_path(WorkflowVenvType.EVALS_AGENTIC))
+    tasks_path = venv_path / TAU3_TASKS_DIRNAME
+    if not tasks_path.is_dir():
+        raise RuntimeError(
+            f"{adapter} tasks were not generated at {tasks_path}; the "
+            "EVALS_AGENTIC venv needs reprovisioning."
+        )
+    return tasks_path
+
+
 def make_agentic_driver(task: Any, *, runtime_config: Any = None) -> AgenticEvalDriver:
     if task.agentic_eval_config is None:
         raise RuntimeError(
@@ -195,6 +223,7 @@ def build_harbor_config(
     return HarborRunConfig(
         task_name=task_output_dir.name,
         dataset=cfg.dataset,
+        dataset_path=_local_dataset_path(cfg),
         agent=cfg.agent,
         model_name=_openai_model_name(cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
