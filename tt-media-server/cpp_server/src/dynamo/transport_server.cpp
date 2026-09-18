@@ -29,6 +29,68 @@ namespace tt::dynamo {
 
 namespace {
 
+// Call-home keep-alive defaults. The response stream goes quiet for the whole
+// prefill round trip (tens of seconds under load), during which no application
+// bytes flow in either direction. An idle window well under a minute keeps the
+// TCP path warm so a stateful hop (NAT, conntrack, load balancer) cannot reap
+// the socket mid-generation.
+//
+// NOTE: this does NOT defend against an application-level read timeout further
+// upstream (nginx proxy_read_timeout, aiohttp sock_read, ...). Those count
+// payload bytes and never observe keep-alive probes; raising the client-side
+// read timeout is the only fix for that case.
+constexpr int kCallHomeKeepAliveIdleSeconds = 15;
+constexpr int kCallHomeKeepAliveIntervalSeconds = 15;
+constexpr int kCallHomeKeepAliveProbes = 4;
+
+int envInt(const char* name, int fallback) {
+  const char* raw = std::getenv(name);
+  if (raw == nullptr || *raw == '\0') return fallback;
+  char* end = nullptr;
+  const long parsed = std::strtol(raw, &end, 10);
+  if (end == raw || *end != '\0' || parsed < 0 || parsed > 86400) {
+    TT_LOG_WARN("[DynamoTx] ignoring invalid {}={}; using {}", name, raw,
+                fallback);
+    return fallback;
+  }
+  return static_cast<int>(parsed);
+}
+
+// Applied via TcpClient::setSockOptCallback, which runs on the freshly created
+// socket before connect(); the options survive the connect and apply to the
+// established connection.
+void applyCallHomeKeepAlive(int fd) {
+  if (envInt("DYNAMO_CALLHOME_KEEPALIVE", 1) == 0) return;
+
+  const int enable = 1;
+  if (::setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) < 0) {
+    TT_LOG_WARN("[DynamoTx] Failed to set SO_KEEPALIVE: {}", strerror(errno));
+    return;  // the per-socket tuning below is meaningless without it
+  }
+
+  const struct {
+    int option;
+    const char* name;
+    int value;
+  } knobs[] = {
+      {TCP_KEEPIDLE, "TCP_KEEPIDLE",
+       envInt("DYNAMO_CALLHOME_KEEPALIVE_IDLE_S",
+              kCallHomeKeepAliveIdleSeconds)},
+      {TCP_KEEPINTVL, "TCP_KEEPINTVL",
+       envInt("DYNAMO_CALLHOME_KEEPALIVE_INTVL_S",
+              kCallHomeKeepAliveIntervalSeconds)},
+      {TCP_KEEPCNT, "TCP_KEEPCNT",
+       envInt("DYNAMO_CALLHOME_KEEPALIVE_PROBES", kCallHomeKeepAliveProbes)},
+  };
+  for (const auto& knob : knobs) {
+    if (::setsockopt(fd, IPPROTO_TCP, knob.option, &knob.value,
+                     sizeof(knob.value)) < 0) {
+      TT_LOG_WARN("[DynamoTx] Failed to set {}={}: {}", knob.name, knob.value,
+                  strerror(errno));
+    }
+  }
+}
+
 Json::Value parseJsonBytes(const uint8_t* data, size_t len) {
   Json::Value out;
   if (len == 0) return out;
@@ -204,6 +266,7 @@ void DynamoStreamWriter::connect() {
 
   client_ = std::make_shared<trantor::TcpClient>(
       loop_, trantor::InetAddress(host, port), "DynamoCallHome");
+  client_->setSockOptCallback([](int fd) { applyCallHomeKeepAlive(fd); });
   std::weak_ptr<DynamoStreamWriter> weak = shared_from_this();
   client_->setConnectionCallback([weak](const trantor::TcpConnectionPtr& c) {
     if (auto self = weak.lock()) self->onConnState(c);
