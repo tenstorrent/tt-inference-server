@@ -6193,6 +6193,69 @@ _eval_config_list = [
             ),
         ],
     ),
+    # OCRBench, not docvqa_val/chartqa: this transcribes rather than answers questions.
+    # No eos_string/stop override; the other VLM entries carry Llama tokens.
+    EvalConfig(
+        hf_model_repo="PaddlePaddle/PaddleOCR-VL-1.6",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="ocrbench",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "ocrbench_accuracy,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "timeout": "9999",
+                },
+                # Unlimited: ocrbench divides by a fixed 1000, so --limit deflates the score.
+                limit_samples_map={},
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="ocrbench_v2",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "ocrbench_v2_accuracy,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "timeout": "9999",
+                },
+                # Safe to subset: aggregates as a mean over the categories collected.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                },
+            ),
+        ],
+    ),
 ]
 
 
