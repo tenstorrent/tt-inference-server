@@ -370,6 +370,71 @@ def _scenario_kind(entry: Mapping[str, Any]) -> str:
     return str(entry.get("kind", DEFAULT_SCENARIO_KIND))
 
 
+def _fold_validation_plan(data: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Fold a validation-plan export back into the canonical document shape.
+
+    Regroups the flat ``items[]`` list (one entry per operating point) back
+    into ``scenarios``/``workloads`` by ``scenarioId``. Each item's ``targets``
+    *is* the sweep row, so this is a regroup, not a field translation. A
+    document with no ``items`` is returned untouched.
+    """
+    items = data.get("items")
+    if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+        return data
+
+    sweeps: Dict[str, List[Mapping[str, Any]]] = {}
+    agentic_sweeps: Dict[str, List[Mapping[str, Any]]] = {}
+    evals: List[Mapping[str, Any]] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        kind = item.get("type")
+        targets = item.get("targets")
+        if kind == "accuracy_eval":
+            spec = item.get("spec")
+            if isinstance(spec, Mapping):
+                evals.append(spec)
+        elif kind == "operating_point" and isinstance(targets, Mapping):
+            row = dict(targets)
+            if item.get("slo"):
+                row["slo"] = item["slo"]
+            sweeps.setdefault(str(item.get("scenarioId", "")), []).append(row)
+        elif kind == "agentic_operating_point" and isinstance(targets, Mapping):
+            # An agentic item has no sibling ``slo``: the row's own SLOs ride
+            # inside ``targets`` (AgenticOperatingPointItem declares no slo
+            # field), so the row is already complete.
+            agentic_sweeps.setdefault(str(item.get("scenarioId", "")), []).append(
+                dict(targets)
+            )
+
+    scenarios: List[Mapping[str, Any]] = [
+        dict(s) for s in data.get("scenarios", []) if isinstance(s, Mapping)
+    ]
+    for workload in data.get("workloads", []):
+        if not isinstance(workload, Mapping):
+            continue
+        entry = dict(workload)
+        key = str(entry.get("id", ""))
+        # Only fill what the export stripped: a workload that kept its sweep
+        # inline (some exports do) is authoritative and left alone.
+        if _scenario_kind(entry) == AGENTIC_KIND:
+            if not entry.get("agenticSweep") and key in agentic_sweeps:
+                entry["agenticSweep"] = agentic_sweeps[key]
+        elif not entry.get("sweep") and key in sweeps:
+            entry["sweep"] = sweeps[key]
+        scenarios.append(entry)
+
+    folded = dict(data)
+    folded["scenarios"] = scenarios
+    # Every workload is now represented in ``scenarios``; dropping the list it
+    # came from keeps the agentic dedupe from seeing each one twice.
+    folded.pop("workloads", None)
+    if evals:
+        existing = [e for e in data.get("accuracyEvals", []) if isinstance(e, Mapping)]
+        folded["accuracyEvals"] = existing + evals
+    return folded
+
+
 def _agentic_workloads(
     scenarios: Sequence[Mapping[str, Any]],
     workloads: Sequence[Mapping[str, Any]],
@@ -407,6 +472,10 @@ class RequirementsDoc:
     def from_dict(cls, data: Mapping[str, Any]) -> "RequirementsDoc":
         schema_version = str(data.get("schemaVersion", ""))
         _check_schema_version(schema_version)
+        # A validation-plan export carries its sweeps and eval specs in a flat
+        # top-level "items" list rather than on the workloads; fold them back
+        # so both it and the canonical document load identically.
+        data = _fold_validation_plan(data)
         # Later 2.x revisions wrap identity (model, deployment, meta) in a
         # "document" envelope and carry the agentic sweep in a sibling
         # "workloads" list; earlier ones put identity at the top level. Read
