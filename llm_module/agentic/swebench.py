@@ -139,8 +139,8 @@ TestSpec.get_instance_container_name = _get_safe_instance_container_name
 def _setup_env_script_with_classic_conda_solver(self):
     script = _ORIGINAL_SETUP_ENV_SCRIPT(self)
     return script.replace(
-        "set -euxo pipefail\n",
-        "set -euxo pipefail\nexport CONDA_SOLVER=classic\n",
+        "set -euxo pipefail\\n",
+        "set -euxo pipefail\\nexport CONDA_SOLVER=classic\\n",
         1,
     )
 
