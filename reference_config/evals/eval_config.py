@@ -742,7 +742,7 @@ _eval_config_list = [
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=80,
+                max_concurrent=40,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 score=EvalTaskScore(
@@ -847,7 +847,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=80,
+                    n_concurrent_trials=40,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -902,7 +902,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=40,
+                    n_concurrent_trials=20,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
