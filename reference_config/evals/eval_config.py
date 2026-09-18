@@ -1454,57 +1454,37 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3.8-27B",
         tasks=[
             EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # R1-style zero-shot reasoning GPQA Diamond. Use the chat endpoint
+                # so the server applies Qwen's thinking-enabled chat template.
+                task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    # NO published_score EXISTS for this checkpoint on SWE-bench
-                    # Verified. Searched: the HF card (publishes SWE-bench Pro 61.7 and
-                    # QwenSWEBench 79.0 -- different datasets) and the Artificial
-                    # Analysis model page (no Verified breakout). Do NOT substitute the
-                    # Pro number: SWE-bench Pro is a harder, disjoint task set and
-                    # scoring a Verified run against it would read as a large false
-                    # regression.
-                    # Consequence, via resolve_eval_reference() + accept_eval_score():
-                    # with reference_score None the accuracy check returns None and the
-                    # report renders N/A -- the task still RUNS and still reports its
-                    # measured accuracy, it just cannot pass or fail. That is the same
-                    # shape the google/gemma-4-26B-A4B-it entries below use. Fill this
-                    # in from a measured H100 run (as gpu_reference_score) or from a
-                    # first-party number if Qwen publishes one.
-                    published_score=None,
-                    published_score_ref="TBD",
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": ["exact_match,none"],
                         "unit": "percent",
                     },
                 ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=1,
-                    max_workers=8,
-                    n_tasks=None,  # full dataset
-                    temperature=1.0,
-                    top_p=0.95,
-                    # 160K + 32K = 192K, inside the P300X2 spec's 262144 max_context.
-                    max_input_tokens=160 * 1024,
-                    max_output_tokens=32 * 1024,
-                    completion_kwargs={
-                        "extra_body": {
-                            "top_k": 20,
-                        },
-                    },
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                        ],
-                    },
-                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                },
+                gen_kwargs={
+                    # lm-eval's local chat client expects a non-streaming response.
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # 5% selects the established deterministic 10-question CI subset.
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 1,
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
