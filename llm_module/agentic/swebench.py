@@ -158,7 +158,8 @@ def _eval_script_with_compatible_matplotlib_versioning(self):
     return script.replace(
         "python -m pip install -e .\\n",
         "python -m pip install -e .\\n"
-        "python -m pip install 'setuptools_scm==7.1.0'\\n",
+        "python -m pip install --force-reinstall --no-deps "
+        "'setuptools_scm==7.1.0'\\n",
         1,
     )
 
@@ -166,7 +167,9 @@ def _eval_script_with_compatible_matplotlib_versioning(self):
 # Matplotlib 3.7 uses the release-branch-semver version scheme. Newer
 # setuptools_scm delegates that scheme to vcs_versioning, which emits a
 # deprecation warning that this legacy test suite promotes to an exception.
-# Restore the contemporary version helper before running the official tests.
+# Force-reinstall the contemporary version helper before running the official
+# tests because vcs_versioning can leave replacement files in the shared
+# setuptools_scm package directory while its metadata still reports 7.1.0.
 TestSpec.eval_script = property(_eval_script_with_compatible_matplotlib_versioning)
 
 
