@@ -341,20 +341,35 @@ Both workflows write under `workflow_logs/` in the repository root (or under
 
 > [!NOTE]
 >
-> The following section documents our additions or changes in this evaluation campaign.
+> This section summarizes campaign additions and benchmark fixes applied to
+> [the base branch, `ipastalTT/glm-5.3-c8`](https://github.com/tenstorrent/tt-inference-server/tree/ipastalTT/glm-5.3-c8).
+> They add model validation and repair benchmark failures.
+> Existing test configurations remain unchanged. We preserve the base branch's
+> test definitions, sampling settings, concurrency, and scoring rules.
+> Additional tests require explicit selection. The Tau3 fix repairs the
+> evaluator's container dependencies so the existing test can run.
 
 <a id="added-custom-longbench-benchmark"></a>
 <a id="custom-longbench-benchmark"></a>
 
 ## 1. Custom LongBench benchmark
 
-Use `--benchmark custom-longbench` to run the GLM-5.3 benchmark with real-text
-LongBench prompts. It uses the same 28 input/output-length, concurrency and
-request-count conditions as the standard `--workflow benchmarks` sweep; only
-the input dataset changes. Without this selector, the workflow runs random
-inputs only.
+Run the GLM-5.3 performance sweep with real-text prompts from LongBench V1/V2.
+This campaign addition is also present in the base branch at
+[`b14327dc`](https://github.com/tenstorrent/tt-inference-server/tree/b14327dc3abb5531a8a111ebfb90a133f556e5ac).
 
-From the repository root, add these two arguments to the standard command:
+- [`datasets/custom-longbench/`](../datasets/custom-longbench/README.md) supplies
+  368 prompts across all 12 input lengths, from 128 to 255,872 tokens.
+- [`llm_module/custom_longbench.py`](../llm_module/custom_longbench.py),
+  `build_longbench_configs()`, selects prompts for each input length.
+  It preserves the 28 sweep conditions, output lengths, concurrency, and request
+  counts. Insufficient rows cause an error; the client does not duplicate prompts.
+- [`test_module/llm_tests/llm_benchmark_tests.py`](../test_module/llm_tests/llm_benchmark_tests.py),
+  `run_llm_bench()`, selects this path only with `--benchmark custom-longbench`.
+  The default random-input benchmark and its acceptance targets stay unchanged.
+  Random-input targets do not grade custom-input results.
+
+From the repository root:
 
 ```bash
 python run.py \
@@ -368,30 +383,29 @@ python run.py \
   --dev-mode
 ```
 
-- **Data:** the bundled JSONL contains 368 prompts from public LongBench V1/V2,
-  covering all 12 input lengths from 128 to 255,872 tokens, including 10,000 and
-  196,608. See the [dataset README](../datasets/custom-longbench/README.md) for
-  source sample IDs and preparation, including official middle-truncation code.
-- **Execution:** the client selects rows by input length and invokes
-  `vllm bench serve --dataset-name custom`. The full sweep requests 373 responses
-  with a total output budget of 112,256 tokens. Insufficient rows cause an error;
-  the client does not repeat rows to fill a condition.
-- **Server:** disable prefix caching on both Prefill and Decode for both datasets.
-  This is a server setting; the client arguments above do not change it.
-- **Reports:** use a fresh `CACHE_ROOT` for each run. TT Markdown/JSON reports
-  appear under `$CACHE_ROOT/workflow_logs/reports_output/benchmarks/`. Compare
-  matching conditions; random-input performance targets do not grade custom results.
-
-Other evaluation workflows are unchanged. See [Custom LongBench](custom_longbench.md)
-for input format and driver options.
+Use a fresh `CACHE_ROOT` for each run. Compare matching sweep conditions with
+prefix caching disabled on both Prefill and Decode for both datasets.
+The client does not change server cache settings.
+See [Custom LongBench](custom_longbench.md) for dataset preparation and reports.
 
 <a id="glm-53-swe-bench"></a>
 
 ## 2. GLM-5.3 SWE-bench
 
-GLM-5.3 uses TT's existing SWE-bench workflow with mini-swe-agent.
-Select `swebench` explicitly; the default GLM-5.3 agentic tasks remain
-Terminal-Bench and Banking. The agentic prerequisites above apply.
+Add an optional SWE-bench Verified evaluation using the existing mini-swe-agent
+workflow.
+
+- [`reference_config/evals/eval_config.py`](../reference_config/evals/eval_config.py)
+  adds `swe_bench_verified` to GLM-5.3 with `requires_explicit_selection=True`.
+  It reuses the GLM-5.2 SWE-bench recipe with concurrency set to 8.
+- [`test_module/llm_tests/agentic_eval_tests.py`](../test_module/llm_tests/agentic_eval_tests.py),
+  `_select_agentic_tasks()` and `_filter_agentic_tasks_by_benchmark()`, require
+  `--agentic-benchmark swebench` or the full task name to select it.
+  Unset or `all` still selects only Terminal-Bench and Banking for GLM-5.3.
+- [`run.py`](../run.py) and [`run_workflows.py`](../run_workflows.py) update the CLI
+  help to explain this selection rule.
+  [Selection tests](../tests/test_module/llm_tests/test_glm53_swebench.py) cover
+  the unchanged default campaign and the new explicit selection.
 
 ```bash
 python run.py \
@@ -406,29 +420,46 @@ python run.py \
 
 <a id="banking-evaluator-dependency"></a>
 
-## 3. Banking evaluator dependency
+## 3. Tau3 Banking evaluator dependency
 
-On this fork, Docker-based Tau3 runs automatically add `websockets==17.1`
-to the Banking task's `main` image and check
-`import tau2.evaluator.evaluator` during the image build. Harbor's
-[task Dockerfile](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/src/tau3_bench/task-template/environment/Dockerfile)
-clones the unpinned tau2 default branch and installs `tau2[knowledge]`.
-[tau2 PR #523](https://github.com/sierra-research/tau2-bench/pull/523), merged
-September 10, 2026, added an eager voice import to that evaluation path without
-adding `websockets` to the knowledge dependencies. Without it, grading can fail with
-`used_tau2_evaluator: false` and reward 0; that is not a valid model score.
+Repair a missing dependency in the Banking task's `main` image.
+This is a recent tau2 regression, introduced on September 10, 2026.
 
-The client applies a Compose build overlay through a Docker adapter scoped to
-the Harbor subprocess. No manual `PATH` change or server-side installation is
-needed; remove any previously configured external Banking Docker wrapper.
-The original task files, user-simulator image, and scoring rules are unchanged.
-Other tasks pass through to Docker unchanged. Kubernetes images are not patched.
-Compose must support `dockerfile_inline`; generated overlays are saved beside
-the Harbor job under `<job-name>_banking_docker/overlays/`.
+- Harbor's [task Dockerfile](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/src/tau3_bench/task-template/environment/Dockerfile)
+  clones tau2's default branch without a commit pin and installs `tau2[knowledge]`.
+  A later image build can therefore pick up new tau2 code without any client change.
+- [tau2 PR #523](https://github.com/sierra-research/tau2-bench/pull/523), merged
+  September 10, added a voice import to `src/tau2/data_model/simulation.py`.
+  Importing the evaluator now reaches code that requires `websockets`.
+  The [dependency declaration](https://github.com/sierra-research/tau2-bench/blob/825183ad5963c7cbfdbf7862c5626f594f505bbe/pyproject.toml)
+  still lists it only under the `voice` extra, not `knowledge`.
+- With the same Python 3.12 dependencies and no `websockets`, evaluator import
+  passed at the preceding commit, `b351ed5`, and failed at the merge, `825183a`.
+  The error was `ModuleNotFoundError: No module named 'websockets'`.
+  A grading failure can produce `used_tau2_evaluator: false` and reward 0.
+  That reward is not a valid model score.
 
-After the run, check every Banking trial's `verifier/result.json` for
-`used_tau2_evaluator: true`. The build check verifies imports, not successful
-grading. This client fix does not repair server-side tool-argument parsing.
-It also does not pin tau2 or make task builds reproducible: the main and runtime
-images still clone upstream independently. Revalidate the workaround when
-changing the task package or tau2 revision.
+The fix is limited to the evaluation client:
+
+- [`llm_module/agentic/banking_docker.py`](../llm_module/agentic/banking_docker.py),
+  `docker_command()`, adds a Compose build overlay for Banking tasks only.
+  It installs `websockets==17.1` in `main` and checks
+  `import tau2.evaluator.evaluator` during the build.
+- [`llm_module/agentic/harbor.py`](../llm_module/agentic/harbor.py), `run()`,
+  enables the adapter only for Docker runs of `sierra-research/tau3-bench`.
+  The adapter applies only to the Harbor subprocess.
+  No manual `PATH` change or server installation is required.
+  Remove any previously configured external Banking Docker wrapper.
+- Task files, the user-simulator image, and scoring rules stay unchanged.
+  Other tasks pass through to Docker unchanged. Kubernetes images are not patched.
+  [Adapter tests](../tests/llm_module/test_banking_docker.py) check task selection,
+  argument forwarding, and the merged Compose configuration.
+
+Compose must support `dockerfile_inline`. The adapter saves overlays beside the
+Harbor job under `<job-name>_banking_docker/overlays/`.
+After a run, check each Banking trial's `verifier/result.json` for
+`used_tau2_evaluator: true`. The build check verifies imports only.
+
+This fix does not change server-side tool-argument parsing or pin tau2.
+The main and runtime images still clone upstream independently.
+Revalidate the dependency fix when changing tau2 or the task package.
