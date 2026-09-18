@@ -17,11 +17,10 @@ from types import SimpleNamespace
 import pytest
 
 from test_module._test_common import ReportCheckTypes
-from test_module.eval_tests import tts_eval_tests as tts
 from test_module.eval_tests.tts_eval_tests import (
     DEFAULT_WER_THRESHOLD,
     _intelligibility_score,
-    _missing_quality_deps,
+    _missing_deps,
     _tts_eval_block,
     _wer_accuracy_check,
 )
@@ -82,16 +81,14 @@ class TestWerAccuracyCheck:
         )
 
 
-class TestMissingQualityDeps:
-    def test_importable_deps_report_nothing_missing(self, monkeypatch):
-        monkeypatch.setattr(tts, "TTS_QUALITY_DEPS", ("sys", "json"))
-        assert _missing_quality_deps() == []
+class TestMissingDeps:
+    def test_importable_deps_report_nothing_missing(self):
+        assert _missing_deps(("sys", "json")) == []
 
-    def test_unimportable_dep_is_reported(self, monkeypatch):
-        monkeypatch.setattr(
-            tts, "TTS_QUALITY_DEPS", ("sys", "definitely_not_a_real_module_xyz")
-        )
-        assert _missing_quality_deps() == ["definitely_not_a_real_module_xyz"]
+    def test_unimportable_dep_is_reported(self):
+        assert _missing_deps(("sys", "definitely_not_a_real_module_xyz")) == [
+            "definitely_not_a_real_module_xyz"
+        ]
 
 
 class TestTtsEvalBlockShape:
@@ -100,8 +97,8 @@ class TestTtsEvalBlockShape:
             _ctx(),
             _task(),
             score=90.0,
-            wer=0.1,
             accuracy_check=ReportCheckTypes.PASS,
+            metrics={"wer": 0.1},
         )
         assert block.kind == "evals"
         assert block.task_type == "text_to_speech"
@@ -124,9 +121,9 @@ class TestTtsEvalBlockShape:
             _ctx(),
             _task(),
             score=None,
-            wer=None,
             accuracy_check=ReportCheckTypes.NA,
             error="deps unavailable: torch",
+            metrics={"wer": None},
         )
         assert block.data["accuracy_check"] is ReportCheckTypes.NA
         assert block.data["score"] is None
