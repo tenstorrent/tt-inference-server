@@ -363,3 +363,30 @@ def test_merge_renders_the_release_shaped_json(tmp_path):
         "Spec Tests",
         "Agentic Targets",
     ]
+
+
+def test_a_checkpointed_report_is_merged_but_blocks_acceptance(tmp_path):
+    """A cancelled run's checkpoint is real data, not a finished measurement.
+
+    Merging it is the point of checkpointing; grading it as if the sweep had
+    finished is not, so ``report_partial`` has to survive into the verdict.
+    """
+    payload = _report(workflow="benchmarks")
+    payload["metadata"]["report_partial"] = True
+    payload["metadata"]["report_blocks"] = 25
+    _write(tmp_path, "a1", "report_benchmarks_0_100.json", payload)
+
+    _, stats = merge_reports(tmp_path, tmp_path / "out")
+    assert stats["merged"] == 1
+    assert stats["partial_reports"] == ["report_benchmarks_0_100.json"]
+    assert stats["accepted"] is False
+    assert stats["blockers"] >= 1
+
+
+def test_a_finished_report_is_not_flagged_partial(tmp_path):
+    payload = _report(workflow="benchmarks")
+    payload["metadata"]["report_partial"] = False
+    _write(tmp_path, "a1", "report_benchmarks_0_100.json", payload)
+
+    _, stats = merge_reports(tmp_path, tmp_path / "out")
+    assert stats["partial_reports"] == []
