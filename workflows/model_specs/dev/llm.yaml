@@ -982,7 +982,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: 51044645725437dcbd0eb7d974484faa5237e7f5
+      tt_metal_source_ref: mvasiljevic/qwen38-packed-51044645725
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1027,7 +1027,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: 51044645725437dcbd0eb7d974484faa5237e7f5
+      tt_metal_source_ref: mvasiljevic/qwen38-packed-51044645725
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1072,7 +1072,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: 51044645725437dcbd0eb7d974484faa5237e7f5
+      tt_metal_source_ref: mvasiljevic/qwen38-packed-51044645725
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
