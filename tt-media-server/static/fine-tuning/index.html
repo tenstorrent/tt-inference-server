@@ -61,6 +61,34 @@
         .error-msg { color: #c0392b; font-weight: 600; margin-top: 0.5rem; }
         .success-msg { color: #27ae60; font-weight: 600; margin-top: 0.5rem; }
         #model-info { font-size: 0.9rem; color: #555; margin-bottom: 1rem; }
+
+        #deploy-panel {
+            margin-top: 1rem;
+            padding: 0.75rem;
+            border: 2px solid #2980b9;
+            border-radius: 8px;
+            background: #f4f9fd;
+        }
+        #deploy-panel h4 { margin: 0 0 0.5rem 0; }
+        #deploy-prompt {
+            width: 100%; min-height: 80px; padding: 0.5rem;
+            font-family: monospace; font-size: 0.85rem;
+        }
+        #deploy-response {
+            margin-top: 0.5rem; padding: 0.5rem; min-height: 80px;
+            background: #fff; border: 1px solid #ddd; border-radius: 4px;
+            white-space: pre-wrap; word-wrap: break-word;
+            font-family: monospace; font-size: 0.85rem;
+        }
+        .deploy-controls {
+            display: flex; gap: 0.75rem; align-items: center;
+            flex-wrap: wrap; margin: 0.5rem 0;
+        }
+        .deploy-controls label { font-size: 0.85rem; margin: 0; }
+        .deploy-controls input, .deploy-controls select {
+            padding: 0.3rem; font-size: 0.85rem;
+        }
+        #deploy-btn { background: #2980b9; color: #fff; border: none; margin-top: 1rem; }
     </style>
 </head>
 <body>
@@ -75,6 +103,15 @@
                     <div class="form-grid">
                         <label>Model
                             <select id="model_select"></select>
+                        </label>
+                        <label>Device
+                            <select id="device_type"></select>
+                        </label>
+                        <label>Trainer
+                            <select id="trainer"></select>
+                        </label>
+                        <label>Optimizer
+                            <select id="optimizer"></select>
                         </label>
                     </div>
                 </fieldset>
@@ -108,6 +145,12 @@
                         </label>
                         <label>Log Steps Freq
                             <input type="number" id="steps_freq" value="10" min="1">
+                        </label>
+                        <label>Max Steps (0 = unlimited)
+                            <input type="number" id="max_steps" value="500" min="0">
+                        </label>
+                        <label>Checkpoint Saving Interval
+                            <input type="number" id="save_interval" value="100" min="0">
                         </label>
                         <label>Dtype
                             <select id="dtype">
@@ -156,10 +199,30 @@
                 <h3>Job: <code id="detail-id"></code></h3>
                 <dl id="detail-meta"></dl>
                 <button id="cancel-btn" hidden>Cancel Job</button>
-                
+
                 <div id="metrics-section">
                     <h4 id="metrics-heading">No metrics to show</h4>
                     <canvas id="metrics-chart" width="1200" height="500" style="width:100%; background:#fff; border:1px solid #ddd; border-radius:4px;"></canvas>
+                </div>
+
+                <button id="deploy-btn" hidden>Deploy</button>
+
+                <div id="deploy-panel" hidden>
+                    <h4>Run Inference</h4>
+                    <div class="deploy-controls">
+                        <label>Checkpoint
+                            <select id="deploy-checkpoint"></select>
+                        </label>
+                        <label>Max Tokens
+                            <input type="number" id="deploy-max-tokens" value="64" min="1" max="512">
+                        </label>
+                        <span id="deploy-status" style="font-size: 0.8rem; color: #666;"></span>
+                    </div>
+                    <textarea id="deploy-prompt" placeholder="Enter prompt..."></textarea>
+                    <div style="margin-top: 0.5rem;">
+                        <button id="deploy-submit">Send</button>
+                    </div>
+                    <div id="deploy-response"></div>
                 </div>
             </div>
         </div>
