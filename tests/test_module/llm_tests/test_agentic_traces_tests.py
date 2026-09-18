@@ -343,3 +343,42 @@ class TestTraceSourceDispatch:
         # The orchestrator creates the output root; the (mocked) driver would
         # create its own per-run artifact subtree.
         assert (tmp_path / "agentic_traces").is_dir()
+
+
+class TestGlm53Corpus:
+    def test_only_dataset_and_label_change_for_full_corpus(self, tmp_path):
+        from dataclasses import asdict
+        from reference_config.agentic_traces.agentic_traces_config import (
+            AGENTIC_TRACES_CONFIGS,
+        )
+
+        model_id = "id_tt-transformers_GLM-5.3_super_cluster"
+        original = AGENTIC_TRACES_CONFIGS[model_id]
+        planned = []
+        for corpus in (None, "256k", "1m", None):
+            outcome = AgenticTracesDriverResult(
+                return_code=0, payload=_ok_payload(), raw_path=None
+            )
+            patcher, driver = _driver_returning(outcome)
+            with patcher:
+                result = run_agentic_traces(
+                    _ctx(model_id=model_id, tmp_path=tmp_path), corpus=corpus
+                )
+            assert result.ok
+            planned.append(asdict(driver.run.call_args.args[0]))
+        assert planned[0] == planned[1] == planned[3]
+        full = planned[2]
+        assert full.pop("public_dataset") == "semianalysis_cc_traces_weka_062126"
+        assert "_256k" not in full.pop("label")
+        baseline = planned[0]
+        assert baseline.pop("public_dataset").endswith("_256k")
+        baseline.pop("label")
+        assert full == baseline
+        assert AGENTIC_TRACES_CONFIGS[model_id] is original
+
+    def test_rejects_corpus_selection_for_other_models(self, tmp_path):
+        patcher, driver = _driver_returning()
+        with patcher:
+            result = run_agentic_traces(_ctx(tmp_path=tmp_path), corpus="1m")
+        assert not result.ok
+        driver.run.assert_not_called()

@@ -142,6 +142,7 @@ class AgenticTracesOptions:
     mode: str = "full"
     # Comma-separated TraceSource names narrowing which configured runs execute.
     trace_sources: Optional[str] = None
+    corpus: Optional[str] = None
     # Ad-hoc overrides, for debugging a config without editing it.
     duration_override: Optional[int] = None
     git_ref_override: Optional[str] = None

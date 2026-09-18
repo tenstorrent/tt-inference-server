@@ -441,3 +441,40 @@ Client requests, test cases, model settings, and scoring rules are unchanged.
 - [`llm_module/agentic/harbor.py`](../llm_module/agentic/harbor.py), `run()`,
   applies the pin automatically to Banking tasks in Tau3 Docker runs.
   Other tasks are unchanged. Remove any external Banking Docker wrapper.
+
+## 4. AgentX 1M corpus
+
+TT's [instructions for the full 1M corpus](https://github.com/tenstorrent/tt-inference-server/pull/5163#issuecomment-5693020667)
+remove `_256k` from the dataset name. This fork exposes that choice without
+editing the default configuration.
+
+- Add `--agentic-traces-corpus 1m` to the GLM-5.3 AgentX command above.
+- The default remains `semianalysis_cc_traces_weka_062126_256k`.
+  Explicit `256k` selects the same run.
+- `1m` selects `semianalysis_cc_traces_weka_062126`. Only the dataset and result
+  label change. Lane 8, duration, seed, sampling requests, warmup, and scoring
+  remain unchanged. Model context length and corpus selection are separate.
+- [`run.py`](../run.py), [`run_workflows.py`](../run_workflows.py), and their
+  runtime/engine forwarding pass the selection to
+  [`run_agentic_traces()`](../test_module/llm_tests/agentic_traces_tests.py).
+  It selects a copy of the run specification; the default registry is unchanged.
+- Use a fresh `CACHE_ROOT` for each corpus. The existing native JSON records
+  `public_dataset`, lane count, duration, seed, and the InferenceX revision.
+
+## 5. PoC environment check
+
+TT reloads the repository's `.env` after startup. An old `OPENAI_BASE_URL` can
+send Banking simulator requests to a different server than `--server-url`.
+
+[`scripts/check_poc_environment.py`](../scripts/check_poc_environment.py) checks
+both the shell environment and `.env`. It rejects conflicting endpoints, output
+paths, model/target overrides, Harbor settings, and AIPerf overrides. It does not
+change either source or print credential values. Run it before each PoC client:
+
+```bash
+python scripts/check_poc_environment.py \
+  --server-url "$SERVER_URL" --cache-root "$CACHE_ROOT"
+```
+
+The check writes `poc-environment.json` under `CACHE_ROOT`. Normal credential
+settings, including `HF_TOKEN` and `API_KEY`, remain available to TT.

@@ -499,6 +499,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--agentic-traces-corpus",
+        choices=["256k", "1m"],
+        default=None,
+        help="Select the GLM-5.3 InferenceX corpus; unset preserves the TT default.",
+    )
+    parser.add_argument(
         "--agentic-traces-duration",
         type=int,
         default=None,
@@ -600,6 +606,7 @@ def parse_args() -> argparse.Namespace:
         )
     agentic_traces_flags = (
         args.agentic_traces_sources,
+        args.agentic_traces_corpus,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
         args.agentic_traces_metrics_url,

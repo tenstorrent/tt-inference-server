@@ -298,12 +298,14 @@ class TestAgenticTracesOptions:
                 workflow="release",
                 agentic_traces=True,
                 agentic_traces_sources="inferencex_agentx",
+                agentic_traces_corpus="1m",
                 agentic_traces_duration=1800,
                 agentic_traces_git_ref="cafebabe",
             )
         )
         assert opts.trace_sources == "inferencex_agentx"
         assert opts.duration_override == 1800
+        assert opts.corpus == "1m"
         assert opts.git_ref_override == "cafebabe"
 
     def test_metrics_urls_become_a_tuple(self, monkeypatch):

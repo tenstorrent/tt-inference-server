@@ -251,6 +251,7 @@ class AgenticTracesWorkflow(WorkflowExecution):
                     self.ctx,
                     mode=opts.mode,
                     trace_sources=opts.trace_sources,
+                    corpus=opts.corpus,
                     duration_override=opts.duration_override,
                     git_ref_override=opts.git_ref_override,
                     metrics_urls=opts.metrics_urls,

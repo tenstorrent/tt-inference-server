@@ -69,6 +69,7 @@ def run_agentic_traces(
     *,
     mode: str = "full",
     trace_sources: Optional[str] = None,
+    corpus: Optional[str] = None,
     duration_override: Optional[int] = None,
     git_ref_override: Optional[str] = None,
     metrics_urls: Sequence[str] = (),
@@ -135,6 +136,20 @@ def run_agentic_traces(
             trace_sources=selected_sources,
             git_ref_override=git_ref_override,
         )
+        if corpus is not None:
+            if corpus not in ("256k", "1m"):
+                raise ValueError("AgentX corpus must be 256k or 1m")
+            if config.model_id != "id_tt-transformers_GLM-5.3_super_cluster" or any(
+                run.trace_source is not TraceSource.INFERENCEX_AGENTX
+                for run in run_specs
+            ):
+                raise ValueError("Corpus selection requires GLM-5.3 InferenceX traces")
+            # TT's full-corpus recipe changes only the dataset name:
+            # https://github.com/tenstorrent/tt-inference-server/pull/5163#issuecomment-5693020667
+            dataset = "semianalysis_cc_traces_weka_062126"
+            if corpus == "256k":
+                dataset += "_256k"
+            run_specs = tuple(replace(run, public_dataset=dataset) for run in run_specs)
         runs = build_runs(
             effective_config,
             spec,
