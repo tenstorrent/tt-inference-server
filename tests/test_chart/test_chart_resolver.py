@@ -32,6 +32,10 @@ def _render(*set_args):
         # media/forge rows fail closed without an auth choice.
         "--set",
         "auth.apiKey=fake",
+        # These tests are about engine/impl resolution, so they must not depend
+        # on whether the row they happen to pick is pinned above the image floor.
+        "--set",
+        "imageFloor.enforce=false",
     ]
     for s in set_args:
         cmd.extend(["--set", s])
