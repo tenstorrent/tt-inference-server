@@ -161,7 +161,28 @@ python run.py \
   --dev-mode
 ```
 
-And terminal bench 2.1
+### Banking evaluator dependency
+
+On this fork, Docker-based Tau3 runs automatically add `websockets==17.1`
+to the Banking task's `main` image and check
+`import tau2.evaluator.evaluator` during the image build. The task installs
+`tau2[knowledge]`, but the evaluator also imports voice code whose `websockets`
+dependency is absent. Without it, grading can fail with
+`used_tau2_evaluator: false` and reward 0; that is not a valid model score.
+
+The client applies a Compose build overlay through a Docker adapter scoped to
+the Harbor subprocess. No manual `PATH` change or server-side installation is
+needed; remove any previously configured external Banking Docker wrapper.
+The original task files, user-simulator image, and scoring rules are unchanged.
+Other tasks pass through to Docker unchanged. Kubernetes images are not patched.
+Compose must support `dockerfile_inline`; generated overlays are saved beside
+the Harbor job under `<job-name>_banking_docker/overlays/`.
+
+After the run, check every Banking trial's `verifier/result.json` for
+`used_tau2_evaluator: true`. The build check verifies imports, not successful
+grading. This client fix does not repair server-side tool-argument parsing.
+
+### Terminal-Bench 2.1
 
 ```bash
 python run.py \
