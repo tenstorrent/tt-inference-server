@@ -369,8 +369,7 @@ qwen38_autoport_b1_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/autoports/qwen_qwen3_8_27b",
 )
-# Same batch-1 device implementation under distinct benchmark profile names.
-# Their model specs keep max_num_seqs=1 while selecting C8/C16 client loads.
+# Real device-batch profiles for the C8/C16 benchmark loads.
 qwen38_autoport_b8_impl = ImplSpec(
     impl_id="qwen38_autoport_b8",
     impl_name="qwen38-autoport-b8",

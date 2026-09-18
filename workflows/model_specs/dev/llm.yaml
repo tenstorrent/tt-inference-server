@@ -982,7 +982,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_ref: mvasiljevic/qwen38-concurrency
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -994,8 +994,7 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  # Concurrency-8 load with the same single-sequence device path as the B1
-  # profile. Requests beyond the active sequence wait in vLLM's scheduler.
+  # Concurrency-8 load with eight device slots and a shared 1M-token KV pool.
   impl: qwen38_autoport_b8
   inference_engine: VLLM
   model_type: LLM
@@ -1007,6 +1006,7 @@ templates:
       max_context: 262144
       max_tokens_all_users_override: 1050592
       env_vars:
+        QWEN_VLLM_KV_POOL_TOKENS: "1050592"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
@@ -1016,7 +1016,7 @@ templates:
         enable_auto_tool_choice: true
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
-        max_num_seqs: "1"
+        max_num_seqs: "8"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1027,7 +1027,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_ref: mvasiljevic/qwen38-concurrency
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1039,7 +1039,7 @@ templates:
 
 - weights:
     - Qwen/Qwen3.8-27B
-  # Concurrency-16 load with one sequence admitted to each device step.
+  # Concurrency-16 load with sixteen device slots.
   impl: qwen38_autoport_b16
   inference_engine: VLLM
   model_type: LLM
@@ -1051,6 +1051,7 @@ templates:
       max_context: 262144
       max_tokens_all_users_override: 1050592
       env_vars:
+        QWEN_VLLM_KV_POOL_TOKENS: "1050592"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
@@ -1060,7 +1061,7 @@ templates:
         enable_auto_tool_choice: true
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
-        max_num_seqs: "1"
+        max_num_seqs: "16"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1071,7 +1072,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-full-requirements-ci
+      tt_metal_source_ref: mvasiljevic/qwen38-concurrency
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
