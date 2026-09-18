@@ -4,7 +4,7 @@
 
 import os
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
@@ -127,17 +127,31 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
-# Models characterized single-stream only: every ISL/OSL pair still runs, but the
-# batched leg (max_concurrency = the spec's max_concurrency) is dropped, as are the
-# structured-output runs. Prefix-matched against model_spec.model_name, the model
-# weights basename, so one entry covers a family's point releases.
+# Per-model sweep override, prefix-matched against model_spec.model_name (the model
+# weights basename, so one entry covers a family's point releases). A matched model
+# REPLACES the sweep rather than extending it:
 #
-# GLM-5.x is here because its batched leg measures the harness, not the model: the
-# spec says max_concurrency 80 while the engine seats 32, so 48 of every 80 requests
-# queue and TTFT becomes queueing time (tt-shield run 35095803588: mean TTFT
-# 1,206,839 ms at isl 131072, ~98% of it waiting). Concurrency 1 isolates prefill and
-# decode cleanly. Drop the entry once slots and max_concurrency agree.
-MODEL_SINGLE_STREAM_ONLY = ("GLM-5.",)
+#   pairs          the only ISL/OSL pairs it runs, still subject to isl + osl <= max_context
+#   concurrencies  the exact concurrency ladder, instead of [1, allowed_max]; levels above
+#                  the model's allowed max are dropped
+#
+# An override also skips the structured-output runs, which drive a concurrency of their
+# own -- drop `and override is None` at structured_output_eligible to get them back --
+# and it clears SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE, since flooring every level
+# at 2x the model's max_concurrency would make the low-concurrency legs run dozens of
+# sequential waves; get_num_prompts then scales the prompt count with the level.
+#
+# GLM-5.x holds one pair and a full ladder on purpose: the interesting question for it is
+# how throughput and latency scale with batch size at a fixed shape, and 10000/1024 is
+# the longest pair whose decode dominates its prefill. Its spec declares
+# max_concurrency 80 against an engine that seats 32, so the ladder is also what shows
+# where that ceiling actually bites.
+MODEL_SWEEP_OVERRIDES = {
+    "GLM-5.": {
+        "pairs": [(10000, 1024)],
+        "concurrencies": (1, 2, 4, 6, 8, 10, 12, 16, 20, 25, 32, 40, 50, 60, 80),
+    },
+}
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -176,7 +190,7 @@ def _expand_text_sweep_params(
     max_tokens_all_users: int,
     model_max_concurrency: int,
     min_num_prompts: int = 0,
-    single_stream_only: bool = False,
+    concurrencies: Optional[Sequence[int]] = None,
 ) -> List[BenchmarkTaskParams]:
     if isl + osl > max_context:
         return []
@@ -184,9 +198,14 @@ def _expand_text_sweep_params(
     allowed_max_concurrency = get_benchmark_max_concurrency(
         isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
-    concurrencies = [1]
-    if allowed_max_concurrency > 1 and not single_stream_only:
-        concurrencies.append(allowed_max_concurrency)
+    if concurrencies is None:
+        levels = [1]
+        if allowed_max_concurrency > 1:
+            levels.append(allowed_max_concurrency)
+    else:
+        # An explicit ladder still cannot exceed what the token budget allows; keep 1 so a
+        # model whose allowed max is 1 is measured rather than skipped.
+        levels = [c for c in concurrencies if c <= allowed_max_concurrency] or [1]
 
     return [
         BenchmarkTaskParams(
@@ -200,7 +219,7 @@ def _expand_text_sweep_params(
                 min_num_prompts=min_num_prompts if concurrency > 1 else 0,
             ),
         )
-        for concurrency in concurrencies
+        for concurrency in levels
     ]
 
 
@@ -604,9 +623,19 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
         )
 
-    single_stream_only = (model_spec.model_name or "").startswith(
-        MODEL_SINGLE_STREAM_ONLY
+    override = next(
+        (
+            spec
+            for prefix, spec in MODEL_SWEEP_OVERRIDES.items()
+            if (model_spec.model_name or "").startswith(prefix)
+        ),
+        None,
     )
+    sweep_concurrencies = None
+    if override is not None:
+        text_isl_osl_pairs = list(override["pairs"])
+        sweep_concurrencies = tuple(override["concurrencies"])
+        sweep_min_num_prompts = 0
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
@@ -683,7 +712,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             max_tokens_all_users=max_tokens_all_users,
                             model_max_concurrency=model_max_concurrency,
                             min_num_prompts=sweep_min_num_prompts,
-                            single_stream_only=single_stream_only,
+                            concurrencies=sweep_concurrencies,
                         )
                     ]
                     + (
@@ -714,8 +743,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     # Structured-output benchmarks: llms and vlms, can be extended
     structured_output_eligible = (
-        model_spec.model_type in (ModelType.LLM, ModelType.VLM)
-        and not single_stream_only
+        model_spec.model_type in (ModelType.LLM, ModelType.VLM) and override is None
     )
     if structured_output_eligible:
         tasks.append(
