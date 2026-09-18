@@ -346,7 +346,8 @@ class AVGenerateRequest(BaseModel):
     # step, so a profile meant to run unguided has to switch all of them off.
     video_modality_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
     audio_modality_scale: Optional[float] = Field(None, ge=0.0, le=30.0)
-    rescale_scale: Optional[float] = Field(None, ge=0.0, le=1.0)
+    video_rescale_scale: Optional[float] = Field(None, ge=0.0, le=1.0)
+    audio_rescale_scale: Optional[float] = Field(None, ge=0.0, le=1.0)
     # LoRA adapters to bind for this request, innermost first. Honoured by both
     # LTX servers. Omitted or empty restores the base weights.
     lora_adapters: Optional[List[LoraAdapterSpec]] = None

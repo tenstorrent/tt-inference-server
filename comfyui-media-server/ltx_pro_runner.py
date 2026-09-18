@@ -130,7 +130,8 @@ class LTXProRunner(LTXRunner):
             audio_stg_scale=float(opt("audio_stg_scale")),
             video_modality_scale=float(opt("video_modality_scale")),
             audio_modality_scale=float(opt("audio_modality_scale")),
-            rescale_scale=float(opt("rescale_scale")),
+            video_rescale_scale=float(opt("video_rescale_scale")),
+            audio_rescale_scale=float(opt("audio_rescale_scale")),
             stg_block=int(opt("stg_block")),
         )
         if on_event is not None:

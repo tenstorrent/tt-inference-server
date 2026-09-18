@@ -43,7 +43,12 @@ class LTXProConfig(LTXConfig):
     audio_stg_scale: float = 1.0
     video_modality_scale: float = 3.0
     audio_modality_scale: float = 3.0
-    rescale_scale: float = 0.7
+    # Rescale is per-modality because the two streams want different values: the
+    # reference HQ preset pairs video 0.45 with audio 1.0, and a shared scalar
+    # cannot express that. 1.0 on the audio is what clears its high-band noise
+    # floor; the same value on the video desaturates it.
+    video_rescale_scale: float = 0.7
+    audio_rescale_scale: float = 0.7
     stg_block: int = 28
 
     # Separate dev-mode switch so bringing up one server short does not shrink the
