@@ -53,7 +53,10 @@ def hardware_to_device_name(hardware: str) -> str:
     if not hardware:
         raise ValueError("deployment.hardware is required to resolve a device")
     key = hardware.strip().upper()
-    mapped = _HARDWARE_TO_DEVICE.get(key)
+    # Separators vary between the document vocabulary and the customer-facing
+    # names: the schema's only Blackhole spelling is "BH-Galaxy", the aliases
+    # below are written with spaces.
+    mapped = _HARDWARE_TO_DEVICE.get(re.sub(r"[\s_-]+", " ", key))
     if mapped is not None:
         return mapped
     for pattern, device_name in _HARDWARE_PATTERN_TO_DEVICE:
