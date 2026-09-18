@@ -96,6 +96,7 @@ class VLLMParamConformanceTest(BaseTest):
             "endpoint_url": report_data.get("endpoint_url", endpoint_url),
             "model_name": report_data.get("model_name", model_name),
             "task_name": report_data.get("task_name", self.REPORT_TASK_NAME),
+            "chat_template_kwargs": report_data.get("chat_template_kwargs", {}),
             "parameter_conformance_summary": self._build_conformance_summary(results),
             "detailed_test_results": self._build_detailed_results(results),
             "success": self._all_passed(results),
