@@ -715,6 +715,24 @@ class TestVllmOverrideCliArgs:
     def test_false_and_null_omitted(self):
         assert _vllm_override_cli_args('{"a": false, "b": null}') == []
 
+    def test_list_renders_one_token_per_item(self):
+        assert _vllm_override_cli_args(
+            '{"served-model-name": ["Llama-3.1-8B-Instruct", "local-llm"]}'
+        ) == [
+            "--served-model-name",
+            "Llama-3.1-8B-Instruct",
+            "local-llm",
+        ]
+
+    def test_empty_list_emits_no_flag(self):
+        assert _vllm_override_cli_args('{"served-model-name": []}') == []
+
+    def test_dict_stays_a_single_json_token(self):
+        assert _vllm_override_cli_args('{"hf-overrides": {"max_seq_len": 4096}}') == [
+            "--hf-overrides",
+            '{"max_seq_len": 4096}',
+        ]
+
     def test_none_and_empty_and_malformed_return_empty(self):
         assert _vllm_override_cli_args(None) == []
         assert _vllm_override_cli_args("") == []
