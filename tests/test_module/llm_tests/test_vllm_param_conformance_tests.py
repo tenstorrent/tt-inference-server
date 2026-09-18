@@ -59,6 +59,19 @@ def test_resolve_model_name_defaults_when_unresolved():
     assert test._resolve_model_name() == DEFAULT_MODEL_NAME
 
 
+def test_explicit_chat_template_defaults_forwarded_without_model_heuristics():
+    test = VLLMParamConformanceTest(
+        TestConfig({"chat_template_kwargs": {"enable_thinking": False}}), {})
+    assert test._extra_pytest_args() == [
+        "--chat-template-kwargs", '{"enable_thinking": false}']
+
+
+def test_invalid_chat_template_defaults_rejected():
+    test = VLLMParamConformanceTest(TestConfig({"chat_template_kwargs": []}), {})
+    with pytest.raises(ValueError, match="JSON object"):
+        test._extra_pytest_args()
+
+
 def test_diffusiongemma_suite_receives_catalog_max_context():
     ctx = _fake_ctx(
         hf_model_repo="google/diffusiongemma-26B-A4B-it",

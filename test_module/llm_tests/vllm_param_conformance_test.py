@@ -165,7 +165,12 @@ class VLLMParamConformanceTest(BaseTest):
         return json.loads(report_path.read_text())
 
     def _extra_pytest_args(self) -> List[str]:
-        return []
+        defaults = self.config.get("chat_template_kwargs")
+        if defaults is None:
+            return []
+        if not isinstance(defaults, dict):
+            raise ValueError("chat_template_kwargs must be a JSON object")
+        return ["--chat-template-kwargs", json.dumps(defaults, sort_keys=True)]
 
     def _record_pytest_output(
         self, return_code: Optional[int], stdout: Optional[bytes]
@@ -307,7 +312,7 @@ class VLLMDiffusionGemmaParamConformanceTest(VLLMParamConformanceTest):
                 "vllm_diffusiongemma conformance requires "
                 "model_spec.device_model_spec.max_context"
             )
-        return ["--max-context", str(max_context)]
+        return [*super()._extra_pytest_args(), "--max-context", str(max_context)]
 
 
 def run_vllm_param_conformance(
