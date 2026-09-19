@@ -901,6 +901,64 @@ def _weights_spec():
     }
 
 
+def test_quetzal_fetches_only_pinned_metadata(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = MagicMock()
+    transformers.AutoTokenizer = MagicMock()
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "quetzal"},
+        device_model_spec={
+            "vllm_args": {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+        },
+    )
+    path = module.ensure_weights_available(spec)
+    kwargs = module.snapshot_download.call_args.kwargs
+    assert kwargs["revision"] == "a" * 40
+    assert kwargs["allow_patterns"]
+    assert not any(
+        pattern.endswith((".pt", ".bin", ".safetensors", ".py")) or pattern == "*"
+        for pattern in kwargs["allow_patterns"]
+    )
+    transformers.AutoConfig.from_pretrained.assert_called_once_with(
+        path, local_files_only=True, trust_remote_code=False
+    )
+    transformers.AutoTokenizer.from_pretrained.assert_called_once_with(
+        path, local_files_only=True, trust_remote_code=False
+    )
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(path)
+
+
+def test_quetzal_missing_metadata_fails_closed(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    module.snapshot_download.side_effect = RuntimeError("offline")
+    transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = MagicMock()
+    transformers.AutoConfig.from_pretrained.side_effect = ValueError("missing config")
+    transformers.AutoTokenizer = MagicMock()
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "quetzal"},
+        device_model_spec={
+            "vllm_args": {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+        },
+    )
+    with pytest.raises(RuntimeError, match="metadata unavailable"):
+        module.ensure_weights_available(spec)
+    assert "MODEL_WEIGHTS_DIR" not in os.environ
+
+
 def test_ensure_weights_available_resumes_partial_download(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
