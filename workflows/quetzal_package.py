@@ -19,9 +19,7 @@ QUETZAL_IMPL_ID = "quetzal"
 QUETZAL_PACKAGE_ROOT_ENV = "QUETZAL_PACKAGE_ROOT"
 QUETZAL_MANIFEST_SHA256_ENV = "QUETZAL_BUNDLE_MANIFEST_SHA256"
 QUETZAL_AUXILIARY_ROOTS_ENV = "QUETZAL_AUXILIARY_ROOTS_JSON"
-QUETZAL_AUXILIARY_RUNTIME_ROOT = Path(
-    "/home/container_app_user/quetzal/auxiliary"
-)
+QUETZAL_AUXILIARY_RUNTIME_ROOT = Path("/home/container_app_user/quetzal/auxiliary")
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 
 
@@ -91,8 +89,12 @@ def _manifest_auxiliary_mounts(
     try:
         manifest = json.loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        raise ValueError(f"Quetzal package manifest is invalid JSON: {error}") from error
-    references = manifest.get("auxiliary_references") if isinstance(manifest, dict) else None
+        raise ValueError(
+            f"Quetzal package manifest is invalid JSON: {error}"
+        ) from error
+    references = (
+        manifest.get("auxiliary_references") if isinstance(manifest, dict) else None
+    )
     if references is None:
         if configured:
             raise ValueError(
@@ -126,9 +128,7 @@ def _manifest_auxiliary_mounts(
         if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError(f"Quetzal auxiliary reference {name} has invalid SHA-256")
         runtime_value = runtime_roots.get(name)
-        expected_runtime = (
-            QUETZAL_AUXILIARY_RUNTIME_ROOT / name / f"sha256-{digest}"
-        )
+        expected_runtime = QUETZAL_AUXILIARY_RUNTIME_ROOT / name / f"sha256-{digest}"
         if runtime_value != str(expected_runtime):
             raise ValueError(
                 f"Quetzal auxiliary runtime path for {name} must be "
@@ -213,9 +213,7 @@ def resolve_quetzal_package_mount(
             "impl=quetzal model spec must define "
             "QUETZAL_BUNDLE_MANIFEST_SHA256 as a lowercase SHA-256"
         )
-    auxiliary = _manifest_auxiliary_mounts(
-        host_root, env_vars, expected_sha256
-    )
+    auxiliary = _manifest_auxiliary_mounts(host_root, env_vars, expected_sha256)
     return QuetzalPackageMount(
         host_root=host_root,
         runtime_root=runtime_root,
@@ -236,9 +234,7 @@ def quetzal_package_env(
     if package.auxiliary:
         result[QUETZAL_AUXILIARY_ROOTS_ENV] = json.dumps(
             {
-                mount.name: str(
-                    mount.host_root if local_server else mount.runtime_root
-                )
+                mount.name: str(mount.host_root if local_server else mount.runtime_root)
                 for mount in package.auxiliary
             },
             sort_keys=True,

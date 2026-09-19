@@ -47,7 +47,9 @@ def _model_spec(impl_id="quetzal", env_vars=None):
 
 
 def _make_v2_package(
-    tmp_path, *, root_mode=0o555,
+    tmp_path,
+    *,
+    root_mode=0o555,
     name="openai_gpt-oss-120b-streamed-cache",
 ):
     digest = "e" * 64
@@ -59,18 +61,19 @@ def _make_v2_package(
     auxiliary.chmod(root_mode)
     manifest = {
         "schema": "ttq.artifact_bundle/v2",
-        "auxiliary_references": [{
-            "name": name, "role": "streamed_cache", "sha256": digest,
-            "files": [],
-        }],
+        "auxiliary_references": [
+            {
+                "name": name,
+                "role": "streamed_cache",
+                "sha256": digest,
+                "files": [],
+            }
+        ],
     }
     raw = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
     (package / "manifest.json").write_bytes(raw)
     manifest_sha256 = hashlib.sha256(raw).hexdigest()
-    runtime_root = (
-        "/home/container_app_user/quetzal/auxiliary/"
-        f"{name}/sha256-{digest}"
-    )
+    runtime_root = f"/home/container_app_user/quetzal/auxiliary/{name}/sha256-{digest}"
     env = {
         "QUETZAL_PACKAGE_ROOT": str(CATALOG_ROOT),
         "QUETZAL_BUNDLE_MANIFEST_SHA256": manifest_sha256,
@@ -268,7 +271,9 @@ def test_v2_auxiliary_root_must_be_accessible_to_container_uid(
     mount = resolve_quetzal_package_mount(_model_spec(env_vars=env), runtime)
 
     try:
-        with pytest.raises(ValueError, match="Bind mount permission check failed") as error:
+        with pytest.raises(
+            ValueError, match="Bind mount permission check failed"
+        ) as error:
             validate_bind_mount_permissions(runtime, mount)
         assert missing_access in str(error.value)
         # Admission must not mutate an immutable published auxiliary to fix it.
