@@ -959,6 +959,64 @@ def test_quetzal_missing_metadata_fails_closed(
     assert "MODEL_WEIGHTS_DIR" not in os.environ
 
 
+@pytest.mark.parametrize(
+    "revision,tokenizer",
+    [
+        (None, None),
+        ("main", "main"),
+        ("a" * 12, "a" * 12),
+        (True, True),
+        ("a" * 40, "b" * 40),
+    ],
+)
+def test_quetzal_metadata_refuses_unpinned_or_mismatched_revision(
+    monkeypatch, tmp_path, run_vllm_api_server_module, revision, tokenizer
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "quetzal"},
+        device_model_spec={
+            "vllm_args": {"revision": revision, "tokenizer_revision": tokenizer}
+        },
+    )
+    with pytest.raises(RuntimeError, match="revision"):
+        module.ensure_weights_available(spec)
+    module.snapshot_download.assert_not_called()
+
+
+def test_quetzal_metadata_namespaces_equal_short_names(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = MagicMock()
+    transformers.AutoTokenizer = MagicMock()
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    paths = []
+    for repo in ("first/same-name", "second/same-name"):
+        monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+        paths.append(
+            module.ensure_weights_available(
+                {
+                    "model_name": "same-name",
+                    "hf_model_repo": repo,
+                    "impl": {"impl_id": "quetzal"},
+                    "device_model_spec": {
+                        "vllm_args": {
+                            "revision": "a" * 40,
+                            "tokenizer_revision": "a" * 40,
+                        }
+                    },
+                }
+            )
+        )
+    assert paths[0] != paths[1]
+
+
 def test_ensure_weights_available_resumes_partial_download(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
