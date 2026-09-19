@@ -3,6 +3,16 @@
     "_category": "LLM",
     "test_matrices": [
         {
+            "models": ["Qwen/Qwen3.6-27B"],
+            "devices": ["p300x2"],
+            "test_cases": [{
+                "template": "VLLMParamConformanceTest",
+                "enabled": true,
+                "description": "Answer-text conformance with explicit recorded non-thinking template",
+                "test_config": {"chat_template_kwargs": {"enable_thinking": false}}
+            }]
+        },
+        {
             "models": [
                 "qwen3_32b",
                 "llama_3_1_8b",
