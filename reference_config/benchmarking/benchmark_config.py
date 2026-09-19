@@ -141,15 +141,16 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 # at 2x the model's max_concurrency would make the low-concurrency legs run dozens of
 # sequential waves; get_num_prompts then scales the prompt count with the level.
 #
-# GLM-5.x holds one pair and a full ladder on purpose: the interesting question for it is
-# how throughput and latency scale with batch size at a fixed shape, and 10000/1024 is
-# the longest pair whose decode dominates its prefill. Its spec declares
-# max_concurrency 80 against an engine that seats 32, so the ladder is also what shows
-# where that ceiling actually bites.
+# GLM-5.x holds one pair and two levels on purpose. The full 15-level ladder
+# (tt-shield run 35328548556) already answered where this shape saturates: output
+# throughput peaks at 1,717 tok/s at 40 concurrent, and past 50 the engine drops into a
+# second decode regime — median TPOT steps 9.55 -> 18.8 ms and throughput falls to 663
+# tok/s at 80. So the deployment now runs 40 slots and the sweep measures the two points
+# that matter: one request alone, and the engine full.
 MODEL_SWEEP_OVERRIDES = {
     "GLM-5.": {
         "pairs": [(10000, 1024)],
-        "concurrencies": (1, 2, 4, 6, 8, 10, 12, 16, 20, 25, 32, 40, 50, 60, 80),
+        "concurrencies": (1, 40),
     },
 }
 

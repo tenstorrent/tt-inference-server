@@ -392,6 +392,8 @@ def test_glm_runs_one_pair_across_the_full_concurrency_ladder():
     ladder = list(override["concurrencies"])
     (isl, osl) = override["pairs"][0]
     assert (isl, osl) == (10000, 1024)
+    # One request alone, and the engine full at its 40 slots.
+    assert ladder == [1, 40]
 
     params = _expand_text_sweep_params(
         isl=isl,
