@@ -2704,7 +2704,7 @@ templates:
     env_vars:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
-      QUETZAL_BUNDLE_MANIFEST_SHA256: b8903221c961744390d6c18a4875ec7e4c9c8f46f42990268a4b0a8db793860f
+      QUETZAL_BUNDLE_MANIFEST_SHA256: b270eb9255fed46fb25a45f90ca8aaf999df4801e602a47a847035450b36acfd
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
