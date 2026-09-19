@@ -3,6 +3,13 @@
     "_category": "LLM",
     "test_matrices": [
         {
+            "devices": ["p300x2"],
+            "models": ["openai/gpt-oss-120b"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
             "models": [
                 "qwen3_32b",
                 "llama_3_1_8b",
