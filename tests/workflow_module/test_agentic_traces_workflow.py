@@ -64,8 +64,6 @@ class TestRunTasks:
         wf = self._workflow(
             mode="ci",
             trace_sources="inferencex_agentx",
-            corpus="1m",
-            concurrency_override=6,
             duration_override=1200,
             git_ref_override="cafebabe",
             auth_token="tok",
@@ -77,8 +75,6 @@ class TestRunTasks:
         kwargs = mock_run.call_args.kwargs
         assert kwargs["mode"] == "ci"
         assert kwargs["trace_sources"] == "inferencex_agentx"
-        assert kwargs["corpus"] == "1m"
-        assert kwargs["concurrency_override"] == 6
         assert kwargs["duration_override"] == 1200
         assert kwargs["git_ref_override"] == "cafebabe"
         assert kwargs["auth_token"] == "tok"

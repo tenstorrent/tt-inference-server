@@ -82,16 +82,27 @@ python run.py \
 ```
 
 For the optional real-text benchmark, see
-[Added: custom LongBench benchmark](#added-custom-longbench-benchmark) below.
+[Custom LongBench benchmark](#custom-longbench-benchmark) below.
 
 AgentX (agentic traces)
 
+The default GLM-5.3 configuration uses the 256K corpus at concurrency 8.
+For concurrency 6, see [AgentX concurrency](#agentx-concurrency).
+Ask the server operator for the current Prefill and Decode metrics URLs.
+Both must be reachable from the client host and accept unauthenticated GETs;
+the pinned AIPerf collector does not send the inference API key to these URLs.
+
 ```bash
+export PREFILL_METRICS_URL='<current prefill metrics URL>'
+export DECODE_METRICS_URL='<current decode metrics URL>'
+export CACHE_ROOT="$PWD/workflow_logs/runs/agentx-$(date -u +%Y%m%dT%H%M%SZ)"
 python run.py \
   --model GLM-5.3 \
   --workflow agentic_traces \
   --device super_cluster \
   --server-url https://<endpoint>:443 \
+  --agentic-traces-metrics-url "$PREFILL_METRICS_URL" \
+  --agentic-traces-metrics-url "$DECODE_METRICS_URL" \
   --skip-system-sw-validation \
   --dev-mode
 ```
@@ -337,38 +348,19 @@ Both workflows write under `workflow_logs/` in the repository root (or under
 
 ---
 
-# Evaluation campaign additions and changes
-
 > [!NOTE]
 >
-> This section summarizes campaign additions and benchmark fixes applied to
-> [the base branch, `ipastalTT/glm-5.3-c8`](https://github.com/tenstorrent/tt-inference-server/tree/ipastalTT/glm-5.3-c8).
-> They add model validation and repair benchmark failures.
-> Client requests, test cases, sampling settings, concurrency, and scoring rules
-> remain unchanged. Additional tests require explicit selection. The Tau3 fix
-> pins a working benchmark revision so the existing test can run.
+> The following section documents our additions or changes in this evaluation campaign.
 
-<a id="added-custom-longbench-benchmark"></a>
-<a id="custom-longbench-benchmark"></a>
+## Custom LongBench benchmark
 
-## 1. Custom LongBench benchmark
+Use `--benchmark custom-longbench` to run the GLM-5.3 benchmark with real-text
+LongBench prompts. It uses the same 28 input/output-length, concurrency and
+request-count conditions as the standard `--workflow benchmarks` sweep; only
+the input dataset changes. Without this selector, the workflow runs random
+inputs only.
 
-Run the GLM-5.3 performance sweep with real-text prompts from LongBench V1/V2.
-This campaign addition is also present in the base branch at
-[`b14327dc`](https://github.com/tenstorrent/tt-inference-server/tree/b14327dc3abb5531a8a111ebfb90a133f556e5ac).
-
-- [`datasets/custom-longbench/`](../datasets/custom-longbench/README.md) supplies
-  368 prompts across all 12 input lengths, from 128 to 255,872 tokens.
-- [`llm_module/custom_longbench.py`](../llm_module/custom_longbench.py),
-  `build_longbench_configs()`, selects prompts for each input length.
-  It preserves the 28 sweep conditions, output lengths, concurrency, and request
-  counts. Insufficient rows cause an error; the client does not duplicate prompts.
-- [`test_module/llm_tests/llm_benchmark_tests.py`](../test_module/llm_tests/llm_benchmark_tests.py),
-  `run_llm_bench()`, selects this path only with `--benchmark custom-longbench`.
-  The default random-input benchmark and its acceptance targets stay unchanged.
-  Random-input targets do not grade custom-input results.
-
-From the repository root:
+From the repository root, add these two arguments to the standard command:
 
 ```bash
 python run.py \
@@ -382,94 +374,61 @@ python run.py \
   --dev-mode
 ```
 
-Use a fresh `CACHE_ROOT` for each run. Compare matching sweep conditions with
-prefix caching disabled on both Prefill and Decode for both datasets.
-The client does not change server cache settings.
-See [Custom LongBench](custom_longbench.md) for dataset preparation and reports.
+- **Data:** the bundled JSONL contains 368 prompts from public LongBench V1/V2,
+  covering all 12 input lengths from 128 to 255,872 tokens, including 10,000 and
+  196,608. See the [dataset README](../datasets/custom-longbench/README.md) for
+  source sample IDs and preparation, including official middle-truncation code.
+- **Execution:** the client selects rows by input length and invokes
+  `vllm bench serve --dataset-name custom`. The full sweep requests 373 responses
+  with a total output budget of 112,256 tokens. Insufficient rows cause an error;
+  the client does not repeat rows to fill a condition.
+- **Server:** disable prefix caching on both Prefill and Decode for both datasets.
+  This is a server setting; the client arguments above do not change it.
+- **Reports:** use a fresh `CACHE_ROOT` for each run. TT Markdown/JSON reports
+  appear under `$CACHE_ROOT/workflow_logs/reports_output/benchmarks/`. Compare
+  matching conditions; random-input performance targets do not grade custom results.
 
-<a id="glm-53-swe-bench"></a>
+Other evaluation workflows are unchanged. See [Custom LongBench](custom_longbench.md)
+for input format and driver options.
 
-## 2. GLM-5.3 SWE-bench
+---
 
-Add an optional SWE-bench Verified evaluation using the existing mini-swe-agent
-workflow.
+# GLM-5.3 campaign additions
 
-- [`reference_config/evals/eval_config.py`](../reference_config/evals/eval_config.py)
-  adds `swe_bench_verified` to GLM-5.3 with `requires_explicit_selection=True`.
-  It reuses the GLM-5.2 SWE-bench recipe with concurrency set to 8.
-- [`test_module/llm_tests/agentic_eval_tests.py`](../test_module/llm_tests/agentic_eval_tests.py),
-  `_select_agentic_tasks()` and `_filter_agentic_tasks_by_benchmark()`, require
-  `--agentic-benchmark swebench` or the full task name to select it.
-  Unset or `all` still selects only Terminal-Bench and Banking for GLM-5.3.
-- [`run.py`](../run.py) and [`run_workflows.py`](../run_workflows.py) update the CLI
-  help to explain this selection rule.
-  [Selection tests](../tests/test_module/llm_tests/test_glm53_swebench.py) cover
-  the unchanged default campaign and the new explicit selection.
+This section documents the changes required by the GLM-5.3 campaign. The base
+branch already contains the custom LongBench benchmark described above.
+
+## SWE-bench Verified
+
+SWE-bench is opt-in so the default GLM-5.3 agentic command continues to run
+Terminal-Bench and Tau3 Banking only.
 
 ```bash
-python run.py \
-  --model GLM-5.3 \
-  --workflow agentic \
-  --agentic-benchmark swebench \
-  --device super_cluster \
-  --server-url https://<endpoint>:443 \
-  --skip-system-sw-validation \
-  --dev-mode
+python run.py --model GLM-5.3 --workflow agentic \
+  --agentic-benchmark swebench --device super_cluster \
+  --server-url https://<endpoint>:443 --skip-system-sw-validation --dev-mode
 ```
 
-<a id="banking-evaluator-dependency"></a>
+## Tau3 Banking runtime
 
-## 3. Tau3 Banking runtime pin
+Tau3 Banking image builds pin the evaluator and user-simulator images to tau2
+revision `b351ed5f9281d4bdfa5629262f54c8781da0d5be` to avoid the evaluator's
+`websockets` import failure in newer revisions. The Harbor path applies this
+automatically to Banking tasks and checks evaluator import during the build.
 
-Harbor did not pin the Tau3 Banking runtime source. New image builds picked up
-an upstream bug. We pin the runtime to the commit before that bug.
-Client requests, test cases, model settings, and scoring rules are unchanged.
+## AgentX concurrency
 
-- tt-inference-server runs Tau3 Banking through Harbor. The
-  [Tau3 implementation and evaluator](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/README.md#overview)
-  live in `sierra-research/tau2-bench`; the Python package is still named `tau2`.
-- Harbor's [Dockerfile](https://github.com/dcvijeticTT/harbor/blob/a7f80f9baf674909b98da952e102b37b0a846b0d/adapters/tau3-bench/src/tau3_bench/task-template/environment/Dockerfile)
-  cloned the latest default branch. [PR #523](https://github.com/sierra-research/tau2-bench/pull/523),
-  merged September 10, 2026, made the evaluator import voice code requiring
-  `websockets`. The installed `knowledge` extra omitted that dependency, so
-  evaluator import failed even without a tt-inference-server code change.
-- [`llm_module/agentic/banking_docker.py`](../llm_module/agentic/banking_docker.py)
-  pins both the evaluator and user-simulator images to
-  [`b351ed5`](https://github.com/sierra-research/tau2-bench/commit/b351ed5f9281d4bdfa5629262f54c8781da0d5be),
-  the preceding commit. It checks evaluator import during each image build.
-  The extra `websockets` installation is removed.
-- [`llm_module/agentic/harbor.py`](../llm_module/agentic/harbor.py), `run()`,
-  applies the pin automatically to Banking tasks in Tau3 Docker runs.
-  Other tasks are unchanged. Remove any external Banking Docker wrapper.
+`--agentic-traces-concurrency` changes only the AIPerf client replay concurrency;
+the corpus stays at 256K and server capacity is configured separately. Run the
+default C8 measurement with `--agentic-traces-concurrency 8`, then repeat the
+same command with a fresh `CACHE_ROOT` and `--agentic-traces-concurrency 6`.
 
-## 4. AgentX 1M corpus
+Keep the server profile fixed. Ask the server operator for a fresh server before
+each run if the comparison requires a cold cache.
 
-TT's [instructions for the full 1M corpus](https://github.com/tenstorrent/tt-inference-server/pull/5163#issuecomment-5693020667)
-remove `_256k` from the dataset name. This fork exposes that choice without
-editing the default configuration.
+## AgentX warmup
 
-- Add `--agentic-traces-corpus 1m` to the GLM-5.3 AgentX command above.
-- The default remains `semianalysis_cc_traces_weka_062126_256k`.
-  Explicit `256k` selects the same run.
-- `1m` selects `semianalysis_cc_traces_weka_062126`. Only the dataset and result
-  label change. Lane 8, duration, seed, sampling requests, warmup, and scoring
-  remain unchanged. Model context length and corpus selection are separate.
-- [`run.py`](../run.py), [`run_workflows.py`](../run_workflows.py), and their
-  runtime/engine forwarding pass the selection to
-  [`run_agentic_traces()`](../test_module/llm_tests/agentic_traces_tests.py).
-  It selects a copy of the run specification; the default registry is unchanged.
-- Use a fresh `CACHE_ROOT` for each corpus. The existing native JSON records
-  `public_dataset`, lane count, duration, seed, and the InferenceX revision.
-
-## 5. AgentX concurrency
-
-Use the same 256K corpus with `--agentic-traces-concurrency 8` or
-`--agentic-traces-concurrency 6`. This selects the AIPerf client concurrency;
-server capacity is configured separately. The default remains 8 for GLM-5.3.
-Use a fresh `CACHE_ROOT` for each run. Duration, seed, per-lane warmup, sampling,
-and report processing are unchanged. Native results record the selected concurrency.
-
-The InferenceX setup hook applies the existing one-line auto-warmup correction
-for pinned revision `ddeb02eb9c5c89f44e2e4950e741b499d0b8190a`: it marks that phase
-as warmup so its server-counter baseline is separated from profiling. The hook
-runs for both a new installation and a reused environment. No manual patch is needed.
+For the pinned InferenceX revision
+`ddeb02eb9c5c89f44e2e4950e741b499d0b8190a`, setup marks the automatic warmup
+phase separately from the profiling phase. This applies to new and reused
+AgentX environments.

@@ -110,7 +110,6 @@ class RuntimeConfig:
     agentic_traces: bool = False
     agentic_traces_mode: str = "full"
     agentic_traces_sources: Optional[str] = None
-    agentic_traces_corpus: Optional[str] = None
     agentic_traces_concurrency: Optional[int] = None
     agentic_traces_duration: Optional[int] = None
     agentic_traces_git_ref: Optional[str] = None
@@ -222,7 +221,6 @@ class RuntimeConfig:
             agentic_traces=getattr(args, "agentic_traces", False),
             agentic_traces_mode=getattr(args, "agentic_traces_mode", None) or "full",
             agentic_traces_sources=getattr(args, "agentic_traces_sources", None),
-            agentic_traces_corpus=getattr(args, "agentic_traces_corpus", None),
             agentic_traces_concurrency=getattr(args, "agentic_traces_concurrency", None),
             agentic_traces_duration=getattr(args, "agentic_traces_duration", None),
             agentic_traces_git_ref=getattr(args, "agentic_traces_git_ref", None),

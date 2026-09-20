@@ -488,15 +488,15 @@ non-agent overhead. The maximum run time also includes one startup grace period.
 when heuristic deadlines are disabled. On timeout, the workflow keeps the
 partial result for diagnostics and returns exit code 124.
 
-By default, `EVALS_AGENTIC` tasks run unless marked `requires_explicit_selection`.
-Select tasks with `--agentic-benchmark` (forwarded from `run.py`) and a
+By default every `EVALS_AGENTIC` task configured for the model runs. To run only
+a subset, pass `--agentic-benchmark` (forwarded from `run.py`) with a
 comma-separated list of aliases or raw task names:
 
 - `tau3` → every `tau3_bench_*` task
 - `tb2.0` → `terminal_bench_2` only (not `terminal_bench_2_1`)
 - `tb2.1` → `terminal_bench_2_1`
 - `swebench` → every `swe_bench_*` task
-- `all` (or omitting the flag) → default agentic tasks, excluding opt-in additions
+- `all` (or omitting the flag) → every configured agentic task
 
 ```bash
 python run.py --model moonshotai/Kimi-K2.7-Code --workflow agentic \

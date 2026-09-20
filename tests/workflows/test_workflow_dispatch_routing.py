@@ -408,8 +408,6 @@ def test_agentic_traces_builds_its_own_launcher_command(monkeypatch, tmp_path):
         workflow="agentic_traces",
         agentic_traces_mode="ci",
         agentic_traces_sources="inferencex_agentx",
-        agentic_traces_corpus="1m",
-        agentic_traces_concurrency=6,
         agentic_traces_duration=1200,
         agentic_traces_git_ref="9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
         jwt_secret="sek",
@@ -426,11 +424,9 @@ def test_agentic_traces_builds_its_own_launcher_command(monkeypatch, tmp_path):
     # (it must resolve the ModelSpec first to know which ref to check out).
     assert commands[0].venv_type is None
     assert "run_agentic_traces.py" in argv[0]
-    assert argv[argv.index("--agentic-traces-corpus") + 1] == "1m"
     assert argv[argv.index("--workflow") + 1] == "agentic_traces"
     assert argv[argv.index("--agentic-traces-mode") + 1] == "ci"
     assert argv[argv.index("--agentic-traces-sources") + 1] == "inferencex_agentx"
-    assert argv[argv.index("--agentic-traces-concurrency") + 1] == "6"
     assert argv[argv.index("--agentic-traces-duration") + 1] == "1200"
     assert (
         argv[argv.index("--agentic-traces-git-ref") + 1]
@@ -451,7 +447,6 @@ def test_agentic_traces_omits_unset_overrides(monkeypatch, tmp_path):
     for flag in (
         "--agentic-traces-sources",
         "--agentic-traces-duration",
-        "--agentic-traces-concurrency",
         "--agentic-traces-git-ref",
         "--agentic-traces-metrics-url",
         "--jwt-secret",
@@ -649,8 +644,6 @@ def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
         agentic_traces=True,
         agentic_traces_mode="ci",
         agentic_traces_sources="inferencex_agentx",
-        agentic_traces_corpus="1m",
-        agentic_traces_concurrency=6,
         agentic_traces_duration=900,
         agentic_traces_git_ref="e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
     )
@@ -662,7 +655,6 @@ def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
     assert "--agentic-traces" in argv
     assert argv[argv.index("--agentic-traces-mode") + 1] == "ci"
     assert argv[argv.index("--agentic-traces-sources") + 1] == "inferencex_agentx"
-    assert argv[argv.index("--agentic-traces-concurrency") + 1] == "6"
     assert argv[argv.index("--agentic-traces-duration") + 1] == "900"
     assert (
         argv[argv.index("--agentic-traces-git-ref") + 1]

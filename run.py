@@ -586,13 +586,6 @@ def parse_arguments():
         "(SWO_LICENSE_KEY or ~/.swarmone/license.key), so name it explicitly to run it.",
     )
     agentic_traces_group.add_argument(
-        "--agentic-traces-corpus",
-        choices=["256k", "1m"],
-        default=None,
-        help="Select the GLM-5.3 InferenceX corpus. Unset preserves the TT default "
-        "(256k). 1m selects the full corpus without changing other run settings.",
-    )
-    agentic_traces_group.add_argument(
         "--agentic-traces-concurrency",
         type=int,
         default=None,
@@ -914,7 +907,6 @@ def parse_arguments():
     runs_agentic_traces = args.workflow == "agentic_traces" or args.agentic_traces
     agentic_traces_overrides = (
         args.agentic_traces_sources,
-        args.agentic_traces_corpus,
         args.agentic_traces_concurrency,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
