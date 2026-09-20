@@ -417,15 +417,6 @@ class TTModelRunner:
         if removed_req_indices:
             self.input_batch.condense(removed_req_indices)
 
-    def _validate_mm_input(self, mm_input: MultiModalKwargs) -> None:
-        """Validate multi-modal input supports only single images."""
-        if list(mm_input.modalities) != ["image"]:
-            raise NotImplementedError("Only images are supported for now")
-        assert mm_input.get_item_count("image") == 1, (
-            "Request can contain multiple inputs, \
-            but each input can contain only one image!"
-        )
-
     def _gather_multi_modal_inputs(self, scheduler_output) -> dict:
         """
         Gather and batch multi-modal inputs from scheduled requests.
@@ -434,9 +425,9 @@ class TTModelRunner:
         Creates a list of pixel values for each request.
         Example:
         [
-          None, # for requests without mm_inputs
-          [pixel_values_1], # with single mm_input
-          [pixel_values_2, pixel_values_3, ...], # with multiple mm_inputs
+          None, # for requests without mm_features
+          [pixel_values_1], # with a single image feature
+          [pixel_values_2, pixel_values_3, ...], # with multiple image features
         ]
         """
 
@@ -446,14 +437,24 @@ class TTModelRunner:
             req_id = new_req_data.req_id
             req_state = self.requests[req_id]
 
-            if not req_state.mm_inputs:
+            if not req_state.mm_features:
                 multi_modal_kwargs["pixel_values"].append(None)
                 continue
 
             pv_array = []
-            for mm_input in req_state.mm_inputs:
-                self._validate_mm_input(mm_input)
-                pv_array.append(mm_input["pixel_values"])
+            for feature in req_state.mm_features:
+                if feature.modality != "image":
+                    raise NotImplementedError("Only images are supported for now")
+                if feature.data is None:
+                    raise RuntimeError(
+                        f"Multimodal feature {feature.identifier} has no input data"
+                    )
+                feature_data = feature.data.get_data()
+                if "pixel_values" not in feature_data:
+                    raise NotImplementedError(
+                        "Only image inputs with pixel_values are supported for now"
+                    )
+                pv_array.append(feature_data["pixel_values"])
 
             multi_modal_kwargs["pixel_values"].append(pv_array)
 
@@ -672,6 +673,7 @@ class TTModelRunner:
             sampling_metadata=sampling_metadata,
             multi_modal_kwargs=multi_modal_kwargs,
             cross_block_tables=None,  # Not yet supported in V1
+            sampling_batch_indices=[list(range(num_reqs))],
         )
 
     def build_model_input(
@@ -769,7 +771,11 @@ class TTModelRunner:
         }
 
     def concat_dp_model_inputs(
-        self, inputs, is_decode: bool, max_blocks_decode_batch: Optional[int]
+        self,
+        inputs,
+        is_decode: bool,
+        max_blocks_decode_batch: Optional[int],
+        sampling_batch_indices: Optional[list[list[int]]] = None,
     ) -> "TTModelInput":
         """
         Concatenate a DP-sized set of inputs into a single TTModelInput.
@@ -917,6 +923,7 @@ class TTModelRunner:
             sampling_metadata=sampling_metadata,
             multi_modal_kwargs=multi_modal_kwargs,
             cross_block_tables=None,  # Not yet supported in V1
+            sampling_batch_indices=sampling_batch_indices,
         )
         return merged
 
@@ -971,13 +978,15 @@ class TTModelRunner:
         prefill_idx_per_mesh: list[list[int]] = [[] for _ in range(self._tt_dp)]
         decode_idx_per_mesh: list[list[int]] = [[] for _ in range(self._tt_dp)]
         active_load = [0] * self._tt_dp
+        for mesh in self._req_to_mesh.values():
+            active_load[mesh] += 1
         for req_idx in range(num_reqs):
             req_id = input_batch.req_ids[req_idx]
             mesh = self._req_to_mesh.get(req_id)
             if mesh is None:
                 mesh = min(range(self._tt_dp), key=lambda m: active_load[m])
                 self._req_to_mesh[req_id] = mesh
-            active_load[mesh] += 1
+                active_load[mesh] += 1
             assert active_load[mesh] <= self._per_mesh_max_seqs, (
                 f"replica {mesh} has {active_load[mesh]} active requests "
                 f"(> per-replica width {self._per_mesh_max_seqs}); concurrency "
@@ -1029,7 +1038,10 @@ class TTModelRunner:
                 for idxs in prefill_idx_per_mesh
             ]
             merged = self.concat_dp_model_inputs(
-                prefill_inputs, is_decode=False, max_blocks_decode_batch=None
+                prefill_inputs,
+                is_decode=False,
+                max_blocks_decode_batch=None,
+                sampling_batch_indices=prefill_idx_per_mesh,
             )
             sampled_per_mesh, logprobs_per_mesh = self.execute_with_model_input(merged)
             for mesh, idxs in enumerate(prefill_idx_per_mesh):
@@ -1055,7 +1067,10 @@ class TTModelRunner:
                 "float_inputs": torch.stack(float_inputs),
             }
             merged = self.concat_dp_model_inputs(
-                gather, is_decode=True, max_blocks_decode_batch=max_blocks
+                gather,
+                is_decode=True,
+                max_blocks_decode_batch=max_blocks,
+                sampling_batch_indices=decode_idx_per_mesh,
             )
             sampled_per_mesh, logprobs_per_mesh = self.execute_with_model_input(merged)
             for mesh, idxs in enumerate(decode_idx_per_mesh):
@@ -1083,7 +1098,7 @@ class TTModelRunner:
             top_p=input_batch.sampling.top_p_cpu[i0],
         )
 
-    def _row_generators(self, batch_indices, num_dp: int):
+    def _row_generators(self, batch_indices):
         """Per-row RNGs for a block of logits, aligned to ``batch_indices``.
 
         ``batch_indices`` are persistent-batch slots in logits-row order. The
@@ -1091,18 +1106,19 @@ class TTModelRunner:
         keeps its own stream when ``condense`` moves it to a different slot.
 
         Returns None when no row is seeded, which keeps the sampler on its
-        batched draw. Also returns None under data parallelism: the merged
-        batch spans every rank's requests but ``self.input_batch`` only holds
-        this rank's, so the row->request mapping would be wrong. Seeds are
-        ignored rather than misapplied there.
+        batched draw. Also returns None under process data parallelism: the
+        merged batch spans every process's requests but ``self.input_batch``
+        only holds this rank's. In-process TT submesh DP keeps explicit slot
+        mappings and therefore supports per-request seeds.
         """
-        if num_dp > 1:
+        process_dp = self.parallel_config.data_parallel_size
+        if process_dp > 1:
             if not self._warned_dp_seed:
                 self._warned_dp_seed = True
                 logger.warning(
                     "Ignoring sampling seeds: per-request seeding is not "
                     "supported with data parallelism (dp=%d).",
-                    num_dp,
+                    process_dp,
                 )
             return None
 
@@ -1143,6 +1159,7 @@ class TTModelRunner:
             sampling_metadata=None,
             multi_modal_kwargs={},
             cross_block_tables=None,
+            sampling_batch_indices=[list(idxs)],
         )
 
     def _build_mesh_decode_input(
@@ -1187,6 +1204,7 @@ class TTModelRunner:
             sampling_metadata=None,
             multi_modal_kwargs={},
             cross_block_tables=None,
+            sampling_batch_indices=[list(idxs)],
         )
 
     def execute_with_model_input(
@@ -1217,6 +1235,16 @@ class TTModelRunner:
         sampling_params_per_dp = model_input.tt_sampling_params
         if not isinstance(sampling_params_per_dp, list):
             sampling_params_per_dp = [sampling_params_per_dp]
+        if model_input.sampling_batch_indices is None:
+            flat_sampling_batch_indices = list(
+                range(model_input.input_tokens.shape[0])
+            )
+        else:
+            flat_sampling_batch_indices = [
+                idx
+                for rank_indices in model_input.sampling_batch_indices
+                for idx in rank_indices
+            ]
 
         # Check if batch is mixed
         # Mixed batch: prompt_lens is a list with both positive (prefill) and -1 (decode) values
@@ -1370,7 +1398,10 @@ class TTModelRunner:
                         prefill_logits,
                         prefill_sp,
                         generators=self._row_generators(
-                            prefill_indices.tolist(), len(batch_size_per_dp)
+                            [
+                                flat_sampling_batch_indices[i]
+                                for i in prefill_indices.tolist()
+                            ]
                         ),
                     )
                     .view(-1, 1)
@@ -1424,7 +1455,10 @@ class TTModelRunner:
                         decode_logits,
                         decode_sp,
                         generators=self._row_generators(
-                            decode_indices.tolist(), len(batch_size_per_dp)
+                            [
+                                flat_sampling_batch_indices[i]
+                                for i in decode_indices.tolist()
+                            ]
                         ),
                     )
                     .view(-1, 1)
@@ -1547,12 +1581,17 @@ class TTModelRunner:
                     self.sample_on_device_mode == "decode_only" and not is_decode
                 ):
                     logits = tt_out[seg_start : seg_start + sz, -1, :]
+                    if model_input.sampling_batch_indices is None:
+                        rank_batch_indices = range(seg_start, seg_start + sz)
+                    else:
+                        rank_batch_indices = model_input.sampling_batch_indices[
+                            dp_rank
+                        ]
+                        assert len(rank_batch_indices) == sz
                     next_token_ids = sample_tokens(
                         logits,
                         sampling_params_per_dp[dp_rank],
-                        generators=self._row_generators(
-                            range(seg_start, seg_start + sz), len(batch_size_per_dp)
-                        ),
+                        generators=self._row_generators(rank_batch_indices),
                     )
                     if num_logprobs is not None:
                         rank_logprobs = compute_sampled_logprobs(

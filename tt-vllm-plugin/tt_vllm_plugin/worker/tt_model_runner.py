@@ -40,6 +40,10 @@ class TTModelInput:
     sampling_metadata: None  # Not used in V1
     multi_modal_kwargs: dict
     cross_block_tables: torch.Tensor | None  # Not yet supported in V1
+    # Persistent input-batch slots corresponding to active sampled rows, grouped
+    # by DP segment. Populated when one process owns all segments (including
+    # in-process TT submesh DP); unavailable for gathered process DP.
+    sampling_batch_indices: list[list[int]] | None = None
 
 
 def _multinomial(probs, generators):

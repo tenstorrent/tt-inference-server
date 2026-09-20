@@ -95,6 +95,7 @@ class TTPlatform(Platform):
         vllm_config.cache_config.enable_prefix_caching = False
 
         parallel_config = vllm_config.parallel_config
+        cls.process_data_parallel_size = parallel_config.data_parallel_size
         if parallel_config.worker_cls == "auto":
             if _vllm_use_v1():
                 parallel_config.worker_cls = (
@@ -243,6 +244,15 @@ class TTPlatform(Platform):
         if isinstance(params, SamplingParams):
             if params.n != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
+            if (
+                params.logprobs is not None
+                and getattr(cls, "process_data_parallel_size", 1) > 1
+            ):
+                raise ValueError(
+                    "logprobs are not supported with process data parallelism "
+                    "on TT; use data_parallel_size=1 or in-process "
+                    "tt_data_parallel"
+                )
             if params.prompt_logprobs is not None:
                 raise ValueError(
                     f"Currently not supporting prompt_logprobs on {cls.device_name}"

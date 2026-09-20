@@ -59,6 +59,15 @@ _DEFAULT_DRAIN_TIMEOUT_S = 60.0
 _DRAIN_POLL_INTERVAL_S = 0.05
 
 
+class _AdmissionGate:
+    """Atomically close admission and track requests accepted before closure."""
+
+    def __init__(self) -> None:
+        self.condition = asyncio.Condition()
+        self.in_progress = False
+        self.inflight = 0
+
+
 class _AdmissionGateMiddleware:
     """Reject new inference requests with 503 while a weight update is applied.
 
@@ -69,29 +78,72 @@ class _AdmissionGateMiddleware:
     let through.
     """
 
-    def __init__(self, app: ASGIApp, gate_state: Any) -> None:
+    def __init__(self, app: ASGIApp, gate: _AdmissionGate) -> None:
         self.app = app
-        self._gate_state = gate_state
+        self._gate = gate
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and getattr(
-            self._gate_state, "_tt_weight_update_in_progress", False
-        ):
-            path = scope.get("path", "")
-            if not path.startswith(_GATE_EXEMPT_PREFIXES):
-                response = JSONResponse(
-                    {
-                        "error": {
-                            "message": "Weight update in progress; retry shortly.",
-                            "type": "server_busy",
-                        }
-                    },
-                    status_code=503,
-                    headers={"Retry-After": "1"},
-                )
-                await response(scope, receive, send)
-                return
-        await self.app(scope, receive, send)
+        path = scope.get("path", "")
+        if scope["type"] != "http" or path.startswith(_GATE_EXEMPT_PREFIXES):
+            await self.app(scope, receive, send)
+            return
+
+        async with self._gate.condition:
+            if self._gate.in_progress:
+                rejected = True
+            else:
+                rejected = False
+                self._gate.inflight += 1
+
+        if rejected:
+            response = JSONResponse(
+                {
+                    "error": {
+                        "message": "Weight update in progress; retry shortly.",
+                        "type": "server_busy",
+                    }
+                },
+                status_code=503,
+                headers={"Retry-After": "1"},
+            )
+            await response(scope, receive, send)
+            return
+
+        try:
+            # An ASGI application returns only after its response body (including
+            # a streaming body) is complete, so the count covers parsing,
+            # engine submission, and response delivery.
+            await self.app(scope, receive, send)
+        finally:
+            async with self._gate.condition:
+                self._gate.inflight -= 1
+                if self._gate.inflight == 0:
+                    self._gate.condition.notify_all()
+
+
+def _drain_timeout_seconds() -> float:
+    try:
+        return float(os.getenv(_DRAIN_TIMEOUT_ENV, _DEFAULT_DRAIN_TIMEOUT_S))
+    except (TypeError, ValueError):
+        return _DEFAULT_DRAIN_TIMEOUT_S
+
+
+async def _drain_admitted(gate: _AdmissionGate) -> None:
+    """Wait until every request admitted before gate closure has completed."""
+    async with gate.condition:
+        try:
+            await asyncio.wait_for(
+                gate.condition.wait_for(lambda: gate.inflight == 0),
+                timeout=_drain_timeout_seconds(),
+            )
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Timed out waiting for admitted requests to finish; "
+                    "weight update was not applied."
+                ),
+            ) from exc
 
 
 async def _drain_inflight(engine_client: Any) -> None:
@@ -112,10 +164,7 @@ async def _drain_inflight(engine_client: Any) -> None:
         )
         return
 
-    try:
-        timeout_s = float(os.getenv(_DRAIN_TIMEOUT_ENV, _DEFAULT_DRAIN_TIMEOUT_S))
-    except (TypeError, ValueError):
-        timeout_s = _DEFAULT_DRAIN_TIMEOUT_S
+    timeout_s = _drain_timeout_seconds()
 
     deadline = time.monotonic() + timeout_s
     while has_unfinished():
@@ -242,12 +291,20 @@ async def update_weights(body: WeightUpdateRequest, request: Request):
         app_state._tt_weight_update_lock = lock
 
     async with lock:
-        app_state._tt_weight_update_in_progress = True
+        gate = getattr(app_state, "_tt_weight_update_gate", None)
+        if gate is None:
+            gate = _AdmissionGate()
+            app_state._tt_weight_update_gate = gate
+        async with gate.condition:
+            gate.in_progress = True
         try:
+            await _drain_admitted(gate)
             await _drain_inflight(engine_client)
             results = await _apply_weight_update(engine_client, body)
         finally:
-            app_state._tt_weight_update_in_progress = False
+            async with gate.condition:
+                gate.in_progress = False
+                gate.condition.notify_all()
 
     # The model-owning worker owns the version counter and reports the
     # authoritative new value.
@@ -364,11 +421,13 @@ def install() -> None:
             return
         self.include_router(router)
         self.state._tt_weight_update_mounted = True
-        # Quiesce state: the gate flag the middleware reads, and a lock that
-        # serializes concurrent /update calls.
-        self.state._tt_weight_update_in_progress = False
+        # Quiesce state: atomic admission tracking plus a lock that serializes
+        # concurrent /update calls.
+        self.state._tt_weight_update_gate = _AdmissionGate()
         self.state._tt_weight_update_lock = asyncio.Lock()
-        self.add_middleware(_AdmissionGateMiddleware, gate_state=self.state)
+        self.add_middleware(
+            _AdmissionGateMiddleware, gate=self.state._tt_weight_update_gate
+        )
         logger.info(
             "Mounted TT weight-update routes under /v1/internal/weights "
             "(with weight-update admission gate)"

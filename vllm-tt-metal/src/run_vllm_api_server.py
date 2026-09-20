@@ -1132,12 +1132,7 @@ def absorb_plugin_config_into_additional_config(default_vllm_args):
     tt_override = raw.get("tt")
     if not isinstance(tt_override, dict) or not tt_override:
         return
-    additional = default_vllm_args.get("additional_config")
-    if not isinstance(additional, dict):
-        additional = {}
-    tt_cfg = additional.get("tt")
-    if not isinstance(tt_cfg, dict):
-        tt_cfg = {}
+    additional, tt_cfg = _additional_config_tt(default_vllm_args)
     for key, value in tt_override.items():
         tt_cfg.setdefault(key, value)
     additional["tt"] = tt_cfg

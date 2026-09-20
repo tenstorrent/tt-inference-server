@@ -734,7 +734,12 @@ def test_absorb_plugin_config_preserves_existing_tt_values(
 ):
     default_vllm_args = {
         "plugin_config": {"tt": {"tt_data_parallel": 99, "foo": 1}},
-        "additional_config": {"tt": {"tt_data_parallel": 2}},
+        "additional_config": json.dumps(
+            {
+                "tt": {"tt_data_parallel": 2},
+                "other_plugin": {"enabled": True},
+            }
+        ),
     }
 
     run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
@@ -745,6 +750,10 @@ def test_absorb_plugin_config_preserves_existing_tt_values(
         "tt_data_parallel": 2,
         "foo": 1,
     }
+    assert default_vllm_args["additional_config"]["other_plugin"] == {
+        "enabled": True
+    }
+
 
 def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     monkeypatch, run_vllm_api_server_module
