@@ -382,3 +382,41 @@ class TestGlm53Corpus:
             result = run_agentic_traces(_ctx(tmp_path=tmp_path), corpus="1m")
         assert not result.ok
         driver.run.assert_not_called()
+
+
+class TestConcurrencyOverride:
+    def test_c6_changes_only_concurrency_and_reaches_aiperf(self, tmp_path):
+        from dataclasses import asdict
+        from llm_module.drivers.aiperf_agentic_traces import build_aiperf_cmd
+
+        planned = []
+        for count in (None, 6, 8, None):
+            patcher, driver = _driver_returning(AgenticTracesDriverResult(
+                return_code=0, payload=_ok_payload(), raw_path=None
+            ))
+            with patcher:
+                result = run_agentic_traces(
+                    _ctx("id_tt-transformers_GLM-5.3_super_cluster", tmp_path),
+                    corpus="256k", concurrency_override=count,
+                )
+            assert result.ok
+            run = driver.run.call_args.args[0]
+            cmd = build_aiperf_cmd(
+                run=run, venv_python=tmp_path / "python", model_name="GLM-5.3",
+                tokenizer="zai-org/GLM-5.3", url="http://localhost:8000",
+                artifact_dir=tmp_path,
+            )
+            assert cmd[cmd.index("--concurrency") + 1] == str(count or 8)
+            planned.append(asdict(run))
+        assert planned[0] == planned[2] == planned[3]
+        assert planned[1].pop("concurrency") == 6
+        assert planned[0].pop("concurrency") == 8
+        assert planned[1] == planned[0]
+
+    @pytest.mark.parametrize("count", [0, -1])
+    def test_invalid_concurrency_never_starts_driver(self, tmp_path, count):
+        patcher, driver = _driver_returning()
+        with patcher:
+            result = run_agentic_traces(_ctx(tmp_path=tmp_path), concurrency_override=count)
+        assert not result.ok
+        driver.run.assert_not_called()

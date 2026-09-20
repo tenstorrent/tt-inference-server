@@ -263,6 +263,26 @@ INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
 _INFERENCEX_REF_STAMP = ".inferencex_ref"
 
 
+def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
+    # Separate auto-warmup from profiling: SemiAnalysisAI/agentx-harness#44.
+    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44
+    if git_ref != "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a":
+        return True
+    config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
+    source = config_path.read_text(encoding="utf-8")
+    old = (
+        "        phase=CreditPhase.WARMUP,\n"
+        "        timing_mode=TimingMode.AGENTIC_REPLAY,\n"
+    )
+    new = old + '        phase_kind="warmup",\n'
+    if source.count(old) != 1:
+        logger.error("Unexpected AIPerf warmup configuration: %s", config_path)
+        return False
+    if new not in source:
+        config_path.write_text(source.replace(old, new, 1), encoding="utf-8")
+    return True
+
+
 def setup_agentic_traces(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
@@ -318,7 +338,7 @@ def setup_agentic_traces(
                 git_ref,
                 repo_dir,
             )
-            return True
+            return _patch_agentic_warmup(repo_dir, git_ref)
         logger.info(
             "InferenceX checkout is on a different ref than the configured %s; "
             "re-checking out and reinstalling.",
@@ -376,6 +396,9 @@ def setup_agentic_traces(
         f"-r {agentic_requirements} -e {vendored_aiperf}"
     )
     if run_command(install_cmd, logger=logger) != 0:
+        return False
+
+    if not _patch_agentic_warmup(repo_dir, git_ref):
         return False
 
     stamp_file.write_text(f"{git_ref}\n")

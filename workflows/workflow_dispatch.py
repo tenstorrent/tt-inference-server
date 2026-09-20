@@ -534,6 +534,11 @@ def _forward_agentic_traces(cmd, runtime_config) -> None:
     )
     _extend_if_set(
         cmd,
+        "--agentic-traces-concurrency",
+        getattr(runtime_config, "agentic_traces_concurrency", None),
+    )
+    _extend_if_set(
+        cmd,
         "--agentic-traces-duration",
         getattr(runtime_config, "agentic_traces_duration", None),
     )
@@ -633,6 +638,11 @@ def _build_agentic_traces_cmd(
         cmd,
         "--agentic-traces-corpus",
         getattr(runtime_config, "agentic_traces_corpus", None),
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-traces-concurrency",
+        getattr(runtime_config, "agentic_traces_concurrency", None),
     )
     _extend_if_set(
         cmd,

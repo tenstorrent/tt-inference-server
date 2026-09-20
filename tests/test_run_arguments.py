@@ -366,6 +366,7 @@ class TestModelSpecCliArgsCompatibility:
         assert args.agentic_traces_mode == "full"
         assert args.agentic_traces_sources is None
         assert args.agentic_traces_duration is None
+        assert args.agentic_traces_concurrency is None
         assert args.agentic_traces_git_ref is None
         # Unset means AIPerf scrapes only the load target's own /metrics.
         assert args.agentic_traces_metrics_url is None
@@ -430,6 +431,7 @@ class TestModelSpecCliArgsCompatibility:
         [
             ("--agentic-traces-sources", "inferencex_agentx"),
             ("--agentic-traces-duration", "1800"),
+            ("--agentic-traces-concurrency", "6"),
             ("--agentic-traces-git-ref", "abc123"),
             ("--agentic-traces-metrics-url", "worker-a:9000"),
         ],
@@ -442,6 +444,19 @@ class TestModelSpecCliArgsCompatibility:
             with pytest.raises(SystemExit):
                 parse_arguments()
         assert "require --workflow agentic_traces" in capsys.readouterr().err
+
+    @pytest.mark.parametrize("value", ["0", "-1"])
+    def test_agentic_traces_rejects_nonpositive_concurrency(self, base_args, value):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch("sys.argv", ["run.py"] + args + ["--agentic-traces-concurrency", value]):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+
+    def test_agentic_traces_concurrency_reaches_runtime_config(self, base_args):
+        args = [a if a != "benchmarks" else "agentic_traces" for a in base_args]
+        with patch("sys.argv", ["run.py"] + args + ["--agentic-traces-concurrency", "6"]):
+            parsed = parse_arguments()
+        assert RuntimeConfig.from_args(parsed).agentic_traces_concurrency == 6
 
     def test_agentic_traces_duration_below_the_scenario_floor_is_rejected(
         self, base_args, capsys

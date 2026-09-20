@@ -70,6 +70,7 @@ def run_agentic_traces(
     mode: str = "full",
     trace_sources: Optional[str] = None,
     corpus: Optional[str] = None,
+    concurrency_override: Optional[int] = None,
     duration_override: Optional[int] = None,
     git_ref_override: Optional[str] = None,
     metrics_urls: Sequence[str] = (),
@@ -156,6 +157,7 @@ def run_agentic_traces(
             mode=traces_mode,
             run_specs=run_specs,
             duration_override=duration_override,
+            concurrency_override=concurrency_override,
         )
     except (ValueError, NotImplementedError) as exc:
         logger.error("[agentic-traces] Could not plan the sweep: %s", exc)

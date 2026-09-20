@@ -120,6 +120,7 @@ def build_runs(
     mode: AgenticTracesMode = AgenticTracesMode.FULL,
     run_specs: Optional[Sequence[AgenticTracesRunSpec]] = None,
     duration_override: Optional[int] = None,
+    concurrency_override: Optional[int] = None,
 ) -> List[AgenticTracesRun]:
     """Expand ``config`` into concrete runs for ``mode``.
 
@@ -130,6 +131,10 @@ def build_runs(
     Raises ``NotImplementedError`` for a configured-but-unimplemented trace
     source so an unsupported selection can never look like a clean sweep.
     """
+    if concurrency_override is not None and (
+        type(concurrency_override) is not int or concurrency_override < 1
+    ):
+        raise ValueError("Trace-replay concurrency must be a positive integer")
     settings = config.settings_for_mode(mode)
     specs = tuple(run_specs) if run_specs is not None else config.runs
 
@@ -161,7 +166,11 @@ def build_runs(
 
     runs: List[AgenticTracesRun] = []
     for spec in specs:
-        concurrency = settings.concurrency or spec.concurrency
+        concurrency = (
+            concurrency_override
+            if concurrency_override is not None
+            else settings.concurrency or spec.concurrency
+        )
         runs.append(
             AgenticTracesRun(
                 trace_source=spec.trace_source,

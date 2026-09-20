@@ -593,6 +593,14 @@ def parse_arguments():
         "(256k). 1m selects the full corpus without changing other run settings.",
     )
     agentic_traces_group.add_argument(
+        "--agentic-traces-concurrency",
+        type=int,
+        default=None,
+        metavar="COUNT",
+        help="Override trace-replay client concurrency. Unset preserves the model "
+        "and mode defaults; this does not change server capacity.",
+    )
+    agentic_traces_group.add_argument(
         "--agentic-traces-duration",
         type=int,
         default=None,
@@ -907,6 +915,7 @@ def parse_arguments():
     agentic_traces_overrides = (
         args.agentic_traces_sources,
         args.agentic_traces_corpus,
+        args.agentic_traces_concurrency,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
         args.agentic_traces_metrics_url,
@@ -917,6 +926,12 @@ def parse_arguments():
             "--workflow release --agentic-traces "
             f"(got --workflow {args.workflow})."
         )
+
+    if (
+        args.agentic_traces_concurrency is not None
+        and args.agentic_traces_concurrency < 1
+    ):
+        parser.error("--agentic-traces-concurrency must be a positive integer")
 
     if args.agentic_traces_duration is not None:
         from reference_config.agentic_traces.agentic_traces_config import (

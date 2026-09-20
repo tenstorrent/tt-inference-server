@@ -461,20 +461,15 @@ editing the default configuration.
 - Use a fresh `CACHE_ROOT` for each corpus. The existing native JSON records
   `public_dataset`, lane count, duration, seed, and the InferenceX revision.
 
-## 5. PoC environment check
+## 5. AgentX concurrency
 
-TT reloads the repository's `.env` after startup. An old `OPENAI_BASE_URL` can
-send Banking simulator requests to a different server than `--server-url`.
+Use the same 256K corpus with `--agentic-traces-concurrency 8` or
+`--agentic-traces-concurrency 6`. This selects the AIPerf client concurrency;
+server capacity is configured separately. The default remains 8 for GLM-5.3.
+Use a fresh `CACHE_ROOT` for each run. Duration, seed, per-lane warmup, sampling,
+and report processing are unchanged. Native results record the selected concurrency.
 
-[`scripts/check_poc_environment.py`](../scripts/check_poc_environment.py) checks
-both the shell environment and `.env`. It rejects conflicting endpoints, output
-paths, model/target overrides, Harbor settings, and AIPerf overrides. It does not
-change either source or print credential values. Run it before each PoC client:
-
-```bash
-python scripts/check_poc_environment.py \
-  --server-url "$SERVER_URL" --cache-root "$CACHE_ROOT"
-```
-
-The check writes `poc-environment.json` under `CACHE_ROOT`. Normal credential
-settings, including `HF_TOKEN` and `API_KEY`, remain available to TT.
+The InferenceX setup hook applies the existing one-line auto-warmup correction
+for pinned revision `ddeb02eb9c5c89f44e2e4950e741b499d0b8190a`: it marks that phase
+as warmup so its server-counter baseline is separated from profiling. The hook
+runs for both a new installation and a reused environment. No manual patch is needed.
