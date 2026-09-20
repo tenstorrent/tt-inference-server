@@ -119,6 +119,18 @@ class TTPlatform(Platform):
             if not arch_names[i].startswith("TT"):
                 arch_names[i] = "TT" + arch_names[i]
 
+        # Qwen3-Embedding also declares Qwen3ForCausalLM, so the prefixed name
+        # alone cannot tell it apart from a Qwen3 text generator. Steer the
+        # pooling runner onto TTQwen3Model, leaving TTQwen3ForCausalLM free to
+        # mean the generative tt_transformers model.
+        if vllm_config.model_config.runner_type == "pooling":
+            for i, name in enumerate(arch_names):
+                if name == "TTQwen3ForCausalLM":
+                    arch_names[i] = "TTQwen3Model"
+                    logger.info(
+                        "Pooling runner: resolving TTQwen3ForCausalLM as TTQwen3Model."
+                    )
+
         # Setting attributes on the class level is kind of hacky, but
         # it's the only way to make validate_request depend on vllm_config
         # This is needed to catch incompatible requests early enough
@@ -239,7 +251,10 @@ class TTPlatform(Platform):
     @staticmethod
     def compat_sampling_required(sampling_params) -> bool:
         # anything beyond top-k top-p sampling requires compat sampling
-        # seed pending https://github.com/tenstorrent/tt-metal/issues/32209
+        #
+        # NOTE: `seed` is deliberately absent. The V1 runner honours it directly
+        # by giving each request its own torch.Generator for the host-side
+        # multinomial draw, so a seeded request does not need compat sampling.
         return (
             sampling_params.presence_penalty != 0.0
             or sampling_params.frequency_penalty != 0.0
@@ -255,6 +270,5 @@ class TTPlatform(Platform):
             or sampling_params.guided_decoding is not None
             or sampling_params.logit_bias is not None
             or sampling_params.allowed_token_ids is not None
-            or sampling_params.seed is not None
             or sampling_params.min_tokens != 0
         )

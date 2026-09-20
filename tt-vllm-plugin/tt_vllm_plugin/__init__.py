@@ -40,18 +40,21 @@ def register_models():
             "BGE model may not be available. Ensure tt-metal is in Python path."
         )
 
+    # Register TT Qwen text-generation model (Qwen2.5 / Qwen3 families)
+    ModelRegistry.register_model(
+        "TTQwen3ForCausalLM",
+        "models.tt_transformers.tt.generator_vllm:QwenForCausalLM",
+    )
+
     # Register Qwen3-Embedding model (TTQwen3Model)
     # This allows vLLM to find the TT-specific Qwen3-Embedding implementation
-    # Note: Qwen3-Embedding may be detected as Qwen3ForCausalLM by vLLM,
-    # so we register both TTQwen3Model and TTQwen3ForCausalLM
+    # Note: Qwen3-Embedding also declares Qwen3ForCausalLM in its HF config, so
+    # the architecture name alone does not distinguish it from a text generator.
+    # TTPlatform.check_and_update_config rewrites the arch to TTQwen3Model when
+    # the runner is a pooling one, which is what routes it here.
     try:
         ModelRegistry.register_model(
             "TTQwen3Model",
-            "models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm:Qwen3ForEmbedding",
-        )
-        # Also register TTQwen3ForCausalLM as fallback (in case vLLM detects it as causal LM)
-        ModelRegistry.register_model(
-            "TTQwen3ForCausalLM",
             "models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm:Qwen3ForEmbedding",
         )
         print("Registered Qwen3-Embedding model")
@@ -60,7 +63,7 @@ def register_models():
         import logging
 
         logging.warning(
-            f"Failed to register TTQwen3Model/TTQwen3ForCausalLM (Qwen3-Embedding): {e}. "
+            f"Failed to register TTQwen3Model (Qwen3-Embedding): {e}. "
             "Qwen3-Embedding model may not be available. Ensure tt-metal is in Python path."
         )
 

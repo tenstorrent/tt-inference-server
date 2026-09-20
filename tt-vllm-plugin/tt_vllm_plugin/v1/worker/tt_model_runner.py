@@ -47,6 +47,20 @@ import numpy as np
 logger = init_logger("vllm.tt_vllm_plugin.v1.worker.tt_model_runner")
 
 
+def _seed_generator(seed: Optional[int]) -> Optional[torch.Generator]:
+    """Per-request RNG for ``SamplingParams.seed``, or None if unseeded.
+
+    A CPU generator because TT sampling runs on the host (see
+    ``sample_on_device_mode``); the device sampler has its own seed path that
+    this does not touch. The generator lives on the request's
+    ``CachedRequestState`` so its stream advances across decode steps and
+    follows the request through the batch-slot moves ``condense`` makes.
+    """
+    if seed is None:
+        return None
+    return torch.Generator().manual_seed(seed)
+
+
 def compute_sampled_logprobs(
     logits: torch.Tensor,
     sampled_ids: torch.Tensor,
@@ -150,6 +164,10 @@ class TTModelRunner:
 
         # Whether to sample on device
         self.sample_on_device_mode = TTPlatform.sample_on_device_mode
+
+        # One-shot latch so the unsupported-seeding warning does not repeat
+        # every decode step.
+        self._warned_dp_seed = False
 
         logger.info(
             "TTModelRunner: trace_mode=%s, sample_on_device_mode=%s",
@@ -338,7 +356,7 @@ class TTModelRunner:
                 prompt_token_ids=new_req_data.prompt_token_ids,
                 sampling_params=sampling_params,
                 pooling_params=None,
-                generator=None,
+                generator=_seed_generator(sampling_params.seed),
                 block_ids=new_req_data.block_ids,
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
@@ -1065,6 +1083,40 @@ class TTModelRunner:
             top_p=input_batch.sampling.top_p_cpu[i0],
         )
 
+    def _row_generators(self, batch_indices, num_dp: int):
+        """Per-row RNGs for a block of logits, aligned to ``batch_indices``.
+
+        ``batch_indices`` are persistent-batch slots in logits-row order. The
+        RNG is looked up by request id rather than held per slot, so a request
+        keeps its own stream when ``condense`` moves it to a different slot.
+
+        Returns None when no row is seeded, which keeps the sampler on its
+        batched draw. Also returns None under data parallelism: the merged
+        batch spans every rank's requests but ``self.input_batch`` only holds
+        this rank's, so the row->request mapping would be wrong. Seeds are
+        ignored rather than misapplied there.
+        """
+        if num_dp > 1:
+            if not self._warned_dp_seed:
+                self._warned_dp_seed = True
+                logger.warning(
+                    "Ignoring sampling seeds: per-request seeding is not "
+                    "supported with data parallelism (dp=%d).",
+                    num_dp,
+                )
+            return None
+
+        req_ids = self.input_batch.req_ids
+        generators = []
+        any_seeded = False
+        for idx in batch_indices:
+            req_id = req_ids[idx] if idx < len(req_ids) else None
+            state = self.requests.get(req_id) if req_id is not None else None
+            generator = state.generator if state is not None else None
+            any_seeded |= generator is not None
+            generators.append(generator)
+        return generators if any_seeded else None
+
     def _build_mesh_prefill_input(
         self, input_batch, block_tables_full: torch.Tensor, idxs: list[int]
     ) -> Optional[TTModelInput]:
@@ -1314,7 +1366,13 @@ class TTModelRunner:
                         "Sampling params required for prefill in mixed batch"
                     )
                 prefill_sampled = (
-                    sample_tokens(prefill_logits, prefill_sp)
+                    sample_tokens(
+                        prefill_logits,
+                        prefill_sp,
+                        generators=self._row_generators(
+                            prefill_indices.tolist(), len(batch_size_per_dp)
+                        ),
+                    )
                     .view(-1, 1)
                     .to(torch.int32)
                 )
@@ -1362,7 +1420,15 @@ class TTModelRunner:
                         "Sampling params required for decode in mixed batch"
                     )
                 decode_sampled = (
-                    sample_tokens(decode_logits, decode_sp).view(-1, 1).to(torch.int32)
+                    sample_tokens(
+                        decode_logits,
+                        decode_sp,
+                        generators=self._row_generators(
+                            decode_indices.tolist(), len(batch_size_per_dp)
+                        ),
+                    )
+                    .view(-1, 1)
+                    .to(torch.int32)
                 )
                 if num_logprobs is not None:
                     decode_logprobs = compute_sampled_logprobs(
@@ -1482,7 +1548,11 @@ class TTModelRunner:
                 ):
                     logits = tt_out[seg_start : seg_start + sz, -1, :]
                     next_token_ids = sample_tokens(
-                        logits, sampling_params_per_dp[dp_rank]
+                        logits,
+                        sampling_params_per_dp[dp_rank],
+                        generators=self._row_generators(
+                            range(seg_start, seg_start + sz), len(batch_size_per_dp)
+                        ),
                     )
                     if num_logprobs is not None:
                         rank_logprobs = compute_sampled_logprobs(
