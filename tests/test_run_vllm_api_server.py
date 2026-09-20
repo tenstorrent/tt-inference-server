@@ -695,7 +695,7 @@ def test_resolve_service_port_reads_port_from_sys_argv(
         None,
     ],
 )
-def test_absorb_plugin_config_no_op_leaves_no_additional_config(
+def test_absorb_empty_plugin_config(
     run_vllm_api_server_module, plugin_config
 ):
     default_vllm_args = {"port": 8000}
@@ -711,7 +711,7 @@ def test_absorb_plugin_config_no_op_leaves_no_additional_config(
     assert "additional_config" not in default_vllm_args
 
 
-def test_absorb_plugin_config_merges_into_additional_config_tt(
+def test_absorb_plugin_config(
     run_vllm_api_server_module,
 ):
     default_vllm_args = {
@@ -729,7 +729,7 @@ def test_absorb_plugin_config_merges_into_additional_config_tt(
     }
 
 
-def test_absorb_plugin_config_does_not_clobber_existing_tt_keys(
+def test_absorb_plugin_config_preserves_existing_tt_values(
     run_vllm_api_server_module,
 ):
     default_vllm_args = {
