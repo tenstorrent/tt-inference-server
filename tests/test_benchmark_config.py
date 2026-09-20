@@ -381,33 +381,40 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
 
 
-def test_glm_runs_one_pair_across_the_full_concurrency_ladder():
-    """GLM trades sweep breadth for a concurrency ladder at one fixed shape."""
+def test_glm_keeps_every_pair_but_only_two_concurrency_levels():
+    """GLM sweeps the standard ISL/OSL pairs at concurrency 1 and 40 only.
+
+    1 is the isolated-request baseline, 40 is the deployment's slot count; the
+    ladder already showed everything between is linear and everything above is
+    queueing.
+    """
     from reference_config.benchmarking.benchmark_config import (
+        BENCHMARK_ISL_OSL_PAIRS,
         MODEL_SWEEP_OVERRIDES,
+        SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS,
         _expand_text_sweep_params,
     )
 
     override = MODEL_SWEEP_OVERRIDES["GLM-5."]
-    ladder = list(override["concurrencies"])
-    (isl, osl) = override["pairs"][0]
-    assert (isl, osl) == (10000, 1024)
-    # One request alone, and the engine full at its 40 slots.
-    assert ladder == [1, 40]
+    assert list(override["concurrencies"]) == [1, 40]
+    # No pair pin: the standard sweep is what runs.
+    assert "pairs" not in override
 
-    params = _expand_text_sweep_params(
-        isl=isl,
-        osl=osl,
-        max_context=1048576,
-        max_tokens_all_users=1048576 * 80,
-        model_max_concurrency=80,
-        concurrencies=ladder,
-    )
-    assert [p.max_concurrency for p in params] == ladder
-    assert {(p.isl, p.osl) for p in params} == {(10000, 1024)}
-    # Prompt counts scale with the level instead of being floored at 2 x max_concurrency,
-    # so the low legs do not run dozens of sequential waves.
-    assert [p.num_prompts for p in params] == [2 * c for c in ladder]
+    pairs = list(BENCHMARK_ISL_OSL_PAIRS) + list(SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS)
+    params = []
+    for isl, osl in pairs:
+        params += _expand_text_sweep_params(
+            isl=isl,
+            osl=osl,
+            max_context=1048576,
+            max_tokens_all_users=1048576 * 40,
+            model_max_concurrency=40,
+            concurrencies=override["concurrencies"],
+        )
+    assert {p.max_concurrency for p in params} == {1, 40}
+    assert len(params) == 2 * len(pairs)
+    # The 1M point survives: isl + osl lands exactly on max_context.
+    assert (1048576 - 128, 128) in {(p.isl, p.osl) for p in params}
 
 
 def test_ladder_levels_above_the_allowed_max_are_dropped():

@@ -131,8 +131,9 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 # weights basename, so one entry covers a family's point releases). A matched model
 # REPLACES the sweep rather than extending it:
 #
-#   pairs          the only ISL/OSL pairs it runs, still subject to isl + osl <= max_context
-#   concurrencies  the exact concurrency ladder, instead of [1, allowed_max]; levels above
+#   pairs          optional; the only ISL/OSL pairs it runs, still subject to
+#                  isl + osl <= max_context. Omit it to keep the standard sweep.
+#   concurrencies  the exact concurrency levels, instead of [1, allowed_max]; levels above
 #                  the model's allowed max are dropped
 #
 # An override also skips the structured-output runs, which drive a concurrency of their
@@ -141,15 +142,15 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 # at 2x the model's max_concurrency would make the low-concurrency legs run dozens of
 # sequential waves; get_num_prompts then scales the prompt count with the level.
 #
-# GLM-5.x holds one pair and two levels on purpose. The full 15-level ladder
-# (tt-shield run 35328548556) already answered where this shape saturates: output
-# throughput peaks at 1,717 tok/s at 40 concurrent, and past 50 the engine drops into a
-# second decode regime — median TPOT steps 9.55 -> 18.8 ms and throughput falls to 663
-# tok/s at 80. So the deployment now runs 40 slots and the sweep measures the two points
-# that matter: one request alone, and the engine full.
+# GLM-5.x keeps the standard pair sweep but only two concurrency levels. The 15-level
+# ladder at a fixed shape (tt-shield run 35328548556) already answered where this engine
+# saturates: output throughput peaks at 1,717 tok/s at 40 concurrent, and past 50 it drops
+# into a second decode regime — median TPOT steps 9.55 -> 18.8 ms and throughput falls to
+# 663 tok/s at 80. The deployment now runs 40 slots to match, so every level between 1 and
+# 40 would only re-measure the linear region, and anything above 40 measures queueing.
+# One request alone, and the engine full, at every ISL/OSL pair.
 MODEL_SWEEP_OVERRIDES = {
     "GLM-5.": {
-        "pairs": [(10000, 1024)],
         "concurrencies": (1, 40),
     },
 }
@@ -634,7 +635,8 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     )
     sweep_concurrencies = None
     if override is not None:
-        text_isl_osl_pairs = list(override["pairs"])
+        if override.get("pairs"):
+            text_isl_osl_pairs = list(override["pairs"])
         sweep_concurrencies = tuple(override["concurrencies"])
         sweep_min_num_prompts = 0
 
