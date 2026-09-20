@@ -31,8 +31,12 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 
 
 def test_harbor_checkout_uses_reachable_prebuilt_mirror_revision():
-    assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "1d4c2fe1f5f4d23f4cdbb9642039d5a0f82e9e88"
+    # Temporarily a fork: 1d4c2fe1 plus the commit that pins tau2-bench in the tau3
+    # task images and installs websockets there. Without it every tau3 verifier dies
+    # with "No module named 'websockets'" and the benchmark reports 0.0 with no
+    # errors. Move both lines back to dcvijeticTT once that commit is upstream.
+    assert HARBOR_REPO == "https://github.com/vmaksimovicTT/harbor.git"
+    assert HARBOR_REF == "23fb2ed5b191f9e656d023f23cdfbc953a8a1ca2"
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):

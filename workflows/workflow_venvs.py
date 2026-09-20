@@ -34,8 +34,13 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
 # used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "1d4c2fe1f5f4d23f4cdbb9642039d5a0f82e9e88"
+# Fork pin, temporarily: 1d4c2fe1 + one commit that pins tau2-bench in the tau3 task
+# images and installs websockets there. Without it every tau3 verifier fails with
+# "No module named 'websockets'" and the benchmark reports 0.0 with no errors
+# (tt-shield run 35468951488: 97 of 97 trials, used_tau2_evaluator false). Move back to
+# dcvijeticTT/harbor once that commit is upstream.
+HARBOR_REPO = "https://github.com/vmaksimovicTT/harbor.git"
+HARBOR_REF = "23fb2ed5b191f9e656d023f23cdfbc953a8a1ca2"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
