@@ -57,7 +57,7 @@ def prepare_docker_path(directory: Path, interpreter: Path, path: str) -> str:
     ]
     wrapper = directory / "docker"
     wrapper.write_text(f'#!/bin/sh\nexec {shlex.join(command)} "$@"\n')
-    wrapper.chmod(0o755)
+    wrapper.chmod(0o700)
     return str(directory) + os.pathsep + path
 
 

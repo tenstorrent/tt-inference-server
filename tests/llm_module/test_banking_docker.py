@@ -39,6 +39,7 @@ def docker_adapter(tmp_path):
     docker.chmod(0o755)
     directory = tmp_path / "job's adapter"
     path = prepare_docker_path(directory, Path(sys.executable), str(bin_dir))
+    assert directory.joinpath("docker").stat().st_mode & 0o777 == 0o700
 
     def run(args):
         return subprocess.run(
