@@ -84,7 +84,7 @@ python -m workflows.helm_generator
 python -m workflows.helm_generator --dry-run
 
 # Regenerate just one model or device
-python -m workflows.helm_generator --model Qwen3-32B --device galaxy
+python -m workflows.helm_generator --model Qwen/Qwen3-32B --device galaxy
 python -m workflows.helm_generator --engine media
 ```
 
@@ -145,7 +145,8 @@ helm template charts/tt-inference-server \
   --set model=Llama-3.1-70B \
   --set device=t3k \
   --set engine=media \
-  --set hfToken=fake
+  --set hfToken=fake \
+  --set auth.apiKey=fake
 
 # pick a non-default impl
 helm template charts/tt-inference-server \

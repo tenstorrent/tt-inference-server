@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Mapping, Optional
 
 from report_module.schema import Block
+from utils.model_naming import slugify_name_parts
 
 BENCHMARKS_KIND = "benchmarks"
 
@@ -52,7 +53,7 @@ class LLMResultParser(ABC):
         model = str(record.get("model", ""))
         device = str(record.get("device", ""))
         timestamp = str(record.get("timestamp", ""))
-        block_id = _slugify_block_id(model, device)
+        block_id = slugify_name_parts(model, device)
         section_data = {
             k: v
             for k, v in record.items()
@@ -102,11 +103,3 @@ def metric_stat(raw: Mapping[str, Any], key: str, stat: str = "avg") -> Any:
 def metric_stat_int(raw: Mapping[str, Any], key: str) -> Any:
     value = metric_stat(raw, key)
     return int(value) if isinstance(value, (int, float)) else None
-
-
-def _slugify_block_id(model: str, device: str) -> str:
-    parts = [p for p in (model, device) if p]
-    if not parts:
-        return ""
-    joined = "_".join(parts)
-    return joined.replace("/", "__").replace("\\", "__").replace(" ", "_")

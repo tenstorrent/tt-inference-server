@@ -41,6 +41,7 @@ enum class MetricsLayout : uint8_t {
   BLAZE_RUNNER = 1,
   SDXL = 2,
   EMBEDDING = 3,
+  TTS_RUNNER = 4,
 };
 
 /**

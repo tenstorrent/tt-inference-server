@@ -100,9 +100,26 @@ class TestReportSchemaFromRecords:
             ]
         )
         assert schema.model_name == "m"
+        assert schema.metadata["model_name"] == "m"
+        assert schema.metadata["model_repo"] == "m"
         assert schema.device == "n300"
         assert schema.report_id == "m_20260411_015050"
         assert schema.metadata["generated_at"] == "2026-04-11 01:50:50"
+
+    def test_from_records_splits_full_hf_model(self):
+        schema = ReportSchema.from_records(
+            [
+                {
+                    "kind": "benchmarks",
+                    "model": "openai/whisper-large-v3",
+                    "device": "n150",
+                    "timestamp": "2026-04-11 01:50:50",
+                }
+            ]
+        )
+        assert schema.metadata["model_repo"] == "openai/whisper-large-v3"
+        assert schema.metadata["model_name"] == "whisper-large-v3"
+        assert schema.model_name == "openai/whisper-large-v3"
 
     def test_explicit_metadata_not_overwritten(self):
         schema = ReportSchema.from_records(
@@ -110,6 +127,7 @@ class TestReportSchemaFromRecords:
             metadata={"report_id": "fixed", "model_name": "override"},
         )
         assert schema.report_id == "fixed"
+        assert schema.metadata["model_name"] == "override"
         assert schema.model_name == "override"
 
     def test_empty_records_still_valid(self):

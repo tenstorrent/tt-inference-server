@@ -3,393 +3,399 @@
 
 #include "runtime/runners/embedding_runner.hpp"
 
-#include <Python.h>
+#include <pybind11/embed.h>
+#include <pybind11/stl.h>
 
-#include <sstream>
+#include <cstdlib>
+#include <stdexcept>
 
-#include "config/settings.hpp"
+#include "config/types.hpp"
 #include "utils/logger.hpp"
+
+namespace py = pybind11;
+using namespace py::literals;
 
 namespace tt::runners {
 
 namespace {
 
-void setDictString(PyObject* dict, const char* key, const std::string& value) {
-  PyObject* str = PyUnicode_FromString(value.c_str());
-  PyDict_SetItemString(dict, key, str);
-  Py_DECREF(str);
+// Take the first line of a Python error (the "ValueError: ..." part); the
+// full traceback is logged separately and is too long for a response field.
+std::string firstLine(const std::string& s) {
+  const auto pos = s.find('\n');
+  return pos == std::string::npos ? s : s.substr(0, pos);
+}
+
+// Prepend TT_METAL_HOME to sys.path if not already there. models.demos is a
+// plain directory tree inside the tt-metal checkout, so the interpreter can
+// only import the generator classes when that root is on the path. Deliberate
+// pinning: resolve from the configured location, not from whatever the
+// launching shell happened to have in PYTHONPATH.
+void ensureSysPath() {
+  const char* metalHome = std::getenv("TT_METAL_HOME");
+  if (!metalHome || !*metalHome) return;
+  py::list sysPath = py::module_::import("sys").attr("path");
+  for (const auto& entry : sysPath) {
+    if (py::str(entry).cast<std::string>() == metalHome) return;
+  }
+  sysPath.attr("insert")(0, py::str(metalHome));
+  TT_LOG_INFO("[EmbeddingRunner] Prepended TT_METAL_HOME to sys.path: {}",
+              metalHome);
+}
+
+// Mirror utils/torch_utils.set_torch_thread_limits, which the Python worker
+// called before touching the model. TORCH_NUM_THREADS is exported by
+// embedding_service.cpp alongside OMP/MKL_NUM_THREADS; the env vars alone
+// only size torch's intra-op pool, the interop pool must be capped through
+// the API. Both setters throw once their pool has started, hence the get()
+// guards and the placement before anything else imports torch.
+void applyTorchThreadLimits() {
+  int numThreads = 1;
+  if (const char* env = std::getenv("TORCH_NUM_THREADS"); env && *env) {
+    const int parsed = std::atoi(env);
+    if (parsed > 0) numThreads = parsed;
+  }
+  py::module_ torch = py::module_::import("torch");
+  if (torch.attr("get_num_threads")().cast<int>() != numThreads) {
+    torch.attr("set_num_threads")(numThreads);
+  }
+  if (torch.attr("get_num_interop_threads")().cast<int>() != numThreads) {
+    torch.attr("set_num_interop_threads")(numThreads);
+  }
+  TT_LOG_INFO("[EmbeddingRunner] torch thread limits set to {}", numThreads);
 }
 
 }  // namespace
 
-struct EmbeddingRunner::Impl {
-  bool python_initialized = false;
-  PyObject* runner_module = nullptr;    // tt_model_runners.embedding_runner
-  PyObject* runner_class = nullptr;     // BGELargeENRunner class
-  PyObject* runner_instance = nullptr;  // BGELargeENRunner instance
-  PyObject* request_module = nullptr;   // domain.text_embedding_request
-  PyObject* request_class = nullptr;    // TextEmbeddingRequest class
-  std::string device_id;
+namespace detail {
 
-  explicit Impl(const std::string& devId) : device_id(devId) {}
+/**
+ * Template-method base: owns the full pipeline (device open, tokenizer,
+ * model construction, warmup forward, tokenize->forward->extract, close) and
+ * defers the model-specific steps to virtuals. A new model is onboarded by
+ * adding a subclass below plus a catalog row in settings.cpp.
+ */
+struct EmbeddingImpl {
+  config::EmbeddingConfig config;
+  py::object ttnn;       // the imported ttnn module
+  py::object device;     // ttnn mesh device
+  py::object tokenizer;  // transformers.AutoTokenizer instance
+  py::object model;      // the tt-metal generator class instance
 
-  ~Impl() { cleanup(); }
+  explicit EmbeddingImpl(const config::EmbeddingConfig& cfg) : config(cfg) {}
 
-  void cleanup() {
-    Py_XDECREF(runner_instance);
-    Py_XDECREF(runner_class);
-    Py_XDECREF(runner_module);
-    Py_XDECREF(request_class);
-    Py_XDECREF(request_module);
+  virtual ~EmbeddingImpl() { release(); }
 
-    runner_instance = nullptr;
-    runner_class = nullptr;
-    runner_module = nullptr;
-    request_class = nullptr;
-    request_module = nullptr;
+  // ---- virtual steps (per model) -----------------------------------------
 
-    // Don't finalize Python - other components may use it
+  virtual const char* modelModule() const = 0;
+
+  virtual const char* modelClass() const = 0;
+
+  virtual void addModelKwargs(py::dict& kwargs) const = 0;
+
+  virtual py::object extractDense(const py::object& result) const {
+    return result;
   }
 
-  bool initPython() {
-    if (!Py_IsInitialized()) {
-      Py_Initialize();
-      python_initialized = true;
+  // ---- template methods (shared) ------------------------------------------
+
+  bool initialize() {
+    // Boot the interpreter once per process. pybind11 leaves the GIL held
+    // after initialization; release it at the end of warmup-time
+    const bool ownsInterpreter = !Py_IsInitialized();
+    if (ownsInterpreter) {
+      py::initialize_interpreter();
       TT_LOG_INFO("[EmbeddingRunner] Python interpreter initialized");
     }
 
-    std::string pythonPath = tt::config::pythonPath();
-    PyObject* sysModule = PyImport_ImportModule("sys");
-    if (sysModule) {
-      PyObject* sysPath = PyObject_GetAttrString(sysModule, "path");
-      if (sysPath && PyList_Check(sysPath)) {
-        PyObject* pathStr = PyUnicode_FromString(pythonPath.c_str());
-        // Insert at beginning to take precedence
-        PyList_Insert(sysPath, 0, pathStr);
-        Py_DECREF(pathStr);
-        TT_LOG_INFO("[EmbeddingRunner] Added to sys.path: {}", pythonPath);
+    bool ok = false;
+    {
+      py::gil_scoped_acquire gil;
+      try {
+        ensureSysPath();
+        applyTorchThreadLimits();
+
+        ttnn = py::module_::import("ttnn");
+        openMeshDevice();
+
+        tokenizer = py::module_::import("transformers")
+                        .attr("AutoTokenizer")
+                        .attr("from_pretrained")(config.hf_model_id);
+        TT_LOG_INFO("[EmbeddingRunner] Tokenizer loaded for {}",
+                    config.hf_model_id);
+
+        py::module_::import("os").attr("environ")[py::str("HF_MODEL")] =
+            py::str(config.hf_model_id);
+
+        py::object cls = py::module_::import(modelModule()).attr(modelClass());
+        py::dict kwargs;
+        kwargs["device"] = device;
+        kwargs["max_batch_size"] = config.max_batch_size;
+        kwargs["max_seq_len"] = config.max_seq_len;
+        kwargs["model_name"] = config.hf_model_id;
+        addModelKwargs(kwargs);
+        model = cls(**kwargs);
+        TT_LOG_INFO("[EmbeddingRunner] {}.{} constructed", modelModule(),
+                    modelClass());
+
+        // One real forward pass so weight upload, tracing, and kernel
+        // compilation happen now rather than on the first request.
+        py::object warm =
+            tokenize(py::make_tuple("The capital of France is "
+                                    "Paris"));
+        forwardAndSync(warm);
+        ok = true;
+        TT_LOG_INFO("[EmbeddingRunner] Warmup forward pass completed");
+      } catch (const py::error_already_set& e) {
+        TT_LOG_ERROR("[EmbeddingRunner] Warmup failed:\n{}", e.what());
+        ok = false;
+      } catch (const std::exception& e) {
+        TT_LOG_ERROR("[EmbeddingRunner] Warmup failed: {}", e.what());
+        ok = false;
       }
-      Py_XDECREF(sysPath);
-      Py_DECREF(sysModule);
     }
 
-    return true;
-  }
-
-  bool importModules() {
-    // Import the embedding runner module
-    runner_module = PyImport_ImportModule("tt_model_runners.embedding_runner");
-    if (!runner_module) {
-      PyErr_Print();
-      TT_LOG_ERROR(
-          "[EmbeddingRunner] Failed to import "
-          "tt_model_runners.embedding_runner");
-      return false;
+    if (ownsInterpreter) {
+      PyEval_SaveThread();
     }
-    TT_LOG_INFO("[EmbeddingRunner] Imported tt_model_runners.embedding_runner");
-
-    // Get BGELargeENRunner class
-    runner_class = PyObject_GetAttrString(runner_module, "BGELargeENRunner");
-    if (!runner_class) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to get BGELargeENRunner class");
-      return false;
-    }
-    TT_LOG_INFO("[EmbeddingRunner] Got BGELargeENRunner class");
-
-    // Import TextEmbeddingRequest for creating request objects
-    request_module = PyImport_ImportModule("domain.text_embedding_request");
-    if (!request_module) {
-      PyErr_Print();
-      TT_LOG_ERROR(
-          "[EmbeddingRunner] Failed to import domain.text_embedding_request");
-      return false;
-    }
-
-    request_class =
-        PyObject_GetAttrString(request_module, "TextEmbeddingRequest");
-    if (!request_class) {
-      PyErr_Print();
-      TT_LOG_ERROR(
-          "[EmbeddingRunner] Failed to get TextEmbeddingRequest class");
-      return false;
-    }
-    TT_LOG_INFO("[EmbeddingRunner] Got TextEmbeddingRequest class");
-
-    return true;
-  }
-
-  bool createRunnerInstance() {
-    // Create BGELargeENRunner(device_id)
-    PyObject* args = Py_BuildValue("(s)", device_id.c_str());
-    runner_instance = PyObject_CallObject(runner_class, args);
-    Py_DECREF(args);
-
-    if (!runner_instance) {
-      PyErr_Print();
-      TT_LOG_ERROR(
-          "[EmbeddingRunner] Failed to create BGELargeENRunner instance");
-      return false;
-    }
-    TT_LOG_INFO(
-        "[EmbeddingRunner] Created BGELargeENRunner instance for device {}",
-        device_id);
-
-    return true;
-  }
-
-  bool callSetDevice() {
-    // Call runner.set_device() to initialize the TTNN device
-    PyObject* setDeviceMethod =
-        PyObject_GetAttrString(runner_instance, "set_device");
-    if (!setDeviceMethod) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to get set_device method");
-      return false;
-    }
-
-    PyObject* result = PyObject_CallObject(setDeviceMethod, nullptr);
-    Py_DECREF(setDeviceMethod);
-
-    if (!result) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to call set_device()");
-      return false;
-    }
-
-    Py_DECREF(result);
-    TT_LOG_INFO("[EmbeddingRunner] set_device() completed successfully");
-    return true;
-  }
-
-  bool callWarmup() {
-    // Call runner.warmup() - it's async, so we need to handle coroutine
-    PyObject* warmupMethod = PyObject_GetAttrString(runner_instance, "warmup");
-    if (!warmupMethod) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to get warmup method");
-      return false;
-    }
-
-    // Import asyncio to run the coroutine
-    PyObject* asyncio = PyImport_ImportModule("asyncio");
-    if (!asyncio) {
-      Py_DECREF(warmupMethod);
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to import asyncio");
-      return false;
-    }
-
-    // Get asyncio.run
-    PyObject* asyncioRun = PyObject_GetAttrString(asyncio, "run");
-    if (!asyncioRun) {
-      Py_DECREF(asyncio);
-      Py_DECREF(warmupMethod);
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to get asyncio.run");
-      return false;
-    }
-
-    // Call warmup() to get coroutine
-    PyObject* coro = PyObject_CallObject(warmupMethod, nullptr);
-    Py_DECREF(warmupMethod);
-
-    if (!coro) {
-      Py_DECREF(asyncioRun);
-      Py_DECREF(asyncio);
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to call warmup()");
-      return false;
-    }
-
-    // Run the coroutine with asyncio.run(coro)
-    PyObject* args = PyTuple_Pack(1, coro);
-    PyObject* result = PyObject_CallObject(asyncioRun, args);
-    Py_DECREF(args);
-    Py_DECREF(coro);
-    Py_DECREF(asyncioRun);
-    Py_DECREF(asyncio);
-
-    if (!result) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Warmup failed");
-      return false;
-    }
-
-    bool success = PyObject_IsTrue(result);
-    Py_DECREF(result);
-
-    TT_LOG_INFO("[EmbeddingRunner] Warmup completed: {}",
-                (success ? "success" : "failed"));
-    return success;
+    return ok;
   }
 
   std::vector<domain::EmbeddingResponse> runInference(
       const std::vector<domain::EmbeddingRequest>& requests) {
     std::vector<domain::EmbeddingResponse> responses;
+    responses.reserve(requests.size());
 
-    PyObject* requestList = PyList_New(requests.size());
-    PyObject* emptyArgs = PyTuple_New(0);
-
-    for (size_t i = 0; i < requests.size(); ++i) {
-      const auto& req = requests[i];
-
-      PyObject* kwargs = PyDict_New();
-      setDictString(kwargs, "model", req.model);
-      setDictString(kwargs, "input", req.input);
-
-      PyObject* pyRequest = PyObject_Call(request_class, emptyArgs, kwargs);
-      Py_DECREF(kwargs);
-
-      if (!pyRequest) {
-        PyErr_Print();
-        TT_LOG_ERROR("[EmbeddingRunner] Failed to create TextEmbeddingRequest");
-        Py_DECREF(emptyArgs);
-        Py_DECREF(requestList);
-        return responses;
-      }
-
-      PyList_SetItem(requestList, i, pyRequest);  // Steals reference
-    }
-    Py_DECREF(emptyArgs);
-
-    PyObject* runMethod = PyObject_GetAttrString(runner_instance, "run");
-    if (!runMethod) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] Failed to get run method");
-      Py_DECREF(requestList);
-      return responses;
-    }
-
-    PyObject* args = PyTuple_Pack(1, requestList);
-    PyObject* resultList = PyObject_CallObject(runMethod, args);
-    Py_DECREF(args);
-    Py_DECREF(runMethod);
-    Py_DECREF(requestList);
-
-    if (!resultList) {
-      PyErr_Print();
-      TT_LOG_ERROR("[EmbeddingRunner] runner.start() failed");
-      return responses;
-    }
-
-    // Parse results
-    if (!PyList_Check(resultList)) {
-      TT_LOG_ERROR(
-          "[EmbeddingRunner] Expected list result from runner.start()");
-      Py_DECREF(resultList);
-      return responses;
-    }
-
-    Py_ssize_t numResults = PyList_Size(resultList);
-    for (Py_ssize_t i = 0; i < numResults; ++i) {
-      PyObject* pyResp = PyList_GetItem(resultList, i);  // Borrowed reference
-
-      domain::EmbeddingResponse resp(requests[i].task_id);
-      resp.model = requests[i].model;
-
-      // Get embedding attribute
-      PyObject* embeddingAttr = PyObject_GetAttrString(pyResp, "embedding");
-      if (embeddingAttr && PyList_Check(embeddingAttr)) {
-        Py_ssize_t embedSize = PyList_Size(embeddingAttr);
-        resp.embedding.reserve(embedSize);
-        for (Py_ssize_t j = 0; j < embedSize; ++j) {
-          PyObject* val = PyList_GetItem(embeddingAttr, j);
-          resp.embedding.push_back(static_cast<float>(PyFloat_AsDouble(val)));
+    py::gil_scoped_acquire gil;
+    try {
+      // Same contract as the Python runner's _validate_requests: a model
+      // mismatch anywhere fails the whole batch.
+      for (const auto& req : requests) {
+        if (req.model != config.hf_model_id) {
+          const std::string message =
+              "Only " + config.hf_model_id + " embeddings are supported";
+          for (const auto& r : requests) {
+            domain::EmbeddingResponse resp(r.task_id);
+            resp.error = message;
+            responses.push_back(std::move(resp));
+          }
+          return responses;
         }
       }
-      Py_XDECREF(embeddingAttr);
 
-      // Get total_tokens attribute
-      PyObject* tokensAttr = PyObject_GetAttrString(pyResp, "total_tokens");
-      if (tokensAttr) {
-        resp.total_tokens = static_cast<int>(PyLong_AsLong(tokensAttr));
-        Py_DECREF(tokensAttr);
+      py::list texts;
+      for (const auto& req : requests) {
+        texts.append(req.input);
       }
 
-      responses.push_back(std::move(resp));
+      py::object tokenized = tokenize(texts);
+      py::object result = forwardAndSync(tokenized);
+      py::object dense = extractDense(result);
+
+      py::object attentionMask = tokenized.attr("get")("attention_mask");
+      std::vector<int> tokenCounts;
+      if (!attentionMask.is_none()) {
+        tokenCounts = attentionMask.attr("sum")("dim"_a = 1)
+                          .attr("tolist")()
+                          .cast<std::vector<int>>();
+      }
+
+      // Row i of the (possibly batch-padded) result answers requests[i];
+      for (size_t i = 0; i < requests.size(); ++i) {
+        domain::EmbeddingResponse resp(requests[i].task_id);
+        resp.model = requests[i].model;
+        resp.embedding = dense[py::int_(i)]
+                             .attr("cpu")()
+                             .attr("numpy")()
+                             .attr("tolist")()
+                             .cast<std::vector<float>>();
+        resp.total_tokens = i < tokenCounts.size() ? tokenCounts[i] : 0;
+        responses.push_back(std::move(resp));
+      }
+
+      TT_LOG_DEBUG("[EmbeddingRunner] Processed {} embedding requests",
+                   responses.size());
+    } catch (const py::error_already_set& e) {
+      // Surface the real Python error to every caller in the batch instead
+      // of a generic "no response". The full traceback goes to the log.
+      TT_LOG_ERROR("[EmbeddingRunner] Inference failed:\n{}", e.what());
+      const std::string message = firstLine(e.what());
+      responses.clear();
+      for (const auto& req : requests) {
+        domain::EmbeddingResponse resp(req.task_id);
+        resp.error = message;
+        responses.push_back(std::move(resp));
+      }
     }
 
-    Py_DECREF(resultList);
-
-    TT_LOG_DEBUG("[EmbeddingRunner] Processed {} embedding requests",
-                 responses.size());
     return responses;
+  }
+
+  void release() {
+    if (!Py_IsInitialized()) return;
+    py::gil_scoped_acquire gil;
+    if (ttnn && device && !device.is_none()) {
+      try {
+        ttnn.attr("close_mesh_device")(device);
+        TT_LOG_INFO("[EmbeddingRunner] Mesh device closed");
+      } catch (const py::error_already_set& e) {
+        TT_LOG_WARN("[EmbeddingRunner] close_mesh_device failed: {}",
+                    firstLine(e.what()));
+      }
+    }
+    model = py::object();
+    tokenizer = py::object();
+    device = py::object();
+    ttnn = py::object();
+  }
+
+ protected:
+  py::object identityLocationGenerator() const {
+    return py::cpp_function([](py::object version) { return version; });
+  }
+
+ private:
+  void openMeshDevice() {
+    py::object meshShape = ttnn.attr("MeshShape")(py::cast(config.mesh_shape));
+    py::dict params;
+    params["dispatch_core_config"] =
+        ttnn.attr("DispatchCoreConfig")(py::none(), py::none(), py::none());
+    if (config.trace_region_size > 0) {
+      params["trace_region_size"] = config.trace_region_size;
+    }
+    if (config.num_command_queues > 0) {
+      params["num_command_queues"] = config.num_command_queues;
+    }
+    device =
+        ttnn.attr("open_mesh_device")("mesh_shape"_a = meshShape, **params);
+    TT_LOG_INFO("[EmbeddingRunner] Opened mesh device with {} device(s)",
+                device.attr("get_num_devices")().cast<size_t>());
+  }
+
+  py::object tokenize(const py::object& texts) const {
+    return tokenizer(texts, "padding"_a = true, "truncation"_a = true,
+                     "max_length"_a = config.max_seq_len,
+                     "return_tensors"_a = "pt");
+  }
+
+  py::object forwardAndSync(const py::object& tokenized) {
+    py::object result = model.attr("forward")(
+        tokenized[py::str("input_ids")],
+        "attention_mask"_a = tokenized.attr("get")("attention_mask"));
+    ttnn.attr("synchronize_device")(device);
+    return result;
   }
 };
 
+}  // namespace detail
+
+namespace {
+
+struct BgeLargeEnImpl final : detail::EmbeddingImpl {
+  using EmbeddingImpl::EmbeddingImpl;
+
+  const char* modelModule() const override {
+    return "models.demos.wormhole.bge_large_en.demo.generator_vllm";
+  }
+  const char* modelClass() const override { return "BGEForEmbedding"; }
+
+  void addModelKwargs(py::dict& kwargs) const override {
+    kwargs["model_location_generator"] = identityLocationGenerator();
+    kwargs["act_dtype"] = ttnn.attr("bfloat16");
+    kwargs["weight_dtype"] = ttnn.attr("bfloat8_b");
+  }
+};
+
+struct BgeM3Impl final : detail::EmbeddingImpl {
+  using EmbeddingImpl::EmbeddingImpl;
+
+  const char* modelModule() const override {
+    return "models.demos.wormhole.bge_m3.demo.generator_vllm";
+  }
+  const char* modelClass() const override { return "BgeM3ForEmbedding"; }
+
+  void addModelKwargs(py::dict& kwargs) const override {
+    kwargs["dtype"] = ttnn.attr("bfloat8_b");
+  }
+
+  // BGE-M3's forward returns {"dense_vecs": ..., ...} because the model can
+  // also produce sparse/colbert outputs; we serve dense only.
+  py::object extractDense(const py::object& result) const override {
+    return result[py::str("dense_vecs")];
+  }
+};
+
+struct Qwen3Embedding8bImpl final : detail::EmbeddingImpl {
+  using EmbeddingImpl::EmbeddingImpl;
+
+  const char* modelModule() const override {
+    return "models.demos.wormhole.qwen3_embedding_8b.demo.generator_vllm";
+  }
+  const char* modelClass() const override { return "Qwen3ForEmbedding"; }
+
+  void addModelKwargs(py::dict& kwargs) const override {
+    kwargs["model_location_generator"] = identityLocationGenerator();
+    kwargs["act_dtype"] = ttnn.attr("bfloat16");
+    kwargs["weight_dtype"] = ttnn.attr("bfloat8_b");
+  }
+};
+
+std::unique_ptr<detail::EmbeddingImpl> makeImpl(
+    const config::EmbeddingConfig& cfg) {
+  switch (cfg.runner_type) {
+    case config::ModelRunnerType::TT_BGE_LARGE_EN:
+      return std::make_unique<BgeLargeEnImpl>(cfg);
+    case config::ModelRunnerType::TT_BGE_M3:
+      return std::make_unique<BgeM3Impl>(cfg);
+    case config::ModelRunnerType::TT_QWEN_EMBEDDING_8B:
+      return std::make_unique<Qwen3Embedding8bImpl>(cfg);
+    default:
+      throw std::runtime_error(
+          "[EmbeddingRunner] runner_type=" + config::toString(cfg.runner_type) +
+          " is not a tt-metal embedding model");
+  }
+}
+
+}  // namespace
+
 // Public interface implementation
 
-EmbeddingRunner::EmbeddingRunner(const std::string& deviceId, int visibleDevice)
-    : device_id_(deviceId),
-      visible_device_(visibleDevice),
-      impl_(std::make_unique<Impl>(deviceId)) {
-  TT_LOG_INFO(
-      "[EmbeddingRunner] EmbeddingRunner created for device {} "
-      "visible_device={}",
-      deviceId, visibleDevice);
+EmbeddingRunner::EmbeddingRunner(const config::EmbeddingConfig& config)
+    : config_(config), impl_(makeImpl(config)) {
+  TT_LOG_INFO("[EmbeddingRunner] Created for model {} on device {} (worker {})",
+              config_.hf_model_id, config_.visible_devices, config_.worker_id);
 }
 
 EmbeddingRunner::~EmbeddingRunner() { close(); }
 
 bool EmbeddingRunner::warmup() {
-  TT_LOG_INFO(
-      "[EmbeddingRunner] Starting warmup for device {} visible_device={}",
-      device_id_, visible_device_);
+  TT_LOG_INFO("[EmbeddingRunner] Starting warmup for {} on device {}",
+              config_.hf_model_id, config_.visible_devices);
 
-  if (!impl_->initPython()) {
+  if (!impl_->initialize()) {
     return false;
   }
 
-  if (!impl_->importModules()) {
-    return false;
-  }
-
-  if (!impl_->createRunnerInstance()) {
-    return false;
-  }
-
-  // Initialize the TTNN device before warmup
-  if (!impl_->callSetDevice()) {
-    return false;
-  }
-
-  if (!impl_->callWarmup()) {
-    return false;
-  }
-
-  TT_LOG_INFO("[EmbeddingRunner] Warmup complete for device {}", device_id_);
+  TT_LOG_INFO("[EmbeddingRunner] Warmup complete for device {}",
+              config_.visible_devices);
   return true;
 }
 
 void EmbeddingRunner::close() {
   if (impl_) {
-    impl_->cleanup();
+    impl_->release();
   }
 }
 
 std::vector<domain::EmbeddingResponse> EmbeddingRunner::run(
     const std::vector<domain::EmbeddingRequest>& requests) {
-  if (!impl_ || !impl_->runner_instance) {
+  if (!impl_ || !impl_->model) {
     TT_LOG_ERROR("[EmbeddingRunner] Runner not initialized");
     return {};
   }
 
   return impl_->runInference(requests);
 }
-
-// IRunner interface implementation
-void EmbeddingRunner::run() {
-  // For embedding runners, this could be a service loop
-  // For now, we'll just do warmup since embeddings are request-response based
-  if (!warmup()) {
-    throw std::runtime_error("Failed to initialize EmbeddingRunner");
-  }
-  TT_LOG_INFO(
-      "[EmbeddingRunner] EmbeddingRunner ready for requests on device {}",
-      device_id_);
-}
-
-void EmbeddingRunner::stop() { close(); }
 
 }  // namespace tt::runners

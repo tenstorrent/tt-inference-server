@@ -167,6 +167,27 @@ class TestSubmitGenerateVideoRequest:
         assert exc_info.value.status_code == 500
         assert "Service unavailable" in exc_info.value.detail
 
+    @pytest.mark.asyncio
+    async def test_submit_generate_video_request_queue_full_returns_429(self):
+        """Issue #4959: queue-full admission must surface as 429, not 500."""
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(
+            side_effect=HTTPException(
+                status_code=429, detail="Task queue is full. Please try again later."
+            )
+        )
+        request = VideoGenerateRequest(prompt="Test video")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await submit_generate_video_request(
+                request=request,
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 429
+        assert "Task queue is full" in exc_info.value.detail
+
 
 class TestGetVideoMetadata:
     """Tests for GET /generations/{job_id} endpoint"""
@@ -528,6 +549,31 @@ class TestSubmitGenerateVideoI2VRequest:
 
         assert response.status_code == 202
         mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+
+    @pytest.mark.asyncio
+    async def test_submit_i2v_request_queue_full_returns_429(self):
+        """Issue #4959 repro path: POST /generations/i2v returns 429 when full."""
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(
+            side_effect=HTTPException(
+                status_code=429, detail="Task queue is full. Please try again later."
+            )
+        )
+        request = VideoI2VGenerateRequest(
+            prompt="A cat on a hill",
+            image_prompts=[
+                ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0),
+            ],
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await submit_generate_video_i2v_request(
+                request=request,
+                service=mock_service,
+                api_key="test_key",
+            )
+
+        assert exc_info.value.status_code == 429
 
     @pytest.mark.asyncio
     async def test_submit_i2v_request_multiple_image_prompts(self):

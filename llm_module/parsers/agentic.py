@@ -10,9 +10,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Union
 
-from reference_config.evals.eval_config import accept_eval_score, resolve_eval_reference
 from report_module.schema import Block
-from workflows.workflow_types import ReportCheckTypes
+from utils.model_naming import slugify_name_parts
+from workflow_module.engine_types import ReportCheckTypes
+from workflow_module.target_pack import get_target_pack
 
 from .base import LLMResultParser
 
@@ -41,7 +42,7 @@ class AgenticEvalParser(LLMResultParser):
         if device:
             targets["device"] = device
         if self.score is not None:
-            ref = resolve_eval_reference(self.score, self.limit_mode)
+            ref = get_target_pack().resolve_eval_reference(self.score, self.limit_mode)
             targets.update(
                 {
                     "tolerance": ref["tolerance"],
@@ -59,7 +60,7 @@ class AgenticEvalParser(LLMResultParser):
             kind=self.kind,
             task_type="llm",
             title=f"LLM Eval — {self.task_name}",
-            id=_block_id(self.task_name, device),
+            id=slugify_name_parts(self.task_name, device),
             targets=targets,
             data=_build_evals_data(
                 task_name=self.task_name,
@@ -77,7 +78,7 @@ class AgenticEvalParser(LLMResultParser):
             kind=self.kind,
             task_type="llm",
             title=f"LLM Eval — {self.task_name}",
-            id=_block_id(self.task_name, device),
+            id=slugify_name_parts(self.task_name, device),
             targets=targets,
             data=_build_evals_data(
                 task_name=self.task_name,
@@ -228,9 +229,9 @@ def compute_accuracy_check(
     if accuracy is None or score is None:
         return ReportCheckTypes.NA
     accuracy = _normalize_accuracy_to_percent(accuracy)
-    ref = resolve_eval_reference(score, limit_mode)
+    ref = get_target_pack().resolve_eval_reference(score, limit_mode)
     n_total = metrics.get("n_trials")
-    passed = accept_eval_score(ref, accuracy, n_total=n_total)
+    passed = get_target_pack().accept_eval_score(ref, accuracy, n_total=n_total)
     if passed is None:
         # No gpu reference; fall back to published score ratio.
         published = getattr(score, "published_score", None)
@@ -317,8 +318,3 @@ def _count_harbor_resolved_trials(eval_stats: Mapping[str, Any]) -> Optional[int
         n_resolved += len(trial_names)
         has_reward_counts = True
     return n_resolved if has_reward_counts else None
-
-
-def _block_id(task_name: str, device: str) -> str:
-    parts = [p for p in (task_name, device) if p]
-    return "_".join(parts).replace("/", "__").replace("\\", "__").replace(" ", "_")

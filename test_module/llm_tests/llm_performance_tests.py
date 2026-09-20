@@ -36,6 +36,7 @@ from llm_module import (
 from llm_module.runner import RunnerResult
 from workflow_module import accept_blocks
 
+from .._test_common import report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -61,12 +62,18 @@ def run_llm_performance(
     exported as the bearer token); empty string disables auth.
     """
     server_base_url = ctx.server_url if ctx.remote_server else ctx.server_host
+    metadata = getattr(ctx.model_spec, "metadata", {}) or {}
+    tokenizer_trust_remote_code = bool(
+        metadata.get("tokenizer_trust_remote_code", False)
+    )
+
     server = ServerConnection(
         base_url=server_base_url,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
         auth_token=auth_token,
         is_remote=ctx.remote_server,
+        tokenizer_trust_remote_code=tokenizer_trust_remote_code,
     )
     output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
@@ -105,7 +112,7 @@ def run_llm_performance(
     accept_blocks(
         result.blocks,
         envelope={
-            "model_name": server.model,
+            **report_model_fields(ctx.model_spec),
             "device": device_label,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

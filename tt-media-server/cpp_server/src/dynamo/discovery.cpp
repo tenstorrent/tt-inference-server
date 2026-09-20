@@ -162,6 +162,12 @@ RuntimeParsers runtimeParsersForModelType(const std::string& modelType) {
   if (modelType == "deepseek_v4") {
     return {"deepseek_v4", "deepseek_v4"};
   }
+  // Gemma 4 reasons in `<|channel>thought\n...<channel|>` and emits tool calls
+  // as `<|tool_call>call:name{...}<tool_call|>`; both are handled by the
+  // frontend's gemma4 parsers.
+  if (modelType == "gemma4") {
+    return {"gemma4", "gemma4"};
+  }
   // deepseek_v3 and unknown types default to DeepSeek R1 reasoning.
   return {"deepseek_r1", nullptr};
 }

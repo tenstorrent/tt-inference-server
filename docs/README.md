@@ -11,6 +11,7 @@ Directory of development docs for working on tt-inference-server.
 
 - [Development](development.md) - Git workflows, branching strategy, pre-commit setup, and release process
 - [Add Support for New Model](add_support_for_new_model.md) - Step-by-step guide for adding new model support, including evals and benchmark targets
+- [Model Id Naming Contract](model_id_naming.md) - How a model id becomes a filename, artifact name or job name, and how to read one back; shared with tt-shield
 
 ## Testing & Debugging
 

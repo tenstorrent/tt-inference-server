@@ -28,6 +28,7 @@ def _ctx(
     service_port=8000,
     *,
     model="m",
+    hf_model_repo=None,
     device="N300",
     max_concurrency=4,
     all_params=None,
@@ -36,6 +37,7 @@ def _ctx(
         all_params=all_params if all_params is not None else [],
         model_spec=SimpleNamespace(
             model_name=model,
+            hf_model_repo=hf_model_repo if hf_model_repo is not None else model,
             device_model_spec=SimpleNamespace(max_concurrency=max_concurrency),
         ),
         device=SimpleNamespace(name=device),
@@ -98,10 +100,12 @@ class TestCountTokens:
 
 class TestMetadataHelpers:
     def test_common_report_metadata(self):
+        # Report identity is the full HF repo id, not the basename model_name.
         meta = common_report_metadata(
-            _ctx(model="my-model", device="N300"), "benchmark"
+            _ctx(model="my-model", hf_model_repo="org/my-model", device="N300"),
+            "benchmark",
         )
-        assert meta["model"] == "my-model"
+        assert meta["model"] == "org/my-model"
         assert meta["device"] == "N300"
         assert meta["task_type"] == "benchmark"
         assert "timestamp" in meta

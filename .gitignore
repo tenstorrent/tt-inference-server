@@ -41,6 +41,9 @@ generated_modules
 # wildcards above so CI runs can use them out of the box.
 !llm_module/prefix_cache/manifest.json
 !llm_module/prefix_cache/sample_traces/*.jsonl
+# Requirements-driven validation test fixtures are committed so the requirements
+# schema/target-pack tests can run out of the box.
+!tests/fixtures/requirements/*.json
 *.pt
 *.tti
 *.txt

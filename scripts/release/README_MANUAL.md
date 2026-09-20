@@ -113,18 +113,19 @@ Once the script is executed we need to verify which changes are being introduced
 
  Run this immediately after promotion, before export_model_spec.py:
 ```bash 
- `PYTHONPATH=. python3 -c "
- import collections
- from workflows.model_spec import spec_templates
- seen = collections.defaultdict(list)
- for t in spec_templates:
-     for s in t.expand_to_specs():
-         seen[s.model_id].append(getattr(t, 'version', None))
- dups = {k: v for k, v in seen.items() if len(v) > 1}
- for k, v in sorted(dups.items()):
-     print('DUPLICATE', k, '<- versions', v)
- assert not dups, 'promotion created shadowed duplicate blocks'
- "`
+MODEL_SPECS_ENV=prod PYTHONPATH=. python3 -c "
+import collections
+from workflows.model_spec import spec_templates
+seen = collections.defaultdict(list)
+for t in spec_templates:
+    for s in t.expand_to_specs():
+        seen[s.model_id].append(getattr(t, 'version', None))
+dups = {k: v for k, v in seen.items() if len(v) > 1}
+for k, v in sorted(dups.items()):
+    print('DUPLICATE', k, '<- versions', v)
+assert not dups, 'promotion created shadowed duplicate blocks'
+print('OK: no duplicate model+device records')
+"
 ```
  
  If it fails, delete the older block from workflows/model_specs/prod/<type>.yaml and re-run. len(MODEL_SPECS) must be unchanged afterwards — the deleted block was unreachable, so release_model_spec.json and values.yaml will show no diff.
@@ -213,29 +214,139 @@ crane copy <src> <dst>
 
  crane copy re-labels; it does not rebuild. The tt-shield image was built before promotion, so its baked /home/container_app_user/model_specs/model_spec.json is the prod catalogue from the previous release. Any model or device promoted in this release will be missing from it — the container crashes (No model spec found) or silently serves the old config. This affected v0.17.0 through v0.20.0.
 
- Run this on the release branch, after export_model_spec.py, for each image you copied:
+# Manual catalogue re-bake (backfill a published vLLM image)
+
+Fix a published vLLM image whose baked `model_spec.json` is stale/missing a model, without rebuilding. vLLM only. Verify on an RC tag; the live tag changes only at step 10.
+
+**0. Setup** — name the image, an RC tag, and log in (read+write:packages).
 ```bash
- REPO=<dest repo>; TAG=<dest tag>
- Example:
- REPO=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
- TAG=0.17.0-8c48a10-f52987a
-
- crane copy "$REPO@$(crane digest "$REPO:$TAG")" "$REPO:$TAG-precatalogfix"    # backup
- AMD64=$(crane manifest "$REPO:$TAG" | python3 -c "import json,sys;m=json.load(sys.stdin);print([x['digest'] for x in m['manifests'] if x['platform']['architecture']=='amd64'][0])")
-
- PYTHONPATH=. python3 -c "from scripts.build_docker_images import generate_model_specs_json; generate_model_specs_json()"
- rm -rf /tmp/catalog && mkdir -p /tmp/catalog/home/container_app_user/model_specs
- cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
- tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
-
- crane append -b "$REPO@$AMD64" -f /tmp/catalog-layer.tar -t "$REPO:$TAG"
+export REPO=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+export TAG=0.18.0-c49bb76-6b4a3a7
+export RC=$TAG-catalogfix-rc1
+crane auth login ghcr.io -u <user> -p <PAT>
 ```
- Verification: the release_version inside the image must equal the release you are cutting. If it is one behind, the re-bake did not run.
+
+**1. Back up** the live image to a rollback tag.
+```bash
+INDEX=$(crane digest "$REPO:$TAG")
+crane copy "$REPO@$INDEX" "$REPO:$TAG-precatalogfix"
+```
+
+**2. Resolve** the amd64 image digest (what `crane append` needs).
+```bash
+AMD64=$(crane manifest "$REPO:$TAG" | python3 -c "import json,sys;m=json.load(sys.stdin);print([x['digest'] for x in m['manifests'] if x['platform']['architecture']=='amd64'][0])")
+```
+
+**3. Clean source** — bake from a known-clean `main`.
+```bash
+git checkout main && git pull
+git status --porcelain workflows/model_specs/prod/ VERSION   # must be empty
+```
+
+**4. Generate** `model_spec.json` from the prod catalogue.
+```bash
+PYTHONPATH=. python3 -c "from scripts.build_docker_images import generate_model_specs_json; generate_model_specs_json()"
+```
+
+**5. Pre-flight** — assert the fixed spec is present (KeyError = wrong branch, stop).
+```bash
+python3 -c "import json;print(json.load(open('model_spec.json'))['model_specs']['google/gemma-4-31B-it']['P300X2'])"
+```
+
+**6. Pack** the layer at the right path + ownership (uid/gid 1000).
+```bash
+rm -rf /tmp/catalog && mkdir -p /tmp/catalog/home/container_app_user/model_specs
+cp model_spec.json /tmp/catalog/home/container_app_user/model_specs/
+tar --owner=1000 --group=1000 -C /tmp/catalog -cf /tmp/catalog-layer.tar home
+```
+
+**7. Push to RC** (not the live tag yet).
+```bash
+crane append -b "$REPO@$AMD64" -f /tmp/catalog-layer.tar -t "$REPO:$RC"
+```
+
+**8. Verify RC** — pull the catalogue back out of the pushed image.
+```bash
+python3 - <<'PY'
+import io, json, os, subprocess, tarfile
+R, RC = os.environ["REPO"], os.environ["RC"]
+sh = lambda a: subprocess.run(a, capture_output=True, check=True).stdout
+man = json.loads(sh(["crane","manifest",f"{R}:{RC}"]))
+blob = sh(["crane","blob",f"{R}@{man['layers'][-1]['digest']}"])
+with tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz") as tf:
+    d = json.load(tf.extractfile(next(m for m in tf.getmembers() if m.name.endswith("model_spec.json"))))
+print("gemma present:", "google/gemma-4-31B-it" in d["model_specs"])
+PY
+```
+
+**9. Hardware test** the RC on the target device.
+```bash
+docker run --rm --env "HF_TOKEN=$HF_TOKEN" --ipc host --publish 8000:8000 \
+  --device /dev/tenstorrent --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
+  --volume volume_id_gemma-4-31B-it:/home/container_app_user/cache_root \
+  "$REPO:$RC" --model gemma-4-31B-it --tt-device p300x2
+```
+
+**10. Promote** the verified RC to the live tag (only step that changes what users get).
+```bash
+crane copy "$REPO:$RC" "$REPO:$TAG"
+```
+
+**11. Confirm** with the exact user-facing command.
+```bash
+docker pull "$REPO:$TAG"
+python3 run.py --model gemma-4-31B-it --device p300x2 --workflow server --docker-server
+```
+
+**12. Rollback** if needed.
+```bash
+crane copy "$REPO:$TAG-precatalogfix" "$REPO:$TAG"
+```
+
+
+ **13. Verification** the release_version inside the image must equal the release you are cutting. If it is one behind, the re-bake did not run.
  ```bash
  crane export "$REPO:$TAG" - | tar -xO home/container_app_user/model_specs/model_spec.json \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['release_version'])"
 ```
 Note: this drops the buildkit attestation and changes the digest — the tag stays the same. Only applies to vLLM images; media/forge containers get their config from host env vars.
+
+
+## Rollback — bad published/re-baked vLLM release image
+
+`REPO=ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64`
+`TAG=0.21.0-de59f8a-c127c17     # the published tag`
+`SRC=ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.21.0-<...>   # source that was copied`
+
+**Option 1** — undo the crane append (re-point tag to the un-baked copy):
+```bash
+crane copy "$SRC" "$REPO:$TAG"      # overwrites tag back to pre-append state
+crane digest "$REPO:$TAG"           # confirm digest changed
+```
+
+Option 2 — restore from the backup (if you snapshotted before re-bake):
+```bash
+crane copy "$REPO:$TAG-precatalogfix" "$REPO:$TAG"
+```
+
+Option 3 — fully unpublish (delete the tag):
+```bash
+crane delete "$REPO:$TAG"           # if GHCR rejects, use the API:
+PKG=tt-inference-server%2Fvllm-tt-metal-src-release-ubuntu-22.04-amd64
+VID=$(gh api "/orgs/tenstorrent/packages/container/$PKG/versions" --paginate \
+        --jq ".[] | select(.metadata.container.tags[]? == \"$TAG\") | .id")
+gh api --method DELETE "/orgs/tenstorrent/packages/container/$PKG/versions/$VID"
+```
+⚠️ Only if nothing pulled it yet — deleting a consumed tag breaks pullers; otherwise prefer Option 1/2 (overwrite).
+
+**Verify**
+```bash
+crane export "$REPO:$TAG" - | tar -xO home/container_app_user/model_specs/model_spec.json \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['release_version'])"
+```
+
+
+
 
 ## Step 3: verification through the list model images
 
@@ -297,11 +408,46 @@ Release Notes must be added describing new supported engine features.
 
 ## Step 3: Downloading workflow artifacts and assets upload to Release Object
 
- We need to download all the workflow_logs from a given tt-shield runId job. Of course we should consider only models which are in the scope for the release. Afterwards, we zip them as `vx.xx.x-release_artifacts.zip` and upload that artifact to release object as an Asset.
+ We need to download all the workflow_logs from a given tt-shield runId job, for the
+models in scope for the release, and package them as `vx.x.x-release_artifacts.zip`
+to upload to the Release Object as an Asset.
 
-To do so we can use the script currently implemented in the tt-shield repository:
-Once we clone the tt-shield repository, we can find the script at this path:
-`.github/scripts/release_tools/build_release_artifact/build_release_artifacts.py`
+`scripts/release/build_release_artifacts.py` in **this** repository does that, and
+it is the copy `release-automation.yml` runs, so in the normal flow you take the
+`release-artifacts-v<version>` run artifact rather than running the script by hand.
+Run it directly to rebuild the package outside a pipeline run, or to override the
+scope.
+
+Use this copy. tt-shield carries a second one at
+`.github/scripts/release_tools/build_release_artifact/build_release_artifacts.py`,
+which earlier revisions of this document pointed at; it is not what the pipeline
+runs and the two will drift.
+
+### What the package contains
+
+```
+vx.x.x-release_artifacts.zip
+└── vx.x.x-release_artifacts/
+    ├── workflow_logs_release_<model>_<device>.zip      one per released leaf
+    ├── workflow_logs_release_<model>_<device>.zip
+    └── ...
+```
+
+Each inner zip is that job's tt-shield artifact bundle, carried byte for byte
+(`ai_summaries/`, `docker_server/`, `run_logs/`, `runtime_model_specs/`,
+`reports_output/`, and so on). The outer zip is uncompressed — the bundles are
+already deflate zips, so recompressing them buys under 1%.
+
+This layout has been identical since v0.13.0. Do not change it without checking
+who consumes it.
+
+> **Opening the package on macOS.** Off the Release page it is two archives deep and
+> double-clicking works. `release-automation.yml` also publishes it as the
+> `release-artifacts-v<version>` run artifact, and Actions wraps any artifact in a
+> zip of its own — that download is three archives deep, which macOS Archive
+> Utility refuses with "unsupported format". Use `unzip` on it, or take the asset
+> from the Release page once it is published. The package itself is fine; every
+> published asset from v0.13.0 on opens.
 
 As input properties we need to pass:
 - runId of the release job that contains our workflow logs uploaded
@@ -313,7 +459,7 @@ list `promote_dev_spec_to_prod.py` consumes), so the models no longer need to be
 listed by hand:
 
 ```bash
-python3 build_release_artifacts.py \
+python3 scripts/release/build_release_artifacts.py \
         --run-id 26592936143 \
         --version v0.15.0 \
         --output-dir .
@@ -324,7 +470,7 @@ that are not in the release list — pass one or more `--model MODEL=dev1,dev2`
 flags instead:
 
 ```bash
-python3 build_release_artifacts.py \
+python3 scripts/release/build_release_artifacts.py \
         --run-id 26592936143 \
         --version v0.15.0 \
         --model speecht5_tts=p150,p300x2 \

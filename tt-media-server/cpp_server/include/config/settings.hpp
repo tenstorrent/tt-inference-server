@@ -41,9 +41,10 @@ size_t numWorkers();
 
 /**
  * Size of the process-wide ThreadPool that fronts inference dispatch (used by
- * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
- * threads for the full inference latency, so this caps the in-flight
- * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * `tt::utils::controllerCallbackPool()` on the image/media sync path; the
+ * embedding path is callback-based and does not use it). HTTP requests block
+ * one of these threads for the full inference latency, so this caps the
+ * in-flight dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
  * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
  * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
  * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
@@ -53,10 +54,6 @@ size_t callbackPoolThreads();
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
-
-/** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH.
- * Default: defaults::TT_PYTHON_PATH. */
-std::string pythonPath();
 
 /** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable.
  * Empty if not found. No-arg overload uses the current model_type(). */
@@ -289,6 +286,11 @@ unsigned warmupTimeoutMs();
  * OUTPUT_HANG_TIMEOUT_MS. Default: defaults::OUTPUT_HANG_TIMEOUT_MS. */
 unsigned outputHangTimeoutMs();
 
+/** Warmup budget (ms) per embedding startup phase (fork to READY handshake).
+ * From EMBEDDING_WARMUP_TIMEOUT_MS. Default:
+ * defaults::EMBEDDING_WARMUP_TIMEOUT_MS. */
+unsigned embeddingWarmupTimeoutMs();
+
 /** Task queue name from TT_TASK_QUEUE. Default: defaults::TT_TASK_QUEUE. */
 std::string ttTaskQueueName();
 
@@ -452,6 +454,12 @@ ImageConfig imageEngineConfig();
 /** Build TtsConfig from environment variables and runtime settings.
  * Implemented in src/config/settings.cpp. */
 TtsConfig ttsEngineConfig();
+
+/** Build EmbeddingConfig from environment variables. Reads MODEL_RUNNER_TYPE
+ * (selects the model) and DEVICE (selects its per-device batch size); throws
+ * with the valid values listed if either is unusable. Implemented in
+ * src/config/settings.cpp. */
+EmbeddingConfig embeddingEngineConfig();
 
 /** Build the runner config used by a fork/exec worker for the active service.
  * Media configs receive the worker's DEVICE_IDS group as visible_devices. */

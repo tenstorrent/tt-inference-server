@@ -169,7 +169,8 @@ class SessionManager {
    * removed from that hash's index entry first.
    */
   void registerPrefixHash(const std::string& sessionId,
-                          const std::vector<utils::BlockHashInfo>& blockInfos);
+                          const std::vector<utils::BlockHashInfo>& blockInfos,
+                          bool clearBeingGenerated = false);
 
   /**
    * Response-id continuation lookup.

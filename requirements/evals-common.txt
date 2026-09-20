@@ -8,6 +8,10 @@
 # Uses a TT-maintained fork of lm-evaluation-harness with extras enabled
 # for our common eval suites (api, ifeval, math, sentencepiece, r1_evals,
 # ruler, longbench, hf).
+#
+# Temporarily pinned to ipastalTT/evals-common, which carries the in-stream SSE
+# error propagation fix. Point this back at tstescoTT/evals-common once that is
+# merged upstream.
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu

@@ -59,6 +59,10 @@ class AsyncLogHandler(logging.Handler):
 
     def __init__(self, filename=None, max_bytes=104857600, backup_count=5):
         super().__init__()
+        # Importing vLLM while creating its formatter can reconfigure logging,
+        # which closes every handler registered by ``Handler.__init__``.  Make
+        # close() safe during that partially constructed interval.
+        self._listener = None
         _safe_stop_listener(AsyncLogHandler._active_listener)
         AsyncLogHandler._active_listener = None
 

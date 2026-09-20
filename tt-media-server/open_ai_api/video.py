@@ -18,6 +18,7 @@ from config.constants import (
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
+    MAX_BASE64_IMAGE_LEN,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
@@ -34,10 +35,19 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
+from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
+from utils.image_manager import ImageManager
+from utils.media_downloader import (
+    MediaDownloadFetchError,
+    MediaDownloadPolicyError,
+    MediaDownloadTooLargeError,
+    download_media_url,
+    is_media_url,
+)
 from utils.video_manager import VideoManager
 
 router = APIRouter()
@@ -179,6 +189,56 @@ def reject_text_to_video_on_i2v_deployment() -> None:
     )
 
 
+async def _resolve_image_prompt_urls(request: VideoGenerateRequest) -> None:
+    """Download URL-valued image prompts and replace them with base64 (#4974).
+
+    Runs at the API layer, before the job is enqueued, so runners and workers
+    keep seeing base64 exactly as with inline submissions. Fetch failures map
+    to request-scoped HTTP statuses here instead of surfacing as a 500 from a
+    worker mid-job.
+    """
+    image_prompts = getattr(request, "image_prompts", None) or []
+    # One download budget for the whole request: 81 URL entries must not hold
+    # the connection open for 81 full timeouts.
+    deadline = _time.monotonic() + settings.media_url_timeout_seconds
+    for entry in image_prompts:
+        if not is_media_url(entry.image):
+            continue
+        try:
+            media_bytes = await download_media_url(entry.image, deadline=deadline)
+        except MediaDownloadPolicyError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except MediaDownloadTooLargeError as e:
+            raise HTTPException(status_code=413, detail=str(e))
+        except MediaDownloadFetchError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        image_b64 = base64.b64encode(media_bytes).decode("ascii")
+        # Assignment below bypasses field validation, but SP-runner workers
+        # re-validate ImagePromptEntry mid-job — enforce the field cap here so
+        # an operator-raised media_url_max_bytes fails at submit, not in the
+        # worker.
+        if len(image_b64) > MAX_BASE64_IMAGE_LEN:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"Downloaded media base64-encodes to {len(image_b64)} "
+                    f"chars, over the {MAX_BASE64_IMAGE_LEN}-char image cap"
+                ),
+            )
+        try:
+            ImageManager().base64_to_pil_image(image_b64)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Downloaded media is not a decodable image "
+                    "(supported formats: PNG, JPEG, WebP, etc.)"
+                ),
+            ) from exc
+        entry.image = image_b64
+
+
 async def _submit_video_request(
     request: VideoGenerateRequest,
     service: BaseJobService,
@@ -193,6 +253,8 @@ async def _submit_video_request(
         service.scheduler.check_is_model_ready()
     except Exception:
         raise HTTPException(status_code=405, detail="Model is not ready")
+
+    await _resolve_image_prompt_urls(request)
 
     try:
         # Synchronous mode: process and return video directly
@@ -311,13 +373,25 @@ async def submit_generate_video_i2v_upload(
     _validate_image_content_type(image)
     image_bytes = await _read_capped_upload(image)
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
-    request = VideoI2VGenerateRequest(
-        prompt=prompt,
-        negative_prompt=negative_prompt,
-        num_inference_steps=num_inference_steps,
-        seed=seed,
-        image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
-    )
+    # A file with an allowed image content-type but non-decodable bytes fails the
+    # ImagePromptEntry image validator during this manual construction. Unlike the
+    # JSON /i2v path (where FastAPI parses the body and returns 422), that error
+    # would surface as an unhandled 500 here — so translate it to a 422.
+    try:
+        request = VideoI2VGenerateRequest(
+            prompt=prompt,
+            negative_prompt=negative_prompt,
+            num_inference_steps=num_inference_steps,
+            seed=seed,
+            image_prompts=[ImagePromptEntry(image=image_b64, frame_pos=frame_pos)],
+        )
+    except ValidationError as e:
+        # e.errors() embeds the original ValueError in each entry's ``ctx``, which
+        # HTTPException's plain JSONResponse can't serialize (it would 500 while
+        # rendering the 422). Drop ctx/url so the detail is JSON-safe.
+        raise HTTPException(
+            status_code=422, detail=e.errors(include_url=False, include_context=False)
+        )
     return await _submit_video_request(request, service)
 
 

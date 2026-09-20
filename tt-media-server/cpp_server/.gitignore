@@ -30,6 +30,11 @@ tokenizers/
 # Profiling output (flamegraph-capture[-offcpu].sh writes here)
 bench_results/
 
+# Local runtime droppings: stack-launcher PID list and the fetched internal
+# CA cert. Both are per-machine state, never checked in.
+tt_stack.pids
+tt_internal_ca.crt
+
 # Override root-level *.json ignore
 !resources/openapi.json
 !.mcp.json

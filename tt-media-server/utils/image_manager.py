@@ -105,6 +105,15 @@ class ImageManager:
         Returns:
             PIL Image object
         """
+        if base64_string[:8].lower().startswith(("http://", "https://")):
+            # Runners must only ever see base64: URL-valued media is downloaded
+            # and replaced at the API layer (#4974). Reaching this decoder with
+            # a URL means a submit path skipped that resolution — fail loudly
+            # instead of decoding garbage.
+            raise ValueError(
+                "unresolved media URL reached the image decoder; URLs must be "
+                "downloaded at the API layer before enqueue"
+            )
         if base64_string.startswith("data:"):
             base64_string = base64_string.split(",")[1]
         # Restore stripped padding so HTTP/JSON-trimmed strings decode cleanly.

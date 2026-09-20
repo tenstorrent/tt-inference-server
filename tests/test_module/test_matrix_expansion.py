@@ -7,8 +7,43 @@
 from __future__ import annotations
 
 from test_module.test_categorization_system.suite_loader import (
+    load_server_tests_config,
     load_suite_files_by_category,
 )
+
+
+def test_diffusiongemma_llm_suite_uses_model_specific_conformance_test():
+    suites = load_suite_files_by_category("llm")
+    suite = next(
+        suite for suite in suites if suite["id"] == "diffusiongemma-26b-a4b-it-p300x2"
+    )
+
+    assert suite["weights"] == ["google/diffusiongemma-26B-A4B-it"]
+    assert suite["device"] == "p300x2"
+    assert [case["template"] for case in suite["test_cases"]] == [
+        "VLLMDiffusionGemmaParamConformanceTest"
+    ]
+
+    templates = load_server_tests_config()["test_templates"]
+    template = templates["VLLMDiffusionGemmaParamConformanceTest"]
+    assert template["module"] == "test_module.llm_tests.vllm_param_conformance_test"
+    assert {"param", "e2e", "slow", "heavy"} <= set(template["markers"])
+
+
+def test_llama_3_2_1b_p300x2_uses_vllm_param_conformance_suite():
+    suites = load_suite_files_by_category("llm")
+    matching = [
+        suite
+        for suite in suites
+        if suite["weights"] == ["meta-llama/Llama-3.2-1B-Instruct"]
+    ]
+
+    assert [(suite["id"], suite["device"]) for suite in matching] == [
+        ("llama-3.2-1b-p300x2", "p300x2")
+    ]
+    assert [case["template"] for case in matching[0]["test_cases"]] == [
+        "VLLMParamConformanceTest"
+    ]
 
 
 class TestImageMatrixExpansionSDXL:

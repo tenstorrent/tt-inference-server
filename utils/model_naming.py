@@ -23,14 +23,33 @@ builds the artifact and job names, this repo parses them -- so the escape is a
 cross-repo contract, and both directions belong in one place.
 
 This module is that place. It is stdlib-only and imports nothing else from this
-repo, so it is importable from any package here and runnable as a standalone script from a
+repo, so it is importable from any package here (including the deliberately
+dependency-free ``report_module``) and runnable as a standalone script from a
 plain checkout, with no ``pip install`` and no ``PYTHONPATH`` setup::
 
     python tt-inference-server/utils/model_naming.py slugify "Qwen/Qwen3-32B"
 
+See ``docs/model_id_naming.md`` for the full contract and the tt-shield side.
+
+Design notes
+------------
+The org prefix is **escaped, never stripped**, so a token stays unique and
+round-trips: ``unslugify_model_id(slugify_model_id(x)) == x``.
+
+``__`` rather than ``_`` is what makes that reversal exact. Model ids already
+contain single underscores (``microsoft/phi-1_5``, ``yolox_nano``), so a
+single-underscore separator is ambiguous and cannot be undone -- which is
+exactly how the two sides drifted apart in the first place.
+
+Known limitations, neither of which occurs in any current model id:
+
+* a model id containing a literal ``__`` does not round-trip
+  (``org/a__b`` -> ``org__a__b`` -> ``org/a/b``);
+* whitespace maps to ``_`` and is not recovered.
+
 A consumer that needs the identity back should prefer reading it from data --
 report ``metadata.model_repo`` -- over reversing a name. Reverse a name only
-when the name is all you have.
+when the name is all you have (an artifact listing, a directory scan).
 """
 
 from __future__ import annotations

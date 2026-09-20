@@ -125,6 +125,14 @@ class TestBuildEncodeCmd:
 class TestRunFfmpeg:
     """Tests for _run_ffmpeg process execution."""
 
+    @pytest.fixture(autouse=True)
+    def _ffmpeg_on_path(self):
+        # _run_ffmpeg resolves the binary before Popen. CI has neither ffmpeg
+        # nor imageio_ffmpeg, so the lookup must be stubbed or every test here
+        # raises before the process mock is reached.
+        with patch("utils.video_manager.shutil.which", return_value="/usr/bin/ffmpeg"):
+            yield
+
     @patch("utils.video_manager.subprocess.Popen")
     def test_success(self, mock_popen):
         proc = MagicMock()
@@ -236,6 +244,11 @@ class TestExportToMp4:
 
 class TestEnsureFaststart:
     """Tests for ensure_faststart delegating to _run_ffmpeg."""
+
+    @pytest.fixture(autouse=True)
+    def _ffmpeg_on_path(self):
+        with patch("utils.video_manager.shutil.which", return_value="/usr/bin/ffmpeg"):
+            yield
 
     @patch("utils.video_manager.subprocess.Popen")
     def test_calls_ffmpeg_with_copy_and_faststart(self, mock_popen):

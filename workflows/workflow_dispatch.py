@@ -37,6 +37,7 @@ _ENGINE_WORKFLOW_NAMES = {
     WorkflowType.AGENTIC_TRACES: "agentic_traces",
     WorkflowType.SERVING_BENCH: "serving_bench",
     WorkflowType.PREFILL_DECODE: "prefill_decode",
+    WorkflowType.TRAINING_TESTS: "training_tests",
 }
 
 _ENGINE_EVAL_WORKFLOWS = frozenset({WorkflowType.EVALS, WorkflowType.RELEASE})
@@ -99,6 +100,21 @@ def _is_llm_benchmark_run(wf, model_spec, runtime_config) -> bool:
     )
 
 
+def _eval_config_for(model_spec):
+    """The active target pack's eval config for ``model_spec``, or None.
+
+    Venv provisioning has to plan against the same content the run will
+    execute, so this goes through the pack: a requirements-driven run gets the
+    document's accuracy evals, everything else gets the catalog's.
+    """
+    try:
+        from workflow_module.target_pack import get_target_pack
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("Could not import the target pack (%s); skipping evals.", e)
+        return None
+    return get_target_pack().eval_config(model_spec.hf_model_repo)
+
+
 def _llm_release_includes_agentic(model_spec) -> bool:
     """True if an LLM release should also run agentic evals.
 
@@ -111,12 +127,7 @@ def _llm_release_includes_agentic(model_spec) -> bool:
     """
     if model_spec.model_type not in _LLM_LIKE_TYPES:
         return False
-    try:
-        from reference_config.evals.eval_config import EVAL_CONFIGS
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("Could not import EVAL_CONFIGS (%s); skipping agentic.", e)
-        return False
-    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    cfg = _eval_config_for(model_spec)
     if cfg is None:
         return False
     return any(
@@ -146,8 +157,21 @@ def _is_llm_spec_test_run(wf, model_spec) -> bool:
     return model_spec.model_type in _LLM_LIKE_TYPES and wf == WorkflowType.SPEC_TESTS
 
 
+def _is_training_run(wf, model_spec) -> bool:
+    """``--workflow training_tests`` on a TRAINING model routes to the training
+    driver (``launchers/run_training_test.py``): it submits a LoRA job to the
+    running forge server and grades the loss trajectory. Not the generic workflow
+    engine — the launcher runs in the current interpreter as an HTTP client."""
+    return (
+        wf == WorkflowType.TRAINING_TESTS
+        and model_spec.model_type == ModelType.TRAINING
+    )
+
+
 def can_dispatch_to_engine(model_spec, runtime_config) -> bool:
     wf = WorkflowType.from_string(runtime_config.workflow)
+    if _is_training_run(wf, model_spec):
+        return True
     # Agentic evals, agentic trace replay, serving-bench benchmark suites, the
     # prefill/decode smoke suite, and the prefix-cache / spec-decode benchmarks
     # are workflow-engine-only features with no v1 driver. They route to the
@@ -211,6 +235,17 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
     )
     ensure_readwriteable_dir(output_dir)
 
+    if _is_training_run(wf, model_spec):
+        return [
+            VenvCommand(
+                None,
+                _build_training_cmd(
+                    repo_root, model_spec, runtime_config, json_fpath, output_dir
+                ),
+                env=_engine_env(),
+                label=engine_workflow,
+            )
+        ]
     if wf == WorkflowType.AGENTIC:
         return [
             VenvCommand(
@@ -218,7 +253,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_agentic_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -229,7 +264,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_agentic_traces_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -240,7 +275,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_prefix_cache_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -251,7 +286,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_spec_decode_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -262,7 +297,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 _build_llm_bench_cmd(
                     repo_root, model_spec, runtime_config, json_fpath, output_dir
                 ),
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -272,7 +307,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 WorkflowVenvType.STRESS_TESTS_RUN_SCRIPT,
                 _stress_argv(repo_root, model_spec, runtime_config, json_fpath),
                 model_spec=model_spec,
-                env=_engine_env(),
+                env=_engine_env(model_spec),
                 label=engine_workflow,
             )
         ]
@@ -285,7 +320,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
             "run_workflows.py is required for image-model workflows."
         )
     _warn_on_unsupported_args(runtime_config)
-    env = _engine_env()
+    env = _engine_env(model_spec)
     # --served-model picks the model the prefill_decode mock stack serves,
     # independent of the catalog --model. The smoke runner reads $MODEL (an
     # explicit value wins over the --model-derived default), so forward it here.
@@ -335,10 +370,31 @@ def dispatch_workflows(model_spec, runtime_config, json_fpath) -> List[WorkflowR
     return [WorkflowResult(workflow_name=engine_workflow, return_code=return_code)]
 
 
-def _engine_env() -> dict:
+def _engine_env(model_spec=None) -> dict:
     """Env overrides forwarded to every engine subprocess (VenvCommand merges
-    these over ``os.environ``)."""
-    return {"TT_RUN_COMMAND": "python " + shlex.join(sys.argv)}
+    these over ``os.environ``).
+
+    ``TT_RUN_COMMAND`` records the v1 invocation for report metadata. When a
+    caller passed a bare basename, rewrite ``--model`` to the resolved HF
+    identity so the recorded command matches scheduled-CI spelling.
+    """
+    argv = _argv_with_canonical_model(sys.argv, model_spec)
+    return {"TT_RUN_COMMAND": "python " + shlex.join(argv)}
+
+
+def _argv_with_canonical_model(argv, model_spec) -> list:
+    identity = getattr(model_spec, "hf_model_repo", None) if model_spec else None
+    if not identity:
+        return list(argv)
+    out = list(argv)
+    for i, tok in enumerate(out):
+        if tok == "--model" and i + 1 < len(out):
+            out[i + 1] = identity
+            break
+        if tok.startswith("--model="):
+            out[i] = f"--model={identity}"
+            break
+    return out
 
 
 def _engine_run_argv(
@@ -359,7 +415,7 @@ def _engine_run_argv(
     argv = [
         str(run_workflows_py),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--workflow",
         engine_workflow,
         "--device",
@@ -374,6 +430,7 @@ def _engine_run_argv(
     if runtime_config.docker_server:
         argv.append("--docker-server")
     _extend_if_set(argv, "--server-url", getattr(runtime_config, "server_url", None))
+    _forward_requirements(argv, runtime_config)
     if wf == WorkflowType.SERVING_BENCH:
         _extend_if_set(
             argv, "--serving-bench-suites", runtime_config.serving_bench_suites
@@ -383,6 +440,12 @@ def _engine_run_argv(
         # need the bearer token to reach a JWT-protected server; run.py mints it
         # from --jwt-secret/$JWT_SECRET.
         _forward_jwt(argv, runtime_config)
+        # --repeat-evals (v1) drives the engine's generic --repeat loop, which
+        # writes run_NN/ reports plus an aggregated summary/.
+        if wf == WorkflowType.EVALS:
+            repeat_evals = getattr(runtime_config, "repeat_evals", None)
+            if repeat_evals and int(repeat_evals) > 1:
+                argv.extend(["--repeat", str(int(repeat_evals))])
         if wf == WorkflowType.RELEASE:
             _forward_prefix_cache(argv, runtime_config)
             _forward_spec_decode(argv, runtime_config)
@@ -401,7 +464,7 @@ def _base_engine_argv(
     argv = [
         str(launcher),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--workflow",
         engine_workflow,
         "--device",
@@ -417,6 +480,7 @@ def _base_engine_argv(
         argv.append("--docker-server")
     if getattr(runtime_config, "server_url", None):
         argv.extend(["--server-url", runtime_config.server_url])
+    _forward_requirements(argv, runtime_config)
     return argv
 
 
@@ -425,6 +489,18 @@ def _resolve_launcher(repo_root, filename, label):
     if not launcher.is_file():
         raise FileNotFoundError(f"{label} launcher not found at {launcher}.")
     return launcher
+
+
+def _forward_requirements(cmd, runtime_config) -> None:
+    """Forward --requirements-json to a child.
+
+    The runtime-config JSON already carries the path, but the child needs it on
+    the command line: argparse decides whether the catalog gate applies to
+    --model and which target pack to register *before* that JSON is read.
+    """
+    _extend_if_set(
+        cmd, "--requirements-json", getattr(runtime_config, "requirements_json", None)
+    )
 
 
 def _forward_jwt(cmd, runtime_config) -> None:
@@ -509,6 +585,18 @@ def _forward_spec_decode(cmd, runtime_config) -> None:
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
+    _forward_spec_decode_metrics_urls(cmd, runtime_config)
+
+
+def _forward_spec_decode_metrics_urls(cmd, runtime_config) -> None:
+    """Emit one ``--spec-decode-metrics-url`` per configured endpoint.
+
+    The flag is ``action="append"`` (a list), so stringifying the whole list
+    would forward a bogus ``"['http://...']"`` URL and leave the acceptance
+    columns null.
+    """
+    for metrics_url in getattr(runtime_config, "spec_decode_metrics_url", None) or []:
+        _extend_if_set(cmd, "--spec-decode-metrics-url", metrics_url)
 
 
 def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
@@ -524,16 +612,41 @@ def _stress_argv(repo_root, model_spec, runtime_config, json_fpath):
         "--output-path",
         str(output_path),
         "--model",
-        model_spec.model_name,
+        model_spec.hf_model_repo,
         "--device",
         runtime_config.device,
     ]
+
+
+def _build_training_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
+    """Argv for the training driver launcher (VenvCommand runs it in the current
+    interpreter, which is the HTTP client for the running forge server)."""
+    from workflows.training.registry import expected_config_path
+
+    launcher = _resolve_launcher(repo_root, "run_training_test.py", "training_tests")
+    cmd = _base_engine_argv(
+        launcher, model_spec, runtime_config, json_fpath, output_dir, "training_tests"
+    )
+    cmd.extend(
+        [
+            "--expected-config",
+            str(expected_config_path(model_spec.model_name, runtime_config.device)),
+        ]
+    )
+    # No JWT: the fine-tuning endpoints use Bearer $API_KEY + org header, which
+    # the launcher builds from the environment.
+    return cmd
 
 
 def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output_dir):
     launcher = _resolve_launcher(repo_root, "run_agentic.py", "agentic")
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "agentic"
+    )
+    _extend_if_set(
+        cmd,
+        "--agentic-benchmark",
+        getattr(runtime_config, "agentic_benchmark", None),
     )
     _forward_jwt(cmd, runtime_config)
     return cmd
@@ -625,6 +738,7 @@ def _build_spec_decode_cmd(
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
+    _forward_spec_decode_metrics_urls(cmd, runtime_config)
     _forward_jwt(cmd, runtime_config)
     return cmd
 
@@ -688,17 +802,12 @@ def _selected_eval_tasks(tasks, runtime_config):
 
 
 def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvType]:
-    """Standard eval venvs the run will actually use (from EVAL_CONFIGS).
+    """Standard eval venvs the run will actually use.
 
     Honors --eval-samples / smoke-test so a single-task run doesn't provision
     the (heavy) venvs of tasks it won't execute.
     """
-    try:
-        from reference_config.evals.eval_config import EVAL_CONFIGS
-    except Exception as e:  # pragma: no cover - defensive
-        logger.warning("Could not import EVAL_CONFIGS (%s); skipping eval venvs.", e)
-        return []
-    cfg = EVAL_CONFIGS.get(model_spec.model_name)
+    cfg = _eval_config_for(model_spec)
     if cfg is None:
         return []
     tasks = _selected_eval_tasks(cfg.tasks, runtime_config)
@@ -742,7 +851,7 @@ def _engine_dependency_venv_types(
         # the AGENTIC_TRACES venv setup performs.
         if getattr(runtime_config, "agentic_traces", False):
             venv_types.append(WorkflowVenvType.AGENTIC_TRACES)
-        # The agentic release child resolves harbor/sweagent from the
+        # The agentic release child resolves the harbor CLI from the
         # EVALS_AGENTIC venv, so it must exist before the engine subprocess runs.
         if _llm_release_includes_agentic(model_spec):
             venv_types.append(WorkflowVenvType.EVALS_AGENTIC)

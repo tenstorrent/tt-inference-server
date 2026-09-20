@@ -325,7 +325,10 @@ def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
     text_params = [p for p in sweep_params if getattr(p, "task_type", "text") == "text"]
     assert text_params
 
-    floor = benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS
+    floor = (
+        benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE
+        * runtime_spec.device_model_spec.max_concurrency
+    )
 
     for p in text_params:
         # A sweep point must never issue fewer prompts than its concurrency.
@@ -335,7 +338,7 @@ def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
             assert p.num_prompts >= floor
 
     # Single-user latency points use the normal length-based count (1-8);
-    # applying the throughput floor here would waste 256 serial requests.
+    # applying the throughput floor here would waste hundreds of serial requests.
     single_user = [p for p in text_params if p.max_concurrency == 1]
     assert single_user
     for p in single_user:
@@ -370,7 +373,9 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
 
     # At least one point falls below the SUPER_CLUSTER floor (e.g. the
     # concurrency=1 sweep points), proving the floor is not applied here.
-    assert any(
-        p.num_prompts < benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS
-        for p in text_params
+    spec_max_concurrency = MODEL_SPECS[model_id].device_model_spec.max_concurrency
+    super_cluster_floor = (
+        benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE
+        * spec_max_concurrency
     )
+    assert any(p.num_prompts < super_cluster_floor for p in text_params)

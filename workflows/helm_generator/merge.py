@@ -225,6 +225,59 @@ def set_device_board_counts(doc: Any, counts: Mapping[str, int]) -> bool:
     return True
 
 
+def set_device_chip_counts(doc: Any, counts: Mapping[str, int]) -> bool:
+    """Set/refresh the top-level `deviceChipCounts` map (device_key -> ASIC
+    count), inserted just before `models` for readability. Idempotent.
+
+    Returns True if the file changed.
+    """
+    from ruamel.yaml.comments import CommentedMap
+
+    desired = CommentedMap()
+    for key in sorted(counts):
+        desired[key] = int(counts[key])
+
+    existing = doc.get("deviceChipCounts")
+    if existing is not None and {k: int(v) for k, v in existing.items()} == {
+        k: int(v) for k, v in desired.items()
+    }:
+        return False
+
+    if "deviceChipCounts" in doc:
+        doc["deviceChipCounts"] = desired
+    else:
+        keys = list(doc.keys())
+        # A key's leading comment is stored on the key before it, so inserting
+        # here strands whatever comment introduced the key we displace. Insert
+        # ahead of deviceBoardCounts (keeping the DRA maps together and the
+        # per-model banner on `models`) and re-attach its comment afterwards.
+        if "deviceBoardCounts" in keys:
+            pos = keys.index("deviceBoardCounts")
+        else:
+            pos = keys.index("models") if "models" in keys else len(keys)
+        doc.insert(pos, "deviceChipCounts", desired)
+        doc.yaml_set_comment_before_after_key(
+            "deviceChipCounts",
+            before=(
+                "\nASIC count per device — tt-metal maps one 1Gi hugepage per ASIC, "
+                "so this sizes the\nhugepages request/limit. Generated from "
+                "workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE;\nconsumed by "
+                "tt-inference-server.hugepagesSize."
+            ),
+        )
+        if "deviceBoardCounts" in keys:
+            doc.yaml_set_comment_before_after_key(
+                "deviceBoardCounts",
+                before=(
+                    "\nDRA board count per device — number of Tenstorrent boards a "
+                    "ResourceClaim requests for each device shape.\nGenerated from "
+                    "workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed "
+                    "by tt-inference-server.draDeviceCount."
+                ),
+            )
+    return True
+
+
 def set_device_board_names(doc: Any, names: Mapping[str, str]) -> bool:
     """Set/refresh the top-level `deviceBoardNames` map (device_key -> tt-dra-driver
     `boardName`), inserted just before `models` for readability. Idempotent.

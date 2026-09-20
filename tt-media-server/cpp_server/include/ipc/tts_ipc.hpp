@@ -115,6 +115,15 @@ struct TtsAudioChunkMessage {
   std::vector<uint16_t> samplesBf16;
   std::string error;
 
+  // Worker-side conditioning durations for this task, in microseconds. Carried
+  // on the terminal message only, because that is the one message per request
+  // the main process is guaranteed to see exactly once — which is what lets it
+  // observe real quantiles for work that happened in another process. Zero
+  // means the stage did not run (no voice sample, or a voice-sample cache hit),
+  // and the main process skips the observation rather than recording a zero.
+  uint32_t voiceEncodeUs = 0;
+  uint32_t promptCompileUs = 0;
+
   static constexpr uint32_t FLAG_FINAL = 1;
   static constexpr uint32_t FLAG_ERROR = 2;
   static constexpr uint32_t FLAG_DONE = 4;
@@ -193,6 +202,10 @@ struct TtsAudioChunkMessage {
     os.write(reinterpret_cast<const char*>(&channels), sizeof(channels));
     ser::writeVector(os, samplesBf16);
     ser::writeString(os, error);
+    os.write(reinterpret_cast<const char*>(&voiceEncodeUs),
+             sizeof(voiceEncodeUs));
+    os.write(reinterpret_cast<const char*>(&promptCompileUs),
+             sizeof(promptCompileUs));
   }
 
   static TtsAudioChunkMessage deserialize(std::istream& is) {
@@ -207,6 +220,10 @@ struct TtsAudioChunkMessage {
             sizeof(message.channels));
     message.samplesBf16 = ser::readVector<uint16_t>(is);
     message.error = ser::readString(is);
+    is.read(reinterpret_cast<char*>(&message.voiceEncodeUs),
+            sizeof(message.voiceEncodeUs));
+    is.read(reinterpret_cast<char*>(&message.promptCompileUs),
+            sizeof(message.promptCompileUs));
     return message;
   }
 };

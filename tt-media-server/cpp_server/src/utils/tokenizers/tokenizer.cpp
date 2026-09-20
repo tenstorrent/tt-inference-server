@@ -225,6 +225,8 @@ std::string tokenizerDirForModel(config::ModelType model) {
       return "zai-org/GLM-5.2";
     case config::ModelType::DEEPSEEK_V4_PRO:
       return "deepseek-ai/DeepSeek-V4-Pro";
+    case config::ModelType::GEMMA_4_31B_IT:
+      return "google/gemma-4-31B-it";
     case config::ModelType::DEEPSEEK_R1_0528:
     default:
       return "deepseek-ai/DeepSeek-R1-0528";
@@ -247,6 +249,7 @@ std::unique_ptr<Tokenizer> createTokenizer(config::ModelType model,
     case config::ModelType::MINIMAX_M3:
     case config::ModelType::GLM_5_1:
     case config::ModelType::GLM_5_2:
+    case config::ModelType::GEMMA_4_31B_IT:
       // These load their own model-specific files but currently reuse the
       // DeepSeek chat-template/tool-call behavior until a dedicated tokenizer
       // implementation is added.
@@ -281,6 +284,9 @@ const StaticTokenizerInfo& deepseekR1Info() {
       /*assistantHeaderSequence=*/{128804},
       /*thinkStartTokenId=*/128798,
       /*thinkEndTokenId=*/128799,
+      // History renders as `content.split('</think>')[-1]`: no delimiters.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
@@ -303,6 +309,9 @@ const StaticTokenizerInfo& kimiK26Info() {
       /*assistantHeaderSequence=*/{163588},
       /*thinkStartTokenId=*/163606,  // <think>
       /*thinkEndTokenId=*/163607,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
+      /*thinkStartInHistory=*/true,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -319,6 +328,9 @@ const StaticTokenizerInfo& kimiK27CodeInfo() {
       /*assistantHeaderSequence=*/{163588},
       /*thinkStartTokenId=*/163606,  // <think>
       /*thinkEndTokenId=*/163607,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
+      /*thinkStartInHistory=*/true,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -349,13 +361,20 @@ const StaticTokenizerInfo& minimaxM27Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/200050,  // <think>
       /*thinkEndTokenId=*/200051,    // </think>
+      // History renders as the answer alone: no delimiters.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
 
-// IDs verified against the fetched MiniMax-M3 tokenizer. Same special-token
-// layout as M2.7 (eos 200020, <think>/</think> 200050/200051); the top-level
-// config.json carries no eos_token_id, so discovery.cpp publishes the
+// IDs verified against the fetched MiniMax-M3 tokenizer. Same eos layout as
+// M2.7 (200020), but M3 reasons in <mm:think>/</mm:think> (200059/200060), NOT
+// the <think>/</think> pair M2.7 uses — its chat template defines
+// think_begin_token = '<mm:think>' and the frontend runs the separate
+// "minimax_m3" reasoning parser. Both pairs exist in the vocab, so the M2.7 ids
+// parse fine and simply never match, silently disabling think filtering. The
+// top-level config.json carries no eos_token_id, so discovery.cpp publishes the
 // generation_config.json that contains it.
 const StaticTokenizerInfo& minimaxM3Info() {
   static const StaticTokenizerInfo kInfo{
@@ -363,8 +382,12 @@ const StaticTokenizerInfo& minimaxM3Info() {
       /*stopTokenIds=*/{},
       /*eosTokenId=*/200020,  // [e~[
       /*assistantHeaderSequence=*/{},
-      /*thinkStartTokenId=*/200050,  // <think>
-      /*thinkEndTokenId=*/200051,    // </think>
+      /*thinkStartTokenId=*/200059,  // <mm:think>
+      /*thinkEndTokenId=*/200060,    // </mm:think>
+      // History is prefixed with a bare `</mm:think>`; the opening tag only
+      // survives when the client echoes reasoning back.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -384,6 +407,9 @@ const StaticTokenizerInfo& glm51Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/154841,  // <think>
       /*thinkEndTokenId=*/154842,    // </think>
+      // History is prefixed with a bare `</think>`; opening tag dropped.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -402,6 +428,9 @@ const StaticTokenizerInfo& glm52Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/154841,  // <think>
       /*thinkEndTokenId=*/154842,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
+      /*thinkStartInHistory=*/true,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -418,6 +447,36 @@ const StaticTokenizerInfo& deepseekV4ProInfo() {
       /*assistantHeaderSequence=*/{128804},  // <｜Assistant｜>
       /*thinkStartTokenId=*/128821,          // <think>
       /*thinkEndTokenId=*/128822,            // </think>
+      // The HF repo ships no chat template (fetch_tokenizers.sh), so history
+      // is rendered by DeepseekTokenizer, which emits no delimiters.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
+  };
+  return kInfo;
+}
+
+// IDs verified against the fetched Gemma-4-31B-it tokenizer (added_tokens in
+// tokenizer.json). Gemma 4 does NOT use <think>/</think>: reasoning is emitted
+// in a dedicated channel, `<|channel>thought\n ... <channel|>`, and the
+// template only ever opens the `thought` channel — so the channel delimiters
+// are the think-token pair here. Tool calls are
+// `<|tool_call>call:name{...}<tool_call|>`, handled by the gemma4 tool-call
+// parser on the frontend.
+const StaticTokenizerInfo& gemma431bItInfo() {
+  static const StaticTokenizerInfo kInfo{
+      /*modelName=*/"google/gemma-4-31B-it",
+      // config.json eos_token_id: [1, 106] = <eos>, <turn|>.
+      // generation_config.json widens it to [1, 106, 50], adding
+      // <|tool_response> (the turn ends when the model hands off to a tool).
+      /*stopTokenIds=*/{106, 50},
+      /*eosTokenId=*/1,  // <eos> (also text_config.eos_token_id)
+      /*assistantHeaderSequence=*/{},
+      /*thinkStartTokenId=*/100,  // <|channel>
+      /*thinkEndTokenId=*/101,    // <channel|>
+      // strip_thinking() removes the whole `<|channel>…<channel|>` span from
+      // history, delimiters included, in both thinking modes.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
@@ -446,6 +505,8 @@ const StaticTokenizerInfo& staticInfoFor(config::ModelType model) {
       return glm52Info();
     case config::ModelType::DEEPSEEK_V4_PRO:
       return deepseekV4ProInfo();
+    case config::ModelType::GEMMA_4_31B_IT:
+      return gemma431bItInfo();
   }
   throw std::invalid_argument(
       "tokenizers::staticInfoFor: no static info registered for ModelType " +
@@ -463,6 +524,15 @@ std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model) {
 
 std::pair<uint32_t, uint32_t> thinkTokenIds() {
   return thinkTokenIdsFor(config::modelType());
+}
+
+ThinkMarkersInHistory thinkMarkersInHistoryFor(config::ModelType model) {
+  const auto& info = staticInfoFor(model);
+  return {info.thinkStartInHistory, info.thinkEndInHistory};
+}
+
+ThinkMarkersInHistory thinkMarkersInHistory() {
+  return thinkMarkersInHistoryFor(config::modelType());
 }
 
 }  // namespace tt::utils::tokenizers

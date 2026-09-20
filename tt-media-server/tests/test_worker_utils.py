@@ -54,7 +54,7 @@ if "tt_model_runners.runner_fabric" not in sys.modules:
     sys.modules["tt_model_runners.runner_fabric"] = Mock()
 
 # Now import the modules under test
-from device_workers.worker_utils import initialize_device_worker
+from device_workers.worker_utils import initialize_device_worker, signalJobStart
 from utils.runner_utils import (
     _setup_blackhole_mesh_config,
     _setup_galaxy_mesh_config,
@@ -281,6 +281,24 @@ class TestSetupGalaxyMeshConfig:
                 _setup_galaxy_mesh_config("/opt/tt-metal")
 
                 assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
+
+
+class TestSignalJobStart:
+    """Device dispatch must set the job start_event when present."""
+
+    def test_sets_event_when_present(self):
+        request = Mock()
+        request._start_event = Mock()
+        signalJobStart(request)
+        request._start_event.set.assert_called_once()
+
+    def test_noops_when_event_missing(self):
+        signalJobStart(object())
+
+    def test_noops_when_event_is_none(self):
+        request = Mock()
+        request._start_event = None
+        signalJobStart(request)
 
 
 class TestInitializeDeviceWorker:
@@ -594,6 +612,26 @@ class TestSetupRunnerEnvironmentBlackhole:
                         mock_settings_bh.is_galaxy = False
                         mock_settings_bh.device = "p150"
                         mock_settings_bh.model_runner = "tt-whisper"
+                        mock_settings_bh.default_throttle_level = None
+
+                        with patch("utils.runner_utils.settings", mock_settings_bh):
+                            setup_runner_environment("0")
+
+                            mock_bh.assert_called_once_with("/opt/tt-metal")
+
+    def test_calls_blackhole_setup_for_trainer_training_lora(self):
+        """trainer-training-lora inits torch-xla on a single BH chip of a P300."""
+        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
+            with patch("utils.runner_utils.set_torch_thread_limits"):
+                with patch("utils.runner_utils.get_telemetry_client"):
+                    with patch(
+                        "utils.runner_utils._setup_blackhole_mesh_config"
+                    ) as mock_bh:
+                        mock_settings_bh = Mock()
+                        mock_settings_bh.enable_telemetry = False
+                        mock_settings_bh.is_galaxy = False
+                        mock_settings_bh.device = "p150"
+                        mock_settings_bh.model_runner = "trainer-training-lora"
                         mock_settings_bh.default_throttle_level = None
 
                         with patch("utils.runner_utils.settings", mock_settings_bh):

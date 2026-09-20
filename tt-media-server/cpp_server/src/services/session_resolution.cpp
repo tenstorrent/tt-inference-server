@@ -3,6 +3,7 @@
 
 #include "services/session_resolution.hpp"
 
+#include "config/settings.hpp"
 #include "domain/prefix_cache/block_matcher.hpp"
 #include "utils/logger.hpp"
 
@@ -16,9 +17,22 @@ std::optional<SlotCopyPlan> prepareSlotCopy(
     return std::nullopt;
   }
 
+  const auto mode = tt::config::llmMode();
   auto copyCandidate = domain::prefix_cache::BlockMatcher::findSlotToCopyFrom(
-      candidates, [&sessionManager](const std::string& sessionId) {
+      candidates,
+      [&sessionManager](const std::string& sessionId) {
         return sessionManager.getCommittedBlocks(sessionId);
+      },
+      [&sessionManager, mode](const std::string& sessionId) -> bool {
+        // copy is eligible if the source session is not in-flight (prefill-only
+        // mode) or not being generated (decode mode)
+        // or session is not in flight anymore
+        auto session = sessionManager.getSession(sessionId);
+        if (!session) return false;
+        if (mode == tt::config::LLMMode::PREFILL_ONLY) {
+          return !session->isInFlight();
+        }
+        return !session->isBeingGenerated() || !session->isInFlight();
       });
   if (!copyCandidate.has_value()) {
     return std::nullopt;

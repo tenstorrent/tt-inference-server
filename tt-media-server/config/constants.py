@@ -2,9 +2,10 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import NamedTuple, Tuple
+from typing import NamedTuple, Optional, Tuple
 
 
 class SupportedModels(Enum):
@@ -15,6 +16,7 @@ class SupportedModels(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stabilityai/stable-diffusion-3.5-large"
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
+    FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
@@ -27,6 +29,8 @@ class SupportedModels(Enum):
     WAN_2_2_I2V_DISTILL = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LORA = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
     WAN_2_2_I2V_LIGHTNING = "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+    LTX_2_3_DISTILLED = "Lightricks/LTX-2.3:ltx-2.3-22b-distilled-1.1.safetensors"
+    MINIMAX_H3 = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -64,6 +68,7 @@ class ModelNames(Enum):
     STABLE_DIFFUSION_3_5_LARGE = "stable-diffusion-3.5-large"
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
+    FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
@@ -76,6 +81,8 @@ class ModelNames(Enum):
     WAN_2_2_I2V_DISTILL = "Wan2.2-I2V-Distill-LightX2V"
     WAN_2_2_I2V_LORA = "Wan2.2-I2V-LoRA"
     WAN_2_2_I2V_LIGHTNING = "Wan2.2-I2V-Lightning"
+    LTX_2_3_DISTILLED = "LTX-2.3-distilled"
+    MINIMAX_H3 = "MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -115,6 +122,7 @@ class ModelRunners(Enum):
     TT_SD3_5 = "tt-sd3.5"
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
+    TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
@@ -127,6 +135,8 @@ class ModelRunners(Enum):
     TT_WAN_2_2_I2V_DISTILL = "tt-wan2.2-i2v-distill"
     TT_WAN_2_2_I2V_LORA = "tt-wan2.2-i2v-lora"
     TT_WAN_2_2_I2V_LIGHTNING = "tt-wan2.2-i2v-lightning"
+    TT_LTX_2_3_DISTILLED = "tt-ltx-2.3-distilled"
+    TT_MINIMAX_H3_T2VA = "tt-minimax-h3-t2va"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -180,6 +190,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_SD3_5,
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
+        ModelRunners.TT_FLUX_1_KONTEXT_DEV,
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
@@ -228,6 +239,8 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_WAN_2_2_I2V_DISTILL,
         ModelRunners.TT_WAN_2_2_I2V_LORA,
         ModelRunners.TT_WAN_2_2_I2V_LIGHTNING,
+        ModelRunners.TT_LTX_2_3_DISTILLED,
+        ModelRunners.TT_MINIMAX_H3_T2VA,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -271,6 +284,53 @@ MIN_VIDEO_INFERENCE_STEPS = 4
 MAX_VIDEO_INFERENCE_STEPS = 50
 DEFAULT_VIDEO_INFERENCE_STEPS = 20
 
+# Pipelines that ignore the client's num_inference_steps. Keep these as the
+# values passed into the runner (dit_runners Distill / Lightning / AniSora).
+WAN22_DISTILL_NUM_STEPS = 4
+WAN22_LIGHTNING_NUM_STEPS = 4
+WAN22_ANISORA_NUM_STEPS = 8
+
+VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
+    ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
+    ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+}
+VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
+    ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
+    ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
+    ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
+}
+
+
+def video_executed_inference_steps(
+    requested: Optional[int],
+    model_runner: Optional[str] = None,
+    model_name: Optional[str] = None,
+) -> Optional[int]:
+    """Return the denoise steps the pipeline actually runs.
+
+    Distill, Lightning, and AniSora ignore ``num_inference_steps``; SP_RUNNER
+    serving those weights is identified by ``MODEL``, not by the runner name.
+    """
+    if model_runner:
+        try:
+            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER.get(
+                ModelRunners(model_runner)
+            )
+        except ValueError:
+            forced = None
+        if forced is not None:
+            return forced
+    if model_name:
+        try:
+            forced = VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL.get(ModelNames(model_name))
+        except ValueError:
+            forced = None
+        if forced is not None:
+            return forced
+    return requested
+
+
 INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SDXL_EDIT: {ModelNames.STABLE_DIFFUSION_XL_INPAINTING},
     ModelRunners.TT_SDXL_IMAGE_TO_IMAGE: {ModelNames.STABLE_DIFFUSION_XL_IMG2IMG},
@@ -278,6 +338,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_SD3_5: {ModelNames.STABLE_DIFFUSION_3_5_LARGE},
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
+    ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
@@ -290,6 +351,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: {ModelNames.WAN_2_2_I2V_DISTILL},
     ModelRunners.TT_WAN_2_2_I2V_LORA: {ModelNames.WAN_2_2_I2V_LORA},
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: {ModelNames.WAN_2_2_I2V_LIGHTNING},
+    ModelRunners.TT_LTX_2_3_DISTILLED: {ModelNames.LTX_2_3_DISTILLED},
     ModelRunners.SP_RUNNER: {
         ModelNames.WAN_2_2,
         ModelNames.WAN_2_2_T2V_PRODIA,
@@ -298,6 +360,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.WAN_2_2_I2V_LIGHTNING,
         ModelNames.MOCHI_1,
     },
+    ModelRunners.TT_MINIMAX_H3_T2VA: {ModelNames.MINIMAX_H3},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -398,6 +461,17 @@ class AudioResponseFormat(Enum):
     OGG = "ogg"
 
 
+class AudioInputFormat(Enum):
+    """Container formats accepted on the transcription path.
+
+    UNKNOWN matches no known header and is rejected.
+    """
+
+    WAV = "wav"
+    MP3 = "mp3"
+    UNKNOWN = "unknown"
+
+
 SDXL_VALID_IMAGE_RESOLUTIONS = frozenset({(1024, 1024), (512, 512)})
 
 
@@ -455,6 +529,7 @@ TTS_RESPONSE_FORMATS = AUDIO_RESPONSE_FORMATS | frozenset(
 class JobTypes(Enum):
     VIDEO = "video"
     TRAINING = "training"
+    ADAPTER_MERGE = "adapter_merge"
 
 
 class DatasetLoaders(Enum):
@@ -482,8 +557,31 @@ class TrainingOptimizers(Enum):
     ADAMW = "adamw"
 
 
-# Base directory for storing fine-tuned adapter outputs.
-TRAINING_STORE_ADAPTERS_DIR = "model_store/"
+TRAINING_STORE_ADAPTERS_DIR = "adapters/"
+TRAINING_STORE_MERGED_MODELS_DIR = "merged_models/"
+TRAINING_STORE_JOB_DATABASE_FILENAME = "jobs.db"
+
+
+# Root for LoRA adapters / merged models. Precedence, not redundancy — keep both:
+#   * $TRAINING_STORE_ROOT: set by the launcher for TRAINING servers — cache_root
+#     under --host-volume, else an ephemeral dir.
+#   * $CACHE_ROOT: fallback when TRAINING_STORE_ROOT is unset, e.g. inference
+#     servers reading adapters back from the cache volume.
+# "." is just a last resort so unconfigured callers (e.g. tests) don't crash.
+def _training_store_root() -> str:
+    return os.getenv("TRAINING_STORE_ROOT") or os.getenv("CACHE_ROOT", ".")
+
+
+def adapters_root() -> str:
+    return os.path.join(_training_store_root(), TRAINING_STORE_ADAPTERS_DIR)
+
+
+def merged_models_root() -> str:
+    return os.path.join(_training_store_root(), TRAINING_STORE_MERGED_MODELS_DIR)
+
+
+def job_database_path() -> str:
+    return os.path.join(_training_store_root(), TRAINING_STORE_JOB_DATABASE_FILENAME)
 
 
 # Helper function to create vLLM configuration with late import to avoid circular imports
@@ -749,6 +847,31 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 51000000,
     },
+    # FLUX.1-Kontext-dev shares the FLUX.1-dev transformer/VAE/encoders, so device
+    # configs mirror TT_FLUX_1_DEV. P300 (1,2) is the layout validated end-to-end.
+    (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+        "trace_region_size": 51000000,
+    },
+    (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.P300X2): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+        "trace_region_size": 51000000,
+    },
+    (ModelRunners.TT_FLUX_1_KONTEXT_DEV, DeviceTypes.T3K): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
+    },
     (ModelRunners.TT_FLUX_1_SCHNELL, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
@@ -896,6 +1019,23 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
     },
+    # BH Galaxy is 32 chips, same one-worker-per-mesh layout as WH Galaxy.
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    # One device-id group -> one worker -> requests serialise on the mesh.
+    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
@@ -926,6 +1066,13 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -997,6 +1144,15 @@ ModelConfigs = {
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_LTX_2_3_DISTILLED, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        # LTX 1080p ~6s AV generation (145 frames) plus first-request trace
+        # capture during warmup; give it a generous ceiling.
+        "request_processing_timeout_seconds": 7200,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),
@@ -1250,7 +1406,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.N300): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 2,
@@ -1266,7 +1422,7 @@ ModelConfigs = {
         "queue_for_multiprocessing": QueueType.FasterFifo.value,
     },
     (ModelRunners.QWEN_EMBEDDING_8B, DeviceTypes.T3K): {
-        "device_mesh_shape": (2, 1),
+        "device_mesh_shape": (1, 2),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
         "max_batch_size": 2,
@@ -1514,7 +1670,13 @@ ModelConfigs = {
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
-        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
     },
 }

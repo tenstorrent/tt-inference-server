@@ -9,7 +9,7 @@ from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
-from device_workers.worker_utils import initialize_device_worker
+from device_workers.worker_utils import initialize_device_worker, signalJobStart
 from utils.logger import TTLogger
 
 
@@ -76,6 +76,7 @@ async def _continuous_fan_out(
     shutdown_seen = False
 
     def schedule(req: Any) -> None:
+        signalJobStart(req)
         task = asyncio.create_task(device_runner._run_async([req]))
         inflight[task] = req
 
@@ -203,6 +204,8 @@ def device_worker(
             continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
+        for request in requests:
+            signalJobStart(request)
         responses = None
 
         successful = False

@@ -97,7 +97,8 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
     const auto& tokenizer =
         tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
     task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        tokenizer, request.text, request.description);
+        tokenizer, request.text, request.description, /*promptSpeechIds=*/{},
+        config.bosToken);
   }
 
   return task;

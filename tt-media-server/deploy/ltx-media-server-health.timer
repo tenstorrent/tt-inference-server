@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the LTX media server healthcheck every 60s
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

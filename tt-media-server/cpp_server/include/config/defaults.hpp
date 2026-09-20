@@ -15,8 +15,7 @@ namespace tt::config::defaults {
 
 constexpr const char* DEVICE_IDS = "(0)";
 constexpr const char* MODEL_SERVICE = "llm";
-constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
-constexpr const char* TT_PYTHON_PATH = "..";
+constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 2;
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
@@ -109,6 +108,11 @@ constexpr size_t CLIENT_MAX_BODY_BYTES = 100 * 1024 * 1024;  // 100 MB
 constexpr size_t LOG_FILE_MAX_BYTES = 50 * 1024 * 1024;      // 50 MB
 constexpr size_t LOG_FILE_MAX_COUNT = 5;
 constexpr size_t EMBEDDING_MAX_PIPE_BYTES = 100 * 1024 * 1024;  // 100 MB
+/**
+ * Budget for one embedding startup phase, fork to READY handshake
+ * (overridable via the EMBEDDING_WARMUP_TIMEOUT_MS env var).
+ */
+constexpr unsigned EMBEDDING_WARMUP_TIMEOUT_MS = 600 * 1000;
 // Lower bound used when CALLBACK_POOL_THREADS env is unset or 0; preserves
 // the legacy default (16) for small (1-16 worker) deployments.
 constexpr size_t CALLBACK_POOL_THREADS_MIN = 16;

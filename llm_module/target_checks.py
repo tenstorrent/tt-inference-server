@@ -16,7 +16,7 @@ import logging
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from report_module.schema import Block
-from workflows.workflow_types import ReportCheckTypes
+from workflow_module.engine_types import ReportCheckTypes
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,14 @@ _METRIC_SPECS: Tuple[Tuple[str, str, bool], ...] = (
     ("ttft", "ttft_ms", True),
     ("tput_user", "tput_user", False),
     ("tput", "tput", False),
+    # Extra metrics graded only when a target defines them (requirements-driven
+    # SLOs/scalar targets); catalog perf references leave them None -> NA.
+    # goodput is the % of requests meeting the run's --goodput SLOs, measured
+    # by vllm bench serve when the sweep point carries SLO constraints.
+    ("tpot", "tpot_ms", True),
+    ("e2el", "e2el_ms", True),
+    ("tput_total", "tput_total", False),
+    ("goodput", "goodput", False),
 )
 
 TIER_ORDER: Tuple[str, ...] = ("functional", "complete", "target")
@@ -38,14 +46,23 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
     mean TPOT the way v1's summary report did (``1000 / mean_tpot_ms``).
     """
     ttft = _as_float(record.get("mean_ttft_ms"))
+    tpot = _as_float(record.get("mean_tpot_ms"))
     tput_user = _as_float(record.get("tput_user"))
     if tput_user is None:
-        tpot = _as_float(record.get("mean_tpot_ms"))
         tput_user = 1000.0 / tpot if tpot else None
+    tput = _as_float(record.get("tps_output_throughput"))
+    if tput is None:
+        # aiperf / genai-perf records still key output throughput as
+        # tps_decode_throughput; vLLM records use tps_output_throughput.
+        tput = _as_float(record.get("tps_decode_throughput"))
     return {
         "ttft": ttft,
         "tput_user": tput_user,
-        "tput": _as_float(record.get("tps_decode_throughput")),
+        "tput": tput,
+        "tpot": tpot,
+        "e2el": _as_float(record.get("mean_e2el_ms")),
+        "tput_total": _as_float(record.get("tps_total_throughput")),
+        "goodput": _as_float(record.get("goodput_pct")),
     }
 
 
@@ -56,7 +73,9 @@ def _as_float(value: Any) -> Optional[float]:
 
 
 def _check(ratio: float, tolerance: float, lower_is_better: bool) -> ReportCheckTypes:
-    passed = ratio < (1 + tolerance) if lower_is_better else ratio > (1 - tolerance)
+    # Inclusive at the boundary: a gte/lte target is met by an exact match,
+    # which matters at tolerance 0 (contractual gates).
+    passed = ratio <= (1 + tolerance) if lower_is_better else ratio >= (1 - tolerance)
     return ReportCheckTypes.from_result(passed)
 
 
@@ -134,6 +153,21 @@ def apply_target_checks(block: Block, config: Any) -> Block:
 
     targets = getattr(config, "targets", None) or {}
     data = dict(block.data)
+    # Carry the sweep point's acceptance severity onto the block so acceptance
+    # can treat a "should" target failure as informational. Absent => must.
+    priority = getattr(config, "priority", None)
+    if priority is not None:
+        data["priority"] = priority
+    # Per-metric severities, translated from PerformanceTarget attribute names
+    # to target_checks field names so acceptance can route individual metric
+    # failures (a block mixing must/should targets).
+    target_priorities = getattr(config, "target_priorities", None)
+    if target_priorities:
+        attr_to_field = {attr: field for field, attr, _ in _METRIC_SPECS}
+        data["target_priorities"] = {
+            attr_to_field.get(attr, attr): prio
+            for attr, prio in target_priorities.items()
+        }
     if not targets:
         logger.warning(
             "No perf targets for sweep point isl=%s osl=%s max_concurrency=%s; "

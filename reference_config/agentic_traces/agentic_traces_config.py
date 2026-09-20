@@ -20,12 +20,15 @@ config, and in ``tests/reference_config/test_agentic_traces_config.py``.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
-from enum import Enum
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
 from workflows.workflow_types import AgenticTracesMode
+
+logger = logging.getLogger(__name__)
 
 # The InferenceX ``inferencex-agentx-mvp`` scenario rejects a profiling window
 # shorter than this (see its scenario definition in the InferenceX repo:
@@ -35,27 +38,6 @@ AGENTIC_TRACES_MIN_PROFILE_SECONDS = 900
 
 # Scenarios known to enforce AGENTIC_TRACES_MIN_PROFILE_SECONDS.
 _MIN_DURATION_SCENARIOS = frozenset({"inferencex-agentx-mvp"})
-
-
-class TraceSource(Enum):
-    """Where a run's agentic traces come from.
-
-    ``INFERENCEX_AGENTX`` replays the SemiAnalysis Weka coding traces through
-    the AIPerf fork vendored in the InferenceX repo. ``SWARMONE`` replays
-    SwarmOne's recorded coding sessions through its ``swo-bench`` CLI.
-    """
-
-    INFERENCEX_AGENTX = "inferencex_agentx"
-    SWARMONE = "swarmone"
-
-    @classmethod
-    def from_string(cls, name: str) -> "TraceSource":
-        key = name.strip().upper().replace("-", "_")
-        try:
-            return cls[key]
-        except KeyError:
-            valid = ", ".join(sorted(m.value for m in cls))
-            raise ValueError(f"Invalid TraceSource: {name!r}. Valid: {valid}")
 
 
 # Sources that a sweep only runs when it names them explicitly via
@@ -93,8 +75,22 @@ class AgenticTracesRunSpec:
     slice_duration: float = 1.0
     max_context_length: Optional[int] = None
     tokenizer_trust_remote_code: Optional[bool] = None
+    # True reads token counts off the streaming ``usage`` chunk; TT endpoints
+    # honour ``stream_options.include_usage``, so this works and matches the
+    # served token counts. False would count ISL/OSL with the local tokenizer
+    # instead, ``vllm bench serve`` style.
     use_server_token_count: bool = True
     gpu_telemetry: bool = False
+    # AIPerf ``--goodput`` SLO string: space-separated TAG:VALUE bars deciding
+    # whether a request counts as good. Empty means the run measures no
+    # goodput, since AIPerf reports it only when the bars are passed. Catalog
+    # entries leave this empty; a requirements document supplies its SLOs.
+    goodput: str = ""
+    # The document's expected ``agenticSweep``, kept verbatim (one camelCase
+    # point per concurrency) so the report can grade the measurement against
+    # it -- including the points a truncated sweep never reached. Empty for
+    # catalog runs, which have no expectations to grade against.
+    expected_sweep: List[Dict[str, Any]] = field(default_factory=list)
     # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
     # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
     # ``task`` selects a single task from a multi-task swo-bench scenario (its
@@ -400,6 +396,45 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # GLM-5.2 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay only;
+    # no SwarmOne scenario is recorded for this model. Same InferenceX pin as
+    # Kimi above so numbers stay comparable across the two models.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_GLM-5.2_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=80,
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_GLM-5.3_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=80,
+            ),
+        ),
+    ),
+    # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
+    # only; no SwarmOne scenario is recorded for this model. Same InferenceX
+    # pin as Kimi above so numbers stay comparable across the two models.
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                concurrency=8,
+            ),
+        ),
+    ),
 ]
 
 AGENTIC_TRACES_CONFIGS: Dict[str, AgenticTracesConfig] = map_configs_by_attr(
@@ -418,6 +453,106 @@ def get_agentic_traces_config(model_spec) -> Optional[AgenticTracesConfig]:
     if not model_id:
         return None
     return AGENTIC_TRACES_CONFIGS.get(model_id)
+
+
+# impl_id stamped on specs synthesized from a requirements document for
+# off-catalog models (see workflows/model_spec_provider.py). Such a model can
+# never have an AGENTIC_TRACES_CONFIGS entry, so the strict lookup above would
+# always refuse it.
+_REQUIREMENTS_SYNTHESIZED_IMPL_ID = "requirements_synthesized"
+
+# Template borrowed for requirements-driven runs: the Kimi K2.7-Code config,
+# currently the only onboarded one. Its default sweep is the
+# InferenceX Weka replay (SwarmOne is opt-in, so no swo-bench license is
+# needed); the InferenceX pin and mode settings carry over unchanged.
+_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+
+
+def _borrows_template(model_spec) -> bool:
+    """Whether ``model_spec`` may fall back to the template.
+
+    Two cases, both requirements-driven. A synthesized spec is off-catalog and
+    so can never have an entry. A *catalog* spec without one is the same
+    situation in practice: being in the catalog says the model can be served,
+    not that it is onboarded to this workflow, so adding a model for evals
+    would otherwise turn a working requirements sweep into a refusal.
+
+    Requirements mode is read from argv rather than passed in, because every
+    process that needs this already receives ``--requirements-json``: run.py
+    and run_workflows.py from the operator, the launchers because
+    workflow_dispatch forwards it.
+    """
+    impl_id = getattr(getattr(model_spec, "impl", None), "impl_id", None)
+    if impl_id == _REQUIREMENTS_SYNTHESIZED_IMPL_ID:
+        return True
+    from workflows.requirements_cli import requirements_mode_in_argv
+
+    return requirements_mode_in_argv()
+
+
+def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesConfig]:
+    """Config for ``model_spec``, borrowing a template for requirements runs.
+
+    Strict catalog lookup first. When the model has no entry and the run is
+    requirements-driven, returns the Kimi K2.7-Code config retargeted at this
+    ``model_id`` — the traces are recorded traffic replayed against whatever
+    server is under test, so the run shape is not model-specific. A plain
+    ``--workflow agentic_traces`` on a model with no entry still gets ``None``
+    (refuse to run), unchanged.
+    """
+    config = get_agentic_traces_config(model_spec)
+    if config is not None:
+        return config
+    if not _borrows_template(model_spec):
+        return None
+    template = AGENTIC_TRACES_CONFIGS.get(_REQUIREMENTS_TEMPLATE_MODEL_ID)
+    if template is None:
+        return None
+    model_id = getattr(model_spec, "model_id", None)
+    if not model_id:
+        return None
+    logger.warning(
+        "No agentic-traces config for model_id=%r; borrowing the %r template "
+        "(requirements-driven run).",
+        model_id,
+        _REQUIREMENTS_TEMPLATE_MODEL_ID,
+    )
+    return replace(template, model_id=model_id)
+
+
+def replace_agentic_runs(
+    config: AgenticTracesConfig,
+    concurrencies: Sequence[int],
+    goodput: str = "",
+    expected_sweep: Sequence[Mapping[str, Any]] = (),
+) -> AgenticTracesConfig:
+    """Replay ``config``'s runs at each of ``concurrencies``, grading ``goodput``.
+
+    A requirements document sweeps concurrency while holding the run shape
+    fixed, so each configured run is duplicated once per concurrency rather
+    than replaced: a config carrying both an InferenceX and a SwarmOne spec
+    still sweeps both. An empty ``concurrencies`` leaves the config alone, so a
+    document with no agentic sweep keeps the catalog's single operating point.
+
+    ``goodput`` applies to every run, since the SLOs are the workload's and do
+    not move with the operating point. Every run carries the whole
+    ``expected_sweep`` rather than only its own point, so the report can call
+    out the points a truncated sweep never measured.
+    """
+    if not concurrencies:
+        return config
+    expected = [dict(point) for point in expected_sweep]
+    runs = tuple(
+        replace(
+            run,
+            concurrency=concurrency,
+            goodput=goodput or run.goodput,
+            expected_sweep=list(expected),
+        )
+        for run in config.runs
+        for concurrency in concurrencies
+    )
+    return replace(config, runs=runs)
 
 
 def default_run_specs(
@@ -484,5 +619,7 @@ __all__ = [
     "default_run_specs",
     "for_model_ids",
     "get_agentic_traces_config",
+    "get_agentic_traces_config_or_template",
+    "replace_agentic_runs",
     "resolve_run_specs",
 ]

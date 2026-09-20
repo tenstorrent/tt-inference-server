@@ -1,0 +1,80 @@
+name: Publish Release (on post-release PR merge)
+
+# When a post-release PR (opened by release-automation.yml) is MERGED into main,
+# update the existing DRAFT Release v<version> with the final PR body and publish
+# it. The Release already carries the tag + the release-artifacts asset (both
+# created by the release pipeline); this workflow only fills in the notes and
+# flips draft -> published.
+#
+# Trigger is filtered at the TRIGGER level on paths: ['VERSION'] so no run is
+# created for the many PRs that don't touch VERSION -> no skipped-run clutter in
+# the Actions tab. Caveat (accepted): it will NOT fire on a same-version
+# re-release, because main's VERSION would already equal the release version and
+# the PR would carry no VERSION diff. Only real forward releases auto-publish.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+    paths: ['VERSION']
+
+# gh edits/publishes a Release -> needs contents: write.
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-release-${{ github.event.pull_request.head.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish the draft Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Only a MERGED, SAME-REPO (never a fork) post-release-* PR publishes.
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'post-release-')
+    env:
+      # Personal PAT (not github.token) so PUBLISHING cascades to any future
+      # `on: release: [published]` workflow (e.g. Update Release Zoo). Must have
+      # contents: write on this repo.
+      GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
+      REPO: ${{ github.repository }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      PR_BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: "Resolve the release tag"
+        run: |
+          # Prefer the metadata block embedded in the PR body (exactly v<version>);
+          # fall back to the immutable head ref post-release-v<version>.
+          TAG="$(printf '%s' "${PR_BODY}" | grep -oE 'metadata:version=v[0-9][0-9.]*' | head -1 | sed 's/^metadata:version=//')"
+          if [ -z "${TAG}" ]; then
+            TAG="$(printf '%s' "${HEAD_REF}" | grep -oE 'v[0-9][0-9.]*' | head -1)"
+          fi
+          if [ -z "${TAG}" ]; then
+            echo "::error::could not resolve a release tag from the PR body metadata or head ref '${HEAD_REF}'."
+            exit 1
+          fi
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "Resolved release tag: ${TAG}"
+
+      - name: "Verify the draft Release exists (fail if missing)"
+        run: |
+          if ! gh release view "${TAG}" --repo "${REPO}" >/dev/null 2>&1; then
+            echo "::error::No Release found for tag '${TAG}'. The release-automation pipeline should have created a draft Release; this workflow does not create one. Aborting."
+            exit 1
+          fi
+          echo "Found existing Release '${TAG}'."
+
+      - name: "Update notes from the merged PR body and publish"
+        run: |
+          # Full PR body verbatim, via a file to avoid any shell-escaping issues.
+          printf '%s' "${PR_BODY}" > "${RUNNER_TEMP}/release_notes.md"
+          gh release edit "${TAG}" \
+            --repo "${REPO}" \
+            --notes-file "${RUNNER_TEMP}/release_notes.md" \
+            --draft=false \
+            --latest
+          echo "Published Release '${TAG}' with the merged PR body as its notes."

@@ -20,6 +20,8 @@ mock_settings.max_queue_size = 10
 mock_settings.max_batch_size = 1
 mock_settings.use_queue_per_worker = True
 mock_settings.use_dynamic_batcher = True
+mock_settings.queue_for_multiprocessing = "MemoryQueue"
+mock_settings.canary_enabled = False
 mock_settings.new_device_delay_seconds = 0.1
 mock_settings.max_worker_restart_count = 3
 mock_settings.allow_deep_reset = False
@@ -143,6 +145,21 @@ class TestScheduler:
         assert scheduler.result_queues == {}
 
         assert scheduler.logger is not None
+
+    def test_start_queues_uses_max_queue_size(self):
+        """task_queue capacity must come from settings.max_queue_size."""
+        with patch(
+            "model_services.scheduler.get_settings", return_value=mock_settings
+        ), patch("model_services.scheduler.get_task_queue") as mockGetTaskQueue, patch(
+            "model_services.scheduler.get_queue"
+        ), patch("model_services.scheduler.Queue"), patch(
+            "model_services.scheduler.TTLogger", return_value=mock_logger
+        ):
+            mockGetTaskQueue.return_value = create_mock_queue()
+            Scheduler()
+
+        mockGetTaskQueue.assert_called_once()
+        assert mockGetTaskQueue.call_args.kwargs["size"] == mock_settings.max_queue_size
 
     def test_check_is_model_ready_when_not_ready(self, scheduler):
         """Test check_is_model_ready when model is not ready"""

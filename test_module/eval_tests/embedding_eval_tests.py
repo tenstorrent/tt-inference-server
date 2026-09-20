@@ -15,8 +15,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.workflow_types import WorkflowVenvType
-from workflows.workflow_venvs import VENV_CONFIGS
+from workflow_module.engine_types import WorkflowVenvType
+from workflow_module.venv_provisioner import get_venv_provisioner
 
 from report_module.schema import Block
 
@@ -59,8 +59,11 @@ def _run_embedding_mteb_eval(ctx: MediaContext) -> dict:
     """Run the MTEB eval inside the EVALS_EMBEDDING venv and return metrics."""
     model_name, isl, dimensions = _embedding_model_config(ctx)
 
-    venv_config = VENV_CONFIGS.get(WorkflowVenvType.EVALS_EMBEDDING)
-    venv_python = venv_config.venv_path / "bin" / "python"
+    venv_python = (
+        get_venv_provisioner().venv_path(WorkflowVenvType.EVALS_EMBEDDING)
+        / "bin"
+        / "python"
+    )
     if not venv_python.is_file():
         raise FileNotFoundError(
             f"EVALS_EMBEDDING venv python not found at {venv_python}; "

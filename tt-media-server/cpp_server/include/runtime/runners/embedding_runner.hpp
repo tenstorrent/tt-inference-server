@@ -4,64 +4,61 @@
 #pragma once
 
 #include <memory>
-#include <string>
 #include <vector>
 
+#include "config/runner_config.hpp"
 #include "domain/embedding_request.hpp"
 #include "domain/embedding_response.hpp"
-#include "runtime/runners/ipc_runner.hpp"
+#include "runtime/runners/i_embedding_runner.hpp"
 
 namespace tt::runners {
 
+namespace detail {
 /**
- * Embedding runner that calls Python BGELargeENRunner.
- *
- * Uses Python C API to instantiate and call the BGELargeENRunner class
- * from tt_model_runners/embedding_runner.py.
+ * Template-method base for the per-model implementations (defined in
+ * embedding_runner.cpp). It owns the shared pipeline - device open,
+ * tokenizer, warmup, tokenize->forward->extract, close - and each model
+ * subclass overrides only the steps that differ: which tt-metal module and
+ * class to load, the constructor kwargs, and how to pull the dense vectors
+ * out of forward()'s result. Kept behind this forward declaration so pybind11
+ * types never leak into headers.
  */
-class EmbeddingRunner : public IRunner {
+struct EmbeddingImpl;
+}  // namespace detail
+
+/**
+ * Embedding runner that drives tt-metal directly.
+ *
+ * Uses pybind11 (embedded interpreter) to import ttnn and the model's
+ * generator class from tt-metal's models.demos.
+ * Tokenization goes through the model's HuggingFace
+ * AutoTokenizer for exact parity with the Python server. Python errors are
+ * captured with full tracebacks and surfaced as per-request error responses
+ * rather than swallowed.
+ */
+class EmbeddingRunner : public IEmbeddingRunner {
  public:
-  /** @param device_id e.g. "device_0". @param visible_device TT device index
-   * (1-based) for logging. */
-  EmbeddingRunner(const std::string& deviceId, int visibleDevice = 0);
+  explicit EmbeddingRunner(const config::EmbeddingConfig& config);
   ~EmbeddingRunner() override;
 
   // Prevent copying
   EmbeddingRunner(const EmbeddingRunner&) = delete;
   EmbeddingRunner& operator=(const EmbeddingRunner&) = delete;
 
-  /**
-   * Initialize Python, import modules, create BGELargeENRunner instance,
-   * and call warmup().
-   */
+  /** Open the ttnn mesh device, load tokenizer and model weights, and run
+   * one warmup forward pass. */
   bool warmup() override;
 
-  /**
-   * Clean up Python objects and optionally finalize interpreter.
-   */
-  void close();
-
-  /**
-   * Run embedding inference by calling runner.run(requests).
-   */
   std::vector<domain::EmbeddingResponse> run(
-      const std::vector<domain::EmbeddingRequest>& requests);
+      const std::vector<domain::EmbeddingRequest>& requests) override;
 
-  // IRunner interface implementation
-  void run() override;
-  void stop() override;
-  const char* runnerType() const override { return "EmbeddingRunner"; }
-
-  /**
-   * Get the device ID.
-   */
-  const std::string& deviceId() const { return device_id_; }
+  /** Close the mesh device and drop the Python objects. The interpreter
+   * itself is left running. */
+  void close() override;
 
  private:
-  std::string device_id_;
-  int visible_device_;
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
+  config::EmbeddingConfig config_;
+  std::unique_ptr<detail::EmbeddingImpl> impl_;
 };
 
 }  // namespace tt::runners

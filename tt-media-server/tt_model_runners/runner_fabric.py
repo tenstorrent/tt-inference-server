@@ -28,6 +28,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_FLUX_1_SCHNELL: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTFlux1Runner"]
     ).TTFlux1Runner(wid),
+    ModelRunners.TT_FLUX_1_KONTEXT_DEV: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTFluxKontextRunner"]
+    ).TTFluxKontextRunner(wid),
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid),
@@ -64,6 +67,12 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTWan22I2VLightningRunner"]
     ).TTWan22I2VLightningRunner(wid),
+    ModelRunners.TT_LTX_2_3_DISTILLED: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTLTX23DistilledRunner"]
+    ).TTLTX23DistilledRunner(wid),
+    ModelRunners.TT_MINIMAX_H3_T2VA: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Runner"]
+    ).TTMiniMaxH3Runner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),

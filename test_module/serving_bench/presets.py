@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-from workflows.workflow_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode
 
 # agentic_bench consumes all of these; the cpp benchmark suite ignores the
 # knobs it doesn't define.

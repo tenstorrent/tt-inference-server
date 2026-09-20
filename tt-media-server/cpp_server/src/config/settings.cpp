@@ -4,6 +4,8 @@
 #include "config/settings.hpp"
 
 #include <json/json.h>
+#include <spdlog/fmt/fmt.h>
+#include <spdlog/fmt/ranges.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -19,6 +21,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -65,6 +68,8 @@ std::string resolveBlazeSocketDescriptorPrefix() {
       return "glm";
     case ModelType::DEEPSEEK_V4_PRO:
       return "deepseek";
+    case ModelType::GEMMA_4_31B_IT:
+      return "gemma";
   }
   throw std::runtime_error("Unsupported model type for Blaze socket prefix");
 }
@@ -86,6 +91,8 @@ uint32_t resolveBlazeNumberOfPipelineStages() {
     case ModelType::GLM_5_1:
     case ModelType::GLM_5_2:
       return 80;
+    case ModelType::GEMMA_4_31B_IT:
+      return 62;
     default:
       return defaults::BLAZE_NUMBER_OF_PIPELINE_STAGES;
   }
@@ -208,10 +215,6 @@ unsigned batchTimeoutMs() {
       envUlong("MAX_BATCH_DELAY_TIME_MS", defaults::MAX_BATCH_DELAY_TIME_MS));
 }
 
-std::string pythonPath() {
-  return envString("TT_PYTHON_PATH", defaults::TT_PYTHON_PATH);
-}
-
 static std::filesystem::path tokenizersDir() {
   std::error_code ec;
   std::filesystem::path exePath =
@@ -298,6 +301,11 @@ unsigned warmupTimeoutMs() {
 unsigned outputHangTimeoutMs() {
   return static_cast<unsigned>(
       envUlong("OUTPUT_HANG_TIMEOUT_MS", defaults::OUTPUT_HANG_TIMEOUT_MS));
+}
+
+unsigned embeddingWarmupTimeoutMs() {
+  return static_cast<unsigned>(envUlong("EMBEDDING_WARMUP_TIMEOUT_MS",
+                                        defaults::EMBEDDING_WARMUP_TIMEOUT_MS));
 }
 
 std::string ttTaskQueueName() {
@@ -511,6 +519,120 @@ void readMediaRunnerConfig(MediaRunnerConfigBase& cfg) {
   cfg.visible_devices = visibleDevicesForWorker(0);
 }
 
+// ---------------------------------------------------------------------------
+// Embedding model catalog.
+//
+// C++ is the single config authority for the embedding path: the runner
+// drives tt-metal directly (ttnn + the model's generator class), so the
+// per-(model, device) facts Python's ModelConfigs used to resolve live here.
+// The numbers mirror config/constants.py rows for the same models so the two
+// servers behave identically; there is no runtime handshake left to catch
+// drift, so keep them in sync when constants.py changes.
+//
+// To onboard a model: add a ModelRunnerType enumerator with its toString
+// case, one row here, and a model impl in embedding_runner.cpp (module path,
+// constructor kwargs, output extraction).
+struct EmbeddingDeviceEntry {
+  std::string_view device;  // DEVICE value, e.g. "n150"
+  size_t max_batch_size;
+  size_t max_seq_len;  // vLLM max_model_length for this device
+  std::vector<size_t> mesh_shape;
+};
+
+struct EmbeddingModelEntry {
+  ModelRunnerType runner_type;
+  std::string_view hf_model_id;
+  // ttnn.open_mesh_device knobs the model's Python runner used to pass.
+  // num_command_queues 0 = don't pass the kwarg (ttnn default).
+  size_t num_command_queues;
+  size_t trace_region_size;
+  std::vector<EmbeddingDeviceEntry> devices;
+};
+
+// Python Settings' default trace_region_size; no embedding row overrides it.
+constexpr size_t EMBEDDING_TRACE_REGION_SIZE = 34541598;
+
+constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
+    ModelRunnerType::TT_BGE_LARGE_EN;
+
+const std::vector<EmbeddingModelEntry>& embeddingModels() {
+  // Device entries are {DEVICE, max_batch_size, max_seq_len, mesh_shape}.
+  static const std::vector<EmbeddingModelEntry> kModels = {
+      {ModelRunnerType::TT_BGE_LARGE_EN,
+       "BAAI/bge-large-en-v1.5",
+       /*num_command_queues=*/2,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 8, 384, {1, 1}},
+        {"n300", 16, 384, {2, 1}},
+        {"t3k", 16, 384, {2, 1}},
+        {"galaxy", 8, 384, {1, 1}}}},
+      {ModelRunnerType::TT_BGE_M3,
+       "BAAI/bge-m3",
+       /*num_command_queues=*/2,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 32, 8192, {1, 1}},
+        {"n300", 32, 8192, {2, 1}},
+        {"t3k", 32, 8192, {2, 1}},
+        {"galaxy", 32, 8192, {1, 1}}}},
+      // Galaxy batch 1: ModelConfigs has no max_batch_size key there, so
+      // Python resolved the Settings default (1); max_num_seqs=1 keeps it.
+      {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
+       "Qwen/Qwen3-Embedding-8B",
+       /*num_command_queues=*/0,
+       EMBEDDING_TRACE_REGION_SIZE,
+       {{"n150", 1, 1024, {1, 1}},
+        {"n300", 2, 4096, {2, 1}},
+        {"t3k", 2, 4096, {2, 1}},
+        {"galaxy", 1, 1024, {1, 1}}}},
+      // The mock needs no device and no Python. The "" device entry is
+      // deliberate: CI runs it with nothing set.
+      {ModelRunnerType::EMBEDDING_MOCK,
+       "BAAI/bge-large-en-v1.5",
+       /*num_command_queues=*/0,
+       /*trace_region_size=*/0,
+       {{"", 8, 384, {1, 1}},
+        {"n150", 8, 384, {1, 1}},
+        {"n300", 16, 384, {1, 1}},
+        {"t3k", 16, 384, {1, 1}},
+        {"galaxy", 8, 384, {1, 1}}}},
+  };
+  return kModels;
+}
+
+std::string joinNames(const std::vector<std::string>& names) {
+  return fmt::format("{}", fmt::join(names, ", "));
+}
+
+const EmbeddingModelEntry& findEmbeddingModelOrThrow(
+    const std::string& runnerName) {
+  for (const auto& entry : embeddingModels()) {
+    if (toString(entry.runner_type) == runnerName) return entry;
+  }
+  std::vector<std::string> valid;
+  for (const auto& entry : embeddingModels()) {
+    valid.push_back(toString(entry.runner_type));
+  }
+  throw std::runtime_error("[Config] Unknown embedding MODEL_RUNNER_TYPE='" +
+                           runnerName +
+                           "'; expected one of: " + joinNames(valid));
+}
+
+const EmbeddingDeviceEntry& deviceEntryOrThrow(const EmbeddingModelEntry& model,
+                                               const std::string& device) {
+  for (const auto& entry : model.devices) {
+    if (entry.device == device) return entry;
+  }
+  std::vector<std::string> valid;
+  for (const auto& entry : model.devices) {
+    if (!entry.device.empty()) valid.push_back(std::string(entry.device));
+  }
+  throw std::runtime_error(
+      "[Config] DEVICE='" + device + "' is not supported by " +
+      toString(model.runner_type) + "; expected one of: " + joinNames(valid) +
+      ". DEVICE describes the machine and cannot be derived, so it must be "
+      "set.");
+}
+
 }  // namespace
 
 ImageConfig imageEngineConfig() {
@@ -580,6 +702,33 @@ TtsConfig ttsEngineConfig() {
     }
     cfg.tokenizerPath = envString(
         "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
+
+    // Resolve the prompt-leading BOS from the tokenizer_config.json beside the
+    // tokenizer, the same source the LLM tokenizers use
+    if (!cfg.tokenizerPath.empty()) {
+      const std::filesystem::path configPath =
+          std::filesystem::path(cfg.tokenizerPath).parent_path() /
+          "tokenizer_config.json";
+      try {
+        const auto tokenizerCfg =
+            utils::tokenizers::getTokenizerConfig(configPath.string());
+        if (tokenizerCfg.add_bos_token) {
+          cfg.bosToken = tokenizerCfg.bos_token;
+        }
+      } catch (const std::exception& e) {
+        TT_LOG_WARN("[Config] TTS BOS lookup failed ({}): {}",
+                    configPath.string(), e.what());
+      }
+    }
+    if (cfg.bosToken.empty()) {
+      TT_LOG_WARN(
+          "[Config] TTS prompt has no leading BOS; the reference compiler "
+          "prepends one (e.g. <|begin_of_text|>). Check bos_token / "
+          "add_bos_token in the tokenizer_config.json next to {}",
+          cfg.tokenizerPath);
+    } else {
+      TT_LOG_INFO("[Config] TTS prompt BOS = '{}'", cfg.bosToken);
+    }
     cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
         "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
     cfg.voiceChannels = static_cast<uint16_t>(
@@ -604,6 +753,29 @@ TtsConfig ttsEngineConfig() {
   return cached;
 }
 
+EmbeddingConfig embeddingEngineConfig() {
+  static const EmbeddingConfig cached = [] {
+    const std::string runner =
+        envStringLower("MODEL_RUNNER_TYPE", toString(DEFAULT_EMBEDDING_MODEL));
+    const EmbeddingModelEntry& model = findEmbeddingModelOrThrow(runner);
+
+    EmbeddingConfig cfg;
+    cfg.runner_type = model.runner_type;
+    cfg.hf_model_id = model.hf_model_id;
+    cfg.num_command_queues = model.num_command_queues;
+    cfg.trace_region_size = model.trace_region_size;
+    cfg.device = envStringLower("DEVICE", "");
+    cfg.visible_devices = visibleDevicesForWorker(0);
+    const EmbeddingDeviceEntry& deviceEntry =
+        deviceEntryOrThrow(model, cfg.device);
+    cfg.max_batch_size = deviceEntry.max_batch_size;
+    cfg.max_seq_len = deviceEntry.max_seq_len;
+    cfg.mesh_shape = deviceEntry.mesh_shape;
+    return cfg;
+  }();
+  return cached;
+}
+
 RunnerConfig workerRunnerConfig(size_t workerIndex) {
   switch (modelService()) {
     case ModelService::IMAGE: {
@@ -616,8 +788,12 @@ RunnerConfig workerRunnerConfig(size_t workerIndex) {
       auto cfg = ttsEngineConfig();
       return cfg;
     }
-    case ModelService::EMBEDDING:
-      return EmbeddingConfig{};
+    case ModelService::EMBEDDING: {
+      auto cfg = embeddingEngineConfig();
+      cfg.worker_id = workerIndex;
+      cfg.visible_devices = visibleDevicesForWorker(workerIndex);
+      return cfg;
+    }
     case ModelService::LLM:
     default:
       return blazeConfig();
@@ -638,6 +814,7 @@ ModelType modelType() {
     if (m == "zai-org/GLM-5.1") return ModelType::GLM_5_1;
     if (m == "zai-org/GLM-5.2") return ModelType::GLM_5_2;
     if (m == "deepseek-ai/DeepSeek-V4-Pro") return ModelType::DEEPSEEK_V4_PRO;
+    if (m == "google/gemma-4-31B-it") return ModelType::GEMMA_4_31B_IT;
     return ModelType::DEEPSEEK_R1_0528;
   }();
   return cached;

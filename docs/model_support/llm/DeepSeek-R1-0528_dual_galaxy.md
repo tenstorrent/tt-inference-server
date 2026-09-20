@@ -22,7 +22,7 @@ This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-m
 **via run.py command**
 
 ```bash
-python3 run.py --model DeepSeek-R1-0528 --device dual_galaxy --workflow server --docker-server
+python3 run.py --model deepseek-ai/DeepSeek-R1-0528 --device dual_galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

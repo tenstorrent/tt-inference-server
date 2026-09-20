@@ -1,0 +1,100 @@
+name: Helm Chart Hardware Smoke
+
+# Not per-PR: this holds a scarce Tenstorrent board for the whole run. The runner
+# pool is bare, so hw_smoke_bootstrap.sh stands up RKE2 + tt-operator first.
+
+on:
+  schedule:
+    - cron: "17 20 * * *"
+
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Runner pool to take a board from.
+        type: choice
+        default: tt-ubuntu-2204-n150-stable
+        options:
+          - tt-ubuntu-2204-n150-stable
+          - tt-ubuntu-2204-bh-loudbox-viommu-stable
+      model:
+        description: Chart model value.
+        default: Qwen3-Embedding-4B
+      device:
+        description: Chart device value. Must match the runner's board.
+        default: n150
+      engine:
+        description: Chart engine value (pins the values row).
+        default: forge
+      impl:
+        description: Chart impl value (pins the values row).
+        default: forge_vllm_plugin
+      image-tag:
+        description: >-
+          Override the row's pinned image tag, to tell "the chart is broken" from
+          "the pinned image is stale". Leave empty normally.
+        default: ""
+      api-probe:
+        description: Inference call to make. auto picks from the resolved image.
+        type: choice
+        default: auto
+        options: [auto, embeddings, chat, models]
+      max-wait-seconds:
+        description: How long to wait for Ready before failing.
+        default: "2700"
+
+# One board at a time, and never cancel: killing a run mid-compile can leave a
+# Pod terminating on its claim.
+concurrency:
+  group: helm-hw-smoke
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  hw-smoke:
+    name: Hardware Smoke (${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }} / ${{ github.event.inputs.device || 'n150' }})
+    runs-on: ${{ github.event.inputs.runner || 'tt-ubuntu-2204-n150-stable' }}
+    # ~13m end to end for the default row; generous for bigger models.
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bootstrap (RKE2 + tt-operator + published boards)
+        env:
+          # Only needed where the runtime cannot pull ghcr.io anonymously.
+          GHCR_USERNAME: ${{ github.repository_owner }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PULL_PAT }}
+        run: bash .github/scripts/hw_smoke_bootstrap.sh
+
+      - name: Hardware smoke
+        env:
+          MODEL: ${{ github.event.inputs.model || 'Qwen3-Embedding-4B' }}
+          DEVICE: ${{ github.event.inputs.device || 'n150' }}
+          ENGINE: ${{ github.event.inputs.engine || 'forge' }}
+          IMPL: ${{ github.event.inputs.impl || 'forge_vllm_plugin' }}
+          IMAGE_TAG: ${{ github.event.inputs.image-tag }}
+          # Empty lets the script pick from the image; a value pins it.
+          API_PROBE: ${{ github.event.inputs.api-probe == 'auto' && '' || github.event.inputs.api-probe }}
+          MAX_WAIT_SECONDS: ${{ github.event.inputs.max-wait-seconds || '2700' }}
+          HUGEPAGES: ${{ env.HW_SMOKE_HUGEPAGES }}  # set by the bootstrap step
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}         # only gated weights need it
+        run: bash .github/scripts/helm_hw_smoke.sh
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get nodes -o wide || true
+          kubectl get pods -A -o wide || true
+          kubectl get resourceslices,deviceclasses -o wide || true
+          kubectl -n tt-operator-system logs -l app.kubernetes.io/name=tt-dra-driver --tail=100 || true
+          sudo journalctl -u rke2-server --no-pager | tail -60 || true
+
+      # Order matters: removing tt-operator first strands the DRA plugin and the
+      # Pod sticks in Terminating on its claim.
+      - name: Teardown (workload first, then tt-operator)
+        if: always()
+        run: |
+          helm uninstall ttis-hw -n ttis-hw-smoke --wait --timeout 5m || true
+          kubectl -n ttis-hw-smoke wait --for=delete pod --all --timeout=5m || true
+          helm uninstall tt-operator -n tt-operator-system --wait --timeout 5m || true

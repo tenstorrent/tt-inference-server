@@ -84,7 +84,41 @@ struct BlazeConfig : RunnerConfigBase {
   size_t maxContextLength = defaults::MAX_CONTEXT_LENGTH;
 };
 
-struct EmbeddingConfig : RunnerConfigBase {};
+/** Config for the embedding runners. Deliberately standalone rather than
+ *  derived from MediaRunnerConfigBase: the embedding path reads none of the
+ *  image/TTS weight-distribution fields, and inheriting would make it grow
+ *  whenever those gain a field.
+ *
+ *  The runner drives tt-metal directly (ttnn + the model's generator class),
+ *  so every knob Python's Settings used to resolve lives here now, filled
+ *  from the per-(model, device) table in settings.cpp. */
+struct EmbeddingConfig : RunnerConfigBase {
+  EmbeddingConfig() { runner_type = ModelRunnerType::TT_BGE_LARGE_EN; }
+
+  size_t worker_id = 0;
+  // Chip ids this worker may use, e.g. "0" or "0,1" (from DEVICE_IDS).
+  std::string visible_devices;
+  // Hard cap on requests per forward pass; the parent's dispatch thread forms
+  // batches with it and the model asserts on anything larger.
+  size_t max_batch_size = 1;
+  // Device type string, e.g. "n150" - selects the model's table row.
+  std::string device;
+
+  // HuggingFace repo id, e.g. "BAAI/bge-m3". Triple duty: what clients send
+  // in "model" (and the controller defaults to), what the runner validates
+  // requests against, and the id weights + tokenizer are fetched under.
+  std::string hf_model_id;
+
+  // Tokenizer truncation limit and the model's max_seq_len (vLLM's
+  // max_model_length; varies per device for some models).
+  size_t max_seq_len = 384;
+  // 2-D {rows, cols} passed to ttnn.MeshShape.
+  std::vector<size_t> mesh_shape{1, 1};
+  // 0 = leave ttnn's default (the model doesn't pass the kwarg).
+  size_t num_command_queues = 0;
+  // Bytes reserved for ttnn trace capture at device open.
+  size_t trace_region_size = 0;
+};
 
 struct ImageConfig : MediaRunnerConfigBase {
   ImageConfig() { runner_type = ModelRunnerType::TT_SDXL_GENERATE; }
@@ -120,6 +154,10 @@ struct TtsConfig : RunnerConfigBase {
   uint16_t voiceChannels = defaults::TTS_VOICE_CHANNELS;
   uint32_t audioSampleRateHz = defaults::TTS_AUDIO_SAMPLE_RATE_HZ;
   uint16_t audioChannels = defaults::TTS_AUDIO_CHANNELS;
+
+  // Literal BOS token prepended to the compiled prompt; empty = none.
+  // Read from the tokenizer's tokenizer_config.json in ttsEngineConfig().
+  std::string bosToken;
 
   // Socket descriptor prefixes written by the model launcher into /dev/shm.
   std::string encoderSocketDescriptorPrefix =

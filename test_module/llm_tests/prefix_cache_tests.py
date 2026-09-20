@@ -43,6 +43,7 @@ from llm_module.runner import RunnerResult
 from llm_module.server_control import ServerController
 from workflow_module import accept_blocks
 
+from .._test_common import report_model_fields
 from ..context import MediaContext
 
 logger = logging.getLogger(__name__)
@@ -240,7 +241,7 @@ def run_prefix_cache(
     accept_blocks(
         result.blocks,
         envelope={
-            "model_name": getattr(spec, "model_name", "") or model_repo,
+            **report_model_fields(spec),
             "device": device_label,
             "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         },

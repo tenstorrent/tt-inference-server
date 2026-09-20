@@ -28,6 +28,7 @@ import requests
 
 from report_module.schema import Block
 
+from .benchmark_configs import ensure_custom_dataset
 from .config import DriverContext, LLMRunConfig, ServerConnection
 from .drivers.base import LLMDriver
 from .server_control import ServerController
@@ -130,6 +131,8 @@ class LLMPerformanceRunner:
             if i > 1 and self.inter_run_sleep_s:
                 time.sleep(self.inter_run_sleep_s)
 
+            if self.driver.name == "vllm":
+                cfg = ensure_custom_dataset(cfg, server, context.output_dir)
             outcome = self.driver.run(cfg, server, context)
             result.return_codes.append(outcome.return_code)
             if outcome.return_code != 0:

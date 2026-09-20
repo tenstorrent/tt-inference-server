@@ -7,9 +7,12 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from test_module._test_common import TestConfig
 from test_module.llm_tests.vllm_param_conformance_test import (
     DEFAULT_MODEL_NAME,
+    VLLMDiffusionGemmaParamConformanceTest,
     VLLMParamConformanceTest,
 )
 
@@ -54,3 +57,31 @@ def test_resolve_model_name_defaults_when_unresolved():
     test = _make_test(ctx)
 
     assert test._resolve_model_name() == DEFAULT_MODEL_NAME
+
+
+def test_diffusiongemma_suite_receives_catalog_max_context():
+    ctx = _fake_ctx(
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        model_name="diffusiongemma-26B-A4B-it",
+    )
+    ctx.model_spec.device_model_spec = SimpleNamespace(max_context=262144)
+    test = VLLMDiffusionGemmaParamConformanceTest(
+        TestConfig({}),
+        {},
+        ctx=ctx,
+    )
+
+    assert test.PYTEST_FILENAME == "test_vllm_diffusiongemma.py"
+    assert test._extra_pytest_args() == ["--max-context", "262144"]
+
+
+def test_diffusiongemma_suite_fails_loudly_without_max_context():
+    # A silently missing --max-context would pytest.skip the admission gates.
+    ctx = _fake_ctx(
+        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        model_name="diffusiongemma-26B-A4B-it",
+    )
+    test = VLLMDiffusionGemmaParamConformanceTest(TestConfig({}), {}, ctx=ctx)
+
+    with pytest.raises(RuntimeError, match="max_context"):
+        test._extra_pytest_args()

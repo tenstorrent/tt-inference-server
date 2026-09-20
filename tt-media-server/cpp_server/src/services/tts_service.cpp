@@ -4,14 +4,25 @@
 #include "services/tts_service.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
+#include "metrics/metrics.hpp"
 #include "utils/logger.hpp"
 
 namespace tt::services {
+
+namespace {
+
+double secondsSince(std::chrono::steady_clock::time_point start) {
+  return std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+      .count();
+}
+
+}  // namespace
 
 TtsService::TtsService(config::TtsConfig config,
                        std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -74,11 +85,11 @@ void TtsService::stop() {
   std::vector<StreamCallback> callbacksToCancel;
   {
     std::lock_guard<std::mutex> lock(mutex);
-    callbacksToCancel.reserve(callbacks.size());
-    for (auto& [_, callback] : callbacks) {
-      callbacksToCancel.push_back(std::move(callback));
+    callbacksToCancel.reserve(inFlight.size());
+    for (auto& [_, request] : inFlight) {
+      callbacksToCancel.push_back(std::move(request.callback));
     }
-    callbacks.clear();
+    inFlight.clear();
   }
 
   for (const auto& callback : callbacksToCancel) {
@@ -128,7 +139,21 @@ bool TtsService::generate(domain::tts::TtsRequest request,
     return false;
   }
 
+  // The request clock starts before conditioning, so conditioning is measured
+  // inside the request duration and their ratio is a true fraction. Which
+  // main-process stage runs is decided by the same condition the preprocessor
+  // branches on: a voice sample means PCM normalization, otherwise the
+  // text-only path — tokenizer lookup and prompt compilation, both covered by
+  // TextConditioning. Prompt compilation is timed separately, as PromptCompile,
+  // only on the voice path, where it runs in the worker after the encode.
+  const auto submittedAt = std::chrono::steady_clock::now();
+  const auto conditioningStage =
+      request.voiceSample.has_value()
+          ? tt::metrics::TtsConditioningStage::VoiceNormalization
+          : tt::metrics::TtsConditioningStage::TextConditioning;
   auto task = prepareTask(request);
+  const double conditioningSeconds = secondsSince(submittedAt);
+
   TT_LOG_INFO(
       "[TtsService] Prepared TTS task task_id={} promptTokens={} "
       "voiceWavPcm={}",
@@ -136,16 +161,18 @@ bool TtsService::generate(domain::tts::TtsRequest request,
 
   {
     std::lock_guard<std::mutex> lock(mutex);
-    if (callbacks.size() >= capacityLimit()) {
+    if (inFlight.size() >= capacityLimit()) {
       throw QueueFullException{};
     }
-    callbacks.emplace(task.task_id, std::move(callback));
+    inFlight.emplace(task.task_id,
+                     InFlightRequest{std::move(callback), submittedAt,
+                                     conditioningStage, conditioningSeconds});
   }
 
   if (!queueManager->taskQueue->tryPush(
           tt::ipc::tts::TtsIpcTask::fromDomainTask(task))) {
     std::lock_guard<std::mutex> lock(mutex);
-    callbacks.erase(task.task_id);
+    inFlight.erase(task.task_id);
     throw QueueFullException{};
   }
   return true;
@@ -155,12 +182,17 @@ void TtsService::cancel(uint32_t taskId) {
   StreamCallback callback;
   {
     std::lock_guard<std::mutex> lock(mutex);
-    auto it = callbacks.find(taskId);
-    if (it != callbacks.end()) {
-      callback = std::move(it->second);
-      callbacks.erase(it);
+    auto it = inFlight.find(taskId);
+    if (it != inFlight.end()) {
+      callback = std::move(it->second.callback);
+      inFlight.erase(it);
     }
   }
+  // Deliberately no timing observations here: a client abort ends the request
+  // at an arbitrary point, so its duration would not describe engine time.
+  // Dropping the entry also means the worker's later terminal message finds
+  // nothing to observe, so a cancelled request contributes to neither the
+  // conditioning numerator nor the duration denominator.
 
   TT_LOG_DEBUG("[TtsService] Cancel requested for TTS task {}", taskId);
   if (queueManager) {
@@ -181,7 +213,7 @@ size_t TtsService::capacityLimit() const {
 
 size_t TtsService::currentQueueSize() const {
   std::lock_guard<std::mutex> lock(mutex);
-  return callbacks.size();
+  return inFlight.size();
 }
 
 domain::tts::TtsTask TtsService::prepareTask(
@@ -197,7 +229,7 @@ void TtsService::audioLoop(size_t workerIndex) {
   while (running.load(std::memory_order_acquire) &&
          queue->blockingPop(message)) {
     if (message.isFinal()) {
-      finishRequest(message.task_id, message.finishReason());
+      finishRequest(message.task_id, message);
       continue;
     }
     deliverEvent(message.task_id, message.toDomainChunk());
@@ -211,30 +243,52 @@ bool TtsService::deliverEvent(uint32_t taskId,
   StreamCallback callback;
   {
     std::lock_guard<std::mutex> lock(mutex);
-    auto it = callbacks.find(taskId);
-    if (it == callbacks.end()) {
+    auto it = inFlight.find(taskId);
+    if (it == inFlight.end()) {
       return false;
     }
-    callback = it->second;
+    callback = it->second.callback;
   }
   callback(event);
   return true;
 }
 
-void TtsService::finishRequest(uint32_t taskId,
-                               domain::tts::TtsFinishReason reason) {
-  StreamCallback callback;
+void TtsService::finishRequest(
+    uint32_t taskId, const tt::ipc::tts::TtsAudioChunkMessage& message) {
+  InFlightRequest request;
   {
     std::lock_guard<std::mutex> lock(mutex);
-    auto it = callbacks.find(taskId);
-    if (it == callbacks.end()) {
+    auto it = inFlight.find(taskId);
+    if (it == inFlight.end()) {
       return;
     }
-    callback = std::move(it->second);
-    callbacks.erase(it);
+    request = std::move(it->second);
+    inFlight.erase(it);
   }
-  if (callback) {
-    callback(reason);
+
+  // Every conditioning stage and the request duration are observed here, at the
+  // one point that sees a request through to the end, so all of them describe
+  // the same set of requests. The worker's stages arrive as microseconds on the
+  // terminal message; 0 means the stage did not run for this request (no voice
+  // sample, or the voice-sample cache already held the speech IDs), and is
+  // skipped rather than observed as a zero-length stage.
+  auto& serverMetrics = tt::metrics::ServerMetrics::instance();
+  serverMetrics.onTtsConditioning(request.conditioningStage,
+                                  request.conditioningSeconds);
+  if (message.voiceEncodeUs > 0) {
+    serverMetrics.onTtsConditioning(
+        tt::metrics::TtsConditioningStage::VoiceEncode,
+        static_cast<double>(message.voiceEncodeUs) / 1e6);
+  }
+  if (message.promptCompileUs > 0) {
+    serverMetrics.onTtsConditioning(
+        tt::metrics::TtsConditioningStage::PromptCompile,
+        static_cast<double>(message.promptCompileUs) / 1e6);
+  }
+  serverMetrics.onTtsRequestDuration(secondsSince(request.submittedAt));
+
+  if (request.callback) {
+    request.callback(message.finishReason());
   }
 }
 

@@ -31,6 +31,21 @@ Validate required values and that model/engine/device/impl resolves.
   {{- $available := keys $deviceEntry.impls | sortAlpha | join ", " }}
   {{- fail (printf "No impl '%s' for model '%s' on engine '%s' device '%s'. Available impls: %s" $impl .Values.model $engine .Values.device $available) }}
 {{- end }}
+
+{{/*
+media/forge fall back to a well-known built-in key when API_KEY is unset, which
+looks authenticated but is not, so make the operator pick. vLLM needs no gate:
+it is open unless VLLM_API_KEY is set, which is what auth.apiKey sets.
+*/}}
+{{- $auth := .Values.auth | default dict }}
+{{- if and (dig "apiKey" "" $auth) (dig "disabled" false $auth) }}
+  {{- fail "auth.apiKey and auth.disabled are contradictory: the server would honour NO_AUTH and serve unauthenticated while the key sits in the release Secret. Set one." }}
+{{- end }}
+{{- if or (eq $engine "media") (eq $engine "forge") }}
+  {{- if and (not (dig "apiKey" "" $auth)) (not (dig "disabled" false $auth)) }}
+    {{- fail (printf "engine '%s' authenticates its inference routes with a bearer key, and leaving it unset would silently use the server image's built-in default. Set auth.apiKey=<key> (stored in the release Secret as API_KEY), or auth.disabled=true to run without auth." $engine) }}
+  {{- end }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -144,6 +159,25 @@ with `with (include … | trim)`.
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+hugepages-1Gi request/limit: hugepages.size when set, else one 1Gi page per ASIC
+of the device (deviceChipCounts). Empty for a device with no chip count (gpu/cpu,
+or a shape the map does not cover), which drops the request entirely.
+*/}}
+{{- define "tt-inference-server.hugepagesSize" -}}
+{{- $override := dig "size" "" (.Values.hugepages | default dict) -}}
+{{- if $override -}}
+{{- $override -}}
+{{- else -}}
+{{- $chips := index (.Values.deviceChipCounts | default dict) (.Values.device | lower) -}}
+{{- if $chips -}}{{- printf "%dGi" (int $chips) -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "tt-inference-server.cacheRoot" -}}
+/home/container_app_user/cache_root
+{{- end -}}
 
 {{/*
 Cache hostPath — defaults to /opt/cache/<model>-<device>-<impl>. Includes impl

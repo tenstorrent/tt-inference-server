@@ -326,9 +326,9 @@ for submodule, mock in submodules.items():
 def _install_blacksmith_stubs():
     """Import shims for tt-blacksmith, which only ships in the forge worker image.
 
-    These cannot be MagicMocks like the modules above: trainer_training_lora_runner
-    subclasses LoraLLMTrainer and Callback at import time, and a MagicMock is not
-    a usable base class. Config stubs just record kwargs.
+    Job callbacks subclass Callback at import time, so it cannot be a MagicMock.
+    LoraLLMTrainer is a real class so tests can exercise setup/cleanup. Config
+    stubs just record kwargs.
     """
 
     torch_dtypes = {"torch.bfloat16": "bfloat16", "torch.float32": "float32"}
@@ -338,8 +338,6 @@ def _install_blacksmith_stubs():
             self.__dict__.update(kwargs)
 
     class StubTrainerConfig(StubConfig):
-        # Mirrors TrainerConfig.torch_dtype, which the runner calls when loading
-        # the base model.
         def torch_dtype(self):
             return torch_dtypes[self.dtype]
 
@@ -385,6 +383,18 @@ def _install_blacksmith_stubs():
             self.logger = None
             self.global_step = 0
             self.epoch = 0
+            self.step_loss = None
+
+        def setup(self, config=None, **kwargs):
+            if self.config is not None:
+                self.cleanup()
+            self.config = config
+            self.model = self._load_model()
+            self.train_dataloader, self.val_dataloader = self._load_dataloaders()
+            self.optimizer = self._load_optimizer()
+
+        def _load_model(self):
+            return MagicMock()
 
         def _load_dataloaders(self):
             return MagicMock(), MagicMock()
@@ -394,6 +404,18 @@ def _install_blacksmith_stubs():
 
         def train(self):
             pass
+
+        def cleanup(self):
+            preserved = {"callback_handler"}
+            for attr in list(self.__dict__):
+                if attr not in preserved:
+                    delattr(self, attr)
+            self.config = None
+            self.reproducibility_manager = None
+            self.logger = None
+            self.global_step = 0
+            self.epoch = 0
+            self.step_loss = None
 
     def module(name, **attrs):
         stub = types.ModuleType(name)

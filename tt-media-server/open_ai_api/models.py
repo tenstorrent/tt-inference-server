@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import os
+
 from config.constants import ModelRunners, ModelServices
 from config.settings import settings
 from domain.base_request import BaseRequest
@@ -42,6 +44,9 @@ def list_models():
         model_id = settings.vllm.model
     else:
         model_id = settings.model_weights_path
+    # SERVED_MODEL_NAME decouples the console/API display name from the checkpoint
+    # path in settings.model_weights_path (which is also the HF download ref).
+    model_id = os.environ.get("SERVED_MODEL_NAME") or model_id
     if not model_id:
         return {"object": "list", "data": []}
 

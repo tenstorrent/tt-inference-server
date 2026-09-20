@@ -87,6 +87,26 @@ def test_build_schema_uses_recorded_envelope():
     assert [b.kind for b in schema.sections] == ["benchmarks", "evals"]
 
 
+def test_report_id_uses_full_repo_escaped_matching_block_ids():
+    """report_id is synthesised from the full HF repo (escaped), so it aligns
+    with the block ids -- ``slugify_name_parts(model_repo, device)`` -- rather
+    than the bare basename."""
+    acc = BlockAccumulator()
+    acc.accept(
+        [_benchmark_block()],
+        envelope={
+            "model_name": "Qwen3-32B",
+            "model_repo": "Qwen/Qwen3-32B",
+            "device": "galaxy",
+            "generated_at": "2026-05-05 12:00:00",
+        },
+    )
+    schema = acc.build_schema()
+    report_id = schema.metadata["report_id"]
+    assert report_id.startswith("Qwen__Qwen3-32B_")  # escaped full identity
+    assert "/" not in report_id  # filename-safe
+
+
 def test_build_schema_round_trips_through_report_generator(tmp_path: Path):
     acc = BlockAccumulator()
     acc.accept([_benchmark_block(), _eval_block()], envelope=SWEEP_ENVELOPE)

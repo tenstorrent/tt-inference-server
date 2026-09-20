@@ -21,7 +21,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from report_module.schema import Block
 
-from workflows.utils import (
+from workflow_module.context_helpers import (
     get_num_calls,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,

@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 from .base_test import BaseTest
-from .blockify import block_id, sweep_envelope
+from .blockify import block_id, report_model_fields, sweep_envelope
 from .hardware_requirements import HardwareRequirement
 from .exceptions import NotApplicable, SkipTest
 from .report_types import ReportCheckTypes, TestStatus
@@ -44,6 +44,7 @@ __all__ = [
     "get_video_generation_submit_endpoint",
     "is_i2v_video_model",
     "load_targets",
+    "report_model_fields",
     "run_tiered_check",
     "sweep_envelope",
 ]

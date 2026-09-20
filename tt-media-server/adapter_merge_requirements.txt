@@ -1,0 +1,6 @@
+# CPU-only venv deps for the LoRA adapter -> base model merge (utils/adapter_merge_utils.py).
+# `transformers` and `peft` are NOT pinned here; the Dockerfile injects them from their sources of truth.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+accelerate
+colorama

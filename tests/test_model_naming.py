@@ -5,6 +5,7 @@
 
 The contract is shared with tt-shield, which builds the CI artifact and job
 names this repo parses, so these tests are the executable definition of it.
+See ``docs/model_id_naming.md``.
 """
 
 from __future__ import annotations

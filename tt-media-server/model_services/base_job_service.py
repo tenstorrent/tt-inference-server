@@ -2,6 +2,8 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import os
+from multiprocessing import Manager
 from typing import Any, Optional
 
 from config.constants import JobTypes
@@ -17,6 +19,12 @@ class BaseJobService(BaseService):
     def __init__(self):
         super().__init__()
         self._job_manager = get_job_manager()
+        self._processManager = None
+
+    def _createStartEvent(self):
+        if self._processManager is None:
+            self._processManager = Manager()
+        return self._processManager.Event()
 
     async def create_job(
         self,
@@ -24,12 +32,15 @@ class BaseJobService(BaseService):
         request: BaseRequest,
         org_id: Optional[str] = None,
     ) -> dict:
+        startEvent = self._createStartEvent()
+        request._start_event = startEvent
         return await self._job_manager.create_job(
             job_id=request._task_id,
             job_type=job_type,
-            model=settings.model_weights_path,
+            model=os.environ.get("SERVED_MODEL_NAME") or settings.model_weights_path,
             request=request,
             task_function=self.process_request,
+            start_event=startEvent,
             org_id=org_id,
         )
 

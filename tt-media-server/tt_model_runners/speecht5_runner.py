@@ -7,7 +7,7 @@ import base64
 import io
 import os
 import re
-from typing import Any, AsyncGenerator, Dict, List
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import soundfile as sf
 import torch
@@ -39,6 +39,7 @@ from models.experimental.speecht5_tts.tt.ttnn_speecht5_postnet import (
     preprocess_postnet_parameters,
 )
 from num2words import num2words
+from telemetry.audio_metrics import TtsChunkProgress, record_tts_input_tokens
 from telemetry.telemetry_client import TelemetryEvent
 from transformers import SpeechT5ForTextToSpeech, SpeechT5HifiGan, SpeechT5Processor
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
@@ -544,10 +545,11 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 ).unsqueeze(0), None
             return self.speaker_manager.get_speaker_embedding(speaker_id), speaker_id
 
-    def _generate_mel_for_chunk(self, text: str) -> torch.Tensor:
+    def _generate_mel_for_chunk(self, text: str) -> tuple[torch.Tensor, int]:
         """
         Run encoder + autoregressive decoder loop for one text chunk.
-        Returns mel spectrogram: [1, steps * REDUCTION_FACTOR, num_mel_bins]
+        Returns (mel spectrogram [1, steps * REDUCTION_FACTOR, num_mel_bins],
+        encoder token count before padding).
         Matches the per-chunk mel generation in demo_ttnn.py generate_speech_fp32().
         """
         inputs = self.processor(text=text, return_tensors="pt")
@@ -767,14 +769,20 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
 
         # Stack all mel frames on CPU into [1, steps * REDUCTION_FACTOR, num_mel_bins]
         if spectrogram_frames_cpu:
-            return torch.cat(spectrogram_frames_cpu, dim=1)
-        return torch.zeros(batch_size, 1, num_mel_bins)
+            return torch.cat(spectrogram_frames_cpu, dim=1), real_seq_len
+        return torch.zeros(batch_size, 1, num_mel_bins), real_seq_len
 
     async def _generate_audio_sync(
         self,
         text: str,
+        speaker_id: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Generate audio with automatic chunking for long texts (matches demo_ttnn.py)."""
+        """Generate audio with automatic chunking for long texts (matches demo_ttnn.py).
+
+        ``speaker_id`` is the resolved catalog id (None for a client-supplied
+        embedding); it rides on the response so the API layer can report the
+        voice actually used, not just the one requested.
+        """
         try:
             text = normalize_text_for_tts(text)
             chunks = chunk_text(text, processor=self.processor)
@@ -783,14 +791,22 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     f"Long text ({len(text)} chars) split into {len(chunks)} chunks"
                 )
 
+            # Streaming TTFA/cadence proxy: the endpoint has no streaming mode
+            # (the client always gets the complete utterance), so these record
+            # what streaming would deliver — per-chunk mel generation time,
+            # with the first chunk doubling as the time-to-first-audio floor.
+            progress = TtsChunkProgress(model_type=self.settings.model_runner)
             mel_spectrograms = []
+            total_tokens = 0
             for i, chunk in enumerate(chunks):
                 if len(chunks) > 1:
                     self.logger.info(
                         f"Processing chunk {i + 1}/{len(chunks)}: "
                         f"'{chunk[:60]}{'...' if len(chunk) > 60 else ''}'"
                     )
-                mel = self._generate_mel_for_chunk(chunk)
+                mel, chunk_tokens = self._generate_mel_for_chunk(chunk)
+                progress.on_chunk()
+                total_tokens += chunk_tokens
                 mel_spectrograms.append(mel)
 
             # Concatenate mels from all chunks along time axis, then run vocoder once
@@ -811,6 +827,12 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
             audio_base64 = base64.b64encode(audio_buffer.getvalue()).decode("utf-8")
             duration = len(final_audio.squeeze()) / SpeechT5Constants.SAMPLE_RATE
 
+            # Success-only, matching the handler-side usage metrics: a failed
+            # generation did not convert its tokens to speech.
+            record_tts_input_tokens(
+                model_type=self.settings.model_runner, tokens=total_tokens
+            )
+
             yield {
                 "type": "final_result",
                 "result": TextToSpeechResponse(
@@ -818,6 +840,7 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                     duration=duration,
                     sample_rate=SpeechT5Constants.SAMPLE_RATE,
                     format="wav",
+                    speaker_id=speaker_id,
                 ),
                 "task_id": None,
             }
@@ -873,7 +896,9 @@ class TTSpeechT5Runner(BaseMetalDeviceRunner):
                 )
 
             final_result = None
-            async for result in self._generate_audio_sync(request.text):
+            async for result in self._generate_audio_sync(
+                request.text, speaker_id=speaker_id
+            ):
                 result["task_id"] = request._task_id
                 final_result = result
             if final_result and "result" in final_result:

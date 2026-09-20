@@ -11,7 +11,6 @@
 #include "services/request_pipeline.hpp"
 #include "services/service_container.hpp"
 #include "utils/logger.hpp"
-#include "utils/thread_pool.hpp"
 
 namespace tt::api {
 
@@ -64,62 +63,62 @@ void EmbeddingController::createEmbedding(
   auto request = std::move(*requestOpt);
 
   if (request.model.empty()) {
-    request.model = "BAAI/bge-large-en-v1.5";
+    request.model = tt::config::embeddingEngineConfig().hf_model_id;
   }
 
   uint64_t reqNum = request_counter_.fetch_add(1);
 
   auto submitTime = std::chrono::steady_clock::now();
 
-  tt::utils::controllerCallbackPool().submit([service = service_,
-                                              request = std::move(request),
-                                              callback = std::move(callback),
-                                              reqNum, startTime, submitTime]() {
-    try {
-      auto response = service->submitRequest(std::move(request));
-      auto gotResponseTime = std::chrono::steady_clock::now();
+  // Enqueue directly from the Drogon IO thread and let
+  // the worker dispatch thread deliver the response via this callback
+  auto onComplete = [callback, reqNum, startTime,
+                     submitTime](domain::EmbeddingResponse&& response) {
+    auto gotResponseTime = std::chrono::steady_clock::now();
 
-      if (!response.error.empty()) {
-        callback(errorResponse(drogon::k500InternalServerError, response.error,
-                               "server_error"));
-        return;
-      }
-
-      Json::Value jsonResponse = response.toOpenaiJson();
-      auto builtJsonTime = std::chrono::steady_clock::now();
-
-      auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
-
-      if (reqNum % 100 == 0) {
-        double parseMs =
-            std::chrono::duration<double, std::milli>(submitTime - startTime)
-                .count();
-        double waitMs = std::chrono::duration<double, std::milli>(
-                            gotResponseTime - submitTime)
-                            .count();
-        double buildMs = std::chrono::duration<double, std::milli>(
-                             builtJsonTime - gotResponseTime)
-                             .count();
-        double totalMs =
-            std::chrono::duration<double, std::milli>(builtJsonTime - startTime)
-                .count();
-        TT_LOG_DEBUG(
-            "[EmbeddingController] req={} parse={}ms wait={}ms build={}ms "
-            "total={}ms",
-            reqNum, parseMs, waitMs, buildMs, totalMs);
-      }
-
-      callback(resp);
-
-    } catch (const services::QueueFullException& e) {
-      callback(errorResponse(drogon::k429TooManyRequests, e.what(),
-                             "rate_limit_exceeded"));
-    } catch (const std::exception& e) {
-      callback(errorResponse(drogon::k500InternalServerError,
-                             std::string("Internal error: ") + e.what(),
+    if (!response.error.empty()) {
+      callback(errorResponse(drogon::k500InternalServerError, response.error,
                              "server_error"));
+      return;
     }
-  });
+
+    Json::Value jsonResponse = response.toOpenaiJson();
+    auto builtJsonTime = std::chrono::steady_clock::now();
+
+    auto resp = drogon::HttpResponse::newHttpJsonResponse(jsonResponse);
+
+    if (reqNum % 100 == 0) {
+      double parseMs =
+          std::chrono::duration<double, std::milli>(submitTime - startTime)
+              .count();
+      double waitMs = std::chrono::duration<double, std::milli>(
+                          gotResponseTime - submitTime)
+                          .count();
+      double buildMs = std::chrono::duration<double, std::milli>(
+                           builtJsonTime - gotResponseTime)
+                           .count();
+      double totalMs =
+          std::chrono::duration<double, std::milli>(builtJsonTime - startTime)
+              .count();
+      TT_LOG_DEBUG(
+          "[EmbeddingController] req={} parse={}ms wait={}ms build={}ms "
+          "total={}ms",
+          reqNum, parseMs, waitMs, buildMs, totalMs);
+    }
+
+    callback(resp);
+  };
+
+  try {
+    service_->submitRequestAsync(std::move(request), std::move(onComplete));
+  } catch (const services::QueueFullException& e) {
+    callback(errorResponse(drogon::k429TooManyRequests, e.what(),
+                           "rate_limit_exceeded"));
+  } catch (const std::exception& e) {
+    callback(errorResponse(drogon::k500InternalServerError,
+                           std::string("Internal error: ") + e.what(),
+                           "server_error"));
+  }
 }
 
 }  // namespace tt::api

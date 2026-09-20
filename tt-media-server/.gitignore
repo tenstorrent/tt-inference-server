@@ -2,4 +2,5 @@ venv/
 build/
 cpp_server/build/
 prefill_gateway/build/
-model_store/
+adapters/
+merged_models/

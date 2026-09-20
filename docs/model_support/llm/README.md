@@ -30,6 +30,7 @@ Models with EXPERIMENTAL status are under active development and may have stabil
 | [gpt-oss-20b](gpt-oss-20b_galaxy.md) | - | - | [🛠️ Experimental](gpt-oss-20b_galaxy.md) | - | - | - | - | - | - | [🛠️ Experimental](gpt-oss-20b_t3k.md) | - | - |
 | [AFM-4.5B](AFM-4.5B_t3k.md) | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](AFM-4.5B_t3k.md) | - | [🛠️ Experimental](AFM-4.5B_n300.md) |
 | [DeepSeek-R1-0528](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_dual_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_quad_galaxy.md) | [🛠️ Experimental](DeepSeek-R1-0528_galaxy.md) | - | - | - | - | - | - | - | - | - |
+| [diffusiongemma-26B-A4B-it](diffusiongemma-26B-A4B-it_p300x2.md) | - | - | - | - | - | - | [🛠️ Experimental](diffusiongemma-26B-A4B-it_p300x2.md) | - | - | - | - | - |
 | [Falcon3-7B-Instruct](Falcon3-7B-Instruct_p150.md) | - | - | - | - | - | - | - | - | [🛠️ Experimental](Falcon3-7B-Instruct_p150.md) | - | - | - |
 | [gemma-3-1b-it](gemma-3-1b-it_n150.md) | - | - | - | - | - | - | - | - | - | - | [🛠️ Experimental](gemma-3-1b-it_n150.md) | - |
 | [gemma-4-31B-it](gemma-4-31B-it_p300x2.md) | - | - | - | - | - | - | [🛠️ Experimental](gemma-4-31B-it_p300x2.md) | - | - | - | - | - |
