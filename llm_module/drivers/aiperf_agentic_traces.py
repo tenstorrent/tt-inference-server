@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 # ``local_compute`` the rest -- i.e. the only source that is a genuine miss.
 PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = ("vllm:prompt_tokens_by_source",)
 _LOCAL_HIT_TOKEN_SOURCE = "local_cache_hit"
+_EXTERNAL_HIT_TOKEN_SOURCE = "external_kv_transfer"
 _COMPUTED_TOKEN_SOURCE = "local_compute"
 
 
@@ -564,8 +565,8 @@ def _parse_prefix_cache_metrics(
     actually prefilled on a concurrency-8 replay and reported 8.9% for a cache
     serving 41.1%. See the comments at each branch.
 
-    ``prompt_tokens`` is the run's total prompt tokens, which the token-source
-    branch divides by; that branch is skipped without it.
+    ``prompt_tokens`` is the run's total prompt tokens per AIPerf, used only to
+    cross-check the token-source branch's own denominator.
 
     ``server_metrics_export.json`` is scoped to the profiling phase and
     pre-aggregates each counter's in-window delta into ``stats.total``, so the
@@ -627,9 +628,15 @@ def _parse_prefix_cache_metrics(
                 return float(sum(values))
         return None
 
-    def _counter_total_by_label(aliases: Sequence[str], label: str) -> Dict[str, float]:
-        """Sum one counter per distinct value of ``label``, across endpoints."""
-        totals: Dict[str, float] = {}
+    def _counter_total_per_endpoint(
+        aliases: Sequence[str], label: str
+    ) -> Dict[str, Dict[str, float]]:
+        """Sum one counter per ``label`` value, keyed by endpoint.
+
+        Endpoint identity has to survive here: which worker reported a series
+        is what separates a prefiller's sources from a decoder's.
+        """
+        totals: Dict[str, Dict[str, float]] = {}
         for alias in aliases:
             metric = series_by_metric.get(alias)
             if not isinstance(metric, Mapping):
@@ -644,7 +651,9 @@ def _parse_prefix_cache_metrics(
                 value = stats.get("total")
                 key = labels.get(label)
                 if isinstance(value, (int, float)) and isinstance(key, str):
-                    totals[key] = totals.get(key, 0.0) + float(value)
+                    endpoint = str(s.get("endpoint_url") or "")
+                    by_label = totals.setdefault(endpoint, {})
+                    by_label[key] = by_label.get(key, 0.0) + float(value)
             if totals:
                 return totals
         return totals
@@ -662,41 +671,18 @@ def _parse_prefix_cache_metrics(
         return metrics
 
     # Preferred: the engine partitions every prompt token it scheduled by
-    # origin, so the tokens it had to compute are exactly the misses.
-    #
-    # The rate is taken off that miss side rather than by summing the hit
-    # sources over a denominator of everything scraped. A token is computed at
-    # most once anywhere in the cluster, so ``local_compute`` cannot
-    # double-count; the hit sources can. In a disaggregated deployment every
-    # token the prefiller produced is shipped to the decoder and reappears
-    # there as ``external_kv_transfer``, so the all-endpoint sum is 2x the
-    # prompt and the old ratio reported exactly half the true rate (45.2% for a
-    # cache serving 90.4% on a 1P1D GLM-5.3 replay). Folding
-    # ``external_kv_transfer`` back into the numerator, as InferenceX's
-    # aggregation does, does not undo it: that series also carries the tokens
-    # the prefiller freshly computed, which turns the result into
-    # (1 + true) / 2 and floors it at 50% no matter how the cache performs.
-    #
-    # ``prompt_tokens`` is the server-reported total for the profiling window,
-    # counted once per request by the frontend and therefore immune to the same
-    # double-count. The two are consistent by construction -- the counters and
-    # the usage blocks describe the same requests -- so a ``local_compute``
-    # larger than the whole prompt means the scrape and the profiling window
-    # disagree, and the hits/queries pair below is used instead.
-    by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
-    if by_source and prompt_tokens > 0:
-        computed = by_source.get(_COMPUTED_TOKEN_SOURCE, 0.0)
-        if computed <= prompt_tokens:
-            return _with_endpoints(
-                _token_source_metrics(by_source, computed, prompt_tokens)
-            )
-        logger.warning(
-            "Engine reported %.0f computed prompt tokens against AIPerf's %.0f "
-            "for the profiling window; the scrape window and the profiling "
-            "window disagree, so the token-source partition is ignored.",
-            computed,
-            prompt_tokens,
-        )
+    # origin, so the hit rate is a share of a whole and cannot exceed 100%.
+    # Both sides of the ratio come from that partition, so they describe the
+    # same requests -- AIPerf's own prompt-token total counts only requests
+    # that completed, and would undercount the denominator by whatever was
+    # still in flight when the profiling window closed (5 cancelled requests,
+    # 0.6pp, on a 900s concurrency-8 replay).
+    by_endpoint = _counter_total_per_endpoint(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
+    if by_endpoint:
+        source_metrics = _token_source_metrics(by_endpoint)
+        if source_metrics:
+            _warn_if_double_counted(source_metrics, prompt_tokens)
+            return _with_endpoints(source_metrics)
 
     hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
     queries = _counter_total(PREFIX_CACHE_QUERIES_METRIC_ALIASES)
@@ -727,31 +713,89 @@ def _parse_prefix_cache_metrics(
 
 
 def _token_source_metrics(
-    by_source: Mapping[str, float],
-    computed: float,
-    prompt_tokens: float,
+    by_endpoint: Mapping[str, Mapping[str, float]],
 ) -> Dict[str, Any]:
-    """Build the hit-rate metrics from one token-source partition.
+    """Hit rate and tier split from the engine's token-source partition.
 
-    Also splits the hits by tier, since which tier served them is the actionable
-    part: GPU-cache hits are free, offload-tier hits cost a KV transfer.
-    ``local_cache_hit`` is safe to sum across endpoints (a token is a local hit
-    on the one worker that prefilled it), so the offload tier is taken as the
-    remainder rather than from ``external_kv_transfer``, which double-counts.
-    The split is omitted when the two do not reconcile.
+    Each worker accounts for every prompt token it handled, so a disaggregated
+    deployment describes the same token twice: the prefiller partitions it into
+    ``local_cache_hit`` / ``local_compute``, and the decoder reports the whole
+    prompt again as ``external_kv_transfer`` when the KV arrives over the
+    connector. Summing all three sources over all workers therefore doubles the
+    denominator and halves the rate -- 45.2% for a cache serving 90.4% on a
+    1P1D GLM-5.3 replay. Folding ``external_kv_transfer`` into the numerator to
+    compensate, as InferenceX's aggregation does, does not undo it: the series
+    also carries the tokens the prefiller freshly computed, which turns the
+    result into (1 + true) / 2 and floors it at 50% however the cache performs.
+
+    The duplicate is dropped by counting ``external_kv_transfer`` only on a
+    worker that also recorded local prefix-cache hits. On a prefiller backed by
+    a KV-offload tier it is a genuine hit and belongs in both the numerator and
+    the denominator; on a pure decode worker it is the handoff, and such a
+    worker never serves a prompt token from its own prefix cache.
+    ``local_compute`` counts everywhere, since a token is computed at most once
+    anywhere in the cluster -- including the single token per request the
+    decoder computes to start generating.
+
+    The tier split is kept because it is the actionable part: GPU-cache hits
+    are free, offload-tier hits cost a transfer. Returns ``{}`` when no worker
+    recorded a local hit, since nothing then distinguishes a prefiller from a
+    decoder and a wrong number is worse than a missing one.
     """
-    hit_tokens = prompt_tokens - computed
-    metrics: Dict[str, Any] = {
+    prefilling = [
+        sources
+        for sources in by_endpoint.values()
+        if sources.get(_LOCAL_HIT_TOKEN_SOURCE, 0.0) > 0
+    ]
+    if not prefilling:
+        return {}
+
+    local_hits = sum(s.get(_LOCAL_HIT_TOKEN_SOURCE, 0.0) for s in prefilling)
+    external_hits = sum(s.get(_EXTERNAL_HIT_TOKEN_SOURCE, 0.0) for s in prefilling)
+    computed = sum(s.get(_COMPUTED_TOKEN_SOURCE, 0.0) for s in by_endpoint.values())
+    hit_tokens = local_hits + external_hits
+    prompt_tokens = hit_tokens + computed
+    if prompt_tokens <= 0:
+        return {}
+
+    return {
         "measured_prefix_cache_hit_pct": 100.0 * hit_tokens / prompt_tokens,
         "prefix_cache_hit_tokens_measured": hit_tokens,
         "prefix_cache_prompt_tokens_measured": prompt_tokens,
         "prefix_cache_computed_tokens_measured": computed,
+        "prefix_cache_local_hit_tokens_measured": local_hits,
+        "prefix_cache_external_hit_tokens_measured": external_hits,
     }
-    local_hits = by_source.get(_LOCAL_HIT_TOKEN_SOURCE, 0.0)
-    if 0.0 <= local_hits <= hit_tokens:
-        metrics["prefix_cache_local_hit_tokens_measured"] = local_hits
-        metrics["prefix_cache_external_hit_tokens_measured"] = hit_tokens - local_hits
-    return metrics
+
+
+# A decode worker's prompt tokens duplicate a prefiller's, so leaking one in
+# lands the total near 2x. Anything under this is the in-flight tail AIPerf
+# dropped at the cutoff, which is expected and small.
+_DOUBLE_COUNT_RATIO = 1.5
+
+
+def _warn_if_double_counted(metrics: Mapping[str, Any], prompt_tokens: float) -> None:
+    """Cross-check the engine's denominator against AIPerf's own token count.
+
+    AIPerf counts prompt tokens once per completed request, so it cannot
+    double-count however the fleet is laid out. It is the wrong denominator to
+    divide by -- it misses whatever was still in flight at the cutoff -- but it
+    is the right independent check that the partition above dropped the
+    duplicate it was supposed to.
+    """
+    measured = float(metrics.get("prefix_cache_prompt_tokens_measured") or 0.0)
+    if prompt_tokens <= 0 or measured <= prompt_tokens * _DOUBLE_COUNT_RATIO:
+        return
+    logger.warning(
+        "Prefix-cache denominator is %.0f prompt tokens against AIPerf's %.0f "
+        "(%.1fx): a worker's tokens are likely being counted twice, which "
+        "would deflate the %.1f%% hit rate. Check the token-source partition "
+        "per endpoint in server_metrics_export.json.",
+        measured,
+        prompt_tokens,
+        measured / prompt_tokens,
+        float(metrics.get("measured_prefix_cache_hit_pct") or 0.0),
+    )
 
 
 def _summarize_errors(error_summary: List[Any]) -> List[Dict[str, Any]]:

@@ -1003,32 +1003,49 @@ class TestPrefixCacheTokenSources:
         metrics = parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
         assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(90.0)
 
-    def test_counters_wider_than_the_profiling_window_fall_back(self, tmp_path):
-        """More computed tokens than the run had prompt tokens means the scrape
-        covered traffic AIPerf did not; the partition cannot be divided by a
-        denominator it does not match."""
-        metrics_export = _by_source(
-            worker={"local_cache_hit": 900, "local_compute": 5000}
-        )
-        metrics_export.update(
-            {
-                "vllm:prefix_cache_hits": {"series": [{"stats": {"total": 800.0}}]},
-                "vllm:prefix_cache_queries": {"series": [{"stats": {"total": 1000.0}}]},
-            }
-        )
-        _write_server_metrics(tmp_path, metrics=metrics_export)
-        metrics = parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
-        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(80.0)
-
-    def test_without_a_prompt_token_total_the_partition_is_skipped(self, tmp_path):
+    def test_the_denominator_covers_requests_aiperf_dropped(self, tmp_path):
+        """Both sides come from the partition, so the in-flight requests
+        cancelled at the cutoff -- which the engine prefilled but AIPerf's usage
+        total never counted -- cannot skew the ratio."""
         _write_server_metrics(
             tmp_path,
-            metrics=_by_source(worker={"local_cache_hit": 900, "local_compute": 100}),
+            metrics=_by_source(
+                prefill={"local_cache_hit": 12201984, "local_compute": 1990667},
+                decode={"local_compute": 236, "external_kv_transfer": 14192651},
+            ),
         )
         metrics = parse_aiperf_output(
-            _write_summary(tmp_path, total_isl={"unit": "tokens", "avg": 0.0})
+            _write_summary(tmp_path, **_prompt_tokens(13650038))
         )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            85.97, abs=1e-2
+        )
+        assert metrics["prefix_cache_prompt_tokens_measured"] == 14192887.0
+
+    def test_a_worker_with_no_local_hits_cannot_be_told_from_a_decoder(self, tmp_path):
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                worker={"external_kv_transfer": 900, "local_compute": 100}
+            ),
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
         assert "measured_prefix_cache_hit_pct" not in metrics
+
+    def test_a_leaked_duplicate_is_warned_about(self, tmp_path, caplog):
+        """The decoder here reports a local hit, so it passes for a prefiller
+        and its transfer inflates the denominator. AIPerf's own token count is
+        the independent check that catches it."""
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                prefill={"local_cache_hit": 900, "local_compute": 100},
+                decode={"local_cache_hit": 1, "external_kv_transfer": 1000},
+            ),
+        )
+        with caplog.at_level("WARNING"):
+            parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
+        assert "counted twice" in caplog.text
 
 
 class TestUsageCacheHitFallback:

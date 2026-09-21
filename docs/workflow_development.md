@@ -719,22 +719,37 @@ needs no flag: AIPerf scrapes `<url>/metrics` by default and writes
 counter's in-window delta pre-aggregated into `stats.total` — which is also why
 the cache-priming warmup does not drag the number down.
 
-The rate is derived from the miss side: one minus the tokens the engine had to
-compute (`vllm:prompt_tokens_by_source{source="local_compute"}`, summed across
-endpoints) over the run's prompt tokens. That is deliberate rather than the
-obvious ratio of hit sources to everything scraped. A token is computed at most
-once anywhere in the cluster, so the miss side cannot double-count; the hit
-sources can. On a disaggregated deployment every token the prefiller produced is
-shipped to the decoder and reappears there as `external_kv_transfer`, so the
-all-endpoint sum is twice the prompt and that ratio reports exactly half the
-true rate. Adding `external_kv_transfer` back into the numerator does not fix
-it — the series also carries the tokens the prefiller freshly computed, which
-turns the result into `(1 + true) / 2` and floors it at 50%. Where the hits came
-from is kept separately as `prefix_cache_local_hit_tokens_measured` (GPU cache,
-free) and `prefix_cache_external_hit_tokens_measured` (offload tier, costs a KV
-transfer). When the counters are absent the driver falls back to the server's
-per-request usage accounting (`prompt_tokens_details.cached_tokens`, which needs
-vLLM's `--enable-prompt-tokens-details` or SGLang's `--enable-cache-report`), and
+The rate comes from `vllm:prompt_tokens_by_source`, which partitions every
+prompt token the engine scheduled into `local_cache_hit`, `external_kv_transfer`
+and `local_compute`. Summing all three over every scraped endpoint is the
+obvious reading and it is wrong on a disaggregated deployment: each worker
+accounts for every token it handled, so the prefiller partitions a token and the
+decoder then reports the same token again as `external_kv_transfer` when the KV
+arrives over the connector. The denominator doubles and the rate halves — 45.2%
+for a cache serving 90.4% on a 1P1D GLM-5.3 replay. Folding
+`external_kv_transfer` into the numerator to compensate does not fix it either:
+the series also carries the tokens the prefiller freshly computed, so the result
+becomes `(1 + true) / 2`, floored at 50% and reading plausibly high (96.4% for a
+cache serving 92.7%) exactly when the true rate is already good.
+
+The parser drops the duplicate by counting `external_kv_transfer` only on a
+worker that also recorded local prefix-cache hits — a genuine offload-tier hit
+on a prefiller, the handoff on a decoder, and a pure decode worker never serves a
+prompt token from its own prefix cache. `local_compute` counts everywhere, since
+a token is computed at most once in the cluster. Both sides of the ratio
+therefore come from the same partition, which matters because AIPerf's own
+prompt-token total counts only requests that *completed* and would undercount the
+denominator by whatever was in flight at the cutoff (5 cancelled requests, 0.6pp,
+on a 900s concurrency-8 replay). That total is still used as an independent
+cross-check: a denominator above 1.5x it means a duplicate leaked back in, and
+the driver warns. Where the hits came from is kept as
+`prefix_cache_local_hit_tokens_measured` (GPU cache, free) and
+`prefix_cache_external_hit_tokens_measured` (offload tier, costs a transfer).
+When no worker reports a local hit there is nothing to tell a prefiller from a
+decoder, so the partition is skipped. The driver then falls back to the
+hits/queries counters, then to the server's per-request usage accounting
+(`prompt_tokens_details.cached_tokens`, which needs vLLM's
+`--enable-prompt-tokens-details` or SGLang's `--enable-cache-report`), and
 failing that omits the field so the report drops the column rather than
 publishing a 0% that reads like a broken cache.
 
