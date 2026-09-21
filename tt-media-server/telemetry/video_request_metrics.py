@@ -28,7 +28,36 @@ _LABELS = ["model_type", "request_type"]
 # duration_seconds is validated to 1..60 on VideoGenerateRequest. The ladder
 # runs to 80 so raising that cap degrades the histogram to coarse rather than
 # clipping every longer clip into +Inf.
-_DURATION_BUCKETS = (1, 2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 80, float("inf"))
+# duration_seconds is validated to 1..60. MiniMax-H3, the one runner that
+# constrains it further, serves the integers 4..15 (MINIMAX_H3_DURATIONS_S), so
+# the ladder resolves every one of those individually — a coarser ladder would
+# collapse its working points into four buckets and make the distribution
+# useless as the capacity input it is described as. Above 15 the steps widen,
+# and the top bucket sits past the 60s validation cap so raising that cap
+# degrades to coarse rather than clipping into +Inf.
+_DURATION_BUCKETS = (
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    20,
+    30,
+    45,
+    60,
+    80,
+    float("inf"),
+)
 
 # Aspect ratios published as their own label value. Everything else collapses
 # to ASPECT_RATIO_OTHER.
@@ -66,11 +95,23 @@ requested_duration = Histogram(
 
 
 def bucket_aspect_ratio(raw: object) -> str:
-    """Map a caller-supplied aspect ratio onto a bounded label value."""
+    """Map a caller-supplied aspect ratio onto a bounded label value.
+
+    Normalises the way the platform does before comparing. MiniMax-H3's
+    ``minimax_h3_parse_aspect_ratio`` accepts ``"16x9"``, ``"16/9"`` and
+    ``" 16:9 "`` as 16:9 — it does ``strip()`` then maps ``x`` and ``/`` onto
+    ``:`` before validating. Matching the raw string here would label every one
+    of those "other" while the server happily serves them as 16:9, which
+    manufactures false entries in exactly the bucket whose job is to flag
+    shapes we do not support.
+    """
     if raw is None or raw == "":
         return ASPECT_RATIO_UNSET
-    if isinstance(raw, str) and raw in _KNOWN_ASPECT_RATIOS:
-        return raw
+    if not isinstance(raw, str):
+        return ASPECT_RATIO_OTHER
+    normalised = raw.strip().replace("x", ":").replace("/", ":")
+    if normalised in _KNOWN_ASPECT_RATIOS:
+        return normalised
     return ASPECT_RATIO_OTHER
 
 
@@ -97,5 +138,5 @@ def observe_video_request(request: object, model_type: str, request_type: str) -
         duration = getattr(request, "duration_seconds", None)
         if duration:
             requested_duration.labels(*labels).observe(duration)
-    except Exception:  # pragma: no cover - defensive
-        logger.warning("video request metrics: failed to record request shape")
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"video request metrics: failed to record request shape: {e}")

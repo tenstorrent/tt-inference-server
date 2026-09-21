@@ -6,17 +6,22 @@
 
 Complements :mod:`telemetry.image_metrics`, which times what the engine *did*
 (denoise loop, VAE decode, conditioning). This module records what was
-*requested* — conditioning path, denoising steps and guidance scale — so a
-shift in the timing metrics can be attributed to a change in the incoming
-workload rather than to the engine.
-
-Batch size is deliberately absent: `batch` is already a label on the denoise,
-VAE and conditioning metrics in :mod:`telemetry.image_metrics`.
+*requested* — conditioning path, denoising steps, guidance scale, output
+resolution and batch size — so a shift in the timing metrics can be attributed
+to a change in the incoming workload rather than to the engine.
 
 Recorded once per client request in :meth:`ImageService.pre_process`, before
 segmentation. ``create_segment_request`` fans a multi-image request out into
-one request per image, so recording in a runner would count batch size as
-several separate requests and misreport the arrival rate.
+one request per image, so recording in a runner would count one client request
+several times and misreport the arrival rate.
+
+Batch size in particular is ONLY observable here. The `batch` label on the
+stage metrics is the device-side batch — ``max(self.batch_size -
+needed_padding, len(images), 1)`` in ``base_sdxl_runner``, and a hardcoded 1 in
+``dit_runners`` and ``z_image_turbo_runner`` — and segmentation has already set
+``number_of_images = 1`` by the time a runner sees the request. Without this
+module a 4-image request is indistinguishable from four 1-image requests in
+every metric the server exports.
 """
 
 from __future__ import annotations
@@ -51,6 +56,26 @@ _LABELS = ["model_type", "conditioning"]
 # minimums. The ladder runs past 50 so that raising the cap degrades the
 # histogram to coarse rather than clipping everything into +Inf.
 _STEP_BUCKETS = (4, 8, 12, 16, 20, 25, 30, 40, 50, 64, 100, float("inf"))
+
+# number_of_images is validated to 1..4.
+_BATCH_BUCKETS = (1, 2, 3, 4, 8, float("inf"))
+
+# width/height are validated to 256..1536 each, so a request spans roughly
+# 0.065 MP (256x256) to 2.36 MP (1536x1536). The ladder covers that with room
+# above, so raising the cap degrades to coarse rather than clipping into +Inf.
+_MEGAPIXEL_BUCKETS = (
+    0.0625,
+    0.125,
+    0.25,
+    0.5,
+    0.786,
+    1.0,
+    1.5,
+    2.36,
+    4.0,
+    8.0,
+    float("inf"),
+)
 
 # guidance_scale is validated to 1.0..20.0. Values cluster low, so the ladder
 # is denser there; the tail past 20 exists only to make an out-of-range request
@@ -91,6 +116,21 @@ requested_guidance_scale = Histogram(
 )
 
 
+requested_images = Histogram(
+    "tt_media_server_image_requested_images",
+    "Images requested per image request (batch size, before segmentation)",
+    _LABELS,
+    buckets=_BATCH_BUCKETS,
+)
+
+requested_megapixels = Histogram(
+    "tt_media_server_image_requested_megapixels",
+    "Requested output resolution per image request, in megapixels (width x height)",
+    _LABELS,
+    buckets=_MEGAPIXEL_BUCKETS,
+)
+
+
 def conditioning_of(request: ImageGenerateRequest) -> str:
     """Return the conditioning path for ``request``.
 
@@ -98,9 +138,11 @@ def conditioning_of(request: ImageGenerateRequest) -> str:
     ImageToImageRequest, so an isinstance chain in the other order would report
     every edit as a plain image-to-image.
 
-    Imported lazily because the edit and image-to-image domain modules import
-    the generate module, and importing them at module scope here would create a
-    cycle through ``telemetry``.
+    Imported lazily, not for a cycle — nothing under ``domain`` or ``config``
+    imports ``telemetry`` — but because several test modules park a Mock under
+    ``sys.modules["domain.image_generate_request"]`` at import time (see
+    ``tests/test_device_worker.py``). Resolving these inside the call keeps the
+    isinstance checks bound to the real classes.
     """
     from domain.image_edit_request import ImageEditRequest
     from domain.image_to_image_request import ImageToImageRequest
@@ -134,5 +176,20 @@ def observe_image_request(request: ImageGenerateRequest, model_type: str) -> Non
         if guidance is not None:
             requested_guidance_scale.labels(*labels).observe(guidance)
 
-    except Exception:  # pragma: no cover - defensive
-        logger.warning("image request metrics: failed to record request shape")
+        count = getattr(request, "number_of_images", None)
+        if count:
+            requested_images.labels(*labels).observe(count)
+
+        # width/height are optional and validated both-or-neither, so one
+        # being set is enough to trust the pair. Runners that do not support
+        # per-request resolution ignore them, which is exactly why the
+        # REQUESTED value is worth recording separately from the `resolution`
+        # label the stage metrics read off the produced image: the two
+        # diverging is the signal.
+        width = getattr(request, "width", None)
+        height = getattr(request, "height", None)
+        if width and height:
+            requested_megapixels.labels(*labels).observe(width * height / 1_000_000)
+
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning(f"image request metrics: failed to record request shape: {e}")

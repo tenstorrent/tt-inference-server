@@ -44,8 +44,7 @@ def test_conditioning_of_image_to_image():
 def test_conditioning_of_edit_is_not_reported_as_image_to_image():
     """The isinstance chain must be checked most-derived first.
 
-    ImageEditRequest subclasses ImageToImageRequest (adding a required mask, so
-    "edit" here is inpainting), and an isinstance chain in the other order
+    ImageEditRequest subclasses ImageToImageRequest, and an isinstance chain in the other order
     silently reports every edit as a plain image-to-image — the two paths would
     become indistinguishable and the edit share would read as zero forever.
     """
@@ -61,6 +60,20 @@ def test_conditioning_of_edit_is_not_reported_as_image_to_image():
     )
 
 
+def test_conditioning_of_maskless_edit():
+    """A mask-free edit is still an edit.
+
+    mask became Optional so the shared /edits endpoint serves both mask-based
+    inpainting (SDXL) and instruction-only editing (FLUX.1-Kontext). Keying
+    conditioning off the presence of a mask instead of the request class would
+    mislabel every Kontext edit as plain image-to-image — and the mask-carrying
+    test above would still pass, so this case has to be pinned separately.
+    """
+    req = ImageEditRequest(prompt="make it night", image="data:image/png;base64,AA")
+    assert req.mask is None
+    assert conditioning_of(req) == CONDITIONING_EDIT
+
+
 def test_observe_records_shape_and_labels():
     model = "test-shape-labels"
     observe_image_request(
@@ -71,20 +84,54 @@ def test_observe_records_shape_and_labels():
     assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
     assert sample("tt_media_server_image_requested_steps_sum", **labels) == 25
     assert sample("tt_media_server_image_requested_guidance_scale_sum", **labels) == 7.5
+    assert sample("tt_media_server_image_requested_images_sum", **labels) == 2
 
 
 def test_observe_counts_a_batch_as_one_request():
-    """One client request is one increment, whatever its batch size.
+    """One client request is one increment; batch size is an observation.
 
     ImageService fans a multi-image request out via create_segment_request into
-    one request per image. Recording anywhere downstream of pre_process would
-    count a 4-image request four times and inflate the arrival rate.
+    one request per image, setting number_of_images = 1 on each. Recording
+    anywhere downstream would count a 4-image request four times and inflate
+    the arrival rate — and would lose the requested batch size entirely, since
+    the `batch` label on the stage metrics is the DEVICE-side batch, not this.
     """
     model = "test-shape-batch"
     observe_image_request(_t2i(number_of_images=4), model)
 
     labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
     assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
+    assert sample("tt_media_server_image_requested_images_sum", **labels) == 4
+
+
+def test_observe_records_requested_resolution():
+    """Requested width/height, recorded as megapixels.
+
+    Worth recording separately from the `resolution` label on the stage
+    metrics: that one is read off the PRODUCED image, so it is absent entirely
+    when a run fails, and some runners ignore per-request width/height. The
+    two diverging is the signal.
+    """
+    model = "test-shape-resolution"
+    observe_image_request(_t2i(width=1024, height=1024), model)
+
+    labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
+    (count,) = (sample("tt_media_server_image_requested_megapixels_count", **labels),)
+    assert count == 1
+    got = sample("tt_media_server_image_requested_megapixels_sum", **labels)
+    assert abs(got - 1024 * 1024 / 1_000_000) < 1e-9, got
+
+
+def test_observe_skips_unset_resolution():
+    """width/height are optional; absent means the runner default applies."""
+    model = "test-shape-no-resolution"
+    observe_image_request(_t2i(), model)
+
+    labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
+    assert sample("tt_media_server_image_requested_megapixels_count", **labels) in (
+        0,
+        None,
+    )
 
 
 def test_observe_separates_conditioning_paths():

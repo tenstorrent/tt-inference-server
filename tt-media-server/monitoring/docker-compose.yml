@@ -61,6 +61,10 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >-
+        case "$$DEPLOYMENT_NAME" in *[!A-Za-z0-9._-]*)
+        echo "DEPLOYMENT_NAME must contain only letters, digits, dot, underscore or hyphen (got: $$DEPLOYMENT_NAME). It is substituted into the config, where an & or | would be interpreted rather than inserted — & silently yields a bogus identity and | aborts the render." >&2;
+        exit 1;;
+        esac;
         if [ -n "$$REMOTE_WRITE_URL" ] && [ -z "$$DEPLOYMENT_NAME" ]; then
         echo "REMOTE_WRITE_URL is set but DEPLOYMENT_NAME is empty. Set DEPLOYMENT_NAME to a stable, unique name for this deployment (site or cluster, not the container hostname) — without it every deployment writes identical instance labels and collides into one series." >&2;
         exit 1;
