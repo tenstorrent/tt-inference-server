@@ -1008,7 +1008,7 @@ templates:
       env_vars:
         QWEN_VLLM_KV_POOL_TOKENS: "1050592"
         QWEN_BATCHED_PREFILL: "1"
-        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded"
+        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
         QWEN_PREFILL_STARTUP_WARMUP: "1"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
@@ -1056,7 +1056,7 @@ templates:
       env_vars:
         QWEN_VLLM_KV_POOL_TOKENS: "1050592"
         QWEN_BATCHED_PREFILL: "1"
-        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded"
+        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
         QWEN_PREFILL_STARTUP_WARMUP: "1"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
