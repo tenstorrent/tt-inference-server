@@ -10,8 +10,9 @@ what the media-server accepts cannot drift from what the pipeline is warmed for.
 request-transport concerns that pull in ``av`` -- media probing and reference-clip windows -- live
 here.
 
-Ref2VA reference *counts* match ``packing_ref2va`` (9 / 3 / 3). Per-clip and combined duration
-windows are the product contract and are enforced here; the pipeline truncates instead of refusing.
+Ref2VA reference *counts* match ``packing_ref2va`` (9 / 3 / 3, 12 total). Per-clip and combined
+duration windows are the product contract and are enforced here; the pipeline truncates instead of
+refusing.
 """
 
 import io
@@ -50,6 +51,7 @@ __all__ = [
     "MINIMAX_H3_MAX_REFERENCE_IMAGES",
     "MINIMAX_H3_MAX_REFERENCE_VIDEOS",
     "MINIMAX_H3_MAX_REFERENCE_AUDIOS",
+    "MINIMAX_H3_MAX_REFERENCES",
     "MINIMAX_H3_REF_CLIP_MIN_S",
     "MINIMAX_H3_REF_CLIP_MAX_S",
     "MINIMAX_H3_REF_COMBINED_MAX_S",
@@ -60,11 +62,12 @@ __all__ = [
     "check_reference_clip_durations",
 ]
 
-# Ref2VA omni-reference limits. Counts match packing_ref2va; duration windows
-# are the product card (the pipeline does not enforce them).
+# Ref2VA omni-reference limits. Counts match packing_ref2va (per-type and total);
+# duration windows are the product card (the pipeline does not enforce them).
 MINIMAX_H3_MAX_REFERENCE_IMAGES = 9
 MINIMAX_H3_MAX_REFERENCE_VIDEOS = 3
 MINIMAX_H3_MAX_REFERENCE_AUDIOS = 3
+MINIMAX_H3_MAX_REFERENCES = 12
 MINIMAX_H3_REF_CLIP_MIN_S = 2.0
 MINIMAX_H3_REF_CLIP_MAX_S = 15.0
 MINIMAX_H3_REF_COMBINED_MAX_S = 15.0

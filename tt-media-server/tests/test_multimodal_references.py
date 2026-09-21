@@ -13,6 +13,7 @@ from tt_model_runners.minimax_h3_policy import (
     MINIMAX_H3_MAX_REFERENCE_AUDIOS,
     MINIMAX_H3_MAX_REFERENCE_IMAGES,
     MINIMAX_H3_MAX_REFERENCE_VIDEOS,
+    MINIMAX_H3_MAX_REFERENCES,
     check_reference_clip_durations,
 )
 
@@ -96,6 +97,39 @@ class TestMultimodalReferences:
         assert len(refs.images) == 1
         assert len(refs.videos) == 1
         assert len(refs.audios) == 1
+
+    def test_total_at_cap_accepted(self):
+        refs = MultimodalReferences(
+            images=[
+                MediaSource(b64=_TINY_PNG_BASE64)
+                for _ in range(MINIMAX_H3_MAX_REFERENCE_IMAGES)
+            ],
+            videos=[
+                MediaSource(url="https://example.com/v.mp4")
+                for _ in range(MINIMAX_H3_MAX_REFERENCE_VIDEOS)
+            ],
+        )
+        assert (
+            len(refs.images) + len(refs.videos) + len(refs.audios)
+            == MINIMAX_H3_MAX_REFERENCES
+        )
+
+    def test_total_over_cap_rejected(self):
+        with pytest.raises(ValidationError, match="in total"):
+            MultimodalReferences(
+                images=[
+                    MediaSource(b64=_TINY_PNG_BASE64)
+                    for _ in range(MINIMAX_H3_MAX_REFERENCE_IMAGES)
+                ],
+                videos=[
+                    MediaSource(url="https://example.com/v.mp4")
+                    for _ in range(MINIMAX_H3_MAX_REFERENCE_VIDEOS)
+                ],
+                audios=[
+                    MediaSource(url="https://example.com/a.wav")
+                    for _ in range(MINIMAX_H3_MAX_REFERENCE_AUDIOS)
+                ],
+            )
 
 
 class TestVideoRef2VAGenerateRequest:
