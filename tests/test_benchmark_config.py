@@ -258,6 +258,7 @@ def test_qwen38_concurrent_profiles_use_matching_device_batch(
 
     assert model_spec.device_model_spec.max_concurrency == concurrency
     assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == str(concurrency)
+    assert model_spec.device_model_spec.vllm_args["max_num_batched_tokens"] == "1050592"
     assert (
         model_spec.device_model_spec.env_vars["QWEN_VLLM_KV_POOL_TOKENS"] == "1050592"
     )

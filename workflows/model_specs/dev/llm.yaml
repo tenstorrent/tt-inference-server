@@ -1019,6 +1019,8 @@ templates:
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
         max_num_seqs: "8"
+        # Match admission to the existing shared KV capacity, not one context.
+        max_num_batched_tokens: "1050592"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1066,6 +1068,8 @@ templates:
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
         max_num_seqs: "16"
+        # Match admission to the existing shared KV capacity, not one context.
+        max_num_batched_tokens: "1050592"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
