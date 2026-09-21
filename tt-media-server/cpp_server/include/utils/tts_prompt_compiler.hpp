@@ -18,14 +18,22 @@ namespace tt::utils::tts_prompt_compiler {
 
 namespace tts_tokens = tt::utils::tts_tokenizer;
 
-// TTS-2 prompt format:
+// TTS-2 prompt format (2026-09 / v2):
 //   TVD / description-only:
 //     <|voice_prompt_start|>{description}<|voice_prompt_end|>
-//     <|bot|>{text}<|speech_start|>
+//     <|bot|>[<|instruction_start|>{instruction}<|instruction_end|>]{text}
+//     <|reserved_token_0..7|><|speech_start|>
 //   Voice-clone continuation:
 //     <|audio_prompt_start|><|s_12|><|s_34|>...<|audio_prompt_end|>
 //     <|voice_prompt_start|>{description}<|voice_prompt_end|>
-//     <|bot|>{text}<|speech_start|>
+//     <|bot|>[instruction]{text}<|reserved_token_0..7|><|speech_start|>
+//
+// Two things changed in v2 and both are silent if wrong -- the model simply
+// produces worse audio, with no error anywhere:
+//   * an instruction is WRAPPED in instruction tokens, not rendered as a
+//     bracketed "[say with anger] ..." prefix;
+//   * eight readout tokens precede every generated speech segment.
+// Mirrors the reference at tts-models/prompting.py.
 //
 // The final string is tokenized by the TTS tokenizer; speech IDs are encoded as
 // literal tokenizer tokens like <|s_123|>, not inserted as raw token IDs.
@@ -60,10 +68,25 @@ inline void validatePromptInputs(
   }
 }
 
+// Renders a turn's instruction together with its transcript. Empty
+// instruction returns the text unchanged; note the wrapped form concatenates
+// with NO separator, matching the reference.
+inline std::string formatInstruction(const std::string& text,
+                                     const std::string& instruction) {
+  const std::string trimmedInstruction = trim(instruction);
+  if (trimmedInstruction.empty()) {
+    return text;
+  }
+  const std::string wrapped = std::string(tts_tokens::INSTRUCTION_START_TOKEN) +
+                              trimmedInstruction +
+                              tts_tokens::INSTRUCTION_END_TOKEN;
+  return text.empty() ? wrapped : wrapped + text;
+}
+
 inline std::string compilePromptString(
     const std::string& text, const std::optional<std::string>& description,
     const std::vector<uint32_t>& promptSpeechIds = {},
-    const std::string& bosToken = "") {
+    const std::string& bosToken = "", const std::string& instruction = "") {
   validatePromptInputs(text, description);
 
   std::ostringstream prompt;
@@ -86,8 +109,8 @@ inline std::string compilePromptString(
            << tts_tokens::VOICE_PROMPT_END_TOKEN;
   }
 
-  prompt << tts_tokens::BOT_TOKEN << trim(text)
-         << tts_tokens::SPEECH_START_TOKEN;
+  prompt << tts_tokens::BOT_TOKEN << formatInstruction(trim(text), instruction)
+         << tts_tokens::readoutTokens() << tts_tokens::SPEECH_START_TOKEN;
   return prompt.str();
 }
 
@@ -95,9 +118,10 @@ inline std::vector<uint32_t> compilePromptTokens(
     const tt::utils::tokenizers::Tokenizer& tokenizer, const std::string& text,
     const std::optional<std::string>& description,
     const std::vector<uint32_t>& promptSpeechIds = {},
-    const std::string& bosToken = "") {
-  return tokenizer.encode(
-      compilePromptString(text, description, promptSpeechIds, bosToken));
+    const std::string& bosToken = "", const std::string& instruction = "") {
+  return tokenizer.encode(compilePromptString(text, description,
+                                              promptSpeechIds, bosToken,
+                                              instruction));
 }
 
 }  // namespace tt::utils::tts_prompt_compiler
