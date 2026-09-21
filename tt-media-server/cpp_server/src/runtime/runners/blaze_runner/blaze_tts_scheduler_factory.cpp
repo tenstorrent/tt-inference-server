@@ -315,9 +315,25 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   // yet -- see the note below.
   params.chunk_tokens = config.chunkTokens;
   params.first_chunk_tokens = config.firstChunkTokens;
-  // TODO(ramp): the engine exposes only first/steady. Until it carries a
-  // second-chunk size, config.secondChunkTokens is applied by the scheduler
-  // wrapper by chunk index; the engine still sees one size per call.
+  // BLOCKED ON THE ENGINE: TtsSchedulerParams exposes first_chunk_tokens and
+  // chunk_tokens only, so the transitional second chunk cannot be expressed.
+  // config.secondChunkTokens is parsed, validated and range-checked against
+  // the decoder pool, but has no engine field to land in yet.
+  //
+  // Do NOT work around it by collapsing the ramp. 17 -> 48 -> 48 puts a
+  // 48-token chunk against the 180 ms SC deadline, which needs ~271 ms to
+  // generate and misses outright; 17 -> 32 -> 32 meets every deadline but
+  // gives up the concurrency the ramp exists for (~646 vs ~802 max C, because
+  // the 0.24 s withheld per chunk is a fixed tax that larger chunks dilute).
+  // The fix is a second_chunk_tokens field in TtsSchedulerParams.
+  if (config.secondChunkTokens != config.chunkTokens &&
+      config.secondChunkTokens != config.firstChunkTokens) {
+    TT_LOG_WARN(
+        "makeEngineTtsParams: TTS_SECOND_CHUNK_TOKENS={} is not yet honoured; "
+        "the engine has no second-chunk field, so chunk 2 will use {} tokens. "
+        "The 180 ms SC deadline assumes {}.",
+        config.secondChunkTokens, config.chunkTokens, config.secondChunkTokens);
+  }
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
   // Rows per fused H2D page (m), a separate lever from max_batch_size (B). B
   // caps how many chunks are mid-flight; m caps how many distinct users ride
