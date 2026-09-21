@@ -683,6 +683,22 @@ templates:
         no-enable-chunked-prefill: true
         reasoning-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking":true}'
+        # Tool calling, same requirement as the autoport entry above:
+        # mini-swe-agent (swe_bench_verified) sends tool_choice:"auto", which
+        # vLLM refuses without these flags (60x HTTP 400 zeroed the eval on
+        # run 32355285037, tt-agentic-bringup-qb2#2). The gemma4 tool parser
+        # is text-level (registered by vllm-tt-plugin), independent of the
+        # device implementation.
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Render chat requests with message content as plain strings, same as
+        # the autoport entry: vLLM's parts normalization plus the template's
+        # system-turn parts branch leaves a stray space before <turn|> on
+        # every request with a system message (tt-agentic-bringup-qb2#42).
+        # Template-level, so it applies to this implementation too; "string"
+        # is byte-identical to reference apply_chat_template (verified
+        # in-image against vLLM 0.26.0 renderers/hf.py, 2026-09-09).
+        chat_template_content_format: string
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
