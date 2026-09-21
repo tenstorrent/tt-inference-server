@@ -222,23 +222,25 @@ templates:
   # drafter, K=5). Same B=1 profile as 31B MTP. 12B has no z-lab dFlash
   # checkpoint, so MTP is the only spec path for this size.
   #
-  # KNOWN ISSUE (2026-09-14): this model emits DEGENERATE text on this stack --
-  # "The capital of France is" -> "11"; r1_gpqa_diamond (10 samples, seq=1)
-  # scores 0 with every response empty. It reproduces on the PLAIN BASELINE
-  # decode path too (4 concurrent requests, which take the adaptive baseline
-  # fallback, return "1.1111._...."), so it is NOT a speculation, block-output
-  # or adaptive-fallback bug -- it is upstream of all of them.
-  #   Ruled out: weights present (23 GB); weight-key prefix
-  #   model.language_model.* (identical to the working 31B); tie_word_embeddings
-  #   True with no lm_head tensor (also identical to 31B).
-  #   Suspect: ModelArgs/config resolution for the UNIFIED checkpoint --
-  #   model_type gemma4_unified, 48 layers, nested text_config, vision AND audio
-  #   embedders, vs the 31B's model_type gemma4.
-  # Benchmarks still sweep clean (rc=0, 35 points, 2.07x at osl=1024) because a
-  # throughput benchmark COUNTS tokens without reading them, and the evals
-  # workflow still reports Acceptance PASS because EXPERIMENTAL waives the eval
-  # block on a score of 0. Treat every 12B number here as a token RATE only.
-  # Fix the text path before trusting this entry.
+  # RESOLVED 2026-09-21. The earlier note here said this entry emitted DEGENERATE
+  # text ("The capital of France is" -> "11") and scored 0 on r1_gpqa_diamond with
+  # every response empty. The degenerate text is gone; the empty responses were a
+  # thinking-budget artifact, not a broken text path:
+  #   * The served text is coherent and correct -- the 3 non-empty GPQA responses
+  #     in the 2026-09-20 run were 3/3 correct, with clean derivations and boxed
+  #     answers.
+  #   * The other 7 returned "" because the thought channel never closed within
+  #     max_gen_toks=32768 and lm-eval scores message.content only. The requests
+  #     ran the full budget (~380 s each), still mid-chain at 32k.
+  #   * Ruled out as causes: speculation (two concurrent requests take the batched
+  #     baseline path and loop identically), sampling (temperature 1.0 / 0.6 and
+  #     greedy all run to the cap), and the reasoning parser (it routes correctly
+  #     whenever the model does close the block).
+  #   * With enable_thinking=false (set in vllm_args below) the same 10 items each
+  #     finish in 505-1003 tokens and score 8/10 = 80.0 vs published 78.8.
+  # So the 12B text path is healthy on this stack. Note that a throughput
+  # benchmark counts tokens without reading them, and EXPERIMENTAL waives the eval
+  # block, so neither one would have caught this -- read the eval SCORE.
   inference_engine: VLLM
   device_model_specs:
     - device: P150X8
@@ -275,7 +277,18 @@ templates:
         async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
+        # The gemma4 template defaults enable_thinking=true. On the 12B that makes
+        # plain requests burn max_tokens inside the thought channel and return
+        # content=None: measured 2026-09-21, 7/10 r1_gpqa_diamond items never close
+        # the block within max_gen_toks=32768 (still mid-chain at 32k, ~380 s each),
+        # so lm-eval -- which scores message.content only -- saw empty strings and
+        # the task scored 30. Not a speculation bug: two concurrent requests take
+        # the batched baseline path and loop identically, and temperature 1.0 / 0.6
+        # / greedy all run to the cap. With thinking off the same 10 items finish in
+        # 505-1003 tokens each and score 8/10 = 80.0 (published 78.8). Same reason
+        # as the Qwen3 entry below. Request-level chat_template_kwargs still win, so
+        # callers that want thinking just ask for it.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
         reasoning-parser: gemma4
         # B=1 single-stream spec: full prefill in ONE forward so the dFlash
         # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
@@ -318,7 +331,18 @@ templates:
         async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
+        # The gemma4 template defaults enable_thinking=true. On the 12B that makes
+        # plain requests burn max_tokens inside the thought channel and return
+        # content=None: measured 2026-09-21, 7/10 r1_gpqa_diamond items never close
+        # the block within max_gen_toks=32768 (still mid-chain at 32k, ~380 s each),
+        # so lm-eval -- which scores message.content only -- saw empty strings and
+        # the task scored 30. Not a speculation bug: two concurrent requests take
+        # the batched baseline path and loop identically, and temperature 1.0 / 0.6
+        # / greedy all run to the cap. With thinking off the same 10 items finish in
+        # 505-1003 tokens each and score 8/10 = 80.0 (published 78.8). Same reason
+        # as the Qwen3 entry below. Request-level chat_template_kwargs still win, so
+        # callers that want thinking just ask for it.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
         reasoning-parser: gemma4
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
