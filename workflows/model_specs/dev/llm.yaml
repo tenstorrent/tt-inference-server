@@ -982,7 +982,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-packed-fused-14cacc46294
+      tt_metal_source_ref: mvasiljevic/qwen38-batched-prefill-585e04e5c8f
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1007,6 +1007,7 @@ templates:
       max_tokens_all_users_override: 1050592
       env_vars:
         QWEN_VLLM_KV_POOL_TOKENS: "1050592"
+        QWEN_BATCHED_PREFILL: "1"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
@@ -1027,7 +1028,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-packed-fused-14cacc46294
+      tt_metal_source_ref: mvasiljevic/qwen38-batched-prefill-585e04e5c8f
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1052,6 +1053,7 @@ templates:
       max_tokens_all_users_override: 1050592
       env_vars:
         QWEN_VLLM_KV_POOL_TOKENS: "1050592"
+        QWEN_BATCHED_PREFILL: "1"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
@@ -1072,7 +1074,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-packed-fused-14cacc46294
+      tt_metal_source_ref: mvasiljevic/qwen38-batched-prefill-585e04e5c8f
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
