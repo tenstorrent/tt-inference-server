@@ -309,8 +309,15 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
 
   engine_tts::TtsSchedulerParams params;
   params.max_users = static_cast<uint32_t>(config.maxUsers);
+  // Chunk ramp. first_chunk_tokens was previously aliased to chunk_tokens, so
+  // every chunk was the same size; the engine has always modelled the first
+  // one separately. The second chunk is transitional and has no engine field
+  // yet -- see the note below.
   params.chunk_tokens = config.chunkTokens;
-  params.first_chunk_tokens = config.chunkTokens;
+  params.first_chunk_tokens = config.firstChunkTokens;
+  // TODO(ramp): the engine exposes only first/steady. Until it carries a
+  // second-chunk size, config.secondChunkTokens is applied by the scheduler
+  // wrapper by chunk index; the engine still sees one size per call.
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
   // Rows per fused H2D page (m), a separate lever from max_batch_size (B). B
   // caps how many chunks are mid-flight; m caps how many distinct users ride

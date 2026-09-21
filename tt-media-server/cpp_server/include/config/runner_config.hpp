@@ -112,8 +112,21 @@ struct TtsConfig : RunnerConfigBase {
   size_t audioQueueCapacity = defaults::TTS_AUDIO_QUEUE_CAPACITY;
   size_t cancelQueueCapacity = defaults::CANCEL_QUEUE_CAPACITY;
 
-  // Chunk contract shared by the API, runner, and scheduler.
+  // Chunk contract shared by the API, runner, and scheduler. Three sizes: the
+  // first chunk is short so audio starts quickly, the second is transitional,
+  // and the third onward is steady state. See defaults.hpp for the ramp.
+  uint32_t firstChunkTokens = defaults::TTS_FIRST_CHUNK_TOKENS;
+  uint32_t secondChunkTokens = defaults::TTS_SECOND_CHUNK_TOKENS;
   uint32_t chunkTokens = defaults::TTS_CHUNK_TOKENS;
+
+  // Latency targets. fcP50/fcP99 are measured from request arrival; the rest
+  // are inter-chunk arrival deadlines for the 2nd, 3rd and 4th+ chunks.
+  // Defaults are derived from the chunk sizes and the withheld audio.
+  uint32_t fcP50Ms = defaults::TTS_FC_P50_MS;
+  uint32_t fcP99Ms = defaults::TTS_FC_P99_MS;
+  uint32_t scP99Ms = defaults::TTS_SC_P99_MS;
+  uint32_t tcP99Ms = defaults::TTS_TC_P99_MS;
+  uint32_t tc4P99Ms = defaults::TTS_TC4_P99_MS;
 
   // Tokenizer for the SpeechLM backbone, including TTS audio/speech tokens.
   std::string tokenizerPath;

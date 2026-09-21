@@ -184,7 +184,46 @@ constexpr size_t TTS_PAGE_WIDTH = 0;
 // blaze_tts_scheduler_factory.cpp static_asserts the two against each other.
 constexpr size_t TTS_PAGE_WIDTH_MAX = 8;
 constexpr size_t TTS_AUDIO_QUEUE_CAPACITY = 1024;
-constexpr uint32_t TTS_CHUNK_TOKENS = 30;
+// Chunk ramp. The v2 contract sends a short first chunk to get audio out
+// quickly, a transitional second chunk, then a steady size. Each is separate
+// because the deadline a chunk earns is the audio it RETURNS, and the first
+// two return less than steady state.
+//   17 tok = 0.34 s generated, 0.12 s withheld -> 0.22 s returned
+//   32 tok = 0.64 s generated, 0.24 s withheld -> 0.40 s returned
+//   48 tok = 0.96 s generated, 0.24 s withheld -> 0.72 s returned
+constexpr uint32_t TTS_FIRST_CHUNK_TOKENS = 17;
+constexpr uint32_t TTS_SECOND_CHUNK_TOKENS = 32;
+constexpr uint32_t TTS_CHUNK_TOKENS = 48;
+// Customer cap: no chunk may carry more than 1.0 s of audio (audio quality).
+// At 20 ms/token that is 50. This is the validation ceiling -- it must NOT be
+// TTS_CHUNK_TOKENS itself, or the steady size could only ever be lowered.
+constexpr uint32_t TTS_CHUNK_TOKENS_MAX = 50;
+
+// Audio withheld per chunk as a playback cushion, and the safety headroom
+// subtracted from the first playback deadline. The deadlines below are derived
+// from these, so the two cannot silently disagree.
+constexpr uint32_t TTS_MS_PER_TOKEN = 20;
+constexpr uint32_t TTS_FIRST_CHUNK_WITHHELD_MS = 120;
+constexpr uint32_t TTS_CHUNK_WITHHELD_MS = 240;
+constexpr uint32_t TTS_HEADROOM_MS = 40;
+
+// Latency targets. FC is measured from request arrival; the rest are
+// inter-chunk arrival deadlines. Derived by default:
+//   SC   = first chunk returned - headroom = 340 - 120 - 40 = 180
+//   TC   = second chunk returned           = 640 - 240      = 400
+//   TC4+ = steady chunk returned           = 960 - 240      = 720
+// Each is env-overridable; override only to explore, since a value that
+// disagrees with the chunk sizes describes a contract the client is not using.
+constexpr uint32_t TTS_FC_P50_MS = 100;
+constexpr uint32_t TTS_FC_P99_MS = 125;
+constexpr uint32_t TTS_SC_P99_MS =
+    TTS_FIRST_CHUNK_TOKENS * TTS_MS_PER_TOKEN - TTS_FIRST_CHUNK_WITHHELD_MS - TTS_HEADROOM_MS;
+constexpr uint32_t TTS_TC_P99_MS =
+    TTS_SECOND_CHUNK_TOKENS * TTS_MS_PER_TOKEN - TTS_CHUNK_WITHHELD_MS;
+constexpr uint32_t TTS_TC4_P99_MS =
+    TTS_CHUNK_TOKENS * TTS_MS_PER_TOKEN - TTS_CHUNK_WITHHELD_MS;
+static_assert(TTS_SC_P99_MS == 180 && TTS_TC_P99_MS == 400 && TTS_TC4_P99_MS == 720,
+              "derived TTS deadlines must match the agreed 180/400/720 contract");
 constexpr uint32_t TTS_VOICE_SAMPLE_RATE_HZ = 16000;
 constexpr uint16_t TTS_VOICE_CHANNELS = 1;
 constexpr uint32_t TTS_AUDIO_SAMPLE_RATE_HZ = 48000;

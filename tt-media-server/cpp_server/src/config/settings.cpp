@@ -584,12 +584,39 @@ TtsConfig ttsEngineConfig() {
     cfg.cancelQueueCapacity = static_cast<size_t>(
         envUlong("TTS_CANCEL_QUEUE_CAPACITY", defaults::CANCEL_QUEUE_CAPACITY));
 
-    cfg.chunkTokens = static_cast<uint32_t>(
-        envUlong("TTS_CHUNK_TOKENS", defaults::TTS_CHUNK_TOKENS));
-    if (cfg.chunkTokens == 0 || cfg.chunkTokens > defaults::TTS_CHUNK_TOKENS) {
-      throw std::runtime_error("[Config] TTS_CHUNK_TOKENS must be in [1, " +
-                               std::to_string(defaults::TTS_CHUNK_TOKENS) +
-                               "]");
+    // Chunk ramp: first / second / steady. The ceiling is TTS_CHUNK_TOKENS_MAX
+    // (the 1 s audio-quality cap), NOT TTS_CHUNK_TOKENS -- bounding by the
+    // default would make the steady size lowerable but never raisable.
+    auto readChunk = [&](const char* name, uint32_t dflt) {
+      auto v = static_cast<uint32_t>(envUlong(name, dflt));
+      if (v == 0 || v > defaults::TTS_CHUNK_TOKENS_MAX) {
+        throw std::runtime_error(
+            std::string("[Config] ") + name + " must be in [1, " +
+            std::to_string(defaults::TTS_CHUNK_TOKENS_MAX) + "]");
+      }
+      return v;
+    };
+    cfg.firstChunkTokens =
+        readChunk("TTS_FIRST_CHUNK_TOKENS", defaults::TTS_FIRST_CHUNK_TOKENS);
+    cfg.secondChunkTokens =
+        readChunk("TTS_SECOND_CHUNK_TOKENS", defaults::TTS_SECOND_CHUNK_TOKENS);
+    cfg.chunkTokens = readChunk("TTS_CHUNK_TOKENS", defaults::TTS_CHUNK_TOKENS);
+
+    // Latency targets. Overridable, but they default to values derived from
+    // the chunk sizes above, so leaving them alone keeps the contract coherent.
+    cfg.fcP50Ms = static_cast<uint32_t>(
+        envUlong("TTS_FC_P50_MS", defaults::TTS_FC_P50_MS));
+    cfg.fcP99Ms = static_cast<uint32_t>(
+        envUlong("TTS_FC_P99_MS", defaults::TTS_FC_P99_MS));
+    cfg.scP99Ms = static_cast<uint32_t>(
+        envUlong("TTS_SC_P99_MS", defaults::TTS_SC_P99_MS));
+    cfg.tcP99Ms = static_cast<uint32_t>(
+        envUlong("TTS_TC_P99_MS", defaults::TTS_TC_P99_MS));
+    cfg.tc4P99Ms = static_cast<uint32_t>(
+        envUlong("TTS_TC4_P99_MS", defaults::TTS_TC4_P99_MS));
+    if (cfg.fcP50Ms == 0 || cfg.fcP99Ms < cfg.fcP50Ms) {
+      throw std::runtime_error(
+          "[Config] TTS_FC_P99_MS must be >= TTS_FC_P50_MS and both nonzero");
     }
     cfg.tokenizerPath = envString(
         "TTS_TOKENIZER_PATH", tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
