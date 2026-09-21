@@ -360,6 +360,9 @@ class EvalTask:
     # Off by default: the host is the CI runner, not containerized.
     allow_code_execution: bool = False
     agentic_eval_config: Optional[HarborEvalConfig] = None
+    # Agentic additions can require their name/alias without expanding the
+    # existing default campaign, including --agentic-benchmark all.
+    requires_explicit_selection: bool = False
     # Acceptance severity for this eval ("must"/"should"). "must" failures block
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
@@ -942,6 +945,52 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                requires_explicit_selection=True,
+                score=EvalTaskScore(
+                    published_score=95.4,
+                    published_score_ref="https://www.vals.ai/benchmarks/swebench",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                },
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-12143",
+                            "pytest-dev__pytest-5262",
+                            "django__django-14672",
+                            "sympy__sympy-13551",
+                            "sphinx-doc__sphinx-9281",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],

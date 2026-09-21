@@ -451,8 +451,8 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Comma-separated agentic benchmark(s) to run. Aliases: tau3, "
             "tb2.0 (terminal_bench_2), tb2.1 (terminal_bench_2_1), swebench "
-            "(swe_bench_*). Raw task names accepted. Unset/'all' runs every "
-            "configured EVALS_AGENTIC task."
+            "(swe_bench_*). Raw task names accepted. Unset/'all' runs default "
+            "agentic tasks; opt-in tasks require their name or alias."
         ),
     )
 
@@ -497,6 +497,14 @@ def parse_args() -> argparse.Namespace:
             "model. swarmone is a recognized config value with no client "
             "integration yet and fails fast if selected."
         ),
+    )
+    parser.add_argument(
+        "--agentic-traces-concurrency",
+        type=int,
+        default=None,
+        metavar="COUNT",
+        help="Override trace-replay client concurrency. Unset preserves the model "
+        "and mode defaults; this does not change server capacity.",
     )
     parser.add_argument(
         "--agentic-traces-duration",
@@ -600,6 +608,7 @@ def parse_args() -> argparse.Namespace:
         )
     agentic_traces_flags = (
         args.agentic_traces_sources,
+        args.agentic_traces_concurrency,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
         args.agentic_traces_metrics_url,
@@ -612,6 +621,12 @@ def parse_args() -> argparse.Namespace:
             "--workflow release --agentic-traces "
             f"(got --workflow {args.workflow})."
         )
+    if (
+        args.agentic_traces_concurrency is not None
+        and args.agentic_traces_concurrency < 1
+    ):
+        parser.error("--agentic-traces-concurrency must be a positive integer")
+
     if args.agentic_traces_duration is not None:
         min_profile_seconds = get_target_pack().agentic_traces_min_profile_seconds()
         if args.agentic_traces_duration < min_profile_seconds:

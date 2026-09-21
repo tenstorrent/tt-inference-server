@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from llm_module.agentic.banking_docker import prepare_docker_path
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
     make_terminal_bench_probe,
@@ -339,12 +340,22 @@ def run(config: HarborRunConfig) -> int:
         else _DEFAULT_AGENT_TIMEOUT_SEC
     )
     per_task_budget = agent_timeout + config.per_task_overhead_sec
+    env = os.environ.copy()
+    if (
+        config.environment_type == "docker"
+        and config.dataset.split("@")[0] == "sierra-research/tau3-bench"
+    ):
+        env["PATH"] = prepare_docker_path(
+            config.jobs_dir / f"{config.task_name}_banking_docker",
+            interpreter,
+            env.get("PATH", os.defpath),
+        )
     # ``harbor_timeout_sec`` is an optional flat backstop kept from the unified
     # harness; the wave-aware stall/ceiling watchdog is the primary protection.
     rc = run_with_progress(
         cmd,
         cwd=None,
-        env=os.environ.copy(),
+        env=env,
         probe=make_terminal_bench_probe(job_dir),
         label=config.task_name,
         per_task_budget_s=per_task_budget,

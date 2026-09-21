@@ -548,8 +548,8 @@ def parse_arguments():
         help="Comma-separated agentic benchmark(s) to run under --workflow agentic. "
         "Aliases: tau3 (tau3_bench_*), tb2.0 (terminal_bench_2), tb2.1 "
         "(terminal_bench_2_1), swebench (swe_bench_*). Raw task names are also "
-        "accepted. When unset (or 'all'), runs every EVALS_AGENTIC task configured "
-        "for the model.",
+        "accepted. Unset/'all' runs the model's default agentic tasks; opt-in "
+        "tasks require their name or alias.",
     )
 
     agentic_traces_group = parser.add_argument_group(
@@ -584,6 +584,14 @@ def parse_arguments():
         "unset, runs every configured source except opt-in ones. swarmone is opt-in: "
         "it replays SwarmOne swo-bench scenarios and needs a SwarmOne license "
         "(SWO_LICENSE_KEY or ~/.swarmone/license.key), so name it explicitly to run it.",
+    )
+    agentic_traces_group.add_argument(
+        "--agentic-traces-concurrency",
+        type=int,
+        default=None,
+        metavar="COUNT",
+        help="Override trace-replay client concurrency. Unset preserves the model "
+        "and mode defaults; this does not change server capacity.",
     )
     agentic_traces_group.add_argument(
         "--agentic-traces-duration",
@@ -899,6 +907,7 @@ def parse_arguments():
     runs_agentic_traces = args.workflow == "agentic_traces" or args.agentic_traces
     agentic_traces_overrides = (
         args.agentic_traces_sources,
+        args.agentic_traces_concurrency,
         args.agentic_traces_duration,
         args.agentic_traces_git_ref,
         args.agentic_traces_metrics_url,
@@ -909,6 +918,12 @@ def parse_arguments():
             "--workflow release --agentic-traces "
             f"(got --workflow {args.workflow})."
         )
+
+    if (
+        args.agentic_traces_concurrency is not None
+        and args.agentic_traces_concurrency < 1
+    ):
+        parser.error("--agentic-traces-concurrency must be a positive integer")
 
     if args.agentic_traces_duration is not None:
         from reference_config.agentic_traces.agentic_traces_config import (

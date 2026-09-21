@@ -82,16 +82,27 @@ python run.py \
 ```
 
 For the optional real-text benchmark, see
-[Added: custom LongBench benchmark](#added-custom-longbench-benchmark) below.
+[Custom LongBench benchmark](#custom-longbench-benchmark) below.
 
 AgentX (agentic traces)
 
+The default GLM-5.3 configuration uses the 256K corpus at concurrency 8.
+For concurrency 6, see [AgentX concurrency](#agentx-concurrency).
+Ask the server operator for the current Prefill and Decode metrics URLs.
+Both must be reachable from the client host and accept unauthenticated GETs;
+the pinned AIPerf collector does not send the inference API key to these URLs.
+
 ```bash
+export PREFILL_METRICS_URL='<current prefill metrics URL>'
+export DECODE_METRICS_URL='<current decode metrics URL>'
+export CACHE_ROOT="$PWD/workflow_logs/runs/agentx-$(date -u +%Y%m%dT%H%M%SZ)"
 python run.py \
   --model GLM-5.3 \
   --workflow agentic_traces \
   --device super_cluster \
   --server-url https://<endpoint>:443 \
+  --agentic-traces-metrics-url "$PREFILL_METRICS_URL" \
+  --agentic-traces-metrics-url "$DECODE_METRICS_URL" \
   --skip-system-sw-validation \
   --dev-mode
 ```
@@ -379,3 +390,45 @@ python run.py \
 
 Other evaluation workflows are unchanged. See [Custom LongBench](custom_longbench.md)
 for input format and driver options.
+
+---
+
+# GLM-5.3 campaign additions
+
+This section documents the changes required by the GLM-5.3 campaign. The base
+branch already contains the custom LongBench benchmark described above.
+
+## SWE-bench Verified
+
+SWE-bench is opt-in so the default GLM-5.3 agentic command continues to run
+Terminal-Bench and Tau3 Banking only.
+
+```bash
+python run.py --model GLM-5.3 --workflow agentic \
+  --agentic-benchmark swebench --device super_cluster \
+  --server-url https://<endpoint>:443 --skip-system-sw-validation --dev-mode
+```
+
+## Tau3 Banking runtime
+
+Tau3 Banking image builds pin the evaluator and user-simulator images to tau2
+revision `b351ed5f9281d4bdfa5629262f54c8781da0d5be` to avoid the evaluator's
+`websockets` import failure in newer revisions. The Harbor path applies this
+automatically to Banking tasks and checks evaluator import during the build.
+
+## AgentX concurrency
+
+`--agentic-traces-concurrency` changes only the AIPerf client replay concurrency;
+the corpus stays at 256K and server capacity is configured separately. Run the
+default C8 measurement with `--agentic-traces-concurrency 8`, then repeat the
+same command with a fresh `CACHE_ROOT` and `--agentic-traces-concurrency 6`.
+
+Keep the server profile fixed. Ask the server operator for a fresh server before
+each run if the comparison requires a cold cache.
+
+## AgentX warmup
+
+For the pinned InferenceX revision
+`ddeb02eb9c5c89f44e2e4950e741b499d0b8190a`, setup marks the automatic warmup
+phase separately from the profiling phase. This applies to new and reused
+AgentX environments.

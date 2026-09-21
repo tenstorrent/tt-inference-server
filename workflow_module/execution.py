@@ -143,6 +143,7 @@ class AgenticTracesOptions:
     # Comma-separated TraceSource names narrowing which configured runs execute.
     trace_sources: Optional[str] = None
     # Ad-hoc overrides, for debugging a config without editing it.
+    concurrency_override: Optional[int] = None
     duration_override: Optional[int] = None
     git_ref_override: Optional[str] = None
     # Extra Prometheus /metrics endpoints holding the prefix-cache counters,
