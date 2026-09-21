@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 from report_module import renderers
 from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
 from report_module.markdown_table import build_markdown_table
+from report_module.qwen38_overview import render_overview
 from report_module.report_file_saver import ReportFileSaver
 from report_module.schema import Block, ReportSchema, SchemaLike
 from report_module.status import STATUS_GLYPHS as _STATUS_GLYPHS
@@ -156,8 +157,17 @@ def _assemble_release_markdown(
     ).strip()
     if acceptance_md:
         preamble.append(acceptance_md)
+    overview = render_overview(schema.sections, schema.metadata)
+    if overview:
+        preamble.append(overview)
 
     sections = _inject_spec_test_summary(rendered_pairs, schema.metadata)
+    if overview and sections:
+        sections = [
+            "<details>\n<summary>Per-test details and all target checks</summary>\n\n"
+            + _SECTION_SEPARATOR.join(sections)
+            + "\n\n</details>"
+        ]
     preamble_md = "\n\n".join(preamble)
     return _SECTION_SEPARATOR.join([preamble_md] + sections)
 
