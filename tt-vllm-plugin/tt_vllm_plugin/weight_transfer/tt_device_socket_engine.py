@@ -204,7 +204,9 @@ class TTDeviceSocketWeightTransferEngine(
             raise RuntimeError(
                 "receive_weights called before init_transfer_engine(); no bridge."
             )
-        logger.info("Receiving weight update via WeightBridge (peer=%s)", self._peer_rank)
+        logger.info(
+            "Receiving weight update via WeightBridge (peer=%s)", self._peer_rank
+        )
         hf_dict = self._bridge.recv_state()
         try:
             # An empty dict is the plumbing-test payload (SIM_PAYLOAD=empty):

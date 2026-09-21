@@ -262,7 +262,9 @@ class TTWorker(WorkerBase):
         engine = self._ensure_weight_transfer_engine()
         # Prefer the bridge dir threaded through additional_config (survives the
         # EngineCore's curated env, unlike a bare TT_WEIGHT_BRIDGE_DIR).
-        override_tt_config = getattr(self.model_config, "override_tt_config", None) or {}
+        override_tt_config = (
+            getattr(self.model_config, "override_tt_config", None) or {}
+        )
         engine.bind_runtime(
             device=self.mesh_device,
             bridge_dir=override_tt_config.get("tt_weight_bridge_dir"),
@@ -535,9 +537,7 @@ class TTWorker(WorkerBase):
         # for them. Requests needing logprobs must run in-process submesh DP
         # (tt_data_parallel) or DP=1, where the runner returns them directly.
         sampled_token_ids_per_dp: list[torch.Tensor]
-        sampled_token_ids_per_dp, _ = self.model_runner.execute_with_model_input(
-            merged
-        )
+        sampled_token_ids_per_dp, _ = self.model_runner.execute_with_model_input(merged)
 
         # Pad each DP result to uniform shape for tensor all_gather.
         world = self.vllm_config.parallel_config.data_parallel_size

@@ -59,6 +59,7 @@ def weight_update_api(monkeypatch):
 
     fastapi = types.ModuleType("fastapi")
     fastapi.APIRouter = lambda *args, **kwargs: Router()
+    fastapi.Depends = lambda dependency: dependency
     fastapi.HTTPException = HTTPException
     fastapi.Request = object
     monkeypatch.setitem(sys.modules, "fastapi", fastapi)
@@ -80,12 +81,7 @@ def weight_update_api(monkeypatch):
     monkeypatch.setitem(sys.modules, "starlette.responses", responses)
     monkeypatch.setitem(sys.modules, "starlette.types", starlette_types)
 
-    path = (
-        Path(__file__).parents[1]
-        / "vllm-tt-metal"
-        / "src"
-        / "weight_update_api.py"
-    )
+    path = Path(__file__).parents[1] / "vllm-tt-metal" / "src" / "weight_update_api.py"
     spec = importlib.util.spec_from_file_location("weight_update_api_under_test", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

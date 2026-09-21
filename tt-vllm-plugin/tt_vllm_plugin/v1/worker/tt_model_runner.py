@@ -82,8 +82,8 @@ def compute_sampled_logprobs(
     sampled = sampled_ids.view(-1, 1).long()
     sampled_logprobs = logprobs.gather(-1, sampled)
 
-    # 0-indexed rank of the sampled token: how many tokens are strictly likelier.
-    ranks = (logprobs > sampled_logprobs).sum(dim=-1).to(torch.int32)
+    # Match vLLM: one-based ranks, counting ties as equally likely.
+    ranks = (logprobs >= sampled_logprobs).sum(dim=-1).to(torch.int32)
 
     if num_logprobs > 0:
         k = min(num_logprobs, logprobs.shape[-1])
@@ -953,9 +953,12 @@ class TTModelRunner:
     def _execute_model_inprocess_dp(
         self, scheduler_output: "SchedulerOutput"
     ) -> ModelRunnerOutput:
-        # 1. Drop replica pins for finished requests (frees their per-replica
-        #    capacity for future admissions).
-        for req_id in scheduler_output.finished_req_ids:
+        # 1. Finished and preempted requests no longer own valid KV on their
+        #    replica. Keep pins for running requests merely skipped this step.
+        released_req_ids = scheduler_output.finished_req_ids | (
+            getattr(scheduler_output, "preempted_req_ids", None) or set()
+        )
+        for req_id in released_req_ids:
             self._req_to_mesh.pop(req_id, None)
 
         # 2. Standard single-batch state update (unchanged vLLM bookkeeping).
@@ -1023,18 +1026,14 @@ class TTModelRunner:
                 if lp is None or not idxs:
                     continue
                 if combined_logprobs is None:
-                    combined_logprobs = empty_logprobs(
-                        num_reqs, lp.logprobs.shape[-1]
-                    )
+                    combined_logprobs = empty_logprobs(num_reqs, lp.logprobs.shape[-1])
                 scatter_logprobs(combined_logprobs, lp, idxs)
                 logprob_rows_filled += len(idxs)
 
         # 4a. PREFILL pass (replica-parallel over meshes with prefill work).
         if any(prefill_idx_per_mesh):
             prefill_inputs = [
-                self._build_mesh_prefill_input(
-                    input_batch, block_tables_full, idxs
-                )
+                self._build_mesh_prefill_input(input_batch, block_tables_full, idxs)
                 for idxs in prefill_idx_per_mesh
             ]
             merged = self.concat_dp_model_inputs(
@@ -1056,9 +1055,7 @@ class TTModelRunner:
             int_inputs = []
             float_inputs = []
             for idxs in decode_idx_per_mesh:
-                mi = self._build_mesh_decode_input(
-                    input_batch, block_tables_full, idxs
-                )
+                mi = self._build_mesh_decode_input(input_batch, block_tables_full, idxs)
                 gathered = self.build_dp_decode_gather_input(mi, max_blocks)
                 int_inputs.append(gathered["int_inputs"])
                 float_inputs.append(gathered["float_inputs"])
@@ -1236,9 +1233,7 @@ class TTModelRunner:
         if not isinstance(sampling_params_per_dp, list):
             sampling_params_per_dp = [sampling_params_per_dp]
         if model_input.sampling_batch_indices is None:
-            flat_sampling_batch_indices = list(
-                range(model_input.input_tokens.shape[0])
-            )
+            flat_sampling_batch_indices = list(range(model_input.input_tokens.shape[0]))
         else:
             flat_sampling_batch_indices = [
                 idx
@@ -1584,9 +1579,7 @@ class TTModelRunner:
                     if model_input.sampling_batch_indices is None:
                         rank_batch_indices = range(seg_start, seg_start + sz)
                     else:
-                        rank_batch_indices = model_input.sampling_batch_indices[
-                            dp_rank
-                        ]
+                        rank_batch_indices = model_input.sampling_batch_indices[dp_rank]
                         assert len(rank_batch_indices) == sz
                     next_token_ids = sample_tokens(
                         logits,

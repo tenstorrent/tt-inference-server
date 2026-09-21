@@ -236,6 +236,8 @@ class TTPlatform(Platform):
         cls,
         processed_inputs: ProcessorInputs,
         params: Union[SamplingParams, PoolingParams],
+        *,
+        prompt: PromptType = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
 
@@ -252,6 +254,14 @@ class TTPlatform(Platform):
                     "logprobs are not supported with process data parallelism "
                     "on TT; use data_parallel_size=1 or in-process "
                     "tt_data_parallel"
+                )
+            if params.logprobs is not None and getattr(
+                cls, "sample_on_device_mode", None
+            ):
+                raise ValueError("logprobs require host-side sampling on TT")
+            if params.logprobs == -1:
+                raise ValueError(
+                    "Full-vocabulary logprobs (logprobs=-1) are not supported on TT"
                 )
             if params.prompt_logprobs is not None:
                 raise ValueError(

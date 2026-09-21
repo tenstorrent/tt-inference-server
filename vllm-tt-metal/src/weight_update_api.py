@@ -33,12 +33,14 @@ This avoids forking vLLM.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
+import secrets
 import time
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -351,10 +353,29 @@ async def reset_prefix_cache(request: Request):
     try:
         await reset()
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            status_code=500, detail=f"reset_prefix_cache failed: {exc}"
-        )
+        raise HTTPException(status_code=500, detail=f"reset_prefix_cache failed: {exc}")
     return {"status": "ok"}
+
+
+async def _authenticate_native_rl(request: Request) -> None:
+    """Apply the OpenAI server's API-key policy to its non-/v1 RL routes."""
+    args = getattr(request.app.state, "args", None)
+    tokens = [
+        key
+        for key in (getattr(args, "api_key", None) or [os.getenv("VLLM_API_KEY")])
+        if key
+    ]
+    if not tokens:
+        return
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    token_hash = hashlib.sha256(token.encode("utf-8")).digest()
+    matches = False
+    for key in tokens:
+        matches |= secrets.compare_digest(
+            token_hash, hashlib.sha256(key.encode("utf-8")).digest()
+        )
+    if scheme.lower() != "bearer" or not matches:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def _mount_native_rl_routes(app) -> None:
@@ -363,8 +384,8 @@ def _mount_native_rl_routes(app) -> None:
     vLLM only auto-mounts these routes (``/pause``, ``/resume``,
     ``/init_weight_transfer_engine``, ``/update_weights``, ``/get_world_size``)
     when ``VLLM_SERVER_DEV_MODE`` is set. We mount them explicitly on the
-    already-authed OpenAI app so the co-located trainer can drive updates
-    through the native control plane without flipping global dev mode.
+    OpenAI app with explicit API-key authentication so the co-located trainer
+    can drive updates through the native control plane without global dev mode.
 
     These are the transport-agnostic counterparts of the legacy
     ``/v1/internal/weights/*`` routes: ``/pause?mode=wait`` drains in-flight
@@ -378,7 +399,7 @@ def _mount_native_rl_routes(app) -> None:
     except Exception as exc:  # noqa: BLE001 - older/other vLLM builds
         logger.warning("Native RL weight-sync router unavailable: %s", exc)
         return
-    app.include_router(rlhf_router)
+    app.include_router(rlhf_router, dependencies=[Depends(_authenticate_native_rl)])
     logger.info(
         "Mounted native vLLM RL weight-sync routes (/pause, /resume, "
         "/init_weight_transfer_engine, /update_weights, /get_world_size)"
@@ -394,8 +415,9 @@ def install() -> None:
     ``runpy.run_module(..., run_name="__main__")`` re-executes the api_server
     module, so a ``build_app`` monkeypatch is shadowed by the redefinition and
     never runs. ``fastapi`` is not re-executed, so an ``__init__`` hook survives
-    and mounts the router on the server app (auth middleware is app-level and
-    still covers these routes).
+    and mounts the router on the server app. The /v1 routes use the server auth
+    middleware; native RL routes use an explicit dependency with the same
+    API-key policy.
     """
     # Defense-in-depth: these routes are strictly for the co-located RL trainer.
     # Even a stray/future call to install() must be inert off the RL path so the

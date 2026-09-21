@@ -12,7 +12,8 @@ from vllm.v1.worker.gpu_input_batch import CachedRequestState
 
 class SamplingInputBatch:
     # Marks "this request did not ask for logprobs". SamplingParams.logprobs is
-    # None when unrequested and >= 0 otherwise (0 == sampled token only), so a
+    # None when unrequested and >= 0 for supported requests (0 == sampled token
+    # only). TTPlatform rejects full-vocabulary requests (logprobs=-1), so a
     # negative value cannot collide with a real request. Private: callers go
     # through the methods below rather than comparing against it themselves.
     _NO_LOGPROBS = -1

@@ -695,9 +695,7 @@ def test_resolve_service_port_reads_port_from_sys_argv(
         None,
     ],
 )
-def test_absorb_empty_plugin_config(
-    run_vllm_api_server_module, plugin_config
-):
+def test_absorb_empty_plugin_config(run_vllm_api_server_module, plugin_config):
     default_vllm_args = {"port": 8000}
     if plugin_config is not None:
         default_vllm_args["plugin_config"] = plugin_config
@@ -750,9 +748,7 @@ def test_absorb_plugin_config_preserves_existing_tt_values(
         "tt_data_parallel": 2,
         "foo": 1,
     }
-    assert default_vllm_args["additional_config"]["other_plugin"] == {
-        "enabled": True
-    }
+    assert default_vllm_args["additional_config"]["other_plugin"] == {"enabled": True}
 
 
 def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
@@ -822,6 +818,7 @@ def test_runtime_env_preserves_external_package_or_uses_catalog_fallback(
         if selected_root
         else '{"experts":"/catalog/experts"}'
     )
+
 
 def test_main_passes_passthrough_port_to_trace_capture(
     monkeypatch, run_vllm_api_server_module

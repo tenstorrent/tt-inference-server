@@ -10,18 +10,14 @@ from collections import deque
 from collections.abc import Iterable
 from typing import Optional, Union
 
-from vllm.config import VllmConfig
 from vllm.distributed.kv_events import KVEventBatch
 from vllm.logger import init_logger
-from vllm.multimodal import MULTIMODAL_REGISTRY, MultiModalRegistry
 from vllm.utils.math_utils import cdiv
 from vllm.v1.core.sched.output import NewRequestData, SchedulerOutput
 from vllm.v1.core.sched.scheduler import Scheduler
 from vllm.v1.engine import EngineCoreEventType, EngineCoreOutputs
-from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
-from vllm.v1.structured_output import StructuredOutputManager
 
 logger = init_logger("vllm.tt_vllm_plugin.v1.ascend_scheduler")
 
@@ -262,8 +258,8 @@ class AscendScheduler(Scheduler):
             req_to_new_block_ids[request.request_id] = (
                 self.kv_cache_manager.get_block_ids(request.request_id)
             )
-            req_to_new_blocks[request.request_id] = (
-                self.kv_cache_manager.get_blocks(request.request_id)
+            req_to_new_blocks[request.request_id] = self.kv_cache_manager.get_blocks(
+                request.request_id
             )
             # Update request info.
             num_scheduled_tokens[request.request_id] = num_new_tokens
@@ -418,13 +414,6 @@ class AscendScheduler(Scheduler):
                 )
             )
 
-        # Generate grammar bitmask for structured output requests
-        grammar_bitmask = self.structured_output_manager.grammar_bitmask(
-            self.requests,
-            structured_output_request_ids,
-            scheduled_spec_decode_tokens,
-        )
-
         # Construct the scheduler output.
         new_reqs_data = [
             NewRequestData.from_request(req, req_to_new_block_ids[req.request_id])
@@ -455,6 +444,10 @@ class AscendScheduler(Scheduler):
             finished_req_ids=self.finished_req_ids,  # type: ignore
             free_encoder_mm_hashes=self.encoder_cache_manager.get_freed_mm_hashes(),
         )
+
+        # Older vLLM pins do not accept this field in the constructor. Attach
+        # it afterwards so TT replica placement can release preempted KV slots.
+        scheduler_output.preempted_req_ids = {req.request_id for req in preempted_reqs}
 
         # NOTE(Kuntai): this function is designed for multiple purposes:
         # 1. Plan the KV cache store
