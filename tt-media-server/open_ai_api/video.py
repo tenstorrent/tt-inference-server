@@ -250,13 +250,18 @@ def _is_h3_t2va_deployment() -> bool:
         return False
     if runner is ModelRunners.TT_MINIMAX_H3_T2VA:
         return True
+    if runner is ModelRunners.TT_MINIMAX_H3_FASTH3:
+        return True
     if runner is not ModelRunners.SP_RUNNER:
         return False
     model_env = os.getenv("MODEL")
     if not model_env:
         return False
     try:
-        return ModelNames(model_env) is ModelNames.MINIMAX_H3
+        return ModelNames(model_env) in {
+            ModelNames.MINIMAX_H3,
+            ModelNames.MINIMAX_H3_FASTH3,
+        }
     except ValueError:
         return False
 
