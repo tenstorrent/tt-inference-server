@@ -621,13 +621,43 @@ std::unique_ptr<tts_scheduler::ITtsScheduler> makeRealTtsScheduler(
     auto pairs = config.decoderSocketPairs;
     if (pairs.empty()) {
       pairs.push_back({config.decoderSocketDescriptorPrefix,
-                       config.decoderSocketDescriptorPrefix});
+                       config.decoderSocketDescriptorPrefix,
+                       0});
+    }
+    // Every chunk size the ramp emits must have a decoder traced for its wire
+    // size, or its chunks have nowhere to go. Check that up front: a mismatch
+    // otherwise surfaces as a socket that blocks forever, not an error.
+    {
+      const uint32_t wanted[] = {
+          tt::config::ttsWireTokensFor(config.firstChunkTokens),
+          tt::config::ttsWireTokensFor(config.secondChunkTokens),
+          tt::config::ttsWireTokensFor(config.chunkTokens)};
+      const bool sized =
+          std::any_of(pairs.begin(), pairs.end(),
+                      [](const auto& p) { return p.chunkTokens != 0; });
+      if (sized) {
+        for (uint32_t want : wanted) {
+          const bool served =
+              std::any_of(pairs.begin(), pairs.end(), [want](const auto& p) {
+                return p.chunkTokens == want;
+              });
+          if (!served) {
+            throw std::runtime_error(
+                "[Config] chunk ramp needs a decoder traced at " +
+                std::to_string(want) +
+                " tokens, but no TTS_DECODER_SOCKET_PAIRS entry declares that "
+                "size. Add h2d:d2h:" + std::to_string(want) + ".");
+          }
+        }
+      }
     }
     std::vector<std::unique_ptr<engine_pipeline::DecoderPipelineInterface>> decoders;
     decoders.reserve(pairs.size());
     for (const auto& pair : pairs) {
-      TT_LOG_INFO("makeTtsScheduler: decoder {} over shared memory, H2D='{}', D2H='{}'",
-                  decoders.size(), pair.h2dSocketId, pair.d2hSocketId);
+      TT_LOG_INFO(
+          "makeTtsScheduler: decoder {} over shared memory, H2D='{}', D2H='{}', T={}",
+          decoders.size(), pair.h2dSocketId, pair.d2hSocketId,
+          pair.chunkTokens != 0 ? pair.chunkTokens : config.chunkTokens);
       decoders.push_back(std::make_unique<engine_pipeline::DecoderSocketPipeline>(
           pair.h2dSocketId, pair.d2hSocketId, config.connectTimeoutMs));
     }
