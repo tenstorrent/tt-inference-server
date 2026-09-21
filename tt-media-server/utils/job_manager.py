@@ -115,6 +115,39 @@ class Job:
         return data
 
 
+# Inline media in a job's echoed ``request_parameters``. A Ref2VA request can carry tens of
+# megabytes of base64 across its references, and that dict is returned in the 202, in every
+# status poll and in ``/jobs`` for ``job_retention_seconds`` -- so the upload would be served
+# back once per poll and pinned in RAM for a day. The media reaches the worker on the request
+# object, not through this dict, so only the echo changes.
+_INLINE_MEDIA_KEYS = frozenset({"image", "b64"})
+_INLINE_MEDIA_KEEP_CHARS = 256
+
+
+def redact_inline_media(value):
+    """Copy of a request dump with long inline base64 media replaced by a size note.
+
+    Only ``image`` (``image_prompts[]``) and ``b64`` (``references.*[]``) string values longer
+    than ``_INLINE_MEDIA_KEEP_CHARS`` are touched; URLs, short values and every other field
+    come back unchanged.
+    """
+    if isinstance(value, dict):
+        return {
+            key: (
+                f"<inline media omitted: {len(item)} base64 chars>"
+                if key in _INLINE_MEDIA_KEYS
+                and isinstance(item, str)
+                and len(item) > _INLINE_MEDIA_KEEP_CHARS
+                and not item[:8].lower().startswith(("http://", "https://"))
+                else redact_inline_media(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_inline_media(item) for item in value]
+    return value
+
+
 class JobManager:
     def __init__(self):
         self._logger = TTLogger()
@@ -158,7 +191,7 @@ class JobManager:
                 id=job_id,
                 job_type=job_type.value,
                 model=model,
-                request_parameters=request.model_dump(mode="json"),
+                request_parameters=redact_inline_media(request.model_dump(mode="json")),
                 org_id=org_id,
             )
 
