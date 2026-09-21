@@ -229,12 +229,20 @@ _MODEL_EXPLICIT_TEXT_SWEEP_NORMALIZED = {
 _MODEL_EXPLICIT_TEXT_TARGETS_NORMALIZED = {
     _normalize_model_key(name): {
         point: {
-            "target": PerformanceTarget(
-                ttft_ms=values[0],
-                tput_user=values[1],
-                tput=values[2],
-                e2el_ms=values[3],
+            tier: PerformanceTarget(
+                ttft_ms=values[0] / fraction,
+                tput_user=values[1] * fraction,
+                tput=values[2] * fraction,
+                e2el_ms=values[3] / fraction,
                 tolerance=0.0,
+            )
+            # Match the control's 10%/50% performance tiers. Latency is
+            # lower-is-better, so its limit scales inversely. Keep the
+            # requirements target unchanged and independently assessed.
+            for tier, fraction in (
+                ("functional", 0.10),
+                ("complete", 0.50),
+                ("target", 1.0),
             )
         }
         for point, values in targets.items()

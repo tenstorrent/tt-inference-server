@@ -10,6 +10,7 @@ from typing import Iterable, List, Optional, Set, Tuple
 
 import pytest
 
+from llm_module.target_checks import build_target_checks
 from workflows.model_spec import MODEL_SPECS
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import DeviceTypes
@@ -270,6 +271,43 @@ def test_qwen38_concurrent_profiles_use_matching_device_batch(
     sweep_params = config.tasks[1].param_map[DeviceTypes.P300X2]
     assert _extract_sweep_triplets(sweep_params) == expected_sweep
     assert all(params.targets["target"] for params in sweep_params)
+
+
+@pytest.mark.parametrize(
+    "impl_name,expected_count",
+    [("qwen38-autoport-b1", 8), ("qwen38-autoport-b8", 3), ("qwen38-autoport-b16", 2)],
+)
+def test_qwen38_all_requirement_points_have_performance_tiers(
+    monkeypatch, impl_name, expected_count
+):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    model_id = _find_model_id(
+        model_name="Qwen3.8-27B", device=DeviceTypes.P300X2, impl_name=impl_name
+    )
+    config = benchmark_config.get_benchmark_config(MODEL_SPECS[model_id])
+    params_list = config.tasks[1].param_map[DeviceTypes.P300X2]
+    assert len(params_list) == expected_count
+    for params in params_list:
+        assert set(params.targets) == {"functional", "complete", "target"}
+        target = params.targets["target"]
+        expected = benchmark_config.MODEL_EXPLICIT_TEXT_TARGETS["Qwen3.8-27B"][
+            (params.isl, params.osl, params.max_concurrency)
+        ]
+        assert (
+            target.ttft_ms,
+            target.tput_user,
+            target.tput,
+            target.e2el_ms,
+        ) == expected
+        checks, _ = build_target_checks(params.targets, {})
+        assert set(checks) == {"functional", "complete", "target"}
+        for name, fraction in (("functional", 0.10), ("complete", 0.50)):
+            tier = params.targets[name]
+            assert tier.ttft_ms == pytest.approx(target.ttft_ms / fraction)
+            assert tier.e2el_ms == pytest.approx(target.e2el_ms / fraction)
+            assert tier.tput_user == pytest.approx(target.tput_user * fraction)
+            assert tier.tput == pytest.approx(target.tput * fraction)
+            assert tier.tolerance == target.tolerance == 0.0
 
 
 def test_select_smoke_test_benchmark_config_adds_smoke_pair_without_targets(
