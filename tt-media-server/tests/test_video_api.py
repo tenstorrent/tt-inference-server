@@ -469,6 +469,10 @@ class TestRejectRef2vaOnWrongDeployment:
     def test_in_process_t2va_runner_is_refused(self):
         assert self._refuses() == 422
 
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fasth3")
+    def test_in_process_fasth3_runner_is_refused(self):
+        assert self._refuses() == 422
+
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
     @patch("open_ai_api.video.settings.model_runner", "sp_runner")
     def test_sp_frontend_for_a_ref2va_peer_is_allowed(self):
@@ -482,6 +486,11 @@ class TestRejectRef2vaOnWrongDeployment:
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
     @patch("open_ai_api.video.settings.model_runner", "sp_runner")
     def test_sp_frontend_naming_fl2va_is_refused(self):
+        assert self._refuses() == 422
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_fasth3_is_refused(self):
         assert self._refuses() == 422
 
     @patch("open_ai_api.video.settings.model_runner", "sp_runner")
@@ -504,7 +513,7 @@ class TestRejectRef2vaOnWrongDeployment:
 
 
 class TestSpPeerIsKnownNonRef2va:
-    """The helper must recognise exactly the two H3 non-Ref2VA task names."""
+    """The helper must recognise the H3 non-Ref2VA task names."""
 
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
     def test_t2va_name(self):
@@ -512,6 +521,10 @@ class TestSpPeerIsKnownNonRef2va:
 
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"})
     def test_fl2va_name(self):
+        assert _sp_peer_is_known_non_ref2va() is True
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"})
+    def test_fasth3_name(self):
         assert _sp_peer_is_known_non_ref2va() is True
 
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
@@ -802,6 +815,7 @@ class TestMiniMaxH3NumInferenceSteps:
             "tt-minimax-h3-t2va",
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
+            "tt-minimax-h3-fasth3",
         ],
     )
     @patch("domain.video_generate_request.get_settings")
@@ -815,6 +829,7 @@ class TestMiniMaxH3NumInferenceSteps:
             "tt-minimax-h3-t2va",
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
+            "tt-minimax-h3-fasth3",
         ],
     )
     @pytest.mark.parametrize("steps", [20, 50])
@@ -862,6 +877,7 @@ class TestMiniMaxH3DurationAdmission:
             "tt-minimax-h3-t2va",
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
+            "tt-minimax-h3-fasth3",
         ],
     )
     @patch("domain.video_generate_request.get_settings")
@@ -878,6 +894,7 @@ class TestMiniMaxH3DurationAdmission:
             "tt-minimax-h3-t2va",
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
+            "tt-minimax-h3-fasth3",
         ],
     )
     @patch("domain.video_generate_request.get_settings")
@@ -888,7 +905,7 @@ class TestMiniMaxH3DurationAdmission:
 
     @pytest.mark.parametrize(
         "model",
-        ["MiniMax-H3", "MiniMax-H3-FL2VA", "MiniMax-H3-Ref2VA"],
+        ["MiniMax-H3", "MiniMax-H3-FL2VA", "MiniMax-H3-Ref2VA", "MiniMax-H3-FastH3"],
     )
     @patch("domain.video_generate_request.get_settings")
     def test_sp_runner_with_h3_model_rejects_duration_30(self, mock_settings, model):

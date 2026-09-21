@@ -108,6 +108,7 @@ def _is_minimax_h3() -> bool:
         ModelRunners.TT_MINIMAX_H3_T2VA.value,
         ModelRunners.TT_MINIMAX_H3_FL2VA.value,
         ModelRunners.TT_MINIMAX_H3_REF2VA.value,
+        ModelRunners.TT_MINIMAX_H3_FASTH3.value,
     }:
         return True
 
@@ -124,6 +125,7 @@ def _is_minimax_h3() -> bool:
             ModelNames.MINIMAX_H3,
             ModelNames.MINIMAX_H3_FL2VA,
             ModelNames.MINIMAX_H3_REF2VA,
+            ModelNames.MINIMAX_H3_FASTH3,
         }
     except ValueError:
         return False

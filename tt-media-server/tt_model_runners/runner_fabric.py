@@ -76,6 +76,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_MINIMAX_H3_REF2VA: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMiniMaxH3Ref2VARunner"]
     ).TTMiniMaxH3Ref2VARunner(wid),
+    ModelRunners.TT_MINIMAX_H3_FASTH3: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTMiniMaxFastH3Runner"]
+    ).TTMiniMaxFastH3Runner(wid),
     ModelRunners.TT_WHISPER: lambda wid: __import__(
         "tt_model_runners.whisper_runner", fromlist=["TTWhisperRunner"]
     ).TTWhisperRunner(wid),

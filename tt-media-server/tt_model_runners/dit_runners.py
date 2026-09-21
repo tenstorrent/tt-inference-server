@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import ttnn
 from config.constants import (
+    MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
     WAN22_ANISORA_NUM_STEPS,
     WAN22_DISTILL_NUM_STEPS,
     WAN22_LIGHTNING_NUM_STEPS,
@@ -81,6 +82,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: "MiniMaxH3-FL2VA",
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: "MiniMaxH3-Ref2VA",
+    ModelRunners.TT_MINIMAX_H3_FASTH3.value: "MiniMaxH3-FastH3",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -1366,6 +1368,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
     pipeline_task = "t2va"
     dit_fsdp = False
+    num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
 
     def __init__(self, device_id: str):
         super().__init__(device_id)
@@ -1403,6 +1406,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 dit_fsdp=self.dit_fsdp,
                 trace_denoise=_minimax_h3_env_bool("MINIMAX_H3_TRACE_DENOISE"),
                 bucket_denoise=_minimax_h3_env_bool("MINIMAX_H3_BUCKET_DENOISE"),
+                **self._create_pipeline_kwargs(),
             )
         except Exception as e:
             log_exception_chain(
@@ -1513,7 +1517,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             num_frames=num_frames,
             height=height,
             width=width,
-            num_inference_steps=MINIMAX_H3_NUM_INFERENCE_STEPS,
+            num_inference_steps=self.num_inference_steps,
             seed=int(request.seed) if request.seed is not None else 0,
             **self._pipeline_extra_kwargs(request),
         )
@@ -1544,9 +1548,22 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         # character. Same shape as the Prodia runner's `return [VideoManager().export_to_mp4(...)]`.
         return [path]
 
+    def _create_pipeline_kwargs(self) -> dict:
+        """Extra ``create_pipeline(...)`` kwargs beyond mesh/weights/task/trace."""
+        return {}
+
     def _pipeline_extra_kwargs(self, request: VideoGenerateRequest) -> dict:
         """Extra ``pipeline(...)`` kwargs beyond prompt/shape/steps/seed."""
         return {}
+
+
+class TTMiniMaxFastH3Runner(TTMiniMaxH3Runner):
+    """MiniMax-H3 FastH3: t2va with a distilled LoRA adapter, fixed to 4 steps."""
+
+    num_inference_steps = MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
+
+    def _create_pipeline_kwargs(self) -> dict:
+        return {"lora_path": os.environ.get("MINIMAX_H3_LORA_PATH")}
 
 
 class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
