@@ -717,10 +717,26 @@ between them is how much offered reuse the cache actually caught. Collecting it
 needs no flag: AIPerf scrapes `<url>/metrics` by default and writes
 `server_metrics_export.json`, already scoped to the profiling phase with each
 counter's in-window delta pre-aggregated into `stats.total` — which is also why
-the cache-priming warmup does not drag the number down. Hits and queries are
-summed across endpoints before dividing, keeping a multi-worker rate
-token-weighted. When the counters are absent the field is omitted and the report
-drops the column, rather than publishing a 0% that reads like a broken cache.
+the cache-priming warmup does not drag the number down.
+
+The rate is derived from the miss side: one minus the tokens the engine had to
+compute (`vllm:prompt_tokens_by_source{source="local_compute"}`, summed across
+endpoints) over the run's prompt tokens. That is deliberate rather than the
+obvious ratio of hit sources to everything scraped. A token is computed at most
+once anywhere in the cluster, so the miss side cannot double-count; the hit
+sources can. On a disaggregated deployment every token the prefiller produced is
+shipped to the decoder and reappears there as `external_kv_transfer`, so the
+all-endpoint sum is twice the prompt and that ratio reports exactly half the
+true rate. Adding `external_kv_transfer` back into the numerator does not fix
+it — the series also carries the tokens the prefiller freshly computed, which
+turns the result into `(1 + true) / 2` and floors it at 50%. Where the hits came
+from is kept separately as `prefix_cache_local_hit_tokens_measured` (GPU cache,
+free) and `prefix_cache_external_hit_tokens_measured` (offload tier, costs a KV
+transfer). When the counters are absent the driver falls back to the server's
+per-request usage accounting (`prompt_tokens_details.cached_tokens`, which needs
+vLLM's `--enable-prompt-tokens-details` or SGLang's `--enable-cache-report`), and
+failing that omits the field so the report drops the column rather than
+publishing a 0% that reads like a broken cache.
 
 That is the expected outcome when the load target does not expose the counters —
 a Dynamo frontend does not aggregate its workers'. Point the scrape at the

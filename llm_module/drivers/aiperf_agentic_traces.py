@@ -41,9 +41,11 @@ logger = logging.getLogger(__name__)
 
 # vLLM partitions the prompt tokens it scheduled by where they came from, one
 # series per ``source`` label: ``local_cache_hit`` is the GPU prefix cache,
-# ``external_kv_transfer`` a KV-offload tier, ``local_compute`` the rest.
+# ``external_kv_transfer`` a KV-offload tier or a peer worker's KV connector,
+# ``local_compute`` the rest -- i.e. the only source that is a genuine miss.
 PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = ("vllm:prompt_tokens_by_source",)
-_CACHE_HIT_TOKEN_SOURCE = "local_cache_hit"
+_LOCAL_HIT_TOKEN_SOURCE = "local_cache_hit"
+_COMPUTED_TOKEN_SOURCE = "local_compute"
 
 
 @dataclass(frozen=True)
@@ -108,7 +110,9 @@ class AIPerfAgenticTracesDriver:
 
         # Entries may carry a prefill=/decode= role prefix for the prefix-cache
         # driver's benefit; agentic traces reports one blended rate, so the role
-        # is stripped and only the URL is used.
+        # is stripped and only the URL is used. That is safe here because the
+        # rate below is derived from the miss side, which needs no knowledge of
+        # which worker played which role -- see _parse_prefix_cache_metrics.
         metrics_urls = tuple(
             _normalize_metrics_url(_split_role_and_url(spec)[1])
             for spec in server.prefix_cache_metrics_urls
@@ -486,13 +490,67 @@ def parse_aiperf_output(
         if value:
             metrics[key] = value
 
-    metrics.update(_parse_prefix_cache_metrics(artifact_dir, metrics_urls))
+    # The engine's own counters are authoritative when the scrape produced any:
+    # they are the cache's accounting, scoped to the profiling window. A
+    # prefix-unaware frontend (Dynamo) exports none and AIPerf then writes no
+    # usable series -- or no server_metrics_export.json at all -- so fall back
+    # to the server's per-response usage accounting, which every
+    # OpenAI-compatible endpoint reports as ``prompt_tokens_details``.
+    prompt_tokens = 0.0
+    for tag in ("total_usage_prompt_tokens", "total_isl"):
+        value = _stat(tag)
+        if isinstance(value, (int, float)) and value > 0:
+            prompt_tokens = float(value)
+            break
+    engine_metrics = _parse_prefix_cache_metrics(
+        artifact_dir, metrics_urls, prompt_tokens=prompt_tokens
+    )
+    metrics.update(engine_metrics or _usage_cache_hit_metrics(summary))
 
     return metrics
 
 
+def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
+    """Measured prefix-cache hit rate from the server's own usage accounting.
+
+    The frontend reports one usage block per request no matter how many workers
+    touched it, so this is immune to the cross-worker double-count the
+    token-source partition has to work around.
+
+    Absent unless the server populates ``usage.prompt_tokens_details``: vLLM
+    needs ``--enable-prompt-tokens-details``, SGLang ``--enable-cache-report``,
+    TRT-LLM reports it by default. Returns ``{}`` when the tags are missing, so
+    the report drops the column rather than publishing a misleading 0%.
+    """
+
+    def _avg(tag: str) -> Optional[float]:
+        block = summary.get(tag)
+        if not isinstance(block, Mapping):
+            return None
+        value = block.get("avg")
+        return float(value) if isinstance(value, (int, float)) else None
+
+    cached = _avg("total_usage_prompt_cache_read_tokens")
+    prompt = _avg("total_usage_prompt_tokens")
+
+    pct = _avg("overall_usage_prompt_cache_read_pct")
+    if pct is None and cached is not None and prompt:
+        pct = 100.0 * cached / prompt
+    if pct is None:
+        return {}
+
+    metrics: Dict[str, Any] = {"measured_prefix_cache_hit_pct": pct}
+    if cached is not None:
+        metrics["prefix_cache_hit_tokens_measured"] = cached
+    if prompt is not None:
+        metrics["prefix_cache_prompt_tokens_measured"] = prompt
+    return metrics
+
+
 def _parse_prefix_cache_metrics(
-    artifact_dir: Path, metrics_urls: Sequence[str] = ()
+    artifact_dir: Path,
+    metrics_urls: Sequence[str] = (),
+    prompt_tokens: float = 0.0,
 ) -> Dict[str, Any]:
     """Measure the engine's prefix-cache hit rate from its own counters.
 
@@ -500,9 +558,14 @@ def _parse_prefix_cache_metrics(
     the reuse inherent to the traces the cache actually caught.
 
     Read from the engine's token-source partition where it exposes one, falling
-    back to its prefix-cache hit/query counters -- the order InferenceX's own
-    aggregation uses, and for the same reason: the pair's denominator inflates
-    under load. See the comments at each branch.
+    back to its prefix-cache hit/query counters. That pair is only a fallback
+    because its denominator inflates under load -- a queued request is
+    re-queried on every scheduling attempt, which grew it to 10.8x the tokens
+    actually prefilled on a concurrency-8 replay and reported 8.9% for a cache
+    serving 41.1%. See the comments at each branch.
+
+    ``prompt_tokens`` is the run's total prompt tokens, which the token-source
+    branch divides by; that branch is skipped without it.
 
     ``server_metrics_export.json`` is scoped to the profiling phase and
     pre-aggregates each counter's in-window delta into ``stats.total``, so the
@@ -598,24 +661,41 @@ def _parse_prefix_cache_metrics(
             metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
         return metrics
 
-    # Preferred, and what InferenceX's own aggregation reports
-    # (``utils/agentic/aggregation/backends/vllm.py``): the engine partitions the
-    # prompt tokens it scheduled by origin, so the cache's share is a share of a
-    # whole and cannot exceed 100%. The hits/queries pair below is its fallback,
-    # and is only equivalent while nothing queues -- a queued request is
-    # re-queried on every scheduling attempt, which inflated the denominator to
-    # 10.8x the tokens actually prefilled on a concurrency-8 replay and reported
-    # 8.9% for a cache serving 41.1%.
+    # Preferred: the engine partitions every prompt token it scheduled by
+    # origin, so the tokens it had to compute are exactly the misses.
+    #
+    # The rate is taken off that miss side rather than by summing the hit
+    # sources over a denominator of everything scraped. A token is computed at
+    # most once anywhere in the cluster, so ``local_compute`` cannot
+    # double-count; the hit sources can. In a disaggregated deployment every
+    # token the prefiller produced is shipped to the decoder and reappears
+    # there as ``external_kv_transfer``, so the all-endpoint sum is 2x the
+    # prompt and the old ratio reported exactly half the true rate (45.2% for a
+    # cache serving 90.4% on a 1P1D GLM-5.3 replay). Folding
+    # ``external_kv_transfer`` back into the numerator, as InferenceX's
+    # aggregation does, does not undo it: that series also carries the tokens
+    # the prefiller freshly computed, which turns the result into
+    # (1 + true) / 2 and floors it at 50% no matter how the cache performs.
+    #
+    # ``prompt_tokens`` is the server-reported total for the profiling window,
+    # counted once per request by the frontend and therefore immune to the same
+    # double-count. The two are consistent by construction -- the counters and
+    # the usage blocks describe the same requests -- so a ``local_compute``
+    # larger than the whole prompt means the scrape and the profiling window
+    # disagree, and the hits/queries pair below is used instead.
     by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
-    prefilled_tokens = sum(by_source.values())
-    if prefilled_tokens > 0:
-        cached = by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0)
-        return _with_endpoints(
-            {
-                "measured_prefix_cache_hit_pct": 100.0 * cached / prefilled_tokens,
-                "prefix_cache_hit_tokens_measured": cached,
-                "prefix_cache_prompt_tokens_measured": prefilled_tokens,
-            }
+    if by_source and prompt_tokens > 0:
+        computed = by_source.get(_COMPUTED_TOKEN_SOURCE, 0.0)
+        if computed <= prompt_tokens:
+            return _with_endpoints(
+                _token_source_metrics(by_source, computed, prompt_tokens)
+            )
+        logger.warning(
+            "Engine reported %.0f computed prompt tokens against AIPerf's %.0f "
+            "for the profiling window; the scrape window and the profiling "
+            "window disagree, so the token-source partition is ignored.",
+            computed,
+            prompt_tokens,
         )
 
     hits = _counter_total(PREFIX_CACHE_HITS_METRIC_ALIASES)
@@ -644,6 +724,34 @@ def _parse_prefix_cache_metrics(
             "prefix_cache_queries_measured": queries,
         }
     )
+
+
+def _token_source_metrics(
+    by_source: Mapping[str, float],
+    computed: float,
+    prompt_tokens: float,
+) -> Dict[str, Any]:
+    """Build the hit-rate metrics from one token-source partition.
+
+    Also splits the hits by tier, since which tier served them is the actionable
+    part: GPU-cache hits are free, offload-tier hits cost a KV transfer.
+    ``local_cache_hit`` is safe to sum across endpoints (a token is a local hit
+    on the one worker that prefilled it), so the offload tier is taken as the
+    remainder rather than from ``external_kv_transfer``, which double-counts.
+    The split is omitted when the two do not reconcile.
+    """
+    hit_tokens = prompt_tokens - computed
+    metrics: Dict[str, Any] = {
+        "measured_prefix_cache_hit_pct": 100.0 * hit_tokens / prompt_tokens,
+        "prefix_cache_hit_tokens_measured": hit_tokens,
+        "prefix_cache_prompt_tokens_measured": prompt_tokens,
+        "prefix_cache_computed_tokens_measured": computed,
+    }
+    local_hits = by_source.get(_LOCAL_HIT_TOKEN_SOURCE, 0.0)
+    if 0.0 <= local_hits <= hit_tokens:
+        metrics["prefix_cache_local_hit_tokens_measured"] = local_hits
+        metrics["prefix_cache_external_hit_tokens_measured"] = hit_tokens - local_hits
+    return metrics
 
 
 def _summarize_errors(error_summary: List[Any]) -> List[Dict[str, Any]]:
@@ -796,6 +904,19 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
         f"{float(measured_cache):.1f}%" if measured_cache is not None else "n/a",
         float(metrics.get("theoretical_prefix_cache_hit_pct", 0) or 0),
     )
+    # Where the prompt tokens came from, which is what makes a misdirected
+    # scrape obvious: a worker that prefills nothing computes nothing and would
+    # otherwise just report a suspiciously perfect rate.
+    computed_tokens = metrics.get("prefix_cache_computed_tokens_measured")
+    if computed_tokens is not None:
+        logger.info(
+            "[agentic-traces]   prompt tokens gpu-cache/offload/computed = "
+            "%.0f/%.0f/%.0f of %.0f",
+            float(metrics.get("prefix_cache_local_hit_tokens_measured", 0) or 0),
+            float(metrics.get("prefix_cache_external_hit_tokens_measured", 0) or 0),
+            float(computed_tokens),
+            float(metrics.get("prefix_cache_prompt_tokens_measured", 0) or 0),
+        )
 
     # Context overflow means traces were truncated against --max-context-length,
     # so the replay no longer matches what was recorded. The scenario tolerates

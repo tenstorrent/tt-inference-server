@@ -866,6 +866,23 @@ class TestPrefixCacheMeasurement:
         )
         assert "measured_prefix_cache_hit_pct" not in metrics
 
+    def test_a_tenstorrent_worker_uses_its_own_counter_names(self, tmp_path):
+        """cpp_server exports ``tt_prefix_cache_*`` and no token-source
+        partition, so it takes the hits/queries branch."""
+        _write_server_metrics(
+            tmp_path,
+            metrics={
+                "tt_prefix_cache_hits_total": {
+                    "series": [{"stats": {"total": 8200.0}}]
+                },
+                "tt_prefix_cache_queries_total": {
+                    "series": [{"stats": {"total": 10000.0}}]
+                },
+            },
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(82.0)
+
     def test_zero_queries_does_not_divide_by_zero(self, tmp_path):
         _write_server_metrics(
             tmp_path,
@@ -875,6 +892,193 @@ class TestPrefixCacheMeasurement:
             },
         )
         metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert "measured_prefix_cache_hit_pct" not in metrics
+
+
+def _by_source(**per_endpoint):
+    """``vllm:prompt_tokens_by_source``, one series per (endpoint, source)."""
+    return {
+        "vllm:prompt_tokens_by_source": {
+            "type": "counter",
+            "series": [
+                {
+                    "endpoint_url": endpoint,
+                    "labels": {"source": source},
+                    "stats": {"total": float(total)},
+                }
+                for endpoint, sources in per_endpoint.items()
+                for source, total in sources.items()
+            ],
+        }
+    }
+
+
+def _prompt_tokens(total):
+    return {"total_usage_prompt_tokens": {"unit": "tokens", "avg": float(total)}}
+
+
+class TestPrefixCacheTokenSources:
+    """The engine's token-source partition, preferred over hits/queries.
+
+    The rate is the share of prompt tokens the engine did not compute, so it
+    stays correct whether one worker serves a request or a prefiller hands off
+    to a decoder.
+    """
+
+    def test_aggregated_deployment_reports_the_engines_rate(self, tmp_path):
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                worker={"local_cache_hit": 900, "local_compute": 100},
+            ),
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(90.0)
+        assert metrics["prefix_cache_hit_tokens_measured"] == 900.0
+        assert metrics["prefix_cache_computed_tokens_measured"] == 100.0
+        assert metrics["prefix_cache_prompt_tokens_measured"] == 1000.0
+
+    def test_disaggregated_deployment_is_not_halved(self, tmp_path):
+        """In 1P1D the decoder re-reports the whole prompt as an external
+        transfer, so summing the hit sources across workers would report
+        exactly half the true rate. Numbers are from a GLM-5.3 c8 replay that
+        reported 45.19% for a cache serving 90.38%."""
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                prefill={
+                    "local_cache_hit": 29175808,
+                    "local_compute": 3106175,
+                    "external_kv_transfer": 0,
+                },
+                decode={
+                    "local_cache_hit": 0,
+                    "local_compute": 456,
+                    "external_kv_transfer": 32281983,
+                },
+            ),
+        )
+        metrics = parse_aiperf_output(
+            _write_summary(tmp_path, **_prompt_tokens(32282439))
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            90.38, abs=1e-2
+        )
+        assert metrics["prefix_cache_computed_tokens_measured"] == 3106631.0
+
+    def test_offload_tier_hits_count_and_are_split_from_gpu_hits(self, tmp_path):
+        """A prefiller that pulls KV from an offload tier instead of computing
+        it got a hit, so scoping to the prefill worker's ``local_cache_hit``
+        alone would understate it (23.7% here against a true 92.7%)."""
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                prefill={
+                    "local_cache_hit": 236600,
+                    "external_kv_transfer": 690000,
+                    "local_compute": 73400,
+                },
+                decode={"external_kv_transfer": 1000000, "local_compute": 0},
+            ),
+        )
+        metrics = parse_aiperf_output(
+            _write_summary(tmp_path, **_prompt_tokens(1000000))
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(92.66)
+        assert metrics["prefix_cache_local_hit_tokens_measured"] == 236600.0
+        assert metrics["prefix_cache_external_hit_tokens_measured"] == 690000.0
+
+    def test_token_sources_win_over_hits_and_queries(self, tmp_path):
+        """The pair's denominator inflates under load, so it is only a fallback."""
+        metrics_export = _by_source(
+            worker={"local_cache_hit": 900, "local_compute": 100}
+        )
+        metrics_export.update(
+            {
+                "vllm:prefix_cache_hits": {"series": [{"stats": {"total": 900.0}}]},
+                "vllm:prefix_cache_queries": {"series": [{"stats": {"total": 9000.0}}]},
+            }
+        )
+        _write_server_metrics(tmp_path, metrics=metrics_export)
+        metrics = parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(90.0)
+
+    def test_counters_wider_than_the_profiling_window_fall_back(self, tmp_path):
+        """More computed tokens than the run had prompt tokens means the scrape
+        covered traffic AIPerf did not; the partition cannot be divided by a
+        denominator it does not match."""
+        metrics_export = _by_source(
+            worker={"local_cache_hit": 900, "local_compute": 5000}
+        )
+        metrics_export.update(
+            {
+                "vllm:prefix_cache_hits": {"series": [{"stats": {"total": 800.0}}]},
+                "vllm:prefix_cache_queries": {"series": [{"stats": {"total": 1000.0}}]},
+            }
+        )
+        _write_server_metrics(tmp_path, metrics=metrics_export)
+        metrics = parse_aiperf_output(_write_summary(tmp_path, **_prompt_tokens(1000)))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(80.0)
+
+    def test_without_a_prompt_token_total_the_partition_is_skipped(self, tmp_path):
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(worker={"local_cache_hit": 900, "local_compute": 100}),
+        )
+        metrics = parse_aiperf_output(
+            _write_summary(tmp_path, total_isl={"unit": "tokens", "avg": 0.0})
+        )
+        assert "measured_prefix_cache_hit_pct" not in metrics
+
+
+class TestUsageCacheHitFallback:
+    """``prompt_tokens_details.cached_tokens``, for a frontend that exports no
+    Prometheus counters at all."""
+
+    def test_used_when_the_engine_exports_no_counters(self, tmp_path):
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path,
+                total_usage_prompt_tokens={"unit": "tokens", "avg": 1000.0},
+                total_usage_prompt_cache_read_tokens={"unit": "tokens", "avg": 940.0},
+            )
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(94.0)
+        assert metrics["prefix_cache_hit_tokens_measured"] == 940.0
+
+    def test_the_servers_own_percentage_is_preferred_over_recomputing(self, tmp_path):
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path,
+                total_usage_prompt_tokens={"unit": "tokens", "avg": 1000.0},
+                total_usage_prompt_cache_read_tokens={"unit": "tokens", "avg": 940.0},
+                overall_usage_prompt_cache_read_pct={"unit": "%", "avg": 93.5},
+            )
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(93.5)
+
+    def test_engine_counters_take_precedence(self, tmp_path):
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(worker={"local_cache_hit": 900, "local_compute": 100}),
+        )
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path,
+                total_usage_prompt_tokens={"unit": "tokens", "avg": 1000.0},
+                total_usage_prompt_cache_read_tokens={"unit": "tokens", "avg": 940.0},
+            )
+        )
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(90.0)
+
+    def test_a_server_that_reports_no_cached_tokens_omits_the_metric(self, tmp_path):
+        """What a vLLM without ``--enable-prompt-tokens-details`` produces: usage
+        is reported, the cache-read breakdown is not."""
+        metrics = parse_aiperf_output(
+            _write_summary(
+                tmp_path, total_usage_prompt_tokens={"unit": "tokens", "avg": 1000.0}
+            )
+        )
         assert "measured_prefix_cache_hit_pct" not in metrics
 
 
