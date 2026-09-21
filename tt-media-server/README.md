@@ -682,6 +682,25 @@ curl -X 'POST' \
 }'
 ```
 
+### Input media limits (MiniMax-H3)
+
+The FL2VA (`/generations/i2v`, `/generations/i2v/upload`) and Ref2VA (`/generations/ref2va`)
+endpoints admit media against the published MiniMax input media card. Anything outside it is
+refused at submit time with a 413 (size) or 422 naming the limit, never with a 202 followed by a
+failed job. The whole request body is capped at 64 MB (`MAX_REQUEST_BODY_BYTES`), so large files
+should be passed as `{"url": ...}` sources (their host must be listed in `MEDIA_URL_ALLOWED_DOMAINS`)
+rather than inline base64.
+
+| Media | Where | Limits |
+|-------|-------|--------|
+| Image | `image_prompts[].image` (first frame `frame_pos=0`, last frame `frame_pos=-1`, one of each); `references.images[]` (at most 9) | JPG/JPEG, PNG, WEBP, HEIC, HEIF; at most 30 MB per file; width and height each within [256, 5760] px; aspect ratio (w/h) within [0.4, 2.5] |
+| Video | `references.videos[]` (at most 3) | MP4 (.mp4) or MOV (.mov); video H.264/AVC or H.265/HEVC, audio AAC or MP3; at most 50 MB per file; [256, 5760] px; w/h within [0.4, 2.5]; 23.976-60 fps; 2-15 s per clip and at most 15 s combined |
+| Audio | `references.audios[]` (at most 3) | WAV or MP3; at most 15 MB per file; 2-15 s per clip and at most 15 s combined |
+
+At most 12 references in total across the three lists. HEIC/HEIF decoding requires `pillow-heif`
+(listed in `requirements.txt`); without it those two formats are refused with a message saying so.
+The constants live in `tt_model_runners/minimax_h3_policy.py`.
+
 ## Get video job metadata
 
 ```bash
@@ -1046,6 +1065,10 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
 | `TT_VIDEO_EXPORT_CRF` | `"23"` | x264 CRF used when exporting MP4 (lower = higher quality) |
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
+| `MAX_REQUEST_BODY_BYTES` | `67108864` | Total request-body cap (64 MB) on the video generation routes, answered with 413 from `Content-Length` (or the streamed byte count) before the body is parsed; `0` disables it |
+| `MEDIA_URL_ALLOWED_DOMAINS` | `""` | Comma-separated hostnames, exact or `*.suffix`, that `url` media sources may be fetched from; while empty every URL source is refused with 400 |
+| `MEDIA_URL_MAX_BYTES` | `52428800` | Ceiling for one URL-sourced media file (50 MB); the video endpoints apply the per-modality caps of the input media card (image 30 MB, video 50 MB, audio 15 MB) beneath it |
+| `MEDIA_URL_TIMEOUT_SECONDS` | `30.0` | Total download budget for all URL sources of one request, redirects and body included |
 
 ## Operational TT Settings
 

@@ -145,14 +145,19 @@ class Settings(BaseSettings):
     # with 400 — the allowlist is the SSRF guard, and it is checked again on
     # every redirect hop.
     media_url_allowed_domains: str = ""
-    # 7,500,000 bytes base64-encode to exactly MAX_BASE64_IMAGE_LEN
-    # (10,000,000 chars, domain/video_i2v_generate_request.py). A larger
-    # default would pass the endpoint and then fail the field cap when an
-    # SP-runner worker re-validates ImagePromptEntry mid-job.
-    media_url_max_bytes: int = 7_500_000
+    # Ceiling for one URL-sourced asset. The video endpoints pass the per-modality
+    # cap of the MiniMax input media card (image 30 MB, video 50 MB, audio 15 MB,
+    # tt_model_runners/minimax_h3_policy.py) per download; this setting can only
+    # tighten those, never widen them. Default = the largest of the three.
+    media_url_max_bytes: int = 50 * 1024 * 1024
     # Total deadline for one asset: covers redirects and the full body read.
     media_url_timeout_seconds: float = 30.0
     media_url_max_redirects: int = 5
+    # Total request-body cap on the video generation routes (/v1/videos, /video),
+    # enforced by RequestBodyLimitMiddleware from Content-Length or the streamed
+    # byte count before any JSON is parsed: 64 MB, the MiniMax input media card.
+    # Media that does not fit belongs in URL sources, not inline base64. 0 disables.
+    max_request_body_bytes: int = 64 * 1024 * 1024
 
     # Telemetry settings
     enable_telemetry: bool = True

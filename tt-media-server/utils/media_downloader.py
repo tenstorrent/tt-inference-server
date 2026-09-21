@@ -217,6 +217,7 @@ async def download_media_url(
     *,
     client: Optional[httpx.AsyncClient] = None,
     deadline: Optional[float] = None,
+    max_bytes: Optional[int] = None,
 ) -> bytes:
     """Download one media asset under the configured URL policy.
 
@@ -231,8 +232,15 @@ async def download_media_url(
         deadline: Optional ``time.monotonic()`` deadline shared across several
             downloads (one budget per request). Defaults to now +
             ``media_url_timeout_seconds``.
+        max_bytes: Byte cap for this asset (the caller knows whether it is
+            fetching a 30 MB image or a 50 MB clip). Defaults to
+            ``media_url_max_bytes``, which stays the ceiling: a per-call cap
+            can only tighten it.
     """
-    max_bytes = settings.media_url_max_bytes
+    if max_bytes is None or max_bytes <= 0:
+        max_bytes = settings.media_url_max_bytes
+    else:
+        max_bytes = min(max_bytes, settings.media_url_max_bytes)
     max_redirects = max(0, settings.media_url_max_redirects)
     timeout_seconds = settings.media_url_timeout_seconds
     if timeout_seconds <= 0:
