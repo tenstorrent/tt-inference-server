@@ -5380,7 +5380,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=16,  # 12 -> 16: concurrency-16 experiment (SC16 blaze, n-slots 16), 2026-09-15
+                    n_concurrent_trials=8,  # 12 -> 16: concurrency-16 experiment (SC16 blaze, n-slots 16), 2026-09-15
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     # QB2 release runners expose only 16 CPUs; docker compose
@@ -5464,7 +5464,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=16,  # 12 -> 16: concurrency-16 experiment (SC16 blaze, n-slots 16), 2026-09-15
+                    n_concurrent_trials=8,  # 12 -> 16: concurrency-16 experiment (SC16 blaze, n-slots 16), 2026-09-15
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     agent_timeout_sec=2 * 60 * 60,
