@@ -2,24 +2,38 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import base64
+import io
+
 import pytest
 from domain.video_ref2va_generate_request import (
     MediaSource,
     MultimodalReferences,
     VideoRef2VAGenerateRequest,
 )
+from PIL import Image
 from pydantic import ValidationError
 from tt_model_runners.minimax_h3_policy import (
     MINIMAX_H3_MAX_REFERENCE_AUDIOS,
     MINIMAX_H3_MAX_REFERENCE_IMAGES,
     MINIMAX_H3_MAX_REFERENCE_VIDEOS,
+    MINIMAX_H3_MEDIA_MIN_SIDE_PX,
     check_reference_clip_durations,
 )
 
-_TINY_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
-    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-)
+
+def _png_b64(
+    width: int = MINIMAX_H3_MEDIA_MIN_SIDE_PX,
+    height: int = MINIMAX_H3_MEDIA_MIN_SIDE_PX,
+) -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (90, 120, 150)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+# The smallest image the MiniMax input media card admits (256 px per side); a 1x1
+# placeholder is refused by check_h3_image now.
+_TINY_PNG_BASE64 = _png_b64()
 
 
 class TestMediaSource:

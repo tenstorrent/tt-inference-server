@@ -106,10 +106,11 @@ def video_result_path(task_id: str) -> str:
 def image_prompts_path(task_id: str) -> str:
     """Return the side-file path holding the JSON-serialised image_prompts.
 
-    A worst-case I2V request can carry ``WAN22_NUM_FRAMES * MAX_BASE64_IMAGE_LEN``
-    bytes of conditioning images (~810 MB). Embedding that inline in the SHM
-    slot is impractical, so :class:`SPRunner` writes the list to this path and
-    the runner side reads it back after the SHM hand-off.
+    A request can carry up to ``max_request_body_bytes`` (64 MB) of inline
+    conditioning media, and more once URL sources are downloaded into base64
+    (each image up to ``MINIMAX_H3_IMAGE_MAX_BYTES``). Embedding that inline in
+    the SHM slot is impractical, so :class:`SPRunner` writes the list to this
+    path and the runner side reads it back after the SHM hand-off.
     """
     return os.path.join(VIDEO_FILE_DIR, f"tt_img_{task_id}.json")
 

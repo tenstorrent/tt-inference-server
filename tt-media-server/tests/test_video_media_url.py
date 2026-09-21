@@ -110,15 +110,17 @@ class TestResolveImagePromptUrls:
         assert exc_info.value.status_code == status
 
     async def test_oversized_download_is_rejected_with_413(self):
-        # 8,000,000 bytes base64-encode past the 10,000,000-char field cap;
-        # without the endpoint check this would 202 and then fail validation
-        # inside an SP-runner worker mid-job.
+        # One byte over the card's 30 MB image cap base64-encodes past the
+        # MAX_BASE64_IMAGE_LEN field cap; without the endpoint check this would
+        # 202 and then fail validation inside an SP-runner worker mid-job.
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_IMAGE_MAX_BYTES
+
         request = VideoI2VGenerateRequest(
             prompt="p", image_prompts=[{"image": _URL, "frame_pos": 0}]
         )
         with patch(
             "open_ai_api.video.download_media_url",
-            new=AsyncMock(return_value=b"x" * 8_000_000),
+            new=AsyncMock(return_value=b"x" * (MINIMAX_H3_IMAGE_MAX_BYTES + 1)),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await _resolve_image_prompt_urls(request)

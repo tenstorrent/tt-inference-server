@@ -9,6 +9,9 @@ asyncio
 # tt-metal models/tt_dit/pipelines/ltx/requirements.txt; av has no deps of its
 # own, so unlike diffusers it needs no --no-deps handling here.
 av==17.0.1
+# HEIC/HEIF reference images (the MiniMax-H3 input media card lists both). Pure
+# wheel with libheif bundled; utils/image_manager.py registers the opener.
+pillow-heif
 colorama
 fastapi
 faster_fifo

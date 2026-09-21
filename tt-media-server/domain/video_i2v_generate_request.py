@@ -11,9 +11,11 @@ frames across the output video.
 
 Validation mirrors the upstream ``WanPipelineI2V.prepare_latents`` contract
 for Wan, and MiniMax-H3 FL2VA's first/last keyframe sentinels (``0``, ``-1``).
-The pipeline-level ``num_frames`` for Wan (used by both the runner and the
-validators below) is the single source of truth in
-``config.constants.WAN22_NUM_FRAMES``.
+On an H3 FL2VA deployment each keyframe is also admitted against the MiniMax
+input media card (``check_h3_image``: <= 30 MB, JPG/PNG/WEBP/HEIC/HEIF,
+[256, 5760] px, aspect 0.4-2.5). The pipeline-level ``num_frames`` for Wan
+(used by both the runner and the validators below) is the single source of
+truth in ``config.constants.WAN22_NUM_FRAMES``.
 """
 
 import os
@@ -23,12 +25,20 @@ from config.constants import WAN22_NUM_FRAMES, ModelNames, ModelRunners
 from config.settings import get_settings
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
+from tt_model_runners.minimax_h3_policy import (
+    MINIMAX_H3_IMAGE_MAX_BYTES,
+    base64_len_for_bytes,
+    check_h3_image,
+    decode_base64_media,
+)
 from utils.image_manager import ImageManager
 from utils.media_downloader import is_media_url
 
-# The cap exists to bound HTTP body size, not to match
-# any pipeline constraint.
-MAX_BASE64_IMAGE_LEN = 10_000_000
+# One inline image is capped at the MiniMax card's 30 MB file size, measured as
+# base64 text (4/3 of the bytes). This bounds a field; the 64 MB request-body cap
+# (open_ai_api/body_limit.py) bounds the request, so several 30 MB images cannot
+# arrive inline -- they go by URL, as the card says.
+MAX_BASE64_IMAGE_LEN = base64_len_for_bytes(MINIMAX_H3_IMAGE_MAX_BYTES)
 
 
 class ImagePromptEntry(BaseModel):
@@ -51,6 +61,12 @@ class ImagePromptEntry(BaseModel):
             # policy-checked at the API layer before enqueue
             # (open_ai_api/video.py), where failures map to real HTTP
             # statuses instead of a blanket 422 here.
+            return v
+
+        if _is_minimax_h3_fl2va():
+            # The MiniMax input media card, header-only (Image.open is lazy), so a
+            # 30 MB keyframe costs milliseconds here and is decoded once, on the worker.
+            check_h3_image(decode_base64_media(v), label="image")
             return v
 
         try:

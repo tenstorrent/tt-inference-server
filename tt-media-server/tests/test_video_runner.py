@@ -1255,8 +1255,10 @@ _TINY_PNG_B64_CACHE: str = ""
 
 
 def _tiny_png_b64() -> str:
-    """Smallest valid PNG, base64-encoded — used as a stand-in for I2V
-    conditioning images in tests that don't actually decode them."""
+    """Smallest PNG the MiniMax input media card admits (256 px per side),
+    base64-encoded — a stand-in for I2V / Ref2VA conditioning images in tests
+    that don't actually decode them. The rank-0 worker re-validates the request
+    schema, which refuses anything under 256 px, so a 1x1 pixel no longer fits."""
     global _TINY_PNG_B64_CACHE
     if _TINY_PNG_B64_CACHE:
         return _TINY_PNG_B64_CACHE
@@ -1267,7 +1269,7 @@ def _tiny_png_b64() -> str:
     from PIL import Image
 
     buf = io.BytesIO()
-    Image.new("RGB", (1, 1), color=0).save(buf, format="PNG")
+    Image.new("RGB", (256, 256), color=0).save(buf, format="PNG")
     _TINY_PNG_B64_CACHE = base64.b64encode(buf.getvalue()).decode("ascii")
     return _TINY_PNG_B64_CACHE
 
