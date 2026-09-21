@@ -42,7 +42,13 @@ from tt_model_runners.minimax_h3_policy import (
 
 def _image(width: int, height: int, fmt: str = "PNG") -> bytes:
     buf = io.BytesIO()
-    Image.new("RGB", (width, height), (90, 120, 150)).save(buf, format=fmt)
+    image = Image.new("RGB", (width, height), (90, 120, 150))
+    if fmt == "MPO":
+        # Pillow writes the multi-picture APP2 segment only for >1 frame; with one
+        # frame the file is a plain JPEG and reopens as such.
+        image.save(buf, format="MPO", save_all=True, append_images=[image.copy()])
+    else:
+        image.save(buf, format=fmt)
     return buf.getvalue()
 
 
@@ -84,11 +90,16 @@ class TestCaps:
         from domain.video_i2v_generate_request import MAX_BASE64_IMAGE_LEN
         from domain.video_ref2va_generate_request import MAX_BASE64_MEDIA_LEN
 
-        assert MAX_BASE64_IMAGE_LEN == base64_len_for_bytes(MINIMAX_H3_IMAGE_MAX_BYTES)
+        headroom = policy.MEDIA_B64_FIELD_HEADROOM
+        assert MAX_BASE64_IMAGE_LEN == (
+            base64_len_for_bytes(MINIMAX_H3_IMAGE_MAX_BYTES) + headroom
+        )
         assert (
-            MAX_BASE64_IMAGE_LEN == 41_943_040
-        )  # a 30 MB image fits, 7.5 MB was the old cap
-        assert MAX_BASE64_MEDIA_LEN == base64_len_for_bytes(MINIMAX_H3_VIDEO_MAX_BYTES)
+            MAX_BASE64_IMAGE_LEN >= 41_943_040
+        )  # a 30 MB image fits (7.5 MB was the cap)
+        assert MAX_BASE64_MEDIA_LEN == (
+            base64_len_for_bytes(MINIMAX_H3_VIDEO_MAX_BYTES) + headroom
+        )
 
     def test_decode_tolerates_data_url_and_stripped_padding(self):
         raw = b"\x89PNG\r\n\x1a\n" + b"abc"
@@ -112,8 +123,10 @@ class TestCaps:
 
 
 class TestImageCard:
-    @pytest.mark.parametrize("fmt", ["PNG", "JPEG"])
+    @pytest.mark.parametrize("fmt", ["PNG", "JPEG", "MPO"])
     def test_admits_png_and_jpeg(self, fmt):
+        # MPO is the multi-picture JPEG phones and cameras write for every .jpg;
+        # Pillow reports it under that name and the card calls it JPG.
         image = check_h3_image(_image(256, 256, fmt))
         assert image.size == (256, 256)
         assert image.format == fmt
@@ -331,6 +344,42 @@ class TestReferenceVideoCard:
         with pytest.raises(ValueError, match="could not be probed"):
             check_h3_reference_video(b"\x00" * 64)
 
+    def test_stream_without_a_decoder_is_an_unsupported_codec(self, monkeypatch):
+        """PyAV leaves codec_context None for a codec libavcodec cannot decode (EVC,
+        LCEVC, an unregistered fourcc): that is a 422 naming the codec, not a 500."""
+        import av
+
+        video = SimpleNamespace(
+            type="video",
+            codec_context=None,
+            width=640,
+            height=360,
+            average_rate=30,
+            guessed_rate=None,
+            base_rate=None,
+            duration=None,
+            time_base=None,
+        )
+        container = MagicMock()
+        container.format.name = "mov,mp4,m4a,3gp,3g2,mj2"
+        container.duration = 3_000_000
+        container.streams = [video]
+        container.__enter__.return_value = container
+        monkeypatch.setattr(av, "open", lambda *_a, **_k: container)
+        assert probe_media(b"fake").video_codec == "unknown"
+        with pytest.raises(ValueError, match="video codec 'unknown'"):
+            check_h3_reference_video(b"fake")
+
+    def test_pyav_surprises_become_422s(self, monkeypatch):
+        import av
+
+        def boom(*_a, **_k):
+            raise AttributeError("'NoneType' object has no attribute 'name'")
+
+        monkeypatch.setattr(av, "open", boom)
+        with pytest.raises(ValueError, match="could not be probed"):
+            probe_media(b"fake")
+
 
 class TestReferenceAudioCard:
     def test_wav_and_mp3_are_admitted_and_measured(self, clips):
@@ -414,6 +463,19 @@ class TestSchemas:
         with pytest.raises(ValidationError, match="not supported"):
             ImagePromptEntry(image=_b64(_image(256, 256, "BMP")), frame_pos=0)
 
+    @patch("domain.video_i2v_generate_request.get_settings", _fl2va_settings)
+    def test_data_url_prefix_does_not_eat_into_the_30mb_cap(self):
+        from domain.video_i2v_generate_request import ImagePromptEntry
+
+        # Exactly 30 MiB of (junk) payload behind a data-URL prefix: the field cap
+        # must let it through to the byte-level checks, which refuse the junk as
+        # undecodable -- not the prefix as "too long".
+        payload = "data:image/jpeg;base64," + _b64(b"\xff" * MINIMAX_H3_IMAGE_MAX_BYTES)
+        with pytest.raises(ValidationError) as info:
+            ImagePromptEntry(image=payload, frame_pos=0)
+        assert "could not be decoded" in str(info.value)
+        assert "at most" not in str(info.value)
+
     def test_wan_keeps_the_generic_decodability_check(self):
         from domain.video_i2v_generate_request import ImagePromptEntry
 
@@ -428,15 +490,20 @@ class TestEndpointHelpers:
         image = check_h3_image(base64.b64decode(video_api._OPENAPI_IMAGE_PLACEHOLDER))
         assert image.size == (256, 256)
 
-    def test_upload_cap_and_content_types_follow_the_card(self):
+    def test_upload_and_url_caps_follow_the_card_on_h3_only(self):
         from open_ai_api import video as video_api
 
-        assert video_api._MAX_UPLOAD_BYTES == MINIMAX_H3_IMAGE_MAX_BYTES
         assert {
             "image/heic",
             "image/heif",
             "image/webp",
         } <= video_api._ALLOWED_IMAGE_CONTENT_TYPES
+        with patch("domain.video_i2v_generate_request.get_settings", _fl2va_settings):
+            assert video_api._upload_max_bytes() == MINIMAX_H3_IMAGE_MAX_BYTES
+            assert video_api._image_prompt_url_max_bytes() == MINIMAX_H3_IMAGE_MAX_BYTES
+        # Wan deployments keep the caps they had: their validator decodes in full.
+        assert video_api._upload_max_bytes() == 10 * 1024 * 1024
+        assert video_api._image_prompt_url_max_bytes() == 7_500_000
 
     def test_media_limits_admit_a_good_clip(self, clips):
         from open_ai_api import video as video_api

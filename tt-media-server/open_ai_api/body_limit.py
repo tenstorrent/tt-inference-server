@@ -13,18 +13,42 @@ is read, and, for a chunked upload without one, from the running byte count.
 Scoped by path prefix to the video routes so the audio and chat services keep
 their own limits (``max_audio_size_bytes`` etc.). Only body-carrying methods
 are checked; ``max_bytes <= 0`` disables the middleware.
+
+The chunked case raises from ``receive`` while FastAPI is reading the body.
+FastAPI wraps any plain exception raised there into a 400 "error parsing the
+body", but re-raises a ``fastapi.HTTPException``, so the error IS one (413)
+and ``ExceptionMiddleware`` renders it with the same detail text.
+
+Ordering contract: this middleware must sit INSIDE any ``BaseHTTPMiddleware``
+(added to the app before it, since the last ``add_middleware`` is outermost).
+A ``BaseHTTPMiddleware`` between here and the route reads the body inside an
+anyio task group, which would wrap the 413 in an ``ExceptionGroup`` that
+FastAPI turns into its 400. ``__call__`` still unwraps such a group as a last
+resort for the case where nothing inside rendered a response.
 """
 
 import json
 from typing import Iterable
 
+from fastapi import HTTPException
+
 _BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
 _DEFAULT_PREFIXES = ("/v1/videos", "/video")
 
 
-class _BodyTooLarge(Exception):
-    def __init__(self, received: int):
-        super().__init__(received)
+def _detail_text(max_bytes: int, size_text: str) -> str:
+    return (
+        f"Request body is {size_text}, over the {max_bytes}-byte limit "
+        f"({max_bytes / (1024 * 1024):g} MB) for video generation requests. "
+        "Pass large media as URL sources instead of inline base64."
+    )
+
+
+class _BodyTooLarge(HTTPException):
+    def __init__(self, received: int, max_bytes: int):
+        super().__init__(
+            status_code=413, detail=_detail_text(max_bytes, f"over {received} bytes")
+        )
         self.received = received
 
 
@@ -68,20 +92,10 @@ class RequestBodyLimitMiddleware:
             for prefix in self.path_prefixes
         )
 
-    def _detail(self, size_text: str) -> bytes:
-        return json.dumps(
-            {
-                "detail": (
-                    f"Request body is {size_text}, over the {self.max_bytes}-byte "
-                    f"limit ({self.max_bytes / (1024 * 1024):g} MB) for video "
-                    "generation requests. Pass large media as URL sources instead of "
-                    "inline base64."
-                )
-            }
-        ).encode("utf-8")
-
     async def _reject(self, send, size_text: str) -> None:
-        body = self._detail(size_text)
+        body = json.dumps({"detail": _detail_text(self.max_bytes, size_text)}).encode(
+            "utf-8"
+        )
         await send(
             {
                 "type": "http.response.start",
@@ -120,7 +134,7 @@ class RequestBodyLimitMiddleware:
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > self.max_bytes:
-                    raise _BodyTooLarge(received)
+                    raise _BodyTooLarge(received, self.max_bytes)
             return message
 
         async def tracking_send(message):

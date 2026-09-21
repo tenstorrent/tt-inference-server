@@ -10,8 +10,13 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from open_ai_api.body_limit import RequestBodyLimitMiddleware
 from open_ai_api.deprecation import DeprecatedPathMiddleware
+from pydantic import BaseModel
 
 LIMIT = 1024
+
+
+class _Payload(BaseModel):
+    prompt: str
 
 
 def _client(max_bytes: int = LIMIT) -> TestClient:
@@ -20,13 +25,21 @@ def _client(max_bytes: int = LIMIT) -> TestClient:
     async def echo(request: Request):
         return {"received": len(await request.body())}
 
+    async def parsed(body: _Payload):
+        # The real video routes look like this: FastAPI reads and parses the body
+        # itself, wrapping any plain exception from that read into a 400.
+        return {"prompt_len": len(body.prompt)}
+
     app.post("/v1/videos/generations/ref2va")(echo)
+    app.post("/v1/videos/generations")(parsed)
     app.post("/video/generations")(echo)
     app.post("/v1/audio/transcriptions")(echo)
     app.get("/v1/videos/jobs")(lambda: {"jobs": []})
-    # The real app has a BaseHTTPMiddleware inside the cap; the size error must cross it.
-    app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
+    # main.py's order: the cap sits inside the BaseHTTPMiddleware (added first =
+    # inner). The other way round, FastAPI would answer chunked oversize bodies
+    # with its own 400 -- test_chunked_..._through_fastapi_body_parsing guards it.
     app.add_middleware(RequestBodyLimitMiddleware, max_bytes=max_bytes)
+    app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
     return TestClient(app)
 
 
@@ -73,6 +86,36 @@ def test_chunked_body_under_the_cap_passes():
         VIDEO, content=chunks(), headers={"Transfer-Encoding": "chunked"}
     )
     assert response.json() == {"received": 600}
+
+
+def test_chunked_body_over_the_cap_is_413_through_fastapi_body_parsing():
+    """The route with a pydantic body is the real shape; FastAPI must not turn the
+    size error into its own 400 'There was an error parsing the body'."""
+    client = _client()
+    payload = b'{"prompt": "' + b"x" * (LIMIT + 200) + b'"}'
+
+    def chunks():
+        yield payload[:700]
+        yield payload[700:]
+
+    response = client.post(
+        "/v1/videos/generations",
+        content=chunks(),
+        headers={"Transfer-Encoding": "chunked"},
+    )
+    assert response.status_code == 413
+    detail = response.json()["detail"]
+    assert f"{LIMIT}-byte limit" in detail and "URL" in detail
+
+
+def test_parsed_body_under_the_cap_reaches_the_route():
+    client = _client()
+    response = client.post("/v1/videos/generations", json={"prompt": "hello"})
+    assert response.json() == {"prompt_len": 5}
+    response = client.post(
+        "/v1/videos/generations", content=b'{"prompt": "' + b"x" * (LIMIT * 2) + b'"}'
+    )
+    assert response.status_code == 413
 
 
 def test_legacy_video_prefix_is_capped_too():

@@ -22,7 +22,6 @@ from config.constants import (
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
 from domain.video_i2v_generate_request import (
-    MAX_BASE64_IMAGE_LEN,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
     _is_minimax_h3_fl2va,
@@ -105,9 +104,12 @@ def _openapi_image_placeholder() -> str:
 _OPENAPI_IMAGE_PLACEHOLDER = _openapi_image_placeholder()
 
 # Multipart safety knobs — same shape as Stability/Runway/OpenAI image edits.
-# The byte cap is the card's single-image size; the same check_h3_image rules
-# then apply through ImagePromptEntry on an H3 FL2VA deployment.
+# On an H3 FL2VA deployment the byte cap is the card's single-image size and the
+# check_h3_image rules then apply through ImagePromptEntry; Wan deployments keep
+# the caps they had, since their validator decodes every image in full.
 _MAX_UPLOAD_BYTES = MINIMAX_H3_IMAGE_MAX_BYTES
+_LEGACY_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+_LEGACY_IMAGE_URL_MAX_BYTES = 7_500_000
 _UPLOAD_READ_CHUNK = 64 * 1024
 _ALLOWED_IMAGE_CONTENT_TYPES = frozenset(
     {"image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"}
@@ -139,6 +141,20 @@ def _validate_image_content_type(upload: UploadFile) -> None:
         )
 
 
+def _upload_max_bytes() -> int:
+    """Multipart image cap: the card's 30 MB on H3 FL2VA, the historical 10 MiB elsewhere."""
+    return _MAX_UPLOAD_BYTES if _is_minimax_h3_fl2va() else _LEGACY_UPLOAD_MAX_BYTES
+
+
+def _image_prompt_url_max_bytes() -> int:
+    """URL-sourced keyframe cap: the card's 30 MB on H3 FL2VA, the historical 7.5 MB elsewhere."""
+    return (
+        MINIMAX_H3_IMAGE_MAX_BYTES
+        if _is_minimax_h3_fl2va()
+        else _LEGACY_IMAGE_URL_MAX_BYTES
+    )
+
+
 async def _read_capped_upload(upload: UploadFile) -> bytes:
     """Stream-read upload bytes with a hard cap to prevent RAM exhaustion.
 
@@ -146,6 +162,7 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     in chunks lets us reject early with 413 before the whole payload lands
     in Python memory and is base64-expanded by ~33%.
     """
+    max_bytes = _upload_max_bytes()
     chunks: list[bytes] = []
     total = 0
     while True:
@@ -153,10 +170,10 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
         if not chunk:
             break
         total += len(chunk)
-        if total > _MAX_UPLOAD_BYTES:
+        if total > max_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"Image exceeds {_MAX_UPLOAD_BYTES}-byte upload cap",
+                detail=f"Image exceeds {max_bytes}-byte upload cap",
             )
         chunks.append(chunk)
     return b"".join(chunks)
@@ -403,23 +420,22 @@ async def _resolve_image_prompt_urls(request: VideoGenerateRequest) -> None:
     for entry in image_prompts:
         if not is_media_url(entry.image):
             continue
-        media_bytes = await _download_media(
-            entry.image, deadline, max_bytes=MINIMAX_H3_IMAGE_MAX_BYTES
-        )
-
-        image_b64 = base64.b64encode(media_bytes).decode("ascii")
-        # Assignment below bypasses field validation, but SP-runner workers
-        # re-validate ImagePromptEntry mid-job — enforce the field cap here so
-        # an operator-raised media_url_max_bytes fails at submit, not in the
-        # worker.
-        if len(image_b64) > MAX_BASE64_IMAGE_LEN:
+        max_bytes = _image_prompt_url_max_bytes()
+        media_bytes = await _download_media(entry.image, deadline, max_bytes=max_bytes)
+        # The downloader enforces the cap while streaming; this is the belt to
+        # its braces (a mocked or misconfigured downloader), and it keeps the
+        # SP-runner worker's re-validation of ImagePromptEntry from ever seeing
+        # a field over MAX_BASE64_IMAGE_LEN.
+        if len(media_bytes) > max_bytes:
             raise HTTPException(
                 status_code=413,
                 detail=(
-                    f"Downloaded media base64-encodes to {len(image_b64)} "
-                    f"chars, over the {MAX_BASE64_IMAGE_LEN}-char image cap"
+                    f"Downloaded image is {len(media_bytes)} bytes, over the "
+                    f"{max_bytes}-byte cap"
                 ),
             )
+
+        image_b64 = base64.b64encode(media_bytes).decode("ascii")
         if _is_minimax_h3_fl2va():
             _admit_or_raise(check_h3_image, media_bytes, label="image_prompts image")
         else:
@@ -677,8 +693,10 @@ async def submit_generate_video_i2v_upload(
     the requested ``frame_pos``.
 
     Hard limits:
-      * content_type must be ``image/png``, ``image/jpeg``, or ``image/webp``
-      * upload body capped at 10 MB (rejected with 413 before RAM allocation)
+      * content_type must be ``image/png``, ``image/jpeg``, ``image/webp``,
+        ``image/heic`` or ``image/heif``
+      * upload body capped at 30 MB on MiniMax-H3 FL2VA (the input media card;
+        the keyframe is then checked like an inline one), 10 MiB elsewhere
     """
     _validate_image_content_type(image)
     image_bytes = await _read_capped_upload(image)

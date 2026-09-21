@@ -26,6 +26,7 @@ from config.settings import get_settings
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
 from tt_model_runners.minimax_h3_policy import (
+    MEDIA_B64_FIELD_HEADROOM,
     MINIMAX_H3_IMAGE_MAX_BYTES,
     base64_len_for_bytes,
     check_h3_image,
@@ -35,10 +36,12 @@ from utils.image_manager import ImageManager
 from utils.media_downloader import is_media_url
 
 # One inline image is capped at the MiniMax card's 30 MB file size, measured as
-# base64 text (4/3 of the bytes). This bounds a field; the 64 MB request-body cap
-# (open_ai_api/body_limit.py) bounds the request, so several 30 MB images cannot
-# arrive inline -- they go by URL, as the card says.
-MAX_BASE64_IMAGE_LEN = base64_len_for_bytes(MINIMAX_H3_IMAGE_MAX_BYTES)
+# base64 text (4/3 of the bytes, plus room for a data-URL prefix). This bounds a
+# field; the 64 MB request-body cap (open_ai_api/body_limit.py) bounds the request,
+# so several 30 MB images cannot arrive inline -- they go by URL, as the card says.
+MAX_BASE64_IMAGE_LEN = (
+    base64_len_for_bytes(MINIMAX_H3_IMAGE_MAX_BYTES) + MEDIA_B64_FIELD_HEADROOM
+)
 
 
 class ImagePromptEntry(BaseModel):
