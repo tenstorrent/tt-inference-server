@@ -50,12 +50,13 @@ prometheus_metrics = PrometheusMetrics(app)
 prometheus_metrics.setup_metrics()
 
 app.include_router(api_router)
-app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
-# Outermost: refuse an oversized video request from its Content-Length before the
-# body is read, and from the byte count when it is chunked.
+# Refuse an oversized video request from its Content-Length before the body is
+# read, and from the byte count when it is chunked. Added BEFORE the
+# BaseHTTPMiddleware below so it sits inside it (see body_limit.py, ordering).
 app.add_middleware(
     RequestBodyLimitMiddleware, max_bytes=settings.max_request_body_bytes
 )
+app.add_middleware(DeprecatedPathMiddleware, sunset_date="2026-06-30")
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")

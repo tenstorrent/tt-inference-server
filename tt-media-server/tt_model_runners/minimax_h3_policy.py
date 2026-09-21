@@ -80,6 +80,7 @@ __all__ = [
     "MINIMAX_H3_VIDEO_MAX_FPS",
     "MINIMAX_H3_AUDIO_MAX_BYTES",
     "MINIMAX_H3_AUDIO_CONTAINERS",
+    "MEDIA_B64_FIELD_HEADROOM",
     "MediaTooLargeError",
     "MediaProbe",
     "base64_len_for_bytes",
@@ -129,8 +130,15 @@ MINIMAX_H3_MAX_REQUEST_BODY_BYTES = 64 * 1024 * 1024
 MINIMAX_H3_IMAGE_MAX_BYTES = 30 * 1024 * 1024
 # PIL ``Image.format`` names. HEIC and HEIF both decode as "HEIF" once pillow-heif has
 # registered its opener (utils.image_manager does that at import when the wheel is present).
-MINIMAX_H3_IMAGE_FORMATS = frozenset({"JPEG", "PNG", "WEBP", "HEIF"})
+# "MPO" is a JPEG with a multi-picture APP2 segment -- what iPhones and many Samsung, Sony
+# and Fujifilm cameras write for every .jpg -- and Pillow reports it under that name.
+MINIMAX_H3_IMAGE_FORMATS = frozenset({"JPEG", "MPO", "PNG", "WEBP", "HEIF"})
 MINIMAX_H3_IMAGE_FORMATS_TEXT = "JPG, JPEG, PNG, WEBP, HEIC, HEIF"
+# Base64 fields carry the encoded bytes plus, optionally, a "data:<mime>;base64," prefix that
+# decode_base64_media strips. The pydantic max_length on those fields is the encoded size of
+# the byte cap plus this headroom, so a file exactly at the cap is admitted with the prefix
+# too; the byte cap itself is enforced on the decoded bytes.
+MEDIA_B64_FIELD_HEADROOM = 128
 MINIMAX_H3_MEDIA_MIN_SIDE_PX = 256
 MINIMAX_H3_MEDIA_MAX_SIDE_PX = 5760
 MINIMAX_H3_MEDIA_MIN_ASPECT = 0.4
@@ -263,6 +271,17 @@ class MediaProbe:
     audio_codec: Optional[str] = None
 
 
+def _stream_codec_name(stream) -> str:
+    """Normalized codec name of a stream; ``"unknown"`` when libavcodec has no decoder for it.
+
+    PyAV leaves ``stream.codec_context`` as ``None`` for a codec id it cannot decode (an
+    unregistered fourcc, MPEG-5 EVC, LCEVC ...). That is an unsupported codec, not a crash.
+    """
+    context = getattr(stream, "codec_context", None)
+    name = getattr(context, "name", None) if context is not None else None
+    return _normalize_codec(name) or "unknown"
+
+
 def _normalize_codec(name: Optional[str]) -> Optional[str]:
     if not name:
         return None
@@ -292,16 +311,23 @@ def probe_media(raw: bytes) -> MediaProbe:
             width = height = None
             video_codec = None
             if video is not None:
-                video_codec = _normalize_codec(video.codec_context.name)
+                video_codec = _stream_codec_name(video)
                 width, height = video.width, video.height
                 rate = video.average_rate or video.guessed_rate or video.base_rate
                 fps = float(rate) if rate else None
                 if duration is None and video.duration is not None and video.time_base:
                     duration = float(video.duration * video.time_base)
-            audio_codec = _normalize_codec(audio.codec_context.name) if audio else None
-            if duration is None and audio is not None and audio.duration is not None:
+            audio_codec = _stream_codec_name(audio) if audio is not None else None
+            if (
+                duration is None
+                and audio is not None
+                and audio.duration is not None
+                and audio.time_base
+            ):
                 duration = float(audio.duration * audio.time_base)
-    except av.FFmpegError as exc:  # av.AVError was removed in PyAV 14
+    except Exception as exc:
+        # av.FFmpegError for an unreadable file (av.AVError was removed in PyAV 14), and
+        # anything else PyAV raises on an odd container: the caller's 422, never a 500.
         raise ValueError(
             "media could not be probed (not a readable audio/video file)"
         ) from exc

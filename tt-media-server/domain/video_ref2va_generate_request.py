@@ -19,6 +19,7 @@ from typing import List, Optional
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator, model_validator
 from tt_model_runners.minimax_h3_policy import (
+    MEDIA_B64_FIELD_HEADROOM,
     MINIMAX_H3_MAX_REFERENCE_AUDIOS,
     MINIMAX_H3_MAX_REFERENCE_IMAGES,
     MINIMAX_H3_MAX_REFERENCE_VIDEOS,
@@ -33,7 +34,9 @@ from utils.media_downloader import is_media_url
 # One MediaSource field serves images, videos and audio, so its text cap is the
 # largest file the card admits -- a 50 MB reference video -- as base64. The
 # per-modality byte caps (30 / 50 / 15 MB) are enforced on the decoded bytes.
-MAX_BASE64_MEDIA_LEN = base64_len_for_bytes(MINIMAX_H3_VIDEO_MAX_BYTES)
+MAX_BASE64_MEDIA_LEN = (
+    base64_len_for_bytes(MINIMAX_H3_VIDEO_MAX_BYTES) + MEDIA_B64_FIELD_HEADROOM
+)
 
 
 class MediaSource(BaseModel):

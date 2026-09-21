@@ -686,8 +686,9 @@ curl -X 'POST' \
 
 The FL2VA (`/generations/i2v`, `/generations/i2v/upload`) and Ref2VA (`/generations/ref2va`)
 endpoints admit media against the published MiniMax input media card. Anything outside it is
-refused at submit time with a 413 (size) or 422 naming the limit, never with a 202 followed by a
-failed job. The whole request body is capped at 64 MB (`MAX_REQUEST_BODY_BYTES`), so large files
+refused at submit time with a 4xx naming the limit -- 413 for an oversize request body, URL source
+or multipart upload, 422 for everything else including an oversize inline base64 file -- never
+with a 202 followed by a failed job. The whole request body is capped at 64 MB (`MAX_REQUEST_BODY_BYTES`), so large files
 should be passed as `{"url": ...}` sources (their host must be listed in `MEDIA_URL_ALLOWED_DOMAINS`)
 rather than inline base64.
 
