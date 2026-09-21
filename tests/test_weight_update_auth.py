@@ -27,9 +27,13 @@ from fastapi.testclient import TestClient
     [
         (None, "secret", None, 401),
         (None, "secret", "Bearer wrong", 401),
+        (None, "secret", "Bearer secrex", 401),
+        (None, "secret", "Bearer secret-extra", 401),
+        (None, "secret", "Bearer ", 401),
         (None, "secret", "Basic secret", 401),
         (None, "secret", "Bearer secret", 200),
         (None, "secret", "bEaReR secret", 200),
+        (["first", "second"], "env", "Bearer first", 200),
         (["first", "second"], "env", "Bearer second", 200),
         (["cli"], "env", "Bearer env", 401),
         (None, None, None, 200),

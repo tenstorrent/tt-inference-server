@@ -33,7 +33,6 @@ This avoids forking vLLM.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
 import secrets
@@ -368,12 +367,11 @@ async def _authenticate_native_rl(request: Request) -> None:
     if not tokens:
         return
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
-    token_hash = hashlib.sha256(token.encode("utf-8")).digest()
+    # Compare bearer-token bytes directly; this is not password-hash storage.
+    token_bytes = token.encode("utf-8")
     matches = False
     for key in tokens:
-        matches |= secrets.compare_digest(
-            token_hash, hashlib.sha256(key.encode("utf-8")).digest()
-        )
+        matches |= secrets.compare_digest(token_bytes, key.encode("utf-8"))
     if scheme.lower() != "bearer" or not matches:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
