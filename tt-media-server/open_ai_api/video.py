@@ -666,7 +666,7 @@ async def submit_generate_video_ref2va_request(
     """Create a Ref2VA job: prompt plus reference images, videos, and/or audio.
 
     ``references.images`` / ``videos`` / ``audios`` are lists of ``{b64}`` or
-    ``{url}`` objects. Counts: 9 / 3 / 3. Each video/audio clip must be 2–15 s
+    ``{url}`` objects. Counts: 9 / 3 / 3, 12 total. Each video/audio clip must be 2–15 s
     with combined duration ≤ 15 s. Audio cannot stand alone.
     """
     return await _submit_video_request(request, service)

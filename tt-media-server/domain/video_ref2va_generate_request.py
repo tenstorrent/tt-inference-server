@@ -42,7 +42,7 @@ class MediaSource(BaseModel):
 class MultimodalReferences(BaseModel):
     """Reference images, videos, and audio for omni-reference generation.
 
-    Counts match MiniMax-H3 ref2va (9 / 3 / 3). Audio cannot stand alone.
+    Counts match MiniMax-H3 ref2va (9 / 3 / 3, 12 total). Audio cannot stand alone.
     ``frame_pos`` is not a field here: these are not output-frame pins.
     """
 
@@ -102,6 +102,8 @@ class MultimodalReferences(BaseModel):
 
     @model_validator(mode="after")
     def _not_empty_and_audio_not_alone(self):
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MAX_REFERENCES
+
         if not self.images and not self.videos and not self.audios:
             raise ValueError(
                 "ref2va needs at least one reference image, video, or audio"
@@ -109,6 +111,11 @@ class MultimodalReferences(BaseModel):
         if self.audios and not self.images and not self.videos:
             raise ValueError(
                 "an audio reference must be paired with at least one image or video"
+            )
+        total = len(self.images) + len(self.videos) + len(self.audios)
+        if total > MINIMAX_H3_MAX_REFERENCES:
+            raise ValueError(
+                f"at most {MINIMAX_H3_MAX_REFERENCES} references in total, got {total}"
             )
         return self
 
