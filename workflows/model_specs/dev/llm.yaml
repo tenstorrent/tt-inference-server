@@ -609,7 +609,7 @@ templates:
         # Prefill performance levers of tt-metal branch vkovacevic/gemma4-prefill-perf
         # (models/autoports/google_gemma_4_31b/tt/multichip_decoder.py PREFILL_OPTS) and
         # the ring CCL topology; the fabric below must be FABRIC_1D_RING to match.
-        GEMMA4_PREFILL_OPTS: 'concat,matmul,lofi,gelu,sdpa8'
+        GEMMA4_PREFILL_OPTS: 'concat,matmul,lofi,gelu'
         GEMMA4_MC_TOPOLOGY: ring
       override_tt_config:
         fabric_config: FABRIC_1D_RING
