@@ -258,6 +258,19 @@ struct EmbeddingImpl {
  private:
   void openMeshDevice() {
     py::object meshShape = ttnn.attr("MeshShape")(py::cast(config.mesh_shape));
+    size_t meshDevices = 1;
+    for (size_t dim : config.mesh_shape) {
+      meshDevices *= dim;
+    }
+    // A (2,1) N300 mesh uses the on-card chip-to-chip link. Without fabric
+    // the open hangs on ETH heartbeat; FABRIC_1D is the 2-chip line topology.
+    if (meshDevices > 1) {
+      ttnn.attr("set_fabric_config")(
+          ttnn.attr("FabricConfig").attr("FABRIC_1D"));
+      TT_LOG_INFO(
+          "[EmbeddingRunner] Fabric FABRIC_1D enabled for {}-chip mesh",
+          meshDevices);
+    }
     py::dict params;
     params["dispatch_core_config"] =
         ttnn.attr("DispatchCoreConfig")(py::none(), py::none(), py::none());

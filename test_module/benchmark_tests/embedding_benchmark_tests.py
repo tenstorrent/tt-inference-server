@@ -46,7 +46,9 @@ def _embedding_params(ctx: MediaContext) -> tuple[str, int, int, int]:
     workers each serve several requests at once. ``BENCHMARK_NUM_PROMPTS``
     overrides the total request count: it should be >= 10-20x the concurrency,
     otherwise the run is dominated by the startup transient and the reported
-    average never reflects steady state.
+    average never reflects steady state. A smaller prompt count is valid when
+    matching a published recipe (BGE-M3 N300 uses 60). ``BENCHMARK_NUM_WARMUPS``
+    is forwarded to ``vllm bench serve --num-warmups`` when set.
     """
     env = ctx.model_spec.device_model_spec.env_vars
     concurrency = env.get("BENCHMARK_MAX_CONCURRENCY", env.get("VLLM__MAX_NUM_SEQS", 1))
@@ -181,6 +183,9 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
             "--result-dir",
             result_dir,
         ]
+        num_warmups = env.get("BENCHMARK_NUM_WARMUPS")
+        if num_warmups:
+            cmd += ["--num-warmups", str(num_warmups)]
         if num_clients > 1:
             # Distinct prompt sets per client; irrelevant to the server but
             # keeps the combined run equivalent to one big random dataset.
