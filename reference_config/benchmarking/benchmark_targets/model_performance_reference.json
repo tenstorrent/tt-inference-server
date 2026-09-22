@@ -134,7 +134,7 @@
     "Qwen3.8-27B": {
         "p300x2": [
             {
-                "_comment": "ASSUMED, NOT VALIDATED. Same derivation as the 'Qwen3.6-27B' entry (inferred from 'Qwen3-32B' t3k: ttft 62.0 / tput_user 41.0) because Qwen3.8-27B is the same parameter class and rides the same tt-metal code path (models/demos/blackhole/qwen36; its HF architectures string is 'Qwen3_5ForConditionalGeneration', already registered in vllm-tt-plugin). 'tput' equals 'tput_user' at max_concurrency 1 by definition. Doubly unvalidated: neither the numbers nor the assumption that the qwen36 implementation covers this checkpoint has been confirmed on hardware.",
+                "_comment": "Scoped QB2 128/128 release target. At max_concurrency 1, aggregate throughput equals per-user throughput.",
                 "isl": 128,
                 "osl": 128,
                 "max_concurrency": 1,

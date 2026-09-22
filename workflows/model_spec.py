@@ -307,6 +307,13 @@ qwen36_blackhole_b8_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Qwen3.8-27B dedicated agentic-pipeline autoport.
+qwen38_autoport_impl = ImplSpec(
+    impl_id="qwen38_autoport",
+    impl_name="qwen38-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
 # Muse-Glimmer-30B. NOTE the code_path is under models/autoports/, which is
 # auto-ported bring-up output rather than a hand-written demo, and it exists only on
 # the tt-metal branch `agentic-research/hous/muse-glimmer-30b` — not on main.
@@ -340,6 +347,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen36_blackhole": qwen36_blackhole_impl,
     "training_lora": training_lora_impl,
     "qwen36_blackhole_b8": qwen36_blackhole_b8_impl,
+    "qwen38_autoport": qwen38_autoport_impl,
     "muse_glimmer": muse_glimmer_impl,
     "diffusion_gemma": diffusion_gemma_impl,
 }

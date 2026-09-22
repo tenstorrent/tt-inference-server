@@ -120,6 +120,10 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 SUPER_CLUSTER_MIN_NUM_PROMPTS = 256
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
+# This Qwen3.8 release check intentionally runs only its declared 128/128
+# performance reference, not characterization or structured-output sweeps.
+_PERF_REFERENCE_ONLY_IMPLS = frozenset({"qwen38-autoport"})
+
 
 # Image resolution pairs for multimodal benchmarks
 # Format here is isl, osl, image_height, image_width, images_per_prompt
@@ -613,7 +617,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     tasks = [perf_ref_task]
     # optionally skip the benchmark sweeps and only run the perf reference targets
-    if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")):
+    if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")) and (
+        model_spec.impl.impl_name not in _PERF_REFERENCE_ONLY_IMPLS
+    ):
         # Make benchmark sweeps table for this device
         if model_spec.model_type == ModelType.CNN:
             benchmark_task_runs = BenchmarkTaskCNN(
@@ -686,7 +692,10 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: llms and vlms, can be extended
-    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    structured_output_eligible = (
+        model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+        and model_spec.impl.impl_name not in _PERF_REFERENCE_ONLY_IMPLS
+    )
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(

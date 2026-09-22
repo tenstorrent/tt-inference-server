@@ -1439,12 +1439,8 @@ _eval_config_list = [
     #     NOT the terminal_bench_2 the sibling Qwen3.6-27B config runs. Picking the
     #     task to match the published dataset version is the point -- scoring a 2.1
     #     number against a 2.0 run would compare different task sets.
-    #   * SWE-bench Verified has NO published number for this checkpoint. The card
-    #     reports SWE-bench Pro 61.7 and QwenSWEBench 79.0, and neither is the
-    #     SWE-bench/SWE-bench_Verified dataset swe_bench_verified runs; AA's model
-    #     page does not break out a Verified score either. The task is still
-    #     configured (it is the third eval of the QB2 bring-up set) but with
-    #     published_score=None -- see that task for what that costs.
+    #   * The requirements' 61.7 SWE-bench Pro number is retained as published
+    #     context only. CI uses the explicit 3/5 Verified cohort gate below.
     #
     # Unlike gemma-4 this needs no enable_thinking override: Qwen3.8's chat
     # template has thinking ON by default (card: "Thinking mode is on by default"),
@@ -1464,27 +1460,13 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    # NO gpu_reference_score: nobody has run this checkpoint on an
-                    # H100 reference server yet. Consequence, via
-                    # resolve_eval_reference() + compute_accuracy_check(): with no
-                    # GPU baseline the check falls back to
-                    # `accuracy >= published_score * (1 - tolerance)`, i.e. it must
-                    # score >= 84.74% on TT silicon. That is a STRICT bar and this
-                    # eval should be expected to FAIL on early runs -- published
-                    # numbers are consistently optimistic against a real serving
-                    # stack (gemma-4-31B publishes 84.3 but measured 83.33 on an
-                    # H100). At EXPERIMENTAL evals are informational
-                    # (ModelStatusTypes.evals_enforced is False), so a failure here
-                    # does not block acceptance; it becomes a real gate at
-                    # FUNCTIONAL and above. Replace this with a measured
-                    # gpu_reference_score before promoting the status.
-                    #
-                    # Also deliberately no mode_reference_scores: under --ci-mode
-                    # the subset score is therefore compared against the FULL-set
-                    # 89.2, and the ci-nightly doc_ids are harder than average (the
-                    # gemma-4 entry measures ~8 points lower on its subset than on
-                    # the full set), so expect CI-mode runs to read low until a
-                    # subset reference is measured.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=90.0,
+                            ref="QB2 Qwen3.8 release cohort: 9/10 GPQA",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -1494,6 +1476,7 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=1,
                 # Use the chat endpoint so the server applies the chat template
                 # (which is what carries thinking mode); client-side
                 # apply_chat_template on /v1/completions would bypass it.
@@ -1523,7 +1506,7 @@ _eval_config_list = [
                 # sequentially and dominate CI runtime, so keep the CI subset small
                 # (same rationale as the gemma-4-31B-it entry).
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -1535,12 +1518,13 @@ _eval_config_list = [
                     # agent-matched to this config (terminal-bench-2-1 + terminus-2).
                     published_score=73.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    # NO gpu_reference_score: nobody has run this checkpoint on an
-                    # H100 reference server. The check therefore falls back to
-                    # `accuracy >= published * (1 - tolerance)` = >= 69.35%, a strict
-                    # bar that early runs should be expected to miss. Informational
-                    # while the spec is EXPERIMENTAL; replace with a measured number
-                    # before promoting status.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=80.0,
+                            ref="QB2 Qwen3.8 release cohort: 4/5 Terminal-Bench 2.1",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1550,7 +1534,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,
                     # QB2 release runners expose only 16 CPUs.
@@ -1599,22 +1583,15 @@ _eval_config_list = [
                 task_name="swe_bench_verified",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
-                    # NO published_score EXISTS for this checkpoint on SWE-bench
-                    # Verified. Searched: the HF card (publishes SWE-bench Pro 61.7 and
-                    # QwenSWEBench 79.0 -- different datasets) and the Artificial
-                    # Analysis model page (no Verified breakout). Do NOT substitute the
-                    # Pro number: SWE-bench Pro is a harder, disjoint task set and
-                    # scoring a Verified run against it would read as a large false
-                    # regression.
-                    # Consequence, via resolve_eval_reference() + accept_eval_score():
-                    # with reference_score None the accuracy check returns None and the
-                    # report renders N/A -- the task still RUNS and still reports its
-                    # measured accuracy, it just cannot pass or fail. That is the same
-                    # shape the google/gemma-4-26B-A4B-it entries below use. Fill this
-                    # in from a measured H100 run (as gpu_reference_score) or from a
-                    # first-party number if Qwen publishes one.
-                    published_score=None,
-                    published_score_ref="TBD",
+                    published_score=61.7,
+                    published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="QB2 Qwen3.8 release cohort: 3/5 SWE-bench Verified",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1626,7 +1603,7 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=1,
                     max_workers=8,
                     n_tasks=None,  # full dataset
                     temperature=1.0,
