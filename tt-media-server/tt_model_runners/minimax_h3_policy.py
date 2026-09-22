@@ -29,7 +29,8 @@ from typing import Optional
 # The serving envelope and its validators are owned by the model's policy module and re-exported
 # lazily: pulling them at import time would drag ``ttnn`` into every consumer, and the server's unit
 # tests mock the whole ``models.tt_dit`` tree. ``__getattr__`` defers the metal import to first
-# access, so this module stays importable (and testable) without metal present.
+# access, so this module stays importable (and testable) without metal present. A name the metal
+# module does not define yet falls back to ``_LEGACY_REEXPORTS`` below.
 _METAL_REEXPORTS = frozenset(
     {
         "MINIMAX_H3_ASPECT_RATIOS",
@@ -43,11 +44,76 @@ _METAL_REEXPORTS = frozenset(
 )
 
 
+# Pre-move server definitions of the re-exported items. A metal python tree that predates the
+# move (e.g. 34260b25483, the pinned OM Quad3 tree) ships ``policy.py`` with the aspect/duration
+# constants but without ``MINIMAX_H3_NUM_INFERENCE_STEPS``, ``minimax_h3_parse_aspect_ratio`` and
+# ``minimax_h3_frames_are_aligned``; a name the metal module lacks resolves here, byte-for-byte
+# what metal defines today, so the server runs against either generation. Metal wins when it has
+# the name.
+_LEGACY_ASPECT_RATIOS = ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16))
+_LEGACY_DEFAULT_ASPECT_RATIO = (16, 9)
+_LEGACY_DURATIONS_S = tuple(range(4, 16))
+_LEGACY_DEFAULT_DURATION_S = 5
+_LEGACY_NUM_INFERENCE_STEPS = 50
+
+
+def _metal_policy_module():
+    try:
+        from models.tt_dit.pipelines.minimax_h3 import policy as metal_policy
+    except ImportError:
+        return None
+    return metal_policy
+
+
+def _legacy_parse_aspect_ratio(value: str) -> tuple[int, int]:
+    """``"16:9"`` -> ``(16, 9)``, restricted to the published set (pre-move server copy)."""
+    ratios = __getattr__("MINIMAX_H3_ASPECT_RATIOS")
+    text = str(value).strip().replace("x", ":").replace("/", ":")
+    parts = text.split(":")
+    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+        raise ValueError(
+            f"aspect_ratio must look like 'W:H' (got {value!r}); supported: "
+            + ", ".join(f"{w}:{h}" for w, h in ratios)
+        )
+    pair = (int(parts[0]), int(parts[1]))
+    if pair not in ratios:
+        raise ValueError(
+            f"aspect_ratio {pair[0]}:{pair[1]} is not served; supported: "
+            + ", ".join(f"{w}:{h}" for w, h in ratios)
+        )
+    return pair
+
+
+def _legacy_frames_are_aligned(num_frames: int) -> bool:
+    """``num_frames`` must be ``17n + 5`` (pre-move server copy; modulus read from packing)."""
+    from models.tt_dit.pipelines.minimax_h3.packing import (
+        MINIMAX_H3_FRAMES_PER_CHUNK,
+        MINIMAX_H3_LATENTS_PER_CHUNK,
+    )
+
+    return (
+        num_frames >= MINIMAX_H3_LATENTS_PER_CHUNK
+        and num_frames % MINIMAX_H3_FRAMES_PER_CHUNK == MINIMAX_H3_LATENTS_PER_CHUNK
+    )
+
+
+_LEGACY_REEXPORTS = {
+    "MINIMAX_H3_ASPECT_RATIOS": lambda: _LEGACY_ASPECT_RATIOS,
+    "MINIMAX_H3_DEFAULT_ASPECT_RATIO": lambda: _LEGACY_DEFAULT_ASPECT_RATIO,
+    "MINIMAX_H3_DEFAULT_DURATION_S": lambda: _LEGACY_DEFAULT_DURATION_S,
+    "MINIMAX_H3_DURATIONS_S": lambda: _LEGACY_DURATIONS_S,
+    "MINIMAX_H3_NUM_INFERENCE_STEPS": lambda: _LEGACY_NUM_INFERENCE_STEPS,
+    "minimax_h3_parse_aspect_ratio": lambda: _legacy_parse_aspect_ratio,
+    "minimax_h3_frames_are_aligned": lambda: _legacy_frames_are_aligned,
+}
+
+
 def __getattr__(name: str):
     if name in _METAL_REEXPORTS:
-        from models.tt_dit.pipelines.minimax_h3 import policy as _metal_policy
-
-        return getattr(_metal_policy, name)
+        metal_policy = _metal_policy_module()
+        if metal_policy is not None and hasattr(metal_policy, name):
+            return getattr(metal_policy, name)
+        return _LEGACY_REEXPORTS[name]()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
