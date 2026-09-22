@@ -357,7 +357,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--spec-decode-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "categories"],
         default="full",
         help=(
             "Preset for --spec-decode (default: full). 'ci' is a short "

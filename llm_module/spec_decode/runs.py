@@ -13,7 +13,8 @@ orchestrator that ties them together is
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, replace
 from typing import List, Optional, Tuple
 
 # SPEED-Bench qualitative split: ~80 prompts per category.
@@ -128,6 +129,7 @@ SPEC_DECODE_CI_SWEEP: List[SpecDecodeRun] = _qualitative_runs(
 
 SPEC_DECODE_PRESETS = {
     "full": SPEC_DECODE_SWEEP,
+    "categories": _qualitative_runs(SPEED_BENCH_QUALITATIVE_CATEGORIES),
     "ci": SPEC_DECODE_CI_SWEEP,
 }
 
@@ -145,7 +147,28 @@ def build_runs(preset: str = "full") -> List[SpecDecodeRun]:
             f"Unknown spec-decode preset: {preset}. "
             f"Available: {sorted(SPEC_DECODE_PRESETS)}"
         )
-    return list(SPEC_DECODE_PRESETS[preset])
+    runs = list(SPEC_DECODE_PRESETS[preset])
+    # SPEED_BENCH_CONCURRENCY=N pins every run of the preset to one concurrency (e.g. the slot count of a
+    # fixed-slot deployment) and collapses the throughput concurrency sweep to that single point.
+    override = os.environ.get("SPEED_BENCH_CONCURRENCY")
+    if override is None:
+        return runs
+    concurrency = int(override)
+    if concurrency < 1:
+        raise ValueError("SPEED_BENCH_CONCURRENCY must be positive")
+    result = []
+    seen = set()
+    for run in runs:
+        if run.public_dataset in seen:
+            continue
+        seen.add(run.public_dataset)
+        result.append(replace(
+            run, max_concurrency=concurrency,
+            num_prompts=(max(32, 4 * concurrency)
+                         if run.public_dataset.startswith("speed_bench_throughput_")
+                         else run.num_prompts),
+        ))
+    return result
 
 
 def summarize_runs(runs: List[SpecDecodeRun]) -> str:

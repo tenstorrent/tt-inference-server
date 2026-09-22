@@ -13,6 +13,10 @@ def _drop_server_seed(payload: dict[str, Any]) -> dict[str, Any]:
     """Return a request payload with lm-eval's implicit seed removed."""
     request_payload = dict(payload)
     request_payload.pop("seed", None)
+    # lm-eval sends ``stop: []`` when a task has no stop strings (``until=[]``); some OpenAI-compatible
+    # servers (e.g. Dynamo) reject the empty list instead of treating it as "no stop". Omit the field.
+    if request_payload.get("stop") == []:
+        request_payload.pop("stop")
     return request_payload
 
 

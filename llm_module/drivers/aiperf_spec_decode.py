@@ -40,6 +40,8 @@ renderer surfaces so misconfigured runs are visible in the report.
 
 from __future__ import annotations
 
+import os
+
 import glob
 import json
 import logging
@@ -321,6 +323,10 @@ def _build_aiperf_cmd(
     # store-true flag (aiperf defines it with negative=False).
     if tokenizer_trust_remote_code:
         cmd.append("--tokenizer-trust-remote-code")
+    # SPEED_BENCH_CAPTURE_RAW=1 keeps every request/response pair (aiperf raw export) next to the metrics,
+    # so output quality can be audited after a perf run. Off by default: the raw export is ~100 MB per scenario.
+    if os.environ.get("SPEED_BENCH_CAPTURE_RAW") == "1":
+        cmd += ["--export-level", "raw"]
     if run.num_prompts is not None:
         cmd += ["--request-count", str(run.num_prompts)]
     if run.output_len is not None:
