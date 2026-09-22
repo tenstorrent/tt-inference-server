@@ -4793,7 +4793,14 @@ _eval_config_list = [
                             "terminal-bench/cobol-modernization",
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
+                            # Replaces qemu-startup: that task (and qemu-alpine-ssh) is built on
+                            # debian:bullseye-slim, whose security repo no longer serves packages,
+                            # so its test.sh dies at `apt-get install curl` before running a single
+                            # test. Reproduced with the reference solution via Harbor's oracle agent
+                            # (reward 0.0) and on runs 34145630605 and 35667712636 -- a guaranteed 0
+                            # for any model. Same difficulty/category (medium, system-administration);
+                            # the oracle passes its verifier 8/8.
+                            "terminal-bench/nginx-request-logging",
                         ],
                     },
                 ),
