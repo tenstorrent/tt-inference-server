@@ -1369,5 +1369,79 @@ class TestUtilityFunctions:
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
 
 
+@pytest.mark.parametrize("local_server", [False, True])
+@pytest.mark.parametrize("selection", ["selected", "absent", "native", "rejected"])
+def test_main_forwards_validated_package_weight_source(
+    monkeypatch, tmp_path, local_server, selection
+):
+    """Exercise main's real host-setup call; stop before launching a server."""
+    import run as entrypoint
+
+    args = argparse.Namespace(requirements_doc=None)
+    runtime = MagicMock(
+        docker_server=not local_server,
+        local_server=local_server,
+        host_volume=str(tmp_path / "storage"),
+        host_hf_cache=None,
+        host_weights_dir=None,
+        image_user="1000",
+        workflow="server",
+    )
+    model = MagicMock(model_id="test-model")
+    model.impl.impl_id = "tt_transformers" if selection == "native" else "quetzal"
+    monkeypatch.setattr(entrypoint, "parse_arguments", lambda: args)
+    monkeypatch.setattr(entrypoint, "resolve_runtime", lambda _: (runtime, model))
+    for name in (
+        "handle_maintenance_args",
+        "export_model_specs_json",
+        "bootstrap_uv",
+        "handle_secrets",
+        "setup_run_logger",
+        "ensure_readwriteable_dir",
+    ):
+        monkeypatch.setattr(entrypoint, name, MagicMock())
+    monkeypatch.setattr(entrypoint, "get_current_commit_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        entrypoint, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(entrypoint, "format_cli_args_summary", lambda _: "test")
+    validation = MagicMock()
+    monkeypatch.setattr(entrypoint, "validate_setup", validation)
+
+    selected_mount = object() if selection == "selected" else None
+
+    def resolve(spec, config):
+        validation.assert_called_once()
+        assert spec is model and config is runtime
+        if selection == "rejected":
+            raise ValueError("package selection rejected")
+        return selected_mount
+
+    resolver = MagicMock(side_effect=resolve)
+    monkeypatch.setattr(entrypoint, "resolve_quetzal_package_mount", resolver)
+
+    class SetupReached(Exception):
+        pass
+
+    setup = MagicMock(side_effect=SetupReached)
+    monkeypatch.setattr(entrypoint, "setup_host", setup)
+    if selection == "rejected":
+        with pytest.raises(ValueError, match="package selection rejected"):
+            entrypoint.main()
+        setup.assert_not_called()
+    else:
+        with pytest.raises(SetupReached):
+            entrypoint.main()
+        setup.assert_called_once()
+        kwargs = setup.call_args.kwargs
+        assert kwargs["package_provides_weights"] is (selection == "selected")
+        assert kwargs["model_spec"] is model
+        assert kwargs["host_volume"] == runtime.host_volume
+        assert kwargs["host_weights_dir"] is None
+        assert kwargs["local_server"] is local_server
+        assert kwargs["image_user"] == (None if local_server else "1000")
+    resolver.assert_called_once_with(model, runtime)
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
