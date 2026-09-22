@@ -4737,7 +4737,7 @@ _eval_config_list = [
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
                     n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
-                    n_attempts=1,
+                    n_attempts=2,
                     n_tasks=None,  # full dataset
                     # QB2 release runners expose only 16 CPUs; docker compose
                     # rejects a higher --cpus reservation ("range of CPUs is
@@ -4793,7 +4793,6 @@ _eval_config_list = [
                             "terminal-bench/cobol-modernization",
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
                         ],
                     },
                 ),
