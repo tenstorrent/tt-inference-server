@@ -53,7 +53,8 @@ class JobDatabase:
                     completed_at INTEGER,
                     error_message TEXT,
                     result_path TEXT,
-                    org_id TEXT
+                    org_id TEXT,
+                    retained INTEGER NOT NULL DEFAULT 0
                 );
             """)
             cursor.execute("""
@@ -106,12 +107,13 @@ class JobDatabase:
         status: str,
         created_at: int,
         org_id: Optional[str] = None,
+        retained: bool = False,
     ) -> None:
         """Insert a new job into the database."""
         with self._get_cursor(commit=True) as cursor:
             cursor.execute(
                 """
-                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at, org_id) VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO jobs (id, job_type, model, status, request_parameters, created_at, org_id, retained) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job_id,
@@ -121,6 +123,7 @@ class JobDatabase:
                     json.dumps(request_parameters),
                     created_at,
                     org_id,
+                    int(retained),
                 ),
             )
 
@@ -162,10 +165,19 @@ class JobDatabase:
             )
             print(f"Rows affected: {cursor.rowcount}")
 
-    def delete_job(self, job_id: str) -> None:
-        """Delete a job from the database."""
+    def update_job_retained(self, job_id: str, retained: bool) -> None:
+        """Update whether automatic retention cleanup may delete a job."""
+        with self._get_cursor(commit=True) as cursor:
+            cursor.execute(
+                "UPDATE jobs SET retained = ? WHERE id = ?", (int(retained), job_id)
+            )
+
+    @contextmanager
+    def delete_job(self, job_id: str):
+        """Open a deletion transaction that commits when the context exits."""
         with self._get_cursor() as cursor:
             cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            yield
 
     def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific job from the database by its ID."""

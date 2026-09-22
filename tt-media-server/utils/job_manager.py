@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import shutil
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -13,7 +14,11 @@ from sqlite3 import IntegrityError
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
-from config.constants import JobTypes, job_database_path
+from config.constants import (
+    JobTypes,
+    adapters_root,
+    job_database_path,
+)
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
@@ -46,6 +51,7 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
+    retained: bool = False
     local_progress_time: Optional[float] = None
     _task: Callable = None
     _progress_tracker: Any = None
@@ -121,6 +127,11 @@ class Job:
             "model": self.model,
             "request_parameters": self.request_parameters,
         }
+        if self.job_type in {
+            JobTypes.TRAINING.value,
+            JobTypes.ADAPTER_MERGE.value,
+        }:
+            data["retained"] = self.retained
         if self.org_id:
             data["org_id"] = self.org_id
         if self.completed_at:
@@ -202,6 +213,7 @@ class JobManager:
                         status=job.status.value,
                         created_at=job.created_at,
                         org_id=job.org_id,
+                        retained=job.retained,
                     )
                     if result_path:
                         self.db.update_result_path(job_id, result_path)
@@ -332,6 +344,49 @@ class JobManager:
             self._logger.info(f"Job {job_id} cancellation initiated.")
             return job.to_public_dict()
 
+    def set_job_retained(
+        self,
+        job_id: str,
+        retained: bool,
+        org_id: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Protect or release a job from automatic retention cleanup."""
+        with self._jobs_lock:
+            job = self._get_job_if_authorized(job_id, org_id)
+            if job is None:
+                return None
+
+            if self.db:
+                self.db.update_job_retained(job.id, retained)
+            job.retained = retained
+            return job.to_public_dict()
+
+    def delete_job(
+        self,
+        job_id: str,
+        org_id: Optional[str] = None,
+    ) -> bool:
+        """Delete a terminal job, its persisted data, and its result artifacts."""
+        with self._jobs_lock:
+            job = self._get_job_if_authorized(job_id, org_id)
+            if job is None:
+                return False
+            if not job.is_terminal():
+                raise ValueError("Only terminal jobs can be deleted")
+
+            self._jobs.pop(job.id, None)
+
+        try:
+            result_path = self._get_result_path_for_deletion(job)
+            self._delete_job_record_and_result(job, result_path)
+        except Exception:
+            with self._jobs_lock:
+                self._jobs.setdefault(job.id, job)
+            raise
+
+        self._logger.info(f"Manually deleted job {job.id}")
+        return True
+
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
@@ -453,6 +508,7 @@ class JobManager:
             for job in self._jobs.values():
                 is_old_terminal = (
                     job.is_terminal()
+                    and not job.retained
                     and job.completed_at
                     and job.completed_at < retention_cutoff
                 )
@@ -491,39 +547,72 @@ class JobManager:
             self._cleanup_job(job, force=True)
             self._sync_status_to_db(job)
 
-        for job in jobs_to_remove:
-            if job.result_path and isinstance(job.result_path, str):
-                try:
-                    if os.path.exists(job.result_path):
-                        os.remove(job.result_path)
-                        self._logger.debug(
-                            f"Deleted file for job {job.id}: {job.result_path}"
-                        )
-                except Exception as e:
-                    self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
-
-        # Remove from storage under lock
+        removed_jobs = []
         with self._jobs_lock:
             for job in jobs_to_remove:
+                current_job = self._jobs.get(job.id)
+                if current_job is not job or job.retained:
+                    continue
                 self._jobs.pop(job.id, None)
-                if self.db:
-                    try:
-                        self.db.delete_job(job.id)
-                    except Exception as e:
-                        self._logger.error(
-                            f"Database deletion failed for job {job.id} during cleanup: {e}"
-                        )
+                removed_jobs.append(job)
 
-            if jobs_to_remove:
-                self._logger.info(
-                    f"Cleaned up {len(jobs_to_remove)} old job(s): "
-                    f"{', '.join(job.id for job in jobs_to_remove)}"
+        cleaned_jobs = []
+        for job in removed_jobs:
+            try:
+                result_path = self._get_result_path_for_deletion(job)
+                self._delete_job_record_and_result(job, result_path)
+            except Exception as e:
+                self._logger.error(
+                    f"Deletion failed for job {job.id} during cleanup: {e}"
                 )
+                with self._jobs_lock:
+                    self._jobs.setdefault(job.id, job)
+                continue
+            cleaned_jobs.append(job)
+
+        if cleaned_jobs:
+            self._logger.info(
+                f"Cleaned up {len(cleaned_jobs)} old job(s): "
+                f"{', '.join(job.id for job in cleaned_jobs)}"
+            )
 
     def _is_job_stuck(self, job: Job, progress_cutoff: float) -> bool:
         if not (job.is_in_progress() or job.is_cancelling()):
             return False
         return job.progress_time() < progress_cutoff
+
+    def _get_result_path_for_deletion(self, job: Job) -> Optional[str]:
+        if not job.result_path or not isinstance(job.result_path, str):
+            return None
+
+        path = os.path.realpath(job.result_path)
+        if job.job_type == JobTypes.TRAINING.value:
+            root = os.path.realpath(adapters_root())
+            if path == root or os.path.commonpath([root, path]) != root:
+                raise ValueError(f"Refusing to delete result outside {root}: {path}")
+            return job.result_path
+
+        if os.path.islink(job.result_path) or os.path.isfile(job.result_path):
+            return job.result_path
+        return None
+
+    @staticmethod
+    def _delete_result_path(result_path: Optional[str]) -> None:
+        if result_path is None:
+            return
+        if os.path.islink(result_path) or os.path.isfile(result_path):
+            os.remove(result_path)
+        elif os.path.isdir(result_path):
+            shutil.rmtree(result_path)
+
+    def _delete_job_record_and_result(
+        self, job: Job, result_path: Optional[str]
+    ) -> None:
+        if self.db:
+            with self.db.delete_job(job.id):
+                self._delete_result_path(result_path)
+        else:
+            self._delete_result_path(result_path)
 
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
@@ -655,6 +744,7 @@ class JobManager:
                     completed_at=db_job.get("completed_at"),
                     result_path=db_job.get("result_path"),
                     error=db_job.get("error_message"),
+                    retained=bool(db_job.get("retained", False)),
                 )
 
                 if db_job["job_type"] == JobTypes.TRAINING.value:

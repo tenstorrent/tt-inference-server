@@ -35,6 +35,27 @@ class TestInsertJobOrgId:
         assert result["org_id"] is None
 
 
+class TestJobRetention:
+    def test_insert_defaults_to_not_retained(self, db_with_job):
+        assert db_with_job.get_job_by_id("job-1")["retained"] == 0
+
+    def test_update_job_retained(self, db_with_job):
+        db_with_job.update_job_retained("job-1", True)
+        assert db_with_job.get_job_by_id("job-1")["retained"] == 1
+
+
+class TestDeleteJob:
+    def test_external_cleanup_failure_rolls_back_delete(self, db_with_job):
+        def fail_cleanup():
+            raise RuntimeError("filesystem unavailable")
+
+        with pytest.raises(RuntimeError, match="filesystem unavailable"):
+            with db_with_job.delete_job("job-1"):
+                fail_cleanup()
+
+        assert db_with_job.get_job_by_id("job-1") is not None
+
+
 class TestInsertCheckpoint:
     def test_insert_and_retrieve_single_checkpoint(self, db_with_job):
         db_with_job.insert_checkpoint(
@@ -79,7 +100,8 @@ class TestInsertCheckpoint:
     def test_checkpoints_cascade_deleted_with_job(self, db_with_job):
         db_with_job.insert_checkpoint("job-1", "ckpt-1", 100, 1, {}, 1001.0)
         assert len(db_with_job.get_checkpoints("job-1")) == 1
-        db_with_job.delete_job("job-1")
+        with db_with_job.delete_job("job-1"):
+            pass
         assert db_with_job.get_checkpoints("job-1") == []
 
 
@@ -124,5 +146,6 @@ class TestInsertLog:
     def test_logs_cascade_deleted_with_job(self, db_with_job):
         db_with_job.insert_log("job-1", 0, "ts", "info", 10, "msg")
         assert len(db_with_job.get_logs("job-1")) == 1
-        db_with_job.delete_job("job-1")
+        with db_with_job.delete_job("job-1"):
+            pass
         assert db_with_job.get_logs("job-1") == []
