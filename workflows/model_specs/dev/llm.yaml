@@ -982,7 +982,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-row-norm-20260921
+      tt_metal_source_ref: mvasiljevic/qwen38-packed-swiglu-20260922
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1010,6 +1010,7 @@ templates:
         QWEN_BATCHED_PREFILL: "1"
         QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
         QWEN_PREFILL_BATCHED_HEAD: "1"
+        QWEN_PREFILL_PACKED_SWIGLU: "1"
         QWEN_PREFILL_ROW_PARALLEL_NORM: "1"
         QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
         QWEN_PREFILL_STARTUP_WARMUP: "1"
@@ -1033,7 +1034,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-row-norm-20260921
+      tt_metal_source_ref: mvasiljevic/qwen38-packed-swiglu-20260922
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL
@@ -1061,6 +1062,7 @@ templates:
         QWEN_BATCHED_PREFILL: "1"
         QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
         QWEN_PREFILL_BATCHED_HEAD: "1"
+        QWEN_PREFILL_PACKED_SWIGLU: "1"
         QWEN_PREFILL_ROW_PARALLEL_NORM: "1"
         QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
         QWEN_PREFILL_STARTUP_WARMUP: "1"
@@ -1084,7 +1086,7 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-row-norm-20260921
+      tt_metal_source_ref: mvasiljevic/qwen38-packed-swiglu-20260922
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL

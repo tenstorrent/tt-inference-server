@@ -195,6 +195,7 @@ def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
     assert model_spec.device_model_spec.max_concurrency == 1
     assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == "1"
     assert "QWEN_PREFILL_STARTUP_WARMUP" not in model_spec.device_model_spec.env_vars
+    assert "QWEN_PREFILL_PACKED_SWIGLU" not in model_spec.device_model_spec.env_vars
     assert "QWEN_PREFILL_ROW_PARALLEL_NORM" not in model_spec.device_model_spec.env_vars
 
     config = benchmark_config.get_benchmark_config(model_spec)
@@ -264,10 +265,11 @@ def test_qwen38_concurrent_profiles_use_matching_device_batch(
     )
     assert (
         model_spec.device_model_spec.tt_metal_source_ref
-        == "mvasiljevic/qwen38-row-norm-20260921"
+        == "mvasiljevic/qwen38-packed-swiglu-20260922"
     )
     assert model_spec.device_model_spec.env_vars["QWEN_BATCHED_PREFILL"] == "1"
     assert model_spec.device_model_spec.env_vars["QWEN_PREFILL_STARTUP_WARMUP"] == "1"
+    assert model_spec.device_model_spec.env_vars["QWEN_PREFILL_PACKED_SWIGLU"] == "1"
     assert (
         model_spec.device_model_spec.env_vars["QWEN_PREFILL_ROW_PARALLEL_NORM"] == "1"
     )
