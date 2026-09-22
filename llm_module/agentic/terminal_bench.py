@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -199,7 +200,17 @@ def run(config: TerminalBenchRunConfig) -> int:
             cmd.extend(["--agent-kwarg", f"{key}={_format_kwarg(value)}"])
 
     logger.info("Running command: %s", " ".join(cmd))
-    result = subprocess.run(cmd)
+    # Harbor imports a custom agent (``agent_import_path`` = ``module:Class``)
+    # inside its own process; the ``harbor`` console script does not put the
+    # cwd on sys.path, so expose the repo root for agents that live in-tree.
+    env = os.environ.copy()
+    repo_root = str(Path(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = (
+        f"{repo_root}{os.pathsep}{env['PYTHONPATH']}"
+        if env.get("PYTHONPATH")
+        else repo_root
+    )
+    result = subprocess.run(cmd, env=env)
     _prune_terminal_recordings(config.jobs_dir / config.task_name)
     if result.returncode != 0:
         return result.returncode

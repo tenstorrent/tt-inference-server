@@ -4736,6 +4736,10 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
+                    # Stock terminus-2 plus a 3-rule shell-recovery addendum in its prompt
+                    # (llm_module/agentic/terminus2_recovery.py). Ablation for the qemu-style
+                    # self-inflicted hang on run 35667712636; scores are NOT stock terminus-2.
+                    agent_import_path="llm_module.agentic.terminus2_recovery:Terminus2Recovery",
                     n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
                     n_attempts=1,
                     n_tasks=None,  # full dataset
