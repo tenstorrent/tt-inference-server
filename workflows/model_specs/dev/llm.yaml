@@ -767,7 +767,7 @@ templates:
     - device: P300X2
       max_concurrency: 1
       max_context: 262144
-      default_impl: false
+      default_impl: true
       env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
