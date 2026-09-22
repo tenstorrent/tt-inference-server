@@ -3015,3 +3015,42 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# Published TP4 implementation. Qualification is tracked in issue #5209.
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: llama31_8b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072
+      max_tokens_all_users_override: 131072  # Shared across all 32 slots.
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P300x2
+      vllm_args:
+        block_size: 128
+        data_parallel_size: 1
+        revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        tokenizer_revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        max-logprobs: -1
+        async-scheduling: true
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 268435456
+        l1_small_size: 16384
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json

@@ -701,6 +701,34 @@ def ensure_weights_available(model_spec: dict) -> Path:
     if model_spec.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID:
         return _ensure_quetzal_metadata(model_spec)
 
+    if model_spec.get("impl", {}).get("impl_id") == "llama31_8b_qb2":
+        # This implementation was validated with a fixed checkpoint. Use the
+        # Hub's revision-specific snapshot cache, not the shared mutable weights
+        # directory used by other implementations of the same model.
+        vllm_args = model_spec["device_model_spec"]["vllm_args"]
+        revision = vllm_args.get("revision")
+        if (
+            not isinstance(revision, str)
+            or len(revision) != 40
+            or any(c not in "0123456789abcdef" for c in revision)
+            or vllm_args.get("tokenizer_revision") != revision
+        ):
+            raise ValueError(
+                "Llama QB2 requires matching full checkpoint/tokenizer revision pins"
+            )
+        cache_root = Path(
+            os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
+        )
+        weights_path = Path(
+            snapshot_download(
+                repo_id=model_spec["hf_model_repo"],
+                revision=revision,
+                cache_dir=cache_root / "weights" / "hub",
+            )
+        )
+        os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
+        return weights_path
+
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
     # always invoke it: a partially-downloaded directory looks non-empty but would crash
@@ -764,6 +792,8 @@ def register_tt_models(impl_id=None):
     # Llama path selection based on impl_id
     if impl_id == "llama3_70b_galaxy":
         os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
+    elif impl_id == "llama31_8b_qb2":
+        os.environ["TT_LLAMA_TEXT_VER"] = "llama31_8b_qb2"
     else:  # default: tt_transformers
         os.environ["TT_LLAMA_TEXT_VER"] = "tt_transformers"
 
@@ -810,6 +840,10 @@ def model_setup(model_spec_json):
         "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
     }
+    if model_spec_json.get("impl", {}).get("impl_id") == "llama31_8b_qb2":
+        # The published TT model reads LLAMA_MODEL_PATH, while vLLM uses HF_MODEL.
+        # Both must resolve to the same mounted or downloaded snapshot.
+        dynamic_env_vars["LLAMA_MODEL_PATH"] = str(weights_dir)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")

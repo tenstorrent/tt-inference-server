@@ -417,3 +417,62 @@ def test_diffusiongemma_dev_spec_matches_validated_256k_contract():
     assert (
         int(env["DG_TRACE_REGION_SIZE"]) == additional_config["tt"]["trace_region_size"]
     )
+
+
+def test_llama_qb2_catalog_preserves_default_and_shared_pool():
+    specs = get_model_spec_map(
+        load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+        )
+    )
+    choices = [
+        s
+        for s in specs.values()
+        if s.hf_model_repo == "meta-llama/Llama-3.1-8B-Instruct"
+        and s.device_type == DeviceTypes.P300X2
+        and s.inference_engine == InferenceEngine.VLLM.value
+    ]
+    assert [s.impl.impl_id for s in choices if s.device_model_spec.default_impl] == [
+        "tt_transformers"
+    ]
+    spec = next(s for s in choices if s.impl.impl_id == "llama31_8b_qb2")
+    assert spec.impl.impl_name == "llama31-8b-qb2"
+    assert spec.impl.code_path == "models/demos/llama31_8b_qb2"
+    device = spec.device_model_spec
+    assert device.max_concurrency == 32
+    assert device.max_context == device.max_tokens_all_users == 131072
+    assert device.env_vars["MESH_DEVICE"] == "P300x2"
+    assert device.known_issues == []
+    assert spec.has_builtin_warmup
+
+
+def test_performance_references_are_scoped_to_implementation(monkeypatch):
+    from workflows import model_spec
+
+    common = {"isl": 128, "osl": 128, "max_concurrency": 1, "num_prompts": 8}
+    monkeypatch.setattr(
+        model_spec,
+        "model_performance_reference",
+        {
+            "test/model": {
+                "p300x2": [
+                    {**common, "targets": {"measured": {"tput_user": 10.0}}},
+                    {
+                        **common,
+                        "impl": "llama31_8b_qb2",
+                        "targets": {
+                            "measured": {"tput_user": 130.0, "tolerance": 0.05}
+                        },
+                    },
+                ]
+            }
+        },
+    )
+
+    def rates(impl):
+        refs = model_spec.get_perf_reference_map("test/model", {}, impl_id=impl)
+        return [r.targets["target"].tput_user for r in refs[DeviceTypes.P300X2]]
+
+    assert rates("tt_transformers") == [10.0]
+    assert rates(None) == [10.0]
+    assert rates("llama31_8b_qb2") == [10.0, 130.0]

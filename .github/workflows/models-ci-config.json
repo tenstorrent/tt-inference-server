@@ -80,6 +80,22 @@
                             ]
                         }
                     }
+                },
+                {
+                    "inference_engine": "vLLM",
+                    "impl": "llama31-8b-qb2",
+                    "ci": {
+                        "nightly": {
+                            "devices": [
+                                "P300X2"
+                            ]
+                        },
+                        "release": {
+                            "devices": [
+                                "P300X2"
+                            ]
+                        }
+                    }
                 }
             ]
         },

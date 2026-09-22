@@ -13,6 +13,7 @@ parsed Block here, in the runner.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from report_module.schema import Block
@@ -69,7 +70,7 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
 def _as_float(value: Any) -> Optional[float]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return float(value)
+    return float(value) if math.isfinite(value) else None
 
 
 def _check(ratio: float, tolerance: float, lower_is_better: bool) -> ReportCheckTypes:
@@ -86,8 +87,8 @@ def build_target_checks(
 
     ``targets`` maps a tier name to a ``workflows.utils_report.PerformanceTarget``.
     Each tier gets ``<field>`` (the target), ``<field>_ratio`` and
-    ``<field>_check`` per metric; a metric the tier does not define, or one
-    the tool did not measure, is ``NA`` rather than a failure.
+    ``<field>_check`` per metric. An undefined target is ``NA``. A declared
+    target with no valid measurement fails, so partial reports cannot pass.
 
     The verdict is the strictest tier that fully passes, reported as PASS
     only when the ``target`` tier passes at least one real check and none
@@ -108,9 +109,9 @@ def build_target_checks(
                 tier[f"{field}_check"] = ReportCheckTypes.NA
                 continue
             tier[field] = target_value
-            if actual is None:
+            if actual is None or actual <= 0:
                 tier[f"{field}_ratio"] = 0.0
-                tier[f"{field}_check"] = ReportCheckTypes.NA
+                tier[f"{field}_check"] = ReportCheckTypes.FAIL
                 continue
             ratio = actual / target_value
             tier[f"{field}_ratio"] = ratio
