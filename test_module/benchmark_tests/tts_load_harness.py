@@ -4,9 +4,9 @@
 
 """Standalone TTS load harness for a running server's ``/v1/audio/speech``.
 
-Not part of the workflow engine: ``benchmark_tests/__init__.py`` exposes only the
-``run_*_benchmark`` entry points, so nothing here is imported by ``run.py``. Run
-it by hand against any deployed TTS server.
+The workflow engine imports its load-generation and aggregation functions through
+``tts_benchmark_tests.py``. It can also be run directly against any deployed TTS
+server with the CLI below.
 
     sweep    concurrency sweep, one of three arrival models -> results JSON
     report   that JSON -> summary table, FC/SC/TC box table, optional charts
@@ -103,6 +103,10 @@ DEFAULT_KEY = "your-secret-key"
 BYTES_PER_SAMPLE = 2
 WAV_HEADER_BYTES = 44
 MAX_TC_GAPS = 200  # cap the per-request gap list so a sweep's JSON stays manageable
+
+
+class PreflightError(RuntimeError):
+    """The target server did not produce a valid response during preflight."""
 
 
 @dataclass
@@ -464,7 +468,9 @@ def _preflight(tgt: Target) -> dict:
             )
             return probe
         logger.warning("preflight attempt %d/3 failed: %s", attempt, probe["error"])
-    sys.exit(f"preflight FAILED 3x: {probe['error']} -- is the server up and healthy?")
+    raise PreflightError(
+        f"preflight FAILED 3x: {probe['error']} -- is the server up and healthy?"
+    )
 
 
 def sweep(args: argparse.Namespace, tgt: Target) -> dict:
@@ -895,7 +901,10 @@ def main(argv: list[str] | None = None) -> None:
 
     tgt = _build_target(args)
     if args.command == "sweep":
-        doc = sweep(args, tgt)
+        try:
+            doc = sweep(args, tgt)
+        except PreflightError as exc:
+            raise SystemExit(str(exc)) from None
         if not args.no_table:
             print_report(doc, args)
     elif args.command == "dump":
@@ -909,6 +918,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
+    "PreflightError",
     "Target",
     "build_text",
     "request",

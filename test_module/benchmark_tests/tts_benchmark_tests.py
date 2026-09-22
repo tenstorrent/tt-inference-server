@@ -2,26 +2,27 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+"""Workflow adapter for the chunk-aware TTS load harness.
+
+The load generator remains usable as a standalone CLI. This module supplies
+the workflow-facing policy (the CI sweep shape), translates its aggregate rows
+to the common report schema, and grades the six FC/SC/TC percentile SLOs.
+"""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import math
-import sys
 import time
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import aiohttp
-
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
-
-from workflow_module.context_helpers import get_num_calls
-
 from report_module.schema import Block
+from workflow_module.context_helpers import get_num_calls
 
 from .._test_common import (
     MetricSpec,
@@ -31,11 +32,191 @@ from .._test_common import (
 )
 from ..context import MediaContext, require_health
 from ..test_status import TtsTestStatus
+from . import tts_load_harness
 
 logger = logging.getLogger(__name__)
 
-
 DEFAULT_TTS_TEXT = "Hello, this is a test of the text to speech system."
+TT_TTS_IMPL = "tt-tts"
+
+
+# QUAD validation shape from docs/TTS_SHARED_MEMORY_DECODERS.md. Five levels
+# exercise the decoder scaling curve while keeping the default CI run bounded.
+TTS_CI_CONCURRENCY = (1, 2, 4, 8, 16)
+TTS_CI_DURATION_SECONDS = 60.0
+TTS_CI_WARMUP_SECONDS = 20.0
+TTS_CI_SETTLE_SECONDS = 5.0
+TTS_CI_TEXT_TOKENS = 1024
+TTS_CI_CHARS_PER_TOKEN = 3.46
+TTS_CI_TIMEOUT_SECONDS = 300.0
+TTS_RAW_RESULTS_FILENAME = "tts_load_results.json"
+
+
+_LATENCY_SPECS = (
+    ("FC P50", "fc_p50_ms", "fc_p50_ms"),
+    ("FC P95", "fc_p95_ms", "fc_p95_ms"),
+    ("SC P50", "sc_p50_ms", "sc_p50_ms"),
+    ("SC P95", "sc_p95_ms", "sc_p95_ms"),
+    ("TC P50", "tc_p50_ms", "tc_p50_ms"),
+    ("TC P95", "tc_p95_ms", "tc_p95_ms"),
+)
+
+
+def _finite(value):
+    """Return a JSON-safe finite float, or ``None`` for a missing sample."""
+    if value is None:
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
+
+
+def _report_rows(rows: list[dict]) -> list[dict]:
+    """Rename harness internals to the public FC/SC/TC report vocabulary."""
+    report_rows = []
+    for row in rows:
+        report_rows.append(
+            {
+                "concurrency": row["conc"],
+                "average_concurrency": _finite(row["C"]),
+                "num_successful": row["n_ok"],
+                "error_request_count": row["n_err"],
+                "throughput_rps": _finite(row["rps"]),
+                "million_chars_per_hour": _finite(row["mchar_h"]),
+                "average_chunks": _finite(row["chunks"]),
+                "fc_p50_ms": _finite(row["ttfb_p50"]),
+                "fc_p95_ms": _finite(row["ttfb_p95"]),
+                "sc_p50_ms": _finite(row["ttfs_p50"]),
+                "sc_p95_ms": _finite(row["ttfs_p95"]),
+                "tc_p50_ms": _finite(row["ttft_p50"]),
+                "tc_p95_ms": _finite(row["ttft_p95"]),
+            }
+        )
+    return report_rows
+
+
+def _worst_latency_values(rows: list[dict]) -> dict[str, float | None]:
+    """Worst measured percentile across the entire concurrency ladder.
+
+    Grading the maximum makes the single CI verdict equivalent to requiring
+    every measured concurrency point to satisfy every latency SLO.
+    """
+    return {
+        field: max(
+            (row[field] for row in rows if row.get(field) is not None),
+            default=None,
+        )
+        for _, field, _ in _LATENCY_SPECS
+    }
+
+
+def _results_are_complete(rows: list[dict]) -> bool:
+    """Reject partial sweeps and latency-only success in the presence of errors."""
+    expected_concurrency = set(TTS_CI_CONCURRENCY)
+    measured_concurrency = {row.get("concurrency") for row in rows}
+    return measured_concurrency == expected_concurrency and all(
+        row.get("num_successful", 0) > 0
+        and row.get("error_request_count", 0) == 0
+        and all(row.get(field) is not None for _, field, _ in _LATENCY_SPECS)
+        for row in rows
+    )
+
+
+def _target_checks(ctx: MediaContext, rows: list[dict]):
+    worst = _worst_latency_values(rows)
+    target_checks, target_check = run_tiered_check(
+        ctx,
+        [
+            MetricSpec(
+                name,
+                worst[field],
+                target_attr,
+                lower_is_better=True,
+                field_name=field,
+                inclusive=True,
+            )
+            for name, field, target_attr in _LATENCY_SPECS
+        ],
+    )
+    integrity_check = (
+        ReportCheckTypes.PASS if _results_are_complete(rows) else ReportCheckTypes.FAIL
+    )
+    for tier in target_checks.values():
+        tier["benchmark_integrity"] = 1
+        tier["benchmark_integrity_ratio"] = (
+            1.0 if integrity_check == ReportCheckTypes.PASS else 0.0
+        )
+        tier["benchmark_integrity_check"] = integrity_check
+    if integrity_check == ReportCheckTypes.FAIL:
+        target_check = ReportCheckTypes.FAIL
+    return target_checks, target_check
+
+
+def _sweep_args(output_path: Path) -> argparse.Namespace:
+    """Arguments consumed by :func:`tts_load_harness.sweep`."""
+    return argparse.Namespace(
+        concurrency=",".join(str(value) for value in TTS_CI_CONCURRENCY),
+        duration=TTS_CI_DURATION_SECONDS,
+        warmup=TTS_CI_WARMUP_SECONDS,
+        settle=TTS_CI_SETTLE_SECONDS,
+        arrival="closed",
+        rate=None,
+        max_inflight=0,
+        on_full="shed",
+        out=str(output_path / TTS_RAW_RESULTS_FILENAME),
+    )
+
+
+def _target(ctx: MediaContext) -> tts_load_harness.Target:
+    parsed = urlparse(ctx.base_url)
+    if not parsed.hostname:
+        raise ValueError(
+            f"TTS benchmark could not resolve a host from {ctx.base_url!r}"
+        )
+    nchars = round(TTS_CI_TEXT_TOKENS * TTS_CI_CHARS_PER_TOKEN)
+    return tts_load_harness.Target(
+        host=parsed.hostname,
+        port=ctx.server_port,
+        timeout=TTS_CI_TIMEOUT_SECONDS,
+        text=tts_load_harness.build_text(nchars),
+    )
+
+
+def run_tts_load_benchmark(ctx: MediaContext) -> Block:
+    """Run the chunk-aware FC/SC/TC concurrency sweep for a TTS model."""
+    require_health(ctx)
+    output_path = Path(ctx.output_path)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    document = tts_load_harness.sweep(_sweep_args(output_path), _target(ctx))
+    rows, chars_per_request = tts_load_harness.aggregate(document)
+    report_rows = _report_rows(rows)
+    target_checks, target_check = _target_checks(ctx, report_rows)
+
+    num_successful = sum(row["num_successful"] for row in report_rows)
+    error_request_count = sum(row["error_request_count"] for row in report_rows)
+    return Block(
+        kind="benchmarks",
+        task_type="text_to_speech",
+        title="Text-to-Speech Load Benchmark",
+        id=block_id(ctx) or None,
+        targets={
+            "concurrency": list(TTS_CI_CONCURRENCY),
+            "text_tokens": TTS_CI_TEXT_TOKENS,
+        },
+        data={
+            "Benchmarks": {
+                "num_requests": num_successful + error_request_count,
+                "num_successful": num_successful,
+                "error_request_count": error_request_count,
+                "chars_per_request": chars_per_request,
+                "arrival_model": "closed",
+                "raw_results": TTS_RAW_RESULTS_FILENAME,
+                "target_check": target_check,
+                "target_checks": target_checks,
+            },
+            "Latency by Concurrency": report_rows,
+        },
+    )
 
 
 def _tts_num_calls(ctx: MediaContext, is_eval: bool = False) -> int:
@@ -234,8 +415,8 @@ def _tts_throughput_rps(
     return successful / wall_seconds
 
 
-def run_tts_benchmark(ctx: MediaContext) -> Block:
-    """Run benchmarks for a TTS model (SpeechT5, etc.)."""
+def _run_legacy_tts_benchmark(ctx: MediaContext) -> Block:
+    """Preserve the pre-load-harness behavior for SpeechT5 implementations."""
     logger.info(
         f"Running benchmarks for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
@@ -279,6 +460,14 @@ def run_tts_benchmark(ctx: MediaContext) -> Block:
             },
         },
     )
+
+
+def run_tts_benchmark(ctx: MediaContext) -> Block:
+    """Dispatch TTS benchmarks by implementation without changing legacy models."""
+    impl_name = getattr(getattr(ctx.model_spec, "impl", None), "impl_name", None)
+    if impl_name == TT_TTS_IMPL:
+        return run_tts_load_benchmark(ctx)
+    return _run_legacy_tts_benchmark(ctx)
 
 
 __all__ = ["run_tts_benchmark"]

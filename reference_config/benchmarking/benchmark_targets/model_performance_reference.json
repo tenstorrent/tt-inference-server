@@ -694,6 +694,25 @@
             }
         ]
     },
+    "propritery/tts-2": {
+        "quad_galaxy": [
+            {
+                "max_concurrency": 16,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "fc_p50_ms": 150,
+                        "fc_p95_ms": 350,
+                        "sc_p50_ms": 270,
+                        "sc_p95_ms": 270,
+                        "tc_p50_ms": 570,
+                        "tc_p95_ms": 570
+                    }
+                }
+            }
+        ]
+    },
     "google/gemma-2-27b-it": {
         "galaxy": [
             {
