@@ -72,6 +72,26 @@ def add_requirements_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def misfiled_gauntlet_document(path: str, doc: Any) -> str | None:
+    """Error text when a gauntlet document's folder disagrees with its model.
+
+    Callers name a document by folder (``specs/<customer>/<model>``), so CI can
+    synthesize the path from the model it is pointing the run at. A document
+    filed under the wrong folder would therefore gate one model's endpoint on
+    another model's criteria -- and nothing downstream compares the two.
+    Matching is case-insensitive: a real misfile differs by far more than case.
+    """
+    folder = Path(path).parent.name
+    model = doc.model.name.rsplit("/", 1)[-1]
+    if folder.casefold() == model.casefold():
+        return None
+    return (
+        f"requirements document {path} describes model {doc.model.name!r} but is "
+        f"filed under folder {folder!r}. A document must live in a folder named "
+        f"after its own model, e.g. specs/<customer>/{model}/<id>.json."
+    )
+
+
 def apply_requirements(
     args: argparse.Namespace, parser: argparse.ArgumentParser
 ) -> None:
@@ -86,21 +106,29 @@ def apply_requirements(
     from workflow_module.requirements_schema import RequirementsError, load_requirements
     from workflows.llm_gauntlet_repo import (
         LLMGauntletError,
+        is_llm_gauntlet_ref,
         resolve_requirements_location,
     )
     from workflows.model_spec_provider import hardware_to_device_name
     from workflows.requirements_target_pack import unknown_eval_names
 
+    # Kept because resolution overwrites it below, and the misfile check only
+    # applies to a document named by llm-gauntlet repo path.
+    requested = args.requirements_json
     try:
         # A "llm-gauntlet;<path>" value names the document by its path inside
         # that repo; resolve it to a real file first. Done here, before the
         # load, so the absolutized path below is what every downstream consumer
         # sees -- RuntimeConfig, the forwarded child argv, the launcher re-exec.
         # None of them need to know the scheme exists.
-        args.requirements_json = resolve_requirements_location(args.requirements_json)
+        args.requirements_json = resolve_requirements_location(requested)
         doc = load_requirements(args.requirements_json)
     except (LLMGauntletError, RequirementsError) as e:
         parser.error(str(e))
+    if is_llm_gauntlet_ref(requested):
+        misfiled = misfiled_gauntlet_document(args.requirements_json, doc)
+        if misfiled:
+            parser.error(misfiled)
     # Reject unknown accuracy evals now rather than at eval-config build time,
     # halfway through the run.
     unknown = unknown_eval_names(doc)
@@ -164,6 +192,7 @@ __all__ = [
     "REQUIREMENTS_HELP",
     "add_requirements_argument",
     "apply_requirements",
+    "misfiled_gauntlet_document",
     "register_requirements_providers",
     "requirements_mode_in_argv",
 ]
