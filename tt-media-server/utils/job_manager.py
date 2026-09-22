@@ -46,7 +46,7 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
-    last_progress_time: Optional[float] = None
+    local_progress_time: Optional[float] = None
     _task: Callable = None
     _progress_tracker: Any = None
     start_event: Optional[Event] = None
@@ -58,8 +58,8 @@ class Job:
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = int(time.time())
-        if self.last_progress_time is None:
-            self.last_progress_time = time.monotonic()
+        if self.local_progress_time is None:
+            self.local_progress_time = time.monotonic()
 
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
@@ -68,16 +68,16 @@ class Job:
 
     def touch_progress(self) -> float:
         """Record progress locally and in the shared worker heartbeat."""
-        self.last_progress_time = time.monotonic()
+        self.local_progress_time = time.monotonic()
         if self._progress_tracker is not None:
-            self._progress_tracker.value = self.last_progress_time
-        return self.last_progress_time
+            self._progress_tracker.value = self.local_progress_time
+        return self.local_progress_time
 
     def progress_time(self) -> float:
         """Return worker progress when shared, otherwise local job progress."""
         if self._progress_tracker is not None:
             return float(self._progress_tracker.value)
-        return self.last_progress_time
+        return self.local_progress_time
 
     def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())

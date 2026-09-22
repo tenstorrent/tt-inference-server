@@ -67,13 +67,13 @@ class TestJob:
             model="test-model",
             _progress_tracker=tracker,
         )
-        previous_progress = job.last_progress_time
+        previous_progress = job.local_progress_time
         job.mark_in_progress()
 
         assert job.status == JobStatus.IN_PROGRESS
         assert job.is_in_progress()
-        assert job.last_progress_time >= previous_progress
-        assert tracker.value == job.last_progress_time
+        assert job.local_progress_time >= previous_progress
+        assert tracker.value == job.local_progress_time
 
     def test_progress_time_reads_shared_tracker(self):
         """Worker heartbeats are reflected in the parent-side job."""
@@ -1073,7 +1073,7 @@ class TestJobManager:
         with job_manager._jobs_lock:
             job = job_manager._jobs["job-123"]
             job.mark_in_progress()
-            job.last_progress_time = time.monotonic() - 10
+            job.local_progress_time = time.monotonic() - 10
 
         # Run cleanup
         job_manager._cleanup_old_jobs()
@@ -1108,7 +1108,7 @@ class TestJobManager:
             job = job_manager._jobs["job-active"]
             job.created_at = int(time.time()) - 100
             job.mark_in_progress()
-            job.last_progress_time = time.monotonic()
+            job.local_progress_time = time.monotonic()
 
         job_manager._cleanup_old_jobs()
 
@@ -1121,12 +1121,12 @@ class TestJobManager:
             id="video-job",
             job_type=JobTypes.VIDEO.value,
             model="test-model",
-            last_progress_time=100.0,
+            local_progress_time=100.0,
         )
 
         job.mark_in_progress()
 
-        assert job.last_progress_time == 100.0
+        assert job.local_progress_time == 100.0
         assert job_manager._is_job_stuck(job, progress_cutoff=101.0)
 
     @pytest.mark.asyncio
@@ -1153,7 +1153,7 @@ class TestJobManager:
             job = job_manager._jobs["job-race"]
             job.mark_in_progress()
             stale_time = time.monotonic() - 100
-            job.last_progress_time = stale_time
+            job.local_progress_time = stale_time
             tracker.value = stale_time
             original_progress_time = job.progress_time
             progress_read_count = 0
