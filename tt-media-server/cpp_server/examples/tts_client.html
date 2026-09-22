@@ -1,0 +1,1037 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc. -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TTS Streaming Client</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: #3b82f6;
+    --bg: #f7f7f9;
+    --panel: #ffffff;
+    --border: #e2e2e7;
+    --text: #1a1a1e;
+    --muted: #6b7280;
+    --ok: #16a34a;
+    --err: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+    display: flex;
+    justify-content: center;
+  }
+  main { width: 100%; max-width: 760px; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; }
+  p.subtitle { color: var(--muted); margin-top: 0; font-size: 0.9rem; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  label { display: block; font-size: 0.85rem; font-weight: 600; margin: 12px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type="text"], input[type="password"], input[type="number"], textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    background: transparent;
+    color: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; min-width: 0; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  button {
+    border: none;
+    border-radius: 6px;
+    padding: 9px 18px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: white; }
+  button.primary:disabled { background: #9db8e8; cursor: not-allowed; }
+  button.secondary { background: #e5e7eb; color: #111827; }
+  button.secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    margin-bottom: 4px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.busy { background: var(--accent); animation: pulse 1s infinite ease-in-out; }
+  .dot.ok { background: var(--ok); }
+  .dot.err { background: var(--err); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+  }
+  .metric {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .metric .value { font-size: 1.25rem; font-weight: 700; }
+  .metric .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  /* Load-test KPIs are a fixed 3 x 4: FC / SC / TC rows over p50, p95, max,
+     then the run-level row. auto-fit would reflow them and break the reading. */
+  .metrics.grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  /* Generate & play: all five tiles on one row. auto-fit would wrap them by width. */
+  .metrics.grid5 { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .metrics.grid5 .metric { padding: 10px 8px; }
+  .metrics.grid5 .value { font-size: 1.05rem; }
+  .metrics.grid5 .label { font-size: 0.64rem; }
+  @media (max-width: 720px) {
+    .metrics.grid5 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 560px) { .metrics.grid3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .metric .label .tgt { text-transform: none; letter-spacing: 0; opacity: 0.75; }
+  audio { width: 100%; margin-top: 14px; }
+  .log {
+    background: #0f172a;
+    color: #cbd5e1;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.76rem;
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  /* An empty .log still paints its dark background + padding, showing up as a
+     stray black bar under the grid. Collapse it until it actually has output. */
+  .log:empty { display: none; }
+  .progress {
+    height: 8px; margin-top: 10px; border-radius: 999px; overflow: hidden;
+    background: var(--bg); border: 1px solid var(--border);
+  }
+  .progress > .bar {
+    height: 100%; width: 0%; background: var(--accent);
+    /* Matches the 1s poll: the bar glides to the next value instead of stepping. */
+    transition: width 1s linear;
+  }
+  .log { margin-top: 14px; }
+  .log .err-line { color: #fca5a5; }
+  .note {
+    font-size: 0.78rem;
+    color: var(--muted);
+    background: var(--bg);
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-top: 14px;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .brand img { height: 18px; width: auto; }
+  .brand span { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">
+    <img src="tenstorrent_logo.svg" alt="Tenstorrent" />
+    <span>Powered by Tenstorrent</span>
+  </div>
+  <h1>TTS Streaming Client</h1>
+  <p class="subtitle"> <code>POST /v1/audio/speech</code>.</p>
+
+  <!-- ===================== LOAD TEST (closed loop) ===================== -->
+  <section class="panel">
+    <h2 style="margin:0 0 6px;font-size:1.05rem;">Load test</h2>
+    <p class="subtitle" style="margin-top:0;">
+      Closed loop: <b id="ltUsersEcho">500</b> simulated users, each sending its next request
+      the moment the previous one finishes. Concurrency is the input; throughput and latency
+      are measured. ISL = 1020, OSL = 1020
+      <br /><br />
+    </p>
+    <div class="row">
+      <div style="flex:1;">
+        <label for="ltUsers">Users (concurrency)</label>
+        <input type="number" id="ltUsers" value="500" min="1" max="2000" />
+      </div>
+      <div style="flex:1;">
+        <label for="ltMinutes">Duration (minutes)</label>
+        <input type="number" id="ltMinutes" value="5" min="1" max="60" step="1" />
+      </div>
+    </div>
+    <div class="actions">
+      <button type="button" class="primary" id="launchBtn">Launch</button>
+      <button type="button" class="secondary" id="ltStopBtn" disabled>Stop</button>
+    </div>
+    <br>
+    <div class="status-line" style="margin-top:14px;">
+      <span class="dot" id="ltDot"></span>
+      <span id="ltStatus">Idle</span>
+    </div>
+    <div class="progress" id="ltProgWrap" hidden><div class="bar" id="ltProg"></div></div>
+
+    <div class="metrics grid3">
+      <div class="metric"><div class="value" id="kFc50">–</div><div class="label">FC P50 <span class="tgt">(&le;150 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kFc95">–</div><div class="label">FC P95 <span class="tgt">(&le;350 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kFcMax">–</div><div class="label">FC Pmax <span class="tgt">(&le;350 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kSc50">–</div><div class="label">SC P50 <span class="tgt">(&le;270 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kSc95">–</div><div class="label">SC P95 <span class="tgt">(&le;270 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kScMax">–</div><div class="label">SC Pmax <span class="tgt">(&le;270 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kTc50">–</div><div class="label">TC P50 <span class="tgt">(&le;570 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kTc95">–</div><div class="label">TC P95 <span class="tgt">(&le;570 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kTcMax">–</div><div class="label">TC Pmax <span class="tgt">(&le;570 ms)</span></div></div>
+      <div class="metric"><div class="value" id="kC">–</div><div class="label">C (measured)</div></div>
+      <div class="metric"><div class="value" id="kMchar">–</div><div class="label">Mchar/h</div></div>
+      <div class="metric"><div class="value" id="kVerdict">–</div><div class="label">KPI / strict</div></div>
+    </div>
+  </section>
+
+
+  <section class="panel">
+    <h2 style="margin:0 0 6px;font-size:1.05rem;">Generate &amp; play</h2>
+    <p class="subtitle" style="margin-top:0;">
+      One request, streamed and played back as it arrives. Use it to hear the voice and
+      sanity-check the stack; the numbers below are a single sample, not a benchmark
+      &mdash; use Load test for that.
+    </p>
+    <label for="text">Text</label>
+    <textarea id="text">The quick brown fox jumps over the lazy dog.</textarea>
+
+    <label for="description">Voice description (optional)</label>
+    <input type="text" id="description" placeholder="e.g. a calm low voice" />
+
+    <div class="actions">
+      <button type="button" class="primary" id="submitBtn">Generate &amp; Play</button>
+      <button type="button" class="secondary" id="stopBtn" disabled>Stop</button>
+    </div>
+    <br>
+    <div class="status-line" style="margin-top:14px;">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Idle</span>
+    </div>
+
+    <div class="metrics grid5">
+      <div class="metric">
+        <div class="value" id="mTtfc">–</div>
+        <div class="label">Time to First Chunk</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mChunks">–</div>
+        <div class="label">Chunks Received</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mTotal">–</div>
+        <div class="label">Total Time</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mAudioDur">–</div>
+        <div class="label">Audio Duration</div>
+      </div>
+      <div class="metric">
+        <div class="value" id="mRtf">–</div>
+        <div class="label">RTF</div>
+      </div>
+    </div>
+
+    <br>
+    <p class="subtitle" style="margin-top:14px;color:var(--text);"><b>Replay</b></p>
+    <audio id="player" controls></audio>
+
+    <div class="log" id="log"></div>
+
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  // Endpoint and key were inputs; they are fixed now. The page is served by
+  // tts_bench_server.py, which reverse-proxies /v1/* to the inference server,
+  // so the request is same-origin and needs no CORS preflight.
+  const BASE_URL = window.location.origin;
+  const API_KEY = "your-secret-key";
+  const textEl = $("text");
+  const descriptionEl = $("description");
+  const submitBtn = $("submitBtn");
+  const stopBtn = $("stopBtn");
+  const statusDot = $("statusDot");
+  const statusText = $("statusText");
+  const playerEl = $("player");
+  const logEl = $("log");
+
+
+  const metricEls = {
+    ttfc: $("mTtfc"),
+    chunks: $("mChunks"),
+    rtf: $("mRtf"),
+    total: $("mTotal"),
+    audioDur: $("mAudioDur"),
+  };
+
+  let batchAbortController = null;
+  let lastObjectUrl = null;
+
+  // Real-time playback state: schedules decoded PCM chunks back-to-back on
+  // a single AudioContext timeline as they arrive off the network.
+  const REALTIME_LEAD_SECONDS = 0.08;
+  let audioCtx = null;
+  let nextPlayTime = 0;
+  let scheduledSources = [];
+  let pcmCarry = new Uint8Array(0);
+
+  function log(message, isError = false) {
+    const ts = new Date().toISOString().split("T")[1].replace("Z", "");
+    const line = document.createElement("div");
+    if (isError) line.className = "err-line";
+    line.textContent = `[${ts}] ${message}`;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setStatus(text, kind) {
+    statusText.textContent = text;
+    statusDot.className = "dot" + (kind ? ` ${kind}` : "");
+  }
+
+  function resetMetrics() {
+    Object.values(metricEls).forEach((el) => (el.textContent = "–"));
+  }
+
+  function fmtMs(ms) {
+    return `${ms.toFixed(0)} ms`;
+  }
+
+  function fmtSec(s) {
+    return `${s.toFixed(3)} s`;
+  }
+
+  // Concatenate Uint8Array chunks without repeated array copies per byte.
+  function concatBytes(a, b) {
+    const out = new Uint8Array(a.length + b.length);
+    out.set(a, 0);
+    out.set(b, a.length);
+    return out;
+  }
+
+  // Rewrites the placeholder RIFF/data sizes (0xFFFFFFFF) that the server's
+  // streaming WAV header uses, so the assembled Blob is a valid, finite WAV
+  // file every decoder/player can seek and report duration for.
+  function finalizeWavHeader(headerBytes, dataSize) {
+    const header = headerBytes.slice(); // copy, don't mutate the original
+    const view = new DataView(header.buffer);
+    view.setUint32(4, 36 + dataSize, true); // RIFF chunk size
+    view.setUint32(40, dataSize, true); // data chunk size
+    return header;
+  }
+
+  function parseWavHeader(headerBytes) {
+    const view = new DataView(headerBytes.buffer, headerBytes.byteOffset, headerBytes.byteLength);
+    return {
+      channels: view.getUint16(22, true),
+      sampleRateHz: view.getUint32(24, true),
+      bitsPerSample: view.getUint16(34, true),
+    };
+  }
+
+  function stopRealtimePlayback() {
+    scheduledSources.forEach((src) => {
+      try { src.stop(); } catch { /* already finished */ }
+    });
+    scheduledSources = [];
+    if (audioCtx) audioCtx.close().catch(() => {});
+    audioCtx = null;
+    nextPlayTime = 0;
+    pcmCarry = new Uint8Array(0);
+  }
+
+  // Deinterleaves PCM16LE bytes into a Web Audio AudioBuffer; the buffer's
+  // declared sampleRate can differ from the context's — the browser resamples.
+  function pcm16BytesToAudioBuffer(ctx, bytes, sampleRateHz, channels) {
+    const frameBytes = channels * 2;
+    const frames = Math.floor(bytes.length / frameBytes);
+    const buffer = ctx.createBuffer(channels, frames, sampleRateHz);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    for (let ch = 0; ch < channels; ch++) {
+      const channelData = buffer.getChannelData(ch);
+      for (let i = 0; i < frames; i++) {
+        channelData[i] = view.getInt16((i * channels + ch) * 2, true) / 32768;
+      }
+    }
+    return buffer;
+  }
+
+  // Schedules one chunk immediately after whatever is already queued, so
+  // playback stays gapless regardless of when chunks actually arrive.
+  function scheduleRealtimeChunk(bytes, sampleRateHz, channels) {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      nextPlayTime = audioCtx.currentTime + REALTIME_LEAD_SECONDS;
+    }
+    const buffer = pcm16BytesToAudioBuffer(audioCtx, bytes, sampleRateHz, channels);
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    const startAt = Math.max(nextPlayTime, audioCtx.currentTime);
+    source.start(startAt);
+    nextPlayTime = startAt + buffer.duration;
+    scheduledSources.push(source);
+    source.onended = () => {
+      scheduledSources = scheduledSources.filter((s) => s !== source);
+    };
+  }
+
+  // ---------------------------------------------------------------- crossfade
+  // The server emits fixed 600 ms chunks and the seams between them are NOT
+  // continuous: measured on a 12-chunk clip, |x[i]-x[i-1]| at the joins averaged
+  // 2342 against 393 elsewhere, with individual joins up to 7566 -- audible clicks.
+  //
+  // This is ffmpeg's `acrossfade=d=F:c1=tri:c2=tri` applied at every seam: the last
+  // F samples of a chunk are linearly mixed with the first F of the next, so total
+  // length shrinks by F per join. 1 s (the ffmpeg example) is impossible here -- it
+  // exceeds the 600 ms chunk and would consume the whole stream; a few ms removes
+  // the step without audibly shortening anything. It runs ONCE on the byte stream
+  // and feeds both live playback and the replay blob, so the two cannot diverge.
+  function makeCrossfader(chunkBytes, fadeSamples, channels) {
+    const frameBytes = channels * 2;
+    const chunkFrames = Math.floor(chunkBytes / frameBytes);
+    const F = Math.min(fadeSamples, Math.floor(chunkFrames / 4));  // never > 1/4 chunk
+    let posInChunk = 0;          // frames consumed of the current chunk
+    let tail = null;             // held last F frames of the previous chunk
+    let carry = new Uint8Array(0);
+    function toI16(u8) {
+      return new Int16Array(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.length));
+    }
+    return {
+      enabled: F > 0 && chunkFrames > 0,
+      push(u8) {
+        if (!(F > 0 && chunkFrames > 0)) return u8;
+        const all = concatBytes(carry, u8);
+        const usable = all.length - (all.length % frameBytes);
+        carry = all.slice(usable);
+        if (usable === 0) return new Uint8Array(0);
+        const inp = toI16(all.slice(0, usable));
+        const out = [];
+        let i = 0;
+        while (i < inp.length) {
+          if (tail && posInChunk === 0) {
+            // head of a new chunk: mix F frames against the held tail
+            const have = Math.min(F * channels - (tail.used || 0), inp.length - i);
+            const mixed = new Int16Array(have);
+            for (let k = 0; k < have; k++) {
+              const idx = (tail.used || 0) + k;
+              const t = Math.floor(idx / channels) / F;      // 0 -> 1 across the fade
+              mixed[k] = Math.max(-32768, Math.min(32767,
+                Math.round(tail.data[idx] * (1 - t) + inp[i + k] * t)));
+            }
+            out.push(mixed);
+            tail.used = (tail.used || 0) + have;
+            i += have;
+            if (tail.used >= F * channels) { tail = null; posInChunk = F; }
+            continue;
+          }
+          // body of the chunk, stopping F frames short so the tail can be held
+          const bodyEnd = (chunkFrames - F) * channels;
+          const take = Math.min(bodyEnd - posInChunk * channels, inp.length - i);
+          if (take > 0) {
+            out.push(inp.slice(i, i + take));
+            i += take; posInChunk += take / channels;
+          }
+          if (posInChunk >= chunkFrames - F) {
+            // hold the seam
+            const need = F * channels - (tail ? tail.data.length : 0);
+            const grab = Math.min(need, inp.length - i);
+            if (grab <= 0) break;
+            const held = inp.slice(i, i + grab);
+            tail = tail ? {data: concatI16(tail.data, held)} : {data: held};
+            i += grab; posInChunk += grab / channels;
+            if (posInChunk >= chunkFrames) posInChunk = 0;
+          }
+        }
+        return i16ListToBytes(out);
+      },
+      flush() {
+        // the final seam has no successor: emit it unfaded rather than drop audio
+        const parts = [];
+        if (tail && tail.data) {
+          const used = tail.used || 0;
+          if (used < tail.data.length) parts.push(tail.data.slice(used));
+        }
+        tail = null;
+        return i16ListToBytes(parts);
+      },
+    };
+  }
+  function concatI16(a, b) {
+    const out = new Int16Array(a.length + b.length);
+    out.set(a, 0); out.set(b, a.length); return out;
+  }
+  function i16ListToBytes(list) {
+    const n = list.reduce((s, a) => s + a.length, 0);
+    const i16 = new Int16Array(n);
+    let o = 0;
+    for (const a of list) { i16.set(a, o); o += a.length; }
+    return new Uint8Array(i16.buffer, 0, n * 2);
+  }
+
+  // Buffers any leftover partial audio frame until enough bytes arrive to
+  // fill a whole frame, since network reads can split mid-sample.
+  function feedRealtime(bytes, sampleRateHz, channels) {
+    const frameBytes = channels * 2;
+    const combined = concatBytes(pcmCarry, bytes);
+    const usableLen = combined.length - (combined.length % frameBytes);
+    if (usableLen === 0) {
+      pcmCarry = combined;
+      return;
+    }
+    scheduleRealtimeChunk(combined.slice(0, usableLen), sampleRateHz, channels);
+    pcmCarry = combined.slice(usableLen);
+  }
+
+  function buildRequest(baseUrl, apiKey, text, description) {
+    // The proxy measures this stream server-side and files the result under this id.
+    const reqId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const headers = {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "X-Req-Id": reqId,
+    };
+    const payload = { text };
+    if (description) payload.description = description;
+    return {
+      url: `${baseUrl.replace(/\/+$/, "")}/v1/audio/speech`,
+      headers,
+      body: JSON.stringify(payload),
+      reqId,
+    };
+  }
+
+  async function readErrorBody(response) {
+    try {
+      const json = await response.json();
+      const err = json && json.error;
+      if (err) {
+        return `${response.status} ${err.type || ""}: ${err.message || JSON.stringify(err)}`;
+      }
+      return `${response.status}: ${JSON.stringify(json)}`;
+    } catch {
+      return `HTTP ${response.status} ${response.statusText}`;
+    }
+  }
+
+  // Runs one POST /v1/audio/speech request end-to-end. Only the request with
+  // playAudio=true drives the sample metric tiles, real-time scheduling, and
+  // the final replayable blob; the rest just stream-and-discard for timing.
+  async function runOneRequest(index, playAudio, req, signal) {
+    const sentAt = performance.now();
+    let response;
+    try {
+      response = await fetch(req.url, {
+        method: "POST",
+        headers: req.headers,
+        body: req.body,
+        signal,
+      });
+    } catch (e) {
+      if (e.name === "AbortError") return { ok: false, aborted: true };
+      log(`[req ${index + 1}] network/CORS error: ${e.message}`, true);
+      return { ok: false, error: e.message };
+    }
+
+    if (!response.ok) {
+      const msg = await readErrorBody(response);
+      log(`[req ${index + 1}] server error: ${msg}`, true);
+      return { ok: false, error: msg };
+    }
+
+    if (playAudio) setStatus("Streaming…", "busy");
+
+    // Server-side measurement, polled live. The proxy scores the stream exactly as
+    // tts_load_harness.py does and republishes on every completed chunk.
+    let srvTimer = null;
+    let srvOk = false;          // true once the proxy's measurement has been applied
+    let srvM = null;            // the proxy's last measurement for this request
+    async function pollServer() {
+      try {
+        const m = await (await fetch(`/api/stream?id=${req.reqId}`)).json();
+        if (m && m.fc_ms !== null && m.fc_ms !== undefined) {
+          srvOk = true;
+          srvM = m;
+          metricEls.ttfc.textContent = fmtMs(m.fc_ms);
+          metricEls.chunks.textContent = String(m.chunks);
+          // RTF from the server's own clock: the browser's total time carries network
+          // latency, which inflates the ratio the harness computes as gen_s/audio_s.
+          // Total time AND audio duration from the server, so the pair -- and the
+          // RTF that divides them -- all come off one clock. Mixing a server total
+          // with a browser-side duration can make total look larger than audio.
+          metricEls.total.textContent = fmtSec(m.total_ms / 1000);
+          if (m.audio_s > 0) metricEls.audioDur.textContent = fmtSec(m.audio_s);
+          if (m.audio_s > 0) metricEls.rtf.textContent = (m.total_ms / 1000 / m.audio_s).toFixed(3);
+        }
+      } catch (e) { /* transient; next tick retries */ }
+    }
+    if (playAudio && req.reqId) {
+      metricEls.ttfc.textContent = "…";
+      srvTimer = setInterval(pollServer, 250);
+    }
+
+    const reader = response.body.getReader();
+    let headerCarry = new Uint8Array(0);
+    let headerBytes = null; // parsed once we have 44 bytes
+    const audioParts = playAudio ? [] : null;
+    let totalAudioBytes = 0;
+    let channels = 0;
+    let sampleRateHz = 0;
+    let bitsPerSample = 0;
+
+    let firstChunkAt = null;
+    let lastChunkAt = null;
+    let chunkCount = 0;
+
+    // --- chunk accounting, matched to tts_load_harness.py --------------------
+    // The harness parses HTTP chunked framing itself, so one mark = one server
+    // audio chunk, stamped when that chunk is COMPLETE, and FC = marks[0].
+    // fetch() hides chunk boundaries: reader.read() returns whatever the browser
+    // happened to buffer, which merges or splits server chunks. Counting reads
+    // therefore measures the network, not the model.
+    // Instead we rebuild the harness's marks from the byte count: the server emits
+    // fixed CHUNK_AUDIO_S-long chunks, so every CHUNK_BYTES of audio completes one.
+    const CHUNK_AUDIO_S = 0.6;     // CHUNK_TOKENS(30) * 960 / 48000, per tts_load_report
+    let chunkBytes = 0;            // set once the WAV header gives us the format
+    // Post-processing feeds playback and replay; metrics stay on the RAW stream so
+    // the crossfade cannot move FC/chunk counts.
+    let xfade = null;
+    let playBytes = 0;
+    const xfadeOn = true;
+    const xfadeMs = 5;   // measured: seam step 2342 -> 243, below the 387 interior mean
+    function emitPlayable(u8) {
+      if (!u8 || u8.length === 0) return;
+      if (playAudio) { audioParts.push(u8); feedRealtime(u8, sampleRateHz, channels); }
+      playBytes += u8.length;
+    }
+    function processed(u8) {
+      if (!xfade) return u8;
+      return xfade.push(u8);
+    }
+    function onAudioBytes(bytes) {
+      if (playAudio) audioParts.push(bytes);
+      totalAudioBytes += bytes.length;
+      const now = performance.now();
+      if (!chunkBytes) {
+        chunkBytes = Math.round(
+          CHUNK_AUDIO_S * sampleRateHz * channels * (bitsPerSample / 8));
+      }
+      // One read can complete several chunks; they all landed at the same instant.
+      while (chunkBytes > 0 && (chunkCount + 1) * chunkBytes <= totalAudioBytes) {
+        chunkCount += 1;
+        if (firstChunkAt === null) {
+          firstChunkAt = now;
+          // FC is NOT reported from here. The browser's arrival time includes network
+          // latency to the cluster and fetch() buffering, which read ~600ms against
+          // the harness's ~87ms. The proxy's server-side figure is polled instead.
+        }
+        lastChunkAt = now;
+        if (playAudio) metricEls.chunks.textContent = String(chunkCount);
+      }
+    }
+
+    // The final chunk is usually short. The harness counts it (it counts frames,
+    // not bytes), so count it too rather than dropping audio the user can hear.
+    function flushFinalChunk() {
+      if (!chunkBytes || totalAudioBytes <= chunkCount * chunkBytes) return;
+      chunkCount += 1;
+      const now = performance.now();
+      if (firstChunkAt === null) firstChunkAt = now;
+      lastChunkAt = now;
+      if (playAudio) {
+        metricEls.chunks.textContent = String(chunkCount);
+      }
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (xfade) emitPlayable(xfade.flush());
+          flushFinalChunk();
+          if (srvTimer) { clearInterval(srvTimer); srvTimer = null; }
+          if (playAudio && req.reqId) {
+            await pollServer();
+            try {
+              const m = await (await fetch(`/api/stream?id=${req.reqId}`)).json();
+              if (m && m.fc_ms !== null) {
+                log(
+                  `server-measured: FC ${m.fc_ms} ms, ${m.chunks} chunks` +
+                  (m.sc_ms !== null ? `, SC ${m.sc_ms} ms` : "") +
+                  (m.tc_max_ms !== null ? `, TC max ${m.tc_max_ms} ms` : "") +
+                  `, stall ${m.stall_ms} ms over ${m.bubbles} gap(s) ` +
+                  `(real-time line ${m.chunk_audio_ms} ms)`);
+              }
+            } catch (e) { /* the polled value already stands */ }
+          }
+          break;
+        }
+        if (!value || value.length === 0) continue;
+
+        if (headerBytes === null) {
+          const combined = concatBytes(headerCarry, value);
+          if (combined.length < 44) {
+            headerCarry = combined;
+            continue;
+          }
+          headerBytes = combined.slice(0, 44);
+          const parsed = parseWavHeader(headerBytes);
+          channels = parsed.channels;
+          sampleRateHz = parsed.sampleRateHz;
+          bitsPerSample = parsed.bitsPerSample;
+          if (playAudio) {
+            log(
+              `WAV header: ${parsed.sampleRateHz} Hz, ${parsed.channels} ch, ` +
+                `${parsed.bitsPerSample}-bit`
+            );
+          }
+          if (xfadeOn && xfadeMs > 0) {
+            const cb = Math.round(CHUNK_AUDIO_S * sampleRateHz) * channels * 2;
+            xfade = makeCrossfader(cb, Math.round(xfadeMs * sampleRateHz / 1000), channels);
+            if (playAudio) {
+              log(`crossfade: ${xfadeMs} ms (tri) at every ${CHUNK_AUDIO_S * 1000} ms `
+                  + `chunk seam${xfade.enabled ? "" : " -- DISABLED, fade too long"}`);
+            }
+            if (!xfade.enabled) xfade = null;
+          }
+          const rest = combined.slice(44);
+          if (rest.length > 0) {
+            onAudioBytes(rest);          // metrics: raw stream
+            emitPlayable(processed(rest));
+          }
+        } else {
+          onAudioBytes(value);          // metrics: raw stream
+          emitPlayable(processed(value));
+        }
+      }
+    } catch (e) {
+      if (e.name === "AbortError") return { ok: false, aborted: true };
+      log(`[req ${index + 1}] stream error: ${e.message}`, true);
+      return { ok: false, error: e.message };
+    }
+
+    const totalSeconds = (performance.now() - sentAt) / 1000;
+
+    if (headerBytes === null || totalAudioBytes === 0) {
+      log(`[req ${index + 1}] ended with no audio data.`, true);
+      return { ok: false, error: "no audio data" };
+    }
+
+    const bytesPerSample = bitsPerSample / 8;
+    const audioDurationSeconds =
+      totalAudioBytes / (sampleRateHz * channels * bytesPerSample);
+    const rtf = audioDurationSeconds > 0 ? totalSeconds / audioDurationSeconds : null;
+
+    if (playAudio && !srvOk) {
+      // Fallback only: no server measurement came back for this request. These are
+      // browser-side, so Total Time carries network latency and RTF is inflated.
+      metricEls.total.textContent = fmtSec(totalSeconds);
+      metricEls.audioDur.textContent = fmtSec(audioDurationSeconds);
+      if (rtf !== null) metricEls.rtf.textContent = rtf.toFixed(3);
+    }
+    if (playAudio) {
+
+      // playBytes, not totalAudioBytes: a crossfade consumes F frames per seam, so
+      // the assembled WAV is shorter than the raw stream and its header must say so.
+      const fixedHeader = finalizeWavHeader(headerBytes, playBytes || totalAudioBytes);
+      const blob = new Blob([fixedHeader, ...audioParts], { type: "audio/wav" });
+      lastObjectUrl = URL.createObjectURL(blob);
+      playerEl.src = lastObjectUrl; // available for replay/seek; already played live
+
+      log(
+        srvM
+          ? `[req ${index + 1}] done: ${srvM.chunks} chunks, ${totalAudioBytes} audio ` +
+            `bytes, ${(srvM.total_ms / 1000).toFixed(3)}s total, ` +
+            `${srvM.audio_s.toFixed(3)}s audio.`
+          : `[req ${index + 1}] done: ${chunkCount} chunks, ${totalAudioBytes} audio ` +
+            `bytes, ${totalSeconds.toFixed(3)}s total (browser clock), ` +
+            `${audioDurationSeconds.toFixed(3)}s audio.`
+      );
+    }
+
+    return {
+      ok: true,
+      ttfcMs: firstChunkAt !== null ? firstChunkAt - sentAt : null,
+      chunks: chunkCount,
+      totalSeconds,
+      audioDurationSeconds,
+      rtf,
+      srvTotalMs: srvM ? srvM.total_ms : null,
+    };
+  }
+
+  async function runBatch() {
+    const baseUrl = BASE_URL;
+    const text = textEl.value.trim();
+    const description = descriptionEl.value.trim();
+    const apiKey = API_KEY;
+    const count = 1;
+
+    if (!text) { log("Text is required", true); return; }
+
+    resetMetrics();
+    logEl.textContent = "";
+    stopRealtimePlayback();
+    if (lastObjectUrl) {
+      URL.revokeObjectURL(lastObjectUrl);
+      lastObjectUrl = null;
+    }
+    playerEl.removeAttribute("src");
+
+    const req = buildRequest(baseUrl, apiKey, text, description);
+    batchAbortController = new AbortController();
+    submitBtn.disabled = true;
+    stopBtn.disabled = false;
+    setStatus("Sending request…", "busy");
+    log(`POST ${req.url}`);
+
+    const batchStartAt = performance.now();
+    let completed = 0;
+    let failed = 0;
+    let sumTtfc = 0;
+    let ttfcCount = 0;
+    let sumRtf = 0;
+    let rtfCount = 0;
+    let lastSrvTotalMs = null;   // the proxy's total for the request that plays
+
+    function onOneDone(result) {
+      completed += 1;
+      if (result.srvTotalMs !== null && result.srvTotalMs !== undefined) {
+        lastSrvTotalMs = result.srvTotalMs;
+      }
+      if (!result.ok) {
+        if (!result.aborted) failed += 1;
+      } else {
+        if (result.ttfcMs !== null) {
+          sumTtfc += result.ttfcMs;
+          ttfcCount += 1;
+        }
+        if (result.rtf !== null) {
+          sumRtf += result.rtf;
+          rtfCount += 1;
+        }
+      }
+    }
+
+    const tasks = Array.from({ length: count }, (_, i) =>
+      runOneRequest(i, i === 0, req, batchAbortController.signal).then((result) => {
+        onOneDone(result);
+        return result;
+      })
+    );
+    await Promise.allSettled(tasks);
+
+    const wallSeconds = (performance.now() - batchStartAt) / 1000;
+    // Prefer the server's figure; the browser's wall time includes the round trip.
+    const srvTotal = lastSrvTotalMs !== null ? lastSrvTotalMs / 1000 : null;
+    log(`Done in ${(srvTotal !== null ? srvTotal : wallSeconds).toFixed(3)}s.`);
+    setStatus(failed > 0 ? "Completed with errors" : "Done", failed > 0 ? "err" : "ok");
+    finishUi();
+  }
+
+  function finishUi() {
+    submitBtn.disabled = false;
+    stopBtn.disabled = true;
+    batchAbortController = null;
+  }
+
+  submitBtn.addEventListener("click", () => {
+    runBatch().catch((e) => {
+      log(`Unexpected error: ${e.message}`, true);
+      setStatus("Error", "err");
+      finishUi();
+    });
+  });
+
+  stopBtn.addEventListener("click", () => {
+    if (batchAbortController) batchAbortController.abort();
+    stopRealtimePlayback();
+  });
+
+  // ----------------------------------------------------------------- load test
+  // The browser cannot exec the harness, so Launch POSTs to this page's own
+  // origin and tts_bench_server.py runs tts_load_harness.py on the server host.
+  // KPIs come back from aggregating the harness's own JSON -- the page never
+  // recomputes a metric, so what it shows is what the harness measured.
+  const ltUsers = $("ltUsers"), ltMinutes = $("ltMinutes");
+  const launchBtn = $("launchBtn"), ltStopBtn = $("ltStopBtn");
+  const ltDot = $("ltDot"), ltStatus = $("ltStatus");
+  const ltProgWrap = $("ltProgWrap"), ltProg = $("ltProg");
+  const ltUsersEcho = $("ltUsersEcho");
+  const kEls = {
+    fc50: $("kFc50"), fc95: $("kFc95"), fcmax: $("kFcMax"),
+    sc50: $("kSc50"), sc95: $("kSc95"), scmax: $("kScMax"),
+    tc50: $("kTc50"), tc95: $("kTc95"), tcmax: $("kTcMax"),
+    C: $("kC"), mchar: $("kMchar"),
+  };
+  // Same numbers the labels advertise; used only to colour a tile pass/fail.
+  const KPI_TARGET = {
+    fc50: 150, fc95: 350, fcmax: 350, sc50: 270, sc95: 270,
+    scmax: 270, tc50: 570, tc95: 570, tcmax: 570,
+  };
+  let ltTimer = null;
+  // A single failed poll is not a dead run: the server may have been restarted, or
+  // a connection refused under load. Giving up on the first failure abandoned a run
+  // that was still going. Tolerate a few in a row before declaring it lost.
+  let ltMisses = 0;
+  const LT_MAX_MISSES = 8;
+
+  ltUsers.addEventListener("input", () => {
+    ltUsersEcho.textContent = ltUsers.value || "0";
+  });
+
+  function ltSetStatus(text, cls) {
+    ltStatus.textContent = text;
+    ltDot.className = "dot" + (cls ? " " + cls : "");
+  }
+
+  function ltClearTiles() {
+    Object.values(kEls).forEach((el) => {
+      el.textContent = "–";
+      el.style.color = "";
+    });
+    $("kVerdict").textContent = "–";
+    $("kVerdict").style.color = "";
+  }
+
+  function ltFillTiles(k) {
+    for (const [key, el] of Object.entries(kEls)) {
+      const v = k[key];
+      if (v === null || v === undefined) { el.textContent = "–"; continue; }
+      el.textContent = key === "C" ? v.toFixed(1)
+        : key === "mchar" ? v.toFixed(1)
+        : `${Math.round(v)} ms`;
+      const t = KPI_TARGET[key];
+      if (t !== undefined) el.style.color = v <= t ? "var(--ok)" : "var(--err)";
+    }
+    const v = $("kVerdict");
+    v.textContent = `${k.kpi_pass ? "PASS" : "FAIL"} / ${k.strict_pass ? "PASS" : "FAIL"}`;
+    v.style.color = k.kpi_pass ? "var(--ok)" : "var(--err)";
+  }
+
+  function ltUi(running) {
+    launchBtn.disabled = running;
+    ltStopBtn.disabled = !running;
+    ltUsers.disabled = running;
+    ltMinutes.disabled = running;
+    ltProgWrap.hidden = !running;
+  }
+
+  function fmtClock(s) {
+    s = Math.max(0, Math.round(s));
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+
+  async function ltPoll() {
+    let st;
+    try {
+      st = await (await fetch("/api/status", { cache: "no-store" })).json();
+      ltMisses = 0;
+    } catch (e) {
+      ltMisses += 1;
+      if (ltMisses < LT_MAX_MISSES) {
+        ltSetStatus(
+          `Reconnecting to the run server… (${ltMisses}/${LT_MAX_MISSES})`, "busy");
+        return;
+      }
+      ltSetStatus(`Lost contact with the run server: ${e.message}`, "err");
+      clearInterval(ltTimer); ltTimer = null; ltUi(false);
+      return;
+    }
+    if (st.state === "running" || st.state === "starting") {
+      ltProg.style.width = `${st.pct || 0}%`;
+      // Past the wall clock the elapsed/total pair is meaningless (it reads
+      // 2:10 / 2:00), and the drain has no known end. Show the phase alone.
+      if (st.phase === "Draining") {
+        ltSetStatus("Draining", "busy");
+        return;
+      }
+      const left = Math.max(0, (st.total_s || 0) - (st.elapsed_s || 0));
+      ltSetStatus(
+        `${st.phase || "Running"} — ${fmtClock(st.elapsed_s || 0)} / ` +
+        `${fmtClock(st.total_s || 0)}${left > 0 ? ` (${fmtClock(left)} left)` : ""}`,
+        "busy");
+      return;
+    }
+    clearInterval(ltTimer); ltTimer = null;
+    ltUi(false);
+    if (st.state === "done" && st.kpi) {
+      ltProg.style.width = "100%";
+      ltFillTiles(st.kpi);
+      ltSetStatus(
+        `Done — ${st.kpi.n_ok} requests at ${st.kpi.rps} req/s`,
+        st.kpi.kpi_pass ? "ok" : "err");
+    } else if (st.state === "error") {
+      // Show the harness's own last words rather than a generic failure.
+      const tail = (st.log || []).slice(-3).join(" | ");
+      ltSetStatus(`Run failed: ${tail || "see server log"}`, "err");
+    } else {
+      ltSetStatus("Stopped", "err");
+    }
+  }
+
+  launchBtn.addEventListener("click", async () => {
+    ltClearTiles();
+    ltMisses = 0;
+    ltProg.style.width = "0%";
+    ltUi(true);
+    ltSetStatus("Starting…", "busy");
+    try {
+      const r = await fetch("/api/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          users: parseInt(ltUsers.value, 10) || 1,
+          minutes: parseFloat(ltMinutes.value) || 1,
+        }),
+      });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        ltSetStatus(`Could not start: ${e.error || r.status}`, "err");
+        ltUi(false);
+        return;
+      }
+    } catch (e) {
+      ltSetStatus(`Could not reach the run server: ${e.message}`, "err");
+      ltUi(false);
+      return;
+    }
+    ltTimer = setInterval(ltPoll, 1000);
+    ltPoll();
+  });
+
+  ltStopBtn.addEventListener("click", async () => {
+    ltSetStatus("Stopping…", "busy");
+    await fetch("/api/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => {});
+  });
+})();
+</script>
+</body>
+</html>

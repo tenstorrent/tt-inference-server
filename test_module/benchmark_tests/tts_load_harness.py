@@ -288,19 +288,71 @@ def _serializable(rec: dict, conc: int) -> dict:
 
 
 def run_closed(
-    tgt: Target, conc: int, duration: float, warmup: float
+    tgt: Target,
+    conc: int,
+    duration: float,
+    warmup: float,
+    stagger: float = 0.0,
+    stagger_mode: str = "even",
 ) -> tuple[list, float, float]:
-    """Closed loop: each worker sends its next request as soon as one completes."""
+    """Closed loop: each worker sends its next request as soon as one completes.
+
+    CONVOY EFFECT. Started together, workers phase-lock: every one sends, they all
+    finish at nearly the same time (service time here is near-deterministic -- fixed
+    ISL/OSL), and they all send again together. Arrivals then come in bursts of size
+    ``conc`` once per service time instead of spread out, and FC pays for it: the
+    burst queues behind itself, so FC measures queueing inside the burst rather than
+    the server's first-chunk latency.
+
+    ``stagger`` de-phases them with a one-off delay before each worker's FIRST
+    request, absorbed by warmup and discarded with it. Because service time varies
+    little, the offsets persist for the whole run.
+
+    ``stagger_mode``:
+      * ``even``   -- offset = stagger * uid / conc. Spreads arrivals uniformly, which
+                      removes the most burstiness. Arrivals become near-deterministic,
+                      so this is the OPTIMISTIC end: less arrival variance than real
+                      traffic. Open loop (Poisson) remains the realistic reference.
+      * ``random`` -- offset = U(0, stagger). Random phases, so arrivals clump the way
+                      a Poisson process does, without the self-synchronizing convoy.
+
+    Set ``stagger`` to about one mean service time to spread a full service period.
+    """
     stop = threading.Event()
     out, lock = [], threading.Lock()
+    rng = random.Random(42 + conc)
+    if stagger_mode == "random":
+        offsets = [rng.uniform(0.0, stagger) for _ in range(conc)]
+    else:
+        offsets = [stagger * u / conc for u in range(conc)]
 
     def worker(uid: int) -> None:
+        # De-phase BEFORE the first send. No record is registered while sleeping, so
+        # a staggered worker contributes nothing to occupancy until it is really busy.
+        if offsets[uid] > 0:
+            if stop.wait(offsets[uid]):
+                return
         while not stop.is_set():
             rec = {"uid": uid, "t_send": time.time(), "t_end": None}
             with lock:
                 out.append(rec)  # registered BEFORE the send, never vanishes
             request(tgt, uid, rec)
 
+    if stagger > 0:
+        logger.info(
+            "  stagger %.1fs (%s) across %d workers -- de-phasing the convoy",
+            stagger,
+            stagger_mode,
+            conc,
+        )
+        if warmup < stagger:
+            logger.warning(
+                "  warmup %.0fs < stagger %.1fs: the last workers start INSIDE the "
+                "measurement window, so C will be below %d",
+                warmup,
+                stagger,
+                conc,
+            )
     logger.info("  warmup %.0fs @ conc=%d ...", warmup, conc)
     threads = [
         threading.Thread(target=worker, args=(u,), daemon=True) for u in range(conc)
@@ -428,9 +480,13 @@ def run_burst(tgt: Target, conc: int) -> tuple[list, float, float]:
 
     def worker(uid: int) -> None:
         start_gate.wait()  # release every thread together
-        rec = request(tgt, uid)
+        # register before sending, as run_closed/run_open do: a request still in
+        # flight when join() times out must stay in the record set, or the occupancy
+        # integral silently loses the work it represents
+        rec = {"uid": uid, "t_send": time.time(), "t_end": None}
         with lock:
             recs.append(rec)
+        request(tgt, uid, rec)
 
     threads = [
         threading.Thread(target=worker, args=(u,), daemon=True) for u in range(conc)
@@ -525,7 +581,14 @@ def sweep(args: argparse.Namespace, tgt: Target) -> dict:
         elif args.arrival == "burst":
             recs, w0, w1 = run_burst(tgt, conc)
         else:
-            recs, w0, w1 = run_closed(tgt, conc, args.duration, args.warmup)
+            stag = (
+                mean_service_s
+                if args.stagger == "auto"
+                else (0.0 if args.stagger == "off" else float(args.stagger))
+            )
+            recs, w0, w1 = run_closed(
+                tgt, conc, args.duration, args.warmup, stag, args.stagger_mode
+            )
 
         in_win = _arrival_cohort(recs, w0, w1)
         ok = [r for r in in_win if r["ok"]]
@@ -844,6 +907,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Open-loop requests/s; overrides concurrency/service-time calibration.",
+    )
+    p.add_argument(
+        "--stagger",
+        default="off",
+        help="Closed loop: de-phase worker start times to kill the convoy effect. "
+        "'off' (default, preserves earlier results), 'auto' (one mean service time, "
+        "measured by the preflight probe), or a number of seconds.",
+    )
+    p.add_argument(
+        "--stagger-mode",
+        choices=["even", "random"],
+        default="even",
+        help="'even' spreads arrivals uniformly (least bursty); 'random' gives "
+        "Poisson-like random phases without the self-synchronizing convoy.",
     )
     p.add_argument(
         "--max-inflight",
