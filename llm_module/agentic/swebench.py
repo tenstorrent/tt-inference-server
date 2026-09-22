@@ -19,11 +19,17 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# The SWE-bench harness builds/pulls Docker images (a shared base image plus
-# per-instance images) from ghcr.io. Those transfers can fail transiently
-# mid-stream (e.g. ``ChunkedEncodingError: Response ended prematurely`` while
-# pulling ``ghcr.io/epoch-research/swe-bench.base.x86_64``). Retry a few times
-# before giving up; both counts are env-tunable for CI.
+# The SWE-bench harness (upstream ``swebench`` >= 5) grades against the
+# prebuilt per-instance images the SWE-bench project publishes on Docker Hub
+# (``swebench/sweb.eval.x86_64.<instance>``), so no conda environment is solved
+# at grading time. The epoch-research fork we previously pinned built those
+# environments locally; on run 35667712636 the matplotlib env build spent 81 min
+# in ``conda env create`` and then aborted on a libsolv assertion, so a correct
+# patch went ungraded. Image pulls can still fail transiently mid-stream
+# (``ChunkedEncodingError: Response ended prematurely``); retry a few times
+# before giving up; both counts are env-tunable for CI. Requires a dataset that
+# carries the ``image`` column (``SWE-bench/SWE-bench_Verified``; the legacy
+# ``princeton-nlp/`` name does not).
 _HARNESS_MAX_ATTEMPTS = 3
 _HARNESS_RETRY_DELAY_SEC = 30
 
@@ -123,19 +129,25 @@ def _write_swebench_harness_patch(output_dir: Path) -> Path:
 import logging
 import re
 
-from swebench.harness.test_spec import TestSpec
+# Container-name sanitizer for harnesses that embed the model name (which
+# contains "/") in the eval container name. Upstream swebench >= 5 has no
+# ``swebench.harness.test_spec`` module and names containers
+# ``sweb.eval.<instance>.<run_id>`` without the model name, so the patch is
+# simply skipped there; it stays for older forks.
+try:
+    from swebench.harness.test_spec import TestSpec
 
-_ORIGINAL_GET_INSTANCE_CONTAINER_NAME = TestSpec.get_instance_container_name
+    _ORIGINAL_GET_INSTANCE_CONTAINER_NAME = TestSpec.get_instance_container_name
 
+    def _get_safe_instance_container_name(self, run_id=None):
+        container_name = _ORIGINAL_GET_INSTANCE_CONTAINER_NAME(self, run_id)
+        container_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", container_name)
+        container_name = re.sub(r"^[^a-zA-Z0-9]+", "", container_name)
+        return container_name or f"eval.{self.instance_id}"
 
-def _get_safe_instance_container_name(self, run_id=None):
-    container_name = _ORIGINAL_GET_INSTANCE_CONTAINER_NAME(self, run_id)
-    container_name = re.sub(r"[^a-zA-Z0-9_.-]", "-", container_name)
-    container_name = re.sub(r"^[^a-zA-Z0-9]+", "", container_name)
-    return container_name or f"eval.{self.instance_id}"
-
-
-TestSpec.get_instance_container_name = _get_safe_instance_container_name
+    TestSpec.get_instance_container_name = _get_safe_instance_container_name
+except ImportError:
+    pass
 
 
 # The epoch-research SWE-bench fork's build_image() pushes every freshly built
