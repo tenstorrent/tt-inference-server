@@ -30,14 +30,33 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
-    Flux1KontextPipeline,
-)
+
+try:
+    from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
+        Flux1KontextPipeline,
+    )
+except ImportError:
+    # tt-metal does not ship models/tt_dit/pipelines/flux1/pipeline_flux1_kontext
+    # yet (absent on main as of 2026-09-16). This module-scope import previously
+    # took down every runner defined here -- Wan, Flux, SD3.5, Mochi, Motif,
+    # QwenImage, MiniMax -- because one optional pipeline was missing. Degrade to
+    # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
+    # precise error if the Kontext runner is actually requested.
+    Flux1KontextPipeline = None
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
 )
-from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+
+try:
+    from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+except ImportError:
+    # tt_dit's Mochi pipeline is the only one here that imports
+    # diffusers.pipelines.* (for linear_quadratic_schedule), so it is the only
+    # one that breaks when diffusers and huggingface_hub are mismatched in the
+    # image. Same containment as Flux1-Kontext above: keep the other runners
+    # loadable and let TTMochi1Runner.create_pipeline report the real cause.
+    MochiPipeline = None
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
@@ -357,6 +376,13 @@ class TTFluxKontextRunner(TTDiTRunner):
         return None, 1.0
 
     def create_pipeline(self):
+        if Flux1KontextPipeline is None:
+            raise ImportError(
+                "Flux1-Kontext requires models.tt_dit.pipelines.flux1."
+                "pipeline_flux1_kontext, which this tt-metal build does not "
+                "provide. Use a tt-metal revision that ships the Kontext "
+                "pipeline to run this model."
+            )
         try:
             lora_path, lora_scale = self._active_lora()
             if lora_path:
@@ -488,6 +514,13 @@ class TTMochi1Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
+        if MochiPipeline is None:
+            raise ImportError(
+                "Mochi-1 requires models.tt_dit.pipelines.mochi.pipeline_mochi, "
+                "which failed to import in this image -- typically a diffusers / "
+                "huggingface_hub version mismatch, since it is the only tt_dit "
+                "pipeline that imports diffusers.pipelines."
+            )
         try:
             return MochiPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
