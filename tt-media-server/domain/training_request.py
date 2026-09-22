@@ -73,10 +73,7 @@ class TrainingRequest(BaseRequest):
         if self._progress_tracker is None:
             return
         now = time.monotonic()
-        if (
-            now - self._last_heartbeat_time
-            < PROGRESS_HEARTBEAT_INTERVAL_SECONDS
-        ):
+        if now - self._last_heartbeat_time < PROGRESS_HEARTBEAT_INTERVAL_SECONDS:
             return
         self._progress_tracker.value = now
         self._last_heartbeat_time = now

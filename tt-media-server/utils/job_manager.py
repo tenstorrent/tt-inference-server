@@ -444,9 +444,7 @@ class JobManager:
     def _cleanup_old_jobs(self):
         """Remove old completed/failed/cancelled, stuck in-progress, and stale cancelling jobs."""
         retention_cutoff = time.time() - self._settings.job_retention_seconds
-        progress_cutoff = (
-            time.monotonic() - self._settings.job_max_stuck_time_seconds
-        )
+        progress_cutoff = time.monotonic() - self._settings.job_max_stuck_time_seconds
 
         jobs_to_remove = []
         stuck_jobs = []
@@ -474,8 +472,7 @@ class JobManager:
                 if current_job is not job:
                     continue
                 latest_progress_cutoff = (
-                    time.monotonic()
-                    - self._settings.job_max_stuck_time_seconds
+                    time.monotonic() - self._settings.job_max_stuck_time_seconds
                 )
                 if not self._is_job_stuck(job, latest_progress_cutoff):
                     continue
@@ -488,13 +485,9 @@ class JobManager:
                 )
 
             if was_in_progress:
-                self._logger.warning(
-                    f"Force-cancelling stuck in-progress job {job.id}"
-                )
+                self._logger.warning(f"Force-cancelling stuck in-progress job {job.id}")
             else:
-                self._logger.warning(
-                    f"Force-cancelling stale cancelling job {job.id}"
-                )
+                self._logger.warning(f"Force-cancelling stale cancelling job {job.id}")
             self._cleanup_job(job, force=True)
             self._sync_status_to_db(job)
 

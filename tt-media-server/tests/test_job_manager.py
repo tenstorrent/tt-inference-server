@@ -1139,9 +1139,7 @@ class TestJobManager:
             await asyncio.sleep(10)
             return "models/result"
 
-        tracker = type(
-            "Tracker", (), {"value": time.monotonic() - 100}
-        )()
+        tracker = type("Tracker", (), {"value": time.monotonic() - 100})()
         await job_manager.create_job(
             job_id="job-race",
             job_type=JobTypes.TRAINING,
