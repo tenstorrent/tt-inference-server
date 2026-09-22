@@ -37,7 +37,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Update this pin from the fork's tt-inference-server branch. Keep a commit SHA
 # so Harbor code changes are explicit in each evaluation revision.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "6c1627362869567c156251aee6bba4e355c4a32c"
+HARBOR_REF = "b7c3fe00eb72cdfa8d20d27ca810cc47c4e30b14"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:

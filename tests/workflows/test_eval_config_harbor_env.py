@@ -32,7 +32,7 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 
 def test_harbor_checkout_uses_pinned_runtime_revision():
     assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "6c1627362869567c156251aee6bba4e355c4a32c"
+    assert HARBOR_REF == "b7c3fe00eb72cdfa8d20d27ca810cc47c4e30b14"
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):
