@@ -5064,6 +5064,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
                     # Seconds allowed between two streamed chunks (idle timeout), not a
@@ -5075,7 +5076,7 @@ _eval_config_list = [
                     # lm-eval-harness' SSE consumer only parses
                     # /v1/completions chunks, not /v1/chat/completions; keep
                     # stream=false to avoid empty resps + KeyError: 'message'.
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -5105,6 +5106,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
                     # Seconds allowed between two streamed chunks (idle timeout), not a
@@ -5113,7 +5115,7 @@ _eval_config_list = [
                     "idle_timeout": "900",
                 },
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
