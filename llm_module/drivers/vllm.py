@@ -82,6 +82,9 @@ def build_vllm_bench_serve_argv(
         # it the result JSON gains request_goodput (good requests/sec).
         cmd.extend(["--goodput", *config.goodput.split()])
 
+    if config.token_timing:
+        cmd.append("--ignore-eos")
+
     if config.custom_dataset_path is not None:
         cmd.extend(
             [
@@ -116,6 +119,7 @@ def build_vllm_bench_serve_argv(
     if server.tokenizer_trust_remote_code or is_remote_base_url:
         cmd.append("--trust-remote-code")
 
+    extra_body = {"seed": 42} if config.token_timing else {}
     if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
@@ -123,12 +127,10 @@ def build_vllm_bench_serve_argv(
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
         cmd.extend(["--host", server.host, "--port", str(server.service_port)])
-        cmd.extend(
-            [
-                "--extra-body",
-                json.dumps({"truncate_prompt_tokens": config.isl}),
-            ]
-        )
+        extra_body["truncate_prompt_tokens"] = config.isl
+
+    if extra_body:
+        cmd.extend(["--extra-body", json.dumps(extra_body)])
 
     # vllm bench serve defines --header with nargs="*"; pass all headers on one flag.
     cmd.extend(["--header", *headers])
@@ -163,12 +165,22 @@ class VLLMBenchDriver(LLMDriver):
             result_filename=result_filename,
         )
 
+        if config.token_timing:
+            binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)
+            cmd = [
+                str(binary.parent / "python"),
+                str(Path(__file__).parents[1] / "vllm_token_timing.py"),
+                *cmd[1:],
+            ]
+
         env = dict(context.extra_env)
         if auth_token:
             env["OPENAI_API_KEY"] = auth_token
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(result_filename) if rc == 0 else None
+        if raw is not None and config.token_timing:
+            raw["tt_timing_protocol"] = "first-to-last-nonempty-content"
         if raw is not None and config.output_block_size > 1:
             raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)

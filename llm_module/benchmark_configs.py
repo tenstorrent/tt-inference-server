@@ -103,6 +103,7 @@ def get_llm_configs(
                     )
                 ),
                 output_block_size=output_block_size,
+                token_timing=bool(metadata.get("benchmark_token_timing", False)),
                 custom_dataset_path=(
                     Path(
                         f"speed_bench_prompts_isl-{params.isl}_n-{params.num_prompts}.jsonl"

@@ -181,3 +181,46 @@ def test_without_custom_dataset_the_sweep_stays_random():
 
     assert cmd[cmd.index("--dataset-name") + 1] == "random"
     assert cmd[cmd.index("--random-input-len") + 1] == "128"
+
+
+def test_token_timing_uses_fixed_output_and_request_seed():
+    server = ServerConnection(
+        base_url="http://127.0.0.1", service_port=8000, model="test"
+    )
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="/venv/bin/vllm",
+        config=_config(token_timing=True),
+        server=server,
+        result_filename=_result_path(),
+    )
+    assert "--ignore-eos" in cmd
+    assert json.loads(cmd[cmd.index("--extra-body") + 1]) == {
+        "seed": 42,
+        "truncate_prompt_tokens": 128,
+    }
+
+
+def test_token_timing_runs_adapter_with_the_selected_client_interpreter(
+    monkeypatch, tmp_path
+):
+    from llm_module.config import DriverContext
+    from llm_module.drivers import vllm as driver_module
+
+    seen = []
+    monkeypatch.setattr(
+        driver_module, "run_command", lambda cmd, **kw: seen.append(cmd) or 0
+    )
+    monkeypatch.setattr(driver_module, "load_json", lambda _: {"completed": 8})
+    server = ServerConnection(
+        base_url="http://127.0.0.1", service_port=8000, model="test"
+    )
+    driver = driver_module.VLLMBenchDriver(vllm_binary="/client-venv/bin/vllm")
+    result = driver.run(
+        _config(token_timing=True), server, DriverContext(output_dir=tmp_path)
+    )
+    assert seen[0][0] == "/client-venv/bin/python"
+    assert seen[0][1].endswith("/llm_module/vllm_token_timing.py")
+    assert seen[0][2:4] == ["bench", "serve"]
+    assert result.raw["tt_timing_protocol"] == "first-to-last-nonempty-content"
+    driver.run(_config(), server, DriverContext(output_dir=tmp_path))
+    assert seen[1][:3] == ["/client-venv/bin/vllm", "bench", "serve"]

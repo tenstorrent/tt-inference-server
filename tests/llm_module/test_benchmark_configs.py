@@ -240,3 +240,21 @@ def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tm
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_qb2_enables_token_timing_without_changing_other_implementations():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    found = False
+    for template in templates:
+        if "meta-llama/Llama-3.1-8B-Instruct" not in template.weights:
+            continue
+        for spec in template.expand_to_specs():
+            configs = get_llm_configs(spec, spec.device_type)
+            is_qb2 = spec.impl.impl_id == "llama31_8b_qb2"
+            if is_qb2:
+                found = True
+                assert configs
+            assert all(c.token_timing == is_qb2 for c in configs)
+    assert found
