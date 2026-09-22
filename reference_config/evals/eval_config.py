@@ -6832,6 +6832,22 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
+
+# Focused hardware validation for the one previously invalid cohort member.
+# Keep this on a separate CI branch; the combined release branch retains all
+# three suites and all five SWE instances.
+_qwen38_config = _eval_config_map["Qwen/Qwen3.8-27B"]
+_qwen38_swe_task = _qwen38_config.tasks[2]
+_qwen38_swe_config = replace(
+    _qwen38_swe_task.swebench_eval_config,
+    instance_ids_map={
+        EvalLimitMode.CI_NIGHTLY: ["matplotlib__matplotlib-25332"],
+    },
+)
+_eval_config_map["Qwen/Qwen3.8-27B"] = replace(
+    _qwen38_config,
+    tasks=[replace(_qwen38_swe_task, swebench_eval_config=_qwen38_swe_config)],
+)
 # Keyed by the full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct") so
 # lookups are unambiguous even when two repos share a basename.
 EVAL_CONFIGS = {
