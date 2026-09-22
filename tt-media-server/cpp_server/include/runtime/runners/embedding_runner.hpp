@@ -52,6 +52,15 @@ class EmbeddingRunner : public IEmbeddingRunner {
   std::vector<domain::EmbeddingResponse> run(
       const std::vector<domain::EmbeddingRequest>& requests) override;
 
+  /** Validate and tokenize on the calling thread. The GIL is released while
+   * ttnn runs a forward pass, so this can overlap device compute. */
+  PreparedBatch prepare(
+      std::vector<domain::EmbeddingRequest> requests) override;
+
+  /** Forward pass plus dense-vector extraction for a prepared batch. */
+  std::vector<domain::EmbeddingResponse> runPrepared(
+      PreparedBatch& batch) override;
+
   /** Close the mesh device and drop the Python objects. The interpreter
    * itself is left running. */
   void close() override;

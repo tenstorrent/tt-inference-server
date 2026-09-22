@@ -11,6 +11,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -61,6 +62,24 @@ struct EmbeddingService::Impl {
 
   std::vector<std::unique_ptr<WorkerProcess>> workers;
 
+  /// Pipeline depth per worker: one batch on the device plus one being
+  /// tokenized in the worker child (double buffering).
+  static constexpr size_t kMaxBatchesInFlight = 2;
+
+  /**
+   * Batches sent to a worker whose responses have not arrived yet, in send
+   * order. The dispatch (sender) thread pushes after a successful write and
+   * blocks while the deque is full; the receive thread pops as responses
+   * arrive. Responses come back in send order because the worker child
+   * processes its pipe serially.
+   */
+  struct InFlightState {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::deque<std::vector<std::shared_ptr<PendingRequest>>> batches;
+  };
+  std::vector<std::unique_ptr<InFlightState>> inFlight;
+
   mutable std::mutex workersMutex;
   size_t numWorkers = 3;
 
@@ -103,10 +122,12 @@ struct EmbeddingService::Impl {
     {
       std::lock_guard lock(workersMutex);
       workers.reserve(numWorkers);
+      inFlight.reserve(numWorkers);
       for (size_t i = 0; i < numWorkers; ++i) {
         auto w = std::make_unique<WorkerProcess>();
         w->workerId = static_cast<int>(i);
         workers.push_back(std::move(w));
+        inFlight.push_back(std::make_unique<InFlightState>());
       }
     }
 
@@ -265,6 +286,8 @@ struct EmbeddingService::Impl {
   void launchDispatchThread(size_t idx) {
     workers[idx]->dispatchThread =
         std::make_unique<std::thread>(&Impl::workerDispatchLoop, this, idx);
+    workers[idx]->receiveThread =
+        std::make_unique<std::thread>(&Impl::workerReceiveLoop, this, idx);
   }
 
   std::vector<tt::worker::WorkerInfo> workerInfoSnapshot() const {
@@ -297,11 +320,20 @@ struct EmbeddingService::Impl {
 
     for (auto& w : workers) w->running = false;
     queueCv.notify_all();
+    for (auto& s : inFlight) {
+      if (s) s->cv.notify_all();
+    }
 
     for (auto& w : workers) {
       if (w->dispatchThread && w->dispatchThread->joinable())
         w->dispatchThread->join();
+    }
+    // terminate() ends the child, which EOFs the response pipe and unblocks
+    // a receive thread parked in receiveResponse().
+    for (auto& w : workers) {
       w->terminate();
+      if (w->receiveThread && w->receiveThread->joinable())
+        w->receiveThread->join();
     }
     // All consumers are gone; anything still queued would leave its HTTP
     // client hanging forever, so answer every request with an error now.
@@ -309,6 +341,7 @@ struct EmbeddingService::Impl {
     {
       std::lock_guard lock(workersMutex);
       workers.clear();
+      inFlight.clear();
     }
     isReady = false;
     TT_LOG_INFO("[EmbeddingService] Stopped");
@@ -334,22 +367,21 @@ struct EmbeddingService::Impl {
     uint64_t batches = 0;
     uint64_t requests = 0;
     double queueWaitMs = 0;
-    double dispatchMs = 0;
+    double sendMs = 0;
 
-    void record(size_t workerIdx, size_t batchSize, double qMs, double dMs) {
+    void record(size_t workerIdx, size_t batchSize, double qMs, double sMs) {
       queueWaitMs += qMs;
       batches++;
       requests += batchSize;
-      dispatchMs += dMs;
+      sendMs += sMs;
 
       if (batches % 10 == 0) {
         double avgQueue = queueWaitMs / batches;
-        double avgDispatch = dispatchMs / batches;
-        double throughput = (requests * 1000.0) / (queueWaitMs + dispatchMs);
+        double avgSend = sendMs / batches;
         TT_LOG_DEBUG(
             "[EmbeddingService] Worker {} batches={} requests={} "
-            "avg_queue_wait={}ms avg_dispatch={}ms throughput={} req/s",
-            workerIdx, batches, requests, avgQueue, avgDispatch, throughput);
+            "avg_queue_wait={}ms avg_send={}ms",
+            workerIdx, batches, requests, avgQueue, avgSend);
       }
     }
   };
@@ -414,14 +446,30 @@ struct EmbeddingService::Impl {
     if (!anyReady) drainQueue("No workers available");
   }
 
+  /**
+   * Sender half of the per-worker pipeline: collect a batch, write it to the
+   * request pipe, and record it as in flight. Runs up to kMaxBatchesInFlight
+   * batches ahead of the receive thread, so the worker child can tokenize
+   * batch N+1 while batch N occupies the device.
+   */
   void workerDispatchLoop(size_t workerIdx) {
     auto& worker = workers[workerIdx];
+    auto& inflight = *inFlight[workerIdx];
     TT_LOG_INFO("[EmbeddingService] Worker {} dispatch thread started",
                 workerIdx);
 
     DispatchStats stats;
 
     while (worker->running.load() && worker->isReady) {
+      {
+        std::unique_lock lock(inflight.mutex);
+        inflight.cv.wait(lock, [&] {
+          return inflight.batches.size() < kMaxBatchesInFlight ||
+                 !worker->running.load() || !worker->isReady;
+        });
+      }
+      if (!worker->running.load() || !worker->isReady) break;
+
       const auto queueStart = std::chrono::steady_clock::now();
       auto batch = collectBatch(*worker);
       const auto queueEnd = std::chrono::steady_clock::now();
@@ -433,15 +481,26 @@ struct EmbeddingService::Impl {
         continue;
       }
 
-      const auto dispatchStart = std::chrono::steady_clock::now();
-      dispatchBatchToWorker(*worker, batch);
-      const auto dispatchEnd = std::chrono::steady_clock::now();
+      const size_t batchSize = batch.size();
+      const auto sendStart = std::chrono::steady_clock::now();
+      if (!worker->checkAlive() ||
+          !worker->sendRequest(encodeBatchJson(batch))) {
+        failBatch(batch, "Worker not available");
+        continue;
+      }
+      const auto sendEnd = std::chrono::steady_clock::now();
+
+      {
+        std::lock_guard lock(inflight.mutex);
+        inflight.batches.push_back(std::move(batch));
+      }
+      inflight.cv.notify_all();
 
       stats.record(
-          workerIdx, batch.size(),
+          workerIdx, batchSize,
           std::chrono::duration<double, std::milli>(queueEnd - queueStart)
               .count(),
-          std::chrono::duration<double, std::milli>(dispatchEnd - dispatchStart)
+          std::chrono::duration<double, std::milli>(sendEnd - sendStart)
               .count());
     }
 
@@ -449,7 +508,62 @@ struct EmbeddingService::Impl {
         "[EmbeddingService] Worker {} dispatch thread exiting (isReady={})",
         workerIdx, worker->isReady.load());
 
+    // Wake the receive thread so it notices isReady/running went false.
+    inflight.cv.notify_all();
+
     drainIfLastWorker();
+  }
+
+  /**
+   * Receiver half of the per-worker pipeline: wait for a batch to be in
+   * flight, block on the response pipe, and complete the oldest in-flight
+   * batch with what arrived. Exits once the worker is stopped or dead and
+   * every in-flight batch has been answered or failed.
+   */
+  void workerReceiveLoop(size_t workerIdx) {
+    auto& worker = workers[workerIdx];
+    auto& inflight = *inFlight[workerIdx];
+
+    while (true) {
+      {
+        std::unique_lock lock(inflight.mutex);
+        inflight.cv.wait(lock, [&] {
+          return !inflight.batches.empty() || !worker->running.load() ||
+                 !worker->isReady;
+        });
+        if (inflight.batches.empty()) break;
+      }
+
+      auto responseBuf = worker->receiveResponse();
+
+      std::vector<std::shared_ptr<PendingRequest>> batch;
+      {
+        std::lock_guard lock(inflight.mutex);
+        batch = std::move(inflight.batches.front());
+        inflight.batches.pop_front();
+      }
+      inflight.cv.notify_all();
+
+      if (responseBuf.empty()) {
+        // receiveResponse cleared isReady; the next loop iteration drains
+        // any remaining in-flight batch and then exits.
+        failBatch(batch, "Failed to read response from worker");
+        continue;
+      }
+
+      auto responseMap = embedding_codec::decodeResponses(responseBuf);
+      for (auto& pending : batch) {
+        auto it = responseMap.find(pending->request.task_id);
+        if (it != responseMap.end()) {
+          pending->onComplete(std::move(it->second));
+        } else {
+          completeWithError(*pending, "Response not found for task_id");
+        }
+      }
+    }
+
+    TT_LOG_INFO("[EmbeddingService] Worker {} receive thread exiting",
+                workerIdx);
   }
 
   /** JSON-encode a batch as the array payload the worker's serve loop
@@ -460,39 +574,6 @@ struct EmbeddingService::Impl {
     for (const auto& p : batch) batchJson.append(p->request.toJson());
     Json::StreamWriterBuilder builder;
     return Json::writeString(builder, batchJson);
-  }
-
-  /** Send one batch to the worker, wait for its response and complete every
-   * request in the batch — with its embedding, or with an error. */
-  void dispatchBatchToWorker(
-      WorkerProcess& worker,
-      std::vector<std::shared_ptr<PendingRequest>>& batch) {
-    if (!worker.isReady.load() || !worker.checkAlive()) {
-      failBatch(batch, "Worker not available");
-      return;
-    }
-
-    if (!worker.sendRequest(encodeBatchJson(batch))) {
-      failBatch(batch, "Worker pipe broken");
-      return;
-    }
-
-    auto responseBuf = worker.receiveResponse();
-    if (responseBuf.empty()) {
-      failBatch(batch, "Failed to read response from worker");
-      return;
-    }
-
-    auto responseMap = embedding_codec::decodeResponses(responseBuf);
-
-    for (auto& pending : batch) {
-      auto it = responseMap.find(pending->request.task_id);
-      if (it != responseMap.end()) {
-        pending->onComplete(std::move(it->second));
-      } else {
-        completeWithError(*pending, "Response not found for task_id");
-      }
-    }
   }
 
   static void failBatch(std::vector<std::shared_ptr<PendingRequest>>& batch,

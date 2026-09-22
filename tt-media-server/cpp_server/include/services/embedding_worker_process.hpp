@@ -34,7 +34,10 @@ struct WorkerProcess {
   tt::utils::ScopedFd readFd;   // child → parent (response pipe read end)
   std::atomic<bool> isReady{false};
   std::atomic<bool> running{false};
+  /// Collects batches off the queue and writes them to the request pipe.
   std::unique_ptr<std::thread> dispatchThread;
+  /// Reads responses off the response pipe and completes their requests.
+  std::unique_ptr<std::thread> receiveThread;
 
   /** Fork the worker. The child runs childMain(readFd, writeFd) and never
    * returns; the parent takes ownership of its pipe ends and marks the
