@@ -556,7 +556,6 @@ constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
     ModelRunnerType::TT_BGE_LARGE_EN;
 
 const std::vector<EmbeddingModelEntry>& embeddingModels() {
-  
   static const std::vector<EmbeddingModelEntry> kModels = {
       {ModelRunnerType::TT_BGE_LARGE_EN,
        "BAAI/bge-large-en-v1.5",
@@ -574,7 +573,7 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
         {"n300", 12, 8192, {2, 1}},
         {"t3k", 32, 8192, {2, 1}},
         {"galaxy", 32, 8192, {1, 1}}}},
- 
+
       {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
        "Qwen/Qwen3-Embedding-8B",
        0,
