@@ -7,7 +7,7 @@ from reference_config.evals.eval_config import (
     accept_eval_score,
     resolve_eval_reference,
 )
-from workflows.model_spec import load_templates_from_yaml
+from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import EvalLimitMode, ModelStatusTypes, WorkflowVenvType
 
@@ -21,7 +21,14 @@ def _qwen38_spec():
 
 
 def test_qwen38_release_is_complete_and_runs_only_128_128_target():
-    spec = _qwen38_spec()
+    template_spec = _qwen38_spec()
+    spec = resolve_model_spec(
+        [template_spec],
+        model="Qwen/Qwen3.8-27B",
+        device="p300x2",
+        impl="qwen38-autoport",
+        catalog_name="Shield",
+    )
     config = get_benchmark_config(spec)
 
     assert spec.status == ModelStatusTypes.COMPLETE

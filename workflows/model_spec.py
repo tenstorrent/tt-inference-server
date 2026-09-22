@@ -10,7 +10,7 @@ import re
 import yaml
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Tuple, Union
 
 from workflows.utils import (
     get_repo_root_path,
@@ -1321,6 +1321,54 @@ IMAGE_PINNED_MODEL_SPECS: List[ModelSpec] = [
     for spec in MODEL_SPECS.values()
     if spec.model_id not in _UNPINNED_IMAGE_MODEL_IDS
 ]
+
+
+def resolve_model_spec(
+    specs: Iterable[ModelSpec],
+    *,
+    model: str,
+    device: Union[str, DeviceTypes],
+    engine: Optional[Union[str, InferenceEngine]] = None,
+    impl: Optional[str] = None,
+    catalog_name: str = "catalog",
+) -> ModelSpec:
+    """Compatibility resolver used by current Shield against this older branch."""
+    device_type = (
+        device if isinstance(device, DeviceTypes) else DeviceTypes.from_string(device)
+    )
+    engine_value = (
+        engine.value
+        if isinstance(engine, InferenceEngine)
+        else InferenceEngine.from_string(engine).value
+        if engine
+        else None
+    )
+    model_name = Path(model).name
+    candidates = [
+        spec
+        for spec in specs
+        if (spec.hf_model_repo == model if "/" in model else spec.model_name == model_name)
+        and spec.device_type == device_type
+        and (engine_value is None or spec.inference_engine == engine_value)
+        and (impl is None or spec.impl.impl_name == impl)
+    ]
+    if not candidates:
+        raise ValueError(
+            f"No model spec matches model={model!r}, device={device!r}, "
+            f"engine={engine_value!r}, impl={impl!r} in {catalog_name}"
+        )
+
+    default_spec = next(
+        (spec for spec in candidates if spec.device_model_spec.default_impl), None
+    )
+    if default_spec is not None:
+        return default_spec
+    if len(candidates) == 1 or impl is not None:
+        return candidates[0]
+    raise ValueError(
+        f"Model {model!r} does not have a unique default implementation in "
+        f"{catalog_name}; pass --impl or --engine"
+    )
 
 
 def get_runtime_model_spec(
