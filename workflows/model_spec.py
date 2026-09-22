@@ -352,6 +352,15 @@ qwen36_blackhole_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Qwen3.8-27B dedicated agentic-pipeline autoport.  Keep a separate B1
+# implementation key because the autoport captures decode at max_num_seqs and
+# the release check measures the single-slot 128/128 operating point.
+qwen38_autoport_b1_impl = ImplSpec(
+    impl_id="qwen38_autoport_b1",
+    impl_name="qwen38-autoport-b1",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/qwen_qwen3_8_27b",
+)
 # Same tt-metal code as qwen36_blackhole; distinct impl_id only so the VLM (vision)
 # spec gets its own model_id and does not collide with the text spec on the same
 # (model_name, device). Selectable via --impl qwen36-blackhole-vlm.
@@ -428,6 +437,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "tt_vllm_plugin": tt_vllm_plugin_impl,
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
+    "qwen38_autoport_b1": qwen38_autoport_b1_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
