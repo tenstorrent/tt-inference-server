@@ -229,6 +229,9 @@ class TestTrainingRequest:
         with patch(
             "domain.training_request.time.monotonic",
             side_effect=[100.0, 105.0, 111.0],
+        ), patch(
+            "domain.training_request.settings.training_progress_heartbeat_interval_seconds",
+            10.0,
         ):
             request.touch_progress()
             assert tracker.value == 100.0
@@ -381,9 +384,13 @@ class TestJobControlCallback:
         request._progress_tracker = tracker
         callback = self._callback(request)
 
-        callback.on_train_batch_end(_fake_trainer())
+        with patch("domain.training_request.time.monotonic", return_value=11.0), patch(
+            "domain.training_request.settings.training_progress_heartbeat_interval_seconds",
+            10.0,
+        ):
+            callback.on_train_batch_end(_fake_trainer())
 
-        assert tracker.value > 1.0
+        assert tracker.value == 11.0
 
     def test_stops_on_cancel(self):
         from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
