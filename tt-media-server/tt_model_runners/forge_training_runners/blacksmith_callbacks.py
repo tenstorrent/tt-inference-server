@@ -36,6 +36,10 @@ class JobCallback(Callback):
     def _reset(self) -> None:
         pass
 
+    def _touch_progress(self) -> None:
+        if self._request is not None:
+            self._request.touch_progress()
+
 
 class JobMetricsCallback(JobCallback):
     """Feeds train/validation losses to the job's metrics and logs.
@@ -233,9 +237,11 @@ class JobControlCallback(JobCallback):
         self._stop_if_cancelled(trainer)
 
     def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
+        self._touch_progress()
         self._stop_if_cancelled(trainer)
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
+        self._touch_progress()
         request = self._request
         # Checked per micro-batch, so cancellation stays responsive even when
         # `global_step` only advances every `gradient_accumulation_steps` batches.

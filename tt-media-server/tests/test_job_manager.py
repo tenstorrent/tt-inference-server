@@ -60,11 +60,37 @@ class TestJob:
 
     def test_mark_in_progress(self):
         """Test marking job as in progress"""
-        job = Job(id="test-123", job_type="video", model="test-model")
+        tracker = type("Tracker", (), {"value": 0.0})()
+        job = Job(
+            id="test-123",
+            job_type="training",
+            model="test-model",
+            _progress_tracker=tracker,
+        )
+        previous_progress = job.last_progress_time
         job.mark_in_progress()
 
         assert job.status == JobStatus.IN_PROGRESS
         assert job.is_in_progress()
+        assert job.last_progress_time >= previous_progress
+        assert tracker.value == job.last_progress_time
+
+    def test_progress_time_reads_shared_tracker(self):
+        """Worker heartbeats are reflected in the parent-side job."""
+
+        expected_progress = time.monotonic() + 100
+
+        class Tracker:
+            value = expected_progress
+
+        job = Job(
+            id="test-123",
+            job_type="training",
+            model="test-model",
+            _progress_tracker=Tracker(),
+        )
+
+        assert job.progress_time() == expected_progress
 
     def test_mark_completed(self):
         """Test marking job as completed"""
@@ -1027,7 +1053,7 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_cleanup_stuck_jobs(self, job_manager, mock_request):
-        """Test cleanup cancels stuck jobs"""
+        """Stuck jobs fail but remain available until retention cleanup."""
 
         async def task_func(req):
             await asyncio.sleep(10)
@@ -1046,18 +1072,106 @@ class TestJobManager:
         # Manually set old creation time
         with job_manager._jobs_lock:
             job = job_manager._jobs["job-123"]
-            job.created_at = int(time.time()) - 10  # 10 seconds ago
             job.mark_in_progress()
+            job.last_progress_time = time.monotonic() - 10
 
         # Run cleanup
         job_manager._cleanup_old_jobs()
 
-        # Job should be removed
+        # Job should remain as a diagnosable terminal record.
         metadata = job_manager.get_job_metadata("job-123")
-        assert metadata is None
+        assert metadata["status"] == "failed"
+        assert metadata["error"]["code"] == "stale_job"
         if job_manager.db:
             db_job = job_manager.db.get_job_by_id("job-123")
-            assert db_job is None
+            assert db_job["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_keeps_old_job_with_recent_progress(
+        self, job_manager, mock_request
+    ):
+        """Total job age does not make an actively progressing job stale."""
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+            return "videos/test-123.mp4"
+
+        await job_manager.create_job(
+            job_id="job-active",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+        )
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["job-active"]
+            job.created_at = int(time.time()) - 100
+            job.mark_in_progress()
+            job.last_progress_time = time.monotonic()
+
+        job_manager._cleanup_old_jobs()
+
+        assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
+
+    @pytest.mark.asyncio
+    async def test_video_stuck_timeout_remains_age_based(self, job_manager):
+        """Jobs without a heartbeat retain the existing age-based behavior."""
+        job = Job(
+            id="video-job",
+            job_type=JobTypes.VIDEO.value,
+            model="test-model",
+            last_progress_time=100.0,
+        )
+
+        job.mark_in_progress()
+
+        assert job.last_progress_time == 100.0
+        assert job_manager._is_job_stuck(job, progress_cutoff=101.0)
+
+    @pytest.mark.asyncio
+    async def test_cleanup_rechecks_progress_before_failing(
+        self, job_manager, mock_request
+    ):
+        """A heartbeat arriving after the scan prevents stale cancellation."""
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+            return "models/result"
+
+        tracker = type(
+            "Tracker", (), {"value": time.monotonic() - 100}
+        )()
+        await job_manager.create_job(
+            job_id="job-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            progress_tracker=tracker,
+        )
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["job-race"]
+            job.mark_in_progress()
+            stale_time = time.monotonic() - 100
+            job.last_progress_time = stale_time
+            tracker.value = stale_time
+            original_progress_time = job.progress_time
+            progress_read_count = 0
+
+            def progress_time_with_racing_heartbeat():
+                nonlocal progress_read_count
+                progress_read_count += 1
+                if progress_read_count == 2:
+                    tracker.value = time.monotonic()
+                return original_progress_time()
+
+            job.progress_time = progress_time_with_racing_heartbeat
+
+        job_manager._cleanup_old_jobs()
+
+        assert job_manager.get_job_metadata("job-race")["status"] == "in_progress"
 
     @pytest.mark.asyncio
     async def test_cleanup_deletes_result_files(self, job_manager, mock_request):

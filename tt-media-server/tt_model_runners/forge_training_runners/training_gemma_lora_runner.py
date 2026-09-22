@@ -199,6 +199,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                     )
 
                     global_step += 1
+                    request.touch_progress()
 
                     # Training metrics
                     if global_step % request.steps_freq == 0:
@@ -223,9 +224,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                         running_loss = 0.0
 
                     if global_step % request.val_steps_freq == 0:
-                        avg_val_loss = self.run_validation(
-                            cancel_event=request._cancel_event
-                        )
+                        avg_val_loss = self.run_validation(request)
                         if avg_val_loss is not None:
                             self.logger.info(
                                 f"Epoch {epoch + 1} | Step {global_step} | val/loss: {avg_val_loss:.4f}",
@@ -341,11 +340,12 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
         return [request._output_model_path]
 
-    def run_validation(self, cancel_event: Optional[Event]):
+    def run_validation(self, request: TrainingRequest):
         self.logger.info("\n=== Starting Validation ===")
         self.compiled_model.eval()
         total_val_loss = 0.0
         num_val_batches = 0
+        cancel_event: Optional[Event] = request._cancel_event
 
         with torch.no_grad():
             if cancel_event and cancel_event.is_set():
@@ -374,6 +374,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
                 torch_xla.sync(wait=True)
 
                 num_val_batches += 1
+                request.touch_progress()
 
                 if cancel_event and cancel_event.is_set():
                     self.logger.info("Validation cancelled early.")

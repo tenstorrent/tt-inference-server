@@ -220,6 +220,23 @@ class TestValidate:
 
 
 class TestTrainingRequest:
+    def test_progress_heartbeat_is_throttled(self):
+        request = _request()
+        tracker = MagicMock()
+        tracker.value = 0.0
+        request._progress_tracker = tracker
+
+        with patch(
+            "domain.training_request.time.monotonic",
+            side_effect=[100.0, 105.0, 111.0],
+        ):
+            request.touch_progress()
+            assert tracker.value == 100.0
+            request.touch_progress()
+            assert tracker.value == 100.0
+            request.touch_progress()
+            assert tracker.value == 111.0
+
     def test_a_custom_dataset_requires_path_file_type_and_template(self):
         with pytest.raises(ValueError, match="train_dataset_path"):
             _request(
@@ -355,6 +372,18 @@ class TestJobControlCallback:
         trainer.global_step = 1000
 
         callback.on_train_batch_end(trainer)
+
+    def test_training_batch_updates_progress_heartbeat(self):
+        request = _request(max_steps=0)
+        request._cancel_event = None
+        tracker = MagicMock()
+        tracker.value = 1.0
+        request._progress_tracker = tracker
+        callback = self._callback(request)
+
+        callback.on_train_batch_end(_fake_trainer())
+
+        assert tracker.value > 1.0
 
     def test_stops_on_cancel(self):
         from tt_model_runners.forge_training_runners.blacksmith_callbacks import (

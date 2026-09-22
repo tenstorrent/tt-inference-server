@@ -59,6 +59,7 @@ class TrainingService(BaseJobService):
         request._training_metrics = self._manager.list()
         request._training_logs = self._manager.list()
         request._training_checkpoints = self._manager.list()
+        request._progress_tracker = self._manager.Value("d", time.monotonic())
 
         return await self._job_manager.create_job(
             job_id=request._task_id,
@@ -72,6 +73,7 @@ class TrainingService(BaseJobService):
             job_metrics=request._training_metrics,
             job_logs=request._training_logs,
             job_checkpoints=request._training_checkpoints,
+            progress_tracker=request._progress_tracker,
             org_id=org_id,
         )
 
