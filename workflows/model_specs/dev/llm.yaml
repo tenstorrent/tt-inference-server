@@ -682,7 +682,7 @@ templates:
         no-enable-prefix-caching: true
         no-enable-chunked-prefill: true
         reasoning-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking":true}'
+        default-chat-template-kwargs: '{"enable_thinking":false}'
         # Tool calling, same requirement as the autoport entry above:
         # mini-swe-agent (swe_bench_verified) sends tool_choice:"auto", which
         # vLLM refuses without these flags (60x HTTP 400 zeroed the eval on

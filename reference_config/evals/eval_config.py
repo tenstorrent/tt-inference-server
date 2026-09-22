@@ -4752,7 +4752,7 @@ _eval_config_list = [
                         # (1,000,000), so without this the 3h timeout is the
                         # only brake on a stuck trial. The verifier still
                         # grades the container's end state after the cap.
-                        "max_turns": 50,
+                        "max_turns": 100,
                         "model_info": {
                             # Sized for QB2 (P300X2) at max_model_len=113280
                             # (the autoport's audited vLLM context ceiling, see
@@ -4793,7 +4793,6 @@ _eval_config_list = [
                             "terminal-bench/cobol-modernization",
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
                         ],
                     },
                 ),
