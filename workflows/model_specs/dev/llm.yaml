@@ -982,7 +982,9 @@ templates:
         sample_on_device_mode: all
         trace_mode: decode_only
         trace_region_size: 134217728
-      tt_metal_source_ref: mvasiljevic/qwen38-row-norm-20260921
+      # qwen38-full-bringup plus the required MODEL_WEIGHTS_DIR resolver fix.
+      # The unpatched 0ba1d3d tip cannot start in Shield's mounted-weight layout.
+      tt_metal_source_ref: mvasiljevic/qwen38-ci-weight-fix
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
   status: EXPERIMENTAL

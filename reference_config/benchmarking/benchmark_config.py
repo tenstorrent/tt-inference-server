@@ -209,6 +209,11 @@ _REQUIREMENTS_PROFILE_CONCURRENCY = {
     "qwen38-autoport-b16": 16,
 }
 
+# This branch is the narrow Shield release-candidate check requested for the
+# inherited 128/128 performance target.  Keep the B1 server/eval profile, but
+# do not spend the job on the separate 13-point requirements sweep.
+_PERF_REFERENCE_ONLY_PROFILES = {"qwen38-autoport-b1"}
+
 
 def _normalize_model_key(value: str) -> str:
     """Lowercase alphanumeric form of a model identifier.
@@ -781,7 +786,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     tasks = [perf_ref_task]
     # optionally skip the benchmark sweeps and only run the perf reference targets
-    if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")):
+    if not bool(os.getenv("ONLY_BENCHMARK_TARGETS")) and (
+        model_spec.impl.impl_name not in _PERF_REFERENCE_ONLY_PROFILES
+    ):
         # Make benchmark sweeps table for this device
         if model_spec.model_type == ModelType.CNN:
             benchmark_task_runs = BenchmarkTaskCNN(

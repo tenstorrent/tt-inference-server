@@ -38,4 +38,4 @@ def test_qwen38_release_keeps_original_agentic_cohorts_and_budgets():
     assert terminal_config.agent_timeout_sec == 3 * 60 * 60
     assert terminal_config.agent_kwargs["model_info"]["max_output_tokens"] == 80 * 1024
     assert swe_config.max_output_tokens == 32 * 1024
-    assert terminal_config.n_concurrent_trials == swe_config.n_concurrent_trials == 5
+    assert terminal_config.n_concurrent_trials == swe_config.n_concurrent_trials == 1

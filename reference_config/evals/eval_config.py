@@ -2130,7 +2130,11 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    # Run the five fixed CI tasks sequentially. The latest B8
+                    # combined run timed out two tasks under five-way agent
+                    # contention; the established task-level results used one
+                    # agent at a time.
+                    n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,
                     # QB2 release runners expose only 16 CPUs.
@@ -2203,7 +2207,10 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # Keep model generation sequential so every selected
+                    # instance gets the same serving budget as the validated
+                    # one-task CI runs. max_workers below is verifier-side.
+                    n_concurrent_trials=1,
                     max_workers=8,
                     n_tasks=None,  # full dataset
                     temperature=1.0,

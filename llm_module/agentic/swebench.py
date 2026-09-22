@@ -207,6 +207,8 @@ import re
 from swebench.harness.test_spec import TestSpec
 
 _ORIGINAL_GET_INSTANCE_CONTAINER_NAME = TestSpec.get_instance_container_name
+_ORIGINAL_SETUP_ENV_SCRIPT = TestSpec.setup_env_script.fget
+_ORIGINAL_EVAL_SCRIPT = TestSpec.eval_script.fget
 
 
 def _get_safe_instance_container_name(self, run_id=None):
@@ -217,6 +219,40 @@ def _get_safe_instance_container_name(self, run_id=None):
 
 
 TestSpec.get_instance_container_name = _get_safe_instance_container_name
+
+
+def _setup_env_script_with_matplotlib_solver_fix(self):
+    script = _ORIGINAL_SETUP_ENV_SCRIPT(self)
+    if self.instance_id != "matplotlib__matplotlib-25332":
+        return script
+    return script.replace(
+        "set -euxo pipefail\\n",
+        "set -euxo pipefail\\nexport CONDA_SOLVER=classic\\n",
+        1,
+    )
+
+
+# libmamba/libsolv aborts while resolving this legacy Matplotlib environment.
+# The classic solver is slower but reached the verifier in the prior focused
+# runs, so restrict the workaround to this one selected instance.
+TestSpec.setup_env_script = property(_setup_env_script_with_matplotlib_solver_fix)
+
+
+def _eval_script_with_matplotlib_warning_fix(self):
+    script = _ORIGINAL_EVAL_SCRIPT(self)
+    if self.instance_id != "matplotlib__matplotlib-25332":
+        return script
+    # Matplotlib's pytest configuration promotes a dependency's deprecated
+    # release-branch-semver warning to an exception before the submitted patch
+    # is exercised. A command-line filter has precedence and suppresses only
+    # that external warning; all official tests and other warnings remain.
+    return script.replace(
+        "pytest ",
+        "pytest -W 'ignore:.*release-branch-semver.*:DeprecationWarning' ",
+    )
+
+
+TestSpec.eval_script = property(_eval_script_with_matplotlib_warning_fix)
 
 
 # The epoch-research SWE-bench fork's build_image() pushes every freshly built

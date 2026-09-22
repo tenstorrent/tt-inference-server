@@ -183,7 +183,7 @@ def test_select_smoke_test_benchmark_config(
     assert smoke_config.tasks[0].param_map[device] == config.tasks[0].param_map[device]
 
 
-def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
+def test_qwen38_b1_profile_runs_only_the_128_128_reference_target(monkeypatch):
     benchmark_config = _import_benchmark_config(monkeypatch)
     model_id = _find_model_id(
         model_name="Qwen3.8-27B",
@@ -196,39 +196,26 @@ def test_qwen38_b1_profile_uses_one_server_slot_and_only_b1_sweeps(monkeypatch):
     assert model_spec.device_model_spec.vllm_args["max_num_seqs"] == "1"
     assert "QWEN_PREFILL_STARTUP_WARMUP" not in model_spec.device_model_spec.env_vars
     assert "QWEN_PREFILL_ROW_PARALLEL_NORM" not in model_spec.device_model_spec.env_vars
+    assert (
+        model_spec.device_model_spec.tt_metal_source_ref
+        == "mvasiljevic/qwen38-ci-weight-fix"
+    )
 
     config = benchmark_config.get_benchmark_config(model_spec)
-    sweep_params = config.tasks[1].param_map[DeviceTypes.P300X2]
-    sweep = _extract_sweep_triplets(sweep_params)
-    assert sweep == [
-        (128, 252, 1),
-        (1024, 252, 1),
-        (4096, 252, 1),
-        (16384, 252, 1),
-        (32768, 252, 1),
-        (65536, 252, 1),
-        (131072, 252, 1),
-        (261892, 252, 1),
+    text_params = [
+        params
+        for task in config.tasks
+        for params in task.param_map.get(DeviceTypes.P300X2, [])
+        if params.task_type == "text"
     ]
-    expected_targets = {
-        (128, 252, 1): (60, 50, 50, 5100),
-        (1024, 252, 1): (150, 50, 50, 5190),
-        (4096, 252, 1): (500, 49, 49, 5643),
-        (16384, 252, 1): (1800, 47, 47, 7162),
-        (32768, 252, 1): (3500, 46, 46, 8978),
-        (65536, 252, 1): (8000, 43, 43, 13860),
-        (131072, 252, 1): (22000, 40, 40, 28300),
-        (261892, 252, 1): (60000, 34, 34, 67412),
-    }
-    for params in sweep_params:
-        target = params.targets["target"]
-        assert (
-            target.ttft_ms,
-            target.tput_user,
-            target.tput,
-            target.e2el_ms,
-        ) == expected_targets[(params.isl, params.osl, params.max_concurrency)]
-        assert target.tolerance == 0.0
+    assert len(text_params) == 1
+    target = text_params[0]
+    assert (target.isl, target.osl, target.max_concurrency, target.num_prompts) == (
+        128,
+        128,
+        1,
+        8,
+    )
 
 
 @pytest.mark.parametrize(
@@ -281,7 +268,7 @@ def test_qwen38_concurrent_profiles_use_matching_device_batch(
 
 @pytest.mark.parametrize(
     "impl_name,expected_count",
-    [("qwen38-autoport-b1", 8), ("qwen38-autoport-b8", 3), ("qwen38-autoport-b16", 2)],
+    [("qwen38-autoport-b8", 3), ("qwen38-autoport-b16", 2)],
 )
 def test_qwen38_all_requirement_points_have_performance_tiers(
     monkeypatch, impl_name, expected_count
