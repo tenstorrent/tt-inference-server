@@ -17,6 +17,7 @@ import json
 import os
 import time
 import traceback
+from dataclasses import replace
 
 
 def make_chat_request_func(endpoint):
@@ -114,14 +115,34 @@ def make_chat_request_func(endpoint):
     return request
 
 
+def make_calculate_metrics(calculate_metrics):
+    """Use verified server token counts for totals as well as per-request data."""
+
+    def calculate(input_requests, outputs, *args, **kwargs):
+        # vLLM 0.13 totals the dataset's estimate, which excludes chat formatting.
+        # Keep the original requests intact; successful outputs have been checked
+        # against the fixed workload in make_chat_request_func.
+        actual_requests = [
+            replace(request, prompt_len=output.prompt_len)
+            if output.success
+            else request
+            for request, output in zip(input_requests, outputs, strict=True)
+        ]
+        return calculate_metrics(actual_requests, outputs, *args, **kwargs)
+
+    return calculate
+
+
 def main():
     version = importlib.metadata.version("vllm")
     if version.split("+")[0] != "0.13.0":
         raise RuntimeError(f"Token timing adapter requires vllm 0.13.0, got {version}")
     from vllm.benchmarks.lib import endpoint_request_func as endpoint
+    from vllm.benchmarks import serve
     from vllm.entrypoints.cli.main import main as vllm_main
 
     endpoint.ASYNC_REQUEST_FUNCS["openai-chat"] = make_chat_request_func(endpoint)
+    serve.calculate_metrics = make_calculate_metrics(serve.calculate_metrics)
     vllm_main()
 
 

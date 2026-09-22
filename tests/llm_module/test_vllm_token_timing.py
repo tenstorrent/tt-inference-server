@@ -3,11 +3,45 @@
 
 import asyncio
 import json
+from dataclasses import dataclass
 from types import SimpleNamespace
 
 import pytest
 
 from llm_module import vllm_token_timing
+
+
+def test_metrics_use_actual_input_lengths_without_mutating_requests():
+    @dataclass
+    class Request:
+        prompt_len: int
+        expected_output_len: int = 128
+
+    requests = [Request(127), Request(135), Request(127)]
+    outputs = [
+        SimpleNamespace(success=True, prompt_len=128),
+        SimpleNamespace(success=True, prompt_len=128),
+        SimpleNamespace(success=False, prompt_len=0),
+    ]
+    sentinel = object()
+
+    def calculate(actual_requests, actual_outputs, duration, *, tokenizer):
+        assert actual_outputs is outputs
+        assert duration == 10
+        assert tokenizer is sentinel
+        assert [request.expected_output_len for request in actual_requests] == [128] * 3
+        assert actual_requests[2] is requests[2]
+        return sum(
+            request.prompt_len
+            for request, output in zip(actual_requests, outputs, strict=True)
+            if output.success
+        )
+
+    total = vllm_token_timing.make_calculate_metrics(calculate)(
+        requests, outputs, 10, tokenizer=sentinel
+    )
+    assert total == 256
+    assert [request.prompt_len for request in requests] == [127, 135, 127]
 
 
 def _run(monkeypatch, events, *, status=200, output_len=2):
