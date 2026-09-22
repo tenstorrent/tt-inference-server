@@ -4775,12 +4775,19 @@ _eval_config_list = [
                             # ~6.4K on run 33095231523; 16K truncates only the
                             # extreme tail while bounding a turn at ~9 min at
                             # ~31 tok/s decode.
+                            # 32K out (was 16K): on runs 35667712636 and 35743043158
+                            # the thinking channel alone overran 16K on 7/50 and 8/41
+                            # break-filter episodes; vLLM returns finish_reason=length
+                            # with empty content, terminus-2 discards the generation and
+                            # retries in-episode (~10 min each, ~half the 3h budget).
+                            # 64K + 32K = 96K stays well under the QB2 spec's 262144
+                            # max_model_len.
                             "max_input_tokens": 64 * 1024,
-                            "max_output_tokens": 16 * 1024,
+                            "max_output_tokens": 32 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 16 * 1024,
+                            "max_tokens": 32 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
