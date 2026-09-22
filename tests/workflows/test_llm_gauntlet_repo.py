@@ -132,7 +132,9 @@ def test_directory_with_multiple_json_picks_first_alphabetically_and_warns(
 ):
     _, dest = fake_fetch
     folder = dest / "specs" / "tt-internal" / "qwen3-32b"
-    resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b/x.json")
+    resolve_requirements_location(
+        f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b/x.json"
+    )
     (folder / "a.json").write_text(json.dumps(_DOC))
     (folder / "z.json").write_text(json.dumps(_DOC))
 
@@ -153,12 +155,13 @@ def test_directory_with_no_json_raises(fake_fetch, monkeypatch):
     monkeypatch.setattr(
         gauntlet,
         "fetch_specs",
-        lambda d, ref, token=None: folder.mkdir(parents=True, exist_ok=True)
-        or True,
+        lambda d, ref, token=None: folder.mkdir(parents=True, exist_ok=True) or True,
     )
 
     with pytest.raises(LLMGauntletError, match="no .json file"):
-        resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b")
+        resolve_requirements_location(
+            f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b"
+        )
 
 
 def test_directory_search_is_not_recursive(fake_fetch, monkeypatch):
@@ -176,7 +179,9 @@ def test_directory_search_is_not_recursive(fake_fetch, monkeypatch):
     monkeypatch.setattr(gauntlet, "fetch_specs", fetch_with_nested_json_only)
 
     with pytest.raises(LLMGauntletError, match="no .json file"):
-        resolve_requirements_location(f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b")
+        resolve_requirements_location(
+            f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b"
+        )
 
 
 @pytest.mark.parametrize(
