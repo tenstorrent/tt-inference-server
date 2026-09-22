@@ -137,6 +137,32 @@ class TestPolicy:
             check_media_url_policy("https://host.example/x")
         assert type(exc_info.value) is MediaDownloadError
 
+    def test_allow_any_host_bypasses_the_allowlist(
+        self, media_url_defaults, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "media_url_allowed_domains", "", raising=False)
+        monkeypatch.setattr(settings, "media_url_allow_any_host", True, raising=False)
+        assert (
+            check_media_url_policy("https://anything.example/a.png").host
+            == "anything.example"
+        )
+        assert (
+            check_media_url_policy("http://203.0.113.9:8080/clip.mp4").host
+            == "203.0.113.9"
+        )
+        # scheme and hostname rules still hold
+        with pytest.raises(MediaDownloadPolicyError):
+            check_media_url_policy("ftp://anything.example/a.png")
+
+    def test_allow_any_host_wins_over_a_restrictive_allowlist(
+        self, media_url_defaults, monkeypatch
+    ):
+        monkeypatch.setattr(
+            settings, "media_url_allowed_domains", "allowed.example", raising=False
+        )
+        monkeypatch.setattr(settings, "media_url_allow_any_host", True, raising=False)
+        check_media_url_policy("https://other.example/a.png")
+
     def test_disabled_rejects_urls(self, media_url_defaults, monkeypatch):
         monkeypatch.setattr(settings, "media_url_download_enabled", False)
         with pytest.raises(MediaDownloadPolicyError):

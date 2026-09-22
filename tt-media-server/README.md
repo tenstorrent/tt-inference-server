@@ -1068,6 +1068,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | `TT_VIDEO_EXPORT_PRESET` | `"ultrafast"` | x264 preset used when exporting MP4 (e.g. `ultrafast`, `fast`, `medium`) |
 | `MAX_REQUEST_BODY_BYTES` | `67108864` | Total request-body cap (64 MB) on the video generation routes, answered with 413 from `Content-Length` (or the streamed byte count) before the body is parsed; `0` disables it |
 | `MEDIA_URL_ALLOWED_DOMAINS` | `""` | Comma-separated hostnames, exact or `*.suffix`, that `url` media sources may be fetched from; while empty every URL source is refused with 400 |
+| `MEDIA_URL_ALLOW_ANY_HOST` | `false` | Operator opt-out of the allowlist for closed test clusters: `url` sources from any host are fetched (http(s), redirect cap, byte caps and deadline still apply). Leave `false` in production |
 | `MEDIA_URL_MAX_BYTES` | `52428800` | Ceiling for one URL-sourced media file (50 MB); the video endpoints apply the per-modality caps of the input media card (image 30 MB, video 50 MB, audio 15 MB) beneath it |
 | `MEDIA_URL_TIMEOUT_SECONDS` | `30.0` | Total download budget for all URL sources of one request, redirects and body included |
 

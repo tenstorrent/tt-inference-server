@@ -15,6 +15,8 @@ taxonomy on top:
 * http(s) only; the hostname allowlist is REQUIRED — with no
   ``media_url_allowed_domains`` configured every URL-valued media field is
   refused, so the SSRF surface only exists where an operator opened it.
+  ``media_url_allow_any_host=true`` is the explicit operator opt-out for
+  closed test clusters: any host is accepted, everything else still applies.
 * Allowlist entries are exact hostnames, normalized (IDNA, case, IP
   literals), or label-anchored wildcards: ``*.s3.amazonaws.com`` matches
   ``bucket.s3.amazonaws.com`` at any subdomain depth but never the bare
@@ -163,8 +165,11 @@ def check_media_url_policy(url: str) -> httpx.URL:
             "(media_url_download_enabled=false); send the asset inline."
         )
 
-    exact, suffixes = _allowed_domains()
-    if not exact and not suffixes:
+    allow_any_host = bool(getattr(settings, "media_url_allow_any_host", False))
+    exact, suffixes = (
+        (frozenset(), frozenset()) if allow_any_host else _allowed_domains()
+    )
+    if not allow_any_host and not exact and not suffixes:
         raise MediaDownloadPolicyError(
             "Media URL download requires media_url_allowed_domains to be "
             "configured on this server; send the asset inline."
@@ -183,6 +188,8 @@ def check_media_url_policy(url: str) -> httpx.URL:
         )
 
     hostname = _normalize_hostname(parsed.host)
+    if allow_any_host:
+        return parsed
     if not _hostname_is_allowed(hostname, exact, suffixes):
         # Do not echo the allowlist: it is deployment configuration.
         raise MediaDownloadPolicyError(

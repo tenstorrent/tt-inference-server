@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     # with 400 — the allowlist is the SSRF guard, and it is checked again on
     # every redirect hop.
     media_url_allowed_domains: str = ""
+    # Operator override: accept a URL source from ANY host, ignoring the allowlist
+    # (scheme, redirect cap, byte caps and deadline still apply). This drops the
+    # SSRF guard, so it is for closed test clusters whose clients need arbitrary
+    # public hosts; production keeps it False and lists its buckets above.
+    media_url_allow_any_host: bool = False
     # Ceiling for one URL-sourced asset. The video endpoints pass the per-modality
     # cap of the MiniMax input media card (image 30 MB, video 50 MB, audio 15 MB,
     # tt_model_runners/minimax_h3_policy.py) per download; this setting can only
