@@ -54,5 +54,7 @@ Required evidence includes full IFEval, configured GPQA-CoT, all six LongBench
 groups, the shared Llama API tests, cache/slot admission and nonaligned prefill.
 Record actual task, sample and case counts. The existing checkpoint/device maps
 already select these suites. Do not inherit the other implementation's known
-issue waivers. Align the LongBench chat-template protocol with its GPU reference
-before claiming comparable scores (tracked in #4692).
+issue waivers. The shared Llama-3.1-8B LongBench configuration uses plain
+completion prompts, temperature 0 and a 512-token generation limit, matching
+[the GPU reference](https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040).
+Full-dataset qualification on the candidate is still required.

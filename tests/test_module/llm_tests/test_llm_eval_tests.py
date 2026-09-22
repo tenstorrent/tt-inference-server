@@ -477,3 +477,50 @@ class TestEvalsWorkflowLLMOverride:
         run.assert_not_called()
         dispatch.assert_called_once()
         assert outcomes == ["media-outcome"]
+
+
+@pytest.mark.parametrize("impl_id", ["tt_transformers", "llama31_8b_qb2"])
+def test_llama31_longbench_commands_match_the_gpu_reference(impl_id, tmp_path):
+    from llm_module.eval_configs import get_llm_eval_tasks
+    from workflows.model_spec import load_templates_from_yaml
+    from workflows.utils import get_repo_root_path
+    from workflows.workflow_types import DeviceTypes
+
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    model_spec = next(
+        spec
+        for template in templates
+        if template.impl.impl_id == impl_id
+        for spec in template.expand_to_specs()
+        if spec.hf_model_repo == "meta-llama/Llama-3.1-8B-Instruct"
+        and spec.device_type == DeviceTypes.P300X2
+    )
+    tasks = get_llm_eval_tasks(model_spec)
+    longbench = {t.task_name: t for t in tasks if t.task_name.startswith("longbench_")}
+    references = {
+        "longbench_code_e": 48.12,
+        "longbench_fewshot_e": 63.34,
+        "longbench_multi_e": 20.84,
+        "longbench_single_e": 22.22,
+        "longbench_summarization_e": 26.09,
+        "longbench_synthetic_e": 14.86,
+    }
+    assert set(longbench) == set(references)
+    for name, task in longbench.items():
+        command = build_eval_command(
+            task, model_spec, DeviceTypes.P300X2, tmp_path, 8000
+        )
+        assert "--apply_chat_template" not in command
+        assert "--limit" not in command
+        assert command[command.index("--model") + 1] == "local-completions"
+        assert (
+            "base_url=http://127.0.0.1:8000/v1/completions"
+            in command[command.index("--model_args") + 1]
+        )
+        gen_kwargs = _command_gen_kwargs(command)
+        assert gen_kwargs["temperature"] == "0"
+        assert gen_kwargs["max_gen_toks"] == "512"
+        assert task.score.gpu_reference_score == references[name]
+        assert task.score.tolerance == 0.05
