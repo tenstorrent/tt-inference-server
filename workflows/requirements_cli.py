@@ -41,10 +41,13 @@ REQUIREMENTS_HELP = (
     "from the document when omitted. Accepts 'llm-gauntlet;<path>' to name a "
     "document by its path inside the llm-gauntlet repo, whose specs/**/*.json "
     "are then downloaded (GitHub tarball, no clone) into this repo root -- e.g. "
-    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The repo is private, "
-    "so set TT_LLM_GAUNTLET_TOKEN to a GitHub token that can read it. Fetches "
-    "main unless TT_LLM_GAUNTLET_REF names a branch, tag or commit; pin it in CI "
-    "so a run is reproducible."
+    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The path may also "
+    "name a folder instead of a file: with exactly one .json directly inside "
+    "it, that file is used; with more than one, the alphabetically first is "
+    "used and a warning is logged. The repo is private, so set "
+    "TT_LLM_GAUNTLET_TOKEN to a GitHub token that can read it. Fetches main "
+    "unless TT_LLM_GAUNTLET_REF names a branch, tag or commit; pin it in CI so "
+    "a run is reproducible."
 )
 
 
