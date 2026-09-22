@@ -42,6 +42,9 @@ class TrainingService(BaseJobService):
         self._adapter_merge_lock = asyncio.Lock()
         super().__init__()
 
+    def _get_request_processing_timeout(self) -> Optional[float]:
+        return None
+
     async def create_job(
         self,
         job_type: JobTypes,
