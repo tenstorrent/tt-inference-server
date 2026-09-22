@@ -489,6 +489,49 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Apples-to-apples checkpoint comparison: run Qwen3.6-27B through the exact
+# Qwen3.8 autoport serving profile.  Keep this as a non-default alternative to
+# the production qwen36_blackhole profile above; HF_MODEL is the only runtime
+# setting intentionally changed from the Qwen3.8 entry.
+- weights:
+    - Qwen/Qwen3.6-27B
+  impl: qwen38_autoport
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: false
+      env_vars:
+        EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
+        HF_MODEL: Qwen/Qwen3.6-27B
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+      vllm_args:
+        block_size: "32"
+        enable_auto_tool_choice: true
+        hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        fabric_max_packet_payload_size_bytes: 8192
+        l1_small_size: 24576
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        trace_region_size: 134217728
+  status: COMPLETE
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.6-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3.6-35B-A3B
   impl: qwen36_blackhole

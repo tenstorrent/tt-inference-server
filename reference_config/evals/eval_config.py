@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -6185,6 +6185,16 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
+
+# Comparison-only profile: exercise Qwen3.6 weights with precisely the same
+# task selection, prompts, sampling, token budgets, concurrency and acceptance
+# references as the Qwen3.8 release candidate. The served checkpoint remains
+# Qwen3.6 through the model spec's HF_MODEL/model arguments.
+_eval_config_map["Qwen/Qwen3.6-27B"] = replace(
+    _eval_config_map["Qwen/Qwen3.8-27B"],
+    hf_model_repo="Qwen/Qwen3.6-27B",
+)
+
 EVAL_CONFIGS = {
     model_spec.model_name: _eval_config_map[model_spec.hf_model_repo]
     for _, model_spec in MODEL_SPECS.items()
