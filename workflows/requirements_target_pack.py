@@ -50,6 +50,11 @@ _EVAL_NAME_TO_TASK = {
     "terminal-bench 2.0": "terminal_bench_2",
     "terminal-bench 2": "terminal_bench_2",
     "terminal-bench 2.1": "terminal_bench_2_1",
+    "tau^3-banking benchmark": "tau3_bench_banking",
+    "tau^3-banking": "tau3_bench_banking",
+    "tau3-banking benchmark": "tau3_bench_banking",
+    "tau3-banking": "tau3_bench_banking",
+    "tau3-bench banking": "tau3_bench_banking",
 }
 
 # Scenario scalar-target metric -> PerformanceTarget attribute. Only these

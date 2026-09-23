@@ -27,13 +27,20 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
 # Major version of ``schemaVersion`` this loader understands. A document whose
 # major differs is rejected rather than silently mis-parsed.
 SUPPORTED_SCHEMA_MAJOR = 2
+
+# Scenario ``kind`` discriminator. A canonical document keeps every workload in
+# ``scenarios[]`` and tells them apart by this field; the agentic one is split
+# out into :attr:`RequirementsDoc.agentic_workloads` because it sweeps
+# concurrency alone and drives a different workflow.
+AGENTIC_KIND = "agentic"
+DEFAULT_SCENARIO_KIND = "text"
 
 # Accepted priority values. ``must`` failures block acceptance; ``should``
 # failures are informational (see report_module/acceptance_criteria.py).
@@ -235,6 +242,9 @@ class AgenticWorkload:
     The agentic counterpart to :class:`Scenario`. It sweeps concurrency alone
     rather than (ISL, OSL, concurrency), because the prompt sizes come from the
     replayed traces instead of the document.
+
+    Accepts either spelling: a canonical ``scenarios[]`` entry with
+    ``kind: agentic``, or a ``workloads[]`` entry from a validation-plan export.
     """
 
     id: str
@@ -248,7 +258,7 @@ class AgenticWorkload:
     def from_dict(cls, data: Mapping[str, Any]) -> "AgenticWorkload":
         workload_id = data.get("id") or data.get("name")
         if not workload_id:
-            raise RequirementsError("workloads[]: missing required 'id'")
+            raise RequirementsError("agentic workload: missing required 'id' or 'name'")
         agentic = data.get("agenticWorkload")
         traces = agentic.get("traces", []) if isinstance(agentic, Mapping) else []
         return cls(
@@ -305,6 +315,31 @@ class Deployment:
         )
 
 
+def _scenario_kind(entry: Mapping[str, Any]) -> str:
+    """The ``kind`` of a scenario/workload entry, defaulted like the schema."""
+    return str(entry.get("kind", DEFAULT_SCENARIO_KIND))
+
+
+def _agentic_workloads(
+    scenarios: Sequence[Mapping[str, Any]],
+    workloads: Sequence[Mapping[str, Any]],
+) -> List[AgenticWorkload]:
+    """Agentic workloads from both document spellings, ``scenarios[]`` winning.
+
+    Deduplicated by id: a document carrying both spellings of the same workload
+    would otherwise replay every concurrency twice, and one trace replay costs
+    at least ``AGENTIC_TRACES_MIN_PROFILE_SECONDS`` (900s) of profiling.
+    ``scenarios[]`` is read first, so the canonical spelling wins.
+    """
+    found: Dict[str, AgenticWorkload] = {}
+    for entry in (*scenarios, *workloads):
+        if _scenario_kind(entry) != AGENTIC_KIND:
+            continue
+        workload = AgenticWorkload.from_dict(entry)
+        found.setdefault(workload.id, workload)
+    return list(found.values())
+
+
 @dataclass(frozen=True)
 class RequirementsDoc:
     """Parsed LLM-serving requirements document."""
@@ -331,6 +366,8 @@ class RequirementsDoc:
         model_data = identity.get("model")
         if not isinstance(model_data, Mapping):
             raise RequirementsError("requirements: missing required 'model' object")
+        raw_scenarios = [s for s in data.get("scenarios", []) if isinstance(s, Mapping)]
+        raw_workloads = [w for w in data.get("workloads", []) if isinstance(w, Mapping)]
         return cls(
             id=str(identity.get("id") or model_data.get("name") or "requirements"),
             schema_version=schema_version,
@@ -339,12 +376,14 @@ class RequirementsDoc:
             accuracy_evals=[
                 AccuracyEval.from_dict(e) for e in data.get("accuracyEvals", [])
             ],
-            scenarios=[Scenario.from_dict(s) for s in data.get("scenarios", [])],
-            agentic_workloads=[
-                AgenticWorkload.from_dict(w)
-                for w in data.get("workloads", [])
-                if isinstance(w, Mapping) and w.get("kind") == "agentic"
+            # Only the agentic kind is split out; other kinds stay here and are
+            # skipped downstream by the adapter, not here.
+            scenarios=[
+                Scenario.from_dict(s)
+                for s in raw_scenarios
+                if _scenario_kind(s) != AGENTIC_KIND
             ],
+            agentic_workloads=_agentic_workloads(raw_scenarios, raw_workloads),
             meta=dict(identity.get("meta", {})),
         )
 
@@ -388,15 +427,30 @@ def load_requirements(path: Union[str, Path]) -> RequirementsDoc:
             f"Requirements document must be a JSON object, got {type(data).__name__}"
         )
     doc = RequirementsDoc.from_dict(data)
+    # Report where the agentic workloads came from: a document whose agentic
+    # scenario silently went unread is exactly the failure this loader used to
+    # have, and a bare count made it invisible.
+    agentic_in_scenarios = sum(
+        1
+        for s in data.get("scenarios", [])
+        if isinstance(s, Mapping) and _scenario_kind(s) == AGENTIC_KIND
+    )
     logger.info(
         "Loaded requirements id=%s model=%s hardware=%s "
-        "(%d evals, %d scenarios, %d agentic workloads)",
+        "(%d evals, %d benchmark scenarios, %d agentic workloads; "
+        "%d declared in scenarios[], %d in workloads[])",
         doc.id,
         doc.model.name,
         doc.deployment.hardware,
         len(doc.accuracy_evals),
         len(doc.scenarios),
         len(doc.agentic_workloads),
+        agentic_in_scenarios,
+        sum(
+            1
+            for w in data.get("workloads", [])
+            if isinstance(w, Mapping) and _scenario_kind(w) == AGENTIC_KIND
+        ),
     )
     return doc
 
@@ -441,6 +495,8 @@ def _as_optional_int(value: Any) -> Optional[int]:
 
 __all__ = [
     "SUPPORTED_SCHEMA_MAJOR",
+    "AGENTIC_KIND",
+    "DEFAULT_SCENARIO_KIND",
     "PRIORITY_MUST",
     "PRIORITY_SHOULD",
     "RequirementsError",
