@@ -9,6 +9,7 @@ orchestration, and the ``EvalsWorkflow`` LLM override.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -359,12 +360,37 @@ class TestResultLoading:
     def test_merge_strips_alias_and_dedupes(self, tmp_path):
         self._write(tmp_path / "results_1.json", "gpqa", 0.9)
         self._write(tmp_path / "results_2.json", "mmlu", 0.7)
-        results = mod.merge_eval_results(
+        results, counts = mod.load_eval_results(
             [str(tmp_path / "results_1.json"), str(tmp_path / "results_2.json")]
         )
         assert set(results) == {"gpqa", "mmlu"}
         assert results["gpqa"]["acc,none"] == 0.9
         assert "alias" not in results["gpqa"]
+        assert counts == {}
+
+    @pytest.mark.parametrize("new_count", [10, None])
+    def test_latest_metrics_and_count_come_from_the_same_file(
+        self, tmp_path, new_count
+    ):
+        old = tmp_path / "results_old.json"
+        new = tmp_path / "results_new.json"
+        for path, metric, count, modified in (
+            (old, 0.5, 100, 1),
+            (new, 0.9, new_count, 2),
+        ):
+            self._write(path, "gpqa", metric)
+            data = json.loads(path.read_text())
+            if count is not None:
+                data["n-samples"] = {"gpqa": {"effective": count}}
+            path.write_text(json.dumps(data))
+            os.utime(path, (modified, modified))
+
+        with patch.object(mod.json, "load", wraps=json.load) as read:
+            results, counts = mod.load_eval_results([str(old), str(new)])
+
+        assert read.call_count == 2
+        assert results == {"gpqa": {"acc,none": 0.9}}
+        assert counts == ({"gpqa": new_count} if new_count is not None else {})
 
 
 # --- orchestration -----------------------------------------------------------
@@ -455,11 +481,11 @@ class TestRunLLMEval:
             f"{_MOD}.HttpServerController", return_value=server
         ), patch(f"{_MOD}._run_eval_task", return_value=run_rc) as run_task, patch(
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
-        ), patch(f"{_MOD}.merge_eval_results", return_value=results or {}), patch(
+        ), patch(f"{_MOD}.load_eval_results", return_value=(results or {}, {})), patch(
             f"{_MOD}.blocks_for_task", return_value=blocks if blocks is not None else []
-        ) as score_task, patch(f"{_MOD}.collect_sample_counts", return_value={}), patch(
-            f"{_MOD}.accept_blocks"
-        ) as accept, patch(f"{_MOD}.block_id", return_value=""):
+        ) as score_task, patch(f"{_MOD}.accept_blocks") as accept, patch(
+            f"{_MOD}.block_id", return_value=""
+        ):
             out = mod.run_llm_eval(_ctx())
         return out, run_task, score_task, accept
 
@@ -523,14 +549,12 @@ class TestRunLLMEval:
             f"{_MOD}.HttpServerController", return_value=server
         ), patch(f"{_MOD}._run_eval_task", side_effect=run_eval_task), patch(
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
-        ), patch(f"{_MOD}.merge_eval_results", return_value={}), patch(
+        ), patch(f"{_MOD}.load_eval_results", return_value=({}, {})), patch(
             f"{_MOD}.blocks_for_task",
             side_effect=lambda _ctx, task, *_a, **_k: blocks_by_task[task.task_name],
-        ), patch(f"{_MOD}.collect_sample_counts", return_value={}), patch(
-            f"{_MOD}.accept_blocks"
-        ) as accept, patch(f"{_MOD}.block_id", return_value=""), pytest.raises(
-            KeyboardInterrupt
-        ):
+        ), patch(f"{_MOD}.accept_blocks") as accept, patch(
+            f"{_MOD}.block_id", return_value=""
+        ), pytest.raises(KeyboardInterrupt):
             mod.run_llm_eval(_ctx())
         return accept
 

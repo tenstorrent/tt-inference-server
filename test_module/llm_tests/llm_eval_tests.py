@@ -74,88 +74,74 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     return sorted(set(files))
 
 
-def _extract_json(json_path: Path):
+def _extract_json(json_path: Path) -> tuple[str, dict, int | None]:
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("eval results must be an object")  # noqa: TRY004 -- invalid file data
 
-    results = data.get("results", {})
-    configs = data.get("configs", {})
+    results = data.get("results")
+    configs = data.get("configs")
+    if not isinstance(results, dict) or not results:
+        raise ValueError("results must be a non-empty object")
+    if not isinstance(configs, dict) or not configs:
+        raise ValueError("configs must be a non-empty object")
+    if any(not isinstance(config, dict) for config in configs.values()):
+        raise ValueError("each task config must be an object")
 
-    first_key = list(results.keys())[0]
+    task_name = next(iter(results))
+    metrics = results[task_name]
+    if not isinstance(metrics, dict):
+        raise ValueError(f"metrics for {task_name} must be an object")  # noqa: TRY004 -- invalid file data
+    config = configs.get(task_name, {})
+    if config.get("task", task_name) != task_name:
+        raise ValueError(f"task name mismatch for {task_name}")
+    first_config = next(iter(configs.values()))
+    if "dataset_path" not in first_config or any(
+        config.get("dataset_path") != first_config["dataset_path"]
+        for config in configs.values()
+    ):
+        raise ValueError("task configs must share a dataset_path")
 
-    first_results = results[first_key]
-    extracted_metrics = {
-        k: v
-        for k, v in first_results.items()
-        if "alias" not in k and "_stderr" not in k
+    metrics = {
+        k: v for k, v in metrics.items() if "alias" not in k and "_stderr" not in k
     }
-    extracted = [{first_key: extracted_metrics}]
-
-    config = configs.get(first_key, {})
-    task_name = config.get("task", first_key)
-
-    dataset_path = list(configs.values())[0]["dataset_path"]
-    for config in configs.values():
-        assert dataset_path == config.get("dataset_path")
-    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
-
-    return extracted, {"task_name": task_name, "dataset_path": dataset_path}
+    sample_counts = data.get("n-samples")
+    sample_info = (
+        sample_counts.get(task_name) if isinstance(sample_counts, dict) else None
+    )
+    count = sample_info.get("effective") if isinstance(sample_info, dict) else None
+    if not isinstance(count, int) or isinstance(count, bool):
+        count = None
+    return task_name, metrics, count
 
 
-def merge_eval_results(files) -> dict:
-    """Merge readable per-task results, skipping malformed result files."""
-    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
-    results: dict = {}
-    for json_file in files:
-        try:
-            res, _meta = _extract_json(Path(json_file))
-        except (
-            OSError,
-            ValueError,
-            KeyError,
-            IndexError,
-            TypeError,
-            AttributeError,
-            AssertionError,
-        ) as exc:
-            # A failed subprocess can leave incomplete JSON or invalid task
-            # data. Keep other tasks runnable when this file is read again.
-            logger.warning("Skipping invalid eval results %s: %s", json_file, exc)
-            continue
-        for task_dict in res:
-            for specific_task_name, metrics in task_dict.items():
-                results.setdefault(specific_task_name, metrics)
-    return results
+def load_eval_results(files) -> tuple[dict, dict]:
+    """Read each file once; use the newest valid metrics and count for each task.
 
-
-def collect_sample_counts(files) -> dict:
-    """Map task_name -> effective sample count from lm-eval result JSONs.
-
-    Used for the sample-count-aware acceptance check on CI/limit-mode subsets.
-    lm-eval writes ``n-samples: {task: {original, effective}}``; ``effective`` is
-    the count actually scored (after ``--limit``). Returns ``{}`` for formats
-    without this field (e.g. some lmms-eval outputs), in which case scoring falls
-    back to the ratio check.
+    Missing sample counts stay absent so scoring can use its ratio fallback.
+    Invalid files are skipped without preventing other tasks from running.
     """
-    counts: dict = {}
+    loaded = []
     for json_file in files:
         try:
-            with Path(json_file).open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError):
+            path = Path(json_file)
+            modified = path.stat().st_mtime
+            loaded.append((modified, _extract_json(path)))
+        except (OSError, ValueError) as exc:
+            logger.warning("Skipping invalid eval results %s: %s", json_file, exc)
+
+    results: dict = {}
+    counts: dict = {}
+    for _, (task_name, metrics, count) in sorted(
+        loaded, key=lambda item: item[0], reverse=True
+    ):
+        if task_name in results:
             continue
-        if not isinstance(data, dict):
-            continue
-        sample_counts = data.get("n-samples", {})
-        if not isinstance(sample_counts, dict):
-            continue
-        for task_name, info in sample_counts.items():
-            if task_name in counts or not isinstance(info, dict):
-                continue
-            eff = info.get("effective")
-            if isinstance(eff, int):
-                counts[task_name] = eff
-    return counts
+        results[task_name] = metrics
+        if count is not None:
+            counts[task_name] = count
+    return results, counts
 
 
 # --- scoring one task's results into Block(kind="evals") ---------------------
@@ -493,11 +479,12 @@ def _score_task(
 ) -> List[Block]:
     """Score one finished task from the result files on disk right now."""
     result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
+    results, sample_counts = load_eval_results(result_files)
     task_blocks = blocks_for_task(
         ctx,
         task,
-        merge_eval_results(result_files),
-        collect_sample_counts(result_files),
+        results,
+        sample_counts,
         elapsed_seconds=elapsed_seconds,
     )
     if task_blocks:

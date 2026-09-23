@@ -351,22 +351,23 @@ class TestStandardEvalModeReference:
         assert abs(s - 70.0) < 1e-6
         assert ac_ci == ReportCheckTypes.PASS
 
-    def test_collect_sample_counts_reads_effective(self, tmp_path):
+    def test_load_eval_results_reads_effective_count(self, tmp_path):
         import json as _json
-        from test_module.llm_tests.llm_eval_tests import collect_sample_counts
+        from test_module.llm_tests.llm_eval_tests import load_eval_results
 
         f = tmp_path / "results_x.json"
         f.write_text(
             _json.dumps(
                 {
                     "results": {"r1_gpqa_diamond": {"exact_match,none": 0.7}},
+                    "configs": {"r1_gpqa_diamond": {"dataset_path": "gpqa"}},
                     "n-samples": {
                         "r1_gpqa_diamond": {"original": 198, "effective": 40}
                     },
                 }
             )
         )
-        counts = collect_sample_counts([str(f)])
+        _, counts = load_eval_results([str(f)])
         assert counts == {"r1_gpqa_diamond": 40}
 
 
