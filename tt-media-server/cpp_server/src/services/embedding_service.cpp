@@ -425,12 +425,33 @@ struct EmbeddingService::Impl {
 
   /**
    * Block until requests arrive or the worker must exit, then take up to
-   * maxBatchSize requests off the queue. When the queue is non-empty but a
-   * full batch has not formed, wait (mutex released) until batchTimeout past
-   * the OLDEST queued request's arrival
+   * maxBatchSize requests off the queue.
+   *
+   * Batch-fill policy depends on whether this worker already has a batch in
+   * flight:
+   * - Idle (nothing in flight): the batch goes straight to the device, so a
+   *   partial batch is better than an idle device. When the queue is
+   *   non-empty but a full batch has not formed, wait (mutex released) until
+   *   batchTimeout past the OLDEST queued request's arrival, then take
+   *   whatever is queued.
+   * - Prefetching (a batch is in flight): never ship a partial batch. The
+   *   device kernel has a fixed shape, so a partial prefetch batch pays a
+   *   full forward for a fraction of the requests and permanently wastes the
+   *   empty slots. Wait until a full batch forms or the in-flight batch
+   *   completes (worker back to idle; the linger rules above take over).
+   *   This wait cannot delay any request relative to serial dispatch: the
+   *   prefetched batch would sit behind the running forward anyway.
    */
   std::vector<std::shared_ptr<PendingRequest>> collectBatch(
-      WorkerProcess& worker) {
+      WorkerProcess& worker, InFlightState& inflight) {
+    // Only the calling (sender) thread pushes to inflight, so a false result
+    // stays false for the rest of this collect; true can flip to false when
+    // the receive thread pops (it notifies queueCv to wake the waits below).
+    const auto prefetching = [&inflight] {
+      std::lock_guard g(inflight.mutex);
+      return !inflight.batches.empty();
+    };
+
     std::vector<std::shared_ptr<PendingRequest>> batch;
     std::unique_lock lock(queueMutex);
     queueCv.wait_for(lock, std::chrono::milliseconds(100), [this, &worker] {
@@ -440,14 +461,29 @@ struct EmbeddingService::Impl {
     if (!worker.running.load() || !worker.isReady) return batch;
     if (requestQueue.empty()) return batch;
 
-    if (maxBatchSize > 1 && batchTimeout.count() > 0) {
+    if (maxBatchSize > 1) {
       while (requestQueue.size() < maxBatchSize) {
-        const auto deadline = requestQueue.front()->enqueueTime + batchTimeout;
-        if (std::chrono::steady_clock::now() >= deadline) break;
-        queueCv.wait_until(lock, deadline, [this, &worker] {
-          return requestQueue.size() >= maxBatchSize || requestQueue.empty() ||
-                 !worker.running.load() || !worker.isReady;
-        });
+        if (prefetching()) {
+          // Full batch or nothing. 100ms slices keep the shutdown check
+          // responsive; queue growth and the in-flight pop both notify.
+          queueCv.wait_for(lock, std::chrono::milliseconds(100),
+                           [this, &worker, &prefetching] {
+                             return requestQueue.size() >= maxBatchSize ||
+                                    requestQueue.empty() ||
+                                    !worker.running.load() || !worker.isReady ||
+                                    !prefetching();
+                           });
+        } else {
+          if (batchTimeout.count() <= 0) break;
+          const auto deadline =
+              requestQueue.front()->enqueueTime + batchTimeout;
+          if (std::chrono::steady_clock::now() >= deadline) break;
+          queueCv.wait_until(lock, deadline, [this, &worker] {
+            return requestQueue.size() >= maxBatchSize ||
+                   requestQueue.empty() || !worker.running.load() ||
+                   !worker.isReady;
+          });
+        }
         if (!worker.running.load() || !worker.isReady) break;
         if (requestQueue.empty()) break;
       }
@@ -508,7 +544,7 @@ struct EmbeddingService::Impl {
       if (!worker->running.load() || !worker->isReady) break;
 
       const auto queueStart = std::chrono::steady_clock::now();
-      auto batch = collectBatch(*worker);
+      auto batch = collectBatch(*worker, inflight);
       const auto queueEnd = std::chrono::steady_clock::now();
 
       if (batch.empty()) continue;
@@ -580,6 +616,10 @@ struct EmbeddingService::Impl {
         inflight.batches.pop_front();
       }
       inflight.cv.notify_all();
+      // The sender may be parked in collectBatch refusing to ship a partial
+      // prefetch batch; the pop above made this worker idle, so wake it and
+      // let the idle (linger) rules take over.
+      queueCv.notify_all();
 
       if (responseBuf.empty()) {
         // receiveResponse cleared isReady; the next loop iteration drains
