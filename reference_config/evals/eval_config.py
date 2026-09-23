@@ -6119,3 +6119,9 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
+# Every eval config, including models with no ModelSpec on this branch.
+# EVAL_CONFIGS is what a run dispatches from, so it stays spec-gated; callers
+# that only need a task *definition* to copy (see
+# RequirementsTargetPack._find_task_template) read this instead, so dropping a
+# task from one model's run set cannot make it unreachable catalog-wide.
+ALL_EVAL_CONFIGS = _eval_config_map
