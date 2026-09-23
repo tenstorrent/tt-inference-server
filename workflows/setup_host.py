@@ -329,6 +329,25 @@ class HostSetupManager:
             )
             return False
 
+        if _qb2_checkpoint_revision(self.model_spec):
+            # A matching glob accepts a partial download or a broken symlink.
+            # Require every shard named by the pinned checkpoint's index.
+            try:
+                index = json.loads(
+                    (host_weights_dir / "model.safetensors.index.json").read_text()
+                )
+                shards = set(index["weight_map"].values())
+                if not shards:
+                    raise ValueError("checkpoint index has no weight shards")
+                for filename in shards | {"config.json", "tokenizer.json"}:
+                    path = host_weights_dir / filename
+                    with path.open("rb") as handle:
+                        if not handle.read(1):
+                            raise ValueError(f"empty checkpoint file: {filename}")
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                logger.warning("Incomplete pinned QB2 checkpoint: %s", exc)
+                return False
+
         # Define supported model formats
         model_formats = [
             {

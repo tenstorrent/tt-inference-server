@@ -11,6 +11,7 @@ Each test verifies SetupConfig fields, setup_host() completion, and docker comma
 import json
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
@@ -1231,8 +1232,9 @@ class TestCustomWeightsDockerCommand:
 
 
 @pytest.mark.parametrize("storage", ["host_volume", "host_hf_cache"])
+@pytest.mark.parametrize("shared", [False, True])
 def test_qb2_host_download_mounts_exact_snapshot_readonly(
-    storage, tmp_path, mock_cli_args, monkeypatch
+    storage, shared, tmp_path, mock_cli_args, monkeypatch
 ):
     from workflows.model_spec import load_templates_from_yaml
     from workflows.workflow_types import WorkflowVenvType
@@ -1271,8 +1273,17 @@ def test_qb2_host_download_mounts_exact_snapshot_readonly(
         blobs = snapshot.parents[1] / "blobs"
         blobs.mkdir(exist_ok=True)
         for filename in ("model.safetensors", "config.json", "tokenizer.json"):
-            (blobs / filename).write_text("pinned")
+            if shared and filename == "model.safetensors":
+                shared_file = snapshot.parents[2] / "blobs" / "ab" / "abcdef"
+                shared_file.parent.mkdir(parents=True)
+                shared_file.write_text("pinned")
+                (blobs / filename).symlink_to("../../blobs/ab/abcdef")
+            else:
+                (blobs / filename).write_text("pinned")
             (snapshot / filename).symlink_to(Path("../../blobs") / filename)
+        (snapshot / "model.safetensors.index.json").write_text(
+            json.dumps({"weight_map": {"weight": "model.safetensors"}})
+        )
         return MagicMock(returncode=0)
 
     monkeypatch.setenv("HF_TOKEN", "test-token")
@@ -1298,6 +1309,55 @@ def test_qb2_host_download_mounts_exact_snapshot_readonly(
     assert str(config.container_model_weights_path).endswith("/snapshots/" + revision)
     mount = f"type=bind,src={snapshot.parents[1]},dst={config.container_model_weights_mount_dir},readonly"
     assert mount in docker  # includes snapshot and its relative blob symlinks
+
+    # Recreate only the generated read-only mounts under a fresh root. This
+    # reproduces Docker's path visibility without requiring a Docker daemon.
+    container_root = tmp_path / "container"
+    for arg in docker:
+        if (
+            isinstance(arg, str)
+            and arg.startswith("type=bind,")
+            and arg.endswith(",readonly")
+        ):
+            fields = dict(part.split("=", 1) for part in arg.split(",") if "=" in part)
+            source = Path(fields["src"])
+            target = container_root / fields["dst"].lstrip("/")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target, symlinks=True)
+            else:
+                shutil.copy2(source, target)
+    container_snapshot = container_root / str(
+        config.container_model_weights_path
+    ).lstrip("/")
+    assert (container_snapshot / "model.safetensors").read_text() == "pinned"
+
+
+@pytest.mark.parametrize("broken_symlink", [False, True])
+def test_qb2_checkpoint_rejects_missing_indexed_shard(tmp_path, broken_symlink):
+    from workflows.model_spec import load_templates_from_yaml
+
+    spec = next(
+        s
+        for t in load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+        )
+        for s in t.expand_to_specs()
+        if s.impl.impl_id == "llama31_8b_qb2"
+    )
+    manager = HostSetupManager(
+        model_spec=spec, hf_token="test-token", host_volume=str(tmp_path)
+    )
+    for name in ("model-1.safetensors", "config.json", "tokenizer.json"):
+        (tmp_path / name).write_text("present")
+    (tmp_path / "model.safetensors.index.json").write_text(
+        json.dumps(
+            {"weight_map": {"a": "model-1.safetensors", "b": "model-2.safetensors"}}
+        )
+    )
+    if broken_symlink:
+        (tmp_path / "model-2.safetensors").symlink_to("missing-blob")
+    assert not manager.check_model_weights_dir(tmp_path)
 
 
 def test_qb2_failed_host_download_cannot_fall_back_to_other_weights(
