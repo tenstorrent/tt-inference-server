@@ -1,5 +1,9 @@
 # Gemma 4 26B-A4B text inference on Blackhole card 1
 
+For the September 23 review-branch validation and current running service,
+see [VALIDATION.md](VALIDATION.md). The historical deployment paths below
+refer to the original local snapshot.
+
 This deployment uses the existing Inference Server pipeline and a persistent
 `tt-lab gemma --native-device --serve` child. It serves
 `google/gemma-4-26B-A4B-it` on `http://127.0.0.1:8001`, separately from GPT-OSS
