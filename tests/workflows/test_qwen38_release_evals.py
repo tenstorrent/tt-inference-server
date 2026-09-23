@@ -14,7 +14,8 @@ def test_qwen38_release_contains_all_three_original_suites():
         "swe_bench_verified",
     ]
     assert tasks[0].gen_kwargs["max_gen_toks"] == 80 * 1024
-    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0.05
+    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert tasks[0].max_concurrent == 5
 
 
 def test_qwen38_release_keeps_original_agentic_cohorts_and_budgets():
@@ -35,7 +36,9 @@ def test_qwen38_release_keeps_original_agentic_cohorts_and_budgets():
         "sympy__sympy-13551",
         "scikit-learn__scikit-learn-14629",
     ]
-    assert terminal_config.agent_timeout_sec == 3 * 60 * 60
+    assert terminal_config.agent_timeout_sec == 6 * 60 * 60
     assert terminal_config.agent_kwargs["model_info"]["max_output_tokens"] == 80 * 1024
     assert swe_config.max_output_tokens == 32 * 1024
+    assert swe_config.llm_timeout_sec == 60 * 60
+    assert swe_config.mini_container_timeout_sec == 8 * 60 * 60
     assert terminal_config.n_concurrent_trials == swe_config.n_concurrent_trials == 5

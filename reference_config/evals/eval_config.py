@@ -2098,11 +2098,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # Reasoning eval served at low batch: samples run effectively
-                # sequentially and dominate CI runtime, so keep the CI subset small
-                # (same rationale as the gemma-4-31B-it entry).
+                # Exactly ten samples, with five requests in flight on the B8 server.
+                max_concurrent=5,
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -2136,9 +2135,13 @@ _eval_config_list = [
                     # QB2 release runners expose only 16 CPUs.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    # 3h rather than the 2h the GLM/Kimi 2.1 entries use: QB2 is a
-                    # bring-up target and slower per token than those runs assumed.
-                    agent_timeout_sec=3 * 60 * 60,
+                    # At concurrency five, each agent receives roughly one fifth of
+                    # the aggregate decode throughput while all requests are live.
+                    # The serial compile-compcert control already takes 2h52m, so a
+                    # 3h limit turns valid concurrent trials into AgentTimeoutError.
+                    # Six hours keeps one concurrent wave inside the release job's
+                    # wall-clock budget without reverting to serial execution.
+                    agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -2211,6 +2214,16 @@ _eval_config_list = [
                     # 160K + 32K = 192K, inside the P300X2 spec's 262144 max_context.
                     max_input_tokens=160 * 1024,
                     max_output_tokens=32 * 1024,
+                    # Batched requests have much higher per-user latency than the
+                    # 10-minute generic default. A client-side timeout abandons the
+                    # completion while the server is still generating it; the agent
+                    # then retries until mini-swe-agent reports LimitsExceeded.
+                    llm_timeout_sec=60 * 60,
+                    # Five concurrent instances in the failing run needed up to
+                    # 6h21m. Keep their sandboxes alive long enough to finish rather
+                    # than scoring an empty patch because the serial 2h budget was
+                    # applied to a batched request.
+                    mini_container_timeout_sec=8 * 60 * 60,
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
