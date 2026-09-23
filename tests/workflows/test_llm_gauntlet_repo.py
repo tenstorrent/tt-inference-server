@@ -115,6 +115,75 @@ def test_leading_slash_in_the_repo_path_is_tolerated(fake_fetch):
     assert Path(out) == (dest / "specs/tt-internal/qwen3-32b/x.json").resolve()
 
 
+def test_directory_with_one_json_is_resolved(fake_fetch):
+    """Naming a folder with a single document works like naming it directly."""
+    _, dest = fake_fetch
+    folder = dest / "specs" / "tt-internal" / "qwen3-32b"
+
+    out = resolve_requirements_location(
+        f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b"
+    )
+
+    assert Path(out) == (folder / "x.json").resolve()
+
+
+def test_directory_with_multiple_json_picks_first_alphabetically_and_warns(
+    fake_fetch, caplog
+):
+    _, dest = fake_fetch
+    folder = dest / "specs" / "tt-internal" / "qwen3-32b"
+    resolve_requirements_location(
+        f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b/x.json"
+    )
+    (folder / "a.json").write_text(json.dumps(_DOC))
+    (folder / "z.json").write_text(json.dumps(_DOC))
+
+    with caplog.at_level("WARNING"):
+        out = resolve_requirements_location(
+            f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b"
+        )
+
+    assert Path(out) == (folder / "a.json").resolve()
+    assert "containing 3 json files" in caplog.text
+
+
+def test_directory_with_no_json_raises(fake_fetch, monkeypatch):
+    _, dest = fake_fetch
+    folder = dest / "specs" / "tt-internal" / "qwen3-32b"
+    # The shared fake_fetch always (re-)writes x.json, which would defeat
+    # an empty-folder test -- swap in a fetch that leaves it empty instead.
+    monkeypatch.setattr(
+        gauntlet,
+        "fetch_specs",
+        lambda d, ref, token=None: folder.mkdir(parents=True, exist_ok=True) or True,
+    )
+
+    with pytest.raises(LLMGauntletError, match="no .json file"):
+        resolve_requirements_location(
+            f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b"
+        )
+
+
+def test_directory_search_is_not_recursive(fake_fetch, monkeypatch):
+    """A json only in a nested subfolder does not count -- matches the folder
+    given, not folders below it."""
+    _, dest = fake_fetch
+    folder = dest / "specs" / "tt-internal" / "qwen3-32b"
+
+    def fetch_with_nested_json_only(d, ref, token=None):
+        nested = folder / "nested"
+        nested.mkdir(parents=True, exist_ok=True)
+        (nested / "y.json").write_text(json.dumps(_DOC))
+        return True
+
+    monkeypatch.setattr(gauntlet, "fetch_specs", fetch_with_nested_json_only)
+
+    with pytest.raises(LLMGauntletError, match="no .json file"):
+        resolve_requirements_location(
+            f"{LLM_GAUNTLET_PREFIX}specs/tt-internal/qwen3-32b"
+        )
+
+
 @pytest.mark.parametrize(
     "value",
     [

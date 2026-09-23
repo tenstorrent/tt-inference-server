@@ -185,7 +185,35 @@ def resolve_requirements_location(value: str, *, ref: Optional[str] = None) -> s
             f"{value!r} not found in llm-gauntlet at ref={resolved_ref}. Only "
             f"{SPECS_DIRNAME}/**/*.json is fetched."
         )
+    if target.is_dir():
+        target = _resolve_document_in_dir(value, target)
     return str(target)
+
+
+def _resolve_document_in_dir(value: str, directory: Path) -> Path:
+    """Pick the document when ``value`` names a directory, not a file.
+
+    Looks only at ``directory`` itself (no recursion): one json -> use it;
+    several -> the alphabetically first, with a warning, since silently
+    picking among ambiguous candidates should not pass without a trace.
+    """
+    json_files = sorted(directory.glob("*.json"))
+    if not json_files:
+        raise LLMGauntletError(
+            f"{value!r} resolves to directory {directory} with no .json file "
+            f"in it. Name the document directly, e.g. '{value.rstrip('/')}/<id>.json'."
+        )
+    if len(json_files) > 1:
+        logger.warning(
+            "%r resolves to directory %s containing %d json files (%s); "
+            "picking %s. Name the document directly to avoid relying on this.",
+            value,
+            directory,
+            len(json_files),
+            ", ".join(f.name for f in json_files),
+            json_files[0].name,
+        )
+    return json_files[0]
 
 
 __all__ = [
