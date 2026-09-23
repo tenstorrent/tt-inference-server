@@ -392,6 +392,24 @@ class TestJobControlCallback:
 
         assert tracker.value == 11.0
 
+    @pytest.mark.parametrize(
+        "callback_method", ["on_train_start", "on_validation_start"]
+    )
+    def test_phase_start_updates_progress_heartbeat(self, callback_method):
+        request = _request(max_steps=0)
+        tracker = MagicMock()
+        tracker.value = 1.0
+        request._progress_tracker = tracker
+        callback = self._callback(request)
+
+        with patch("domain.training_request.time.monotonic", return_value=11.0), patch(
+            "domain.training_request.settings.training_progress_heartbeat_interval_seconds",
+            10.0,
+        ):
+            getattr(callback, callback_method)(_fake_trainer())
+
+        assert tracker.value == 11.0
+
     def test_stops_on_cancel(self):
         from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
             StopTraining,

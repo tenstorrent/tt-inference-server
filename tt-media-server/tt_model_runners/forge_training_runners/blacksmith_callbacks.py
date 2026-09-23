@@ -230,6 +230,12 @@ class JobControlCallback(JobCallback):
         self.error = None
         self.stop_reason = None
 
+    def on_train_start(self, trainer, *args, **kwargs):
+        self._touch_progress()
+
+    def on_validation_start(self, trainer, *args, **kwargs):
+        self._touch_progress()
+
     def on_train_batch_start(self, trainer, batch, *args, **kwargs):
         self._stop_if_cancelled(trainer)
 

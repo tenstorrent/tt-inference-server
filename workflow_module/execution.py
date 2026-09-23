@@ -404,6 +404,8 @@ class WorkflowExecution(ABC):
     def inject_metadata(self, schema: ReportSchema) -> None:
         meta = schema.metadata
         meta["workflow"] = self.name
+        meta["report_partial"] = False
+        meta["report_blocks"] = len(schema.sections)
         m = self.orchestrator_metadata
         if m.server_mode is not None:
             meta["server_mode"] = m.server_mode
