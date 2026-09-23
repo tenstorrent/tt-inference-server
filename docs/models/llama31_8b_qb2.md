@@ -20,7 +20,10 @@ native build identity and image digest.
 
 The catalogue fixes both checkpoint and tokenizer to
 `0e9e39f249a16976918f6564b8830bc894c89659`. Automatic downloads use a revision-specific
-Hub snapshot. If you mount weights with `--host-weights-dir`, mount this complete
+Hub snapshot. With a host volume or HF cache, setup downloads that exact revision
+and mounts the snapshot and its blobs read-only. The server uses this mount
+without a second download or write access to the host-owned weights cache.
+If you mount weights with `--host-weights-dir`, mount this complete
 snapshot. The launcher passes its container path to both vLLM and the TT model.
 
 The server has 32 slots sharing a 131072-token KV pool, with 128-token blocks and

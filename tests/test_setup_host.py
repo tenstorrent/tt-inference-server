@@ -1228,3 +1228,104 @@ class TestCustomWeightsDockerCommand:
         assert _find_env_var(docker_command, "RUNTIME_MODEL_SPEC_JSON_PATH") is not None
         # No dev source mounts when dev_mode is off.
         assert "/app/src" not in cmd_str
+
+
+@pytest.mark.parametrize("storage", ["host_volume", "host_hf_cache"])
+def test_qb2_host_download_mounts_exact_snapshot_readonly(
+    storage, tmp_path, mock_cli_args, monkeypatch
+):
+    from workflows.model_spec import load_templates_from_yaml
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = next(
+        s
+        for t in load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+        )
+        for s in t.expand_to_specs()
+        if s.impl.impl_id == "llama31_8b_qb2"
+    )
+    manager = HostSetupManager(
+        model_spec=spec, hf_token="test-token", **{storage: str(tmp_path / "store")}
+    )
+    config = manager.setup_config
+    revision = spec.device_model_spec.vllm_args["revision"]
+    snapshot = config.host_model_weights_snapshot_dir
+    assert snapshot.name == revision
+    # An old mutable download cannot bypass the pinned checkpoint preparation.
+    old = tmp_path / "store" / "weights" / spec.model_name
+    old.mkdir(parents=True)
+    for filename in ("model.safetensors", "config.json", "tokenizer.json"):
+        (old / filename).write_text("old")
+    assert not manager.check_setup()
+
+    venv = MagicMock()
+    venv.venv_path = tmp_path / "venv"
+    (venv.venv_path / "bin").mkdir(parents=True)
+    (venv.venv_path / "bin/hf").touch()
+    commands = []
+
+    def download(command):
+        commands.append(command)
+        snapshot.mkdir(parents=True, exist_ok=True)
+        blobs = snapshot.parents[1] / "blobs"
+        blobs.mkdir(exist_ok=True)
+        for filename in ("model.safetensors", "config.json", "tokenizer.json"):
+            (blobs / filename).write_text("pinned")
+            (snapshot / filename).symlink_to(Path("../../blobs") / filename)
+        return MagicMock(returncode=0)
+
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+    with patch(
+        "workflows.setup_host.VENV_CONFIGS", {WorkflowVenvType.HF_SETUP: venv}
+    ), patch("workflows.setup_host.subprocess.run", side_effect=download):
+        manager.setup_weights_huggingface()
+    command = commands[0]
+    assert command[command.index("--revision") + 1] == revision
+    assert command[command.index("--cache-dir") + 1] == str(snapshot.parents[2])
+    assert "--local-dir" not in command
+    assert (snapshot / "model.safetensors").read_text() == "pinned"
+    assert not manager.check_setup()  # verify/resume even after an earlier download
+
+    json_path = tmp_path / "model_spec.json"
+    json_path.write_text("{}")
+    docker, _ = TestSetupHostDockerCommand()._generate_cmd(
+        spec, mock_cli_args, config, json_path
+    )
+    assert _find_env_var(docker, "MODEL_WEIGHTS_DIR") == str(
+        config.container_model_weights_path
+    )
+    assert str(config.container_model_weights_path).endswith("/snapshots/" + revision)
+    mount = f"type=bind,src={snapshot.parents[1]},dst={config.container_model_weights_mount_dir},readonly"
+    assert mount in docker  # includes snapshot and its relative blob symlinks
+
+
+def test_qb2_failed_host_download_cannot_fall_back_to_other_weights(
+    tmp_path, monkeypatch
+):
+    from workflows.model_spec import load_templates_from_yaml
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = next(
+        s
+        for t in load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+        )
+        for s in t.expand_to_specs()
+        if s.impl.impl_id == "llama31_8b_qb2"
+    )
+    manager = HostSetupManager(
+        model_spec=spec, hf_token="test-token", host_volume=str(tmp_path)
+    )
+    venv = MagicMock()
+    venv.venv_path = tmp_path / "venv"
+    (venv.venv_path / "bin").mkdir(parents=True)
+    (venv.venv_path / "bin/hf").touch()
+    monkeypatch.setenv("HF_TOKEN", "test-token")
+    with patch(
+        "workflows.setup_host.VENV_CONFIGS", {WorkflowVenvType.HF_SETUP: venv}
+    ), patch(
+        "workflows.setup_host.subprocess.run", return_value=MagicMock(returncode=1)
+    ), patch.object(manager, "check_model_weights_dir", return_value=True):
+        with pytest.raises(RuntimeError, match="Pinned QB2 checkpoint download failed"):
+            manager.setup_weights_huggingface()
