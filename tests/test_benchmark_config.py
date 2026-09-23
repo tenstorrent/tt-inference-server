@@ -263,10 +263,17 @@ def test_qwen38_concurrent_profiles_use_matching_device_batch(
     )
     assert (
         model_spec.device_model_spec.tt_metal_source_ref
-        == "mvasiljevic/qwen38-prefill-warmup-fac11633c95"
+        == "mvasiljevic/qwen38-compact-layouts-20260923"
     )
     assert model_spec.device_model_spec.env_vars["QWEN_BATCHED_PREFILL"] == "1"
     assert model_spec.device_model_spec.env_vars["QWEN_PREFILL_STARTUP_WARMUP"] == "1"
+    for flag in (
+        "QWEN_COMPACT_DECODE_RESIDUAL",
+        "QWEN_COMPACT_DECODE_MLP",
+        "QWEN_BATCHED_DECODE_ROPE",
+        "QWEN_COMPACT_DECODE_ATTENTION",
+    ):
+        assert model_spec.device_model_spec.env_vars[flag] == "1"
 
     config = benchmark_config.get_benchmark_config(model_spec)
     assert config.tasks[0].param_map[DeviceTypes.P300X2] == []

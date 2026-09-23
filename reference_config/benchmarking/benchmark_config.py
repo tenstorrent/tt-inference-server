@@ -200,9 +200,8 @@ MODEL_EXPLICIT_TEXT_TARGETS = {
 }
 
 # Select one requirements concurrency per serving profile. The B8/B16 profiles
-# deliberately keep vLLM max_num_seqs at 1: the client holds 8 or 16 requests
-# outstanding while the device executes the same batch-1 path used by the C1
-# profile. This measures queued batch-1 service against the concurrent targets.
+# use matching vLLM max_num_seqs (8 or 16), so the device executes genuinely
+# batched decode rather than queuing concurrent clients behind batch-1 service.
 _REQUIREMENTS_PROFILE_CONCURRENCY = {
     "qwen38-autoport-b1": 1,
     "qwen38-autoport-b8": 8,
