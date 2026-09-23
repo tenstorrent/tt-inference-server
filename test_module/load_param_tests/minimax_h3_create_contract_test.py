@@ -10,8 +10,8 @@ import argparse
 import asyncio
 import json
 import logging
-import re
 import sys
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit, urlunsplit
@@ -20,8 +20,9 @@ import aiohttp  # pyright: ignore[reportMissingImports]
 
 from test_module._test_common import BaseTest, HardwareRequirement, TestConfig
 from test_module._test_common.minimax_h3_client import (
-    CANCEL_PATH,
     CREATE_PATH,
+    MiniMaxClientError,
+    MiniMaxH3Client,
     resolve_server_api_key,
 )
 
@@ -135,10 +136,6 @@ def _headers(api_key: str, auth_mode: str) -> dict[str, str]:
     return headers
 
 
-# A job id the server may hand back and we may put in a URL: uuid4 on the real server.
-_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-
-
 def _service_root(base_url: str) -> str:
     """The server under test as ``scheme://host[:port][/prefix]``; only http(s) qualifies.
 
@@ -150,26 +147,34 @@ def _service_root(base_url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
 
 
+def _job_uuid(task_id: Any) -> str | None:
+    """The server mints job ids with uuid4 (domain/base_request.py); anything else is not an
+    id this suite places in a URL. Re-serialising through uuid.UUID keeps response text out."""
+    try:
+        return str(uuid.UUID(str(task_id)))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 async def _cancel_created_job(
-    session: aiohttp.ClientSession,
     *,
     base_url: str,
     api_key: str,
     task_id: str,
+    request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
-    if not _JOB_ID.fullmatch(task_id):
-        return None  # not an id we would place in a URL
-    url = f"{_service_root(base_url)}{CANCEL_PATH.format(job_id=task_id)}"
+    """Cancel the smoke job through the shared client; None when it could not be cancelled."""
+    job_id = _job_uuid(task_id)
+    if job_id is None:
+        return None
     try:
-        async with session.post(
-            url,
-            headers=_headers(api_key, "valid"),
-        ) as response:
-            if response.status != 200:
-                return None
-            data = await response.json()
-            return data if isinstance(data, dict) else None
-    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        async with MiniMaxH3Client(
+            base_url=_service_root(base_url),
+            api_key=api_key,
+            request_timeout=request_timeout,
+        ) as client:
+            return await client.cancel_task(job_id)
+    except (MiniMaxClientError, RuntimeError, ValueError, asyncio.TimeoutError):
         return None
 
 
@@ -180,6 +185,7 @@ async def _run_case(
     base_url: str,
     api_key: str,
     case: _RequestCase,
+    request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     try:
         async with session.post(
@@ -199,17 +205,20 @@ async def _run_case(
             cancellation: dict[str, Any] | None = None
             if case.requires_job_id:
                 task_id = data.get("id") if isinstance(data, dict) else None
-                passed = passed and isinstance(task_id, str) and bool(task_id)
-                if task_id:
+                job_id = _job_uuid(task_id) if isinstance(task_id, str) else None
+                passed = passed and job_id is not None
+                if job_id:
                     cancellation = await _cancel_created_job(
-                        session,
                         base_url=base_url,
                         api_key=api_key,
-                        task_id=task_id,
+                        task_id=job_id,
+                        request_timeout=request_timeout,
                     )
                     passed = passed and cancellation is not None
                 if not task_id:
                     message = "accepted response did not include a non-empty id"
+                elif job_id is None:
+                    message = "accepted response id is not a UUID"
                 elif cancellation is None:
                     message = "accepted smoke job could not be cancelled"
             elif response.status >= 400:
@@ -259,6 +268,7 @@ async def run_create_contract(
                 base_url=root,
                 api_key=api_key,
                 case=case,
+                request_timeout=request_timeout,
             )
             for case in _cases(normalized_profile)  # type: ignore[arg-type]
         ]

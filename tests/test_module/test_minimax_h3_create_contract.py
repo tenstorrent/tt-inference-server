@@ -35,18 +35,25 @@ def test_service_root_refuses_anything_but_http(bad):
         C._service_root(bad)
 
 
-class _NoNetwork:
-    def post(self, *args, **kwargs):  # pragma: no cover - reaching this is the failure
-        raise AssertionError(f"unexpected request {args} {kwargs}")
-
-
 @pytest.mark.parametrize(
-    "task_id", ["../../admin", "abc def", "", "x" * 129, "%0d%0aX: 1"]
+    "task_id",
+    ["../../admin", "abc def", "", "x" * 129, "%0d%0aX: 1", "not-a-uuid", None],
 )
-def test_cancel_refuses_a_job_id_it_would_not_put_in_a_url(task_id):
-    result = asyncio.run(
+def test_cancel_refuses_a_job_id_that_is_not_a_uuid(task_id):
+    assert C._job_uuid(task_id) is None
+    result = asyncio.run(  # returns before any request is made
         C._cancel_created_job(
-            _NoNetwork(), base_url="http://127.0.0.1:8000", api_key="k", task_id=task_id
+            base_url="http://127.0.0.1:9",
+            api_key="k",
+            task_id=task_id,
+            request_timeout=1.0,
         )
     )
     assert result is None
+
+
+def test_job_uuid_is_the_canonical_form():
+    assert (
+        C._job_uuid("6F9619FF-8B86-D011-B42D-00C04FC964FF")
+        == "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+    )
