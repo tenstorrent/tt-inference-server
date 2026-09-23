@@ -303,3 +303,21 @@ class TestGenerate:
         )
         md = ReportGenerator().generate(_schema(block), tmp_path).markdown
         assert "report the mean value across the benchmark run" not in md
+
+
+class TestPartialReportBanner:
+    def test_partial_report_is_announced_above_the_metadata(self, tmp_path: Path):
+        schema = _schema(Block(kind="benchmarks", title="B", data={"ttft": 1.0}))
+        schema.metadata["report_partial"] = True
+        schema.metadata["report_blocks"] = 23
+        md = ReportGenerator().generate(schema, tmp_path).markdown
+        assert "Partial report" in md
+        assert "23 block(s)" in md
+        # Above the metadata block, so a reader cannot miss it.
+        assert md.index("Partial report") < md.index("### Metadata")
+
+    def test_finished_report_has_no_banner(self, tmp_path: Path):
+        schema = _schema(Block(kind="benchmarks", title="B", data={"ttft": 1.0}))
+        schema.metadata["report_partial"] = False
+        md = ReportGenerator().generate(schema, tmp_path).markdown
+        assert "Partial report" not in md
