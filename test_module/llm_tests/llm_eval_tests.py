@@ -103,11 +103,25 @@ def _extract_json(json_path: Path):
 
 
 def merge_eval_results(files) -> dict:
-    """Merge per-task lm-eval result files into one {task_name: metrics} dict."""
+    """Merge readable per-task results, skipping malformed result files."""
     files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
     results: dict = {}
     for json_file in files:
-        res, _meta = _extract_json(Path(json_file))
+        try:
+            res, _meta = _extract_json(Path(json_file))
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            AttributeError,
+            AssertionError,
+        ) as exc:
+            # A failed subprocess can leave incomplete JSON or invalid task
+            # data. Keep other tasks runnable when this file is read again.
+            logger.warning("Skipping invalid eval results %s: %s", json_file, exc)
+            continue
         for task_dict in res:
             for specific_task_name, metrics in task_dict.items():
                 results.setdefault(specific_task_name, metrics)
@@ -128,9 +142,14 @@ def collect_sample_counts(files) -> dict:
         try:
             with Path(json_file).open("r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             continue
-        for task_name, info in (data.get("n-samples", {}) or {}).items():
+        if not isinstance(data, dict):
+            continue
+        sample_counts = data.get("n-samples", {})
+        if not isinstance(sample_counts, dict):
+            continue
+        for task_name, info in sample_counts.items():
             if task_name in counts or not isinstance(info, dict):
                 continue
             eff = info.get("effective")

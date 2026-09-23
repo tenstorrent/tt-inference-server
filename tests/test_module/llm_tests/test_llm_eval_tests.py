@@ -371,6 +371,82 @@ class TestResultLoading:
 
 
 class TestRunLLMEval:
+    @pytest.mark.parametrize(
+        "bad_result",
+        [
+            "{",
+            "{}",
+            "[]",
+            '{"results": []}',
+            '{"results": {"gpqa": null}}',
+            json.dumps(
+                {
+                    "results": {"gpqa": {"acc,none": 0.9}},
+                    "configs": {"gpqa": {"task": "wrong-task", "dataset_path": "d"}},
+                }
+            ),
+            '{"results": {}, "n-samples": [1]}',
+        ],
+        ids=[
+            "truncated",
+            "empty",
+            "list",
+            "bad-results",
+            "bad-metrics",
+            "task-mismatch",
+            "bad-counts",
+        ],
+    )
+    def test_bad_result_does_not_stop_later_tasks(self, tmp_path, bad_result, caplog):
+        from workflow_module import BlockAccumulator
+
+        ctx = _ctx()
+        ctx.model_spec.model_id = "test-llm"
+        ctx.output_path = str(tmp_path)
+        tasks = [_task(name, _score(reference=90.0)) for name in ("gpqa", "mmlu")]
+        result_dir = tmp_path / "eval_test-llm" / "org__test-llm"
+        result_dir.mkdir(parents=True)
+        accumulator = BlockAccumulator()
+        ran = []
+
+        def run_task(_ctx, task, _token):
+            ran.append(task.task_name)
+            if task.task_name == "gpqa":
+                (result_dir / "results_gpqa.json").write_text(bad_result)
+                return 1
+            # The failed task must already be recorded before the next starts.
+            assert len(accumulator.blocks) == 1
+            assert accumulator.blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+            (result_dir / "results_mmlu.json").write_text(
+                json.dumps(
+                    {
+                        "results": {"mmlu": {"acc,none": 0.95}},
+                        "configs": {"mmlu": {"task": "mmlu", "dataset_path": "d"}},
+                        "n-samples": {"mmlu": {"effective": 10}},
+                    }
+                )
+            )
+            return 0
+
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=tasks), patch(
+            f"{_MOD}.HttpServerController", return_value=server
+        ), patch(f"{_MOD}._run_eval_task", side_effect=run_task), patch(
+            f"{_MOD}.accept_blocks", side_effect=accumulator.accept
+        ):
+            blocks = mod.run_llm_eval(ctx)
+
+        assert ran == ["gpqa", "mmlu"]
+        assert blocks == accumulator.blocks
+        assert blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "no eval results parsed (rc=1)" in blocks[0].data["error"]
+        assert blocks[1].data["accuracy_check"] == ReportCheckTypes.PASS
+        assert blocks[1].data["score"] == 95.0
+        assert "mean_seconds_per_task" in blocks[1].data
+        assert "results_gpqa.json" in caplog.text
+
     def _run(self, tasks, *, healthy=True, blocks=None, run_rc=0, results=None):
         server = MagicMock()
         server.wait_for_healthy.return_value = healthy
