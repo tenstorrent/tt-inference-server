@@ -14,9 +14,11 @@ import pytest
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from llm_module.benchmark_configs import ensure_custom_dataset, get_llm_configs
 from llm_module.config import LLMRunConfig, ServerConnection
+from llm_module.target_checks import apply_target_checks
+from report_module.schema import Block
 from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
 from workflows.utils import get_repo_root_path
-from workflows.workflow_types import ModelType
+from workflows.workflow_types import ModelType, ReportCheckTypes
 
 
 def _text_keys(params):
@@ -257,6 +259,16 @@ def test_qb2_enables_token_timing_without_changing_other_implementations():
                 found = True
                 assert configs
             assert all(c.token_timing == is_qb2 for c in configs)
+            assert all(c.require_complete_metrics == is_qb2 for c in configs)
+            for config in configs:
+                if not config.targets:
+                    continue
+                # Exercise the catalogue -> sweep -> grading path, not just
+                # the flag. Missing metrics must fail QB2 qualification while
+                # existing implementations retain their NA behavior.
+                block = apply_target_checks(Block(kind="benchmarks", data={}), config)
+                expected = ReportCheckTypes.FAIL if is_qb2 else ReportCheckTypes.NA
+                assert block.data["target_check"] == expected
     assert found
 
 

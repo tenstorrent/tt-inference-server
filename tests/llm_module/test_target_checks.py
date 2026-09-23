@@ -106,11 +106,11 @@ class TestBuildTargetChecks:
         assert checks["target"]["tput_check"] == ReportCheckTypes.PASS
         assert verdict == ReportCheckTypes.PASS
 
-    def test_undefined_target_is_na_but_missing_required_measurement_fails(self):
+    def test_undefined_target_and_unmeasured_metric_are_na_not_failures(self):
         targets = {"target": PerformanceTarget(ttft_ms=89.0)}  # no tput targets
         checks, _ = build_target_checks(targets, {"mean_ttft_ms": None})
 
-        assert checks["target"]["ttft_check"] == ReportCheckTypes.FAIL
+        assert checks["target"]["ttft_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_check"] == ReportCheckTypes.NA
         assert checks["target"]["tput_user_check"] == ReportCheckTypes.NA
 
@@ -146,14 +146,14 @@ class TestBuildTargetChecks:
         assert checks["target"]["goodput_ratio"] == pytest.approx(36.0 / 99.0)
         assert verdict == ReportCheckTypes.FAIL
 
-    def test_required_goodput_fails_when_the_run_measured_none(self):
+    def test_goodput_is_na_when_the_run_measured_none(self):
         # No --goodput constraints on the run => no request_goodput in the
-        # result => the declared requirement has not been satisfied.
+        # result => NA (visible), never a silent pass or a spurious failure.
         targets = {"target": PerformanceTarget(goodput=99.0)}
         checks, verdict = build_target_checks(targets, _record())
         assert checks["target"]["goodput"] == 99.0
-        assert checks["target"]["goodput_check"] == ReportCheckTypes.FAIL
-        assert verdict == ReportCheckTypes.FAIL
+        assert checks["target"]["goodput_check"] == ReportCheckTypes.NA
+        assert verdict == ReportCheckTypes.NA
 
     def test_slo_metric_failure_fails_verdict(self):
         targets = {"target": PerformanceTarget(tpot_ms=20.0)}
@@ -338,14 +338,26 @@ class TestAcceptanceIntegration:
 
 
 @pytest.mark.parametrize("invalid", [None, float("nan"), float("inf"), -1.0, 0.0, "50"])
-def test_partial_report_cannot_pass_with_a_missing_or_invalid_required_metric(invalid):
+@pytest.mark.parametrize(
+    "raw_key,field",
+    [
+        ("mean_ttft_ms", "ttft"),
+        ("tput_user", "tput_user"),
+        ("tps_output_throughput", "tput"),
+    ],
+)
+def test_partial_report_cannot_pass_with_a_missing_or_invalid_required_metric(
+    invalid, raw_key, field
+):
     targets = {
         "target": PerformanceTarget(
             ttft_ms=100.0, tput_user=100.0, tput=100.0, tolerance=0.05
         )
     }
-    record = _record(ttft=invalid, tpot=8.0, tput=125.0)
-    checks, verdict = build_target_checks(targets, record)
-    assert checks["target"]["tput_check"] == ReportCheckTypes.PASS
-    assert checks["target"]["ttft_check"] == ReportCheckTypes.FAIL
+    record = _record(ttft=50.0, tpot=None, tput=125.0, tput_user=125.0)
+    record[raw_key] = invalid
+    checks, verdict = build_target_checks(
+        targets, record, require_complete_metrics=True
+    )
+    assert checks["target"][f"{field}_check"] == ReportCheckTypes.FAIL
     assert verdict == ReportCheckTypes.FAIL

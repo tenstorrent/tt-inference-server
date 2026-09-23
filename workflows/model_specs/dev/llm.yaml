@@ -3056,6 +3056,7 @@ templates:
     meta-llama/Llama-3.1-8B-Instruct:
       tool_call_parser_name: llama3_json
       benchmark_token_timing: true
+      benchmark_require_complete_metrics: true
       benchmark_tokenizer_sha256:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
         tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424

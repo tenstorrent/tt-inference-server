@@ -40,6 +40,8 @@ class LLMRunConfig:
     output_block_size: int = 1
     # Opt in only when references use first-to-last nonempty content timing.
     token_timing: bool = False
+    # Opt in when every declared metric is required for release qualification.
+    require_complete_metrics: bool = False
     # Fixed measured references require a complete warmup and independent repeats.
     full_workload_warmup: bool = False
     repetitions: int = 1

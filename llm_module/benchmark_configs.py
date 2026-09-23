@@ -104,6 +104,9 @@ def get_llm_configs(
                 targets=dict(targets_by_shape.get(target_key(params), {})),
                 output_block_size=output_block_size,
                 token_timing=token_timing,
+                require_complete_metrics=bool(
+                    metadata.get("benchmark_require_complete_metrics", False)
+                ),
                 full_workload_warmup=token_timing and bool(targets_by_shape.get(key)),
                 repetitions=3 if token_timing and targets_by_shape.get(key) else 1,
                 custom_dataset_path=(
