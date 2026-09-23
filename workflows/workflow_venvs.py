@@ -263,10 +263,21 @@ INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
 _INFERENCEX_REF_STAMP = ".inferencex_ref"
 
 
+# InferenceX pins whose vendored aiperf still builds the agentic auto-warmup
+# without ``phase_kind``. Both vendor aiperf revisions where the target lines
+# are unchanged (be758d62 and 754356e9), so the same patch applies to each.
+_AGENTIC_WARMUP_PATCH_REFS = frozenset(
+    {
+        "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        "8f12037728d6fc118422318d5472f147dcc2a291",
+    }
+)
+
+
 def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
     # Separate auto-warmup from profiling: SemiAnalysisAI/agentx-harness#44.
     # https://github.com/SemiAnalysisAI/agentx-harness/pull/44
-    if git_ref != "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a":
+    if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
         return True
     config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
     source = config_path.read_text(encoding="utf-8")

@@ -22,6 +22,33 @@ from utils.model_naming import slugify_model_id
 
 logger = logging.getLogger(__name__)
 
+# Flags whose value is a credential. The command is logged verbatim otherwise,
+# which writes the token into every run log and the CI artifacts built from it.
+_SECRET_FLAGS = frozenset({"--api-key"})
+_REDACTED = "<redacted>"
+
+
+def _redacted_command(cmd: Sequence[str]) -> str:
+    """``cmd`` joined for logging, with credential flag values masked."""
+    parts: List[str] = []
+    mask_next = False
+    for raw in cmd:
+        arg = str(raw)
+        if mask_next:
+            parts.append(_REDACTED)
+            mask_next = False
+            continue
+        flag, sep, _ = arg.partition("=")
+        if flag in _SECRET_FLAGS:
+            if sep:
+                parts.append(f"{flag}={_REDACTED}")
+            else:
+                parts.append(arg)
+                mask_next = True
+            continue
+        parts.append(arg)
+    return " ".join(parts)
+
 
 def run_command(
     cmd: Sequence[str],
@@ -36,7 +63,7 @@ def run_command(
     child is killed and 124 is returned (matching ``/usr/bin/timeout``)
     so callers can treat it as a normal nonzero exit and move on.
     """
-    logger.info("Executing: %s", " ".join(str(c) for c in cmd))
+    logger.info("Executing: %s", _redacted_command(cmd))
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
@@ -52,7 +79,7 @@ def run_command(
         logger.error(
             "Command exceeded timeout of %.0fs and was killed: %s",
             timeout_s,
-            " ".join(str(c) for c in cmd),
+            _redacted_command(cmd),
         )
         return 124
     return proc.returncode

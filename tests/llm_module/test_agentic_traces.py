@@ -60,6 +60,9 @@ from workflows.workflow_types import AgenticTracesMode
 
 KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
 KIMI_PINNED_REF = "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a"
+GLM53_MODEL_ID = "id_tt-transformers_GLM-5.3_super_cluster"
+# InferenceX #2829, the commit SemiAnalysis's B300 GLM agentic sweep landed as.
+GLM53_PINNED_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
 
 
 class _FakeDeviceModelSpec:
@@ -88,6 +91,13 @@ class TestConfigRegistry:
     def test_kimi_is_registered_with_the_pinned_ref(self):
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         assert config.inferencex_git_ref == KIMI_PINNED_REF
+
+    def test_glm53_matches_the_inferencex_gpu_reference_client(self):
+        """Same client revision and idle-gap cap as InferenceX's B300 GLM sweep."""
+        config = AGENTIC_TRACES_CONFIGS[GLM53_MODEL_ID]
+        assert config.inferencex_git_ref == GLM53_PINNED_REF
+        (run,) = config.runs
+        assert run.trace_idle_gap_cap_seconds == 300.0
 
     def test_every_config_covers_every_mode(self):
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
@@ -190,7 +200,7 @@ class TestModeResolution:
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)[0]
         assert run.benchmark_duration == 3600
-        assert run.warmup_requests_per_lane == 14
+        assert run.warmup_requests_per_lane == 10
         assert run.num_dataset_entries == 393
         assert run.mode is AgenticTracesMode.FULL
 
@@ -387,6 +397,10 @@ class TestRunSpecValidation:
                 trajectory_start_min_ratio=0.8, trajectory_start_max_ratio=0.2
             )
 
+    def test_non_positive_idle_gap_cap_is_rejected(self):
+        with pytest.raises(ValueError, match="trace_idle_gap_cap_seconds"):
+            AgenticTracesRunSpec(trace_idle_gap_cap_seconds=0)
+
 
 class TestAiperfCommand:
     def _cmd(self, **kwargs):
@@ -468,6 +482,16 @@ class TestAiperfCommand:
             artifact_dir=Path("/tmp/artifacts"),
         )
         assert "--no-gpu-telemetry" not in cmd
+
+    def test_idle_gap_cap_is_omitted_when_unset(self):
+        """The ddeb02eb scenario rejects the flag outright, so Kimi must not get it."""
+        assert "--trace-idle-gap-cap-seconds" not in self._cmd()
+
+    def test_idle_gap_cap_is_passed_when_configured(self):
+        config = AGENTIC_TRACES_CONFIGS[GLM53_MODEL_ID]
+        run = build_runs(config, _FakeModelSpec(model_id=GLM53_MODEL_ID))[0]
+        cmd = self._cmd(run=run)
+        assert cmd[cmd.index("--trace-idle-gap-cap-seconds") + 1] == "300"
 
     def test_no_server_metrics_flag_without_explicit_urls(self):
         """AIPerf already derives <url>/metrics; the flag is only for extras."""

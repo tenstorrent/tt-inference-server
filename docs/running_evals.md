@@ -428,7 +428,15 @@ each run if the comparison requires a cold cache.
 
 ## AgentX warmup
 
-For the pinned InferenceX revision
-`ddeb02eb9c5c89f44e2e4950e741b499d0b8190a`, setup marks the automatic warmup
-phase separately from the profiling phase. This applies to new and reused
-AgentX environments.
+For the pinned InferenceX revisions
+`ddeb02eb9c5c89f44e2e4950e741b499d0b8190a` (Kimi K2.7-Code, GLM-5.2) and
+`8f12037728d6fc118422318d5472f147dcc2a291` (GLM-5.3), setup marks the automatic
+warmup phase separately from the profiling phase. This applies to new and
+reused AgentX environments.
+
+GLM-5.3 is pinned to the commit InferenceX's own B300 GLM agentic sweep landed
+as (#2829), so it runs the same AIPerf client (agentx-v1.0.5) as the GPU
+reference. It also passes `--trace-idle-gap-cap-seconds 300`, InferenceX's
+default. The older `ddeb02eb` client prefixes warmup requests differently from
+profiling, so its warmup does not prime the cache profiling reads and the start
+of the profiling window runs cold.

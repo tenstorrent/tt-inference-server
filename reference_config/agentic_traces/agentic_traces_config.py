@@ -74,6 +74,12 @@ class AgenticTracesRunSpec:
     tokenizer_trust_remote_code: Optional[bool] = None
     use_server_token_count: bool = True
     gpu_telemetry: bool = False
+    # Caps any single recorded idle gap in a trace (``--trace-idle-gap-cap-seconds``).
+    # ``None`` omits the flag: InferenceX pins before agentx-v1.0.0 lock the
+    # scenario to reject it, so it may only be set on a newer pin. InferenceX's
+    # own sweeps pass 300 (``AIPERF_TRACE_IDLE_GAP_CAP_SECONDS`` in
+    # benchmarks/benchmark_lib.sh).
+    trace_idle_gap_cap_seconds: Optional[float] = None
     # SwarmOne (``swo-bench replay``) knobs. Ignored by the InferenceX/AIPerf
     # driver, so they can stay at their defaults on ``inferencex_agentx`` specs.
     # ``task`` selects a single task from a multi-task swo-bench scenario (its
@@ -128,6 +134,14 @@ class AgenticTracesRunSpec:
                 "0 <= min <= max <= 1, got min="
                 f"{self.trajectory_start_min_ratio} max="
                 f"{self.trajectory_start_max_ratio}"
+            )
+        if (
+            self.trace_idle_gap_cap_seconds is not None
+            and self.trace_idle_gap_cap_seconds <= 0
+        ):
+            raise ValueError(
+                "AgenticTracesRunSpec.trace_idle_gap_cap_seconds must be > 0 "
+                f"when set, got {self.trace_idle_gap_cap_seconds}"
             )
         if self.resident is not None and self.resident < 1:
             raise ValueError(
@@ -393,14 +407,23 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             ),
         ),
     ),
+    # GLM-5.3 on SUPER_CLUSTER. Pinned to the InferenceX main commit that
+    # landed SemiAnalysis's B300 GLM agentic sweep (#2829), so this replay runs
+    # the same client as the GPU reference: vendored aiperf 754356e9
+    # (agentx-v1.0.5). Unlike the ddeb02eb pin above, that aiperf keeps the
+    # warmup on the same cache-bust prefix as profiling (aiperf b60d3a9a), so
+    # warmup actually primes the cache profiling reads; on ddeb02eb the first
+    # ~5 min of profiling ran cold. It also accepts the idle-gap cap InferenceX
+    # applies, set below to InferenceX's default.
     AgenticTracesConfig(
         model_id="id_tt-transformers_GLM-5.3_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        inferencex_git_ref="8f12037728d6fc118422318d5472f147dcc2a291",
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126",
                 concurrency=8,
+                trace_idle_gap_cap_seconds=300.0,
             ),
         ),
     ),
