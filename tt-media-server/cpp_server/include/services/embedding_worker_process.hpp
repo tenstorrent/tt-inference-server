@@ -17,18 +17,13 @@
 namespace tt::services::embedding_detail {
 
 /**
- * One forked embedding worker OS process, as seen from the parent.
- *
- * Pipe ownership: the parent holds writeFd (request pipe, write end) and
- * readFd (response pipe, read end); spawn() hands the opposite ends to the
- * child and closes them in the parent. Reaping ownership: waitpid is called
- * only by the worker's dispatch thread (checkAlive) and by terminate();
- * anyone else probing liveness must use kill(pid, 0) so the exit status is
- * not consumed behind the dispatch thread's back.
+ * One forked embedding worker, as seen from the parent. The parent owns
+ * writeFd/readFd; the child gets the opposite pipe ends. Only checkAlive()
+ * and terminate() may waitpid(); everyone else probes with kill(pid, 0).
  */
 struct WorkerProcess {
   int workerId = -1;
-  /// Atomic because health snapshots read it while the startup thread spawns.
+  /// Atomic: health snapshots read it while the startup thread spawns.
   std::atomic<pid_t> pid{-1};
   tt::utils::ScopedFd writeFd;  // parent → child (request pipe write end)
   tt::utils::ScopedFd readFd;   // child → parent (response pipe read end)
@@ -36,21 +31,17 @@ struct WorkerProcess {
   std::atomic<bool> running{false};
   std::unique_ptr<std::thread> dispatchThread;
 
-  /** Fork the worker. The child runs childMain(readFd, writeFd) and never
-   * returns; the parent takes ownership of its pipe ends and marks the
-   * worker running (NOT ready: isReady flips only on the READY sentinel). */
+  /** Fork the worker; the child runs childMain(readFd, writeFd) and never
+   * returns. isReady stays false until the READY sentinel arrives. */
   bool spawn(int wid, std::function<void(int readFd, int writeFd)> childMain);
 
-  /** Non-blocking liveness probe; reaps and logs the exit status if the
-   * child has died. Called from the worker's dispatch thread only. */
+  /** Non-blocking liveness probe; reaps and clears pid if the child died. */
   bool checkAlive();
 
-  /** Length-prefixed write of one request batch; clears isReady on failure.
-   */
+  /** Writes one framed request batch; clears isReady on failure. */
   bool sendRequest(const std::string& json);
 
-  /** Length-prefixed read of one response batch; clears isReady on failure.
-   */
+  /** Reads one framed response batch; clears isReady on failure. */
   std::vector<uint8_t> receiveResponse();
 
   /** SIGTERM + blocking waitpid, then closes both pipe ends. */
