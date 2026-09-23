@@ -33,12 +33,21 @@ REQUIREMENTS_FLAG = "--requirements-json"
 DEFAULT_REQUIREMENTS_DEVICE = "super_cluster"
 
 REQUIREMENTS_HELP = (
-    "Path to an LLM-serving requirements document (schemaVersion 2.x). "
-    "Drives the run from the document: the accuracy evals it lists (gated by "
-    "their reference scores/tolerances), the benchmark sweep points and their "
-    "scalar targets/SLOs, and the model + deployment metadata (so a model not "
-    "in the catalog can still be run). --model/--device default from the "
-    "document when omitted."
+    "Path to an LLM-serving requirements document or validation plan "
+    "(schemaVersion 2.x). Drives the run from the document: the accuracy evals "
+    "it lists (gated by their reference scores/tolerances), the benchmark sweep "
+    "points and their scalar targets/SLOs, and the model + deployment metadata "
+    "(so a model not in the catalog can still be run). --model/--device default "
+    "from the document when omitted. Accepts 'llm-gauntlet;<path>' to name a "
+    "document by its path inside the llm-gauntlet repo, whose specs/**/*.json "
+    "are then downloaded (GitHub tarball, no clone) into this repo root -- e.g. "
+    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The path may also "
+    "name a folder instead of a file: with exactly one .json directly inside "
+    "it, that file is used; with more than one, the alphabetically first is "
+    "used and a warning is logged. The repo is private, so set "
+    "TT_LLM_GAUNTLET_TOKEN to a GitHub token that can read it. Fetches main "
+    "unless TT_LLM_GAUNTLET_REF names a branch, tag or commit; pin it in CI so "
+    "a run is reproducible."
 )
 
 
@@ -75,12 +84,22 @@ def apply_requirements(
     entirely.
     """
     from workflow_module.requirements_schema import RequirementsError, load_requirements
+    from workflows.llm_gauntlet_repo import (
+        LLMGauntletError,
+        resolve_requirements_location,
+    )
     from workflows.model_spec_provider import hardware_to_device_name
     from workflows.requirements_target_pack import unknown_eval_names
 
     try:
+        # A "llm-gauntlet;<path>" value names the document by its path inside
+        # that repo; resolve it to a real file first. Done here, before the
+        # load, so the absolutized path below is what every downstream consumer
+        # sees -- RuntimeConfig, the forwarded child argv, the launcher re-exec.
+        # None of them need to know the scheme exists.
+        args.requirements_json = resolve_requirements_location(args.requirements_json)
         doc = load_requirements(args.requirements_json)
-    except RequirementsError as e:
+    except (LLMGauntletError, RequirementsError) as e:
         parser.error(str(e))
     # Reject unknown accuracy evals now rather than at eval-config build time,
     # halfway through the run.
