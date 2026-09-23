@@ -7,15 +7,17 @@
 # negative prompt and seed, and check that they run concurrently on 8 different workers.
 #
 # Pass condition: 8 x HTTP 200, all 8 images decode, and the wall time for the batch is close to
-# one request's server generation_time (~4.7 s at 20 steps), not 8x. Images are saved for eyeballing;
-# a labelled contact sheet is written when Pillow is available.
+# one worker's [run] time (~4.6 s at 20 steps), not 8x. Per-image times are the workers' own
+# "[run] executed in N seconds. SD35 inference" log lines (the pipeline call: encode, denoise, VAE),
+# read from the container log after the batch. Images are saved for eyeballing; a labelled contact
+# sheet is written when Pillow is available.
 #
 # Prereq: the server was started with DEVICE_IDS listing eight (4,1) columns, e.g.
 #   DEVICE_IDS="(0,4,12,8),(1,5,13,9),(2,6,14,10),(3,7,15,11),(27,31,23,19),(26,30,22,18),(25,29,21,17),(24,28,20,16)"
 # and has logged "All workers ready".
 #
 # Usage: sd35_galaxy_8worker_batch_test.sh [PORT=8000] [STEPS=20]
-# Env:   CONTAINER=tt-inference   container to poll for readiness ("" to skip the log check)
+# Env:   CONTAINER=tt-inference   container to poll for readiness and read [run] times from ("" to skip both)
 #        OUT_DIR=./sd35_batch_<timestamp>   where responses and images are written
 #        API_KEY=                 bearer token if the server runs without NO_AUTH=1
 set -uo pipefail
@@ -55,6 +57,7 @@ NEGS=("blurry, cartoon" "daylight, calm sea" "people, hands" "earth, trees" "day
 SEEDS=(11 22 33 44 55 66 77 88)
 
 echo "firing 8 requests at once ($STEPS steps each)..."
+SINCE=$(date -u +%Y-%m-%dT%H:%M:%S)
 T0=$(date +%s.%N)
 for i in 0 1 2 3 4 5 6 7; do
   (
@@ -62,12 +65,25 @@ for i in 0 1 2 3 4 5 6 7; do
     code=$(curl -s -o "$OUT/r$i.json" -w '%{http_code}' -X POST "localhost:$PORT/v1/images/generations" \
       -H 'Content-Type: application/json' "${AUTH[@]}" \
       -d "{\"prompt\":\"${PROMPTS[$i]}\",\"negative_prompt\":\"${NEGS[$i]}\",\"num_inference_steps\":$STEPS,\"seed\":${SEEDS[$i]}}")
-    gen=$(python3 -c "import json;print(round(json.load(open('$OUT/r$i.json')).get('generation_time',-1),2))" 2>/dev/null || echo "?")
-    printf "req %d  seed=%-2d  http=%s  client=%.2fs  server_gen=%ss\n" "$i" "${SEEDS[$i]}" "$code" "$(echo "$(date +%s.%N) - $t" | bc)" "$gen"
+    printf "req %d  seed=%-2d  http=%s  client=%.2fs\n" "$i" "${SEEDS[$i]}" "$code" "$(echo "$(date +%s.%N) - $t" | bc)"
   ) &
 done
 wait
 printf "WALL for 8 parallel requests: %.2fs\n" "$(echo "$(date +%s.%N) - $T0" | bc)"
+
+# ---- per-image [run] times from the worker logs (pipeline call: encode + denoise + VAE) ----
+if [ -n "$CONTAINER" ]; then
+  sleep 1  # let the last worker flush its log line
+  RUNS=$(docker logs --since "$SINCE" "$CONTAINER" 2>&1 | grep -oE "\[run\] executed in [0-9.]+ seconds\. SD35 inference" | awk '{print $4}')
+  n=$(echo "$RUNS" | grep -c .)
+  if [ "$n" -gt 0 ]; then
+    echo "[run] times per image (worker pipeline, s): $(echo "$RUNS" | sort -n | tr '\n' ' ')"
+    echo "$RUNS" | awk '{s+=$1; if(min==""||$1<min)min=$1; if($1>max)max=$1} END{printf "[run] min/mean/max over %d images: %.2f / %.2f / %.2f s\n", NR, min, s/NR, max}'
+    [ "$n" -ne 8 ] && echo "note: expected 8 [run] lines, found $n (another request may have overlapped the batch)"
+  else
+    echo "no [run] lines found in $CONTAINER log since $SINCE"
+  fi
+fi
 
 # ---- decode images; contact sheet if Pillow is present ----
 python3 - "$OUT" "$STEPS" "$(IFS=,; echo "${SEEDS[*]}")" <<'EOF'
