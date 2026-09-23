@@ -41,7 +41,7 @@ REQUIREMENTS_HELP = (
     "from the document when omitted. Accepts 'llm-gauntlet;<path>' to name a "
     "document by its path inside the llm-gauntlet repo, whose specs/**/*.json "
     "are then downloaded (GitHub tarball, no clone) into this repo root -- e.g. "
-    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The path may also "
+    "'llm-gauntlet;specs/tt-internal/Qwen/Qwen3-32B/<id>.json'. The path may also "
     "name a folder instead of a file: with exactly one .json directly inside "
     "it, that file is used; with more than one, the alphabetically first is "
     "used and a warning is logged. The repo is private, so set "
@@ -75,11 +75,14 @@ def add_requirements_argument(parser: argparse.ArgumentParser) -> None:
 def misfiled_gauntlet_document(path: str, doc: Any) -> str | None:
     """Error text when a gauntlet document's folder disagrees with its model.
 
-    Callers name a document by folder (``specs/<customer>/<model>``), so CI can
-    synthesize the path from the model it is pointing the run at. A document
-    filed under the wrong folder would therefore gate one model's endpoint on
-    another model's criteria -- and nothing downstream compares the two.
-    Matching is case-insensitive: a real misfile differs by far more than case.
+    Callers name a document by folder -- the full model name
+    (``specs/<customer>/<org>/<model>``) or the bare one
+    (``specs/<customer>/<model>``) -- so CI can synthesize the path from the
+    model it is pointing the run at. A document filed under the wrong folder
+    would therefore gate one model's endpoint on another model's criteria --
+    and nothing downstream compares the two. Only the last folder is compared,
+    against the bare model name, which covers both layouts. Matching is
+    case-insensitive: a real misfile differs by far more than case.
     """
     folder = Path(path).parent.name
     model = doc.model.name.rsplit("/", 1)[-1]
@@ -88,7 +91,7 @@ def misfiled_gauntlet_document(path: str, doc: Any) -> str | None:
     return (
         f"requirements document {path} describes model {doc.model.name!r} but is "
         f"filed under folder {folder!r}. A document must live in a folder named "
-        f"after its own model, e.g. specs/<customer>/{model}/<id>.json."
+        f"after its own model, e.g. specs/<customer>/{doc.model.name}/<id>.json."
     )
 
 

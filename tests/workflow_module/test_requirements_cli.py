@@ -243,8 +243,9 @@ def test_validation_accepts_the_off_catalog_requirements_model(
 # --- the llm-gauntlet misfile guard ----------------------------------------
 #
 # CI synthesizes the document path from the model under test
-# (specs/<customer>/<model>), so a document filed under the wrong folder would
-# gate one model's endpoint on another model's criteria.
+# (specs/<customer>/<org>/<model> or specs/<customer>/<model>), so a document
+# filed under the wrong folder would gate one model's endpoint on another
+# model's criteria.
 
 
 def _doc_named(name: str):
@@ -256,9 +257,12 @@ def _doc_named(name: str):
 @pytest.mark.parametrize(
     "folder, model_name",
     [
+        ("Qwen/Qwen3-32B", "Qwen/Qwen3-32B"),
+        ("moonshotai/Kimi-K2.7-Code", "moonshotai/Kimi-K2.7-Code"),
+        # The bare model name, without the org folder, also matches.
         ("Qwen3-32B", "Qwen/Qwen3-32B"),
-        ("Kimi-K2.7-Code", "moonshotai/Kimi-K2.7-Code"),
         # Case drift in the folder is not a misfile.
+        ("qwen/qwen3-32b", "Qwen/Qwen3-32B"),
         ("qwen3-32b", "Qwen/Qwen3-32B"),
         # A document model with no org prefix still matches.
         ("gpt-oss-120b", "gpt-oss-120b"),
@@ -275,14 +279,14 @@ def test_folder_matching_the_document_model_is_not_misfiled(folder, model_name):
 def test_folder_disagreeing_with_the_document_model_is_reported():
     from workflows.requirements_cli import misfiled_gauntlet_document
 
-    path = "/clone/specs/tt-internal/Qwen3-32B/x.json"
+    path = "/clone/specs/tt-internal/Qwen/Qwen3-32B/x.json"
 
     message = misfiled_gauntlet_document(path, _doc_named("moonshotai/Kimi-K2.7-Code"))
 
     # Both halves must be named: the message is the only signal an operator gets.
     assert message is not None
     assert "moonshotai/Kimi-K2.7-Code" in message
-    assert "Qwen3-32B" in message
+    assert "Qwen/Qwen3-32B" in message
 
 
 def test_a_plain_path_is_never_checked_for_misfiling(monkeypatch):
