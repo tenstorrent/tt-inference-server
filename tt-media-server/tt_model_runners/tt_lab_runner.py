@@ -31,8 +31,11 @@ class TTLabRunner(BaseDeviceRunner):
         # A multiprocessing fork inherits uvicorn's handler; restore process
         # termination semantics so systemd and the scheduler can stop this worker.
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
-        if str(device_id).strip("() ") != "0":
-            raise ValueError("tt-lab currently selects physical device 0; configure DEVICE_IDS=(0)")
+        self.gemma = self.settings.model_runner == "tt-lab-gemma"
+        self.vocab = 262144 if self.gemma else 201088
+        selected = os.environ.get("TT_LAB_DEVICE", "0")
+        if str(device_id).strip("() ") != selected or (self.gemma and selected == "0"):
+            raise ValueError("Worker ID must match TT_LAB_DEVICE; Gemma needs a separate nonzero card")
         self.process = None
         self._closing = False
         self.tokenizer = AutoTokenizer.from_pretrained(self.settings.model_weights_path)
@@ -56,8 +59,10 @@ class TTLabRunner(BaseDeviceRunner):
         binary = os.environ["TT_LAB_BINARY"]
         model = os.environ["TT_LAB_GGUF"]
         sidecar = os.environ["TT_LAB_TTQ"]
+        command = (["gemma", "-m", model, "--ttq", sidecar, "--native-device", "--serve", "--context", "4096"]
+                   if self.gemma else ["serve", "-m", model, "--ttq", sidecar, "--device"])
         self.process = subprocess.Popen(
-            [sys.executable, str(Path(__file__).with_name("tt_lab_child.py")), str(os.getpid()), binary, "serve", "-m", model, "--ttq", sidecar, "--device"],
+            [sys.executable, str(Path(__file__).with_name("tt_lab_child.py")), str(os.getpid()), binary, *command],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=0,
         )
         self._closing = False
@@ -76,7 +81,7 @@ class TTLabRunner(BaseDeviceRunner):
         # Exercise actual device inference before publishing model readiness.
         from domain.completion_request import CompletionRequest
         self.run([CompletionRequest(prompt="Hello", max_tokens=1, temperature=0)])
-        self.logger.info(f"GPT-OSS-20B ready on Blackhole; persistent tt-lab PID={self.process.pid}")
+        self.logger.info(f"{self.settings.model_runner} ready on Blackhole device {os.environ.get('TT_LAB_DEVICE')}; persistent tt-lab PID={self.process.pid}")
         return True
 
     def _generate(self, request):
@@ -91,7 +96,7 @@ class TTLabRunner(BaseDeviceRunner):
             view = view[written:]
         deadline = time.monotonic() + self.timeout
         generated = []
-        harmony = isinstance(request.prompt, str) and "<|start|>assistant" in request.prompt
+        harmony = not self.gemma and isinstance(request.prompt, str) and "<|start|>assistant" in request.prompt
 
         def visible_text():
             if not harmony:
@@ -117,7 +122,7 @@ class TTLabRunner(BaseDeviceRunner):
             if token in (-1, -2):
                 finish = "stop" if token == -1 or stopped else "length"
                 break
-            if token < 0 or token >= 201088:
+            if token < 0 or token >= self.vocab:
                 self.close_device()
                 raise RuntimeError("Invalid token from silicon worker")
             generated.append(token)

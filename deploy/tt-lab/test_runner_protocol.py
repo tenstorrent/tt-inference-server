@@ -17,6 +17,8 @@ def runner():
     instance = TTLabRunner.__new__(TTLabRunner)
     instance.tokenizer = AutoTokenizer.from_pretrained(os.environ['MODEL_WEIGHTS_PATH'])
     instance.timeout = 10
+    instance.vocab = 201088
+    instance.gemma = False
     with tempfile.TemporaryFile() as pipe:
         instance.process = SimpleNamespace(stdin=pipe, poll=lambda: None)
         yield instance

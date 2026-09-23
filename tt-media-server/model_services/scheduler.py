@@ -158,7 +158,7 @@ class Scheduler:
 
         # Start workers and wait for completion
         await self._start_workers_in_sequence()
-        if self.settings.model_runner == "tt-lab-gpt-oss" and self.monitor_task_ref is None:
+        if self.settings.model_runner in ("tt-lab-gpt-oss", "tt-lab-gemma") and self.monitor_task_ref is None:
             self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
 
     async def _start_workers_in_sequence(self):
@@ -562,7 +562,7 @@ class Scheduler:
 
     async def worker_health_monitor(self):
         """Monitor worker health and restart dead workers"""
-        while self.monitor_running and (self.is_ready or self.settings.model_runner == "tt-lab-gpt-oss"):
+        while self.monitor_running and (self.is_ready or self.settings.model_runner in ("tt-lab-gpt-oss", "tt-lab-gemma")):
             try:
                 dead_workers = []
 
@@ -592,7 +592,7 @@ class Scheduler:
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
 
-                if dead_workers and self.settings.model_runner == "tt-lab-gpt-oss":
+                if dead_workers and self.settings.model_runner in ("tt-lab-gpt-oss", "tt-lab-gemma"):
                     # A killed process can leave multiprocessing queue locks held.
                     # This deployment has one physical worker and a systemd unit
                     # with Restart=on-failure/KillMode=control-group. Rebuild the

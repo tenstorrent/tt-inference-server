@@ -117,6 +117,7 @@ class ModelNames(Enum):
 
 class ModelRunners(Enum):
     TT_LAB_GPT_OSS = "tt-lab-gpt-oss"
+    TT_LAB_GEMMA = "tt-lab-gemma"
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
     TT_SDXL_EDIT = "tt-sdxl-edit"

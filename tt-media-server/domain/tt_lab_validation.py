@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Validate the silicon backend contract before touching its request pipe."""
 def validate_request(request, tokenizer):
-    if request.model not in (None, "openai/gpt-oss-20b", "gpt-oss-20b"):
-        raise ValueError("This worker serves only openai/gpt-oss-20b")
+    # Tokenizer metadata identifies the serving vocabulary without relying on
+    # the request's model field to select a backend.
+    gemma = getattr(tokenizer, "vocab_size", 0) == 262144
+    model = "google/gemma-4-26B-A4B-it" if gemma else "openai/gpt-oss-20b"
+    vocab = 262144 if gemma else 201088
+    if request.model not in (None, model, model.split("/")[-1]):
+        raise ValueError(f"This worker serves only {model}")
     if request.temperature not in (None, 0, 0.0) or request.n != 1:
         raise ValueError("tt-lab supports greedy generation only: temperature=0 (or omitted), n=1")
     if request.adapter or request.presence_penalty or request.frequency_penalty:
@@ -23,6 +28,6 @@ def validate_request(request, tokenizer):
     limit = request.max_tokens if request.max_tokens is not None else 256
     if not tokens or limit < 1 or len(tokens) + limit > 4096:
         raise ValueError("tt-lab needs 1..4095 input tokens and prompt + max_tokens <= 4096")
-    if any(type(t) is not int or t < 0 or t >= 201088 for t in tokens):
+    if any(type(t) is not int or t < 0 or t >= vocab for t in tokens):
         raise ValueError("Invalid prompt token IDs")
     return tokens, limit

@@ -61,7 +61,7 @@ async def complete_text(
     """
     completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
-    model = completion_request.model or (settings.vllm.model if settings.model_runner == "tt-lab-gpt-oss" else "default")
+    model = completion_request.model or (settings.vllm.model if settings.model_runner in ("tt-lab-gpt-oss", "tt-lab-gemma") else "default")
 
     sub_requests = _split_batched_prompts(completion_request)
     for request in sub_requests:

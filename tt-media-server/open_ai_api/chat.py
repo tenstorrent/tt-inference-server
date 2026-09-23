@@ -94,7 +94,7 @@ def _build_completion_request(
 
 
 def _validate_tt_lab(request):
-    if settings.model_runner == "tt-lab-gpt-oss":
+    if settings.model_runner in ("tt-lab-gpt-oss", "tt-lab-gemma"):
         from domain.tt_lab_validation import validate_request
         try:
             validate_request(request, _get_tokenizer())

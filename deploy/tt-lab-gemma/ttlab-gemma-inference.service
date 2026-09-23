@@ -1,0 +1,17 @@
+[Unit]
+Description=Gemma 4 26B-A4B on Blackhole card 1 via tt-lab and Inference Server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ttuser/workspace/tt-inference-server-gemma/tt-media-server
+ExecStart=/bin/bash /home/ttuser/workspace/tt-inference-server-gemma/deploy/tt-lab-gemma/start.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=control-group
+Environment=PATH=/home/ttuser/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
