@@ -462,7 +462,7 @@ templates:
       max_concurrency: 16
       max_context: 262144
       max_tokens_all_users_override: 1050592
-      tt_metal_source_ref: df19975ffac21f300c91a385fe69bb8110b9ccb2
+      tt_metal_source_ref: f961389122958d80a80a57880c08a77e3b552a54
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
       vllm_plugin_source_repo: https://github.com/mvasiljevicTT/vllm-tt-plugin.git
