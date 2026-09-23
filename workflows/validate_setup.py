@@ -485,7 +485,7 @@ def _try_fix_path_permissions_for_uid(path, uid, need_write=False):
         return False
 
 
-def validate_bind_mount_permissions(args):
+def validate_bind_mount_permissions(args, quetzal_package_mount=None):
     """Validate that --image-user UID can access bind-mounted host paths.
 
     Checks read permission for --host-hf-cache and --host-weights-dir (readonly mounts),
@@ -502,19 +502,31 @@ def validate_bind_mount_permissions(args):
         if not host_volume_path.exists():
             logger.info(f"Creating host volume directory: {host_volume_path}")
             host_volume_path.mkdir(parents=True, exist_ok=True)
-        checks.append(("--host-volume", args.host_volume, True))
+        checks.append(("--host-volume", args.host_volume, True, True))
     if args.host_hf_cache:
-        checks.append(("--host-hf-cache", args.host_hf_cache, False))
+        checks.append(("--host-hf-cache", args.host_hf_cache, False, True))
     if getattr(args, "host_weights_dir", None):
-        checks.append(("--host-weights-dir", args.host_weights_dir, False))
+        checks.append(("--host-weights-dir", args.host_weights_dir, False, True))
     if getattr(args, "quetzal_package_root", None):
-        checks.append(("--quetzal-package-root", args.quetzal_package_root, False))
+        checks.append(
+            ("--quetzal-package-root", args.quetzal_package_root, False, True)
+        )
+    if quetzal_package_mount:
+        for auxiliary in quetzal_package_mount.auxiliary:
+            checks.append(
+                (
+                    f"Quetzal auxiliary root {auxiliary.name}",
+                    str(auxiliary.host_root),
+                    False,
+                    False,
+                )
+            )
 
-    for flag, host_path, need_write in checks:
+    for flag, host_path, need_write, allow_fix in checks:
         ok, reason = check_path_permissions_for_uid(
             host_path, uid, need_write=need_write
         )
-        if not ok:
+        if not ok and allow_fix:
             _try_fix_path_permissions_for_uid(host_path, uid, need_write=need_write)
             ok, reason = check_path_permissions_for_uid(
                 host_path, uid, need_write=need_write
@@ -655,6 +667,7 @@ def validate_setup(model_spec, runtime_config, json_fpath):
     validate_custom_weights(model_spec, runtime_config)
     validate_local_setup(model_spec, runtime_config, json_fpath)
     if runtime_config.docker_server:
-        validate_bind_mount_permissions(runtime_config)
+        package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
+        validate_bind_mount_permissions(runtime_config, package_mount)
     elif runtime_config.local_server:
         validate_local_server_paths(runtime_config)

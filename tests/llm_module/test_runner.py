@@ -271,3 +271,44 @@ def test_non_vllm_runner_skips_custom_dataset_prep(monkeypatch, driver_name):
     _runner(driver, FakeController()).run([incoming], _SERVER, _CTX)
 
     assert driver.run_calls == [incoming]
+
+
+def test_on_block_streams_each_point_as_it_finishes() -> None:
+    """The callback is what survives a kill: it must fire per point, in order."""
+    outcomes = [
+        DriverResult(return_code=0, raw={"isl": 128}, raw_path=None),
+        DriverResult(return_code=0, raw={"isl": 1024}, raw_path=None),
+    ]
+    driver = FakeDriver(outcomes)
+    seen: List[dict] = []
+    result = LLMPerformanceRunner(driver, None, inter_run_sleep_s=0.0).run(
+        [_cfg(), _cfg(isl=1024)],
+        _SERVER,
+        _CTX,
+        skip_trace_capture=True,
+        on_block=lambda block: seen.append(dict(block.data)),
+    )
+    assert [d["isl"] for d in seen] == [128, 1024]
+    assert len(result.blocks) == 2
+
+
+def test_on_block_exception_does_not_abort_the_sweep() -> None:
+    outcomes = [
+        DriverResult(return_code=0, raw={"isl": 128}, raw_path=None),
+        DriverResult(return_code=0, raw={"isl": 1024}, raw_path=None),
+    ]
+    driver = FakeDriver(outcomes)
+
+    def boom(_block):
+        raise RuntimeError("disk full")
+
+    result = LLMPerformanceRunner(driver, None, inter_run_sleep_s=0.0).run(
+        [_cfg(), _cfg(isl=1024)],
+        _SERVER,
+        _CTX,
+        skip_trace_capture=True,
+        on_block=boom,
+    )
+    # Both points still ran and both Blocks are still in the result.
+    assert len(driver.run_calls) == 2
+    assert len(result.blocks) == 2
