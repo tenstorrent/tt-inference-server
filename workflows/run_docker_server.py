@@ -8,6 +8,7 @@ import logging
 import os
 import shlex
 import subprocess
+import tempfile
 import threading
 import time
 import uuid
@@ -38,6 +39,69 @@ from workflows.workflow_types import (
 )
 
 logger = logging.getLogger("run_log")
+
+
+def _tt_metal_source_mounts(model_spec, user_home_path) -> List[str]:
+    """Mount pinned Python model sources over a compatible existing image."""
+    spec = model_spec.device_model_spec
+    ref = spec.tt_metal_source_ref
+    paths = spec.tt_metal_source_paths
+    if not ref and not paths:
+        return []
+    if not ref or not paths:
+        raise ValueError("Source overlay requires both a ref and model paths")
+    for entry in paths:
+        path = Path(entry)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or not entry.startswith("models/autoports/")
+        ):
+            raise ValueError(f"Invalid model source overlay path: {entry}")
+    checkout = Path(tempfile.mkdtemp(prefix="tt-metal-model-source-"))
+    subprocess.run(["git", "init", str(checkout)], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "fetch",
+            "--depth=1",
+            "--filter=blob:none",
+            "https://github.com/tenstorrent/tt-metal.git",
+            ref,
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(checkout), "sparse-checkout", "set", *paths], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(checkout), "checkout", "--detach", "FETCH_HEAD"], check=True
+    )
+    resolved = subprocess.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    logger.info(
+        "tt-metal model source overlay: %s -> %s, paths=%s", ref, resolved, paths
+    )
+    mounts = []
+    for entry in paths:
+        source = checkout / entry
+        if not source.is_dir() or not source.resolve().is_relative_to(
+            checkout.resolve()
+        ):
+            raise ValueError(f"Missing or invalid source overlay directory: {entry}")
+        mounts.extend(
+            [
+                "--mount",
+                f"type=bind,src={source},dst={user_home_path}/tt-metal/{entry},readonly",
+            ]
+        )
+    return mounts
 
 
 def short_uuid():
@@ -423,6 +487,7 @@ def generate_docker_run_command(
                 )
 
     user_home_path = "/home/container_app_user"
+    docker_command += _tt_metal_source_mounts(model_spec, user_home_path)
     if runtime_config.dev_mode:
         if json_fpath:
             container_model_spec_dir = Path(f"{user_home_path}/model_specs")

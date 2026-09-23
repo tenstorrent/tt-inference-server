@@ -38,6 +38,12 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
     assert spec.device_model_spec.max_concurrency == 16
     assert spec.device_model_spec.max_tokens_all_users == 1_050_592
     assert spec.device_model_spec.vllm_args["max_num_seqs"] == "16"
+    assert spec.device_model_spec.env_vars["QWEN_DECODE_BUCKETS"] == "1"
+    assert len(spec.device_model_spec.tt_metal_source_ref) == 40
+    assert spec.device_model_spec.tt_metal_source_paths == [
+        "models/autoports/qwen_qwen3_8_27b",
+        "models/autoports/vllm_bundles",
+    ]
     assert len(benchmark_config.tasks) == 3
     assert [
         (cfg.isl, cfg.osl, cfg.max_concurrency, cfg.num_prompts)

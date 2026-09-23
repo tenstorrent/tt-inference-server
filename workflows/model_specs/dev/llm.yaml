@@ -462,8 +462,13 @@ templates:
       max_concurrency: 16
       max_context: 262144
       max_tokens_all_users_override: 1050592
+      tt_metal_source_ref: 22bc096710f34708501b6c9f24c79643e34fbe4e
+      tt_metal_source_paths:
+        - models/autoports/qwen_qwen3_8_27b
+        - models/autoports/vllm_bundles
       default_impl: true
       env_vars:
+        QWEN_DECODE_BUCKETS: "1"
         QWEN_COMPACT_DECODE_RESIDUAL: "1"
         QWEN_COMPACT_DECODE_MLP: "1"
         QWEN_BATCHED_DECODE_ROPE: "1"

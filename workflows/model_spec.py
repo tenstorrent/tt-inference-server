@@ -399,6 +399,9 @@ class DeviceModelSpec:
     max_context: int
     # Explicit device KV-pool token budget for benchmark concurrency; set only when the pool is decoupled from max_context*max_num_seqs (does NOT affect max_context). None => derived from max_context.
     max_tokens_all_users_override: Optional[int] = None
+    # Python-only model source overlay for reuse of a compatible src-dev image.
+    tt_metal_source_ref: Optional[str] = None
+    tt_metal_source_paths: List[str] = field(default_factory=list)
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
@@ -1054,6 +1057,8 @@ class ModelSpecTemplate:
                     max_concurrency=device_model_spec.max_concurrency,
                     max_context=device_model_spec.max_context,
                     max_tokens_all_users_override=device_model_spec.max_tokens_all_users_override,
+                    tt_metal_source_ref=device_model_spec.tt_metal_source_ref,
+                    tt_metal_source_paths=device_model_spec.tt_metal_source_paths,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference,
