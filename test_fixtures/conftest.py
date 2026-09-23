@@ -52,6 +52,12 @@ def pytest_addoption(parser):
         help="Implementation serving the model (e.g., tt-transformers)",
     )
     parser.addoption(
+        "--chat-template-kwargs",
+        action="store",
+        default=None,
+        help="JSON object merged into chat_template_kwargs for every request",
+    )
+    parser.addoption(
         "--max-context",
         action="store",
         type=int,
@@ -131,6 +137,14 @@ def api_client(endpoint_url, request):
         headers["Authorization"] = f"Bearer {authorization}"
 
     model_name = request.config.getoption("--model-name", default=None)
+    raw_chat_template_kwargs = request.config.getoption(
+        "--chat-template-kwargs", default=None
+    )
+    chat_template_kwargs = (
+        json.loads(raw_chat_template_kwargs) if raw_chat_template_kwargs else {}
+    )
+    if not isinstance(chat_template_kwargs, dict):
+        raise ValueError("--chat-template-kwargs must decode to a JSON object")
 
     def _make_request(
         json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
@@ -140,6 +154,14 @@ def api_client(endpoint_url, request):
         try:
             kwargs = {"headers": headers, "timeout": timeout, "stream": stream}
             if json_payload is not None:
+                if chat_template_kwargs:
+                    json_payload = {
+                        **json_payload,
+                        "chat_template_kwargs": {
+                            **chat_template_kwargs,
+                            **json_payload.get("chat_template_kwargs", {}),
+                        },
+                    }
                 # Inject model name when missing so multi-model endpoints (e.g.
                 # the Tenstorrent console) can route the request correctly.
                 if model_name and "model" not in json_payload:

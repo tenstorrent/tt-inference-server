@@ -72,7 +72,6 @@
             "models": [
                 "gpt_oss_120b",
                 "qwen36_27b",
-                "qwen38_27b",
                 "qwen36_35b_a3b",
                 "gemma4_31b_it",
                 "gemma4_26b_a4b_it",
@@ -87,6 +86,27 @@
                     "template": "VLLMParamConformanceTest",
                     "enabled": true,
                     "description": "vLLM chat/completions parameter conformance"
+                }
+            ]
+        },
+        {
+            "_comment": "Qwen3.8 reasons by default. Generic parameter tests need visible answer text within deliberately tiny token budgets; reasoning behavior remains covered by the separate Qwen3 streaming suite below.",
+            "models": [
+                "qwen38_27b"
+            ],
+            "devices": [
+                "p300x2"
+            ],
+            "test_cases": [
+                {
+                    "template": "VLLMParamConformanceTest",
+                    "enabled": true,
+                    "description": "vLLM chat/completions parameter conformance",
+                    "test_config": {
+                        "chat_template_kwargs": {
+                            "enable_thinking": false
+                        }
+                    }
                 }
             ]
         },

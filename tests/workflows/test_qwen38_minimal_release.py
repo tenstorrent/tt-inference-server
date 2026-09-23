@@ -43,10 +43,16 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
     assert spec.device_model_spec.tt_metal_source_paths == [
         "models/autoports/qwen_qwen3_8_27b",
     ]
+    assert (
+        spec.device_model_spec.vllm_plugin_source_repo
+        == "https://github.com/mvasiljevicTT/vllm-tt-plugin.git"
+    )
+    assert spec.device_model_spec.vllm_plugin_source_ref == (
+        "ba14de9216be50d21b42e4557c5ad1fbf2abd58c"
+    )
     assert len(benchmark_config.tasks) == 3
     assert [
-        (cfg.isl, cfg.osl, cfg.max_concurrency, cfg.num_prompts)
-        for cfg in run_configs
+        (cfg.isl, cfg.osl, cfg.max_concurrency, cfg.num_prompts) for cfg in run_configs
     ] == [
         (128, 128, 1, 8),
         (128, 252, 1, 4),

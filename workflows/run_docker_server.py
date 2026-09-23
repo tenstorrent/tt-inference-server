@@ -104,6 +104,65 @@ def _tt_metal_source_mounts(model_spec, user_home_path) -> List[str]:
     return mounts
 
 
+def _vllm_plugin_source_mounts(model_spec, user_home_path) -> List[str]:
+    """Mount a pinned Python plugin package over a compatible existing image."""
+    spec = model_spec.device_model_spec
+    repo = getattr(spec, "vllm_plugin_source_repo", None)
+    ref = getattr(spec, "vllm_plugin_source_ref", None)
+    if not repo and not ref:
+        return []
+    if not repo or not ref:
+        raise ValueError("Plugin source overlay requires both a repository and ref")
+    if not repo.startswith("https://github.com/") or not repo.endswith(".git"):
+        raise ValueError(f"Invalid plugin source repository: {repo}")
+
+    checkout = Path(tempfile.mkdtemp(prefix="vllm-tt-plugin-source-"))
+    subprocess.run(["git", "init", str(checkout)], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "fetch",
+            "--depth=1",
+            "--filter=blob:none",
+            repo,
+            ref,
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "sparse-checkout",
+            "set",
+            "src/vllm_tt_plugin",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(checkout), "checkout", "--detach", "FETCH_HEAD"],
+        check=True,
+    )
+    resolved = subprocess.run(
+        ["git", "-C", str(checkout), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    logger.info("vllm-tt-plugin source overlay: %s -> %s", ref, resolved)
+
+    source = checkout / "src/vllm_tt_plugin"
+    if not source.is_dir() or not source.resolve().is_relative_to(checkout.resolve()):
+        raise ValueError("Missing or invalid vllm-tt-plugin source package")
+    return [
+        "--mount",
+        f"type=bind,src={source},dst={user_home_path}/vllm-tt-plugin/src/vllm_tt_plugin,readonly",
+    ]
+
+
 def short_uuid():
     return str(uuid.uuid4())[:8]
 
@@ -488,6 +547,7 @@ def generate_docker_run_command(
 
     user_home_path = "/home/container_app_user"
     docker_command += _tt_metal_source_mounts(model_spec, user_home_path)
+    docker_command += _vllm_plugin_source_mounts(model_spec, user_home_path)
     if runtime_config.dev_mode:
         if json_fpath:
             container_model_spec_dir = Path(f"{user_home_path}/model_specs")

@@ -402,6 +402,9 @@ class DeviceModelSpec:
     # Python-only model source overlay for reuse of a compatible src-dev image.
     tt_metal_source_ref: Optional[str] = None
     tt_metal_source_paths: List[str] = field(default_factory=list)
+    # Optional Python-only vllm-tt-plugin overlay for compatible src-dev images.
+    vllm_plugin_source_repo: Optional[str] = None
+    vllm_plugin_source_ref: Optional[str] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
     perf_reference: List[BenchmarkTaskParams] = field(default_factory=list)
@@ -1059,6 +1062,8 @@ class ModelSpecTemplate:
                     max_tokens_all_users_override=device_model_spec.max_tokens_all_users_override,
                     tt_metal_source_ref=device_model_spec.tt_metal_source_ref,
                     tt_metal_source_paths=device_model_spec.tt_metal_source_paths,
+                    vllm_plugin_source_repo=device_model_spec.vllm_plugin_source_repo,
+                    vllm_plugin_source_ref=device_model_spec.vllm_plugin_source_ref,
                     perf_targets_map=device_model_spec.perf_targets_map,
                     default_impl=device_model_spec.default_impl,
                     perf_reference=perf_reference,
@@ -1352,7 +1357,11 @@ def resolve_model_spec(
     candidates = [
         spec
         for spec in specs
-        if (spec.hf_model_repo == model if "/" in model else spec.model_name == model_name)
+        if (
+            spec.hf_model_repo == model
+            if "/" in model
+            else spec.model_name == model_name
+        )
         and spec.device_type == device_type
         and (engine_value is None or spec.inference_engine == engine_value)
         and (impl is None or spec.impl.impl_name == impl)

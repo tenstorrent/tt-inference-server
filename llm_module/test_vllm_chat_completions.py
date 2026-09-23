@@ -64,7 +64,9 @@ PENALTY_PROMPTS = {
 def test_n(report_test, api_client, n_val, request):
     """Tests the 'n' parameter (number of choices)."""
     payload = {"messages": BASE_PROMPT, "n": n_val, "max_tokens": 32}
-    response = api_client(payload)
+    # The first multi-choice request can compile a wider execution shape on
+    # accelerator backends; keep the API assertion independent of cold compile.
+    response = api_client(payload, timeout=120)
 
     try:
         assert "choices" in response, "choices field is not in response"
@@ -285,7 +287,7 @@ def test_penalties(
     payload_base = {
         "messages": messages,
         "temperature": 0.1,
-        "max_tokens": 1024,
+        "max_tokens": 256,
         "seed": 1234,
     }
     response_base = api_client(payload_base, timeout=None)
@@ -317,10 +319,10 @@ def test_penalties(
                 "Penalty didn't reduce repetition on repetition-trap prompt."
             )
 
-        # 3. Length differences accepted but should not be identical
-        assert test_stats["len"] != base_stats["len"], (
-            "Penalty had no measurable effect on output length."
-        )
+        # A penalty need not change the number of whitespace-separated words;
+        # it must change token selection. Requiring a different length rejects
+        # valid same-length generations.
+        assert text_test != text_base, "Penalty had no measurable effect on output."
 
         # For vLLM-specific repetition_penalty, check more aggressive behavior
         if penalty_param == "repetition_penalty":

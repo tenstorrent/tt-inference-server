@@ -111,6 +111,9 @@ class VLLMParamConformanceTest(BaseTest):
             model_name,
             "-q",
         ]
+        chat_template_kwargs = self.config.get("chat_template_kwargs")
+        if chat_template_kwargs:
+            command.extend(["--chat-template-kwargs", json.dumps(chat_template_kwargs)])
         logger.info("Running vLLM parameter suite: %s", " ".join(command))
 
         # The child pytest is a fresh interpreter and does NOT inherit run.py's

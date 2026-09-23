@@ -465,6 +465,8 @@ templates:
       tt_metal_source_ref: df19975ffac21f300c91a385fe69bb8110b9ccb2
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
+      vllm_plugin_source_repo: https://github.com/mvasiljevicTT/vllm-tt-plugin.git
+      vllm_plugin_source_ref: ba14de9216be50d21b42e4557c5ad1fbf2abd58c
       default_impl: true
       env_vars:
         QWEN_DECODE_BUCKETS: "1"
