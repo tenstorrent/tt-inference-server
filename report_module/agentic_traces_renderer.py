@@ -87,7 +87,7 @@ THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
     ("total_token_throughput", "Total Tok/s"),
     ("active_throughput_tok_per_s", "Total Tok/s (Active)"),
     ("request_throughput", "Req/s"),
-    ("effective_prefill_throughput", "Prefill Tok/s"),
+    ("effective_prefill_throughput", "Input Tok/s"),
     ("active_prefill_throughput", "Prefill Tok/s (Active)"),
     # swo-bench measures prefill per request against the prompt actually sent,
     # so a cache hit shows up as a very high rate; it is not comparable to
@@ -95,7 +95,6 @@ THROUGHPUT_COLUMNS: List[Tuple[str, str]] = [
     ("prefill_tok_per_sec_mean", "Prefill Tok/s/Req Avg"),
     ("prefill_tok_per_sec_p50", "Prefill Tok/s/Req P50"),
     ("prefill_tok_per_sec_p90", "Prefill Tok/s/Req P90"),
-    ("effective_decode_throughput", "Decode Tok/s"),
     ("active_decode_throughput", "Decode Tok/s (Active)"),
     ("effective_concurrency", "Eff. Concur"),
     ("concurrency_mean", "Concur Avg"),
@@ -179,7 +178,6 @@ _THROUGHPUT_KEYS = frozenset(
         "prefill_tok_per_sec_mean",
         "prefill_tok_per_sec_p50",
         "prefill_tok_per_sec_p90",
-        "effective_decode_throughput",
         "active_decode_throughput",
     }
 )
@@ -276,10 +274,11 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "streaming time, so it includes prefill and is the user-visible speed of "
     "an agentic turn; expect it to be several times lower than "
     "**Out Tok/s/User**.",
-    "**Prefill / Decode Tok/s**: the phase split of serving throughput, "
-    "averaged over the whole run. The **(Active)** variants only count the "
-    "windows where that phase was actually working, so the ratio between them "
-    "is the phase's duty cycle.",
+    "**Input / Output Tok/s**: prompt and generated tokens over the run's "
+    "wall clock. **Prefill / Decode Tok/s (Active)** are the phase rates, "
+    "counting only the windows where that phase was actually working, so "
+    "e.g. **Input Tok/s** over **Prefill Tok/s (Active)** is prefill's duty "
+    "cycle.",
     "**Eff. Concur**: concurrency actually in flight. Trace replay honours the "
     "recorded think time, so this sits below the requested **Concur** by "
     "design; a large shortfall means the intended load was never applied.",
@@ -321,8 +320,8 @@ SWARMONE_DEFINITIONS: List[str] = [
     "whole prompt sent, so a prefix-cache hit reads as a very high rate. "
     "Capturing that cache-served prefill is the point of the metric -- it is "
     "what a fixed-ISL sweep cannot show -- but it is a per-request rate, not a "
-    "serving-capacity figure, so do not read it against the run-averaged "
-    "prefill columns.",
+    "serving-capacity figure, so do not read it against **Input Tok/s** or "
+    "**Prefill Tok/s (Active)**.",
     "**TPOT** is deliberately absent: swo-bench's inter-token figure is not a "
     "usable latency (a live run reported 0.01 ms per token against a measured "
     "38.9 tok/s), so **Out Tok/s/User** and **TTFT** are the latency signals "
