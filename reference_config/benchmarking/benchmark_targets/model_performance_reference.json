@@ -460,6 +460,61 @@
             }
         ]
     },
+    "Qwen/Qwen3.8-27B": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 570.0,
+                        "tput_user": 16.78,
+                        "tput": 16.78
+                    }
+                }
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1470.0,
+                        "tput_user": 16.82,
+                        "tput": 16.82
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 13760.0,
+                        "tput_user": 15.99,
+                        "tput": 15.99
+                    }
+                }
+            }
+        ]
+    },
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": {
         "t3k": [
             {

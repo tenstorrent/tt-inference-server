@@ -361,6 +361,15 @@ qwen36_blackhole_vlm_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Arch-neutral shared core of the Qwen3.5/3.6/3.8 family (models/demos/qwen36), with thin
+# per-arch wrappers in models/demos/blackhole/qwen36 and models/demos/wormhole/qwen38.
+# Used by Qwen3.8-27B, which serves on both Blackhole (P300X2) and Wormhole (T3K).
+qwen36_impl = ImplSpec(
+    impl_id="qwen36",
+    impl_name="qwen36",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/qwen36",
+)
 diffusion_gemma_impl = ImplSpec(
     impl_id="diffusion_gemma",
     impl_name="diffusion-gemma",
@@ -429,6 +438,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "qwen36": qwen36_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,

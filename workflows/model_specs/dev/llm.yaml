@@ -1382,6 +1382,73 @@ templates:
         trace_region_size: 1073741824
   status: EXPERIMENTAL
 
+# Qwen3.8-27B is architecturally identical to Qwen3.6-27B (the HF config.json files differ
+# only in transformers_version), so it runs on the same shared models/demos/qwen36 core with
+# only HF_MODEL changed. P300X2 mirrors the Qwen3.6-27B P300X2 row above.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen36
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "(1, 4)"
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+    # WH T3K (4x n300 = 8 chips, 12 GB/chip), TP=8 on a (1, 8) mesh. Device params match
+    # models/demos/wormhole/qwen38/demo/text_demo.py. Do NOT set TT_MESH_GRAPH_DESC_PATH:
+    # ttnn picks the T3K descriptor itself, and a mismatched one can silently hang the
+    # first collective. Measured batch-1 on T3K (tt-metal models/model_targets.yaml
+    # qwen3.8-27b/wh_llmbox_perf): 128 TTFT 0.57 s / 16.8 t/s/u, 4k 1.47 s / 16.8,
+    # 32k 13.76 s / 16.0, 128k 56.45 s / 14.2.
+    - device: T3K
+      # Batch 32 at TP=8 returns wrong results (attention decode per-user PCC 0.019);
+      # B=1/2/4/8/16 are ~0.9999. The tt-metal README recommends B=1 or B=8.
+      max_concurrency: 8
+      # 128k is the longest context verified on Wormhole; 256k is unvalidated.
+      max_context: 131072
+      # Same max_context + 1024 slack pattern as the P300X2 row. Held at one full-context
+      # user (or 8 x 16k), not 2x like BH, because WH has 12 GB/chip.
+      max_tokens_all_users_override: 132096
+      default_impl: true
+      env_vars:
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "T3K"
+        QWEN36_MAX_TOKENS_ALL_USERS: "132096"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3-32B
   impl: qwen3_32b_galaxy
