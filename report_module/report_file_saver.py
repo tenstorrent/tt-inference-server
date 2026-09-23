@@ -28,6 +28,8 @@ def _write_atomic(content: str, path: Path) -> None:
         ) as temp:
             temp_path = Path(temp.name)
             temp.write(content)
+        # NamedTemporaryFile creates 0600; keep reports readable as before.
+        temp_path.chmod(0o644)
         temp_path.replace(path)
     finally:
         if temp_path is not None:
