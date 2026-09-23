@@ -412,12 +412,23 @@ gemma4_dflash_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4",
 )
+# Multimodal (text + image) serving through the same tt-metal code path. Distinct
+# impl id for the same reason as the two speculative profiles above: a spec is
+# keyed by (impl_name, model_name, device), and this one selects the vision
+# tower + multimodal embedder in addition to the text model.
+gemma4_vision_impl = ImplSpec(
+    impl_id="gemma4_vision",
+    impl_name="gemma4-vision",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,
     "gemma4_dflash": gemma4_dflash_impl,
+    "gemma4_vision": gemma4_vision_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,

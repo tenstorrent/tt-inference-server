@@ -384,3 +384,66 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# Gemma-4 31B multimodal (text + image) on the 8-chip LoudBox profile.
+#
+# Same tt-metal code path as the gemma4 text entries in llm.yaml; the distinct
+# impl id selects the vision tower + multimodal embedder alongside the text
+# model (see gemma4_vision_impl in workflows/model_spec.py). Device settings
+# mirror the validated gemma4 P150X8 text profile rather than being invented:
+# same mesh, CCL topology, page block size and fabric config.
+#
+# Measured on tt-metal arg/gemma4_vision_support (8-chip LB, 31B config):
+# vision tower + multimodal embedder 11.63 ms/image (86 img/s), full-depth
+# tower PCC 0.9887 (300dpi) / 0.9912 (240dpi) against a correctly masked
+# reference. Those numbers are from the metal unit benchmark, NOT from serving
+# -- the served figures are what this entry exists to measure.
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_vision
+  inference_engine: VLLM
+  model_type: VLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024, matching the text profile
+      # NOT the default for this (weights, device, engine) group: the
+      # tt_transformers text entry already holds that, and the validator
+      # rejects two defaults. Selected explicitly with --impl gemma4-vision.
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        l1_small_size: 24576
+        # Text-only 31B runs at 512 MB; the vision tower adds its own trace, so
+        # extend it the way the Qwen3.5-27B VLM entry does for the same reason.
+        trace_region_size: 671088640
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # One image per prompt: the tower runs batch=1 and callers loop over
+        # users (VisionTower raises on batch > 1).
+        limit-mm-per-prompt: '{"image": 1}'
+        mm-processor-cache-gb: 0
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        reasoning-parser: gemma4
+        # Same reason as the 12B MTP entry in llm.yaml: with a reasoning parser
+        # active, a request whose thought channel never closes returns
+        # content=None and scores 0. Request-level chat_template_kwargs still win.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
