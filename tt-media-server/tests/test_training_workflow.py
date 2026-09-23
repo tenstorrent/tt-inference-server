@@ -139,6 +139,7 @@ class TestLlamaTrainingServiceCreateJob:
             assert kwargs["cancel_event"] is not None
             assert kwargs["job_metrics"] is not None
             assert kwargs["job_logs"] is not None
+            assert kwargs["progress_tracker"] is not None
             assert kwargs["result_path"] == "./adapters/llama_task_456"
 
 

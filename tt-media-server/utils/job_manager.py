@@ -46,7 +46,9 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
+    local_progress_time: Optional[float] = None
     _task: Callable = None
+    _progress_tracker: Any = None
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
@@ -56,9 +58,26 @@ class Job:
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = int(time.time())
+        if self.local_progress_time is None:
+            self.local_progress_time = time.monotonic()
 
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
+        if self._progress_tracker is not None:
+            self.touch_progress()
+
+    def touch_progress(self) -> float:
+        """Record progress locally and in the shared worker heartbeat."""
+        self.local_progress_time = time.monotonic()
+        if self._progress_tracker is not None:
+            self._progress_tracker.value = self.local_progress_time
+        return self.local_progress_time
+
+    def progress_time(self) -> float:
+        """Return worker progress when shared, otherwise local job progress."""
+        if self._progress_tracker is not None:
+            return float(self._progress_tracker.value)
+        return self.local_progress_time
 
     def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())
@@ -145,6 +164,7 @@ class JobManager:
         job_metrics: list = None,
         job_logs: list = None,
         job_checkpoints: list = None,
+        progress_tracker: Any = None,
         org_id: Optional[str] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
@@ -156,6 +176,7 @@ class JobManager:
                 model=model,
                 request_parameters=request.model_dump(mode="json"),
                 org_id=org_id,
+                _progress_tracker=progress_tracker,
             )
 
             if result_path:
@@ -422,44 +443,55 @@ class JobManager:
 
     def _cleanup_old_jobs(self):
         """Remove old completed/failed/cancelled, stuck in-progress, and stale cancelling jobs."""
-        current_time = time.time()
-        cutoff_time = current_time - self._settings.job_retention_seconds
-        stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
+        retention_cutoff = time.time() - self._settings.job_retention_seconds
+        progress_cutoff = time.monotonic() - self._settings.job_max_stuck_time_seconds
 
         jobs_to_remove = []
+        stuck_jobs = []
 
         with self._jobs_lock:
-            for job_id, job in self._jobs.items():
+            for job in self._jobs.values():
                 is_old_terminal = (
                     job.is_terminal()
                     and job.completed_at
-                    and job.completed_at < cutoff_time
+                    and job.completed_at < retention_cutoff
                 )
-                is_stuck = (
-                    job.is_in_progress() or job.is_cancelling()
-                ) and job.created_at < stuck_cutoff_time
-                if is_old_terminal or is_stuck:
+                if is_old_terminal:
                     jobs_to_remove.append(job)
+                elif self._is_job_stuck(job, progress_cutoff):
+                    stuck_jobs.append(job)
 
-        if not jobs_to_remove:
+        if not jobs_to_remove and not stuck_jobs:
             return
 
-        for job in jobs_to_remove:
-            if job.is_in_progress() or job.is_cancelling():
-                if job.is_in_progress():
-                    self._logger.warning(
-                        f"Force-cancelling stuck in-progress job {job.id}"
-                    )
-                else:
-                    self._logger.warning(
-                        f"Force-cancelling stale cancelling job {job.id}"
-                    )
-                self._cleanup_job(job, force=True)
+        for job in stuck_jobs:
+            # Progress and completion happen outside _jobs_lock. Claim the job as
+            # failed only after re-reading both immediately before cancellation.
+            with self._jobs_lock:
+                current_job = self._jobs.get(job.id)
+                if current_job is not job:
+                    continue
+                latest_progress_cutoff = (
+                    time.monotonic() - self._settings.job_max_stuck_time_seconds
+                )
+                if not self._is_job_stuck(job, latest_progress_cutoff):
+                    continue
+                was_in_progress = job.is_in_progress()
                 job.mark_failed(
                     error_code="stale_job",
-                    error_message="Job was stuck and force-cancelled by cleanup",
+                    error_message=(
+                        "Job made no progress and was force-cancelled by cleanup"
+                    ),
                 )
-                self._sync_status_to_db(job)
+
+            if was_in_progress:
+                self._logger.warning(f"Force-cancelling stuck in-progress job {job.id}")
+            else:
+                self._logger.warning(f"Force-cancelling stale cancelling job {job.id}")
+            self._cleanup_job(job, force=True)
+            self._sync_status_to_db(job)
+
+        for job in jobs_to_remove:
             if job.result_path and isinstance(job.result_path, str):
                 try:
                     if os.path.exists(job.result_path):
@@ -482,9 +514,16 @@ class JobManager:
                             f"Database deletion failed for job {job.id} during cleanup: {e}"
                         )
 
-            self._logger.info(
-                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
-            )
+            if jobs_to_remove:
+                self._logger.info(
+                    f"Cleaned up {len(jobs_to_remove)} old job(s): "
+                    f"{', '.join(job.id for job in jobs_to_remove)}"
+                )
+
+    def _is_job_stuck(self, job: Job, progress_cutoff: float) -> bool:
+        if not (job.is_in_progress() or job.is_cancelling()):
+            return False
+        return job.progress_time() < progress_cutoff
 
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
