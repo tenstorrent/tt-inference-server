@@ -252,7 +252,7 @@ class AgenticTracesModeSettings:
 # requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin this if
 # the trace corpus or the server's warmup latency changes materially.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
-    benchmark_duration=3600,
+    benchmark_duration=10800,
     warmup_requests_per_lane=14,
     warmup_grace_period=1800,
     num_dataset_entries=393,
