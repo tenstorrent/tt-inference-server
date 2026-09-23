@@ -6,6 +6,17 @@ from reference_config.evals.eval_config import _eval_config_map
 from workflows.workflow_types import EvalLimitMode
 
 
+def test_qwen38_b8_evals_enforce_complete_acceptance():
+    from pathlib import Path
+
+    import yaml
+
+    catalog = Path(__file__).resolve().parents[2] / "workflows/model_specs/dev/llm.yaml"
+    templates = yaml.safe_load(catalog.read_text())["templates"]
+    template = next(t for t in templates if t["impl"] == "qwen38_autoport_b8")
+    assert template["status"] == "COMPLETE"
+
+
 def test_qwen38_release_contains_all_three_original_suites():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
     assert [task.task_name for task in tasks] == [

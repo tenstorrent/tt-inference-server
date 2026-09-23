@@ -1039,7 +1039,7 @@ templates:
       tt_metal_source_ref: mvasiljevic/qwen38-compact-layouts-20260923
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   metadata:
     Qwen/Qwen3.8-27B:
