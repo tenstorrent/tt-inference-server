@@ -120,6 +120,53 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 SUPER_CLUSTER_MIN_NUM_PROMPTS = 256
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
+# Qwen3.8's release requirements use an OSL of 252 and explicitly exercise
+# concurrency 1, 8, and 16. Keep these as characterization points: the model's
+# sole graded performance reference remains 128/128/1 in
+# model_performance_reference.json.
+MODEL_EXPLICIT_TEXT_SWEEP: Dict[str, List[Tuple[int, int, int]]] = {
+    "Qwen3.8-27B": [
+        (128, 252, 1),
+        (1024, 252, 1),
+        (4096, 252, 1),
+        (16384, 252, 1),
+        (32768, 252, 1),
+        (65536, 252, 1),
+        (131072, 252, 1),
+        (262144 - 252, 252, 1),
+        (4096, 252, 8),
+        (32768, 252, 8),
+        (131072, 252, 8),
+        (4096, 252, 16),
+        (32768, 252, 16),
+    ],
+}
+
+
+def _normalize_model_key(value: str) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+_MODEL_EXPLICIT_TEXT_SWEEP_NORMALIZED = {
+    _normalize_model_key(name): points
+    for name, points in MODEL_EXPLICIT_TEXT_SWEEP.items()
+}
+
+
+def get_explicit_text_sweep(model_spec) -> List[Tuple[int, int, int]]:
+    """Return a model-specific characterization sweep, if one is declared."""
+    for candidate in (
+        getattr(model_spec, "model_name", None),
+        str(getattr(model_spec, "hf_model_repo", "") or "").rsplit("/", 1)[-1],
+        getattr(model_spec, "model_id", None),
+    ):
+        points = _MODEL_EXPLICIT_TEXT_SWEEP_NORMALIZED.get(
+            _normalize_model_key(candidate)
+        )
+        if points:
+            return points
+    return None
+
 # Image resolution pairs for multimodal benchmarks
 # Format here is isl, osl, image_height, image_width, images_per_prompt
 ISL_OSL_IMAGE_RESOLUTION_PAIRS = [
@@ -643,21 +690,37 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 param_map={device: [BenchmarkTaskParams()]}
             )
         else:
+            explicit_points = get_explicit_text_sweep(model_spec)
+            if explicit_points is not None:
+                text_sweep_params = [
+                    BenchmarkTaskParams(
+                        isl=isl,
+                        osl=osl,
+                        max_concurrency=concurrency,
+                        num_prompts=get_num_prompts(isl, osl, concurrency),
+                    )
+                    for isl, osl, concurrency in explicit_points
+                    if isl + osl <= max_context
+                    and concurrency <= model_max_concurrency
+                    and (isl + osl) * concurrency <= max_tokens_all_users
+                ]
+            else:
+                text_sweep_params = [
+                    expanded_params
+                    for isl, osl in text_isl_osl_pairs
+                    if isl + osl <= max_context
+                    for expanded_params in _expand_text_sweep_params(
+                        isl=isl,
+                        osl=osl,
+                        max_context=max_context,
+                        max_tokens_all_users=max_tokens_all_users,
+                        model_max_concurrency=model_max_concurrency,
+                        min_num_prompts=sweep_min_num_prompts,
+                    )
+                ]
             benchmark_task_runs = BenchmarkTask(
                 param_map={
-                    device: [
-                        expanded_params
-                        for isl, osl in text_isl_osl_pairs
-                        if isl + osl <= max_context
-                        for expanded_params in _expand_text_sweep_params(
-                            isl=isl,
-                            osl=osl,
-                            max_context=max_context,
-                            max_tokens_all_users=max_tokens_all_users,
-                            model_max_concurrency=model_max_concurrency,
-                            min_num_prompts=sweep_min_num_prompts,
-                        )
-                    ]
+                    device: text_sweep_params
                     + (
                         # additional vision language model image + text benchmarks
                         [

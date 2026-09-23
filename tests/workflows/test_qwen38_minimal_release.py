@@ -35,21 +35,28 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
 
     assert spec.status == ModelStatusTypes.COMPLETE
     assert spec.impl.impl_name == "qwen38-autoport"
+    assert spec.device_model_spec.max_concurrency == 16
+    assert spec.device_model_spec.max_tokens_all_users == 1_050_592
+    assert spec.device_model_spec.vllm_args["max_num_seqs"] == "16"
     assert len(benchmark_config.tasks) == 3
     assert [
         (cfg.isl, cfg.osl, cfg.max_concurrency, cfg.num_prompts)
         for cfg in run_configs
     ] == [
         (128, 128, 1, 8),
-        (128, 1024, 1, 4),
-        (1024, 128, 1, 4),
-        (2048, 128, 1, 4),
-        (4096, 128, 1, 4),
-        (8192, 128, 1, 2),
-        (16384, 128, 1, 2),
-        (32768, 128, 1, 1),
-        (65536, 128, 1, 1),
-        (131072, 128, 1, 1),
+        (128, 252, 1, 4),
+        (1024, 252, 1, 4),
+        (4096, 252, 1, 4),
+        (16384, 252, 1, 2),
+        (32768, 252, 1, 1),
+        (65536, 252, 1, 1),
+        (131072, 252, 1, 1),
+        (261892, 252, 1, 1),
+        (4096, 252, 8, 32),
+        (32768, 252, 8, 8),
+        (131072, 252, 8, 8),
+        (4096, 252, 16, 64),
+        (32768, 252, 16, 16),
     ]
     graded = [cfg for cfg in run_configs if cfg.targets]
     assert [(cfg.isl, cfg.osl, cfg.max_concurrency) for cfg in graded] == [
@@ -76,7 +83,11 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
     swe = tasks[2].swebench_eval_config
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
     assert len(swe.instance_ids_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 1
+    assert tasks[0].max_concurrent == 5
+    assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
+    assert terminal.agent_timeout_sec == 6 * 60 * 60
+    assert swe.llm_timeout_sec == 60 * 60
+    assert swe.mini_container_timeout_sec == 8 * 60 * 60
 
 
 def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():

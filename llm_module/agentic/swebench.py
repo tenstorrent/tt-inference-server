@@ -54,6 +54,8 @@ class SWEbenchRunConfig:
     shuffle: bool
     random_delay_multiplier: float
     score_existing_predictions: bool
+    llm_timeout_sec: Optional[int] = 10 * 60
+    mini_container_timeout_sec: int = 2 * 60 * 60
     instance_ids: list[str] = field(default_factory=list)
     # Interpreter whose bin/ holds the ``sweagent`` / ``mini-extra`` CLIs and
     # whose ``-m swebench`` is importable. ``None`` uses the current interpreter
@@ -193,8 +195,11 @@ def _write_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
     }
     if config.max_output_tokens is not None:
         model_config["agent"]["model"]["max_output_tokens"] = config.max_output_tokens
-    if config.completion_kwargs:
-        model_config["agent"]["model"]["completion_kwargs"] = config.completion_kwargs
+    completion_kwargs = dict(config.completion_kwargs or {})
+    if config.llm_timeout_sec is not None:
+        completion_kwargs.setdefault("timeout", config.llm_timeout_sec)
+    if completion_kwargs:
+        model_config["agent"]["model"]["completion_kwargs"] = completion_kwargs
 
     config_path = config.output_dir / "sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
@@ -213,8 +218,10 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
         model_kwargs["max_tokens"] = config.max_output_tokens
     if config.completion_kwargs:
         model_kwargs.update(config.completion_kwargs)
+    if config.llm_timeout_sec is not None:
+        model_kwargs.setdefault("timeout", config.llm_timeout_sec)
 
-    model_config = {
+    model_config: dict[str, Any] = {
         "model": {
             "model_name": config.model_name,
             "model_class": config.mini_model_class,
@@ -222,6 +229,10 @@ def _write_mini_sweagent_model_config(config: SWEbenchRunConfig) -> Path:
             "model_kwargs": model_kwargs,
         }
     }
+    if config.mini_container_timeout_sec is not None:
+        model_config["environment"] = {
+            "container_timeout": f"{int(config.mini_container_timeout_sec)}s"
+        }
     config_path = config.output_dir / "mini_sweagent_model_config.yaml"
     config_path.write_text(json.dumps(model_config, indent=2), encoding="utf-8")
     return config_path

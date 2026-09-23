@@ -459,10 +459,21 @@ templates:
     - text
   device_model_specs:
     - device: P300X2
-      max_concurrency: 1
+      max_concurrency: 16
       max_context: 262144
+      max_tokens_all_users_override: 1050592
       default_impl: true
       env_vars:
+        QWEN_COMPACT_DECODE_RESIDUAL: "1"
+        QWEN_COMPACT_DECODE_MLP: "1"
+        QWEN_BATCHED_DECODE_ROPE: "1"
+        QWEN_COMPACT_DECODE_ATTENTION: "1"
+        QWEN_VLLM_KV_POOL_TOKENS: "1050592"
+        QWEN_BATCHED_PREFILL: "1"
+        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
+        QWEN_PREFILL_BATCHED_HEAD: "1"
+        QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
+        QWEN_PREFILL_STARTUP_WARMUP: "1"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"
@@ -473,6 +484,7 @@ templates:
         enable_auto_tool_choice: true
         hf-overrides: '{"architectures":["TTQwen38ForCausalLM"]}'
         max-logprobs: "-1"
+        max_num_seqs: "16"
         no-enable-prefix-caching: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder

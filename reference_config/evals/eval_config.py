@@ -174,6 +174,8 @@ class SWEbenchEvalConfig:
     mini_model_class: str = "litellm"
     mini_environment_class: str = "docker"
     swebench_timeout_sec: Optional[int] = None
+    llm_timeout_sec: Optional[int] = 10 * 60
+    mini_container_timeout_sec: int = 2 * 60 * 60
     shuffle: bool = True
     random_delay_multiplier: float = 0.3
     instance_ids_map: Dict[EvalLimitMode, List[str]] = field(default_factory=dict)
@@ -1476,7 +1478,7 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=1,
+                max_concurrent=5,
                 # Use the chat endpoint so the server applies the chat template
                 # (which is what carries thinking mode); client-side
                 # apply_chat_template on /v1/completions would bypass it.
@@ -1534,15 +1536,13 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=1,
+                    n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=89,
                     # QB2 release runners expose only 16 CPUs.
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    # 3h rather than the 2h the GLM/Kimi 2.1 entries use: QB2 is a
-                    # bring-up target and slower per token than those runs assumed.
-                    agent_timeout_sec=3 * 60 * 60,
+                    agent_timeout_sec=6 * 60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
@@ -1603,7 +1603,7 @@ _eval_config_list = [
                     sweagent_subset="verified",
                     dataset_split="test",
                     agent_backend="mini-swe-agent",
-                    n_concurrent_trials=1,
+                    n_concurrent_trials=5,
                     max_workers=8,
                     n_tasks=None,  # full dataset
                     temperature=1.0,
@@ -1611,6 +1611,8 @@ _eval_config_list = [
                     # 160K + 32K = 192K, inside the P300X2 spec's 262144 max_context.
                     max_input_tokens=160 * 1024,
                     max_output_tokens=32 * 1024,
+                    llm_timeout_sec=60 * 60,
+                    mini_container_timeout_sec=8 * 60 * 60,
                     completion_kwargs={
                         "extra_body": {
                             "top_k": 20,
