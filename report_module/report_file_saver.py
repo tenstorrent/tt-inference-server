@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -17,23 +17,15 @@ logger = logging.getLogger(__name__)
 def _write_atomic(content: str, path: Path) -> None:
     """Replace a report only after its new contents have been written and closed."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = None
+    # A plain exclusive open, not NamedTemporaryFile: its mode follows the
+    # umask like a normal write, instead of a forced 0600.
+    temp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
-        with NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            dir=path.parent,
-            prefix=f".{path.name}.",
-            delete=False,
-        ) as temp:
-            temp_path = Path(temp.name)
+        with open(temp_path, "x", encoding="utf-8") as temp:
             temp.write(content)
-        # NamedTemporaryFile creates 0600; keep reports readable as before.
-        temp_path.chmod(0o644)
         temp_path.replace(path)
     finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+        temp_path.unlink(missing_ok=True)
 
 
 class ReportFileSaver:
