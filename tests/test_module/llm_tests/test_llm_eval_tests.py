@@ -524,3 +524,33 @@ def test_llama31_longbench_commands_match_the_gpu_reference(impl_id, tmp_path):
         assert gen_kwargs["max_gen_toks"] == "512"
         assert task.score.gpu_reference_score == references[name]
         assert task.score.tolerance == 0.05
+
+
+@pytest.mark.parametrize("run_rc", [0, 1])
+def test_diagnostic_runs_replay_without_claiming_full_accuracy(monkeypatch, run_rc):
+    monkeypatch.setenv("QB2_LONGBENCH_DIAGNOSTIC", "1")
+    ctx = _ctx()
+    ctx.model_spec.impl.impl_id = "llama31_8b_qb2"
+    ctx.base_url = "http://127.0.0.1:8000"
+    provider = MagicMock()
+    provider.venv_python.return_value = "/env/bin/python"
+    with patch(
+        f"{_MOD}.get_llm_eval_tasks", return_value=[_task("a"), _task("b")]
+    ), patch(f"{_MOD}.HttpServerController"), patch(
+        "workflow_module.venv_provisioner.get_venv_provisioner", return_value=provider
+    ), patch(f"{_MOD}.run_command", return_value=run_rc) as command, patch(
+        f"{_MOD}._run_eval_task"
+    ) as full_eval, patch(f"{_MOD}._accept"):
+        blocks = mod.run_llm_eval(ctx, auth_token="test-secret")
+    full_eval.assert_not_called()
+    assert command.call_args.kwargs["command"][0] == "/env/bin/python"
+    assert command.call_args.kwargs["env"]["OPENAI_API_KEY"] == "test-secret"
+    if run_rc:
+        assert blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+    else:
+        assert len(blocks) == 2
+        assert all(block.data["status"] == TestStatus.SKIP.value for block in blocks)
+        assert all(
+            block.data.get("accuracy_check") != ReportCheckTypes.PASS
+            for block in blocks
+        )

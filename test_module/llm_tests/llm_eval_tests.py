@@ -428,6 +428,50 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         _accept(ctx, blocks)
         return blocks
 
+    # Diagnostic branch only: preserve the real startup/cleanup lifecycle while
+    # keeping this subset explicitly outside release qualification.
+    if os.environ.get("QB2_LONGBENCH_DIAGNOSTIC") == "1":
+        from workflow_module.engine_types import WorkflowVenvType
+        from workflow_module.venv_provisioner import get_venv_provisioner
+
+        if ctx.model_spec.impl.impl_id != "llama31_8b_qb2":
+            raise RuntimeError("LongBench diagnostic requires the QB2 implementation")
+        root = Path(__file__).resolve().parents[2]
+        command = [
+            get_venv_provisioner().venv_python(WorkflowVenvType.EVALS_COMMON),
+            str(root / "diagnostics" / "longbench_context.py"),
+            "--source",
+            str(root / "diagnostic_source"),
+            "--output",
+            str(Path(ctx.output_path) / "longbench_context_diagnostic"),
+            "--base-url",
+            ctx.base_url,
+        ]
+        env = dict(os.environ)
+        if auth_token:
+            env["OPENAI_API_KEY"] = auth_token
+        rc = run_command(command=command, logger=logger, env=env)
+        if rc:
+            blocks = [
+                _fail_block(
+                    ctx,
+                    tasks[0],
+                    "LongBench diagnostic failed; see preserved partial responses",
+                )
+            ]
+        else:
+            blocks = [
+                _status_block(
+                    ctx,
+                    task,
+                    TestStatus.SKIP,
+                    "Diagnostic branch: 24 paired LongBench examples only; full qualification was not run",
+                )
+                for task in tasks
+            ]
+        _accept(ctx, blocks)
+        return blocks
+
     # Trace capture is skipped for evals (it's a perf warm-up; eval correctness
     # doesn't depend on it). lm-eval carries its own per-request timeout.
     device_max_context = getattr(

@@ -1,0 +1,342 @@
+{
+  "purpose": "Diagnostic only; no release qualification",
+  "source_run": 35915952898,
+  "cases": [
+    {
+      "case_id": "longbench_2wikimqa_e:67",
+      "task": "longbench_2wikimqa_e",
+      "doc_id": 67,
+      "source_id": "be2f02ca083a2f21854d8f24984ac450cf11215000ec1910",
+      "full_input_tokens": 1500,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_2wikimqa_e_2026-09-23T20-59-06.338007.jsonl",
+      "sample_file_sha256": "f913a9e4e13d668dffcdb68cabd96ade8048c1da5a9496878d2eb15c95b26318",
+      "prompt_hash": "0aeef07dc015a33b9b25a3e4cde376c324ab1dda01bc7f783145fb8d620542da",
+      "arm_payload_sha256": {
+        "original_suffix": "60592169de90f22d04246149b07b12c7bf9fc5900e0ede8004c7ac259bedd63e",
+        "full_prompt": "60592169de90f22d04246149b07b12c7bf9fc5900e0ede8004c7ac259bedd63e"
+      }
+    },
+    {
+      "case_id": "longbench_2wikimqa_e:125",
+      "task": "longbench_2wikimqa_e",
+      "doc_id": 125,
+      "source_id": "47659268bc430f7e640db930b97fed4d0670cce46cdb83f8",
+      "full_input_tokens": 7844,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_2wikimqa_e_2026-09-23T20-59-06.338007.jsonl",
+      "sample_file_sha256": "f913a9e4e13d668dffcdb68cabd96ade8048c1da5a9496878d2eb15c95b26318",
+      "prompt_hash": "91c1358ad436222c233da8614861b097cba6280e19c4f49a5d6e27ae82a878df",
+      "arm_payload_sha256": {
+        "original_suffix": "c99fedec0813089deb6202a818f024919449691234d47b3aa8f7f59cbf598afe",
+        "full_prompt": "c6ef5a9b5978a1c6c529c08ff0cc091ceb15ca1bda81b54ea4b911f7008634e4"
+      }
+    },
+    {
+      "case_id": "longbench_2wikimqa_e:229",
+      "task": "longbench_2wikimqa_e",
+      "doc_id": 229,
+      "source_id": "9a1ec3f581a0267d71a30d7661ceb6e277b0be8a58c12e6e",
+      "full_input_tokens": 16437,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_2wikimqa_e_2026-09-23T20-59-06.338007.jsonl",
+      "sample_file_sha256": "f913a9e4e13d668dffcdb68cabd96ade8048c1da5a9496878d2eb15c95b26318",
+      "prompt_hash": "a0dabb9b492e03d74de70b0e4fa89372b2f64da4cfe1c19216e05a7568398003",
+      "arm_payload_sha256": {
+        "original_suffix": "09d34f1dfa1a86af3cc575d195a48431db09da3eac40c453b857552513f931ff",
+        "full_prompt": "64f9874703f66840dab6b718a2f6a905dea238dcf058066a53625e41c13d7e95"
+      }
+    },
+    {
+      "case_id": "longbench_hotpotqa_e:12",
+      "task": "longbench_hotpotqa_e",
+      "doc_id": 12,
+      "source_id": "df9c97f6d1531f7868982667505b92012d0919604b6fe131",
+      "full_input_tokens": 290,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_hotpotqa_e_2026-09-23T20-59-06.338007.jsonl",
+      "sample_file_sha256": "b0e11c4d0b880eafddb23d8423cdebbcdac1e17bb6e33c4c10716c7e865f8c06",
+      "prompt_hash": "4909dea2644e9c9c346fac2e4494806d9a4b8a197f39bfcf3ff779dac7fe3add",
+      "arm_payload_sha256": {
+        "original_suffix": "3124b138ec4bd2bd7cad3353814391a51107016175634a634267db4425af5f5b",
+        "full_prompt": "3124b138ec4bd2bd7cad3353814391a51107016175634a634267db4425af5f5b"
+      }
+    },
+    {
+      "case_id": "longbench_hotpotqa_e:104",
+      "task": "longbench_hotpotqa_e",
+      "doc_id": 104,
+      "source_id": "67196e7c2c0882af46790e6cc5a0ec409d150f94954110e8",
+      "full_input_tokens": 9567,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_hotpotqa_e_2026-09-23T20-59-06.338007.jsonl",
+      "sample_file_sha256": "b0e11c4d0b880eafddb23d8423cdebbcdac1e17bb6e33c4c10716c7e865f8c06",
+      "prompt_hash": "981b14c97ecba2242b74b95db5032f18e29113173974f46b466c93d7e13309b6",
+      "arm_payload_sha256": {
+        "original_suffix": "9b81ffd1b2865bab30364f421dc29c133aa04b7cda07cd6cf216e7873082787c",
+        "full_prompt": "d0979b986986d48dc62c21436d46aa0e837c4ec716cc092d61f9d99f9e3ab351"
+      }
+    },
+    {
+      "case_id": "longbench_hotpotqa_e:218",
+      "task": "longbench_hotpotqa_e",
+      "doc_id": 218,
+      "source_id": "b31526033c3f9cc83adf49c8585353bd6d269b58c65e5b26",
+      "full_input_tokens": 16435,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_hotpotqa_e_2026-09-23T20-59-06.338007.jsonl",
+      "sample_file_sha256": "b0e11c4d0b880eafddb23d8423cdebbcdac1e17bb6e33c4c10716c7e865f8c06",
+      "prompt_hash": "8149d6cd909cf85ec24db3ec04f85e595eca2a4546deb05a2d7dc1192b572735",
+      "arm_payload_sha256": {
+        "original_suffix": "cb7d8c1f9df28190f1dd6a52ba6430307b8d9d1548ac83e8885093f846523988",
+        "full_prompt": "b9ad23776bfa4722da6dc938a3aa5de8deff510401698e2a32bb99666913582e"
+      }
+    },
+    {
+      "case_id": "longbench_lcc_e:34",
+      "task": "longbench_lcc_e",
+      "doc_id": 34,
+      "source_id": "7ae84ee3dc227ab3ad301914db5aa12c8e0ecb2042da37aa",
+      "full_input_tokens": 1120,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_lcc_e_2026-09-23T20-55-07.140943.jsonl",
+      "sample_file_sha256": "549257f498ccc90b283534a01515f1dd6a904bcf33401468e8b5935767f05ac2",
+      "prompt_hash": "a241eebd7ade95e9a4f605a898e757fb27e741ab60ff647f8d5484dd2ec0b5a9",
+      "arm_payload_sha256": {
+        "original_suffix": "b416f1c82938d5e4ce3d77b96a882bd028ccc2ce29722de3aabff0d45937b312",
+        "full_prompt": "b416f1c82938d5e4ce3d77b96a882bd028ccc2ce29722de3aabff0d45937b312"
+      }
+    },
+    {
+      "case_id": "longbench_lcc_e:112",
+      "task": "longbench_lcc_e",
+      "doc_id": 112,
+      "source_id": "2acc02028b0c25ff2f1ace54d857911f96bec894b1ad5a29",
+      "full_input_tokens": 13026,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_lcc_e_2026-09-23T20-55-07.140943.jsonl",
+      "sample_file_sha256": "549257f498ccc90b283534a01515f1dd6a904bcf33401468e8b5935767f05ac2",
+      "prompt_hash": "56caef46e8cb862439e07d67865a272001a00680dcf008e1e1a1fc9a29fd5c48",
+      "arm_payload_sha256": {
+        "original_suffix": "05af2e9c844d2641d4245c231795f8f5f7fc289e904146a4c4fe446f47f799e1",
+        "full_prompt": "f85d0627810936a38f477d22929d03247e8cb420f3dbd0a7e755a52b2b514eef"
+      }
+    },
+    {
+      "case_id": "longbench_lcc_e:254",
+      "task": "longbench_lcc_e",
+      "doc_id": 254,
+      "source_id": "8415cc3776003fa5588524600aadaafdfed4c6921b110ca0",
+      "full_input_tokens": 49213,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_lcc_e_2026-09-23T20-55-07.140943.jsonl",
+      "sample_file_sha256": "549257f498ccc90b283534a01515f1dd6a904bcf33401468e8b5935767f05ac2",
+      "prompt_hash": "cf2b8c2ecc5351502e5739b3e3b91aa62dffdf9f79479910770b25bcb5de908e",
+      "arm_payload_sha256": {
+        "original_suffix": "aaf8b89ecaf2858e2b5db1029519caa8724d380e132aff2de71bf545a878e82b",
+        "full_prompt": "db3b158d21f45c3fcfd4ae72a442b99129c7a6b8cc95985fc213003f7b72d136"
+      }
+    },
+    {
+      "case_id": "longbench_multifieldqa_en_e:32",
+      "task": "longbench_multifieldqa_en_e",
+      "doc_id": 32,
+      "source_id": "22034e095a602824678c4028e6f605919ce520270dc06089",
+      "full_input_tokens": 1370,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_multifieldqa_en_e_2026-09-23T21-00-28.982344.jsonl",
+      "sample_file_sha256": "46d873110cdff9dc0164496084f019c0ff6f2c45cc09aa9fe2c4b1792f542c34",
+      "prompt_hash": "a25ca0878234d61abe285bb057ca6241b9dc8c9e9f7c22436f62ddbf18de7662",
+      "arm_payload_sha256": {
+        "original_suffix": "45b0a989ad1d76a0db40108ffb478be7e66bcb17f17c5084658153d23408fa22",
+        "full_prompt": "45b0a989ad1d76a0db40108ffb478be7e66bcb17f17c5084658153d23408fa22"
+      }
+    },
+    {
+      "case_id": "longbench_multifieldqa_en_e:68",
+      "task": "longbench_multifieldqa_en_e",
+      "doc_id": 68,
+      "source_id": "690d6407b1ef9f8d373370bbcb02f7ecf198379774101140",
+      "full_input_tokens": 7032,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_multifieldqa_en_e_2026-09-23T21-00-28.982344.jsonl",
+      "sample_file_sha256": "46d873110cdff9dc0164496084f019c0ff6f2c45cc09aa9fe2c4b1792f542c34",
+      "prompt_hash": "08570882f20285e94e7a8d740b793e55d9b2485f434a877317956ced2e0d3203",
+      "arm_payload_sha256": {
+        "original_suffix": "8ad8b368565866222ad3a896943bcb5344f0ef336711a11c938642c86c307cf7",
+        "full_prompt": "1ada0479d2042ceaad4158bdde4f5e8d4749e6cf2cb24b1728a6f51a164331c3"
+      }
+    },
+    {
+      "case_id": "longbench_multifieldqa_en_e:70",
+      "task": "longbench_multifieldqa_en_e",
+      "doc_id": 70,
+      "source_id": "2646315b4135b08675c4ab2110dc544058659b9b6aab4752",
+      "full_input_tokens": 15032,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_multifieldqa_en_e_2026-09-23T21-00-28.982344.jsonl",
+      "sample_file_sha256": "46d873110cdff9dc0164496084f019c0ff6f2c45cc09aa9fe2c4b1792f542c34",
+      "prompt_hash": "875c2056839b6506796839606224fc18762578f5d321f01522c4c2dcf1fd90e6",
+      "arm_payload_sha256": {
+        "original_suffix": "cfbef5ae57ef304b54f679034bbb9a143fb5c397f8aaaf5779eb1eb37f6d1141",
+        "full_prompt": "0fa6e3369b36f63abda13e9a75fbc912e553d5097989e6c285c51e8a5527cb29"
+      }
+    },
+    {
+      "case_id": "longbench_passage_count_e:68",
+      "task": "longbench_passage_count_e",
+      "doc_id": 68,
+      "source_id": "d8c82d9718d94504ad800eba373d15f227831550a6c62391",
+      "full_input_tokens": 1978,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_passage_count_e_2026-09-23T21-06-19.449300.jsonl",
+      "sample_file_sha256": "5a114230e8b2ac82fbaa72c5e9cf41a999a7c33dc1cee425de9e8c397ab72e19",
+      "prompt_hash": "dacaeb884c665a0ec6bd0e4cd6584c38107abd67c91c0cae57b6a022a1963808",
+      "arm_payload_sha256": {
+        "original_suffix": "8d38bc85f7cb4acd32bdf809daedc7e66619643eac0ad5d7d94049815ac31a6b",
+        "full_prompt": "5c4f37d97b5f3b98f69008242c9b06d6f37164815acee66ef380ddd8ecad848c"
+      }
+    },
+    {
+      "case_id": "longbench_passage_count_e:108",
+      "task": "longbench_passage_count_e",
+      "doc_id": 108,
+      "source_id": "71ac013c8555828d33f28509f6641b9471f94730565377a4",
+      "full_input_tokens": 8226,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_passage_count_e_2026-09-23T21-06-19.449300.jsonl",
+      "sample_file_sha256": "5a114230e8b2ac82fbaa72c5e9cf41a999a7c33dc1cee425de9e8c397ab72e19",
+      "prompt_hash": "869caf190073c94641f56c182af87b1fa8b3670bd9b3609c53915c9424600fbf",
+      "arm_payload_sha256": {
+        "original_suffix": "c33c150e967001e5a539ef15d78801da0fdb1e1fb28dbe8d7efe623f9249b969",
+        "full_prompt": "b3e2deb8ebe388bd454709e54dbf60d6b7c8f41cea39f0329fa457443b1f7b32"
+      }
+    },
+    {
+      "case_id": "longbench_passage_count_e:235",
+      "task": "longbench_passage_count_e",
+      "doc_id": 235,
+      "source_id": "a8b5b729750aecfb1909a9ea005dfe9ba23241a20037f815",
+      "full_input_tokens": 23081,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_passage_count_e_2026-09-23T21-06-19.449300.jsonl",
+      "sample_file_sha256": "5a114230e8b2ac82fbaa72c5e9cf41a999a7c33dc1cee425de9e8c397ab72e19",
+      "prompt_hash": "fd5fd36590ce0a3c63a024252bec8eca07adb662839ca1f2076092bf31c1ede0",
+      "arm_payload_sha256": {
+        "original_suffix": "063754bd0d4c3a01becb46bf60089ad97c00c34f5af5298c0ddf7d36d5e5b10d",
+        "full_prompt": "c49d8365fc7aff70108362e1334491c2bfd6fdfdffe92ba718465ac4f4bdb51e"
+      }
+    },
+    {
+      "case_id": "longbench_passage_retrieval_en_e:49",
+      "task": "longbench_passage_retrieval_en_e",
+      "doc_id": 49,
+      "source_id": "efa95f747f8774928e61ed59a3b80ed0e151c647f1f73c5b",
+      "full_input_tokens": 3288,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_passage_retrieval_en_e_2026-09-23T21-06-19.449300.jsonl",
+      "sample_file_sha256": "0409b46c94af283d41601a6b2ee998f2ce15920d14a492d9772a5e67ffbe9654",
+      "prompt_hash": "c849fd4213684de3c559192091b2b497c4e780426701afc3d9792fd4ef32955b",
+      "arm_payload_sha256": {
+        "original_suffix": "770d29e98b03eaccb54b4cdbfe49081a9887f511e718ebbc0723f4aa51f9ef05",
+        "full_prompt": "c647754450914cc23cb900b1253aa6bf610ea78b56b7b94c8a2693883d51b0d4"
+      }
+    },
+    {
+      "case_id": "longbench_passage_retrieval_en_e:133",
+      "task": "longbench_passage_retrieval_en_e",
+      "doc_id": 133,
+      "source_id": "b176927e778d209dafcb9bb1e12e323c17eec0a7dd7a01ac",
+      "full_input_tokens": 8146,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_passage_retrieval_en_e_2026-09-23T21-06-19.449300.jsonl",
+      "sample_file_sha256": "0409b46c94af283d41601a6b2ee998f2ce15920d14a492d9772a5e67ffbe9654",
+      "prompt_hash": "949e0e3c358b0fead8e4c87829f23b7d25d0d62f0e8f9cba94cba0727efbd586",
+      "arm_payload_sha256": {
+        "original_suffix": "621e1c80abcc45123d974608c5e46aa5463ddaaec07ba4a2e29813581f3e524e",
+        "full_prompt": "045b7d5c9d8c7075b7eba13b682fcec4ccf3c826f4326e2f6201dd6d96fa119f"
+      }
+    },
+    {
+      "case_id": "longbench_passage_retrieval_en_e:230",
+      "task": "longbench_passage_retrieval_en_e",
+      "doc_id": 230,
+      "source_id": "59df062dfb56b0cc20d53ab22838411559e1fb58fbab7124",
+      "full_input_tokens": 14609,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_passage_retrieval_en_e_2026-09-23T21-06-19.449300.jsonl",
+      "sample_file_sha256": "0409b46c94af283d41601a6b2ee998f2ce15920d14a492d9772a5e67ffbe9654",
+      "prompt_hash": "eed829a28934b9ed64c1cb732cae52adeb0021a4d5ffafe16d2bccb7a6b7458a",
+      "arm_payload_sha256": {
+        "original_suffix": "51468919fe6c41a4f0979474a30b792dbd3698cc3bda71cf44a7995d798349ba",
+        "full_prompt": "be6226a38343f03da6b8e588bf504a04080d948dc3db79bba51727b58adf7540"
+      }
+    },
+    {
+      "case_id": "longbench_qasper_e:90",
+      "task": "longbench_qasper_e",
+      "doc_id": 90,
+      "source_id": "ecdc1201351d1467d8b55b82ce8e54846f36e141284db44e",
+      "full_input_tokens": 2181,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_qasper_e_2026-09-23T21-00-28.982344.jsonl",
+      "sample_file_sha256": "d9593a1b643e01b2174a8eb8c19c83111868ac112f20726b2b605f24e3a78216",
+      "prompt_hash": "035736df251257cdbc583787b64480825d211ef77fca052a3ac14040de9df560",
+      "arm_payload_sha256": {
+        "original_suffix": "bd1e8f952cd780c47ca32a654a63a92f1cf12b681fe4f8b6788870a4e7e8cdf9",
+        "full_prompt": "1e6d90df512da9a4953e49b84b784d24bc2d7e91c43f69f5025de122f8019771"
+      }
+    },
+    {
+      "case_id": "longbench_qasper_e:178",
+      "task": "longbench_qasper_e",
+      "doc_id": 178,
+      "source_id": "4224ab128ca9e42c596fb0fd04ca3d615952f253e3725abe",
+      "full_input_tokens": 5801,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_qasper_e_2026-09-23T21-00-28.982344.jsonl",
+      "sample_file_sha256": "d9593a1b643e01b2174a8eb8c19c83111868ac112f20726b2b605f24e3a78216",
+      "prompt_hash": "2ea347ba5c1a9ad9b6dd3bbf94d4daac2294bf89712d3d7306bdc398dfc8b4ce",
+      "arm_payload_sha256": {
+        "original_suffix": "9bcbf489e6ced9de60dfff36b11cdb593cd96170f60598f61e943b07f55eec51",
+        "full_prompt": "32d0b8f3d9bb35299be53743d8c1a53b3f861d675c62c6319e57c8083d79cbbc"
+      }
+    },
+    {
+      "case_id": "longbench_qasper_e:223",
+      "task": "longbench_qasper_e",
+      "doc_id": 223,
+      "source_id": "6fd8cd7777d0b6f36ccdfc044d9b5056e519fd11feb2a750",
+      "full_input_tokens": 21430,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_qasper_e_2026-09-23T21-00-28.982344.jsonl",
+      "sample_file_sha256": "d9593a1b643e01b2174a8eb8c19c83111868ac112f20726b2b605f24e3a78216",
+      "prompt_hash": "e468412f31f1505f30a31ddc28e2e9c420cb18b6c7d253a6e30faad373738218",
+      "arm_payload_sha256": {
+        "original_suffix": "65ade8caab46c76226c87d726ac282b091ba1db1a71524581c700f734b2ef8d2",
+        "full_prompt": "849c5d449b4ee46da0936d4474ee3704511186b0b115d2d80d0ad91c6fea6997"
+      }
+    },
+    {
+      "case_id": "longbench_repobench-p_e:90",
+      "task": "longbench_repobench-p_e",
+      "doc_id": 90,
+      "source_id": "3cc7b1e8bb5e60cc54f7b53afb7dac2a38b2dea35ff9a17f",
+      "full_input_tokens": 2159,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_repobench-p_e_2026-09-23T20-55-07.140943.jsonl",
+      "sample_file_sha256": "b5333e7dabe5e8ee73c792ac0b941e5b44afb0011c7a1f69fd039fc6ed6ea9bf",
+      "prompt_hash": "3bae64f07d9b7c235a69dccf03a8d939295035b9a4cb0b1308e8058d73506d74",
+      "arm_payload_sha256": {
+        "original_suffix": "5217628a93c471c564f7ab292466d59f0cf43e82a16dee043eedc640bd081c9d",
+        "full_prompt": "274e62abdedd8f5e5d8d8e8c381c8ed51f4c9944b65b895329dec3ca082350ff"
+      }
+    },
+    {
+      "case_id": "longbench_repobench-p_e:106",
+      "task": "longbench_repobench-p_e",
+      "doc_id": 106,
+      "source_id": "f9995eaffa540176c0bc53bde76e56246499269896303281",
+      "full_input_tokens": 13625,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_repobench-p_e_2026-09-23T20-55-07.140943.jsonl",
+      "sample_file_sha256": "b5333e7dabe5e8ee73c792ac0b941e5b44afb0011c7a1f69fd039fc6ed6ea9bf",
+      "prompt_hash": "a4832ba83a72a5c14410a40a59e99d73b219f8e0c08a0d7ca58dd26c836d4e30",
+      "arm_payload_sha256": {
+        "original_suffix": "190c28786e37e5b78eb2cffb897954fc49d6364b7f033f62ae6085e3db863acb",
+        "full_prompt": "9cb8a86fc98aee720a699f4320be06c555e96988edcef27a2ebab1598be268cf"
+      }
+    },
+    {
+      "case_id": "longbench_repobench-p_e:239",
+      "task": "longbench_repobench-p_e",
+      "doc_id": 239,
+      "source_id": "a5d862e0d00cfebf00ff255752d9183d577f897cbd6075bb",
+      "full_input_tokens": 41029,
+      "sample_file": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_BH-Quietbox-2_llama31-8b-qb2/reports_output/release/meta-llama__Llama-3.1-8B-Instruct_p300x2_release/eval_id_llama31-8b-qb2_Llama-3.1-8B-Instruct_p300x2/meta-llama__Llama-3.1-8B-Instruct/samples_longbench_repobench-p_e_2026-09-23T20-55-07.140943.jsonl",
+      "sample_file_sha256": "b5333e7dabe5e8ee73c792ac0b941e5b44afb0011c7a1f69fd039fc6ed6ea9bf",
+      "prompt_hash": "cd80c8d12a0fb60b86d6160690bf07c34931c34f4cb6d76d0046584cfb55dc07",
+      "arm_payload_sha256": {
+        "original_suffix": "bc55cd9e3f8fac705a549d2426b4a52f3e3dba2c29b4f2b411e438b61334b677",
+        "full_prompt": "1490ef398f9df3a94c965f4bc507874526a24433518a5824710c10cc6d46f571"
+      }
+    }
+  ]
+}
