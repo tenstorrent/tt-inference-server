@@ -6,6 +6,7 @@
 #include <pybind11/embed.h>
 #include <pybind11/stl.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -189,8 +190,24 @@ struct EmbeddingImpl {
         texts.append(req.input);
       }
 
+      // Per-phase timing: tokenize and extract are host work, forward is the
+      // model wrapper (its own host work + device kernel), sync is the wait
+      // for the device. Logged per batch to locate E2EL overhead vs the
+      // device-only floor.
+      using Clock = std::chrono::steady_clock;
+      const auto phaseMs = [](Clock::time_point a, Clock::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+      };
+
+      const auto t0 = Clock::now();
       py::object tokenized = tokenize(texts);
-      py::object result = forwardAndSync(tokenized);
+      const auto t1 = Clock::now();
+      py::object result = model.attr("forward")(
+          tokenized[py::str("input_ids")],
+          "attention_mask"_a = tokenized.attr("get")("attention_mask"));
+      const auto t2 = Clock::now();
+      ttnn.attr("synchronize_device")(device);
+      const auto t3 = Clock::now();
       py::object dense = extractDense(result);
 
       py::object attentionMask = tokenized.attr("get")("attention_mask");
@@ -213,9 +230,13 @@ struct EmbeddingImpl {
         resp.total_tokens = i < tokenCounts.size() ? tokenCounts[i] : 0;
         responses.push_back(std::move(resp));
       }
+      const auto t4 = Clock::now();
 
-      TT_LOG_DEBUG("[EmbeddingRunner] Processed {} embedding requests",
-                   responses.size());
+      TT_LOG_INFO(
+          "[EmbeddingRunner] Batch of {}: tokenize={:.1f}ms forward={:.1f}ms "
+          "sync={:.1f}ms extract={:.1f}ms total={:.1f}ms",
+          requests.size(), phaseMs(t0, t1), phaseMs(t1, t2), phaseMs(t2, t3),
+          phaseMs(t3, t4), phaseMs(t0, t4));
     } catch (const py::error_already_set& e) {
       // Surface the real Python error to every caller in the batch instead
       // of a generic "no response". The full traceback goes to the log.
