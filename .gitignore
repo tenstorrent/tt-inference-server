@@ -99,4 +99,7 @@ default_model_spec.json
 # MiniMax-H3 benchmark: the case matrix and the text part of its input pack are source, not data
 !test_module/_test_common/minimax_h3_bench/cases.json
 !test_fixtures/datasets/minimax_h3/
-!test_fixtures/datasets/minimax_h3/**
+test_fixtures/datasets/minimax_h3/*
+!test_fixtures/datasets/minimax_h3/*.md
+!test_fixtures/datasets/minimax_h3/*.txt
+!test_fixtures/datasets/minimax_h3/*.sh

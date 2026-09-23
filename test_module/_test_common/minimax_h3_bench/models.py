@@ -103,8 +103,10 @@ TRANSPORT_POLLS = 150  # ~5 min of continuous unreachability at POLL_S
 #   BH1X     one single-host Blackhole Galaxy, the CI target. PROVISIONAL: T2VA from
 #            the single-host runbook (16:9 5/10/15 s = 69.5/174.7/325.4 s warm on the
 #            2026-08-13 build, ~70/125/176 s on the 09-23 build), FL2VA/REF2VA scaled
-#            from the quad ratios (1.1x / 4x / 5x), with headroom for one in-request
-#            shape compile (4-16 min) when the shape was not warmed at startup.
+#            from the quad ratios (1.1x / 4x / 5x). CI warms only 16:9@5 at startup, so
+#            T2VA-M/H (and every non-5 s shape) carry one in-request compile (4-16 min)
+#            on top of generation; the warmup run of each case absorbs it, and the budget
+#            must hold it because the deployment exposes no progress (no 2x extension).
 #            Regenerate from results.jsonl after the first green weekly.
 TIMEOUT_TABLE_S = {
     "T1": {"SMOKE": 600, "T2VA-L": 900, "T2VA-M": 1800, "T2VA-H": 3600},
@@ -140,8 +142,8 @@ TIMEOUT_TABLE_S = {
         "SMOKE-FL2VA": 600,
         "SMOKE-REF2VA": 1200,
         "T2VA-L": 600,
-        "T2VA-M": 900,
-        "T2VA-H": 1200,
+        "T2VA-M": 1500,
+        "T2VA-H": 1800,
         "FL2VA-L": 600,
         "FL2VA-M": 900,
         "FL2VA-H": 1500,
@@ -267,6 +269,8 @@ def has_audio(path: str) -> bool | None:
                      "stream=codec_name", "-of", "csv=p=0", src],
                     capture_output=True, text=True, timeout=60, **fds,
                 )  # fmt: skip
+                if out.returncode != 0:
+                    return None  # the probe could not read the file; that is not "no audio"
                 return bool(out.stdout.strip())
             out = subprocess.run(
                 [ffmpeg, "-hide_banner", "-i", src],
@@ -397,10 +401,26 @@ def classify_failure(rec: dict) -> str | None:
 
 
 # ---------------------------------------------------------------- assets
+def asset_dirs() -> list:
+    """Directories searched per file, in order: the configured pack (explicit / H3_ASSETS /
+    the shared volume), then the in-repo pack. A partially staged shared directory can
+    therefore never hide the prompts and manifests that are in git."""
+    dirs = [assets_dir(), REPO_ASSETS]
+    return [d for i, d in enumerate(dirs) if d and d not in dirs[:i]]
+
+
+def asset_path(name: str) -> str | None:
+    for root in asset_dirs():
+        path = os.path.join(root, name)
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def asset(name: str) -> str:
-    path = os.path.join(assets_dir(), name)
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"missing asset: {path}")
+    path = asset_path(name)
+    if path is None:
+        raise FileNotFoundError(f"missing asset: {name} (searched {asset_dirs()})")
     return path
 
 
@@ -437,21 +457,29 @@ def read_manifest(path: str) -> dict:
     return entries
 
 
-def verify_assets(names, manifest_name: str = "sha256s-bundle.txt") -> list:
-    """Problems with the named assets against the pack's manifest: missing files, hash
+# The pins come from the manifests in git, never from the directory that holds the bytes:
+# a staged pack that carries its own manifest would otherwise pin nothing.
+PIN_MANIFESTS = (
+    os.path.join(REPO_ASSETS, "sha256s-bundle.txt"),
+    os.path.join(REPO_ASSETS, "sha256s.txt"),
+)
+
+
+def verify_assets(names) -> list:
+    """Problems with the named assets against the repo manifest: missing files, hash
     mismatches, and a missing manifest entry. [] means every named asset is pinned."""
-    root = assets_dir()
     problems = []
     manifest = {}
-    for candidate in (manifest_name, "sha256s.txt"):
-        path = os.path.join(root, candidate)
+    for path in PIN_MANIFESTS:
         if os.path.exists(path):
             manifest = read_manifest(path)
             break
+    if not manifest:
+        problems.append(f"no asset manifest found ({', '.join(PIN_MANIFESTS)})")
     for name in sorted(set(names)):
-        path = os.path.join(root, name)
-        if not os.path.exists(path):
-            problems.append(f"missing asset {path}")
+        path = asset_path(name)
+        if path is None:
+            problems.append(f"missing asset {name} (searched {asset_dirs()})")
             continue
         want = manifest.get(name)
         if want is None:

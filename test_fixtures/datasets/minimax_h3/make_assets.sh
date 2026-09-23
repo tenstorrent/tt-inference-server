@@ -3,17 +3,18 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 # make_assets.sh — regenerate the large MiniMax-H3 benchmark assets that are NOT
-# committed to the repo, then verify every asset (committed + regenerated)
+# part of the staged pack, then verify every asset (staged + regenerated)
 # against sha256s.txt.
 #
-# Why some assets aren't committed: img_max_27mb_astronaut.jpg (~27 MB),
+# Why these five are regenerated: img_max_27mb_astronaut.jpg (~27 MB),
 # vid_max_8s_47mb_robot_street.mp4 (~47 MB), and the three silent reference
 # videos vid_ns{2,5,7}_*.mp4 (~46 MB combined, dominated by vid_ns7_robot.mp4
 # at ~42 MB) would roughly double this repo's data/ directory for files that
 # are mechanically derivable from two CC-BY / public-domain sources. Every
 # other asset the AIA-581 case matrix needs (7 standard 1344x768 images,
-# img_min, the 2s/5s reference videos, all 3 audio clips, all 3 prompts) is
-# small and committed as-is next to this script.
+# img_min, the 2s/5s reference videos, the 4 audio clips) is small and
+# staged next to this script (not in git); the 3 prompts are in git. Nothing
+# here regenerates the staged files -- see README.md for where to copy them from.
 #
 # Sources (see ATTRIBUTION.md in this directory for full attribution text):
 #   - Tears of Steel (Blender Foundation, CC BY 3.0) — 720p mezzanine file,
@@ -48,12 +49,50 @@ NASA_SHA256="3211a9da2b393e4bd080f667d40d3506f17a2946714a93fc703e42e7c5be73cb"
 
 VERIFY_ONLY="${1:-}"
 
+# The 14 small media files of the pack: staged next to this script (not in git),
+# never regenerated here. The first two are the inputs gen_vid_ns_from_committed
+# strips the audio from (the only staged files any gen_* function reads); all 14
+# are needed for verify_all to pass. Checked before any download so a missing
+# pack fails in a second, not after fetching 372 MB of Tears of Steel.
+SMALL_PACK_FILES="
+vid_min_2s_city_skyline.mp4
+vid_std_5s_man_talking.mp4
+img_min_256px_scientist.jpg
+img_std_city_skyline.jpg
+img_std_earth_from_iss.jpg
+img_std_hurricane_from_iss.jpg
+img_std_old_man_portrait.jpg
+img_std_robot_street.jpg
+img_std_three_people.jpg
+img_std_young_man_canal.jpg
+aud_max7_score.wav
+aud_max_8s_score.wav
+aud_min_2s_score.wav
+aud_std_5s_score.wav
+"
+
 log() { printf '[make_assets] %s\n' "$*"; }
 warn() { printf '[make_assets] WARN: %s\n' "$*" >&2; }
 die() { printf '[make_assets] ERROR: %s\n' "$*" >&2; exit 1; }
 
 require_tool() {
     command -v "$1" >/dev/null 2>&1 || die "required tool '$1' not found on PATH"
+}
+
+require_small_pack() {
+    local missing="" f
+    for f in $SMALL_PACK_FILES; do
+        [ -f "$HERE/$f" ] || missing="$missing $f"
+    done
+    [ -z "$missing" ] && return 0
+    {
+        printf '[make_assets] ERROR: the small media pack is not staged next to this script; missing:%s\n' "$missing"
+        printf '[make_assets]        This script regenerates only the 5 large files and derives vid_ns2_city.mp4 /\n'
+        printf '[make_assets]        vid_ns5_man.mp4 from vid_min_2s_city_skyline.mp4 / vid_std_5s_man_talking.mp4.\n'
+        printf '[make_assets]        Stage the pack from /mnt/MLPerf/tt-shield/persistent-volume/h3-assets (or the\n'
+        printf '[make_assets]        team h3-assets archive) into %s first -- see README.md.\n' "$HERE"
+    } >&2
+    exit 1
 }
 
 sha256_of() {
@@ -142,7 +181,7 @@ gen_vid_ns7() {
 
 gen_vid_ns_from_committed() {
     # vid_ns2_city.mp4 and vid_ns5_man.mp4 are EXACT `-c:v copy -an` audio-strips
-    # of the already-committed vid_min_2s_city_skyline.mp4 / vid_std_5s_man_talking.mp4
+    # of the already-staged vid_min_2s_city_skyline.mp4 / vid_std_5s_man_talking.mp4
     # — verified byte-for-byte identical to the pinned assets, no download needed.
     if [ ! -f "$HERE/vid_ns2_city.mp4" ]; then
         log "generating vid_ns2_city.mp4 (audio-stripped copy of vid_min_2s_city_skyline.mp4)"
@@ -182,8 +221,8 @@ gen_img_max() {
 # ---------------------------------------------------------------------------
 # Verification
 # ---------------------------------------------------------------------------
-# Files that are committed to git as-is: a hash mismatch here means something
-# is genuinely wrong (a corrupted checkout, an accidental edit) and is a hard
+# Files that are staged as-is (not in git): a hash mismatch here means something
+# is genuinely wrong (a corrupted copy, an accidental edit) and is a hard
 # failure. The 5 regenerated files are best-effort reproductions from public
 # CC-BY / public-domain sources: img_max/vid_max/vid_ns7 depend on ffmpeg's
 # exact JPEG/H.264 encoder implementation, which is NOT guaranteed to produce
@@ -196,11 +235,11 @@ gen_img_max() {
 # itself is wrong, not just encoder-version hash drift. vid_ns2_city.mp4/
 # vid_ns5_man.mp4 ARE deterministic (a plain stream
 # copy with no re-encoding) and are held to the same hard-failure standard as
-# the committed files.
+# the staged files.
 BEST_EFFORT_FILES="img_max_27mb_astronaut.jpg vid_max_8s_47mb_robot_street.mp4 vid_ns7_robot.mp4"
 # vid_ns2_city.mp4/vid_ns5_man.mp4 are NOT in this list: they are exact,
-# deterministic `-c:v copy -an` strips of committed files with no re-encoding
-# involved, so they are held to the same hard-failure standard as a committed
+# deterministic `-c:v copy -an` strips of staged files with no re-encoding
+# involved, so they are held to the same hard-failure standard as a staged
 # file (see gen_vid_ns_from_committed()).
 
 is_best_effort() {
@@ -285,7 +324,7 @@ verify_all() {
                 fail=$((fail + 1))
             fi
         else
-            printf '  FAIL     %s  (hash differs — this file is expected to be committed verbatim\n' "$fname"
+            printf '  FAIL     %s  (hash differs — this file is expected to be staged verbatim\n' "$fname"
             printf '           or produced by a deterministic stream copy; a mismatch here means\n'
             printf '           something is genuinely wrong, not just encoder drift)\n'
             fail=$((fail + 1))
@@ -306,6 +345,7 @@ main() {
     require_tool ffmpeg
     require_tool ffprobe
     require_tool curl
+    require_small_pack
 
     if [ "$VERIFY_ONLY" != "--verify-only" ]; then
         gen_vid_max

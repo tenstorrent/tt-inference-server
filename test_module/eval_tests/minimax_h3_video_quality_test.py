@@ -26,6 +26,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from report_module.schema import Block
+from workflow_module.target_pack import get_target_pack
 from test_module._test_common import (
     BaseTest,
     HardwareRequirement,
@@ -63,9 +64,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_POLL_TIMEOUT_SECONDS = 1800.0
 DEFAULT_TEST_TIMEOUT_SECONDS = 7200
 DEFAULT_OUTPUT_DIR = Path("/tmp/minimax_h3_video_quality")
-ACCURACY_REFERENCE_PATH = Path(
-    "reference_config/evals/eval_targets/model_accuracy_reference.json"
-)
+ACCURACY_REFERENCE_PATH = get_target_pack().accuracy_targets_path()
 
 
 @dataclass(frozen=True)

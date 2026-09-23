@@ -48,6 +48,33 @@ def _dir_bytes(path: Path) -> int:
     return total
 
 
+# Extra `hf download --exclude` patterns per weights repo, on top of the shared `original/**`.
+# MiniMaxAI/MiniMax-H3 is 498.5 GB in total; the t2va deployment serves text_encoder,
+# transformer, vae, audio_vae, tokenizer, processor, scheduler, audio_scheduler,
+# model_index.json and modular_model_index.json (~144 GB). The excluded dirs are the
+# FL2VA/Ref2VA task partitions (144.1 GB each), the reference transformer
+# transformer_ref/ (66.3 GB) and the repo's non-weight assets/docs/scripts.
+HF_DOWNLOAD_EXTRA_EXCLUDES = {
+    "MiniMaxAI/MiniMax-H3": [
+        "FL2VA/*",
+        "Ref2VA/*",
+        "transformer_ref/*",
+        "assets/*",
+        "docs/*",
+        "scripts/*",
+    ],
+}
+
+
+def _hf_download_exclude_args(hf_repo: str) -> list:
+    """`--exclude <pattern>` pairs for `hf download`: `original/**` for every repo plus the
+    repo's HF_DOWNLOAD_EXTRA_EXCLUDES entries."""
+    args = []
+    for pattern in ["original/**", *HF_DOWNLOAD_EXTRA_EXCLUDES.get(hf_repo, [])]:
+        args.extend(["--exclude", pattern])
+    return args
+
+
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
@@ -299,8 +326,9 @@ class HostSetupManager:
                 "tokenizer_optional": True,
             },
             {
-                # MiniMax-H3 ships a modular diffusers snapshot: modular_model_index.json
-                # instead of model_index.json.
+                # A snapshot with only modular_model_index.json (modular diffusers). The real
+                # MiniMax-H3 snapshot ships BOTH model_index.json and modular_model_index.json,
+                # so the `diffusers` entry above matches it first.
                 "format_name": "diffusers_modular",
                 "weights_format": "**/*.safetensors",
                 "tokenizer_format": "tokenizer.json",
@@ -308,6 +336,22 @@ class HostSetupManager:
                 "tokenizer_optional": True,
             },
         ]
+
+        # `hf download --local-dir` stages in-flight files as
+        # .cache/huggingface/download/**/*.incomplete; while any remain the snapshot is
+        # partial however complete the format check below looks, and run_setup must run
+        # `hf download` again (it resumes).
+        incomplete = list(
+            host_weights_dir.glob(".cache/huggingface/download/**/*.incomplete")
+        )
+        if incomplete:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}: "
+                f"{len(incomplete)} partial download(s) under "
+                f"{host_weights_dir / '.cache' / 'huggingface' / 'download'} "
+                f"(e.g. {incomplete[0].name}); `hf download` will resume them."
+            )
+            return False
 
         # Check each format
         for fmt in model_formats:
@@ -599,8 +643,7 @@ class HostSetupManager:
                 str(hf_exec),
                 "download",
                 hf_repo,
-                "--exclude",
-                "original/**",
+                *_hf_download_exclude_args(hf_repo),
             ]
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
@@ -630,8 +673,7 @@ class HostSetupManager:
             hf_repo,
             "--local-dir",
             str(host_weights_dir),
-            "--exclude",
-            "original/**",
+            *_hf_download_exclude_args(hf_repo),
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")

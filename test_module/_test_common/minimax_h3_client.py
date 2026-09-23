@@ -79,10 +79,15 @@ class MiniMaxDownload:
     content_type: str
 
 
+# Every H3 test (contract, lifecycle, quality, benchmark) reads the key from these names, in
+# this order. The benchmark engine mirrors the tuple; a unit test keeps them equal.
+API_KEY_ENV_VARS = ("API_KEY", "MINIMAX_API_KEY", "TT_MINIMAX_API_KEY")
+
+
 def resolve_server_api_key() -> str:
     """Resolve the literal bearer token used by the media server."""
 
-    for env_name in ("API_KEY", "MINIMAX_API_KEY"):
+    for env_name in API_KEY_ENV_VARS:
         value = os.getenv(env_name)
         if value:
             return value

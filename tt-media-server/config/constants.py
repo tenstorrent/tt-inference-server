@@ -1043,7 +1043,8 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        # Weights are mounted (MODEL_WEIGHTS_DIR from the model spec); never fetched by the service.
+        # Weights are never fetched by the service: MODEL_WEIGHTS_DIR under --host-weights-dir,
+        # else MINIMAX_H3_MODEL_PATH inside cache_root (see workflows/model_specs/dev/video.yaml).
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },

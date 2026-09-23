@@ -49,10 +49,16 @@ def expected_seconds(seconds: float) -> float:
     return expected_frames(seconds) / FPS
 
 
+def _tail(text: str | None, n: int = 300) -> str:
+    return (text or "").strip()[-n:]
+
+
 def ffprobe_json(path: str) -> dict | None:
     """Stream/format metadata as ffprobe reports it; ``ffmpeg -i`` parsed to the same
     shape when only ffmpeg is installed (imageio-ffmpeg ships no ffprobe); None when
-    neither is available."""
+    neither is available; ``{"probe_error": ...}`` when a probe exists but could not read
+    the clip (a missing/corrupt file, a non-zero exit, a hang) -- the judge fails that clip
+    instead of guessing."""
     probe = M.ffprobe_binary()
     ffmpeg = None if probe else M.ffmpeg_binary()
     if not probe and not ffmpeg:
@@ -64,10 +70,15 @@ def ffprobe_json(path: str) -> dict | None:
                     [probe, "-v", "error", "-print_format", "json", "-show_streams", "-show_format", src],
                     capture_output=True, text=True, timeout=120, **fds,
                 )  # fmt: skip
+                if out.returncode != 0:
+                    return {
+                        "probe_error": _tail(out.stderr)
+                        or f"ffprobe exit {out.returncode}"
+                    }
                 try:
                     return json.loads(out.stdout or "{}")
                 except ValueError:
-                    return {}
+                    return {"probe_error": "ffprobe printed no JSON"}
             out = subprocess.run(
                 [ffmpeg, "-hide_banner", "-i", src],
                 capture_output=True,
@@ -75,9 +86,13 @@ def ffprobe_json(path: str) -> dict | None:
                 timeout=120,
                 **fds,
             )
-    except OSError:  # the clip is missing or unreadable: same answer as a failed probe
-        return {}
+    except OSError as exc:  # the clip is missing or unreadable
+        return {"probe_error": f"{type(exc).__name__}: {exc}"}
+    except subprocess.SubprocessError as exc:  # the probe hung on the clip
+        return {"probe_error": f"{type(exc).__name__}: {str(exc)[:200]}"}
     text = out.stderr
+    if "Stream #" not in text and "Duration:" not in text:
+        return {"probe_error": _tail(text) or "ffmpeg -i printed no stream info"}
     streams = []
     for m in re.finditer(
         r"Stream #\d+:\d+(?:\[[^\]]*\])?(?:\([^)]*\))?: (Video|Audio): ([^\n]*)", text
@@ -115,7 +130,7 @@ def audio_stats(path: str):
                 [ffmpeg, "-hide_banner", "-i", src, "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-"],
                 capture_output=True, text=True, timeout=300, **fds,
             )  # fmt: skip
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         return None, None, None
     text = out.stderr
     mean = re.search(r"mean_volume: (-?[\d.]+) dB", text)
@@ -150,6 +165,14 @@ def judge(path: str, seconds: float, aspect: str = "16:9"):
         if served is None or abs(served - want) > DURATION_TOL_S:
             problems.append(f"duration {served}s != {want:.3f}s (requested {seconds}s)")
         notes.append("ffmpeg/ffprobe missing: streams and audio not checked")
+        return problems, notes
+    if meta.get("probe_error"):
+        # A probe exists and could not read the clip: a broken file (or a broken probe),
+        # either of which must not pass. Duration still comes from the mvhd atom.
+        problems.append(f"probe failed: {meta['probe_error']}")
+        served = M.mvhd_duration(path)
+        if served is None or abs(served - want) > DURATION_TOL_S:
+            problems.append(f"duration {served}s != {want:.3f}s (requested {seconds}s)")
         return problems, notes
     streams = meta.get("streams", [])
     video = [s for s in streams if s.get("codec_type") == "video"]
@@ -187,7 +210,9 @@ def judge(path: str, seconds: float, aspect: str = "16:9"):
     if audio:
         mean_db, max_db, rails = audio_stats(path)
         if mean_db is None:
-            notes.append("audio not measured (volumedetect output unparsed)")
+            problems.append(
+                "audio not measured: volumedetect failed or reported no samples"
+            )
         elif rails > AUDIO_RAIL_SHARE:
             problems.append(
                 f"audio at the rails: {rails:.1%} of samples at 0 dB, mean {mean_db} dB -- the corruption signature"

@@ -26,6 +26,13 @@ import urllib.request
 
 from . import models as M
 
+# minimax_h3_client.API_KEY_ENV_VARS is the master copy; the engine also runs standalone
+# (no aiohttp), so the import is guarded and a unit test keeps the two tuples equal.
+try:
+    from ..minimax_h3_client import API_KEY_ENV_VARS
+except ImportError:  # pragma: no cover - standalone use
+    API_KEY_ENV_VARS = ("API_KEY", "MINIMAX_API_KEY", "TT_MINIMAX_API_KEY")
+
 ROUTE = {
     "t2va": "/v1/videos/generations",
     "fl2va": "/v1/videos/generations/i2v",
@@ -38,7 +45,9 @@ DEFAULT_API_KEY = "your-secret-key"
 
 
 def resolve_api_key() -> str:
-    for name in ("API_KEY", "MINIMAX_API_KEY", "TT_MINIMAX_API_KEY", "H3_API_KEY"):
+    """The same names, in the same order, as every other H3 test in this repo
+    (``minimax_h3_client.API_KEY_ENV_VARS``)."""
+    for name in API_KEY_ENV_VARS:
         value = os.environ.get(name)
         if value:
             return value
@@ -79,6 +88,7 @@ class TenstorrentH3:
     exposes_progress = True  # queued -> in_progress -> completed
     MAX_IMAGE_B64 = 10_000_000  # ImagePromptEntry.image maxLength default
     MAX_MEDIA_B64 = 80_000_000  # MediaSource.b64 maxLength default
+    FIXED_STEPS = FIXED_STEPS  # what the deployment runs; never sent in a request
 
     def __init__(self, endpoints: dict, api_key: str | None = None, on_submit=None):
         """``endpoints``: task -> base URL (``all`` serves every task)."""

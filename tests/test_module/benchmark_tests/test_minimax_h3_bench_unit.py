@@ -26,10 +26,24 @@ from test_module._test_common.minimax_h3_bench import models as M
 from test_module._test_common.minimax_h3_bench import runner as R
 
 FFMPEG = M.ffmpeg_binary()
-needs_ffmpeg = pytest.mark.skipif(
-    FFMPEG is None or shutil.which("ffprobe") is None,
-    reason="ffmpeg + ffprobe required",
-)
+
+
+@pytest.fixture
+def _ffmpeg_gate():
+    """Skip without ffmpeg/ffprobe on a laptop; FAIL on a CI runner, where a skip would
+    silently drop every judge test on real clips (test-gate.yml installs ffmpeg)."""
+    if FFMPEG is not None and shutil.which("ffprobe") is not None:
+        return
+    if os.environ.get("GITHUB_ACTIONS"):
+        pytest.fail(
+            "ffmpeg/ffprobe missing on the CI runner; see the ffmpeg step in "
+            ".github/workflows/test-gate.yml",
+            pytrace=False,
+        )
+    pytest.skip("ffmpeg + ffprobe required")
+
+
+needs_ffmpeg = pytest.mark.usefixtures("_ffmpeg_gate")
 
 
 @pytest.fixture
@@ -58,7 +72,12 @@ def pack(tmp_path, monkeypatch):
     (assets / "sha256s-bundle.txt").write_text(manifest)
     M.configure(assets_dir=str(assets), out_dir=str(tmp_path / "out"))
     M._prompt_cache.clear()
-    monkeypatch.setenv("H3_MAX_RETRIES", "0")
+    monkeypatch.setattr(
+        M, "MAX_RETRIES", 0
+    )  # read at import: the env var would not apply
+    monkeypatch.setattr(M, "RETRY_BACKOFF_BASE_S", 0.0)
+    # the throwaway pack pins against its own manifest; the default is the repo's
+    monkeypatch.setattr(M, "PIN_MANIFESTS", (str(assets / "sha256s-bundle.txt"),))
     yield assets
     M.configure(
         assets_dir=M.REPO_ASSETS,
@@ -263,13 +282,23 @@ def test_synchronous_build_is_refused_not_retried(pack, monkeypatch):
 
 
 def test_api_key_resolution_order(monkeypatch):
-    for name in ("API_KEY", "MINIMAX_API_KEY", "TT_MINIMAX_API_KEY", "H3_API_KEY"):
+    from test_module._test_common import minimax_h3_client as C
+
+    # one list for every H3 test in the repo
+    assert (
+        A.API_KEY_ENV_VARS
+        == C.API_KEY_ENV_VARS
+        == ("API_KEY", "MINIMAX_API_KEY", "TT_MINIMAX_API_KEY")
+    )
+    for name in A.API_KEY_ENV_VARS + ("H3_API_KEY",):
         monkeypatch.delenv(name, raising=False)
+    assert A.resolve_api_key() == A.DEFAULT_API_KEY == C.DEFAULT_API_KEY
+    monkeypatch.setenv("H3_API_KEY", "not a name we read")
     assert A.resolve_api_key() == A.DEFAULT_API_KEY
     monkeypatch.setenv("TT_MINIMAX_API_KEY", "tt")
-    assert A.resolve_api_key() == "tt"
+    assert A.resolve_api_key() == C.resolve_server_api_key() == "tt"
     monkeypatch.setenv("API_KEY", "ci")
-    assert A.resolve_api_key() == "ci"
+    assert A.resolve_api_key() == C.resolve_server_api_key() == "ci"
 
 
 # ---------------------------------------------------------------- classification / retry / budgets
@@ -644,5 +673,147 @@ def test_probes_on_a_missing_clip_answer_like_a_failed_probe(tmp_path):
         False,
         None,
     )  # None only when no probe binary exists
-    assert J.ffprobe_json(missing) in ({}, None)
+    meta = J.ffprobe_json(missing)
+    assert meta is None or "FileNotFoundError" in meta.get("probe_error", "")
     assert J.audio_stats(missing) == (None, None, None)
+
+
+# -- review round 2: assets, metrics, probes, verdicts ---------------------------------------
+
+
+def test_assets_resolve_per_file_and_pin_against_the_repo_manifest(tmp_path):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "img_std_old_man_portrait.jpg").write_bytes(b"\xff\xd8\xff" + b"9" * 50)
+    (shared / "prompt_min.txt").write_text("tampered\n")
+    (shared / "sha256s-bundle.txt").write_text(  # vouches for the tampered prompt
+        f"{M.sha256(str(shared / 'prompt_min.txt'))}  prompt_min.txt\n"
+    )
+    M.configure(assets_dir=str(shared), out_dir=str(tmp_path / "out"))
+    try:
+        assert M.asset_dirs() == [str(shared), M.REPO_ASSETS]
+        assert M.asset_path("img_std_old_man_portrait.jpg") == str(
+            shared / "img_std_old_man_portrait.jpg"
+        )
+        # a file the staged directory lacks comes from the repo pack, per file
+        assert M.asset_path("prompt_std.txt") == os.path.join(
+            M.REPO_ASSETS, "prompt_std.txt"
+        )
+        assert M.asset_path("prompt_min.txt") == str(shared / "prompt_min.txt")
+        assert M.asset_path("nope.txt") is None
+        problems = M.verify_assets(["prompt_min.txt", "prompt_std.txt", "nope.txt"])
+        # the shared directory's own manifest pins nothing: the repo manifest rules
+        assert any(p.startswith("prompt_min.txt: sha256 differs") for p in problems), (
+            problems
+        )
+        assert not any("prompt_std.txt" in p for p in problems), problems
+        assert any(p.startswith("missing asset nope.txt") for p in problems), problems
+    finally:
+        M.configure(
+            assets_dir=M.REPO_ASSETS,
+            out_dir=os.path.join(tempfile.gettempdir(), "minimax_h3_bench"),
+        )
+        M._prompt_cache.clear()
+
+
+def test_metric_takes_the_newest_matching_series():
+    ts = "tt_media_server_video_last_generation_timestamp"
+    text = (
+        f'{ts}{{request_type="i2v",status="success"}} 100\n'
+        f'{ts}{{request_type="t2v",status="success"}} 250\n'
+        f'{ts}{{request_type="t2v",status="failure"}} 200\n'
+        f'{ts}_created{{status="success"}} 999\n'
+        'tt_canary_state{state="dead"} 0\n'
+        'tt_canary_state{state="alive"} 1\n'
+        "plain_gauge 7\n"
+    )
+    assert H._metric(text, ts, 'status="success"') == 250  # not the first line (100)
+    assert H._metric(text, ts, 'status="failure"') == 200
+    assert H._metric(text, "tt_canary_state", 'state="dead"') == 0
+    assert H._metric(text, "tt_canary_state", 'state="alive"') == 1
+    assert H._metric(text, "tt_canary_state", 'tate="dead"') is None  # whole pair only
+    assert H._metric(text, "plain_gauge") == 7
+    assert H._metric(text, "absent") is None
+
+
+def test_probe_failure_fails_the_clip(tmp_path, monkeypatch):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"\x00\x00\x00\x18ftypisom" + b"\x00" * 300_000)
+    monkeypatch.setattr(J, "ffprobe_json", lambda _p: {"probe_error": "boom"})
+    problems, notes = J.judge(str(clip), 5)
+    assert problems[0] == "probe failed: boom"
+    assert any(p.startswith("duration") for p in problems)  # mvhd fallback still judged
+
+
+@needs_ffmpeg
+def test_a_corrupt_container_is_a_probe_failure_not_a_pass(tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"\x00\x00\x00\x18ftypisom" + b"\x00" * 300_000)
+    meta = J.ffprobe_json(str(clip))
+    assert meta is not None and (meta.get("probe_error") or not meta.get("streams"))
+    problems, _ = J.judge(str(clip), 5)
+    assert problems and all(
+        "stream" in p or "probe" in p or "duration" in p for p in problems
+    )
+    assert M.has_audio(str(clip)) in (None, False)
+
+
+def test_case_result_counts_only_this_runs_rows(pack):
+    M.ensure_dirs()
+    case = {"id": "T2VA-L", "task": "t2va", "duration_s": 5, "steps": 50}
+    stale = {"combo": "C", "case": "T2VA-L", "tag": "r1", "measured": True, "outcome": "ok",
+             "gen_s": 5.0, "e2e_s": 6.0, "out_file": "/nonexistent/r1.mp4",
+             "mvhd_duration_s": 5.167, "has_audio": True}  # fmt: skip
+    with open(M.results_path(), "w") as fh:
+        fh.write(json.dumps(stale) + "\n")
+    fresh = dict(
+        stale, tag="r2", gen_s=20.0, e2e_s=21.0, out_file="/nonexistent/r2.mp4"
+    )
+    warm = dict(stale, tag="warmup", measured=False, gen_s=19.0)
+    outcome = {
+        "resumed": False,
+        "have": 0,
+        "rc": 0,
+        "warm": warm,
+        "done": [fresh],
+        "stop": "",
+    }
+    entry = H.case_result("C", case, 1, outcome)
+    assert entry["status"] == "pass" and entry["runs_ok"] == 1
+    assert entry["median_s"] == 20.0  # this run's row, not the stale 5.0 on disk
+    # a resumed case (CLI only) is judged from what is on disk
+    resumed = {
+        "resumed": True,
+        "have": 1,
+        "rc": 0,
+        "warm": None,
+        "done": [],
+        "stop": "",
+    }
+    assert H.case_result("C", case, 1, resumed)["median_s"] == 5.0
+    # a fresh run with no ok row has no timing and fails on its rc
+    failed = {"resumed": False, "have": 0, "rc": 1, "warm": warm, "stop": "",
+              "done": [dict(fresh, outcome="timeout", failure_class="timeout")]}  # fmt: skip
+    entry = H.case_result("C", case, 1, failed)
+    assert (
+        entry["status"] == "fail"
+        and entry["median_s"] is None
+        and entry["runs_ok"] == 0
+    )
+
+
+def test_median_is_the_statistical_median_for_even_counts(pack):
+    M.ensure_dirs()
+    case = {"id": "T2VA-L", "task": "t2va", "duration_s": 5, "steps": 50}
+    rows = [{"combo": "C", "case": "T2VA-L", "tag": t, "measured": True, "outcome": "ok",
+             "gen_s": g, "out_file": "/nonexistent/x.mp4", "mvhd_duration_s": 5.167, "has_audio": True}
+            for t, g in (("r1", 10.0), ("r2", 30.0))]  # fmt: skip
+    outcome = {
+        "resumed": False,
+        "have": 0,
+        "rc": 0,
+        "warm": None,
+        "done": rows,
+        "stop": "",
+    }
+    assert H.case_result("C", case, 2, outcome)["median_s"] == 20.0

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import statistics
 import time
 from dataclasses import dataclass, field
 
@@ -27,8 +28,10 @@ NIL_JOB = "00000000-0000-4000-8000-000000000000"
 
 
 def resolve_assets_dir(explicit: str | None = None) -> str:
-    """The pack to use: an explicit path, ``H3_ASSETS``, the shared CI volume, else the
-    in-repo prompts + manifests (enough for the t2va cases)."""
+    """The preferred pack: an explicit path, ``H3_ASSETS``, the shared CI volume, else the
+    in-repo prompts + manifests (enough for the t2va cases). Files are looked up per name
+    (``models.asset_path``) with the in-repo pack as the fallback, and pinned against the
+    repo manifest, so a partially staged directory neither hides nor re-pins anything."""
     for candidate in (
         explicit,
         os.environ.get("H3_ASSETS"),
@@ -216,12 +219,22 @@ def probe_checks(ep: Endpoint) -> list:
 
 
 def _metric(text: str, name: str, labels: str = "") -> float | None:
-    m = re.search(
-        rf"^{re.escape(name)}(?:\{{[^}}]*{re.escape(labels)}[^}}]*\}})?\s+([-+0-9.eE]+)",
-        text,
-        re.M,
-    )
-    return float(m.group(1)) if m else None
+    """The newest value of a Prometheus series: every ``name`` line whose label set holds the
+    whole ``label="value"`` pair (any line when no label is asked), max() of them. The
+    last-generation timestamps carry one series per request_type, and the first line in
+    the exposition is not the newest."""
+    values = []
+    for m in re.finditer(
+        rf"^{re.escape(name)}(?:\{{([^}}]*)\}})?\s+([-+0-9.eE]+)", text, re.M
+    ):
+        pairs = [p.strip() for p in (m.group(1) or "").split(",") if p.strip()]
+        if labels and labels not in pairs:
+            continue
+        try:
+            values.append(float(m.group(2)))
+        except ValueError:
+            continue
+    return max(values) if values else None
 
 
 def pregate(
@@ -529,20 +542,22 @@ def bench_case(
 
 
 def case_result(combo: str, case: dict, runs: int, outcome: dict) -> dict:
-    """The verdict for one case, with every counting clip judged."""
+    """The verdict for one case, with every counting clip judged. The rows that count are
+    the ones THIS call produced; only a resumed or partially resumed case (CLI use, never
+    the spec test) reads the newest ok rows back from results.jsonl."""
     problems, notes = [], []
-    for rec in R.newest_ok_rows(combo, case["id"], runs):
+    done = outcome.get("done") or []
+    warm = outcome.get("warm")
+    if outcome.get("resumed") or outcome.get("have"):
+        rows = R.newest_ok_rows(combo, case["id"], runs)
+    else:
+        rows = [r for r in done if r.get("outcome") == "ok"]
+    for rec in rows:
         p, n = J.run_problems(rec, case)
         problems += [f"{rec.get('tag')}: {x}" for x in p]
         notes += [f"{rec.get('tag')}: {x}" for x in n]
-    done = outcome.get("done") or []
-    warm = outcome.get("warm")
     bad = [r for r in ([warm] if warm else []) + done if r.get("outcome") != "ok"]
-    times = sorted(
-        R.primary_metric(r)
-        for r in R.newest_ok_rows(combo, case["id"], runs)
-        if R.primary_metric(r) is not None
-    )
+    times = sorted(R.primary_metric(r) for r in rows if R.primary_metric(r) is not None)
     xfail = (
         bool(bad)
         and all(r.get("failure_class") == "client_capability" for r in bad)
@@ -561,7 +576,7 @@ def case_result(combo: str, case: dict, runs: int, outcome: dict) -> dict:
         "runs_ok": outcome.get("have", 0) + sum(1 for r in done if r.get("outcome") == "ok"),
         "resumed": outcome.get("resumed", False), "status": status, "stop": outcome.get("stop") or "",
         "problems": problems, "notes": notes,
-        "median_s": times[len(times) // 2] if times else None, "min_s": times[0] if times else None,
+        "median_s": statistics.median(times) if times else None, "min_s": times[0] if times else None,
         "max_s": times[-1] if times else None,
         "failures": [{"tag": r.get("tag"), "outcome": r.get("outcome"), "failure_class": r.get("failure_class"),
                       "error": R.why(r)} for r in bad],

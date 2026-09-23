@@ -263,8 +263,11 @@ templates:
 - weights:
     - MiniMaxAI/MiniMax-H3
   impl: tt_transformers
-  # ~120 GB diffusers-modular snapshot (+ ~62 GB transformer_ref/ that `hf download` does not
-  # exclude) + ~68 GB persistent ttnn cache built on first start.
+  # The HF repo is 498.5 GB in total (FL2VA 144.1, Ref2VA 144.1, text_encoder 66.7,
+  # transformer 66.3, transformer_ref 66.3, vae 10.4, audio_vae 0.6 GB; public HF API,
+  # 2026-09-23). setup_host excludes FL2VA/, Ref2VA/, transformer_ref/, assets/, docs/ and
+  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES), so ~144 GB lands on disk, plus the ~68 GB
+  # persistent ttnn cache built on first start.
   min_disk_gb: 300
   # infer_param_count() reads no size from this name; check_ram() needs an explicit number.
   min_ram_gb: 64
@@ -282,10 +285,13 @@ templates:
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
     # runner uses that instead. Do not set MODEL_WEIGHTS_DIR here: spec env overrides the mount value.
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3
-    # Compile the three 16:9 shapes the CI suites use at startup (4-16 min each) instead of
-    # inside the first request of each shape; the readiness wait covers startup, test budgets
-    # do not have to. Trim to "16:9@5" if startup time matters more than clean budgets.
-    MINIMAX_H3_WARM_SHAPES: "16:9@5,16:9@10,16:9@15"
+    # Warm one shape only. run.py's readiness wait is TT_SERVER_READY_TIMEOUT_SECONDS=3600
+    # per boot attempt (x TT_SERVER_BOOT_ATTEMPTS=2) and covers container start, weight load,
+    # the ttnn cache build on the very first start and every warm shape; a miss stops the
+    # container and the warmups repeat. Three warm compiles (4-16 min each) plus load can
+    # exceed it. The 10 s / 15 s shapes compile inside their first request instead, which the
+    # benchmark's BH1X budgets (T2VA-M 1500 s, T2VA-H 1800 s) and each case's warmup run absorb.
+    MINIMAX_H3_WARM_SHAPES: "16:9@5"
     # Line-cabled boxes: MINIMAX_H3_FABRIC_TOPOLOGY: linear (ring is the default and ~30% faster).
   device_model_specs:
     - device: BLACKHOLE_GALAXY

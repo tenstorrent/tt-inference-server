@@ -8,7 +8,7 @@ adapter and test_h3_bench.py without hardware.  Standard library + ffmpeg.
 By default it speaks the contract observed on the hosted endpoints on 2026-09-18:
 bearer auth, POST -> 202 + job id, queued -> in_progress -> completed, GET
 .../download serves a real mp4 (ffmpeg testsrc2 + sine, 1344x768 at 24 fps,
-17n+5 frames), `num_inference_steps` is a hard 422 "unknown field", the
+17n+5 frames), `num_inference_steps` is a hard 422 (fixed 50-step schedule), the
 deployment gates refuse the tasks it does not serve with a str `detail` before
 the key is checked, cancel of a finished job is 404 (KNOWN cancel-of-finished-404)
 and DELETE of a running job is 409.
@@ -37,6 +37,7 @@ import binascii
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -636,6 +637,14 @@ class Handler(BaseHTTPRequestHandler):
             if task == "ref2va"
             else set()
         )
+        if (
+            "num_inference_steps" in req
+        ):  # the server's own wording (video_generate_request.py)
+            return self.detail(
+                422,
+                f"num_inference_steps is not accepted for MiniMax-H3 {task}: the deployment "
+                "runs a fixed 50-step schedule. Omit the field.",
+            )
         unknown = sorted(k for k in req if k not in allowed)
         if unknown:
             return self.detail(
@@ -692,7 +701,7 @@ class Handler(BaseHTTPRequestHandler):
         echo = {
             k: v for k, v in req.items() if k not in ("image_prompts", "references")
         }
-        echo["num_inference_steps"] = 20  # the schema default, echoed -- not what runs
+        echo["num_inference_steps"] = 50  # the pinned schedule, as the server echoes it
         if task == "fl2va":
             echo["image_prompts"] = [
                 {"frame_pos": e.get("frame_pos", 0), "image": "<elided>"}
@@ -795,6 +804,8 @@ def main(argv=None):
         f"short={OPTS.short}",
         flush=True,
     )
+    # SIGTERM (what the test fixture sends) must run atexit, or every mock leaks CLIP_DIR.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

@@ -959,7 +959,7 @@
                 "minimax_h3"
             ],
             "test_config": {
-                "test_timeout": 300,
+                "timeout": 300,
                 "retry_attempts": 0,
                 "retry_delay": 0,
                 "break_on_failure": false,
@@ -975,7 +975,7 @@
                 "minimax_h3"
             ],
             "test_config": {
-                "test_timeout": 2400,
+                "timeout": 2400,
                 "retry_attempts": 0,
                 "retry_delay": 0,
                 "break_on_failure": false,
@@ -990,7 +990,7 @@
                 "minimax_h3"
             ],
             "test_config": {
-                "test_timeout": 600,
+                "timeout": 600,
                 "retry_attempts": 0,
                 "retry_delay": 0,
                 "break_on_failure": false,
@@ -1007,7 +1007,7 @@
                 "minimax_h3"
             ],
             "test_config": {
-                "test_timeout": 7200,
+                "timeout": 7200,
                 "retry_attempts": 0,
                 "retry_delay": 0,
                 "break_on_failure": false,
@@ -1024,7 +1024,7 @@
                 "minimax_h3"
             ],
             "test_config": {
-                "test_timeout": 14400,
+                "timeout": 14400,
                 "retry_attempts": 0,
                 "retry_delay": 0,
                 "break_on_failure": false,

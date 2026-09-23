@@ -321,6 +321,21 @@ class TestVideoMatrixExpansion:
         assert bench["plan_full"] == [
             {"cases": ["T2VA-L", "T2VA-M", "T2VA-H"], "runs": 3}
         ]
+        # The expanded case carries only template/targets; its budget is the
+        # template's test_config, which BaseTest reads as config["timeout"]
+        # ("test_timeout" is a dead key there).
+        templates = load_server_tests_config()["test_templates"]
+        bench_config = templates["MiniMaxH3BenchmarkTest"]["test_config"]
+        assert bench_config["timeout"] == 14400
+        assert "test_timeout" not in bench_config
+        for template in (
+            "MiniMaxH3CreateContractTest",
+            "MiniMaxH3LifecycleDownloadTest",
+            "MiniMaxH3CancelLifecycleTest",
+            "MiniMaxH3VideoQualityTest",
+        ):
+            assert "timeout" in templates[template]["test_config"], template
+            assert "test_timeout" not in templates[template]["test_config"], template
 
     def test_wan_load_targets_merge_per_device(self):
         for suite_id, expected in self.WAN_LOAD_TARGETS.items():

@@ -15,7 +15,8 @@ Targets (video.json): ``task`` (t2va|fl2va|ref2va), ``plan_ci`` and ``plan_full`
 (lists of ``{"cases": [...], "runs": N}``; the CI plan is used under
 ``--ci-mode``), ``timeout_table`` (BH1X), ``idle_wait_s``, ``target_times_s``
 (per case, informational unless ``enforce_timing``), ``assets_dir``,
-``verify_manifest``, ``force``, ``continue_after_timeout``, ``combo``.
+``verify_manifest``, ``allow_resume`` (default false: CI never resumes from a previous
+results.jsonl), ``api_key``, ``continue_after_timeout``, ``combo``.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ from test_module._test_common.minimax_h3_bench import host as H
 from test_module._test_common.minimax_h3_bench import judge as J
 from test_module._test_common.minimax_h3_bench import models as M
 from test_module._test_common.minimax_h3_bench import runner as R
+from test_module._test_common.minimax_h3_client import resolve_server_api_key
 
 if TYPE_CHECKING:
     from report_module.schema import Block
@@ -79,6 +81,7 @@ def run_benchmark(
     continue_after_timeout: bool = False,
     combo: str | None = None,
     api_key: str | None = None,
+    deadline_s: float | None = None,
 ) -> dict[str, Any]:
     plan = plan or DEFAULT_PLAN_CI
     target_times_s = target_times_s or {}
@@ -100,7 +103,7 @@ def run_benchmark(
         "task_name": "minimax_h3_benchmark", "base_url": base_url, "task": task, "combo": combo,
         "timeout_table": timeout_table, "assets_dir": M.assets_dir(), "out_dir": out_dir,
         "plan": plan, "pregate": [], "probe": [], "smoke": None, "cases": [], "leftover_jobs": [],
-        "success": False,
+        "success": False, "deadline_hit": False,
     }  # fmt: skip
     M.log(
         f"=== minimax_h3_benchmark {combo}: task={task} plan={json.dumps(plan)} table={timeout_table}"
@@ -125,11 +128,7 @@ def run_benchmark(
     asset_problems = (
         M.verify_assets(needed)
         if verify_manifest
-        else [
-            f"missing asset {n}"
-            for n in sorted(needed)
-            if not os.path.exists(os.path.join(M.assets_dir(), n))
-        ]
+        else [f"missing asset {n}" for n in sorted(needed) if M.asset_path(n) is None]
     )
     result["probe"] += asset_problems
 
@@ -184,9 +183,16 @@ def run_benchmark(
 
         # 4. the plan
         for case, runs in selected:
-            if ep.stopped:
+            over = deadline_s is not None and time.time() - started > deadline_s
+            if over and not ep.stopped:
+                result["deadline_hit"] = True
+            if ep.stopped or over:
+                stop = (
+                    ep.stopped
+                    or f"deadline: {deadline_s:.0f}s elapsed before this case started"
+                )
                 result["cases"].append({"case": case["id"], "task": task, "status": "skipped",
-                                        "stop": ep.stopped, "runs_requested": runs, "runs_ok": 0})  # fmt: skip
+                                        "stop": stop, "runs_requested": runs, "runs_ok": 0})  # fmt: skip
                 continue
             outcome = H.bench_case(
                 adapter,
@@ -280,12 +286,24 @@ class MiniMaxH3BenchmarkTest(BaseTest):
             target_times_s=dict(self.targets.get("target_times_s") or {}),
             enforce_timing=bool(self.targets.get("enforce_timing", False)),
             verify_manifest=bool(self.targets.get("verify_manifest", True)),
-            force=bool(self.targets.get("force", False)),
+            # CI never resumes: a previous run's rows must not stand in for generations that
+            # did not happen. Resume stays a CLI feature (main() below, --force off by default).
+            force=not bool(self.targets.get("allow_resume", False)),
             continue_after_timeout=bool(
                 self.targets.get("continue_after_timeout", False)
             ),
             combo=self.targets.get("combo"),
+            api_key=self.targets.get("api_key") or resolve_server_api_key(),
+            deadline_s=self._deadline_s(),
         )
+
+    def _deadline_s(self) -> float | None:
+        """Cooperative bound: BaseTest's timeout cannot interrupt the worker thread, so the
+        benchmark stops starting cases this long after it began (600 s before the timeout,
+        for cancel and teardown) and reports the cases it never started as skipped."""
+        if not self.timeout:
+            return None
+        return max(60.0, float(self.timeout) - 600.0)
 
 
 def run_minimax_h3_benchmark(
