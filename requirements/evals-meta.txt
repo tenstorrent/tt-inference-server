@@ -14,6 +14,8 @@
 
 antlr4_python3_runtime==4.11
 lm-eval[api,math,ifeval,sentencepiece,vllm]==0.4.4
+# lm-eval 0.4.4 IFEval imports pkg_resources, removed in setuptools 81.
+setuptools>=77,<81
 pyjwt
 pillow
 datasets==3.1.0

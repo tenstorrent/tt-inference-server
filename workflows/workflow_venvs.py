@@ -419,10 +419,10 @@ def setup_evals_meta(
             f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
         )
         setup_succeeded = run_command(clone_cmd, logger=logger) == 0 and setup_succeeded
-        # cookbook editable install needs modern setuptools
+        # evals-meta.txt supplies setuptools compatible with cookbook and IFEval.
         setup_succeeded = (
             run_command(
-                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
+                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip",
                 logger=logger,
             )
             == 0
