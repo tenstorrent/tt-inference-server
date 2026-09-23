@@ -342,6 +342,24 @@ class TTSD35Runner(TTDiTRunner):
             return None
         if self.settings.device != DeviceTypes.BLACKHOLE_GALAXY.value:
             return None
+        # Multi-worker mode. When DEVICE_IDS lists 4-chip columns,
+        # e.g. "(0,4,12,8),(1,5,13,9),...", the scheduler starts one worker per
+        # column and setup_runner_environment pins it with TT_VISIBLE_DEVICES.
+        # With only its 4 chips visible, tt-metal auto-discovers them as a closed
+        # ring (system mesh (2, 2)) and a bare (4, 1) opens directly with ring
+        # fabric. No (4, 8) parent is needed -- nor possible, since a second
+        # worker cannot open chips the first one already holds. Measured on
+        # DC16-2-BG-0203-u13-43 (fw 19.11.0, image 0.22.0-da1e44c2): 8 workers x
+        # (4, 1), 4.35-4.44 s per 20-step image each, output bit-identical to the
+        # single-worker parent-mesh path. The parent-mesh plan below is only for
+        # the single-worker case, where all 32 chips are visible and a partial
+        # mesh cannot bring up fabric (Fabric Router Sync timeout).
+        if len(str(self.device_id).split(",")) < 32:
+            self.logger.info(
+                f"Device {self.device_id}: column worker, opening "
+                f"{tuple(self.settings.device_mesh_shape)} directly (no parent mesh)"
+            )
+            return None
         return SD35_BH_GALAXY_PARENT_MESH_PLANS.get(
             tuple(self.settings.device_mesh_shape)
         )
