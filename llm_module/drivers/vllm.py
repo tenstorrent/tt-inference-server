@@ -23,6 +23,7 @@ from typing import List, Optional, Tuple
 from utils.url_helpers import uses_remote_base_url
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..goodput import VLLM_GOODPUT_KEYS, render_goodput
 from ..parsers.vllm import VLLMBenchParser
 from ..fixed_workload_protocol import validate_fixed_workload
 from ._subprocess import load_json, run_command, safe_filename_part
@@ -77,11 +78,12 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if config.goodput:
+    goodput = render_goodput(config.goodput, VLLM_GOODPUT_KEYS)
+    if goodput:
         # --goodput takes space-separated KEY:VALUE SLO pairs as separate
         # argv tokens (nargs="+"; keys ttft/tpot/e2el, milliseconds). With
         # it the result JSON gains request_goodput (good requests/sec).
-        cmd.extend(["--goodput", *config.goodput.split()])
+        cmd.extend(["--goodput", *goodput.split()])
 
     if config.token_timing:
         cmd.extend(

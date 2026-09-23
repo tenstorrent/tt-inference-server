@@ -5,6 +5,7 @@
 import json
 from pathlib import Path
 
+from llm_module.goodput import GoodputSlo
 from llm_module.config import LLMRunConfig, ServerConnection
 from llm_module.drivers.vllm import build_vllm_bench_serve_argv
 
@@ -141,7 +142,7 @@ def test_goodput_constraints_passed_as_separate_tokens():
     )
     cmd, _ = build_vllm_bench_serve_argv(
         vllm_binary="vllm",
-        config=_config(goodput="ttft:2000 tpot:20 e2el:20000"),
+        config=_config(goodput=GoodputSlo(ttft_ms=2000, tpot_ms=20, e2el_ms=20000)),
         server=server,
         result_filename=_result_path(),
     )

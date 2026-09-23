@@ -34,8 +34,11 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
 # used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
+# Track the runtime branch during development. It will be protected and require
+# review before merging changes. Switch to a specific commit once development
+# is stable.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "1d4c2fe1f5f4d23f4cdbb9642039d5a0f82e9e88"
+HARBOR_REF = "tt-inference-server"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -60,9 +63,8 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
         ):
             return False
 
-    # `fetch <sha>` rather than a full mirror fetch: uploadpack.allowAnySHA1InWant
-    # is on for GitHub, so a single commit and its trees come down without the
-    # rest of the history. --depth 1 keeps a bumped pin from accumulating it.
+    # Fetch the selected branch or commit rather than all remote refs.
+    # --depth 1 keeps repeated updates from accumulating history.
     steps = (
         f"git -C {dest} remote set-url origin {repo}",
         f"git -C {dest} fetch --depth 1 origin {ref}",
