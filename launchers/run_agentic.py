@@ -61,7 +61,7 @@ def main() -> int:
         # run.py resolves a "llm-gauntlet;<path>" value before forwarding, so
         # this normally gets a plain path. Resolve anyway, so the launcher stays
         # runnable by hand with the same spelling an operator copied out of a
-        # log; a second resolution is an idempotent no-op fetch.
+        # log; a second resolution just re-downloads the same specs.
         args.requirements_json = resolve_requirements_location(args.requirements_json)
         register_requirements_providers(load_requirements(args.requirements_json))
     # EVALS_AGENTIC setup depends on the model, so resolve the spec first.

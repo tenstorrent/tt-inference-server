@@ -39,12 +39,12 @@ REQUIREMENTS_HELP = (
     "points and their scalar targets/SLOs, and the model + deployment metadata "
     "(so a model not in the catalog can still be run). --model/--device default "
     "from the document when omitted. Accepts 'llm-gauntlet;<path>' to name a "
-    "document by its path inside the llm-gauntlet repo, which is then cloned "
-    "into this repo root -- e.g. "
-    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The clone is over SSH "
-    "(the repo is private) and tracks the remote's default branch unless "
-    "TT_LLM_GAUNTLET_REF names a branch, tag or commit; pin it in CI so a run is "
-    "reproducible. TT_LLM_GAUNTLET_REPO overrides the URL, e.g. for HTTPS."
+    "document by its path inside the llm-gauntlet repo, whose specs/**/*.json "
+    "are then downloaded (GitHub tarball, no clone) into this repo root -- e.g. "
+    "'llm-gauntlet;specs/tt-internal/qwen3-32b/<id>.json'. The repo is private, "
+    "so set TT_LLM_GAUNTLET_TOKEN to a GitHub token that can read it. Fetches "
+    "main unless TT_LLM_GAUNTLET_REF names a branch, tag or commit; pin it in CI "
+    "so a run is reproducible."
 )
 
 

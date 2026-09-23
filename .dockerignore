@@ -26,6 +26,5 @@ tt-media-server/cpp_server/build
 tt-media-server/cpp_server/build-*
 tt-media-server/cpp_server/compile_commands.json
 tt-media-server/cpp_server/tt-llm-engine
-# Pulled on demand by --requirements-json "llm-gauntlet;<path>"; a pnpm
-# workspace has no business in a build context.
+# Pulled on demand by --requirements-json "llm-gauntlet;<path>".
 llm-gauntlet

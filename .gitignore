@@ -93,8 +93,5 @@ model_spec.json
 default_model_spec.json
 
 # Requirements documents/validation plans are pulled from llm-gauntlet on
-# demand by --requirements-json "llm-gauntlet;<path>". The clone is a build
-# artifact of a run, not source: its .ts/.md/pnpm-lock.yaml match nothing
-# below, and the unanchored !requirements*.txt above would otherwise un-ignore
-# a requirements.txt inside it.
+# demand by --requirements-json "llm-gauntlet;<path>"; a run artifact, not source.
 /llm-gauntlet/
