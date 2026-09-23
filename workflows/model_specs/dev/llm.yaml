@@ -462,7 +462,7 @@ templates:
       max_concurrency: 16
       max_context: 262144
       max_tokens_all_users_override: 1050592
-      tt_metal_source_ref: 22bc096710f34708501b6c9f24c79643e34fbe4e
+      tt_metal_source_ref: df19975ffac21f300c91a385fe69bb8110b9ccb2
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
       default_impl: true
