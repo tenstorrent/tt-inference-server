@@ -444,6 +444,21 @@ def setup_evals_meta(
         setup_succeeded = (
             install_requirements(venv_config, "evals-meta.txt") and setup_succeeded
         )
+    # Fail before sending evaluation requests if sentence scoring cannot run.
+    # Use the venv's standard NLTK data path; do not relax NLTK proxy checks.
+    if (
+        not setup_succeeded
+        or run_command(
+            [
+                str(venv_config.venv_python),
+                str(get_repo_root_path() / "scripts" / "setup_nltk_data.py"),
+            ],
+            logger=logger,
+        )
+        != 0
+    ):
+        os.chdir(original_dir)
+        return False
     meta_eval_dir = (
         cookbook_dir
         / "end-to-end-use-cases"
