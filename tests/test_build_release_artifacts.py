@@ -66,10 +66,11 @@ def test_config_scope_resolves_exact_artifact_identity(tmp_path):
         }
     }
 
-    models, expected = resolve_configured_scope(config, _write_dev(tmp_path))
+    models, expected, kinds = resolve_configured_scope(config, _write_dev(tmp_path))
 
     assert models == {"Qwen/Qwen3-32B": ["galaxy"]}
     assert expected == {("Qwen/Qwen3-32B", "galaxy"): IDENTITY}
+    assert kinds == {"Qwen/Qwen3-32B": ["release"]}
 
 
 def test_artifact_and_job_matching_support_full_name_variants():
