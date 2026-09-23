@@ -85,4 +85,11 @@ already select these suites. Do not inherit the other implementation's known
 issue waivers. The shared Llama-3.1-8B LongBench configuration uses plain
 completion prompts, temperature 0 and a 512-token generation limit, matching
 [the GPU reference](https://github.com/tenstorrent/tt-inference-server/issues/1948#issuecomment-3821456040).
+For this QB2 implementation, the LongBench client uses the server's configured
+context length and a hash-verified local tokenizer snapshot. This avoids the
+API harness default, which retains only 1535 input tokens when 512 output tokens
+are reserved. The saved `longbench_protocol/tokenizer_identity.json` records the
+client tokenizer. Other implementations retain their existing client settings.
+The linked GPU reference does not specify its effective context length or
+tokenizer revision; confirm these before claiming protocol equivalence.
 Full-dataset qualification on the candidate is still required.

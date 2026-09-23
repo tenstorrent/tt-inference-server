@@ -300,7 +300,28 @@ def build_eval_command(
             str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
         ]
 
-    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    model_kwargs = dict(task.model_kwargs)
+    if (
+        getattr(getattr(model_spec, "impl", None), "impl_id", None) == "llama31_8b_qb2"
+        and task.task_name.startswith("longbench_")
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+    ):
+        from llm_module.fixed_workload_protocol import resolve_tokenizer
+
+        # The API harness defaults to 2048 - 1, then reserves 512 output
+        # tokens and silently drops all but 1535 input tokens. Use this
+        # implementation's supported context and the same verified tokenizer
+        # as its server/performance protocol. Leave shared task objects and
+        # other implementations unchanged.
+        if not isinstance(device_max_context, int) or device_max_context < 16384:
+            raise ValueError("QB2 LongBench requires its configured full context")
+        model_kwargs["max_length"] = device_max_context
+        model_kwargs["tokenizer"] = resolve_tokenizer(
+            model_spec,
+            Path(output_path) / f"eval_{model_spec.model_id}" / "longbench_protocol",
+        )
+
+    model_kwargs_list = [f"{k}={v}" for k, v in model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 
