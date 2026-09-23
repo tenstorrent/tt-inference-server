@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -264,3 +265,54 @@ def test_resume_skips_measured_rows_already_present(mock, pack, tmp_path, monkey
         "r1",
         "smoke",
     ]  # only the smoke re-ran
+
+
+def _get(url, path, key="mock-key"):
+    req = urllib.request.Request(url + path, headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, dict(resp.headers), resp.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers), exc.read()
+
+
+def test_job_ids_and_legacy_links_never_echo_request_text(mock):
+    import uuid
+
+    url = mock()
+    # a job id that is not a UUID is simply "no such job"
+    code, _, _ = _get(url, "/v1/videos/generations/not-a-job")
+    assert code == 404
+    # the legacy route's successor link carries the route constant or the re-serialised UUID
+    _, headers, _ = _get(url, "/video/jobs")
+    assert headers.get("Link") == '</v1/videos/jobs>; rel="successor-version"'
+    jid = str(uuid.uuid4())
+    code, headers, _ = _get(url, f"/video/generations/{jid.upper()}")
+    assert code == 404
+    assert (
+        headers.get("Link")
+        == f'</v1/videos/generations/{jid}>; rel="successor-version"'
+    )
+    # request text that is neither a route nor a UUID gets no Link header at all
+    code, headers, _ = _get(url, "/video/generations/%0d%0aX-Injected:%201")
+    assert code == 404 and "Link" not in headers
+    # a real job: the download's Content-Disposition names the server-issued id
+    body = json.dumps(
+        {"prompt": "a fox", "aspect_ratio": "16:9", "duration_seconds": 5}
+    ).encode()
+    req = urllib.request.Request(
+        url + "/v1/videos/generations", data=body, method="POST",
+        headers={"Authorization": "Bearer mock-key", "Content-Type": "application/json"},
+    )  # fmt: skip
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        job = json.loads(resp.read())
+    deadline = time.time() + 60
+    while time.time() < deadline:
+        code, headers, _ = _get(url, f"/v1/videos/generations/{job['id']}/download")
+        if code == 200:
+            break
+        time.sleep(0.5)
+    assert code == 200
+    assert (
+        headers.get("Content-Disposition") == f'attachment; filename="{job["id"]}.mp4"'
+    )

@@ -54,24 +54,29 @@ def ffprobe_json(path: str) -> dict | None:
     shape when only ffmpeg is installed (imageio-ffmpeg ships no ffprobe); None when
     neither is available."""
     probe = M.ffprobe_binary()
-    if probe:
-        out = subprocess.run(
-            [probe, "-v", "error", "-print_format", "json", "-show_streams", "-show_format", path],
-            capture_output=True, text=True, timeout=120,
-        )  # fmt: skip
-        try:
-            return json.loads(out.stdout or "{}")
-        except ValueError:
-            return {}
-    ffmpeg = M.ffmpeg_binary()
-    if not ffmpeg:
+    ffmpeg = None if probe else M.ffmpeg_binary()
+    if not probe and not ffmpeg:
         return None
-    out = subprocess.run(
-        [ffmpeg, "-hide_banner", "-i", path],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        with M.media_arg(path) as (src, fds):
+            if probe:
+                out = subprocess.run(
+                    [probe, "-v", "error", "-print_format", "json", "-show_streams", "-show_format", src],
+                    capture_output=True, text=True, timeout=120, **fds,
+                )  # fmt: skip
+                try:
+                    return json.loads(out.stdout or "{}")
+                except ValueError:
+                    return {}
+            out = subprocess.run(
+                [ffmpeg, "-hide_banner", "-i", src],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                **fds,
+            )
+    except OSError:  # the clip is missing or unreadable: same answer as a failed probe
+        return {}
     text = out.stderr
     streams = []
     for m in re.finditer(
@@ -104,10 +109,14 @@ def audio_stats(path: str):
     ffmpeg = M.ffmpeg_binary()
     if not ffmpeg:
         return None, None, None
-    out = subprocess.run(
-        [ffmpeg, "-hide_banner", "-i", path, "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-"],
-        capture_output=True, text=True, timeout=300,
-    )  # fmt: skip
+    try:
+        with M.media_arg(path) as (src, fds):
+            out = subprocess.run(
+                [ffmpeg, "-hide_banner", "-i", src, "-map", "0:a:0", "-af", "volumedetect", "-f", "null", "-"],
+                capture_output=True, text=True, timeout=300, **fds,
+            )  # fmt: skip
+    except OSError:
+        return None, None, None
     text = out.stderr
     mean = re.search(r"mean_volume: (-?[\d.]+) dB", text)
     peak = re.search(r"max_volume: (-?[\d.]+) dB", text)

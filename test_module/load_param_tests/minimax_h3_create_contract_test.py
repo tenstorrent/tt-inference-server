@@ -10,9 +10,11 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp  # pyright: ignore[reportMissingImports]
 
@@ -133,6 +135,21 @@ def _headers(api_key: str, auth_mode: str) -> dict[str, str]:
     return headers
 
 
+# A job id the server may hand back and we may put in a URL: uuid4 on the real server.
+_JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+
+
+def _service_root(base_url: str) -> str:
+    """The server under test as ``scheme://host[:port][/prefix]``; only http(s) qualifies.
+
+    Rebuilt from the parsed parts, so every request URL is a validated origin plus one of the
+    module's route constants rather than raw configuration text."""
+    parts = urlsplit(str(base_url).strip())
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise ValueError(f"base_url must be an http(s) URL, got {base_url!r}")
+    return urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
+
+
 async def _cancel_created_job(
     session: aiohttp.ClientSession,
     *,
@@ -140,7 +157,9 @@ async def _cancel_created_job(
     api_key: str,
     task_id: str,
 ) -> dict[str, Any] | None:
-    url = f"{base_url.rstrip('/')}{CANCEL_PATH.format(job_id=task_id)}"
+    if not _JOB_ID.fullmatch(task_id):
+        return None  # not an id we would place in a URL
+    url = f"{_service_root(base_url)}{CANCEL_PATH.format(job_id=task_id)}"
     try:
         async with session.post(
             url,
@@ -229,14 +248,15 @@ async def run_create_contract(
     if normalized_profile not in _PROFILES:
         raise ValueError(f"profile must be one of {sorted(_PROFILES)}, got {profile!r}")
 
-    endpoint_url = f"{base_url.rstrip('/')}{CREATE_PATH}"
+    root = _service_root(base_url)
+    endpoint_url = f"{root}{CREATE_PATH}"
     timeout = aiohttp.ClientTimeout(total=request_timeout)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         results = [
             await _run_case(
                 session,
                 endpoint_url=endpoint_url,
-                base_url=base_url,
+                base_url=root,
                 api_key=api_key,
                 case=case,
             )

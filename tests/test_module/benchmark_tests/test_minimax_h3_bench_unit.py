@@ -617,3 +617,32 @@ def test_ci_mode_picks_the_bounded_plan():
         )
         is False
     )
+
+
+# -- media probes never put a file name on a command line ----------------------------------
+
+
+def test_media_arg_hands_the_file_over_as_a_descriptor(tmp_path):
+    src = tmp_path / "clip.bin"
+    src.write_bytes(b"ftyp-ish payload")
+    with M.media_arg(str(src)) as (arg, fds):
+        assert arg.startswith("/dev/fd/") and str(src) not in arg
+        (fd,) = fds["pass_fds"]
+        assert arg == f"/dev/fd/{fd}"
+        with open(arg, "rb") as fh:  # what ffmpeg/ffprobe do with the argument
+            assert fh.read() == b"ftyp-ish payload"
+    with pytest.raises(OSError):
+        os.fstat(fd)  # closed on exit
+    with pytest.raises(OSError):
+        with M.media_arg(str(tmp_path / "missing.mp4")):
+            pass
+
+
+def test_probes_on_a_missing_clip_answer_like_a_failed_probe(tmp_path):
+    missing = str(tmp_path / "gone.mp4")
+    assert M.has_audio(missing) in (
+        False,
+        None,
+    )  # None only when no probe binary exists
+    assert J.ffprobe_json(missing) in ({}, None)
+    assert J.audio_stats(missing) == (None, None, None)

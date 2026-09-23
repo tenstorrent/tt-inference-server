@@ -92,8 +92,30 @@ def frames_for(seconds):
     return n
 
 
+# The served (duration, aspect) grid. A lookup hands back the grid's own copy of the pair, so
+# clip file names, ffmpeg arguments and response headers are built from these constants and
+# never from request text (CodeQL py/path-injection, py/http-response-splitting).
+SHAPES = {(d, a): (d, a) for d in range(4, 16) for a in ASPECTS}
+LEGACY_ROUTES = {
+    "/video/generations": "/v1/videos/generations",
+    "/video/generations/i2v": "/v1/videos/generations/i2v",
+    "/video/generations/ref2va": "/v1/videos/generations/ref2va",
+    "/video/jobs": "/v1/videos/jobs",
+}
+
+
+def job_key(raw):
+    """Job ids are UUIDs (uuid4 on the real server too); anything else is 'no such job'.
+    Re-serialising through uuid.UUID keeps request text out of paths and headers."""
+    try:
+        return str(uuid.UUID(str(raw)))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def clip(seconds, aspect):
     """A real mp4 for this shape, encoded once (single-flight) and atomically."""
+    seconds, aspect = SHAPES[(seconds, aspect)]  # KeyError: not a served shape
     key = (seconds, aspect, OPTS.silent, OPTS.railed, OPTS.short)
     with LOCK:
         entry = CLIPS.get(key)
@@ -226,11 +248,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith("/video/"):
             self.send_header("Deprecation", "true")
             self.send_header("Sunset", "Wed, 31 Dec 2026 23:59:59 GMT")
-            self.send_header(
-                "Link",
-                f"<{self.path.replace('/video/', '/v1/videos/', 1)}>; "
-                f'rel="successor-version"',
-            )
+            successor = self.successor()
+            if successor:
+                self.send_header("Link", f'<{successor}>; rel="successor-version"')
         self.end_headers()
         self.wfile.write(body)
 
@@ -271,7 +291,22 @@ class Handler(BaseHTTPRequestHandler):
             if not rest.endswith(suffix):
                 return None
             rest = rest[: -len(suffix)]
-        return rest if rest and "/" not in rest else None
+        if not rest or "/" in rest:
+            return None
+        return job_key(rest)
+
+    def successor(self):
+        """The /v1 twin of a legacy /video/ path: a route-table constant, or the job route
+        with its (UUID) job id -- never the request text itself."""
+        p = self.norm()
+        for route in LEGACY_ROUTES.values():
+            if p == route:
+                return route
+        for suffix in ("", "/download", "/cancel"):
+            jid = self.job_id_from(p, suffix)
+            if jid:
+                return f"/v1/videos/generations/{jid}{suffix}"
+        return None
 
     def gate_text(self, task):
         return (
@@ -618,6 +653,9 @@ class Handler(BaseHTTPRequestHandler):
                 f"aspect_ratio {aspect!r} is not served for MiniMax-H3; "
                 f"pick from {sorted(ASPECTS)}",
             )
+        dur, aspect = SHAPES[
+            (dur, aspect)
+        ]  # the grid's copy: no request text downstream
         if task == "fl2va":
             pos = [e.get("frame_pos", 0) for e in req["image_prompts"]]
             if (

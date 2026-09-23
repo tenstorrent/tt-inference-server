@@ -11,6 +11,7 @@ directories) and fall back to ``H3_OUT`` / ``H3_ASSETS``.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -235,29 +236,48 @@ def mvhd_duration(path: str) -> float | None:
         return None
 
 
+@contextlib.contextmanager
+def media_arg(path: str):
+    """Hand a clip to ffmpeg/ffprobe as ``/dev/fd/N`` instead of by name.
+
+    Yields ``(argument, popen_kwargs)``. The file is opened here, a plain read; the child only
+    ever sees a descriptor number on its command line, so a path from a result directory can
+    never become an argument. Linux/macOS, which is where the harness runs. Missing or
+    unreadable files raise OSError before any process is started."""
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        yield f"/dev/fd/{fd}", {"pass_fds": (fd,)}
+    finally:
+        os.close(fd)
+
+
 def has_audio(path: str) -> bool | None:
     """True/False when a probe ran, None when neither ffprobe nor ffmpeg is available."""
     probe = ffprobe_binary()
+    ffmpeg = None if probe else ffmpeg_binary()
+    if not probe and not ffmpeg:
+        return None
+    if not os.path.isfile(path):
+        return False
     try:
-        if probe:
+        with media_arg(path) as (src, fds):
+            if probe:
+                out = subprocess.run(
+                    [probe, "-v", "error", "-select_streams", "a", "-show_entries",
+                     "stream=codec_name", "-of", "csv=p=0", src],
+                    capture_output=True, text=True, timeout=60, **fds,
+                )  # fmt: skip
+                return bool(out.stdout.strip())
             out = subprocess.run(
-                [probe, "-v", "error", "-select_streams", "a", "-show_entries",
-                 "stream=codec_name", "-of", "csv=p=0", path],
-                capture_output=True, text=True, timeout=60,
-            )  # fmt: skip
-            return bool(out.stdout.strip())
-        ffmpeg = ffmpeg_binary()
-        if ffmpeg:
-            out = subprocess.run(
-                [ffmpeg, "-hide_banner", "-i", path],
+                [ffmpeg, "-hide_banner", "-i", src],
                 capture_output=True,
                 text=True,
                 timeout=60,
+                **fds,
             )
             return bool(re.search(r"Stream #\d+:\d+.*: Audio:", out.stderr))
     except (OSError, subprocess.SubprocessError):
         return None
-    return None
 
 
 # ---------------------------------------------------------------- error extraction
