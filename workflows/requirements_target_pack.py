@@ -26,6 +26,7 @@ import logging
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional
 
+from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
 from workflow_module.model_catalog import ModelSpecProvider
 from workflow_module.requirements_schema import (
     PRIORITY_MUST,
@@ -418,12 +419,17 @@ class RequirementsTargetPack(TargetPack):
 
         if not scenario.sweep:
             return []
-        goodput_constraints = _goodput_constraints(scenario)
-        if goodput_constraints is None and _scenario_targets_goodput(scenario):
+        # With per-row overrides in play, "the scenario has no SLOs" is no
+        # longer the right predicate: a scenario can declare none itself and
+        # still have every row supply its own.
+        if _scenario_targets_goodput(scenario) and not any(
+            p.effective_slo(scenario.slo) for p in scenario.sweep
+        ):
             logger.warning(
-                "Scenario %r declares goodput expectations but no SLOs; "
-                "goodput is only measured when SLOs provide the --goodput "
-                "constraints, so those targets will grade as NA.",
+                "Scenario %r declares goodput expectations but no sweep point "
+                "yields SLOs (neither the scenario default nor any row "
+                "override); goodput is only measured when SLOs provide the "
+                "--goodput constraints, so those targets will grade as NA.",
                 scenario.id,
             )
 
@@ -473,9 +479,10 @@ class RequirementsTargetPack(TargetPack):
                     targets=targets,
                     priority=_aggregate_priority(list(target_priorities.values())),
                     target_priorities=target_priorities or None,
-                    goodput=goodput_constraints,
+                    goodput=_goodput_slo(point.effective_slo(scenario.slo)),
                 )
             )
+        _warn_on_duplicate_shapes(scenario)
         return params
 
     def smoke_test_benchmark_config(self, config: Any, device: Any) -> Any:
@@ -517,7 +524,7 @@ class RequirementsTargetPack(TargetPack):
         return replace_agentic_runs(
             base,
             self._agentic_concurrencies(),
-            goodput=self.agentic_traces_goodput() or "",
+            goodput=self._agentic_goodput_by_concurrency(),
             expected_sweep=self._agentic_expected_sweep(),
         )
 
@@ -550,17 +557,60 @@ class RequirementsTargetPack(TargetPack):
                     seen.setdefault(point.concurrency, None)
         return sorted(seen)
 
-    def agentic_traces_goodput(self) -> Optional[str]:
-        """AIPerf ``--goodput`` constraints from the agentic workloads' SLOs.
+    def _agentic_goodput_by_concurrency(self) -> Dict[int, str]:
+        """AIPerf ``--goodput`` constraints per operating point.
 
-        Without SLOs there is nothing defining a "good" request, so AIPerf can
-        report no goodput -- even when the document sets a goodputPct target.
+        Each row supplies its own bars only -- an agentic row with no ``slo``
+        does not inherit the workload's, since an agentic document targets
+        goodput at specific operating points rather than service-wide (see
+        ``test_agentic_rows_do_not_inherit_the_workload_slo``). A concurrency
+        with no row SLOs is omitted, leaving that run without bars rather than
+        a misleading number. First workload wins on a shared concurrency,
+        matching the dedupe in ``_agentic_concurrencies`` and
+        ``_agentic_expected_sweep``.
         """
         for workload in self._doc.agentic_workloads:
-            constraints = _aiperf_slo_constraints(workload.slo)
-            if constraints:
-                return constraints
-        return None
+            if workload.slo is not None and not any(
+                p.slo is not None for p in workload.sweep
+            ):
+                logger.warning(
+                    "Agentic workload %r declares workload-level SLOs (%r) but "
+                    "no sweep row declares its own; agentic goodput is graded "
+                    "per operating point, so these are ignored and goodput "
+                    "will not be measured. Move the SLOs onto the rows that "
+                    "carry a goodput target.",
+                    workload.id,
+                    workload.slo,
+                )
+        by_concurrency: Dict[int, str] = {}
+        owner: Dict[int, str] = {}
+        for workload in self._doc.agentic_workloads:
+            for point in workload.sweep:
+                if point.concurrency <= 0:
+                    continue
+                constraints = _aiperf_slo_constraints(point.slo)
+                if not constraints:
+                    continue
+                existing = by_concurrency.get(point.concurrency)
+                if existing is None:
+                    by_concurrency[point.concurrency] = constraints
+                    owner[point.concurrency] = workload.id
+                elif existing != constraints:
+                    # Not reconciled: an SLO set is a contract, not a lattice.
+                    # First wins; warn that the other's bars are dropped.
+                    logger.warning(
+                        "Agentic workloads %r and %r both define concurrency %d "
+                        "with different SLOs (%r vs %r); the sweep replays it "
+                        "once, so %r's bars are used and %r's are dropped.",
+                        owner[point.concurrency],
+                        workload.id,
+                        point.concurrency,
+                        existing,
+                        constraints,
+                        owner[point.concurrency],
+                        workload.id,
+                    )
+        return by_concurrency
 
     def resolve_agentic_run_specs(
         self,
@@ -660,46 +710,51 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
     return attach
 
 
-def _slo_constraints(slo: Optional[Slo], keys: Mapping[str, str]) -> Optional[str]:
-    """``--goodput`` constraint string for a set of SLOs, using ``keys``.
+def _goodput_slo(slo: Optional[Slo]) -> Optional[GoodputSlo]:
+    """The document's SLOs as the tool-neutral bars the drivers carry.
 
-    Returns None when there are no SLOs, in which case goodput cannot be
-    measured: nothing defines a "good" request.
+    Benchmark points are handed this value, not a rendered string: which CLI
+    vocabulary to use is the driver's business (``llm_module.goodput``), not
+    the document adapter's.
     """
     if slo is None:
         return None
-    values = {"ttft": slo.ttft_ms, "tpot": slo.tpot_ms, "e2el": slo.e2el_ms}
-    parts = [
-        f"{keys[metric]}:{values[metric]:g}"
-        for metric in ("ttft", "tpot", "e2el")
-        if values[metric] is not None
-    ]
-    return " ".join(parts) or None
-
-
-# vLLM names the per-request bars after the metrics themselves, so its keys are
-# the document's SLO metrics verbatim.
-_VLLM_GOODPUT_KEYS = {"ttft": "ttft", "tpot": "tpot", "e2el": "e2el"}
-
-# AIPerf spells the same three bars out in full, and has no per-output-token
-# tag: inter-token latency is the same measurement under another name, and a
-# request's end-to-end latency is its request latency. Both remain in ms, as
-# the document states them.
-_AIPERF_GOODPUT_KEYS = {
-    "ttft": "time_to_first_token",
-    "tpot": "inter_token_latency",
-    "e2el": "request_latency",
-}
-
-
-def _goodput_constraints(scenario: Scenario) -> Optional[str]:
-    """``vllm bench serve --goodput`` constraint string from a scenario's SLOs."""
-    return _slo_constraints(scenario.slo, _VLLM_GOODPUT_KEYS)
+    return GoodputSlo(ttft_ms=slo.ttft_ms, tpot_ms=slo.tpot_ms, e2el_ms=slo.e2el_ms)
 
 
 def _aiperf_slo_constraints(slo: Optional[Slo]) -> Optional[str]:
-    """AIPerf ``--goodput`` constraint string for a set of SLOs."""
-    return _slo_constraints(slo, _AIPERF_GOODPUT_KEYS)
+    """AIPerf ``--goodput`` string for a set of SLOs.
+
+    The agentic path renders here rather than carrying the typed bars, because
+    ``AgenticTracesRunSpec.goodput`` is a string the InferenceX client is
+    handed verbatim -- there is no driver in between to do the rendering.
+    """
+    return render_goodput(_goodput_slo(slo), AIPERF_GOODPUT_KEYS)
+
+
+def _warn_on_duplicate_shapes(scenario: Scenario) -> None:
+    """Warn when two sweep points share an (ISL, OSL, concurrency) shape.
+
+    Downstream the per-point values are keyed by that shape
+    (``llm_module/benchmark_configs.py``), so a duplicate is last-wins and one
+    point's targets and goodput bars are silently dropped. Cheap to detect
+    here, where the document is still in hand and the ids can be named.
+    """
+    seen: Dict[Any, int] = {}
+    for idx, point in enumerate(scenario.sweep):
+        shape = (point.isl, point.osl, point.concurrency)
+        if shape in seen:
+            logger.warning(
+                "Scenario %r declares sweep points %d and %d with the same "
+                "(isl=%d, osl=%d, concurrency=%d); downstream configs are keyed "
+                "by that shape, so only the last one's targets and goodput SLOs "
+                "are used.",
+                scenario.id,
+                seen[shape],
+                idx,
+                *shape,
+            )
+        seen[shape] = idx
 
 
 def _scenario_targets_goodput(scenario: Scenario) -> bool:
