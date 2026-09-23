@@ -148,3 +148,47 @@ def test_sweep_metadata_lives_only_at_top_level(tmp_path: Path):
     assert payload.count('"model"') == 0
     assert payload.count('"device"') == 1  # top-level metadata.device
     assert payload.count('"timestamp"') == 0
+
+
+class TestOnAcceptHook:
+    """The hook is how a running workflow checkpoints its report."""
+
+    def test_hook_fires_after_each_accept_with_the_block_already_recorded(self):
+        acc = BlockAccumulator()
+        seen: list[int] = []
+        acc.set_on_accept(lambda: seen.append(len(acc.blocks)))
+
+        acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
+        acc.accept([_benchmark_block()])
+
+        assert seen == [1, 2]
+
+    def test_hook_failure_does_not_break_accept(self):
+        acc = BlockAccumulator()
+
+        def boom() -> None:
+            raise RuntimeError("disk full")
+
+        acc.set_on_accept(boom)
+        acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
+
+        assert len(acc.blocks) == 1
+
+    def test_none_uninstalls_the_hook(self):
+        acc = BlockAccumulator()
+        seen: list[int] = []
+        acc.set_on_accept(lambda: seen.append(1))
+        acc.set_on_accept(None)
+
+        acc.accept([_benchmark_block()], envelope=SWEEP_ENVELOPE)
+
+        assert seen == []
+
+    def test_set_on_accept_returns_the_previous_hook(self):
+        acc = BlockAccumulator()
+
+        def first() -> None:
+            pass
+
+        assert acc.set_on_accept(first) is None
+        assert acc.set_on_accept(None) is first

@@ -85,3 +85,39 @@ def test_checkpoint_failure_is_swallowed(tmp_path: Path, monkeypatch) -> None:
     )
     # A sweep still producing data must never die because a render failed.
     assert checkpoint_report(tmp_path, accumulator=acc) is False
+
+
+def test_prepare_runs_before_the_partial_flag_is_set(tmp_path: Path) -> None:
+    """``prepare`` is where the workflow injects its metadata.
+
+    ``WorkflowExecution.inject_metadata`` writes ``report_partial=False`` (it is
+    also the end-of-run path), so the checkpoint must mark itself partial after
+    ``prepare`` -- otherwise every checkpoint would claim to be finished.
+    """
+    acc = BlockAccumulator()
+    acc.accept([_block(128)], envelope=ENVELOPE)
+
+    def prepare(schema) -> None:
+        schema.metadata["workflow"] = "benchmarks"
+        schema.metadata["run_command"] = "run.py --workflow benchmarks"
+        schema.metadata["report_partial"] = False
+
+    assert checkpoint_report(tmp_path, accumulator=acc, prepare=prepare) is True
+
+    meta = json.loads(_data_files(tmp_path)[0].read_text())["metadata"]
+    assert meta["workflow"] == "benchmarks"
+    assert meta["run_command"] == "run.py --workflow benchmarks"
+    assert meta["report_partial"] is True
+
+
+def test_prepare_does_not_leak_into_the_accumulator(tmp_path: Path) -> None:
+    acc = BlockAccumulator()
+    acc.accept([_block(128)], envelope=ENVELOPE)
+
+    def prepare(schema) -> None:
+        schema.metadata["workflow"] = "benchmarks"
+
+    checkpoint_report(tmp_path, accumulator=acc, prepare=prepare)
+
+    assert "workflow" not in acc.envelope
+    assert "report_partial" not in acc.envelope

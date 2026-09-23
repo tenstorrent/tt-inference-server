@@ -209,7 +209,12 @@ def _require_openai_server(ctx: MediaContext) -> None:
 
 
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
-    """Run every EVALS_AGENTIC task for this model; return one Block per task."""
+    """Run every EVALS_AGENTIC task for this model; return one Block per task.
+
+    Each Block is accepted as soon as its task finishes -- accepting is what
+    checkpoints the report, and one task can run for hours, so a job cancelled
+    during task N must not take tasks 1..N-1 with it.
+    """
     _configure_openai_env(ctx)
     _require_openai_server(ctx)
 
@@ -224,6 +229,7 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     server = _server_connection(ctx)
     driver_context = _driver_context(ctx)
     placeholder_config = LLMRunConfig(isl=0, osl=0, max_concurrency=0, num_prompts=0)
+    envelope = sweep_envelope(ctx)
 
     blocks: List[Block] = []
     for task in agentic_tasks:
@@ -243,18 +249,19 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
                     device=driver_context.device,
                 )
             )
+            accept_blocks([blocks[-1]], envelope=envelope)
             continue
         if outcome.raw is None:
             continue
 
         blocks.append(driver.parse(outcome.raw, device=driver_context.device))
+        accept_blocks([blocks[-1]], envelope=envelope)
         logger.info(
             "Task %s done: accuracy=%s",
             task.task_name,
             blocks[-1].data.get("accuracy"),
         )
 
-    accept_blocks(blocks, envelope=sweep_envelope(ctx))
     return blocks
 
 

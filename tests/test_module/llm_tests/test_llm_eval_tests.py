@@ -430,6 +430,65 @@ class TestRunLLMEval:
         assert out[0].data["status"] == TestStatus.SKIP.value
         assert "requires max_context >= 200000" in out[0].data["reason"]
 
+    def _run_killed_on_second_task(self, tasks, blocks_by_task):
+        """Run ``tasks``; the second ``_run_eval_task`` call is a GitHub cancel."""
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        run_calls = []
+
+        def run_eval_task(_ctx, task, _token):
+            run_calls.append(task.task_name)
+            if len(run_calls) == 2:
+                raise KeyboardInterrupt  # SIGINT from a GitHub cancel
+            return 0
+
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=tasks), patch(
+            f"{_MOD}.HttpServerController", return_value=server
+        ), patch(f"{_MOD}._run_eval_task", side_effect=run_eval_task), patch(
+            f"{_MOD}.discover_eval_results", return_value=["f.json"]
+        ), patch(f"{_MOD}.merge_eval_results", return_value={}), patch(
+            f"{_MOD}.blocks_for_task",
+            side_effect=lambda _ctx, task, *_a, **_k: blocks_by_task[task.task_name],
+        ), patch(f"{_MOD}.collect_sample_counts", return_value={}), patch(
+            f"{_MOD}.accept_blocks"
+        ) as accept, patch(f"{_MOD}.block_id", return_value=""), pytest.raises(
+            KeyboardInterrupt
+        ):
+            mod.run_llm_eval(_ctx())
+        return accept
+
+    def test_each_task_is_scored_and_accepted_before_the_next_one_runs(self):
+        """Accepting checkpoints the report, so a cancel during task N must find
+        tasks 1..N-1 already scored and accepted -- not waiting on a post-loop
+        parse that never happens."""
+        gpqa = MagicMock()
+        accept = self._run_killed_on_second_task(
+            [_task("gpqa"), _task("mmlu")], {"gpqa": [gpqa], "mmlu": [MagicMock()]}
+        )
+        accept.assert_called_once()
+        assert accept.call_args.args[0] == [gpqa]
+
+    def test_skipped_task_is_accepted_as_it_is_skipped(self):
+        accept = self._run_killed_on_second_task(
+            [
+                _task("longctx", min_context_required=200000),
+                _task("gpqa"),
+                _task("mmlu"),
+            ],
+            {"gpqa": [MagicMock()], "mmlu": [MagicMock()]},
+        )
+        accepted = [b for call in accept.call_args_list for b in call.args[0]]
+        assert accepted[0].data["status"] == TestStatus.SKIP.value
+
+    def test_skip_block_keeps_its_place_in_task_order(self):
+        # blocks_for_task is mocked to [], so ran tasks become FAIL blocks; the
+        # SKIP for "b" must sit between "a" and "c", in config order.
+        out, _run_task, _score_task, _accept = self._run(
+            [_task("a"), _task("b", min_context_required=200000), _task("c")]
+        )
+        assert [blk.data.get("status") for blk in out][1] == TestStatus.SKIP.value
+
 
 # --- EvalsWorkflow override --------------------------------------------------
 

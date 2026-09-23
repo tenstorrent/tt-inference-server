@@ -422,10 +422,11 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         )
         or _DEFAULT_WAIT_HEALTHY_TIMEOUT_S
     )
+    envelope = _envelope(ctx)
     if not server.wait_for_healthy(timeout=health_timeout):
         logger.error("⛔ inference server not healthy; aborting evals.")
         blocks = [_fail_block(ctx, t, "inference server not healthy") for t in tasks]
-        _accept(ctx, blocks)
+        _accept(blocks, envelope)
         return blocks
 
     # Trace capture is skipped for evals (it's a perf warm-up; eval correctness
@@ -433,10 +434,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     device_max_context = getattr(
         getattr(ctx.model_spec, "device_model_spec", None), "max_context", None
     )
-    ran_tasks = []
-    rc_by_task = {}
-    elapsed_seconds_by_task = {}
-    skipped_blocks: List[Block] = []
+    # Each task is scored and accepted as soon as it finishes: accepting is what
+    # checkpoints the report, so a job cancelled during task N keeps 1..N-1.
+    blocks: List[Block] = []
     for task in tasks:
         min_ctx = getattr(task, "min_context_required", None)
         if min_ctx and device_max_context and device_max_context < min_ctx:
@@ -445,7 +445,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 f"{device_max_context}"
             )
             logger.warning("⏭  Skipping %s: %s.", task.task_name, reason)
-            skipped_blocks.append(_status_block(ctx, task, TestStatus.SKIP, reason))
+            task_blocks = [_status_block(ctx, task, TestStatus.SKIP, reason)]
+            _accept(task_blocks, envelope)
+            blocks.extend(task_blocks)
             continue
         health = server.get_health()
         if getattr(health, "status_code", 200) != 200:
@@ -453,49 +455,51 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 "⛔ server unhealthy mid-eval (status %s); aborting.",
                 getattr(health, "status_code", "?"),
             )
-            rc_by_task[task.task_name] = 1
-            ran_tasks.append(task)
+            task_blocks = _score_task(ctx, task, rc=1, elapsed_seconds=None)
+            _accept(task_blocks, envelope)
+            blocks.extend(task_blocks)
             break
         started_at = time.perf_counter()
-        rc_by_task[task.task_name] = _run_eval_task(ctx, task, auth_token)
-        elapsed_seconds_by_task[task.task_name] = time.perf_counter() - started_at
-        ran_tasks.append(task)
+        rc = _run_eval_task(ctx, task, auth_token)
+        elapsed_seconds = time.perf_counter() - started_at
+        task_blocks = _score_task(ctx, task, rc=rc, elapsed_seconds=elapsed_seconds)
+        _accept(task_blocks, envelope)
+        blocks.extend(task_blocks)
 
-    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
-    results = merge_eval_results(result_files)
-    sample_counts = collect_sample_counts(result_files)
-    blocks: List[Block] = list(skipped_blocks)
-    for task in ran_tasks:
-        task_blocks = blocks_for_task(
-            ctx,
-            task,
-            results,
-            sample_counts,
-            elapsed_seconds=elapsed_seconds_by_task.get(task.task_name),
-        )
-        if task_blocks:
-            blocks.extend(task_blocks)
-        else:
-            # Ran but scored nothing (command failed or results unparseable) —
-            # v1's report path silently drops these; we surface a FAIL block.
-            rc = rc_by_task.get(task.task_name)
-            blocks.append(_fail_block(ctx, task, f"no eval results parsed (rc={rc})"))
-
-    _accept(ctx, blocks)
     return blocks
 
 
-def _accept(ctx: MediaContext, blocks: List[Block]) -> None:
+def _score_task(
+    ctx: MediaContext, task, *, rc: int, elapsed_seconds: Optional[float]
+) -> List[Block]:
+    """Score one finished task from the result files on disk right now."""
+    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
+    task_blocks = blocks_for_task(
+        ctx,
+        task,
+        merge_eval_results(result_files),
+        collect_sample_counts(result_files),
+        elapsed_seconds=elapsed_seconds,
+    )
+    if task_blocks:
+        return task_blocks
+    # Ran but scored nothing (command failed or results unparseable) —
+    # v1's report path silently drops these; we surface a FAIL block.
+    return [_fail_block(ctx, task, f"no eval results parsed (rc={rc})")]
+
+
+def _envelope(ctx: MediaContext) -> dict:
+    return {
+        **report_model_fields(ctx.model_spec),
+        "device": _device_label(ctx),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _accept(blocks: List[Block], envelope: dict) -> None:
     if not blocks:
         return
-    accept_blocks(
-        blocks,
-        envelope={
-            **report_model_fields(ctx.model_spec),
-            "device": _device_label(ctx),
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        },
-    )
+    accept_blocks(blocks, envelope=envelope)
 
 
 __all__ = ["run_llm_eval"]
