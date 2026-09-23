@@ -1,0 +1,2121 @@
+{
+  "schemaVersion": "2.7.0",
+  "document": {
+    "schemaVersion": "2.7.0",
+    "id": "f5aad3ff-36cf-48db-a504-6b9c3f4ab8e8",
+    "meta": {
+      "title": "Wiring Test - Qwen3-32B",
+      "customer": "Tenstorrent",
+      "customerId": "tt-internal",
+      "author": "tt-inference-server maintainers",
+      "status": "draft",
+      "revision": 1,
+      "createdAt": "2026-07-27T21:19:14.455Z",
+      "updatedAt": "2026-08-06T19:48:35.573Z",
+      "notes": "Synthetic validation plan, not a customer requirement. It exists to exercise the --requirements-json path end to end against a model that is easy to bring up: one text scenario, one agentic workload, four accuracy evals. Every target in it is an arbitrary placeholder and says nothing about Qwen3-32B or any other model, so a pass or fail here means only that the plumbing ran.\n\nTwo operating points will not execute as written, deliberately, so the reporting path for them stays covered: the four ISL-131072 rows equal the whole context window and leave no room for output, and the agentic sweep's concurrency 64 exceeds the declared 32."
+    },
+    "model": {
+      "name": "Qwen/Qwen3-32B",
+      "repoUrl": "https://huggingface.co/Qwen/Qwen3-32B",
+      "contextLength": 131072
+    },
+    "deployment": {
+      "environment": "on_prem",
+      "hardware": "WH GLX",
+      "maxConcurrencyPerInstance": 32,
+      "maxInstances": 1
+    }
+  },
+  "workloads": [
+    {
+      "kind": "text",
+      "id": "s-text",
+      "name": "Text sweep",
+      "oslValues": [
+        128,
+        1024
+      ],
+      "slo": {},
+      "maxConcurrency": 32
+    },
+    {
+      "kind": "agentic",
+      "id": "s-agentic",
+      "name": "Agentic trace replay",
+      "oslValues": [],
+      "slo": {},
+      "agenticWorkload": {
+        "traces": [
+          {
+            "id": "8a460203-50f4-4081-9300-7e8b85ef3cdb",
+            "name": "AgentX - Claude Code",
+            "suiteUrl": "https://docs.nvidia.com/aiperf/tutorials/datasets-inputs/inference-x-agent-x-mvp-benchmark",
+            "interactionMode": "interactive",
+            "share": 1,
+            "turnsPerSession": {
+              "mean": 8,
+              "max": 40
+            },
+            "toolCallsPerTurn": {
+              "mean": 1.5,
+              "max": 5
+            },
+            "contextPolicy": "append_only",
+            "peakContextTokens": 32768,
+            "prefixReusePct": 95,
+            "tokenSpread": {
+              "inputMean": 16000,
+              "inputP95": 64000,
+              "outputMean": 500,
+              "outputP95": 2000
+            },
+            "clientToolLatencyMs": 600
+          }
+        ]
+      },
+      "agenticSweep": [
+        {
+          "concurrency": 1,
+          "ttftMeanMs": 798.82,
+          "ttftP50Ms": 674.35,
+          "ttftP90Ms": 1181.6,
+          "ttftP95Ms": 1825.31,
+          "tpotMeanMs": 2.99,
+          "tpotP50Ms": 2.92,
+          "tpotP90Ms": 3.25,
+          "tpotP95Ms": 3.36,
+          "e2elMeanMs": 6640.2,
+          "e2elP50Ms": 3266.35,
+          "e2elP90Ms": 16475.15,
+          "e2elP95Ms": 20503.15,
+          "reqThroughputRps": 0.07602,
+          "totalThroughputTps": 21149.54344,
+          "decodeThroughputTps": 149.9896,
+          "inputTokensMean": 275639.09124,
+          "inputTokensP95": 526822.45,
+          "outputTokensMean": 1968.75547,
+          "outputTokensP95": 6905.45,
+          "kvCacheHitRatePct": 94.6068248312436,
+          "e2eNormIntvtyP75Tps": 190.451378339202,
+          "e2eNormIntvtyP90Tps": 113.898821250043,
+          "slo": {
+            "ttftMs": 1000,
+            "tpotMs": 10,
+            "e2elMs": 20000
+          },
+          "goodputPct": 90
+        },
+        {
+          "concurrency": 4,
+          "ttftMeanMs": 685.75,
+          "ttftP50Ms": 470.27,
+          "ttftP90Ms": 1266.58,
+          "ttftP95Ms": 1653.07,
+          "tpotMeanMs": 3.44,
+          "tpotP50Ms": 3.11,
+          "tpotP90Ms": 3.86,
+          "tpotP95Ms": 4.54,
+          "e2elMeanMs": 4925.88,
+          "e2elP50Ms": 2067.66,
+          "e2elP90Ms": 13016.16,
+          "e2elP95Ms": 18629.93,
+          "reqThroughputRps": 0.17554,
+          "totalThroughputTps": 32759.70424,
+          "decodeThroughputTps": 225.66072,
+          "inputTokensMean": 185628.47544,
+          "inputTokensP95": 579536,
+          "outputTokensMean": 1287.54517,
+          "outputTokensP95": 5388,
+          "kvCacheHitRatePct": 89.8734072417885,
+          "e2eNormIntvtyP75Tps": 162.289232406511,
+          "e2eNormIntvtyP90Tps": 103.524267975378,
+          "goodputPct": 0
+        },
+        {
+          "concurrency": 8,
+          "ttftMeanMs": 664.66,
+          "ttftP50Ms": 420.85,
+          "ttftP90Ms": 1074.32,
+          "ttftP95Ms": 1584.33,
+          "tpotMeanMs": 4.35,
+          "tpotP50Ms": 3.77,
+          "tpotP90Ms": 5.73,
+          "tpotP95Ms": 6.74,
+          "e2elMeanMs": 5082.16,
+          "e2elP50Ms": 2380.66,
+          "e2elP90Ms": 12242.25,
+          "e2elP95Ms": 19102.75,
+          "reqThroughputRps": 0.3688,
+          "totalThroughputTps": 56538.0676,
+          "decodeThroughputTps": 411.93824,
+          "inputTokensMean": 152098.3536,
+          "inputTokensP95": 465826.2,
+          "outputTokensMean": 1116.32733,
+          "outputTokensP95": 4440.85,
+          "kvCacheHitRatePct": 87.2336709908954,
+          "e2eNormIntvtyP75Tps": 146.005090706476,
+          "e2eNormIntvtyP90Tps": 102.768245475034,
+          "goodputPct": 0
+        },
+        {
+          "concurrency": 12,
+          "ttftMeanMs": 698.86,
+          "ttftP50Ms": 402.62,
+          "ttftP90Ms": 1099.32,
+          "ttftP95Ms": 2057.21,
+          "tpotMeanMs": 5.12,
+          "tpotP50Ms": 4.27,
+          "tpotP90Ms": 6.21,
+          "tpotP95Ms": 7.51,
+          "e2elMeanMs": 5624.07,
+          "e2elP50Ms": 2295.74,
+          "e2elP90Ms": 12824.27,
+          "e2elP95Ms": 23344.83,
+          "reqThroughputRps": 0.4613,
+          "totalThroughputTps": 64701.24328,
+          "decodeThroughputTps": 503.6092,
+          "inputTokensMean": 139118.91947,
+          "inputTokensP95": 380789.2,
+          "outputTokensMean": 1091.34195,
+          "outputTokensP95": 4763.25,
+          "kvCacheHitRatePct": 84.0546399188041,
+          "e2eNormIntvtyP75Tps": 137.052124962709,
+          "e2eNormIntvtyP90Tps": 90.7985000402776,
+          "goodputPct": 0
+        },
+        {
+          "concurrency": 16,
+          "ttftMeanMs": 770.79,
+          "ttftP50Ms": 410.63,
+          "ttftP90Ms": 1426.78,
+          "ttftP95Ms": 2086.87,
+          "tpotMeanMs": 6.2,
+          "tpotP50Ms": 4.86,
+          "tpotP90Ms": 7.98,
+          "tpotP95Ms": 9.95,
+          "e2elMeanMs": 6014.18,
+          "e2elP50Ms": 2635.1,
+          "e2elP90Ms": 13970.97,
+          "e2elP95Ms": 22475.18,
+          "reqThroughputRps": 0.69346,
+          "totalThroughputTps": 105186.63624,
+          "decodeThroughputTps": 677.94056,
+          "inputTokensMean": 150754.11306,
+          "inputTokensP95": 519512.9,
+          "outputTokensMean": 977.93128,
+          "outputTokensP95": 4207.4,
+          "kvCacheHitRatePct": 78.6951458278095,
+          "e2eNormIntvtyP75Tps": 112.857207063827,
+          "e2eNormIntvtyP90Tps": 75.1134558364355,
+          "goodputPct": 0
+        },
+        {
+          "concurrency": 64,
+          "ttftMeanMs": 700,
+          "ttftP50Ms": 400,
+          "ttftP90Ms": 1700,
+          "ttftP95Ms": 2200,
+          "tpotMeanMs": 6.2,
+          "tpotP50Ms": 5.1,
+          "tpotP90Ms": 8,
+          "tpotP95Ms": 10,
+          "e2elMeanMs": 6400,
+          "e2elP50Ms": 2900,
+          "e2elP90Ms": 14500,
+          "e2elP95Ms": 28000,
+          "reqThroughputRps": 1,
+          "totalThroughputTps": 200000,
+          "decodeThroughputTps": 890,
+          "inputTokensMean": 140000,
+          "inputTokensP95": 520000,
+          "outputTokensMean": 1000,
+          "outputTokensP95": 4300,
+          "kvCacheHitRatePct": 90,
+          "goodputPct": 0
+        }
+      ],
+      "maxConcurrency": 64
+    }
+  ],
+  "items": [
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 128,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 128,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 128,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 128,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 256,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 256,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 256,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 256,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 512,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 512,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 512,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 512,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 1024,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 1024,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 1024,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 1024,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 2048,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 2048,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 2048,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 2048,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 4096,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 4096,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 4096,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 4096,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 8192,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 8192,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 8192,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 8192,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 16384,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 16384,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 16384,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 16384,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 32768,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 32768,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 32768,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 32768,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 65536,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 65536,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 65536,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 65536,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 131072,
+      "osl": 128,
+      "targets": {
+        "concurrency": 1,
+        "isl": 131072,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 131072,
+      "osl": 128,
+      "targets": {
+        "concurrency": 32,
+        "isl": 131072,
+        "osl": 128,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 10000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 128,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 128,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 128,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 128,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 256,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 256,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 256,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 256,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 512,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 512,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 512,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 512,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 1024,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 1024,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 1024,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 1024,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 2048,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 2048,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 2048,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 2048,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 4096,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 4096,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 4096,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 4096,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 8192,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 8192,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 8192,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 8192,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 16384,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 16384,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 16384,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 16384,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 32768,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 32768,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 32768,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 32768,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 65536,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 65536,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 65536,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 65536,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 1,
+      "isl": 131072,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 1,
+        "isl": 131072,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "operating_point",
+      "scenarioId": "s-text",
+      "scenarioName": "Text sweep",
+      "kind": "text",
+      "concurrency": 32,
+      "isl": 131072,
+      "osl": 1024,
+      "targets": {
+        "concurrency": 32,
+        "isl": 131072,
+        "osl": 1024,
+        "ttftMeanMs": 4100,
+        "ttftP50Ms": 4000,
+        "ttftP99Ms": 35000,
+        "tpotMs": 22.2,
+        "tpotP50Ms": 22.2,
+        "tpotP99Ms": 22.2,
+        "e2elMs": 10000,
+        "e2elP50Ms": 10000,
+        "e2elP99Ms": 10000,
+        "decodeThroughputTps": 100000,
+        "totalThroughputTps": 100000,
+        "reqThroughputRps": 10,
+        "goodputPct": 90
+      },
+      "slo": {
+        "ttftMs": 4100,
+        "tpotMs": 22.2,
+        "e2elMs": 30000
+      },
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "tools": [
+        "vllm bench serve"
+      ]
+    },
+    {
+      "type": "accuracy_eval",
+      "spec": {
+        "name": "GPQA-Diamond",
+        "taskCategory": "reasoning",
+        "unit": "%",
+        "publishedScore": 89.6,
+        "publishedScoreUrl": "https://artificialanalysis.ai/evaluations/gpqa-diamond",
+        "gpuReferenceScore": 88.4,
+        "tolerance": 0.05,
+        "priority": "must"
+      },
+      "acceptance": "\u2265 83.98 %",
+      "methodology": "Run the eval's published harness on a reference GPU vLLM server to establish the GPU Reference Score; the production score must satisfy measured \u2265 GPU-Reference \u00d7 (1 \u2212 tolerance)."
+    },
+    {
+      "type": "accuracy_eval",
+      "spec": {
+        "name": "Terminal-Bench 2.1",
+        "taskCategory": "agentic",
+        "unit": "%",
+        "publishedScore": 67.4,
+        "publishedScoreUrl": "https://artificialanalysis.ai/evaluations/terminalbench-v2-1",
+        "gpuReferenceScore": 65.2,
+        "tolerance": 0.05,
+        "priority": "must"
+      },
+      "acceptance": "\u2265 61.94 %",
+      "methodology": "Run the eval's published harness on a reference GPU vLLM server to establish the GPU Reference Score; the production score must satisfy measured \u2265 GPU-Reference \u00d7 (1 \u2212 tolerance)."
+    },
+    {
+      "type": "accuracy_eval",
+      "spec": {
+        "name": "SWE-bench Verified",
+        "taskCategory": "agentic",
+        "unit": "%",
+        "gpuReferenceScore": 69,
+        "tolerance": 0.05,
+        "priority": "must"
+      },
+      "acceptance": "\u2265 65.55 %",
+      "methodology": "Run the eval's published harness on a reference GPU vLLM server to establish the GPU Reference Score; the production score must satisfy measured \u2265 GPU-Reference \u00d7 (1 \u2212 tolerance)."
+    },
+    {
+      "type": "accuracy_eval",
+      "spec": {
+        "name": "Tau^3-Banking Benchmark",
+        "taskCategory": "agentic",
+        "unit": "%",
+        "publishedScore": 18.1,
+        "publishedScoreUrl": "https://artificialanalysis.ai/evaluations/tau3-banking",
+        "gpuReferenceScore": 11.3,
+        "tolerance": 0.05,
+        "priority": "must"
+      },
+      "acceptance": "\u2265 10.73 %",
+      "methodology": "Run the eval's published harness on a reference GPU vLLM server to establish the GPU Reference Score; the production score must satisfy measured \u2265 GPU-Reference \u00d7 (1 \u2212 tolerance)."
+    },
+    {
+      "type": "agentic_operating_point",
+      "scenarioId": "s-agentic",
+      "scenarioName": "Agentic trace replay",
+      "concurrency": 1,
+      "traces": [
+        "AgentX - Claude Code (interactive) \u2014 100% of sessions \u00b7 8\u201340 turns/session \u00b7 1.5\u20135 tool calls/turn \u00b7 append-only, peak 32768 tokens \u00b7 95% prefix reuse \u00b7 16K\u201364K in / 500\u20132K out tokens \u00b7 tool exec 0.6 s"
+      ],
+      "targets": {
+        "concurrency": 1,
+        "ttftMeanMs": 798.82,
+        "ttftP50Ms": 674.35,
+        "ttftP90Ms": 1181.6,
+        "ttftP95Ms": 1825.31,
+        "tpotMeanMs": 2.99,
+        "tpotP50Ms": 2.92,
+        "tpotP90Ms": 3.25,
+        "tpotP95Ms": 3.36,
+        "e2elMeanMs": 6640.2,
+        "e2elP50Ms": 3266.35,
+        "e2elP90Ms": 16475.15,
+        "e2elP95Ms": 20503.15,
+        "reqThroughputRps": 0.07602,
+        "totalThroughputTps": 21149.54344,
+        "decodeThroughputTps": 149.9896,
+        "inputTokensMean": 275639.09124,
+        "inputTokensP95": 526822.45,
+        "outputTokensMean": 1968.75547,
+        "outputTokensP95": 6905.45,
+        "kvCacheHitRatePct": 94.6068248312436,
+        "e2eNormIntvtyP75Tps": 190.451378339202,
+        "e2eNormIntvtyP90Tps": 113.898821250043,
+        "slo": {
+          "ttftMs": 1000,
+          "tpotMs": 10,
+          "e2elMs": 20000
+        },
+        "goodputPct": 90
+      },
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 1; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 \u2014 the data source publishes no p99 for these families \u2014 and client-side tool execution is excluded.",
+      "tools": [
+        "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+      ]
+    },
+    {
+      "type": "agentic_operating_point",
+      "scenarioId": "s-agentic",
+      "scenarioName": "Agentic trace replay",
+      "concurrency": 4,
+      "traces": [
+        "AgentX - Claude Code (interactive) \u2014 100% of sessions \u00b7 8\u201340 turns/session \u00b7 1.5\u20135 tool calls/turn \u00b7 append-only, peak 32768 tokens \u00b7 95% prefix reuse \u00b7 16K\u201364K in / 500\u20132K out tokens \u00b7 tool exec 0.6 s"
+      ],
+      "targets": {
+        "concurrency": 4,
+        "ttftMeanMs": 685.75,
+        "ttftP50Ms": 470.27,
+        "ttftP90Ms": 1266.58,
+        "ttftP95Ms": 1653.07,
+        "tpotMeanMs": 3.44,
+        "tpotP50Ms": 3.11,
+        "tpotP90Ms": 3.86,
+        "tpotP95Ms": 4.54,
+        "e2elMeanMs": 4925.88,
+        "e2elP50Ms": 2067.66,
+        "e2elP90Ms": 13016.16,
+        "e2elP95Ms": 18629.93,
+        "reqThroughputRps": 0.17554,
+        "totalThroughputTps": 32759.70424,
+        "decodeThroughputTps": 225.66072,
+        "inputTokensMean": 185628.47544,
+        "inputTokensP95": 579536,
+        "outputTokensMean": 1287.54517,
+        "outputTokensP95": 5388,
+        "kvCacheHitRatePct": 89.8734072417885,
+        "e2eNormIntvtyP75Tps": 162.289232406511,
+        "e2eNormIntvtyP90Tps": 103.524267975378,
+        "goodputPct": 0
+      },
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 4; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 \u2014 the data source publishes no p99 for these families \u2014 and client-side tool execution is excluded.",
+      "tools": [
+        "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+      ]
+    },
+    {
+      "type": "agentic_operating_point",
+      "scenarioId": "s-agentic",
+      "scenarioName": "Agentic trace replay",
+      "concurrency": 8,
+      "traces": [
+        "AgentX - Claude Code (interactive) \u2014 100% of sessions \u00b7 8\u201340 turns/session \u00b7 1.5\u20135 tool calls/turn \u00b7 append-only, peak 32768 tokens \u00b7 95% prefix reuse \u00b7 16K\u201364K in / 500\u20132K out tokens \u00b7 tool exec 0.6 s"
+      ],
+      "targets": {
+        "concurrency": 8,
+        "ttftMeanMs": 664.66,
+        "ttftP50Ms": 420.85,
+        "ttftP90Ms": 1074.32,
+        "ttftP95Ms": 1584.33,
+        "tpotMeanMs": 4.35,
+        "tpotP50Ms": 3.77,
+        "tpotP90Ms": 5.73,
+        "tpotP95Ms": 6.74,
+        "e2elMeanMs": 5082.16,
+        "e2elP50Ms": 2380.66,
+        "e2elP90Ms": 12242.25,
+        "e2elP95Ms": 19102.75,
+        "reqThroughputRps": 0.3688,
+        "totalThroughputTps": 56538.0676,
+        "decodeThroughputTps": 411.93824,
+        "inputTokensMean": 152098.3536,
+        "inputTokensP95": 465826.2,
+        "outputTokensMean": 1116.32733,
+        "outputTokensP95": 4440.85,
+        "kvCacheHitRatePct": 87.2336709908954,
+        "e2eNormIntvtyP75Tps": 146.005090706476,
+        "e2eNormIntvtyP90Tps": 102.768245475034,
+        "goodputPct": 0
+      },
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 8; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 \u2014 the data source publishes no p99 for these families \u2014 and client-side tool execution is excluded.",
+      "tools": [
+        "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+      ]
+    },
+    {
+      "type": "agentic_operating_point",
+      "scenarioId": "s-agentic",
+      "scenarioName": "Agentic trace replay",
+      "concurrency": 12,
+      "traces": [
+        "AgentX - Claude Code (interactive) \u2014 100% of sessions \u00b7 8\u201340 turns/session \u00b7 1.5\u20135 tool calls/turn \u00b7 append-only, peak 32768 tokens \u00b7 95% prefix reuse \u00b7 16K\u201364K in / 500\u20132K out tokens \u00b7 tool exec 0.6 s"
+      ],
+      "targets": {
+        "concurrency": 12,
+        "ttftMeanMs": 698.86,
+        "ttftP50Ms": 402.62,
+        "ttftP90Ms": 1099.32,
+        "ttftP95Ms": 2057.21,
+        "tpotMeanMs": 5.12,
+        "tpotP50Ms": 4.27,
+        "tpotP90Ms": 6.21,
+        "tpotP95Ms": 7.51,
+        "e2elMeanMs": 5624.07,
+        "e2elP50Ms": 2295.74,
+        "e2elP90Ms": 12824.27,
+        "e2elP95Ms": 23344.83,
+        "reqThroughputRps": 0.4613,
+        "totalThroughputTps": 64701.24328,
+        "decodeThroughputTps": 503.6092,
+        "inputTokensMean": 139118.91947,
+        "inputTokensP95": 380789.2,
+        "outputTokensMean": 1091.34195,
+        "outputTokensP95": 4763.25,
+        "kvCacheHitRatePct": 84.0546399188041,
+        "e2eNormIntvtyP75Tps": 137.052124962709,
+        "e2eNormIntvtyP90Tps": 90.7985000402776,
+        "goodputPct": 0
+      },
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 12; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 \u2014 the data source publishes no p99 for these families \u2014 and client-side tool execution is excluded.",
+      "tools": [
+        "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+      ]
+    },
+    {
+      "type": "agentic_operating_point",
+      "scenarioId": "s-agentic",
+      "scenarioName": "Agentic trace replay",
+      "concurrency": 16,
+      "traces": [
+        "AgentX - Claude Code (interactive) \u2014 100% of sessions \u00b7 8\u201340 turns/session \u00b7 1.5\u20135 tool calls/turn \u00b7 append-only, peak 32768 tokens \u00b7 95% prefix reuse \u00b7 16K\u201364K in / 500\u20132K out tokens \u00b7 tool exec 0.6 s"
+      ],
+      "targets": {
+        "concurrency": 16,
+        "ttftMeanMs": 770.79,
+        "ttftP50Ms": 410.63,
+        "ttftP90Ms": 1426.78,
+        "ttftP95Ms": 2086.87,
+        "tpotMeanMs": 6.2,
+        "tpotP50Ms": 4.86,
+        "tpotP90Ms": 7.98,
+        "tpotP95Ms": 9.95,
+        "e2elMeanMs": 6014.18,
+        "e2elP50Ms": 2635.1,
+        "e2elP90Ms": 13970.97,
+        "e2elP95Ms": 22475.18,
+        "reqThroughputRps": 0.69346,
+        "totalThroughputTps": 105186.63624,
+        "decodeThroughputTps": 677.94056,
+        "inputTokensMean": 150754.11306,
+        "inputTokensP95": 519512.9,
+        "outputTokensMean": 977.93128,
+        "outputTokensP95": 4207.4,
+        "kvCacheHitRatePct": 78.6951458278095,
+        "e2eNormIntvtyP75Tps": 112.857207063827,
+        "e2eNormIntvtyP90Tps": 75.1134558364355,
+        "goodputPct": 0
+      },
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 16; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 \u2014 the data source publishes no p99 for these families \u2014 and client-side tool execution is excluded.",
+      "tools": [
+        "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+      ]
+    },
+    {
+      "type": "agentic_operating_point",
+      "scenarioId": "s-agentic",
+      "scenarioName": "Agentic trace replay",
+      "concurrency": 64,
+      "traces": [
+        "AgentX - Claude Code (interactive) \u2014 100% of sessions \u00b7 8\u201340 turns/session \u00b7 1.5\u20135 tool calls/turn \u00b7 append-only, peak 32768 tokens \u00b7 95% prefix reuse \u00b7 16K\u201364K in / 500\u20132K out tokens \u00b7 tool exec 0.6 s"
+      ],
+      "targets": {
+        "concurrency": 64,
+        "ttftMeanMs": 700,
+        "ttftP50Ms": 400,
+        "ttftP90Ms": 1700,
+        "ttftP95Ms": 2200,
+        "tpotMeanMs": 6.2,
+        "tpotP50Ms": 5.1,
+        "tpotP90Ms": 8,
+        "tpotP95Ms": 10,
+        "e2elMeanMs": 6400,
+        "e2elP50Ms": 2900,
+        "e2elP90Ms": 14500,
+        "e2elP95Ms": 28000,
+        "reqThroughputRps": 1,
+        "totalThroughputTps": 200000,
+        "decodeThroughputTps": 890,
+        "inputTokensMean": 140000,
+        "inputTokensP95": 520000,
+        "outputTokensMean": 1000,
+        "outputTokensP95": 4300,
+        "kvCacheHitRatePct": 90,
+        "goodputPct": 0
+      },
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 64; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 \u2014 the data source publishes no p99 for these families \u2014 and client-side tool execution is excluded.",
+      "tools": [
+        "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
+      ]
+    }
+  ]
+}
