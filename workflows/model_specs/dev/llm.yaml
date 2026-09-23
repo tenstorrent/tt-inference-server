@@ -3034,6 +3034,7 @@ templates:
         data_parallel_size: 1
         revision: 0e9e39f249a16976918f6564b8830bc894c89659
         tokenizer_revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        seed: 0  # Match the published adapter and frozen performance baseline.
         max-logprobs: -1
         async-scheduling: true
         no-enable-prefix-caching: true
