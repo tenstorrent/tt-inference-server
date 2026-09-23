@@ -100,3 +100,56 @@ def test_t2v_generation_routes_to_base_endpoint(monkeypatch):
 
     assert captured["url"].endswith("v1/videos/generations")
     assert "image_prompts" not in captured["payload"]
+
+
+def test_minimax_h3_has_fixed_step_profile():
+    from test_module.benchmark_tests import video_benchmark_tests as mod
+
+    assert mod.VIDEO_INFERENCE_STEPS["MiniMaxAI/MiniMax-H3"] == 50
+    assert mod.is_minimax_h3_model("MiniMaxAI/MiniMax-H3")
+    assert mod.is_minimax_h3_model("MiniMax-H3")
+    assert not mod.is_minimax_h3_model("Wan-AI/Wan2.2-T2V-A14B-Diffusers")
+
+
+def test_minimax_h3_generation_sends_shape_fields_not_steps(monkeypatch):
+    from test_module.benchmark_tests import video_benchmark_tests as mod
+
+    captured = {}
+
+    class _Resp:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return {"id": "job-h3"}
+
+    def _fake_post(url, json=None, headers=None, timeout=None):
+        captured["url"] = url
+        captured["payload"] = json
+        return _Resp()
+
+    def _fake_poll(ctx, job_id, headers, timeout=mod.DEFAULT_VIDEO_TIMEOUT_SECONDS):
+        captured["poll_timeout"] = timeout
+        return "/tmp/out.mp4"
+
+    monkeypatch.setattr(mod.requests, "post", _fake_post)
+    monkeypatch.setattr(mod, "_poll_video_completion", _fake_poll)
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(
+            model_name="MiniMax-H3", hf_model_repo="MiniMaxAI/MiniMax-H3"
+        ),
+        base_url="http://localhost:8000",
+    )
+    ok, _elapsed, job_id, path = mod._generate_video(
+        ctx, prompt="a fox", num_inference_steps=50
+    )
+    assert ok and job_id == "job-h3" and path == "/tmp/out.mp4"
+    assert captured["url"].endswith("v1/videos/generations")
+    assert captured["payload"] == {
+        "prompt": "a fox",
+        "aspect_ratio": "16:9",
+        "duration_seconds": 5,
+        "seed": 0,
+    }
+    assert "num_inference_steps" not in captured["payload"]
+    assert captured["poll_timeout"] == mod.MINIMAX_H3_VIDEO_TIMEOUT_SECONDS

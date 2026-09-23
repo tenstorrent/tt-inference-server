@@ -182,6 +182,7 @@ class TestVideoMatrixExpansion:
         "mochi-p150x4",
         "mochi-p150x8",
         "mochi-p300x2",
+        "minimax-h3-blackhole_galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -290,6 +291,36 @@ class TestVideoMatrixExpansion:
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():
             assert suite["num_of_devices"] == 1
+
+    def test_minimax_h3_suite_contract_lifecycle_and_benchmark(self):
+        # One single-host BH Galaxy serves t2va; the suite drives the V1 contract, one
+        # judged lifecycle, then the h3-benchmark cases. Cancel stays disabled until a
+        # single-host cancel is verified not to take the deployment down.
+        suite = self._suite_map()["minimax-h3-blackhole_galaxy"]
+        enabled = [
+            tc["template"] for tc in suite["test_cases"] if tc.get("enabled", True)
+        ]
+        assert enabled == [
+            "MiniMaxH3CreateContractTest",
+            "MiniMaxH3LifecycleDownloadTest",
+            "MiniMaxH3BenchmarkTest",
+        ]
+        disabled = [
+            tc["template"] for tc in suite["test_cases"] if not tc.get("enabled", True)
+        ]
+        assert disabled == ["MiniMaxH3CancelLifecycleTest"]
+        bench = self._case_targets(
+            "minimax-h3-blackhole_galaxy", "MiniMaxH3BenchmarkTest"
+        )
+        assert bench["task"] == "t2va"
+        assert bench["timeout_table"] == "BH1X"
+        assert bench["plan_ci"] == [
+            {"cases": ["T2VA-L"], "runs": 3},
+            {"cases": ["T2VA-M", "T2VA-H"], "runs": 1},
+        ]
+        assert bench["plan_full"] == [
+            {"cases": ["T2VA-L", "T2VA-M", "T2VA-H"], "runs": 3}
+        ]
 
     def test_wan_load_targets_merge_per_device(self):
         for suite_id, expected in self.WAN_LOAD_TARGETS.items():

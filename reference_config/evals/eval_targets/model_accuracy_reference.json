@@ -284,6 +284,13 @@
             "output_type": "pil"
         }
     },
+    "MiniMaxAI/MiniMax-H3": {
+        "hf_id": "MiniMaxAI/MiniMax-H3",
+        "num_inference_steps": 50,
+        "extra_args": {
+            "output_type": "pil"
+        }
+    },
     "Tongyi-MAI/Z-Image-Turbo-512x512": {
         "hf_id": "Tongyi-MAI/Z-Image-Turbo",
         "accuracy": {

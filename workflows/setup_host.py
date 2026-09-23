@@ -298,6 +298,15 @@ class HostSetupManager:
                 "params_format": "model_index.json",
                 "tokenizer_optional": True,
             },
+            {
+                # MiniMax-H3 ships a modular diffusers snapshot: modular_model_index.json
+                # instead of model_index.json.
+                "format_name": "diffusers_modular",
+                "weights_format": "**/*.safetensors",
+                "tokenizer_format": "tokenizer.json",
+                "params_format": "modular_model_index.json",
+                "tokenizer_optional": True,
+            },
         ]
 
         # Check each format

@@ -38,7 +38,8 @@
         "VIDEO": [
             "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-            "genmo/mochi-1-preview"
+            "genmo/mochi-1-preview",
+            "MiniMaxAI/MiniMax-H3"
         ],
         "LLM": [
             "Qwen/Qwen3-32B",
@@ -100,7 +101,8 @@
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
-            "bge_m3": "BGE-M3 embedding model tests"
+            "bge_m3": "BGE-M3 embedding model tests",
+            "minimax_h3": "MiniMax-H3 text-to-video-and-audio tests"
         }
     },
     "model_configs": {
@@ -233,6 +235,16 @@
                 "p150x4",
                 "p150x8",
                 "p300x2"
+            ]
+        },
+        "minimax_h3": {
+            "id_name": "minimax-h3",
+            "weights": [
+                "MiniMaxAI/MiniMax-H3"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "blackhole_galaxy"
             ]
         },
         "sdxl": {
@@ -935,6 +947,86 @@
                 "timeout": 3600,
                 "retry_attempts": 0,
                 "retry_delay": 10,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3CreateContractTest": {
+            "module": "test_module.load_param_tests.minimax_h3_create_contract_test",
+            "markers": [
+                "param",
+                "e2e",
+                "minimax_h3"
+            ],
+            "test_config": {
+                "test_timeout": 300,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3LifecycleDownloadTest": {
+            "module": "test_module.load_param_tests.minimax_h3_lifecycle_download_test",
+            "markers": [
+                "e2e",
+                "slow",
+                "heavy",
+                "minimax_h3"
+            ],
+            "test_config": {
+                "test_timeout": 2400,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3CancelLifecycleTest": {
+            "module": "test_module.load_param_tests.minimax_h3_cancel_lifecycle_test",
+            "markers": [
+                "e2e",
+                "slow",
+                "minimax_h3"
+            ],
+            "test_config": {
+                "test_timeout": 600,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3VideoQualityTest": {
+            "module": "test_module.eval_tests.minimax_h3_video_quality_test",
+            "markers": [
+                "eval",
+                "e2e",
+                "slow",
+                "heavy",
+                "minimax_h3"
+            ],
+            "test_config": {
+                "test_timeout": 7200,
+                "retry_attempts": 0,
+                "retry_delay": 0,
+                "break_on_failure": false,
+                "mock_mode": false
+            }
+        },
+        "MiniMaxH3BenchmarkTest": {
+            "module": "test_module.load_param_tests.minimax_h3_benchmark_test",
+            "markers": [
+                "load",
+                "e2e",
+                "slow",
+                "heavy",
+                "minimax_h3"
+            ],
+            "test_config": {
+                "test_timeout": 14400,
+                "retry_attempts": 0,
+                "retry_delay": 0,
                 "break_on_failure": false,
                 "mock_mode": false
             }
