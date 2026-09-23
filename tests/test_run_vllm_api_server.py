@@ -1070,3 +1070,125 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+def _llama_qb2_spec():
+    template = next(
+        t
+        for t in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if t.impl.impl_id == "llama31_8b_qb2"
+    )
+    spec = template.expand_to_specs()[0]
+    return {
+        "model_name": spec.model_name,
+        "hf_model_repo": spec.hf_model_repo,
+        "impl": {"impl_id": spec.impl.impl_id},
+        "device_model_spec": {"vllm_args": dict(spec.device_model_spec.vllm_args)},
+    }
+
+
+def test_llama_qb2_launch_routes_plugin_and_preserves_published_flags(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("TT_LLAMA_TEXT_VER", "stale")
+    module.register_tt_models("llama31_8b_qb2")
+    assert os.environ["TT_LLAMA_TEXT_VER"] == "llama31_8b_qb2"
+    module.register_tt_models("tt_transformers")
+    assert os.environ["TT_LLAMA_TEXT_VER"] == "tt_transformers"
+    spec = _llama_qb2_spec()
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=8000),
+        [],
+        spec["device_model_spec"]["vllm_args"],
+    )
+    argv = [t.replace("_", "-") if t.startswith("--") else t for t in sys.argv[1:]]
+
+    def value(flag):
+        return argv[argv.index(flag) + 1]
+
+    assert value("--block-size") == "128"
+    assert value("--max-num-seqs") == "32"
+    assert value("--max-model-len") == "131072"
+    assert value("--data-parallel-size") == "1"
+    assert (
+        value("--revision")
+        == value("--tokenizer-revision")
+        == "0e9e39f249a16976918f6564b8830bc894c89659"
+    )
+    assert value("--max-logprobs") == "-1"
+    assert "--async-scheduling" in argv
+    assert "--no-enable-prefix-caching" in argv
+    assert "--no-enable-chunked-prefill" in argv
+    assert json.loads(value("--additional-config")) == {
+        "tt": {
+            "sample_on_device_mode": "all",
+            "trace_region_size": 268435456,
+            "l1_small_size": 16384,
+        }
+    }
+
+
+def test_llama_qb2_download_and_tt_model_use_the_same_pinned_snapshot(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.setenv("LLAMA_MODEL_PATH", "/stale/snapshot")
+    spec = _llama_qb2_spec()
+    snapshot = tmp_path / "pinned-snapshot"
+    snapshot.mkdir()
+    module.snapshot_download.return_value = str(snapshot)
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    assert module.ensure_weights_available(spec) == snapshot
+    module.snapshot_download.assert_called_once_with(
+        repo_id=spec["hf_model_repo"],
+        revision="0e9e39f249a16976918f6564b8830bc894c89659",
+        cache_dir=tmp_path / "weights" / "hub",
+    )
+    # Track mutation through monkeypatch so the fixture restores the environment.
+    monkeypatch.setenv("HF_MODEL", "stale")
+    monkeypatch.setenv("VLLM_LOGGING_CONFIG_PATH", "stale")
+    module.model_setup(spec)
+    assert os.environ["HF_MODEL"] == os.environ["LLAMA_MODEL_PATH"] == str(snapshot)
+
+
+@pytest.mark.parametrize(
+    "revision,tokenizer_revision",
+    [
+        ("main", "main"),
+        ("a" * 40, "b" * 40),
+        (None, None),
+    ],
+)
+def test_llama_qb2_rejects_unpinned_or_mismatched_downloads(
+    monkeypatch, tmp_path, run_vllm_api_server_module, revision, tokenizer_revision
+):
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    spec = _llama_qb2_spec()
+    spec["device_model_spec"]["vllm_args"].update(
+        revision=revision, tokenizer_revision=tokenizer_revision
+    )
+    with pytest.raises(ValueError, match="matching full checkpoint/tokenizer"):
+        run_vllm_api_server_module.ensure_weights_available(spec)
+    run_vllm_api_server_module.snapshot_download.assert_not_called()
+
+
+def test_llama_qb2_failed_download_does_not_use_shared_partial_weights(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    spec = _llama_qb2_spec()
+    shared = tmp_path / "weights" / spec["model_name"]
+    shared.mkdir(parents=True)
+    (shared / "config.json").write_text("{}")
+    module.snapshot_download.side_effect = RuntimeError("offline")
+    with pytest.raises(RuntimeError, match="offline"):
+        module.ensure_weights_available(spec)

@@ -38,6 +38,13 @@ class LLMRunConfig:
     # Models that commit more than one token per engine step use block-level
     # latency/throughput as their primary benchmark semantics.
     output_block_size: int = 1
+    # Opt in only when references use first-to-last nonempty content timing.
+    token_timing: bool = False
+    # Opt in when every declared metric is required for release qualification.
+    require_complete_metrics: bool = False
+    # Fixed measured references require a complete warmup and independent repeats.
+    full_workload_warmup: bool = False
+    repetitions: int = 1
     # When set, the vLLM driver runs ``--dataset-name custom`` against this
     # file instead of ``--dataset-name random``. Selection happens when the
     # sweep is built, not inside the driver.

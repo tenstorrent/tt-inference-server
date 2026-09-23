@@ -133,3 +133,32 @@ def test_goodput_dropped_for_non_aiperf(monkeypatch, tmp_path):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_fixed_reference_client_is_isolated_from_default_venv(monkeypatch):
+    from workflow_module.engine_types import WorkflowVenvType
+    from workflow_module import venv_provisioner
+
+    provisioned = []
+    provider = SimpleNamespace(
+        provision=lambda key, spec: provisioned.append(key) or True,
+        venv_python=lambda key: "/pinned-client/bin/python",
+    )
+    monkeypatch.setattr(venv_provisioner, "get_venv_provisioner", lambda: provider)
+    monkeypatch.setattr(
+        "llm_module.benchmark_configs.get_llm_configs", lambda *a, **k: [object()]
+    )
+    seen = []
+    monkeypatch.setattr(
+        lbt, "run_llm_performance", lambda ctx, **kw: seen.append(kw["driver"])
+    )
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(metadata={"benchmark_token_timing": True}),
+        device="P300X2",
+        runtime_config=None,
+    )
+    lbt.run_llm_bench(ctx, venv_python=Path("/default-client/bin/python"))
+    assert provisioned == [WorkflowVenvType.LLM_VLLM_TOKEN_TIMING]
+    assert seen[0].vllm_binary == "/pinned-client/bin/vllm"
+    with pytest.raises(ValueError, match="require --tools vllm"):
+        lbt.run_llm_bench(ctx, tools="aiperf")

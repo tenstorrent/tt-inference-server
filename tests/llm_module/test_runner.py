@@ -273,6 +273,49 @@ def test_non_vllm_runner_skips_custom_dataset_prep(monkeypatch, driver_name):
     assert driver.run_calls == [incoming]
 
 
+def test_fixed_warmup_is_ungraded_and_all_repetitions_keep_independent_verdicts():
+    from dataclasses import replace
+
+    config = replace(
+        TestSweepPointGrading._targeted_cfg(), full_workload_warmup=True, repetitions=3
+    )
+    driver = FakeDriver([_ok({"mean_ttft_ms": t}) for t in (900.0, 50.0, 200.0, 50.0)])
+    contexts = []
+    run = driver.run
+
+    def capture(config, server, context):
+        contexts.append(context.output_dir)
+        return run(config, server, context)
+
+    driver.run = capture
+    persisted = []
+    result = _runner(driver).run([config], _SERVER, _CTX, on_block=persisted.append)
+    assert result.return_codes == [0, 0, 0, 0]
+    assert len(result.blocks) == 3  # slow warmup never contributes a verdict
+    assert [
+        int(b.data["target_checks"]["target"]["ttft_check"]) for b in result.blocks
+    ] == [2, 3, 2]
+    assert [b.data["repetition"] for b in result.blocks] == [1, 2, 3]
+    assert len({b.id for b in result.blocks}) == 3
+    assert len(set(contexts)) == 4  # no overwritten evidence
+    assert persisted == result.blocks  # checkpoint all repetitions, never warmup
+
+
+@pytest.mark.parametrize(
+    "outcome", [DriverResult(1, {}, None), DriverResult(0, None, None)]
+)
+def test_invalid_full_warmup_prevents_measured_repetitions(outcome):
+    from dataclasses import replace
+
+    driver = FakeDriver([outcome, _ok(), _ok(), _ok()])
+    result = _runner(driver).run(
+        [replace(_cfg(), full_workload_warmup=True, repetitions=3)], _SERVER, _CTX
+    )
+    assert not result.ok
+    assert len(driver.run_calls) == 1
+    assert not result.blocks
+
+
 def test_on_block_streams_each_point_as_it_finishes() -> None:
     """The callback is what survives a kill: it must fire per point, in order."""
     outcomes = [

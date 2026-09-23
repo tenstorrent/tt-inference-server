@@ -692,6 +692,72 @@
                     }
                 }
             }
+        ],
+        "p300x2": [
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 28.56452900596196,
+                        "tput_user": 131.33333944432843,
+                        "tput": 128.54095972855552,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 118.30671374627855,
+                        "tput_user": 124.4585693916049,
+                        "tput": 112.35282654083353,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 572.5038492601016,
+                        "tput_user": 116.03800663797645,
+                        "tput": 76.72195272153921,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3434.264019902912,
+                        "tput_user": 86.02750749207902,
+                        "tput": 833.3898513096682,
+                        "tolerance": 0.05
+                    }
+                }
+            }
         ]
     },
     "google/gemma-2-27b-it": {
