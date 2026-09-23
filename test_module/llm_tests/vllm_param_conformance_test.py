@@ -24,6 +24,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional
 
+from llm_module import HttpServerController, RemoteOpenAIController
 from report_module.schema import Block
 
 from .._test_common import BaseTest, TestConfig
@@ -37,6 +38,7 @@ PASSED_STATUS = "passed"
 FAILED_STATUS = "failed"
 DEFAULT_MODEL_NAME = "unknown-model"
 MESSAGE_MAX_LEN = 250
+DEFAULT_SERVER_STARTUP_TIMEOUT_S = 3600.0
 
 # test_module/llm_tests/<this file> -> parents[2] is the repo root, which now
 # holds llm_module / report_module / test_fixtures / utils / workflows (all of
@@ -74,6 +76,7 @@ class VLLMParamConformanceTest(BaseTest):
     REPORT_TASK_NAME = "vllm_chat_completions"
 
     async def _run_specific_test_async(self) -> Dict[str, Any]:
+        await self._wait_for_server_healthy()
         endpoint_url = f"{self.base_url}{self.ENDPOINT_PATH}"
         model_name = self._resolve_model_name()
 
@@ -91,6 +94,43 @@ class VLLMParamConformanceTest(BaseTest):
             "detailed_test_results": self._build_detailed_results(results),
             "success": self._all_passed(results),
         }
+
+    async def _wait_for_server_healthy(self) -> None:
+        """Wait for the API before launching the child pytest process.
+
+        A Docker server is started asynchronously, so focused ``spec_tests``
+        workflows can reach this wrapper while vLLM is still loading.  Keep
+        readiness handling here generic for every vLLM conformance suite and
+        use the same controllers as the eval path.
+        """
+        auth_token = os.getenv("VLLM_API_KEY", "")
+        if self.ctx is not None and getattr(self.ctx, "remote_server", False):
+            controller = RemoteOpenAIController(
+                base_url=self.base_url,
+                auth_token=auth_token,
+            )
+        else:
+            controller = HttpServerController(
+                base_url=self.base_url,
+                service_port=int(self.service_port),
+                auth_token=auth_token,
+            )
+
+        device_spec = (
+            getattr(self.ctx.model_spec, "device_model_spec", None)
+            if self.ctx is not None
+            else None
+        )
+        timeout = float(
+            self.config.get("server_startup_timeout")
+            or getattr(device_spec, "tensor_cache_timeout", None)
+            or DEFAULT_SERVER_STARTUP_TIMEOUT_S
+        )
+        healthy = await asyncio.to_thread(controller.wait_for_healthy, timeout)
+        if not healthy:
+            raise RuntimeError(
+                f"Inference server did not become healthy at {controller.health_url}"
+            )
 
     async def _run_pytest_suite(
         self, output_dir: str, endpoint_url: str, model_name: str
