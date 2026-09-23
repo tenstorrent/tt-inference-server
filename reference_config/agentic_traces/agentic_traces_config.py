@@ -253,7 +253,7 @@ class AgenticTracesModeSettings:
 # the trace corpus or the server's warmup latency changes materially.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
-    warmup_requests_per_lane=14,
+    warmup_requests_per_lane=10,
     warmup_grace_period=1800,
     num_dataset_entries=393,
 )
