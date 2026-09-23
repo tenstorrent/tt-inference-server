@@ -105,7 +105,43 @@ class EvalsWorkflow(WorkflowExecution):
 
     def run_tasks(self) -> List[TaskOutcome]:
         if self.ctx.model_spec.model_type in _LLM_LIKE_TYPES:
-            return [self._run_llm_eval_task()]
+            outcomes = [self._run_llm_eval_task()]
+            # Release already schedules its own agentic child. Standalone evals
+            # must include both runners in this accumulator and report.
+            if getattr(self.ctx.runtime_config, "workflow", None) == "evals":
+                from llm_module.eval_configs import get_llm_eval_tasks
+                from test_module.llm_tests.agentic_eval_tests import (
+                    _select_agentic_tasks,
+                )
+
+                expected = {
+                    t.task_name
+                    for t in get_llm_eval_tasks(
+                        self.ctx.model_spec, self.ctx.runtime_config, self.ctx.device
+                    )
+                }
+                if _has_agentic_tasks(self.ctx):
+                    expected.update(
+                        t.task_name for t in _select_agentic_tasks(self.ctx)
+                    )
+                    child = AgenticWorkflow(
+                        self.ctx,
+                        accumulator=self.accumulator,
+                        orchestrator_metadata=self.orchestrator_metadata,
+                    )
+                    outcomes.extend(child.run_tasks())
+                reported = {
+                    b.targets.get("task_name")
+                    for b in self.accumulator.blocks
+                    if b.kind == "evals"
+                }
+                missing = expected - reported
+                if missing:
+                    self.logger.error(
+                        "Missing configured eval results: %s", sorted(missing)
+                    )
+                    outcomes.append(TaskOutcome("missing_evals", 1, 0.0, None))
+            return outcomes
         return super().run_tasks()
 
     def _run_llm_eval_task(self) -> TaskOutcome:
@@ -113,8 +149,8 @@ class EvalsWorkflow(WorkflowExecution):
 
         Delegates to :func:`test_module.llm_tests.llm_eval_tests.run_llm_eval`,
         which gates on server health, runs each task, scores the results, and
-        forwards Blocks to the accumulator. Agentic evals are a separate
-        workflow. Imported from the leaf submodule so the media runner imports
+        forwards Blocks to the accumulator. The agentic runner is invoked
+        separately by run_tasks. Imported from the leaf submodule so the media runner imports
         stay untouched.
         """
         from test_module.llm_tests.llm_eval_tests import run_llm_eval
