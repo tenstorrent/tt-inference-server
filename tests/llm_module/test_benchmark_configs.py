@@ -258,3 +258,38 @@ def test_qb2_enables_token_timing_without_changing_other_implementations():
                 assert configs
             assert all(c.token_timing == is_qb2 for c in configs)
     assert found
+
+
+def test_fixed_targets_require_the_reference_request_count():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    spec = next(
+        s
+        for t in templates
+        for s in t.expand_to_specs()
+        if s.impl.impl_id == "llama31_8b_qb2"
+    )
+    configs = get_llm_configs(spec, spec.device_type)
+    expected = {
+        (128, 128, 1, 8),
+        (2048, 128, 1, 8),
+        (8192, 128, 1, 8),
+        (2048, 128, 32, 32),
+    }
+    assert _cfg_keys([c for c in configs if c.targets]) == expected
+    for config in configs:
+        if config.targets:
+            assert config.full_workload_warmup
+            assert config.repetitions == 3
+        else:
+            assert not config.full_workload_warmup
+            assert config.repetitions == 1
+    # Same shape, different request count: cannot use the cohort reference.
+    assert any(
+        c.isl == 2048
+        and c.max_concurrency == 32
+        and c.num_prompts == 128
+        and not c.targets
+        for c in configs
+    )

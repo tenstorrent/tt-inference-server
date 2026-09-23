@@ -678,6 +678,12 @@ _venv_config_list = [
         python_version="3.11",
     ),
     VenvConfig(
+        venv_type=WorkflowVenvType.LLM_VLLM_TOKEN_TIMING,
+        requirements_file="llm-vllm-token-timing.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
         venv_type=WorkflowVenvType.LLM_GUIDELLM,
         requirements_file="llm-guidellm.txt",
         extra_dirs=("artifacts",),

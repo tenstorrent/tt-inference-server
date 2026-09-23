@@ -34,6 +34,7 @@ from llm_module import (
     ServerController,
 )
 from llm_module.runner import RunnerResult
+from llm_module.fixed_workload_protocol import resolve_tokenizer
 from workflow_module import accept_blocks
 
 from .._test_common import report_model_fields
@@ -67,15 +68,22 @@ def run_llm_performance(
         metadata.get("tokenizer_trust_remote_code", False)
     )
 
+    output_dir = Path(ctx.output_path) / output_subdir
+    tokenizer = ""
+    if any(getattr(config, "token_timing", False) for config in configs):
+        if driver.name != "vllm":
+            raise ValueError("Fixed token-timing references require the vLLM client")
+        tokenizer = resolve_tokenizer(ctx.model_spec, output_dir)
+
     server = ServerConnection(
         base_url=server_base_url,
         service_port=ctx.server_port,
         model=ctx.model_spec.hf_model_repo,
+        tokenizer=tokenizer,
         auth_token=auth_token,
         is_remote=ctx.remote_server,
         tokenizer_trust_remote_code=tokenizer_trust_remote_code,
     )
-    output_dir = Path(ctx.output_path) / output_subdir
     device_label = ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
     context = DriverContext(output_dir=output_dir, device=device_label, goodput=goodput)
 

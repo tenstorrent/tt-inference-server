@@ -210,7 +210,7 @@ def test_token_timing_runs_adapter_with_the_selected_client_interpreter(
     monkeypatch.setattr(
         driver_module, "run_command", lambda cmd, **kw: seen.append(cmd) or 0
     )
-    monkeypatch.setattr(driver_module, "load_json", lambda _: {"completed": 8})
+    monkeypatch.setattr(driver_module, "load_json", lambda _: _valid_raw())
     server = ServerConnection(
         base_url="http://127.0.0.1", service_port=8000, model="test"
     )
@@ -218,9 +218,52 @@ def test_token_timing_runs_adapter_with_the_selected_client_interpreter(
     result = driver.run(
         _config(token_timing=True), server, DriverContext(output_dir=tmp_path)
     )
+    assert result.return_code == 0
     assert seen[0][0] == "/client-venv/bin/python"
     assert seen[0][1].endswith("/llm_module/vllm_token_timing.py")
     assert seen[0][2:4] == ["bench", "serve"]
     assert result.raw["tt_timing_protocol"] == "first-to-last-nonempty-content"
     driver.run(_config(), server, DriverContext(output_dir=tmp_path))
     assert seen[1][:3] == ["/client-venv/bin/vllm", "bench", "serve"]
+
+
+def _valid_raw():
+    return {
+        "completed": 8,
+        "failed": 0,
+        "num_prompts": 8,
+        "max_concurrency": 1,
+        "input_lens": [128] * 8,
+        "output_lens": [128] * 8,
+        "errors": [""] * 8,
+        "total_input_tokens": 1024,
+        "total_output_tokens": 1024,
+        "ttfts": [0.03] * 8,
+        "itls": [[0.01] * 127 for _ in range(8)],
+        "duration": 10.4,
+        "mean_ttft_ms": 30.0,
+        "mean_tpot_ms": 10.0,
+        "output_throughput": 1024 / 10.4,
+    }
+
+
+def test_partial_success_cannot_pass_fixed_workload(monkeypatch, tmp_path):
+    from llm_module.config import DriverContext
+    from llm_module.drivers import vllm as driver_module
+
+    raw = _valid_raw()
+    raw["completed"] = 7
+    raw["failed"] = 1
+
+    def run(cmd, **kw):
+        Path(cmd[cmd.index("--result-filename") + 1]).write_text(json.dumps(raw))
+        return 0  # vLLM can exit zero despite failed requests.
+
+    monkeypatch.setattr(driver_module, "run_command", run)
+    result = driver_module.VLLMBenchDriver("/venv/bin/vllm").run(
+        _config(token_timing=True),
+        ServerConnection(base_url="localhost", service_port=8000, model="m"),
+        DriverContext(output_dir=tmp_path),
+    )
+    assert result.return_code != 0
+    assert json.loads(result.raw_path.read_text()) == raw

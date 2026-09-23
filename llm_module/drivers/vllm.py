@@ -24,6 +24,7 @@ from utils.url_helpers import uses_remote_base_url
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.vllm import VLLMBenchParser
+from ..fixed_workload_protocol import validate_fixed_workload
 from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
@@ -83,7 +84,21 @@ def build_vllm_bench_serve_argv(
         cmd.extend(["--goodput", *config.goodput.split()])
 
     if config.token_timing:
-        cmd.append("--ignore-eos")
+        cmd.extend(
+            [
+                "--ignore-eos",
+                "--tokenizer",
+                server.tokenizer,
+                "--random-range-ratio",
+                "0.0",
+                "--seed",
+                "0",
+                "--request-rate",
+                "inf",
+                "--num-warmups",
+                "0",
+            ]
+        )
 
     if config.custom_dataset_path is not None:
         cmd.extend(
@@ -151,7 +166,7 @@ class VLLMBenchDriver(LLMDriver):
         context: DriverContext,
     ) -> DriverResult:
         context.output_dir.mkdir(parents=True, exist_ok=True)
-        run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
         result_filename = context.output_dir / (
             f"benchmark_{safe_filename_part(server.model)}_{run_ts}"
             f"_isl-{config.isl}_osl-{config.osl}"
@@ -181,6 +196,13 @@ class VLLMBenchDriver(LLMDriver):
         raw = load_json(result_filename) if rc == 0 else None
         if raw is not None and config.token_timing:
             raw["tt_timing_protocol"] = "first-to-last-nonempty-content"
+            try:
+                validate_fixed_workload(raw, config)
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.error(
+                    "Invalid fixed-workload evidence in %s: %s", result_filename, exc
+                )
+                rc = 1
         if raw is not None and config.output_block_size > 1:
             raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)

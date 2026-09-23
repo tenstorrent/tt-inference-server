@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional, Sequence
 
 import requests
@@ -133,29 +133,54 @@ class LLMPerformanceRunner:
 
             if self.driver.name == "vllm":
                 cfg = ensure_custom_dataset(cfg, server, context.output_dir)
-            outcome = self.driver.run(cfg, server, context)
-            result.return_codes.append(outcome.return_code)
-            if outcome.return_code != 0:
-                logger.error(
-                    "%s exited %d on sweep point %d/%d",
-                    self.driver.name,
-                    outcome.return_code,
-                    i,
-                    total,
-                )
-                continue
-            if outcome.raw is None:
-                logger.error(
-                    "%s sweep point %d/%d produced no parseable raw result",
-                    self.driver.name,
-                    i,
-                    total,
-                )
-                result.parse_failures.append(i)
-                continue
+            repetitions = getattr(cfg, "repetitions", 1)
+            full_warmup = getattr(cfg, "full_workload_warmup", False)
+            if repetitions < 1:
+                raise ValueError("Benchmark repetitions must be positive")
+            phases = (["warmup"] if full_warmup else []) + [
+                f"rep{rep}" for rep in range(1, repetitions + 1)
+            ]
+            for phase in phases:
+                run_context = context
+                if full_warmup or repetitions > 1:
+                    run_context = replace(
+                        context,
+                        output_dir=context.output_dir / f"point-{i}" / phase,
+                    )
+                outcome = self.driver.run(cfg, server, run_context)
+                result.return_codes.append(outcome.return_code)
+                if outcome.return_code != 0 or outcome.raw is None:
+                    logger.error(
+                        "%s sweep point %d/%d %s failed (exit %d, raw=%s)",
+                        self.driver.name,
+                        i,
+                        total,
+                        phase,
+                        outcome.return_code,
+                        outcome.raw is not None,
+                    )
+                    if outcome.return_code == 0:
+                        result.parse_failures.append(i)
+                    if phase == "warmup":
+                        # No measured repetition is valid without its full warmup.
+                        break
+                    continue
+                if phase == "warmup":
+                    continue
 
-            block = self.driver.parse(outcome.raw, device=context.device)
-            block = apply_target_checks(block, cfg)
-            result.blocks.append(block)
+                block = self.driver.parse(outcome.raw, device=context.device)
+                block = apply_target_checks(block, cfg)
+                if repetitions > 1:
+                    block = replace(
+                        block,
+                        id=f"{block.id or 'benchmark'}-point-{i}-{phase}",
+                        title=f"{block.title or 'Benchmark'} — {phase}",
+                        data={
+                            **block.data,
+                            "repetition": int(phase[3:]),
+                            "raw_result": str(outcome.raw_path),
+                        },
+                    )
+                result.blocks.append(block)
 
         return result

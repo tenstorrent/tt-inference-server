@@ -38,6 +38,9 @@ class LLMRunConfig:
     output_block_size: int = 1
     # Opt in only when references use first-to-last nonempty content timing.
     token_timing: bool = False
+    # Fixed measured references require a complete warmup and independent repeats.
+    full_workload_warmup: bool = False
+    repetitions: int = 1
     # When set, the vLLM driver runs ``--dataset-name custom`` against this
     # file instead of ``--dataset-name random``. Selection happens when the
     # sweep is built, not inside the driver.

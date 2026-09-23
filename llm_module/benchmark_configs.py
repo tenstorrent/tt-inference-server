@@ -60,10 +60,15 @@ def get_llm_configs(
         and params.task_type == "text"
     ]
 
+    metadata = getattr(model_spec, "metadata", None) or {}
+    token_timing = bool(metadata.get("benchmark_token_timing", False))
+
+    def target_key(params):
+        shape = (params.isl, params.osl, params.max_concurrency)
+        return (*shape, params.num_prompts) if token_timing else shape
+
     targets_by_shape = {
-        (params.isl, params.osl, params.max_concurrency): params.targets
-        for params in text_params
-        if params.targets
+        target_key(params): params.targets for params in text_params if params.targets
     }
     priority_by_shape = {
         (params.isl, params.osl, params.max_concurrency): params.priority
@@ -81,7 +86,6 @@ def get_llm_configs(
         if getattr(params, "goodput", None)
     }
 
-    metadata = getattr(model_spec, "metadata", None) or {}
     output_block_size = int(metadata.get("output_block_size", 1) or 1)
     configs: List[LLMRunConfig] = []
     seen = set()
@@ -97,13 +101,11 @@ def get_llm_configs(
                 osl=params.osl,
                 max_concurrency=params.max_concurrency,
                 num_prompts=params.num_prompts,
-                targets=dict(
-                    targets_by_shape.get(
-                        (params.isl, params.osl, params.max_concurrency), {}
-                    )
-                ),
+                targets=dict(targets_by_shape.get(target_key(params), {})),
                 output_block_size=output_block_size,
-                token_timing=bool(metadata.get("benchmark_token_timing", False)),
+                token_timing=token_timing,
+                full_workload_warmup=token_timing and bool(targets_by_shape.get(key)),
+                repetitions=3 if token_timing and targets_by_shape.get(key) else 1,
                 custom_dataset_path=(
                     Path(
                         f"speed_bench_prompts_isl-{params.isl}_n-{params.num_prompts}.jsonl"

@@ -137,6 +137,11 @@ def main():
     version = importlib.metadata.version("vllm")
     if version.split("+")[0] != "0.13.0":
         raise RuntimeError(f"Token timing adapter requires vllm 0.13.0, got {version}")
+    tokenizer_version = importlib.metadata.version("transformers")
+    if tokenizer_version != "4.57.6":
+        raise RuntimeError(
+            f"Token timing references require transformers 4.57.6, got {tokenizer_version}"
+        )
     from vllm.benchmarks.lib import endpoint_request_func as endpoint
     from vllm.benchmarks import serve
     from vllm.entrypoints.cli.main import main as vllm_main

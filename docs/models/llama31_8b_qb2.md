@@ -60,9 +60,19 @@ seed 42 and ignore-EOS, and all output lengths are 128. TTFT ends at the first
 nonempty content event; decode speed uses the first-to-last content interval.
 The frozen reference SHA-256 is
 `b7e5688d0903587abcb8a5e8c1634f97515b53330b31cd5e1325bec858268242`.
-Match this protocol when grading the packaged server; the ordinary sweep
-does not replace the required three repetitions. Missing targets
-or required results do not qualify as passing performance.
+The CI runner enforces this protocol for the four reference points. It checks
+the request count as part of each target's identity, validates a full warmup,
+and grades all three repetitions separately. Other sweep points stay ungraded.
+Partial requests, wrong token lengths and inconsistent detailed timing fail even
+if the upstream client exits zero. Each repetition retains a separate raw file
+and report section; the warmup is retained but is not graded.
+
+This opt-in profile uses a separate client environment: vLLM 0.13.0,
+Transformers 4.57.6 and Python 3.11. It resolves the catalogue's exact tokenizer
+revision and verifies both tokenizer file hashes against the baseline, writing
+`tokenizer_identity.json` beside the results. The general benchmark client can
+continue using newer tokenizer dependencies. Missing targets or required results
+do not qualify as passing performance.
 
 Required evidence includes full IFEval, configured GPQA-CoT, all six LongBench
 groups, the shared Llama API tests, cache/slot admission and nonaligned prefill.
