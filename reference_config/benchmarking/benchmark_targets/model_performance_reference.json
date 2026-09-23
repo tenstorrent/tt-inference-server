@@ -476,6 +476,30 @@
                         "ttft_ms": 570.0,
                         "tput_user": 16.78,
                         "tput": 16.78
+                    },
+                    "measured": {
+                        "ttft_ms": 1298.3,
+                        "tput_user": 16.89,
+                        "tput": 14.5,
+                        "tolerance": 0.2
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1395.6,
+                        "tput_user": 16.78,
+                        "tput": 14.3,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -493,6 +517,12 @@
                         "ttft_ms": 1470.0,
                         "tput_user": 16.82,
                         "tput": 16.82
+                    },
+                    "measured": {
+                        "ttft_ms": 2465.6,
+                        "tput_user": 16.5,
+                        "tput": 12.6,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -510,6 +540,12 @@
                         "ttft_ms": 13760.0,
                         "tput_user": 15.99,
                         "tput": 15.99
+                    },
+                    "measured": {
+                        "ttft_ms": 14856.3,
+                        "tput_user": 15.9,
+                        "tput": 5.6,
+                        "tolerance": 0.2
                     }
                 }
             }
