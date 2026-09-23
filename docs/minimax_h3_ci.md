@@ -33,7 +33,8 @@ the nightly builds the media image from tt-metal `main` (the H3 pipeline,
    (`weights/MiniMax-H3`, ~180 GB with `transformer_ref/`), checks 300 GB / 64 GB RAM.
 2. The container starts with `MODEL=MiniMax-H3 DEVICE=blackhole_galaxy` and the spec
    env: `MODEL_RUNNER=tt-minimax-h3-t2va`, `MESH_DEVICE=(4, 8)`, `MAX_QUEUE_SIZE=2`,
-   `MODEL_WEIGHTS_DIR=/home/container_app_user/cache_root/weights/MiniMax-H3`,
+   `MINIMAX_H3_MODEL_PATH=/home/container_app_user/cache_root/weights/MiniMax-H3` (the pipeline
+   reads it when no weights directory is mounted; `--host-weights-dir` runs mount one instead),
    `TT_DIT_CACHE_DIR` on the persistent volume (~68 GB ttnn cache, 20-30 min on the
    very first start), `MINIMAX_H3_WARM_SHAPES=16:9@5,16:9@10,16:9@15` (each shape
    compiles 4-16 min at startup instead of inside the first request).

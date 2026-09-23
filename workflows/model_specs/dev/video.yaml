@@ -276,10 +276,11 @@ templates:
     # One request in flight + one waiting; a queued request must not wait for hours.
     MAX_QUEUE_SIZE: "2"
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
-    # Where setup_host puts the snapshot under --host-volume (weights/<model_name>). settings.py
-    # adopts MODEL_WEIGHTS_DIR only when it is an existing non-empty directory; the pipeline
-    # reads MINIMAX_H3_MODEL_PATH when the runner passes it no directory.
-    MODEL_WEIGHTS_DIR: /home/container_app_user/cache_root/weights/MiniMax-H3
+    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/MiniMax-H3
+    # and nothing sets MODEL_WEIGHTS_DIR, so the runner passes the pipeline no directory and the
+    # pipeline reads this path (tt-metal pipeline_minimax_h3.py). Under --host-weights-dir /
+    # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
+    # runner uses that instead. Do not set MODEL_WEIGHTS_DIR here: spec env overrides the mount value.
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3
     # Compile the three 16:9 shapes the CI suites use at startup (4-16 min each) instead of
     # inside the first request of each shape; the readiness wait covers startup, test budgets
