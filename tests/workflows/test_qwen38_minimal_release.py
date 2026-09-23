@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+from llm_module.benchmark_configs import get_llm_configs
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from reference_config.evals.eval_config import (
     _eval_config_map,
@@ -20,7 +21,7 @@ def _qwen38_spec():
     return template.expand_to_specs()[0]
 
 
-def test_qwen38_release_is_complete_and_runs_only_128_128_target():
+def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
     template_spec = _qwen38_spec()
     spec = resolve_model_spec(
         [template_spec],
@@ -29,14 +30,30 @@ def test_qwen38_release_is_complete_and_runs_only_128_128_target():
         impl="qwen38-autoport",
         catalog_name="Shield",
     )
-    config = get_benchmark_config(spec)
+    benchmark_config = get_benchmark_config(spec)
+    run_configs = get_llm_configs(spec, spec.device_type)
 
     assert spec.status == ModelStatusTypes.COMPLETE
     assert spec.impl.impl_name == "qwen38-autoport"
-    assert len(config.tasks) == 1
-    params = config.tasks[0].param_map[spec.device_type]
-    assert [(p.isl, p.osl, p.max_concurrency, p.num_prompts) for p in params] == [
-        (128, 128, 1, 8)
+    assert len(benchmark_config.tasks) == 3
+    assert [
+        (cfg.isl, cfg.osl, cfg.max_concurrency, cfg.num_prompts)
+        for cfg in run_configs
+    ] == [
+        (128, 128, 1, 8),
+        (128, 1024, 1, 4),
+        (1024, 128, 1, 4),
+        (2048, 128, 1, 4),
+        (4096, 128, 1, 4),
+        (8192, 128, 1, 2),
+        (16384, 128, 1, 2),
+        (32768, 128, 1, 1),
+        (65536, 128, 1, 1),
+        (131072, 128, 1, 1),
+    ]
+    graded = [cfg for cfg in run_configs if cfg.targets]
+    assert [(cfg.isl, cfg.osl, cfg.max_concurrency) for cfg in graded] == [
+        (128, 128, 1)
     ]
 
 
