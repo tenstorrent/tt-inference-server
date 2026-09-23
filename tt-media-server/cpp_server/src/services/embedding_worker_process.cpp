@@ -115,13 +115,16 @@ std::vector<uint8_t> WorkerProcess::receiveResponse() {
 }
 
 void WorkerProcess::terminate() {
+  // Close the request pipe before signalling: a worker blocked reading it
+  // sees EOF and exits its serve loop on its own, so waitpid below cannot
+  // deadlock against a child that does not act on SIGTERM.
+  writeFd.reset();
   const pid_t p = pid.load();
   if (p > 0) {
     kill(p, SIGTERM);
     waitpid(p, nullptr, 0);
     TT_LOG_INFO("[EmbeddingService] Worker {} terminated", workerId);
   }
-  writeFd.reset();
   readFd.reset();
 }
 

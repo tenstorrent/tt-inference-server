@@ -3,6 +3,7 @@
 
 #include "services/embedding_worker_main.hpp"
 
+#include <signal.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -196,6 +197,13 @@ void serveLoop(runners::IEmbeddingRunner& runner, int workerId, int readFd,
 }  // namespace
 
 [[noreturn]] void workerProcessMain(int workerId, int readFd, int writeFd) {
+  // The fork inherits the parent's SIGTERM/SIGINT handlers (Drogon's), which
+  // in the child only poke an event loop that does not exist here — leaving
+  // the worker unkillable and the parent's terminate() stuck in waitpid.
+  // Restore the default die-on-signal behaviour.
+  signal(SIGTERM, SIG_DFL);
+  signal(SIGINT, SIG_DFL);
+
   const size_t wid = static_cast<size_t>(workerId);
   const auto cfg = tt::config::embeddingEngineConfig();
   const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);
