@@ -5,7 +5,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from config.constants import DatasetLoaders, JobTypes
+from config.constants import DatasetLoaders
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from open_ai_api.fine_tuning import router
@@ -98,10 +98,6 @@ class TestGetCatalog:
 
 class TestJobRetention:
     def test_retain_job(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = {
-            "id": "job-1",
-            "job_type": JobTypes.TRAINING.value,
-        }
         mock_service.set_job_retained.return_value = {
             "id": "job-1",
             "retained": True,
@@ -118,7 +114,6 @@ class TestJobRetention:
         )
 
     def test_retain_missing_job_returns_404(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = None
         mock_service.set_job_retained.return_value = None
 
         response = client.put("/jobs/missing/retention", json={"retained": True})
@@ -126,10 +121,6 @@ class TestJobRetention:
         assert response.status_code == 404
 
     def test_retain_adapter_merge_job(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = {
-            "id": "merge-1",
-            "job_type": JobTypes.ADAPTER_MERGE.value,
-        }
         mock_service.set_job_retained.return_value = {
             "id": "merge-1",
             "retained": True,
@@ -148,10 +139,6 @@ class TestJobRetention:
 
 class TestDeleteJob:
     def test_delete_terminal_job(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = {
-            "id": "job-1",
-            "job_type": JobTypes.TRAINING.value,
-        }
         mock_service.delete_job.return_value = True
 
         response = client.delete("/jobs/job-1")
@@ -160,10 +147,6 @@ class TestDeleteJob:
         mock_service.delete_job.assert_called_once_with("job-1", org_id="test-org")
 
     def test_delete_active_job_returns_conflict(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = {
-            "id": "job-1",
-            "job_type": JobTypes.TRAINING.value,
-        }
         mock_service.delete_job.side_effect = ValueError(
             "Only terminal jobs can be deleted"
         )
@@ -173,7 +156,6 @@ class TestDeleteJob:
         assert response.status_code == 409
 
     def test_delete_missing_job_returns_404(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = None
         mock_service.delete_job.return_value = False
 
         response = client.delete("/jobs/missing")
@@ -181,10 +163,6 @@ class TestDeleteJob:
         assert response.status_code == 404
 
     def test_delete_adapter_merge_job(self, client, mock_service):
-        mock_service.get_job_metadata.return_value = {
-            "id": "merge-1",
-            "job_type": JobTypes.ADAPTER_MERGE.value,
-        }
         mock_service.delete_job.return_value = True
 
         response = client.delete("/jobs/merge-1")
