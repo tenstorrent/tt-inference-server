@@ -132,6 +132,9 @@ the readiness window (2 x 3600 s) on the weight download and the ttnn cache.
   `results.jsonl` (3x the slowest observed run; target = 1.25x the median).
 * **Cancel** is disabled in CI until verified on a single host.
 * **Seed determinism** is not asserted (the hosted deployments were not deterministic).
-* The `num_inference_steps` refusal for H3 (`tt-media-server/domain/video_generate_request.py`)
-  aligns main with the hosted deployments and the benchmark contract; clients that
-  named a step count for H3 now get a 422 instead of a clip made with 50 steps anyway.
+* The H3 step-count contract (`tt-media-server/domain/video_generate_request.py`): an
+  explicit `num_inference_steps` is refused with 422, and an omitted one is pinned to the
+  50-step schedule (main previously ran the schema default of 20 steps when the field was
+  omitted, so the "fixed 50" the rows record was not what ran). The multi-host rank workers
+  rebuild the request from shared memory with that field present; `video_runner.py` drops
+  it for H3 before the rebuild so the refusal stays at the API boundary.

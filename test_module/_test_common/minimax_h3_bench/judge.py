@@ -111,11 +111,13 @@ def audio_stats(path: str):
     text = out.stderr
     mean = re.search(r"mean_volume: (-?[\d.]+) dB", text)
     peak = re.search(r"max_volume: (-?[\d.]+) dB", text)
-    total = sum(int(n) for n in re.findall(r"histogram_-?\d+db: (\d+)", text))
+    # volumedetect prints "n_samples: 0" first and the real count at the end; the histogram only
+    # lists the loudest bins down to ~0.1 % of the samples, so its sum is NOT the total.
+    total = max((int(n) for n in re.findall(r"n_samples:\s*(\d+)", text)), default=0)
     at_0db = re.search(r"histogram_0db: (\d+)", text)
-    if not mean or not peak:
+    if not mean or not peak or not total:
         return None, None, None
-    share = (int(at_0db.group(1)) / total) if (at_0db and total) else 0.0
+    share = (int(at_0db.group(1)) / total) if at_0db else 0.0
     return float(mean.group(1)), float(peak.group(1)), share
 
 

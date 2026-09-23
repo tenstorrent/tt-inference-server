@@ -60,7 +60,7 @@ from config.constants import (
     CANARY_TASK_IDS,
     ModelRunners,
 )
-from domain.video_generate_request import VideoGenerateRequest
+from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
@@ -288,6 +288,11 @@ def video_request_to_generate_request(
     gen_names = set(VideoGenerateRequest.model_fields.keys())
     common = shm_names & gen_names
     base_kwargs = {name: getattr(req, name) for name in common}
+    # MiniMax-H3 refuses an explicit num_inference_steps at admission and pins its fixed
+    # schedule instead (domain/video_generate_request.py). The SHM record always carries the
+    # field, so drop it here or every rank-side rebuild would trip the admission rule.
+    if _is_minimax_h3():
+        base_kwargs.pop("num_inference_steps", None)
 
     if image_prompts:
         return VideoI2VGenerateRequest(

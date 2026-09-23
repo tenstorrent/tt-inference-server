@@ -180,7 +180,7 @@ def job_view(job, now=None):
         "model": "MiniMax-H3",
         "task": job["task"],
         "status": status,
-        "created_at": job["t0"],
+        "created_at": int(job["t0"]),
         "request_parameters": job["echo"],
     }
     if OPTS.progress and status == "in_progress":
@@ -190,7 +190,7 @@ def job_view(job, now=None):
             else round(min(0.99, (el - OPTS.queue_seconds) / job["gen"]), 3)
         )
     if status == "completed":
-        out["completed_at"] = job["t0"] + OPTS.queue_seconds + job["gen"]
+        out["completed_at"] = int(job["t0"] + OPTS.queue_seconds + job["gen"])
     if status == "failed":
         out["error"] = {
             "message": "TT_THROW: TIMEOUT: device timeout in fetch queue wait, "
@@ -363,7 +363,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 jobs = [job_view(j) for j in JOBS.values()]
             for j in jobs:
-                j.pop("request_parameters", None)
+                pass  # the real listing carries request_parameters (JobManager.get_all_jobs_metadata)
             return self.send(200, jobs)
         jid = self.job_id_from(p, "/download")
         if jid:

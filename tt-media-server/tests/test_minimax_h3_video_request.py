@@ -70,3 +70,44 @@ def test_shared_video_schema_keeps_non_minimax_behavior():
             resolution="ignored-by-shared-schema",
         )
     assert request.num_inference_steps == 20
+
+
+@pytest.mark.usefixtures("minimax_request_validation")
+def test_minimax_pins_the_fixed_schedule_when_steps_are_omitted():
+    from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+
+    request = VideoGenerateRequest(
+        prompt="A fox runs through wet grass.",
+        aspect_ratio="16:9",
+        duration_seconds=5,
+    )
+    assert request.num_inference_steps == MINIMAX_H3_NUM_INFERENCE_STEPS
+
+
+def test_shm_rebuild_drops_the_step_count_for_minimax():
+    """The multi-host rank workers rebuild the request from shared memory, where
+    num_inference_steps is always present; that path must not trip the admission rule."""
+    from ipc.video_shm import VideoRequest
+    from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+    from tt_model_runners.video_runner import video_request_to_generate_request
+
+    req = VideoRequest(
+        task_id="t-1",
+        prompt="A fox runs through wet grass.",
+        negative_prompt="",
+        num_inference_steps=20,
+        seed=42,
+        height=768,
+        width=1344,
+        num_frames=124,
+        guidance_scale=1.0,
+        guidance_scale_2=1.0,
+    )
+    with patch("domain.video_generate_request._is_minimax_h3", return_value=True):
+        with patch("tt_model_runners.video_runner._is_minimax_h3", return_value=True):
+            gen = video_request_to_generate_request(req)
+    assert gen.prompt == req.prompt and gen.seed == 42
+    assert gen.num_inference_steps == MINIMAX_H3_NUM_INFERENCE_STEPS
+    with patch("domain.video_generate_request._is_minimax_h3", return_value=False):
+        with patch("tt_model_runners.video_runner._is_minimax_h3", return_value=False):
+            assert video_request_to_generate_request(req).num_inference_steps == 20

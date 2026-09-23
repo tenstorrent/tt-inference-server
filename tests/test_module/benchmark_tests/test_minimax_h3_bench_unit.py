@@ -148,6 +148,20 @@ def test_judge_rejects_broken_clips(tmp_path, kwargs, expect):
 
 
 @needs_ffmpeg
+@pytest.mark.parametrize("clipped_fraction,railed", [(0.01, False), (0.2, True)])
+def test_rail_share_is_a_fraction_of_all_samples(tmp_path, clipped_fraction, railed):
+    # a 440 Hz tone at -10 dB with a full-scale burst for `clipped_fraction` of every second
+    audio = f"aevalsrc=exprs='if(lt(mod(t\\,1)\\,{clipped_fraction})\\,1\\,0.3*sin(2*PI*440*t))':s=48000"
+    clip = _make_clip(tmp_path / "burst.mp4", audio=audio)
+    _mean, _peak, share = J.audio_stats(clip)
+    assert (
+        share is not None and abs(share - clipped_fraction) < clipped_fraction * 0.5
+    ), share
+    problems, _notes = J.judge(clip, 5)
+    assert any("rails" in p for p in problems) is railed, problems
+
+
+@needs_ffmpeg
 def test_judge_notes_the_one_frame_gap(tmp_path):
     clip = _make_clip(tmp_path / "short.mp4", frames=J.expected_frames(5) - 1)
     problems, notes = J.judge(clip, 5)
@@ -346,6 +360,12 @@ def test_budgets_come_from_the_table_then_fallbacks(monkeypatch, tmp_path):
     assert M.case_timeout_s(synthetic, "BH1X") == M.TIMEOUT_FLOOR_S
     monkeypatch.setenv("H3_TIMEOUT", "77")
     assert M.case_timeout_s(cases["T2VA-L"], "BH1X") == 77
+
+
+def test_default_retry_budget_is_the_original_two(monkeypatch):
+    assert (
+        M.MAX_RETRIES == 2
+    )  # H3_MAX_RETRIES overrides; is_transient() fences what is retried
 
 
 def test_every_case_has_a_bh1x_budget():

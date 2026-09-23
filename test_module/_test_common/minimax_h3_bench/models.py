@@ -79,9 +79,9 @@ CSV_COLUMNS = [
     "timeout_s", "steps_requested", "steps_effective", "error_message", "out_file",
 ]  # fmt: skip
 POLL_S = 2.0
-# A single-host deployment has no sibling to fail over to: a retry re-submits the
-# same clip to the same mesh. Off unless a run asks for it.
-MAX_RETRIES = int(os.environ.get("H3_MAX_RETRIES", "0"))
+# Re-submits of a TRANSIENT submit/transport failure (connection reset, 5xx, non-JSON
+# body); is_transient() never retries a live job, a timeout, a refusal or a device fault.
+MAX_RETRIES = int(os.environ.get("H3_MAX_RETRIES", "2"))
 RETRY_BACKOFF_BASE_S = float(os.environ.get("H3_RETRY_BACKOFF_S", "5"))
 TIMEOUT_FLOOR_S = int(os.environ.get("H3_TIMEOUT_FLOOR", "300"))
 TIMEOUT_CEIL_S = int(os.environ.get("H3_TIMEOUT_CEIL", "14400"))

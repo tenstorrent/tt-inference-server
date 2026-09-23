@@ -66,6 +66,7 @@ class Endpoint:
     key_ok: bool | None = None
     key_detail: str = ""
     jobs_ok: bool = False
+    unauth_jobs_code: int = 0  # GET /v1/videos/jobs without a key
     gates: dict = field(default_factory=dict)
     gate_detail: dict = field(default_factory=dict)
     stopped: str = ""
@@ -125,8 +126,9 @@ def discover(adapter: A.TenstorrentH3, task: str) -> Endpoint:
     elif warming:
         ep.auth_required = None
         ep.not_ready = "; ".join(sorted({f"{c} {d}" for c, d in probes.values()}))[:200]
-    else:
-        ep.auth_required = adapter.get(task, A.JOBS, key=False)[0] in (401, 403)
+    ep.unauth_jobs_code = adapter.get(task, A.JOBS, key=False)[0]
+    if ep.auth_required is None and not warming:
+        ep.auth_required = ep.unauth_jobs_code in (401, 403)
     for t, (code, detail) in probes.items():
         if code in (401, 403) or isinstance(detail, list):
             state = "open"
@@ -206,6 +208,10 @@ def probe_checks(ep: Endpoint) -> list:
         )
     if ep.auth_required and ep.key_ok is False:
         problems.append(f"API key rejected: {ep.key_detail}")
+    if ep.auth_required and ep.unauth_jobs_code in (200,):
+        problems.append(
+            "GET /v1/videos/jobs without a key answered 200: the listing is not behind auth"
+        )
     return problems
 
 
@@ -225,7 +231,8 @@ def pregate(
     empty queue, no foreign job in flight (bounded wait), the canary is not dead, and
     the newest generation did not fail without a success in the last 30 minutes."""
     problems = []
-    live = ep.liveness or {}
+    code, fresh = adapter.get(ep.task, "/tt-liveness", key=False)
+    live = fresh if code == 200 and isinstance(fresh, dict) else (ep.liveness or {})
     if live.get("model_ready") is False:
         problems.append("model_ready is false")
     if isinstance(live.get("queue_size"), (int, float)) and live["queue_size"] > 0:
