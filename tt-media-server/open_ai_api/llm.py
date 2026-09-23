@@ -16,7 +16,7 @@ from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from utils.logger import TTLogger
 
-from open_ai_api.chat import _count_tokens
+from open_ai_api.chat import _count_tokens, _validate_tt_lab
 
 logger = TTLogger()
 router = APIRouter()
@@ -61,9 +61,11 @@ async def complete_text(
     """
     completion_id = f"cmpl-{uuid.uuid4().hex[:24]}"
     created = int(time.time())
-    model = completion_request.model or "default"
+    model = completion_request.model or (settings.vllm.model if settings.model_runner == "tt-lab-gpt-oss" else "default")
 
     sub_requests = _split_batched_prompts(completion_request)
+    for request in sub_requests:
+        _validate_tt_lab(request)
 
     # Compute prompt token counts (for context-window validation and usage stats).
     # vLLM requires `prompt + max_tokens <= max_model_len`; a prompt that fits
@@ -108,7 +110,10 @@ async def complete_text(
             results = await asyncio.gather(
                 *(service.process_request(r) for r in sub_requests)
             )
-            completion_tokens = sum(_count_tokens(r.text) for r in results if r.text)
+            completion_tokens = sum(
+                r.completion_tokens if getattr(r, "completion_tokens", None) is not None
+                else (_count_tokens(r.text) if r.text else 0) for r in results
+            )
             response = {
                 "id": completion_id,
                 "object": "text_completion",
@@ -142,8 +147,8 @@ async def complete_text(
 
         try:
             service.scheduler.check_is_model_ready()
-        except Exception:
-            raise HTTPException(status_code=405, detail="Model is not ready")
+        except HTTPException:
+            raise
 
         async def result_stream():
             async for partial in service.process_streaming_request(sub_requests[0]):
@@ -173,5 +178,7 @@ async def complete_text(
                 "X-Accel-Buffering": "no",
             },
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

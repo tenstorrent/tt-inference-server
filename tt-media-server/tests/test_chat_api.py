@@ -194,3 +194,29 @@ class TestChatCompletionsValidation:
                 )
                 # Should not 422 — may fail at inference level but not validation
                 assert response.status_code != 422
+
+@patch("open_ai_api.chat._apply_chat_template", return_value="prompt")
+@patch("open_ai_api.chat._count_tokens", return_value=5)
+def test_preserves_backend_token_usage(mock_count, mock_template, test_client, mock_service):
+    from domain.completion_response import CompletionResult
+    mock_service.process_request.return_value = CompletionResult(
+        text="Four.", finish_reason="stop", completion_tokens=42
+    )
+    response = test_client.post("/v1/chat/completions", json=CHAT_REQUEST)
+    assert response.json()["usage"]["completion_tokens"] == 42
+
+
+@patch("open_ai_api.chat._apply_chat_template", return_value="prompt")
+@patch("open_ai_api.chat._count_tokens", return_value=5)
+def test_stream_preserves_length_and_hidden_token_usage(mock_count, mock_template, test_client, mock_service):
+    import json
+    from domain.completion_response import CompletionResult
+    async def stream(request):
+        yield CompletionResult(text="")
+        yield CompletionResult(text="", finish_reason="length", completion_tokens=64)
+    mock_service.process_streaming_request = stream
+    response = test_client.post("/v1/chat/completions", json={**CHAT_REQUEST, "stream": True})
+    frames = [json.loads(line[6:]) for line in response.text.splitlines()
+              if line.startswith("data: ") and line != "data: [DONE]"]
+    assert frames[-1]["choices"][0]["finish_reason"] == "length"
+    assert frames[-1]["usage"]["completion_tokens"] == 64

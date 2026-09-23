@@ -8,6 +8,9 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from utils.logger import TTLogger
 
 AVAILABLE_RUNNERS = {
+    ModelRunners.TT_LAB_GPT_OSS: lambda wid: __import__(
+        "tt_model_runners.tt_lab_runner", fromlist=["TTLabRunner"]
+    ).TTLabRunner(wid),
     ModelRunners.TT_SDXL_TRACE: lambda wid: __import__(
         "tt_model_runners.sdxl_generate_runner_trace",
         fromlist=["TTSDXLGenerateRunnerTrace"],

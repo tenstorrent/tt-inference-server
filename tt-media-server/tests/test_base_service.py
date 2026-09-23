@@ -865,3 +865,19 @@ class TestPrePostProcess:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stream', [False, True])
+@pytest.mark.parametrize('status', [429, 503])
+async def test_rejected_submission_cleans_result_queue(base_service, mock_scheduler, stream, status):
+    from fastapi import HTTPException
+    request = MockRequest()
+    mock_scheduler.process_request.side_effect = HTTPException(status, 'unavailable')
+    with pytest.raises(HTTPException) as exc:
+        if stream:
+            async for _ in base_service.process_streaming(request):
+                pass
+        else:
+            await base_service.process(request)
+    assert exc.value.status_code == status
+    assert mock_scheduler.result_queues == {}

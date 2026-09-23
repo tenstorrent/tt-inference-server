@@ -155,9 +155,8 @@ class BaseService(ABC):
         queue = asyncio.Queue()
         self.scheduler.result_queues[request._task_id] = queue
 
-        self.scheduler.process_request(request)
-
         try:
+            self.scheduler.process_request(request)
             result = await asyncio.wait_for(
                 queue.get(), timeout=settings.request_processing_timeout_seconds
             )
@@ -199,9 +198,8 @@ class BaseService(ABC):
         queue = self.scheduler.result_queues[request._task_id] = asyncio.Queue()
 
         # Submit the request
-        self.scheduler.process_request(request)
-
         try:
+            self.scheduler.process_request(request)
             # Calculate timeout ONCE
             dynamic_timeout = settings.request_processing_timeout_seconds
             if hasattr(request, "_duration") and request._duration is not None:

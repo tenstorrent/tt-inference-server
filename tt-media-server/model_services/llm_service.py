@@ -11,7 +11,7 @@ class LLMService(BaseService):
 
     def handle_streaming_chunk(self, chunk):
         chunk = chunk["data"]
-        if chunk and chunk.text:
+        if chunk and (chunk.text or chunk.finish_reason):
             return chunk
         return None
 

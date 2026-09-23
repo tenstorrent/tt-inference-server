@@ -48,6 +48,7 @@ from model_services.scheduler import Scheduler
 def create_mock_queue():
     """Helper to create a mock queue with common methods"""
     queue = Mock(spec=Queue)
+    queue.name = "test-result-queue"
     queue.put = Mock()
     queue.get = Mock()
     queue.full = Mock(return_value=False)
@@ -176,7 +177,7 @@ class TestScheduler:
         """Test process_request when queue is full"""
         # Setup
         scheduler.is_ready = True
-        scheduler.worker_info = {"worker_0": {"is_ready": True}}
+        scheduler.worker_info = {"worker_0": {"is_ready": True, "process": Mock(is_alive=Mock(return_value=True))}}
         mock_request = Mock()
 
         # Patch the task_queue.full method
@@ -193,7 +194,7 @@ class TestScheduler:
         """Test process_request when queue.put times out"""
         # Setup
         scheduler.is_ready = True
-        scheduler.worker_info = {"worker_0": {"is_ready": True}}
+        scheduler.worker_info = {"worker_0": {"is_ready": True, "process": Mock(is_alive=Mock(return_value=True))}}
         mock_request = Mock()
 
         # Patch the task_queue.put method to raise an exception
@@ -797,3 +798,55 @@ class TestSchedulerErrorListener:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+def test_dead_process_is_not_ready():
+    from fastapi import HTTPException
+    scheduler = Scheduler.__new__(Scheduler)
+    scheduler.is_ready = True
+    scheduler.worker_info = {'0': {'is_ready': True, 'process': Mock(is_alive=Mock(return_value=False))}}
+    with pytest.raises(HTTPException) as exc:
+        scheduler.check_is_model_ready()
+    assert exc.value.status_code == 503
+
+
+def test_sync_worker_does_not_accumulate_cancellations():
+    scheduler = Scheduler.__new__(Scheduler)
+    scheduler.settings = Mock(use_dynamic_batcher=False)
+    scheduler.cancel_queue = Mock()
+    scheduler.cancel_task('finished-task')
+    scheduler.cancel_queue.put.assert_not_called()
+
+
+def test_restart_resets_error_budget():
+    scheduler = Scheduler.__new__(Scheduler)
+    scheduler.settings = Mock(model_runner='other')
+    scheduler.logger = Mock()
+    old_process = Mock(is_alive=Mock(return_value=False))
+    scheduler.worker_info = {'0': {'process': old_process, 'error_count': 6, 'restart_count': 0, 'queue_index': 0}}
+    def start(*args, **kwargs):
+        scheduler.worker_info['0'] = {'error_count': 0}
+    scheduler._start_worker = Mock(side_effect=start)
+    with patch('model_services.scheduler.mark_worker_dead'):
+        scheduler.restart_worker('0')
+    assert scheduler.worker_info['0']['error_count'] == 0
+
+@pytest.mark.asyncio
+async def test_silicon_crash_requests_full_service_recovery():
+    from fastapi import HTTPException
+    scheduler = Scheduler.__new__(Scheduler)
+    scheduler.settings = Mock(model_runner='tt-lab-gpt-oss', max_worker_restart_count=5)
+    scheduler.logger = Mock()
+    scheduler.monitor_running = True
+    scheduler.is_ready = True
+    scheduler.worker_info = {'0': {'process': Mock(is_alive=Mock(return_value=False))}}
+    pending = asyncio.Queue()
+    scheduler.result_queues = {'pending': pending}
+    # SystemExit escapes the monitor's ordinary exception guard.
+    with patch('model_services.scheduler.os._exit', side_effect=SystemExit) as exit_process:
+        with pytest.raises(SystemExit):
+            await scheduler.worker_health_monitor()
+    exit_process.assert_called_once_with(1)
+    assert scheduler.is_ready is False
+    result = pending.get_nowait()
+    assert isinstance(result, HTTPException) and result.status_code == 503

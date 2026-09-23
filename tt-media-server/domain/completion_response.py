@@ -14,6 +14,8 @@ class CompletionResult:
     text: str
     index: Optional[int] = None
     finish_reason: Optional[str] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {

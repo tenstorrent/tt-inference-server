@@ -320,6 +320,10 @@ def device_worker(
             logger.error(error_msg)
             for request in requests:
                 error_queue.put((worker_id, request._task_id, error_msg))
+            if getattr(device_runner, "restart_on_unhealthy", False) is True and not device_runner.health_check():
+                device_runner.close_device()
+                loop.close()
+                return
             continue
 
         logger.debug(

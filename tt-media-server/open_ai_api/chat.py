@@ -92,6 +92,16 @@ def _build_completion_request(
     )
 
 
+
+def _validate_tt_lab(request):
+    if settings.model_runner == "tt-lab-gpt-oss":
+        from domain.tt_lab_validation import validate_request
+        try:
+            validate_request(request, _get_tokenizer())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/chat/completions")
 async def chat_completions(
     chat_request: ChatCompletionRequest,
@@ -118,6 +128,8 @@ async def chat_completions(
         {"role": m.role, "content": _normalize_message_content(m.content)}
         for m in chat_request.messages
     ]
+    if not messages:
+        raise HTTPException(status_code=400, detail="messages must not be empty")
     prompt = _apply_chat_template(messages)
     prompt_tokens = _count_tokens(prompt)
 
@@ -145,11 +157,14 @@ async def chat_completions(
 
     # Build an internal CompletionRequest to reuse the existing inference pipeline
     completion_request = _build_completion_request(chat_request, prompt)
+    _validate_tt_lab(completion_request)
 
     try:
         if not chat_request.stream:
             result = await service.process_request(completion_request)
-            completion_tokens = _count_tokens(result.text) if result.text else 0
+            completion_tokens = getattr(result, "completion_tokens", None)
+            if completion_tokens is None:
+                completion_tokens = _count_tokens(result.text) if result.text else 0
             response = {
                 "id": completion_id,
                 "object": "chat.completion",
@@ -173,13 +188,21 @@ async def chat_completions(
         # Streaming path
         try:
             service.scheduler.check_is_model_ready()
-        except Exception:
-            raise HTTPException(status_code=405, detail="Model is not ready")
+        except HTTPException:
+            raise
 
         async def result_stream():
             accumulated_text = ""
+            actual_completion_tokens = None
+            finish_reason = "stop"
             async for partial in service.process_streaming_request(completion_request):
                 accumulated_text += partial.text
+                if partial.finish_reason:
+                    finish_reason = partial.finish_reason
+                if getattr(partial, "completion_tokens", None) is not None:
+                    actual_completion_tokens = partial.completion_tokens
+                if not partial.text:
+                    continue
                 chunk = {
                     "id": completion_id,
                     "object": "chat.completion.chunk",
@@ -196,9 +219,9 @@ async def chat_completions(
                 yield f"data: {json.dumps(chunk)}\n\n"
 
             # Final chunk with finish_reason and usage stats
-            completion_tokens = (
-                _count_tokens(accumulated_text) if accumulated_text else 0
-            )
+            completion_tokens = actual_completion_tokens
+            if completion_tokens is None:
+                completion_tokens = _count_tokens(accumulated_text) if accumulated_text else 0
             final_chunk = {
                 "id": completion_id,
                 "object": "chat.completion.chunk",
@@ -208,7 +231,7 @@ async def chat_completions(
                     {
                         "index": 0,
                         "delta": {},
-                        "finish_reason": "stop",
+                        "finish_reason": finish_reason,
                     }
                 ],
                 "usage": {
@@ -229,5 +252,7 @@ async def chat_completions(
                 "X-Accel-Buffering": "no",
             },
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

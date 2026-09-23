@@ -90,7 +90,7 @@ class Scheduler:
         task (in which case the signal is a no-op), or the cancel_queue may be
         unavailable during shutdown. Either way we don't raise.
         """
-        if not task_id:
+        if not task_id or self.settings.use_dynamic_batcher is False:
             return
         try:
             self.cancel_queue.put(task_id, block=False)
@@ -125,13 +125,13 @@ class Scheduler:
 
     def check_is_model_ready(self) -> bool:
         if self.is_ready is not True:
-            raise HTTPException(405, "Model is not ready")
+            raise HTTPException(503, "Model is not ready")
 
         # Check if at least one worker is ready
         ready_workers = [
             worker_id
             for worker_id, info in self.worker_info.items()
-            if info.get("is_ready", False)
+            if info.get("is_ready", False) and info["process"].is_alive()
         ]
 
         if not ready_workers:
@@ -158,6 +158,8 @@ class Scheduler:
 
         # Start workers and wait for completion
         await self._start_workers_in_sequence()
+        if self.settings.model_runner == "tt-lab-gpt-oss" and self.monitor_task_ref is None:
+            self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
 
     async def _start_workers_in_sequence(self):
         """Start workers one by one with a delay to avoid overload"""
@@ -253,9 +255,14 @@ class Scheduler:
                 if old_process.is_alive():
                     old_process.terminate()
                     old_process.join(timeout=5.0)
+                    if old_process.is_alive():
+                        old_process.kill()
+                        old_process.join(timeout=5.0)
+                    if old_process.is_alive():
+                        raise RuntimeError("Old worker did not exit")
             except Exception as e:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
-                self.logger.info(f"Old worker {worker_id} process does not exist")
+                raise
 
         mark_worker_dead(old_pid)
 
@@ -265,8 +272,8 @@ class Scheduler:
         # Start new worker
         self._start_worker(worker_id, queue_index=existing_queue_index)
         self.worker_info[worker_id]["restart_count"] = restart_count
-        # pass the error count from old worker -1 to give it a chance to recover
-        self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
+        # A fresh process starts with a fresh error budget.
+        self.worker_info[worker_id]["error_count"] = 0
 
     async def result_listener(self):
         """✅ Read from ALL worker queues in parallel using batch reads"""
@@ -400,9 +407,8 @@ class Scheduler:
                         f"First worker ({device_id}) reported ready; "
                         "starting worker health monitor and flipping /health to 200"
                     )
-                    self.monitor_task_ref = asyncio.create_task(
-                        self.worker_health_monitor()
-                    )
+                    if self.monitor_task_ref is None:
+                        self.monitor_task_ref = asyncio.create_task(self.worker_health_monitor())
                     self._start_canary_monitor()
 
                 all_devices_ready = all(
@@ -556,7 +562,7 @@ class Scheduler:
 
     async def worker_health_monitor(self):
         """Monitor worker health and restart dead workers"""
-        while self.monitor_running and self.is_ready:
+        while self.monitor_running and (self.is_ready or self.settings.model_runner == "tt-lab-gpt-oss"):
             try:
                 dead_workers = []
 
@@ -586,8 +592,20 @@ class Scheduler:
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
 
+                if dead_workers and self.settings.model_runner == "tt-lab-gpt-oss":
+                    # A killed process can leave multiprocessing queue locks held.
+                    # This deployment has one physical worker and a systemd unit
+                    # with Restart=on-failure/KillMode=control-group. Rebuild the
+                    # complete service, including IPC, rather than reuse damaged queues.
+                    self.is_ready = False
+                    for queue in list(self.result_queues.values()):
+                        queue.put_nowait(HTTPException(503, "Inference worker failed; service is restarting"))
+                    self.logger.error("Silicon worker failed; exiting for clean service recovery")
+                    await asyncio.sleep(0.1)  # Let waiting HTTP requests receive 503.
+                    os._exit(1)
+
                 # Restart dead workers (one failure must not block restarting others)
-                for worker_id in dead_workers:
+                for worker_id in dict.fromkeys(dead_workers):
                     restart_count = self.worker_info[worker_id].get("restart_count", 0)
 
                     if restart_count < self.settings.max_worker_restart_count:

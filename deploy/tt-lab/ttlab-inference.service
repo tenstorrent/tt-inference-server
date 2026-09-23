@@ -1,0 +1,20 @@
+[Unit]
+Description=GPT-OSS-20B on Blackhole via tt-inference-server and tt-lab
+After=network.target
+
+[Service]
+Type=simple
+User=ttuser
+Group=ttuser
+WorkingDirectory=/home/ttuser/workspace/tt-inference-server/tt-media-server
+ExecStartPre=+/usr/bin/install -d -o ttuser -g ttuser -m 0700 /dev/hugepages/ttlab
+ExecStart=/home/ttuser/workspace/tt-inference-server/deploy/tt-lab/start.sh
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+KillMode=control-group
+Environment=PATH=/home/ttuser/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -116,6 +116,7 @@ class ModelNames(Enum):
 
 
 class ModelRunners(Enum):
+    TT_LAB_GPT_OSS = "tt-lab-gpt-oss"
     TT_SDXL_TRACE = "tt-sdxl-trace"
     TT_SDXL_IMAGE_TO_IMAGE = "tt-sdxl-image-to-image"
     TT_SDXL_EDIT = "tt-sdxl-edit"
@@ -198,6 +199,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_Z_IMAGE_TURBO,
     },
     ModelServices.LLM: {
+        ModelRunners.TT_LAB_GPT_OSS,
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.VLLMForge_GEMMA4_31B,
