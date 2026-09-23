@@ -7,9 +7,9 @@
 # negative prompt and seed, and check that they run concurrently on 8 different workers.
 #
 # Pass condition: 8 x HTTP 200, all 8 images decode, and the wall time for the batch is close to
-# one worker's [run] time (~4.6 s at 20 steps), not 8x. Per-image times are the workers' own
-# "[run] executed in N seconds. SD35 inference" log lines (the pipeline call: encode, denoise, VAE),
-# read from the container log after the batch. Images are saved for eyeballing; a labelled contact
+# one image's run time (~4.6 s at 20 steps), not 8x. The per-image time reported is the worker's own
+# "[run] executed in N seconds. SD35 inference" log line (the pipeline call: encode, denoise, VAE),
+# read from the container log after the batch and paired to requests by completion order. Images are saved for eyeballing; a labelled contact
 # sheet is written when Pillow is available.
 #
 # Prereq: the server was started with DEVICE_IDS listing eight (4,1) columns, e.g.
@@ -58,31 +58,35 @@ SEEDS=(11 22 33 44 55 66 77 88)
 
 echo "firing 8 requests at once ($STEPS steps each)..."
 SINCE=$(date -u +%Y-%m-%dT%H:%M:%S)
+: > "$OUT/results.txt"
 T0=$(date +%s.%N)
 for i in 0 1 2 3 4 5 6 7; do
   (
-    t=$(date +%s.%N)
     code=$(curl -s -o "$OUT/r$i.json" -w '%{http_code}' -X POST "localhost:$PORT/v1/images/generations" \
       -H 'Content-Type: application/json' "${AUTH[@]}" \
       -d "{\"prompt\":\"${PROMPTS[$i]}\",\"negative_prompt\":\"${NEGS[$i]}\",\"num_inference_steps\":$STEPS,\"seed\":${SEEDS[$i]}}")
-    printf "req %d  seed=%-2d  http=%s  client=%.2fs\n" "$i" "${SEEDS[$i]}" "$code" "$(echo "$(date +%s.%N) - $t" | bc)"
+    echo "$(date +%s.%N) $i ${SEEDS[$i]} $code" >> "$OUT/results.txt"
   ) &
 done
 wait
-printf "WALL for 8 parallel requests: %.2fs\n" "$(echo "$(date +%s.%N) - $T0" | bc)"
+WALL=$(echo "$(date +%s.%N) - $T0" | bc)
 
-# ---- per-image [run] times from the worker logs (pipeline call: encode + denoise + VAE) ----
+# ---- per-image [run] time from the worker logs (pipeline call: encode + denoise + VAE) ----
+# The log line carries no request id, so pair by completion order: the k-th response to return
+# is matched with the k-th "[run] executed in" line written since the batch started.
+RUNS=""
 if [ -n "$CONTAINER" ]; then
   sleep 1  # let the last worker flush its log line
   RUNS=$(docker logs --since "$SINCE" "$CONTAINER" 2>&1 | grep -oE "\[run\] executed in [0-9.]+ seconds\. SD35 inference" | awk '{print $4}')
-  n=$(echo "$RUNS" | grep -c .)
-  if [ "$n" -gt 0 ]; then
-    echo "[run] times per image (worker pipeline, s): $(echo "$RUNS" | sort -n | tr '\n' ' ')"
-    echo "$RUNS" | awk '{s+=$1; if(min==""||$1<min)min=$1; if($1>max)max=$1} END{printf "[run] min/mean/max over %d images: %.2f / %.2f / %.2f s\n", NR, min, s/NR, max}'
-    [ "$n" -ne 8 ] && echo "note: expected 8 [run] lines, found $n (another request may have overlapped the batch)"
-  else
-    echo "no [run] lines found in $CONTAINER log since $SINCE"
-  fi
+fi
+printf "%-4s %-5s %-5s %s\n" "req" "seed" "http" "run (s)"
+sort -n "$OUT/results.txt" | awk -v runs="$(echo "$RUNS" | tr '\n' ' ')" 'BEGIN{n=split(runs,r," ")} {printf "%-4s %-5s %-5s %s\n", $2, $3, $4, (NR<=n ? sprintf("%.2f", r[NR]) : "-")}'
+n=$(echo "$RUNS" | grep -c .)
+if [ "$n" -gt 0 ]; then
+  echo "$RUNS" | awk -v wall="$WALL" '{s+=$1; if(min==""||$1<min)min=$1; if($1>max)max=$1} END{printf "run min/mean/max: %.2f / %.2f / %.2f s   wall for all 8: %.2fs\n", min, s/NR, max, wall}'
+  [ "$n" -ne 8 ] && echo "note: expected 8 [run] lines, found $n (another request may have overlapped the batch)"
+else
+  printf "wall for all 8: %.2fs   (no [run] lines read: CONTAINER unset or log unavailable)\n" "$WALL"
 fi
 
 # ---- decode images; contact sheet if Pillow is present ----
