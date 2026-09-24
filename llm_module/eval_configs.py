@@ -100,6 +100,19 @@ def get_llm_eval_tasks(model_spec, runtime_config=None, device=None) -> List:
     if device is not None:
         standard = [pack.resolve_eval_task_for_device(t, device) for t in standard]
 
+    # Isolated rerun branch: all rows of the four failed QB2 gates only.
+    # Do not merge this execution-scope override into the release candidate.
+    if getattr(getattr(model_spec, "impl", None), "impl_id", None) == "llama31_8b_qb2":
+        requested = {
+            "longbench_code_e",
+            "longbench_multi_e",
+            "longbench_single_e",
+            "longbench_synthetic_e",
+        }
+        standard = [task for task in standard if task.task_name in requested]
+        if {task.task_name for task in standard} != requested:
+            raise ValueError("The focused QB2 rerun requires all four failed gates")
+
     return _select_tasks(standard, runtime_config)
 
 

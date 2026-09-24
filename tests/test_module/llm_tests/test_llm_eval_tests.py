@@ -518,7 +518,12 @@ def test_llama31_longbench_preserves_generation_settings(
         "longbench_summarization_e": 26.09,
         "longbench_synthetic_e": 14.86,
     }
-    assert set(longbench) == set(references)
+    expected = set(references)
+    if impl_id == "llama31_8b_qb2":
+        # This isolated rerun branch selects four full gates, not sample subsets.
+        expected -= {"longbench_fewshot_e", "longbench_summarization_e"}
+        assert len(tasks) == 4
+    assert set(longbench) == expected
     for name, task in longbench.items():
         command = build_eval_command(
             task, model_spec, DeviceTypes.P300X2, tmp_path, 8000
@@ -547,7 +552,7 @@ def test_llama31_longbench_preserves_generation_settings(
         assert gen_kwargs["max_gen_toks"] == "512"
         assert task.score.gpu_reference_score == references[name]
         assert task.score.tolerance == 0.05
-    assert len(tokenizer_calls) == (6 if impl_id == "llama31_8b_qb2" else 0)
+    assert len(tokenizer_calls) == (len(expected) if impl_id == "llama31_8b_qb2" else 0)
 
 
 @pytest.mark.parametrize(
