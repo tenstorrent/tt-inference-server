@@ -7,6 +7,17 @@
 tt-media-server/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @knovokmetTT @vpetrovicTT @ddjukicTT @lmuravljovTT @nanicicTT @visnjakrsmanovicTT
 tt-media-server/tt_model_runners/forge_runners/ @vmilosevic @mcupacTT @mmilosevicTT
 
+# Training and fine-tuning
+tt-media-server/domain/training_request.py @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/model_services/training_service.py @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/open_ai_api/fine_tuning.py @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/tt_model_runners/forge_training_runners/ @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/utils/dataset_loaders/ @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/utils/build_catalog.py @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/static/fine-tuning/ @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/tests/test_*training* @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+tt-media-server/tests/test_fine_tuning_api.py @idjuricTT @ztorlakTT @mcupacTT @mmilosevicTT
+
 # tt-vllm-plugin
 tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT @knovokmetTT @vpetrovicTT @ddjukicTT
 
