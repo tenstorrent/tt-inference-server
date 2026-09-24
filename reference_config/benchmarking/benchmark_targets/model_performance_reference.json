@@ -20,6 +20,28 @@
             }
         ]
     },
+    "Qwen/Qwen3.8-27B": {
+        "p300x2": [
+            {
+                "_comment": "QB2 128/128 target measured by the dedicated Qwen3.8 demo.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 62.0,
+                        "tput_user": 41.0,
+                        "tput": 41.0
+                    }
+                }
+            }
+        ]
+    },
     "Qwen/Qwen3-VL-32B-Instruct": {
         "t3k": [
             {

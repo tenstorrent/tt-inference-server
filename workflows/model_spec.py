@@ -422,6 +422,12 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+qwen38_27b_qb2_impl = ImplSpec(
+    impl_id="qwen38_27b_qb2",
+    impl_name="qwen38-27b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/qwen38_27b_qb2",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -429,6 +435,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_mtp": gemma4_mtp_impl,
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
