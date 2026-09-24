@@ -1,6 +1,6 @@
 ---
 name: deploy-tts-4galaxy
-description: Deploy the Inworld TTS-2 stack across a 4-galaxy Blackhole quad (codec + blaze ring + 2 audio decoders + the C++ inference server), and verify it actually serves audio. Use when asked to deploy, redeploy, bring up, or tear down TTS-2 on a quad such as bh-glx-110-d0Xu[02,08,14,20]; when a deploy hangs, aborts, or comes up serving 44-byte responses; or when changing --n-slots / admission caps. Self-contained: every command is inline.
+description: Deploy the Inworld TTS-2 stack across a 4-galaxy Blackhole quad (codec + blaze ring + audio decoders at T=48 + the C++ inference server), and verify it actually serves audio. Use when asked to deploy, redeploy, bring up, or tear down TTS-2 on a quad such as bh-glx-110-d0Xu[02,08,14,20]; when a deploy hangs, aborts, or comes up serving 44-byte responses; when changing --n-slots / admission caps; or when adding decoders for more concurrency. Self-contained: every command is inline. Validated 2026-09-24 with image tts_inworld_ai_demo (digest f9cc8137).
 ---
 
 # Deploy TTS-2 on a 4-Galaxy Quad
@@ -27,6 +27,16 @@ H4=bh-glx-110-d05u02,bh-glx-110-d05u08,bh-glx-110-d06u02,bh-glx-110-d06u08
 DRIVER=bh-glx-110-d05u08      # where the launcher runs; NOT necessarily stage-0
 NSLOTS=800                    # concurrent sessions; caps below MUST match
 MQSIZE=4000                   # admission queue
+
+# --- Environment. Defaults to the shared, world-readable ljovanovic tree — the
+# --- validated T=48 stack with the 64512 FIFO fix. Just run it. (Override only if
+# --- deploying a different tree.) Every later command references these variables.
+ENV_SCRIPT=/data/ljovanovic/env_tts2.sh   # sources TT_METAL_HOME, PYTHONPATH, checkpoints, python_env
+CACHE=/data/ljovanovic/weight_cache       # weight cache — must be writable by whoever runs this
+LOGDIR=/data/ljovanovic/tts_logs          # log dir — must be writable (blaze writes blaze.log here)
+MGD=/data/ljovanovic/tt-blaze/tests/pipeline_builder/mesh_graph_descriptors/llama_8b_4galaxy_mesh_graph_descriptor.textproto
+IMG=ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:tts_inworld_ai_demo  # needs ghcr login
+
 L=/data/ljovanovic/bench/run_$(date +%m%d_%H%M)   # log dir for this deploy
 RING=$L/ring.log
 mkdir -p "$L"
@@ -34,6 +44,37 @@ mkdir -p "$L"
 
 `DRIVER` is only where `tts_runner` is invoked. **The decoder/stage-0 host is
 discovered, never asserted** — see stage 3.
+
+---
+
+## Prerequisite: the decoder H2D FIFO must be batch-aligned (64512)
+
+**This one edit is the difference between a stack that serves and one that wedges
+under any load.** Check it before every deploy:
+
+```bash
+grep -n "socket_fifo_size_bytes: int" \
+  "$(source "$ENV_SCRIPT" >/dev/null 2>&1; echo $TT_METAL_HOME)/models/demos/inworld_tts/tt/decoder_tts2.py"
+# must read:  socket_fifo_size_bytes: int = 64512,
+# if it says 2048 (or 8192 / 65536), fix it:
+f="$(source "$ENV_SCRIPT" >/dev/null 2>&1; echo $TT_METAL_HOME)/models/demos/inworld_tts/tt/decoder_tts2.py"
+sed -i 's/        socket_fifo_size_bytes: int = [0-9]*,/        socket_fifo_size_bytes: int = 64512,/' "$f"
+```
+
+Why: the engine writes a full 8-page (1536 B) decoder batch in **one** contiguous
+H2D socket write, but `H2DSocket::write` does **not** split at the FIFO wrap. At
+`--tokens 48` each page is 192 B, so when a batch straddles the end of the FIFO the
+tail overruns neighbouring L1 (silent corruption) and the decoder goes idle with work
+still queued — neither FIFO ever looks full. **64512 = 42 × 1536 is an exact multiple
+of one batch, so a batch write can never straddle the wrap.** Any non-multiple (2048,
+8192, 65536) only moves *where* the first crossing lands: 2048 wedges on chunk ~2
+(the classic 44-byte / chunk-4 stall), 65536 survives ~42 chunks then wedges under
+sustained load. Do **not** raise it past ~128 KB — the FIFO is L1-backed and 256 KB
+crashes the decoder. `T=32` (the old default) hides the bug because 128 B pages divide
+every power-of-two FIFO — but this engine requires `--tokens 48`.
+
+No image rebuild is needed: the fix is decoder-side, and the media-server image reads
+the FIFO size from the descriptor the decoder publishes.
 
 ---
 
@@ -137,7 +178,7 @@ is required here. Leftovers are large: `tt_tts_task_queue` alone is ~2.1 GB.
 
 ```bash
 cat > /tmp/_probe.sh <<'PROBE'
-source /data/ljovanovic/env_tts.sh >/dev/null 2>&1
+source /data/ljovanovic/env_tts2.sh >/dev/null 2>&1
 cd "$TT_METAL_HOME" || exit 9
 TT_VISIBLE_DEVICES=0 timeout 200 python -c "
 import ttnn
@@ -177,27 +218,56 @@ that cannot possibly succeed.
 rm -f "$RING"
 ssh -o BatchMode=yes "$DRIVER" '
   for v in $(env | grep -oE "^SLURM_[A-Z_]+"); do unset $v; done
-  source /data/ljovanovic/env_tts.sh && cd "$TT_METAL_HOME"
+  source '"$ENV_SCRIPT"' && cd "$TT_METAL_HOME"
   nohup python -u -m models.demos.inworld_tts.tts_runner --model inworld_tts \
     --model-path "$TTS2_SPEECHLM_PATH" \
     --hosts '"$H4"' \
-    --mgd /data/ljovanovic/tt-blaze/tests/pipeline_builder/mesh_graph_descriptors/llama_8b_4galaxy_mesh_graph_descriptor.textproto \
-    --dec-chip 24 --dec-chip 25 \
-    --cache-path /data/ljovanovic/weight_cache \
-    --env-script /data/ljovanovic/env_tts.sh \
-    --logdir /data/ljovanovic/tts_logs \
+    --mgd '"$MGD"' \
+    --dec-chip 24:48 --dec-chip 25:48 \
+    --cache-path '"$CACHE"' \
+    --env-script '"$ENV_SCRIPT"' \
+    --logdir '"$LOGDIR"' \
     --n-slots '"$NSLOTS"' --launch-only > '"$RING"' 2>&1 &
   echo "  ring launched pid $!"'
 ```
 
-`--dec-chip 24 --dec-chip 25` is what gives **two** audio decoders. `--launch-only`
-keeps codec + blaze alive after the runner returns, which is what lets you re-run
-only the later stages if something downstream fails.
+`--dec-chip 24:48 --dec-chip 25:48` gives **two** audio decoders **at wire size
+T=48** — the `:48` is mandatory. This engine (`tt_llm_engine` b4e10f8, in the
+`tts_inworld_ai_demo` image) hard-codes `WIRE_CODES_PER_CHUNK = 48` and writes
+192-byte pages; a decoder launched at the tt-metal default `T=32` expects 128-byte
+pages and **hangs the shm socket rather than raising**. Both decoders must be `:48`.
+`--launch-only` keeps codec + blaze alive after the runner returns, which is what lets
+you re-run only the later stages if something downstream fails.
+
+Confirm each decoder came up at 48 after the ring is ready:
+
+```bash
+ssh -o BatchMode=yes "$ISHOST" 'pgrep -af "[t]ts_runner --model inworld_tts_decoder" | grep -oE "\-\-tokens [0-9]+"'
+# expect: --tokens 48   (one line per decoder)
+```
+
+**Adding a 3rd+ decoder for more concurrency** (blaze stays up; measured to raise
+max-C from ~576 to ~640 on this quad): stop the server, then launch one extra
+decoder per free chip with a unique socket suffix, and add its pair + chip to the
+server env (stage 4):
+
+```bash
+# free decoder chips are listed as "free chips there: [24, 25, 26, ...]" in $RING
+ssh -o BatchMode=yes "$ISHOST" 'source  >/dev/null 2>&1; cd "$TT_METAL_HOME";
+  TT_VISIBLE_DEVICES=26 nohup python -u -m models.demos.inworld_tts.tts_runner \
+    --model inworld_tts_decoder --model-path "$TTS2_CODEC_DECODER_CKPT" \
+    --socket-suffix _3 --tokens 48 > /tmp/dec_3.log 2>&1 & echo pid $!'
+# then in stage 4 add  tts2_decoder_h2d_3:tts2_decoder_d2h_3  to DECODER_SOCKET_PAIRS
+# and 26 to DEVICE_IDS.  Suffix _2 -> chip 25, _3 -> chip 26, _4 -> chip 27, ...
+```
+
+Note the load balancer (`pick_child`, fewest-outstanding) skews toward decoder0, so
+extra decoders are underused until decoder0 saturates — diminishing returns past ~3.
 
 Then wait, watching **the work** and not the poller:
 
 ```bash
-STALE=0; OLD=""; BLOG=/data/ljovanovic/tts_logs/blaze.log
+STALE=0; OLD=""; BLOG="$LOGDIR/blaze.log"
 for i in $(seq 1 240); do
   grep -q "TTS_RUNNER_READY v1 component=inworld_tts " "$RING" 2>/dev/null && { echo "  ring READY"; break; }
   if grep -qiE "VALIDATION FAILED|Traceback|TT_FATAL|TT_THROW|out of memory|Address already in use" "$RING" 2>/dev/null; then
@@ -276,6 +346,8 @@ docker run -d --name tt-cpp-worker \
   -e TTS_PAGE_LINGER_US=500 \
   -e TTS_PAGE_MIN_ROWS=8 \
   -e TTS_PREFILL_CHUNK_SIZE=256 \
+  -e TTS_CHUNK_TOKENS_1=17 -e TTS_CHUNK_TOKENS_2=32 -e TTS_CHUNK_TOKENS_3=48 \
+  -e TTS_FIRST_CHUNK_TOKENS=17 -e TTS_SECOND_CHUNK_TOKENS=32 -e TTS_CHUNK_TOKENS=48 \
   -e TTS_MAX_NEW_TOKENS=1020 \
   -e TTS_EDF_SAFETY_FACTOR=0.75 \
   -e TTS_MAX_BATCH_SIZE=$NSLOTS \
@@ -288,10 +360,22 @@ docker run -d --name tt-cpp-worker \
   -e TT_LOG_LEVEL=debug \
   -e TTS_TIMING=1 \
   --entrypoint /bin/bash \
-  ghcr.io/tenstorrent/tt-shield/tt-media-inference-server-blaze:tts_inworld_ai_demo_4_glx \
+  $IMG \
   -c 'cd cpp_server && ./build/tt_media_server_cpp'
 "
 ```
+
+> **Image: `tts_inworld_ai_demo`** (validated digest `f9cc8137…`, pulled 2026-09-24) —
+> **not** `tts_inworld_ai_demo_4_glx`. Pull it first (`docker pull …:tts_inworld_ai_demo`)
+> — a cached copy can be weeks stale, and an old build rejected its own config with
+> `[Config] TTS_CHUNK_TOKENS must be in [1, 30]`. The `TTS_CHUNK_TOKENS_1/2/3=17/32/48`
+> ramp (added above) is required: without it the steady chunk defaults out of range and
+> the stack stalls silently.
+
+> **Stop the container with `docker stop -t 30`, never `docker rm -f`.** SIGKILL skips
+> the socket destructors and leaves the decoder H2D mid-transfer
+> (`Bytes sent: N, acknowledged: M`); the next container then aborts in
+> `DecoderSocketPipeline::Impl::Impl` and only a full ring relaunch clears it.
 
 Wait for it and confirm the declared capacity:
 
@@ -312,9 +396,12 @@ ssh -o BatchMode=yes "$ISHOST" 'curl -s -m 10 http://localhost:8010/max-session-
 
 1. `{"max_session_count":<NSLOTS>}` — if it says 700 when you asked for 800, the caps
    did not propagate and the extra slots are invisible.
-2. **Two** `makeTtsScheduler: decoder N over shared memory` lines — one per decoder.
-   `workers=1` in the `capacity=` line is the TTS service worker, *not* the decoder
-   count; two decoders with `workers=1` is correct.
+2. **One `makeTtsScheduler: decoder N over shared memory` line per decoder** —
+   `decoder 0`, `decoder 1`, (`decoder 2` if you added a third). The count must match
+   your `DECODER_SOCKET_PAIRS`. `workers=1` in the `capacity=` line is the TTS service
+   worker, *not* the decoder count; two decoders with `workers=1` is correct. Also expect
+   `drained 0 + 0 residual D2H pages … clean handoff` — nonzero means poisoned sockets
+   (relaunch the ring).
 3. `capacity=<NSLOTS>`.
 
 > **TRAP — the six caps must all track `--n-slots`.** `TTS_MAX_BATCH_SIZE`,
@@ -349,13 +436,22 @@ A wedged stack answers `health=200` and returns **44 bytes** — a bare WAV head
 no audio. Expect ~288 KB for that sentence. This check has caught a "successful"
 deploy that served nothing.
 
-Optional warmup before real measurement:
+**Required warmup before ANY measurement — 100 concurrent requests.** `tokenizer_resolve`
+is a ~14 s cold cost paid **per drogon IO thread** (64 of them); a request landing on an
+un-warmed thread returns a 14 s TTFB that poisons FC p99 and inverts every conclusion. A
+short or sequential warmup does not cover the thread pool — fire ~100 concurrent:
 
 ```bash
-python3 /data/ljovanovic/tt-inference-server/test_module/benchmark_tests/tts_load_harness.py \
-  sweep --host "$ISHOST" --port 8010 --text-tokens 1017 \
-  --arrival closed --concurrency 64 --duration 60 --warmup 20 --out "$L/warm.json" --no-table
+ssh -o BatchMode=yes "$ISHOST" 'for i in $(seq 1 100); do
+  curl -s -o /dev/null -m 120 -X POST http://localhost:8010/v1/audio/speech \
+    -H "Authorization: Bearer your-secret-key" -H "Content-Type: application/json" \
+    -d "{\"text\": \"The quick brown fox jumps over the lazy dog.\"}" & done; wait; echo warmed'
 ```
+
+Only then sweep. On this quad, all graded targets (FC p50 100 / p99 125, SC p99 180,
+TC p99 400, 4C+ p99 720) pass to **C≈160 with 1 decoder, ~576 with 2, ~640 with 3**
+(ISL=64). Decoder duty at the ceiling is ~100% on decoder0, so the decoders are the
+bottleneck — add decoders (above) to push higher.
 
 ---
 
@@ -402,7 +498,10 @@ a process-only teardown because they are root-owned.
 | `Waiting for lock 'CHIP_IN_USE_0_PCIe'` | leftover ranks, possibly dead PIDs | stage 1 properly scoped, then 2b |
 | ring silent, ranks at ~5% CPU | Phase 1 deadlock (looks alive in `ps`) | dead-PID check in stage 3 |
 | aborted at ~6 min but blaze was fine | staleness window too short | 15 min; codec 36–354 s, blaze 490–660 s |
-| `health=200`, 44-byte responses | wedged stack | stage 5 catches it; redeploy |
+| `health=200`, 44-byte responses; or serves a few chunks then stalls under load | decoder H2D FIFO not batch-aligned (FIFO-wrap L1 overrun) | set `socket_fifo_size_bytes = 64512` in `decoder_tts2.py` (Prerequisite section); relaunch ring |
+| decoder idle with work queued, `No TTS scheduler output`, neither FIFO full | same FIFO-wrap bug, or decoder launched at `T=32` | 64512 FIFO **and** `--dec-chip N:48` on every decoder |
+| `Timeout waiting for device to send acknowledgement over H2D socket. Bytes sent: N, acknowledged: M` | prior container killed with `docker rm -f` (skipped socket destructors) | `docker stop -t 30` next time; full ring relaunch to clear |
+| `[Config] TTS_CHUNK_TOKENS must be in [1, 30]` | stale cached image | `docker pull …:tts_inworld_ai_demo` (not `_4_glx`) |
 | `max_session_count` < `NSLOTS` | caps did not propagate | all six knobs must track `--n-slots` |
 | only one `makeTtsScheduler: decoder` | `--dec-chip` given once | pass it twice; check `DECODER_SOCKET_PAIRS` |
 | `cannot find physical PCIe device /dev/tenstorrent/16` | PCIe ids in `DEVICE_IDS` | use LOGICAL ids (24/25, not 16/17) |
