@@ -793,16 +793,6 @@ class TestJobManagement:
         mock_job_manager.cancel_job.assert_called_once_with("job_1", org_id=None)
         assert result is True
 
-    def test_set_job_retained(self, base_job_service, mock_job_manager):
-        mock_job_manager.set_job_retained.return_value = {"retained": True}
-
-        result = base_job_service.set_job_retained("job_1", True)
-
-        mock_job_manager.set_job_retained.assert_called_once_with(
-            "job_1", True, org_id=None
-        )
-        assert result == {"retained": True}
-
     def test_delete_job(self, base_job_service, mock_job_manager):
         mock_job_manager.delete_job.return_value = True
 

@@ -8,7 +8,6 @@ import zipfile
 from config.constants import JobTypes
 from config.settings import get_settings
 from domain.adapter_merge_request import AdapterMergeRequest
-from domain.job_retention_request import JobRetentionRequest
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -119,25 +118,6 @@ async def get_fine_tuning_job_metadata(
     if job_data is None:
         raise HTTPException(status_code=404, detail="Fine-tuning job not found")
 
-    return JSONResponse(content=job_data)
-
-
-@router.put("/jobs/{job_id}/retention")
-async def update_fine_tuning_job_retention(
-    job_id: str,
-    update: JobRetentionRequest,
-    service: BaseJobService = Depends(service_resolver),
-    api_key: str = Security(get_api_key),
-    org_id: str = Depends(get_org_id),
-):
-    """Protect or release a fine-tuning job from automatic cleanup."""
-    job_data = service.set_job_retained(
-        job_id,
-        update.retained,
-        org_id=org_id,
-    )
-    if job_data is None:
-        raise HTTPException(status_code=404, detail="Fine-tuning job not found")
     return JSONResponse(content=job_data)
 
 

@@ -96,47 +96,6 @@ class TestGetCatalog:
         assert "supported" in data
 
 
-class TestJobRetention:
-    def test_retain_job(self, client, mock_service):
-        mock_service.set_job_retained.return_value = {
-            "id": "job-1",
-            "retained": True,
-        }
-
-        response = client.put("/jobs/job-1/retention", json={"retained": True})
-
-        assert response.status_code == 200
-        assert response.json()["retained"] is True
-        mock_service.set_job_retained.assert_called_once_with(
-            "job-1",
-            True,
-            org_id="test-org",
-        )
-
-    def test_retain_missing_job_returns_404(self, client, mock_service):
-        mock_service.set_job_retained.return_value = None
-
-        response = client.put("/jobs/missing/retention", json={"retained": True})
-
-        assert response.status_code == 404
-
-    def test_retain_adapter_merge_job(self, client, mock_service):
-        mock_service.set_job_retained.return_value = {
-            "id": "merge-1",
-            "retained": True,
-        }
-
-        response = client.put("/jobs/merge-1/retention", json={"retained": True})
-
-        assert response.status_code == 200
-        assert response.json()["retained"] is True
-        mock_service.set_job_retained.assert_called_once_with(
-            "merge-1",
-            True,
-            org_id="test-org",
-        )
-
-
 class TestDeleteJob:
     def test_delete_terminal_job(self, client, mock_service):
         mock_service.delete_job.return_value = True

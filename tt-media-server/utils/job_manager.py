@@ -18,6 +18,7 @@ from config.constants import (
     JobTypes,
     adapters_root,
     job_database_path,
+    merged_models_root,
 )
 from config.settings import get_settings
 from domain.base_request import BaseRequest
@@ -28,6 +29,12 @@ from utils.logger import TTLogger
 
 TASK_QUEUE_FULL_DETAIL = "Task queue is full. Please try again later."
 MAX_JOBS_REACHED_DETAIL = "Maximum job limit reached"
+AUTOMATIC_RETENTION_EXEMPT_JOB_TYPES = frozenset(
+    {
+        JobTypes.TRAINING.value,
+        JobTypes.ADAPTER_MERGE.value,
+    }
+)
 
 
 class JobStatus(str, Enum):
@@ -51,7 +58,6 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
-    retained: bool = False
     local_progress_time: Optional[float] = None
     _task: Callable = None
     _progress_tracker: Any = None
@@ -127,11 +133,6 @@ class Job:
             "model": self.model,
             "request_parameters": self.request_parameters,
         }
-        if self.job_type in {
-            JobTypes.TRAINING.value,
-            JobTypes.ADAPTER_MERGE.value,
-        }:
-            data["retained"] = self.retained
         if self.org_id:
             data["org_id"] = self.org_id
         if self.completed_at:
@@ -213,7 +214,6 @@ class JobManager:
                         status=job.status.value,
                         created_at=job.created_at,
                         org_id=job.org_id,
-                        retained=job.retained,
                     )
                     if result_path:
                         self.db.update_result_path(job_id, result_path)
@@ -342,23 +342,6 @@ class JobManager:
             self._cleanup_job(job)
 
             self._logger.info(f"Job {job_id} cancellation initiated.")
-            return job.to_public_dict()
-
-    def set_job_retained(
-        self,
-        job_id: str,
-        retained: bool,
-        org_id: Optional[str] = None,
-    ) -> Optional[dict]:
-        """Protect or release a job from automatic retention cleanup."""
-        with self._jobs_lock:
-            job = self._get_job_if_authorized(job_id, org_id)
-            if job is None:
-                return None
-
-            if self.db:
-                self.db.update_job_retained(job.id, retained)
-            job.retained = retained
             return job.to_public_dict()
 
     def delete_job(
@@ -508,7 +491,7 @@ class JobManager:
             for job in self._jobs.values():
                 is_old_terminal = (
                     job.is_terminal()
-                    and not job.retained
+                    and job.job_type not in AUTOMATIC_RETENTION_EXEMPT_JOB_TYPES
                     and job.completed_at
                     and job.completed_at < retention_cutoff
                 )
@@ -551,7 +534,7 @@ class JobManager:
         with self._jobs_lock:
             for job in jobs_to_remove:
                 current_job = self._jobs.get(job.id)
-                if current_job is not job or job.retained:
+                if current_job is not job:
                     continue
                 self._jobs.pop(job.id, None)
                 removed_jobs.append(job)
@@ -585,9 +568,14 @@ class JobManager:
         if not job.result_path or not isinstance(job.result_path, str):
             return None
 
-        path = os.path.realpath(job.result_path)
-        if job.job_type == JobTypes.TRAINING.value:
-            root = os.path.realpath(adapters_root())
+        result_roots = {
+            JobTypes.TRAINING.value: adapters_root,
+            JobTypes.ADAPTER_MERGE.value: merged_models_root,
+        }
+        root_factory = result_roots.get(job.job_type)
+        if root_factory is not None:
+            path = os.path.realpath(job.result_path)
+            root = os.path.realpath(root_factory())
             if path == root or os.path.commonpath([root, path]) != root:
                 raise ValueError(f"Refusing to delete result outside {root}: {path}")
             return job.result_path
@@ -744,7 +732,6 @@ class JobManager:
                     completed_at=db_job.get("completed_at"),
                     result_path=db_job.get("result_path"),
                     error=db_job.get("error_message"),
-                    retained=bool(db_job.get("retained", False)),
                 )
 
                 if db_job["job_type"] == JobTypes.TRAINING.value:

@@ -35,15 +35,6 @@ class TestInsertJobOrgId:
         assert result["org_id"] is None
 
 
-class TestJobRetention:
-    def test_insert_defaults_to_not_retained(self, db_with_job):
-        assert db_with_job.get_job_by_id("job-1")["retained"] == 0
-
-    def test_update_job_retained(self, db_with_job):
-        db_with_job.update_job_retained("job-1", True)
-        assert db_with_job.get_job_by_id("job-1")["retained"] == 1
-
-
 class TestDeleteJob:
     def test_external_cleanup_failure_rolls_back_delete(self, db_with_job):
         def fail_cleanup():
