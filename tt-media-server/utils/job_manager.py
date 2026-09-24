@@ -620,7 +620,7 @@ class JobManager:
             return False
         return job.progress_time() < progress_cutoff
 
-    def _get_result_path_for_deletion(self, job: Job) -> Optional[str]:
+    def _validate_result_path_for_deletion(self, job: Job) -> Optional[str]:
         if not job.result_path or not isinstance(job.result_path, str):
             return None
 
@@ -650,7 +650,7 @@ class JobManager:
             shutil.rmtree(result_path)
 
     def _delete_jobs_and_results(self, jobs: list[Job]) -> None:
-        result_paths = [self._get_result_path_for_deletion(job) for job in jobs]
+        result_paths = [self._validate_result_path_for_deletion(job) for job in jobs]
         if self.db:
             with self.db.job_deletion_transaction([job.id for job in jobs]):
                 for result_path in result_paths:
