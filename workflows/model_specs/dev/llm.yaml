@@ -494,7 +494,7 @@ templates:
       # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
-      default_impl: true
+      default_impl: false
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
@@ -755,6 +755,40 @@ templates:
       # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
+
+# PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
+# models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
+# Shield sweep is directly comparable with the existing autoport benchmark run.
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 536870912
+        l1_small_size: 16384
+      vllm_args:
+        block_size: '128'
+        hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
+        max-logprobs: '-1'
+        async-scheduling: true
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+        reasoning-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking":true}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 - weights:
     - google/gemma-4-12B-it
