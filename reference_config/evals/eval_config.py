@@ -4789,18 +4789,13 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            # Replaces qemu-startup: that task (and qemu-alpine-ssh) is built on
-                            # debian:bullseye-slim, whose security repo no longer serves packages,
-                            # so its test.sh dies at `apt-get install curl` before running a single
-                            # test. Reproduced with the reference solution via Harbor's oracle agent
-                            # (reward 0.0) and on runs 34145630605 and 35667712636 -- a guaranteed 0
-                            # for any model. Same difficulty/category (medium, system-administration);
-                            # the oracle passes its verifier 8/8.
-                            "terminal-bench/nginx-request-logging",
+                            # Exploratory subset (part1, 2026-09-24): tasks not in the original CI 5, oracle-validated
+                            # locally (Harbor, reference solutions pass). Not a scoring baseline.
+                            "terminal-bench/fix-git",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/largest-eigenval",
                         ],
                     },
                 ),
@@ -4873,11 +4868,18 @@ _eval_config_list = [
                     },
                     instance_ids_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
+                            # Exploratory subset (part1, 2026-09-24): instances not in the original CI 5;
+                            # repo/difficulty spread from SWE-bench Verified metadata. Not a scoring baseline.
+                            "django__django-10880",
+                            "django__django-16502",
+                            "django__django-16631",
+                            "sympy__sympy-19637",
+                            "sympy__sympy-24443",
+                            "scikit-learn__scikit-learn-12682",
+                            "matplotlib__matplotlib-25122",
+                            "astropy__astropy-14598",
+                            "pydata__xarray-4075",
+                            "pytest-dev__pytest-7571",
                         ],
                     },
                 ),
