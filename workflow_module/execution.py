@@ -250,7 +250,13 @@ class WorkflowExecution(ABC):
         )
         try:
             self.prepare()
-            task_outcomes = self.run_tasks()
+            # Checkpoint on every accept: a cancel never reaches the report
+            # phase below, so what the tasks produced must already be on disk.
+            previous_hook = self.accumulator.set_on_accept(self.checkpoint)
+            try:
+                task_outcomes = self.run_tasks()
+            finally:
+                self.accumulator.set_on_accept(previous_hook)
         except Exception as e:
             self.logger.exception(
                 "Workflow %s aborted during task phase: %s", self.name, e
@@ -446,6 +452,20 @@ class WorkflowExecution(ABC):
         self.logger.info("Wrote markdown: %s", result.markdown_path)
         self.logger.info("Wrote json:     %s", result.json_path)
         return result
+
+    def checkpoint(self) -> bool:
+        """Write a partial report for the Blocks accepted so far.
+
+        Same paths and metadata as :meth:`generate_report`, marked
+        ``report_partial``; the end-of-run report overwrites it.
+        """
+        from .checkpoint import checkpoint_report
+
+        return checkpoint_report(
+            Path(self.ctx.output_path).parent,
+            accumulator=self.accumulator,
+            prepare=self.inject_metadata,
+        )
 
 
 __all__ = [
