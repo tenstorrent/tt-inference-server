@@ -380,11 +380,7 @@ class JobManager:
                 self._jobs.pop(job_to_delete.id, None)
 
         try:
-            jobs_and_result_paths = [
-                (job_to_delete, self._get_result_path_for_deletion(job_to_delete))
-                for job_to_delete in jobs_to_delete
-            ]
-            self._delete_job_records_and_results(jobs_and_result_paths)
+            self._delete_jobs_and_results(jobs_to_delete)
         except Exception:
             with self._jobs_lock:
                 for job_to_restore in jobs_to_delete:
@@ -603,8 +599,7 @@ class JobManager:
         deleted_jobs = []
         for job in removed_jobs:
             try:
-                result_path = self._get_result_path_for_deletion(job)
-                self._delete_job_records_and_results([(job, result_path)])
+                self._delete_jobs_and_results([job])
             except Exception as e:
                 self._logger.error(
                     f"Deletion failed for job {job.id} during cleanup: {e}"
@@ -654,17 +649,14 @@ class JobManager:
         elif os.path.isdir(result_path):
             shutil.rmtree(result_path)
 
-    def _delete_job_records_and_results(
-        self, jobs_and_result_paths: list[tuple[Job, Optional[str]]]
-    ) -> None:
+    def _delete_jobs_and_results(self, jobs: list[Job]) -> None:
+        result_paths = [self._get_result_path_for_deletion(job) for job in jobs]
         if self.db:
-            with self.db.job_deletion_transaction(
-                [job.id for job, _ in jobs_and_result_paths]
-            ):
-                for _, result_path in jobs_and_result_paths:
+            with self.db.job_deletion_transaction([job.id for job in jobs]):
+                for result_path in result_paths:
                     self._delete_result_path(result_path)
         else:
-            for _, result_path in jobs_and_result_paths:
+            for result_path in result_paths:
                 self._delete_result_path(result_path)
 
     def _cleanup_job(self, job: Job, force: bool = False):
