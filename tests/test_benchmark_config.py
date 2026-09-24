@@ -345,12 +345,31 @@ def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
         assert p.num_prompts == benchmark_config.get_num_prompts(p.isl, p.osl, 1)
         assert p.num_prompts < floor
 
-    # The high-ISL extension points must be present and respect the floor
-    # (their base 1x concurrency count would otherwise fall well below it).
-    high_isl = [p for p in text_params if p.isl >= 196608 and p.max_concurrency > 1]
-    assert high_isl
-    for p in high_isl:
-        assert p.num_prompts >= floor
+    # The high-ISL extension points must be present as single-user points.
+    assert any(p.isl >= 196608 for p in text_params)
+
+
+def test_sweep_runs_long_isl_at_single_user_only(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    _, runtime_spec = _make_super_cluster_runtime_spec()
+    config = benchmark_config.get_benchmark_config(runtime_spec)
+
+    sweep_params = config.tasks[1].param_map[DeviceTypes.SUPER_CLUSTER]
+    text_params = [p for p in sweep_params if getattr(p, "task_type", "text") == "text"]
+
+    long_isl = [
+        p for p in text_params if p.isl > benchmark_config.SWEEP_MULTI_USER_MAX_ISL
+    ]
+    assert long_isl
+    assert all(p.max_concurrency == 1 for p in long_isl)
+
+    short_isl_multi_user = [
+        p
+        for p in text_params
+        if p.isl <= benchmark_config.SWEEP_MULTI_USER_MAX_ISL and p.max_concurrency > 1
+    ]
+    assert short_isl_multi_user
 
 
 def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
