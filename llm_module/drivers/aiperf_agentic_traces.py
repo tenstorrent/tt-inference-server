@@ -301,6 +301,10 @@ def build_aiperf_cmd(
         cmd.append("--no-gpu-telemetry")
     if run.tokenizer_trust_remote_code:
         cmd.append("--tokenizer-trust-remote-code")
+    if run.trace_idle_gap_cap_seconds is not None:
+        cmd.extend(
+            ["--trace-idle-gap-cap-seconds", f"{run.trace_idle_gap_cap_seconds:g}"]
+        )
     if auth_token:
         cmd.extend(["--api-key", auth_token])
     return cmd
@@ -823,6 +827,7 @@ def _build_payload(
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,
+        "trace_idle_gap_cap_seconds": run.trace_idle_gap_cap_seconds,
         "artifact_dir": str(artifact_dir),
         "metadata": dict(run.metadata or {}),
         **metrics,

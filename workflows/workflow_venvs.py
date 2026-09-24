@@ -264,6 +264,38 @@ INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
 # same pin skips the fetch + reinstall and a run with a different pin does not.
 _INFERENCEX_REF_STAMP = ".inferencex_ref"
 
+# InferenceX pins whose vendored aiperf builds the agentic auto-warmup phase
+# without ``phase_kind``. 8f12037728d6 vendors aiperf 754356e9 (agentx-v1.0.5),
+# which still does.
+_AGENTIC_WARMUP_PATCH_REFS = frozenset({"8f12037728d6fc118422318d5472f147dcc2a291"})
+
+
+def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
+    # Separate auto-warmup from profiling:
+    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44
+    # Without ``phase_kind="warmup"`` AIPerf tags the auto-warmup's server
+    # metric baselines as profiling, so warmup counter growth (including the
+    # prompt-token sources the prefix-cache hit rate is computed from) leaks
+    # into the profiling totals. Remove this patch, and
+    # _AGENTIC_WARMUP_PATCH_REFS, once
+    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
+    # pin moves to an InferenceX revision that vendors it.
+    if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
+        return True
+    config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
+    source = config_path.read_text(encoding="utf-8")
+    old = (
+        "        phase=CreditPhase.WARMUP,\n"
+        "        timing_mode=TimingMode.AGENTIC_REPLAY,\n"
+    )
+    new = old + '        phase_kind="warmup",\n'
+    if source.count(old) != 1:
+        logger.error("Unexpected AIPerf warmup configuration: %s", config_path)
+        return False
+    if new not in source:
+        config_path.write_text(source.replace(old, new, 1), encoding="utf-8")
+    return True
+
 
 def setup_agentic_traces(
     venv_config: VenvConfig,
@@ -323,7 +355,7 @@ def setup_agentic_traces(
                 git_ref,
                 repo_dir,
             )
-            return True
+            return _patch_agentic_warmup(repo_dir, git_ref)
         logger.info(
             "InferenceX checkout is on a different ref than the configured %s; "
             "re-checking out and reinstalling.",
@@ -381,6 +413,9 @@ def setup_agentic_traces(
         f"-r {agentic_requirements} -e {vendored_aiperf}"
     )
     if run_command(install_cmd, logger=logger) != 0:
+        return False
+
+    if not _patch_agentic_warmup(repo_dir, git_ref):
         return False
 
     stamp_file.write_text(f"{git_ref}\n")
