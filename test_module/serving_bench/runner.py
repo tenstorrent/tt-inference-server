@@ -13,7 +13,7 @@ suite's ``defaults.env``. ``--limit-samples-mode`` selects a knob
 preset (see :mod:`presets`); a value already exported by the caller
 still wins.
 
-Result JSONs land under ``<ctx.output_path>/serving_bench/<suite>/``;
+Result JSONs land under ``<ctx.output_path>/serving_bench/<suite>/<attempt>/``;
 one ``Block(kind="serving_bench")`` per suite points at them so the
 unified report records the run. Forwarded to
 :func:`workflow_module.accept_blocks` like the other llm_tests runners.
@@ -25,6 +25,7 @@ import logging
 import os
 import subprocess
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,8 +96,13 @@ def run_serving_bench(ctx, suites: Optional[str] = None) -> List[ServingBenchRes
     results: List[ServingBenchResult] = []
     blocks: List[Block] = []
     for i, name in enumerate(names, 1):
-        out_dir = Path(ctx.output_path) / "serving_bench" / name
-        out_dir.mkdir(parents=True, exist_ok=True)
+        out_dir = (
+            Path(ctx.output_path)
+            / "serving_bench"
+            / name
+            / f"attempt-{uuid.uuid4().hex}"
+        )
+        out_dir.mkdir(parents=True)
         logger.info(
             "[serving_bench] Running %d/%d: %s -> %s", i, len(names), name, target
         )

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -96,6 +97,33 @@ class TestServingBenchWorkflowRunTasks:
 
 
 class TestServingBenchRunner:
+    def test_repeat_lists_only_current_attempt_artifacts(self, tmp_path):
+        ctx = _make_ctx()
+        ctx.output_path = str(tmp_path)
+        outputs = []
+
+        def run(cmd, **kwargs):
+            output = Path(cmd[cmd.index("--output-dir") + 1])
+            outputs.append(output)
+            if len(outputs) == 1:
+                (output / "old.json").write_text("{}")
+                return MagicMock(returncode=0)
+            (output / "failure.log").write_text("benchmark failed")
+            return MagicMock(returncode=1)
+
+        with patch(
+            "test_module.serving_bench.runner.subprocess.run", side_effect=run
+        ), patch("workflow_module.accept_blocks") as accept:
+            run_serving_bench(ctx, suites="benchmark")
+            result = run_serving_bench(ctx, suites="benchmark")
+
+        current = accept.call_args.args[0][0].data
+        assert current["result_files"] == ["failure.log"]
+        assert current["results_dir"] == str(outputs[1])
+        assert result[0].return_code == current["return_code"] == 1
+        assert outputs[0] != outputs[1]
+        assert (outputs[0] / "old.json").exists()
+
     def test_available_suites_finds_all(self):
         suites = available_suites()
         assert "benchmark" in suites
