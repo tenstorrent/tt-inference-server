@@ -48,7 +48,6 @@
                                 "GALAXY",
                                 "N300",
                                 "P100",
-                                "P150X4",
                                 "T3K"
                             ]
                         }
@@ -155,7 +154,6 @@
                 "weekly": {
                     "devices": [
                         "GALAXY",
-                        "P150X4",
                         "T3K"
                     ]
                 }
@@ -428,7 +426,6 @@
                     "devices": [
                         "GALAXY",
                         "BH_GALAXY",
-                        "P150X4",
                         "P300X2",
                         "T3K"
                     ]
@@ -442,7 +439,6 @@
                     "devices": [
                         "GALAXY",
                         "BH_GALAXY",
-                        "P150X4",
                         "P300X2",
                         "T3K"
                     ]
@@ -477,7 +473,6 @@
                     "devices": [
                         "GALAXY",
                         "P300X2",
-                        "P150X4",
                         "T3K"
                     ]
                 }
@@ -490,7 +485,6 @@
                     "devices": [
                         "GALAXY",
                         "P300X2",
-                        "P150X4",
                         "T3K"
                     ]
                 }
@@ -632,7 +626,6 @@
                     "devices": [
                         "GALAXY",
                         "BH_GALAXY",
-                        "P150X4",
                         "P300X2",
                         "T3K"
                     ]
