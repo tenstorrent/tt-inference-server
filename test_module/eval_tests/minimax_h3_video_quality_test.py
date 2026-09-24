@@ -229,7 +229,50 @@ async def _evaluate_sample(
             "type": type(exc).__name__,
             "message": str(exc),
         }
+    _log_sample_outcome(result)
     return result
+
+
+# A failed sample's reason lives in its result dict, and that JSON only reaches the job
+# artifacts if the run survives to the report step; log it so the job log carries it too.
+_MAX_LOGGED_ERROR_CHARS = 500
+
+
+def _log_sample_outcome(result: dict[str, Any]) -> None:
+    label = (
+        f"prompt={result['prompt_id']} sample={result['sample_index']} "
+        f"task={result.get('task_id')}"
+    )
+    error = result.get("error")
+    if isinstance(error, dict):
+        message = str(error.get("message", ""))
+        if len(message) > _MAX_LOGGED_ERROR_CHARS:
+            message = message[:_MAX_LOGGED_ERROR_CHARS] + "..."
+        logger.warning(
+            "MiniMax quality %s failed (%s): %s", label, error.get("type"), message
+        )
+        return
+    metrics = result.get("metrics")
+    if not isinstance(metrics, dict):
+        return
+    probe = metrics.get("probe") or {}
+    structural = metrics.get("structural") or {}
+    valid = bool(metrics.get("valid_video"))
+    logger.log(
+        logging.INFO if valid else logging.WARNING,
+        "MiniMax quality %s valid_video=%s duration=%ss size=%sx%s ratio_error=%s "
+        "decoded_frames=%s black=%s flat=%s frozen=%s",
+        label,
+        valid,
+        probe.get("duration_seconds"),
+        probe.get("width"),
+        probe.get("height"),
+        probe.get("aspect_ratio_error"),
+        structural.get("total_decoded_frames"),
+        structural.get("is_black"),
+        structural.get("is_flat"),
+        structural.get("is_frozen"),
+    )
 
 
 def _mean(values: list[float]) -> float | None:
@@ -459,10 +502,30 @@ def _aggregate_results(
         success = all_outputs_valid and reference_passed
         quality_status = "pass" if reference_passed else "fail"
     else:
+        logger.info(
+            "No MiniMax quality reference for %d video(s) under %s; quality is "
+            "informational (NA)",
+            requested_count,
+            ACCURACY_REFERENCE_KEY,
+        )
         reference_checks = []
         accuracy_check = ReportCheckTypes.NA
         success = all_outputs_valid
         quality_status = "na"
+
+    if not success:
+        reasons = []
+        if generation_success_count < requested_count:
+            reasons.append(f"{generation_success_count}/{requested_count} generated")
+        if valid_video_count < requested_count:
+            reasons.append(f"{valid_video_count}/{requested_count} valid videos")
+        reasons.extend(
+            f"{check['metric']}={check['actual']} (want {check['operator']} "
+            f"{check['threshold']})"
+            for check in reference_checks
+            if not check["passed"]
+        )
+        logger.warning("MiniMax quality evaluation failed: %s", "; ".join(reasons))
 
     return {
         "summary": summary,

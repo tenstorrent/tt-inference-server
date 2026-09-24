@@ -45,10 +45,11 @@ the nightly builds the media image from tt-metal `main` (the H3 pipeline,
    which the benchmark's warmup runs absorb within the `BH1X` budgets (T2VA-M 1500 s,
    T2VA-H 1800 s).
 3. `release` = evals -> benchmarks -> spec tests, one accumulator, one report:
-   * **evals**: `MiniMaxH3VideoQualityTest` (eight 16:9/5 s clips, structural checks:
-     decodable, right duration and ratio, not black/flat/frozen). Black/flat/frozen is
-     enforced: the `accuracy` block for 8 samples in `model_accuracy_reference.json`
-     requires every generation to succeed with 0 invalid and 0 frozen clips. CLIP stays
+   * **evals**: `MiniMaxH3VideoQualityTest` (one 16:9/5 s clip at seed 0, 8 frames sampled
+     from it; structural checks: decodable, right duration and ratio, not black/flat/frozen).
+     Black/flat/frozen is enforced: the `accuracy` block keyed `"1"` (the number of clips) in
+     `model_accuracy_reference.json` requires the generation to succeed with 0 invalid and
+     0 frozen clips. Each sample's outcome, or its error, is logged. CLIP stays
      off (`enable_clip: false`) until a BH Galaxy `clip_valid_range` is measured.
    * **benchmarks**: two 16:9/5 s clips with the H3 request fields (no
      `num_inference_steps`), `ttft` = wall time per clip vs the `blackhole_galaxy`
