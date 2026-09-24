@@ -554,6 +554,11 @@
                     "devices": [
                         "P300X2"
                     ]
+                },
+                "release": {
+                    "devices": [
+                        "P300X2"
+                    ]
                 }
             }
         },
