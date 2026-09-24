@@ -10,8 +10,12 @@ from workflows.run_docker_server import (
 
 
 def test_pinned_source_is_fetched_and_mounted_read_only(tmp_path, monkeypatch):
-    path = "models/autoports/qwen_qwen3_8_27b"
-    (tmp_path / path).mkdir(parents=True)
+    paths = [
+        "models/autoports/qwen_qwen3_8_27b",
+        "models/common/readiness_check",
+    ]
+    for path in paths:
+        (tmp_path / path).mkdir(parents=True)
     sha = "a" * 40
     run = Mock(return_value=SimpleNamespace(stdout=sha + "\n"))
     monkeypatch.setattr(
@@ -20,12 +24,14 @@ def test_pinned_source_is_fetched_and_mounted_read_only(tmp_path, monkeypatch):
     monkeypatch.setattr("workflows.run_docker_server.subprocess.run", run)
     spec = SimpleNamespace(
         device_model_spec=SimpleNamespace(
-            tt_metal_source_ref=sha, tt_metal_source_paths=[path]
+            tt_metal_source_ref=sha, tt_metal_source_paths=paths
         )
     )
     assert _tt_metal_source_mounts(spec, "/home/container_app_user") == [
         "--mount",
-        f"type=bind,src={tmp_path / path},dst=/home/container_app_user/tt-metal/{path},readonly",
+        f"type=bind,src={tmp_path / paths[0]},dst=/home/container_app_user/tt-metal/{paths[0]},readonly",
+        "--mount",
+        f"type=bind,src={tmp_path / paths[1]},dst=/home/container_app_user/tt-metal/{paths[1]},readonly",
     ]
     commands = [call.args[0] for call in run.call_args_list]
     assert any("fetch" in cmd and cmd[-1] == sha for cmd in commands)

@@ -880,6 +880,8 @@ class TestOverrideArgsIntegration:
         mock_model_spec.docker_image = "test:image"
         mock_model_spec.device_model_spec.tt_metal_source_ref = None
         mock_model_spec.device_model_spec.tt_metal_source_paths = []
+        mock_model_spec.device_model_spec.vllm_plugin_source_repo = None
+        mock_model_spec.device_model_spec.vllm_plugin_source_ref = None
         mock_model_spec.impl.impl_name = "tt-transformers"
         mock_model_spec.impl.impl_id = "tt-transformers"
         mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"

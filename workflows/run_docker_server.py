@@ -55,7 +55,7 @@ def _tt_metal_source_mounts(model_spec, user_home_path) -> List[str]:
         if (
             path.is_absolute()
             or ".." in path.parts
-            or not entry.startswith("models/autoports/")
+            or not entry.startswith(("models/autoports/", "models/common/"))
         ):
             raise ValueError(f"Invalid model source overlay path: {entry}")
     checkout = Path(tempfile.mkdtemp(prefix="tt-metal-model-source-"))

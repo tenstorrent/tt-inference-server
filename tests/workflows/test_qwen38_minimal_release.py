@@ -43,6 +43,7 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
     assert spec.device_model_spec.tt_metal_source_paths == [
         "models/autoports/qwen_qwen3_8_27b",
         "models/autoports/vllm_bundles",
+        "models/common/readiness_check",
     ]
     assert (
         spec.device_model_spec.vllm_plugin_source_repo

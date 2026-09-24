@@ -466,6 +466,7 @@ templates:
       tt_metal_source_paths:
         - models/autoports/qwen_qwen3_8_27b
         - models/autoports/vllm_bundles
+        - models/common/readiness_check
       vllm_plugin_source_repo: https://github.com/mvasiljevicTT/vllm-tt-plugin.git
       vllm_plugin_source_ref: ba14de9216be50d21b42e4557c5ad1fbf2abd58c
       default_impl: true
