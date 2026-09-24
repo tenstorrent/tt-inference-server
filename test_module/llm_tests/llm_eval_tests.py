@@ -384,7 +384,15 @@ def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
             "task=%s will preserve reasoning_content in sample logs.", task.task_name
         )
     logger.info("Running eval task=%s", task.task_name)
-    return run_command(command=cmd, logger=logger, env=env)
+    timeout = getattr(task, "wall_clock_timeout_seconds", None)
+    logger.info(
+        "task=%s wall_clock_timeout_seconds=%s max_attempts=%s",
+        task.task_name,
+        timeout,
+        getattr(task, "max_attempts", None),
+    )
+    kwargs = {"timeout_seconds": timeout} if timeout is not None else {}
+    return run_command(command=cmd, logger=logger, env=env, **kwargs)
 
 
 def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
@@ -466,6 +474,19 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     sample_counts = collect_sample_counts(result_files)
     blocks: List[Block] = list(skipped_blocks)
     for task in ran_tasks:
+        rc = rc_by_task.get(task.task_name)
+        if rc:
+            reason = (
+                "execution deadline exceeded; incomplete"
+                if rc == 124
+                else "evaluation subprocess failed"
+            )
+            failure = _fail_block(
+                ctx, task, f"{reason} (rc={rc}); partial files preserved"
+            )
+            failure.data["subprocess_rc"] = rc
+            blocks.append(failure)
+            continue
         task_blocks = blocks_for_task(
             ctx,
             task,
