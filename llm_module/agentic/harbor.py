@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 _OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
+_DOCKER_HOST_NAME = "host.docker.internal"
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
@@ -151,7 +153,7 @@ def _get_agent_kwargs(config: HarborRunConfig) -> dict[str, Any]:
     return agent_kwargs
 
 
-def _get_agent_endpoint(config: HarborRunConfig) -> str:
+def _get_configured_agent_endpoint(config: HarborRunConfig) -> str:
     """Resolve explicit endpoint overrides without consulting the host env."""
     values = [
         config.agent_env[key] for key in _OPENAI_ENDPOINT_ENV if key in config.agent_env
@@ -161,6 +163,43 @@ def _get_agent_endpoint(config: HarborRunConfig) -> str:
     if len(set(values)) > 1:
         raise ValueError("Conflicting OpenAI endpoint overrides in agent env")
     return values[0] if values else config.api_base
+
+
+def _mini_swe_uses_docker_host_gateway(config: HarborRunConfig) -> bool:
+    """Whether mini-swe-agent needs a route from its container to this host."""
+    if (
+        config.agent != _MINI_SWE_AGENT
+        or config.agent_import_path is not None
+        or config.environment_type != "docker"
+    ):
+        return False
+    return urlsplit(_get_configured_agent_endpoint(config)).hostname in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }
+
+
+def _get_agent_endpoint(config: HarborRunConfig) -> str:
+    """Return an endpoint reachable from the process that executes the agent.
+
+    Harbor executes its installed mini-swe-agent inside the SWE task container.
+    A loopback URL therefore points at that container rather than at the runner
+    hosting the inference server. The generated Compose overlay maps Docker's
+    stable host-gateway name; use that name for this one container-executed
+    agent while leaving host-executed agents on loopback.
+    """
+    endpoint = _get_configured_agent_endpoint(config)
+    if not _mini_swe_uses_docker_host_gateway(config):
+        return endpoint
+
+    parsed = urlsplit(endpoint)
+    host = parsed.hostname
+    if host == "::1":
+        netloc = parsed.netloc.replace("[::1]", _DOCKER_HOST_NAME, 1)
+    else:
+        netloc = parsed.netloc.replace(host or "", _DOCKER_HOST_NAME, 1)
+    return urlunsplit(parsed._replace(netloc=netloc))
 
 
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
@@ -191,6 +230,21 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    if _mini_swe_uses_docker_host_gateway(config):
+        overlay_path = (
+            config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
+        )
+        with overlay_path.open("w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "services": {
+                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
+                    }
+                },
+                f,
+                indent=2,
+            )
+        environment_config["extra_docker_compose"] = [str(overlay_path)]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -249,7 +303,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        config.agent_timeout_sec is not None
+        _mini_swe_uses_docker_host_gateway(config)
+        or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
         or bool(config.agent_env)

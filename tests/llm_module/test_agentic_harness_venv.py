@@ -14,6 +14,7 @@ the task container, so there are no other binaries to resolve.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,3 +77,48 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
         harbor.run(config)
 
     assert captured["cmd"][0] == str(Path("/cur/bin/python").parent / "harbor")
+
+
+def test_mini_swe_container_uses_docker_host_gateway(tmp_path):
+    config = _harbor_config(tmp_path, _VENV_PY)
+    config = harbor.HarborRunConfig(
+        **{
+            **config.__dict__,
+            "agent": "mini-swe-agent",
+        }
+    )
+
+    with patch.object(harbor, "run_with_progress", return_value=17) as run_cmd:
+        assert harbor.run(config) == 17
+
+    command = run_cmd.call_args.args[0]
+    assert "--config" in command
+    harbor_config = json.loads(
+        (config.jobs_dir / f"{config.task_name}_harbor_config.json").read_text()
+    )
+    assert harbor_config["agents"][0]["env"] == {
+        "OPENAI_BASE_URL": "http://host.docker.internal:8000/v1",
+        "OPENAI_API_BASE": "http://host.docker.internal:8000/v1",
+    }
+    overlay_path = Path(harbor_config["environment"]["extra_docker_compose"][0])
+    assert json.loads(overlay_path.read_text()) == {
+        "services": {
+            "main": {
+                "extra_hosts": ["host.docker.internal:host-gateway"],
+            }
+        }
+    }
+
+
+def test_host_executed_agent_keeps_loopback_endpoint(tmp_path):
+    config = _harbor_config(tmp_path, _VENV_PY)
+
+    with patch.object(harbor, "run_with_progress", return_value=17) as run_cmd:
+        assert harbor.run(config) == 17
+
+    command = run_cmd.call_args.args[0]
+    endpoint_args = [arg for arg in command if arg.startswith("OPENAI_")]
+    assert endpoint_args == [
+        "OPENAI_BASE_URL=http://localhost:8000/v1",
+        "OPENAI_API_BASE=http://localhost:8000/v1",
+    ]
