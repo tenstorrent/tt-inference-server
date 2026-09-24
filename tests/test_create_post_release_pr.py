@@ -12,6 +12,7 @@ from scripts.release.create_post_release_pr import (
     build_rows,
     render_body,
     render_table,
+    resolve_galaxy_sw_versions,
     resolve_release_scope,
 )
 from scripts.release.release_scope import (
@@ -334,3 +335,17 @@ def test_longer_impl_outside_release_scope_is_not_linked():
         ),
     }
     assert _qb2_rows([job])[0]["ci_url"] is None
+
+
+def test_galaxy_sw_versions_read_the_first_galaxy_row_that_has_a_job(monkeypatch):
+    fetched = []
+    monkeypatch.setattr(
+        "scripts.release.create_post_release_pr.fetch_job_log",
+        lambda _repo, job_id, _token: fetched.append(job_id),
+    )
+    rows = [
+        {"device": "GALAXY", "ci_job_id": None},
+        {"device": "GALAXY", "ci_job_id": 42},
+    ]
+    resolve_galaxy_sw_versions(rows, [{"id": 42}], "repo/name", "123", "token")
+    assert fetched == [42]

@@ -489,7 +489,14 @@ def resolve_galaxy_sw_versions(rows, jobs, tt_shield_repo, run_id, token) -> dic
     if not jobs or not run_id or not token:
         return blank
     # The job build_rows linked to the row, so an impl's row reads its own job.
-    job_id = next((r.get("ci_job_id") for r in rows if _is_galaxy(r["device"])), None)
+    job_id = next(
+        (
+            r["ci_job_id"]
+            for r in rows
+            if _is_galaxy(r["device"]) and r.get("ci_job_id") is not None
+        ),
+        None,
+    )
     if job_id is None:
         return blank
     log = fetch_job_log(tt_shield_repo, job_id, token)
