@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
@@ -357,12 +358,14 @@ def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> B
 # --- running one task --------------------------------------------------------
 
 
-def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
+def _run_eval_task(
+    ctx: MediaContext, task, auth_token: str, *, output_path: Path
+) -> int:
     cmd = build_eval_command(
         task,
         ctx.model_spec,
         _device_label(ctx),
-        ctx.output_path,
+        output_path,
         ctx.server_port,
         runtime_config=ctx.runtime_config,
         deploy_url=ctx.server_host,
@@ -460,14 +463,20 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 "⛔ server unhealthy mid-eval (status %s); aborting.",
                 getattr(health, "status_code", "?"),
             )
-            task_blocks = _score_task(ctx, task, rc=1, elapsed_seconds=None)
+            task_blocks = [_fail_block(ctx, task, "inference server not healthy")]
             _accept(task_blocks, envelope)
             blocks.extend(task_blocks)
             break
+        # Keep each attempt's raw outputs, but never grade files from an older
+        # attempt when this subprocess fails or produces malformed results.
+        output_path = Path(ctx.output_path) / f"eval-attempt-{uuid.uuid4().hex}"
+        output_path.mkdir(parents=True)
         started_at = time.perf_counter()
-        rc = _run_eval_task(ctx, task, auth_token)
+        rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
         elapsed_seconds = time.perf_counter() - started_at
-        task_blocks = _score_task(ctx, task, rc=rc, elapsed_seconds=elapsed_seconds)
+        task_blocks = _score_task(
+            ctx, task, output_path=output_path, rc=rc, elapsed_seconds=elapsed_seconds
+        )
         _accept(task_blocks, envelope)
         blocks.extend(task_blocks)
 
@@ -475,10 +484,15 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
 
 
 def _score_task(
-    ctx: MediaContext, task, *, rc: int, elapsed_seconds: Optional[float]
+    ctx: MediaContext,
+    task,
+    *,
+    output_path: Path,
+    rc: int,
+    elapsed_seconds: Optional[float],
 ) -> List[Block]:
-    """Score one finished task from the result files on disk right now."""
-    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
+    """Score one finished task using only its current attempt's result files."""
+    result_files = discover_eval_results(output_path, ctx.model_spec)
     results, sample_counts = load_eval_results(result_files)
     task_blocks = blocks_for_task(
         ctx,

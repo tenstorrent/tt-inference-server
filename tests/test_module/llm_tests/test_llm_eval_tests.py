@@ -423,7 +423,9 @@ class TestRunLLMEval:
             "bad-counts",
         ],
     )
-    def test_bad_result_does_not_stop_later_tasks(self, tmp_path, bad_result, caplog):
+    def test_bad_result_does_not_reuse_old_scores_or_stop_later_tasks(
+        self, tmp_path, bad_result, caplog
+    ):
         from workflow_module import BlockAccumulator
 
         ctx = _ctx()
@@ -432,11 +434,24 @@ class TestRunLLMEval:
         tasks = [_task(name, _score(reference=90.0)) for name in ("gpqa", "mmlu")]
         result_dir = tmp_path / "eval_test-llm" / "org__test-llm"
         result_dir.mkdir(parents=True)
+        old_result = result_dir / "results_old.json"
+        old_result.write_text(
+            json.dumps(
+                {
+                    "results": {"gpqa": {"acc,none": 0.95}},
+                    "configs": {"gpqa": {"task": "gpqa", "dataset_path": "d"}},
+                }
+            )
+        )
         accumulator = BlockAccumulator()
         ran = []
+        attempt_dirs = []
 
-        def run_task(_ctx, task, _token):
+        def run_task(_ctx, task, _token, *, output_path):
             ran.append(task.task_name)
+            attempt_dirs.append(output_path)
+            result_dir = output_path / "eval_test-llm" / "org__test-llm"
+            result_dir.mkdir(parents=True)
             if task.task_name == "gpqa":
                 (result_dir / "results_gpqa.json").write_text(bad_result)
                 return 1
@@ -465,6 +480,8 @@ class TestRunLLMEval:
             blocks = mod.run_llm_eval(ctx)
 
         assert ran == ["gpqa", "mmlu"]
+        assert len(set(attempt_dirs)) == 2
+        assert old_result.exists()
         assert blocks == accumulator.blocks
         assert blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
         assert "no eval results parsed (rc=1)" in blocks[0].data["error"]
@@ -539,7 +556,7 @@ class TestRunLLMEval:
         server.get_health.return_value = SimpleNamespace(status_code=200)
         run_calls = []
 
-        def run_eval_task(_ctx, task, _token):
+        def run_eval_task(_ctx, task, _token, *, output_path):
             run_calls.append(task.task_name)
             if len(run_calls) == 2:
                 raise KeyboardInterrupt  # SIGINT from a GitHub cancel
