@@ -82,6 +82,13 @@ class AgenticTracesRunSpec:
     # instead, ``vllm bench serve`` style.
     use_server_token_count: bool = True
     gpu_telemetry: bool = False
+    # Caps any single recorded idle gap in a trace (``--trace-idle-gap-cap-seconds``).
+    # 300 is InferenceX's own default (``AIPERF_TRACE_IDLE_GAP_CAP_SECONDS`` in
+    # benchmarks/benchmark_lib.sh). Without it a lane whose trace recorded an
+    # overnight pause sits idle for the whole profiling window. ``None`` omits
+    # the flag, which is required on InferenceX pins before agentx-v1.0.0: their
+    # scenario rejects it.
+    trace_idle_gap_cap_seconds: Optional[float] = 300.0
     # AIPerf ``--goodput`` SLO string: space-separated TAG:VALUE bars deciding
     # whether a request counts as good. Empty means the run measures no
     # goodput, since AIPerf reports it only when the bars are passed. Catalog
@@ -146,6 +153,14 @@ class AgenticTracesRunSpec:
                 "0 <= min <= max <= 1, got min="
                 f"{self.trajectory_start_min_ratio} max="
                 f"{self.trajectory_start_max_ratio}"
+            )
+        if (
+            self.trace_idle_gap_cap_seconds is not None
+            and self.trace_idle_gap_cap_seconds <= 0
+        ):
+            raise ValueError(
+                "AgenticTracesRunSpec.trace_idle_gap_cap_seconds must be > 0 "
+                f"when set, got {self.trace_idle_gap_cap_seconds}"
             )
         if self.resident is not None and self.resident < 1:
             raise ValueError(
@@ -348,6 +363,10 @@ def for_model_ids(model_ids: List[str], **kwargs) -> List[AgenticTracesConfig]:
     return [AgenticTracesConfig(model_id=mid, **kwargs) for mid in model_ids]
 
 
+# InferenceX revision every agentx config below pins. See the Kimi entry for why
+# this commit.
+INFERENCEX_AGENTX_GIT_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
+
 _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # Kimi K2.7-Code on SUPER_CLUSTER (dev catalog). 256k dataset variant to
     # match the spec's 262144 max_context
@@ -357,13 +376,16 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # resolving ("reference is not a tree") once that branch is gone, and the
     # server then refuses it outright as "not our ref".
     #
-    # Pinned to the InferenceX commit that bumps the vendored aiperf submodule
-    # to be758d621, the first revision carrying
-    # ``--warmup-requests-per-lane``. Do not lower this pin without also
-    # restoring a time-bounded warmup: the flag does not exist earlier.
+    # Pinned to the InferenceX main commit that landed SemiAnalysis's B300 GLM
+    # agentic sweep (#2829), so replays run the same client as InferenceX's GPU
+    # reference runs: vendored aiperf 754356e9 (agentx-v1.0.5). Earlier pins
+    # (ddeb02eb, aiperf be758d62) prefixed warmup requests at token 0 even
+    # under cache-bust, so warmup primed cache entries profiling never read
+    # and the first ~5 min of profiling ran cold (aiperf b60d3a9a fixes it).
+    # Keep every model on the same pin so numbers stay comparable.
     AgenticTracesConfig(
         model_id="id_tt-transformers_Kimi-K2.7-Code_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -399,7 +421,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
         model_id="id_tt-transformers_GLM-5.2_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -410,7 +432,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     ),
     AgenticTracesConfig(
         model_id="id_tt-transformers_GLM-5.3_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -424,7 +446,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # pin as Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
         model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
-        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -621,6 +643,7 @@ __all__ = [
     "CI_MODE_SETTINGS",
     "DEFAULT_MODE_SETTINGS",
     "FULL_MODE_SETTINGS",
+    "INFERENCEX_AGENTX_GIT_REF",
     "OPT_IN_TRACE_SOURCES",
     "TraceSource",
     "default_run_specs",
