@@ -247,13 +247,10 @@ class AgenticTracesModeSettings:
 # Reference full-length run: the shape validated by hand before this workflow
 # existed (1h profiling, all 393 eligible traces).
 #
-# 14 requests/lane reproduces the warmup depth of that validated run, which
-# used the superseded 600s time-bounded warmup: it issued 109 warmup wire
-# requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin this if
-# the trace corpus or the server's warmup latency changes materially.
+# 10 requests/lane matches InferenceX's reference warmup.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
-    warmup_requests_per_lane=14,
+    warmup_requests_per_lane=10,
     warmup_grace_period=1800,
     num_dataset_entries=393,
 )
