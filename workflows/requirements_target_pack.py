@@ -561,19 +561,26 @@ class RequirementsTargetPack(TargetPack):
         its ``reasoning_effort`` along, which another server rejects, and its
         two-hour request timeout, which turns the rejection into a stall.
 
+        The search runs over ALL_EVAL_CONFIGS, not EVAL_CONFIGS: a donor is read
+        only for its task definition and is re-gated against the document
+        immediately after, so whether the donor model happens to have a
+        ModelSpec is irrelevant. Searching the spec-gated map let the last model
+        to drop a harness-backed task take the template with it, which is a
+        catalog-wide break for an unrelated document.
+
         Returns the preferred name with a ``None`` template when the catalog
         defines none of them, so the caller can try synthesizing that task.
         """
-        from reference_config.evals.eval_config import EVAL_CONFIGS
+        from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 
-        preferred = EVAL_CONFIGS.get(self._doc.model.name)
+        preferred = ALL_EVAL_CONFIGS.get(self._doc.model.name)
         if preferred is not None:
             for name in candidates:
                 for task in preferred.tasks:
                     if task.task_name == name:
                         return task, name
         for name in candidates:
-            for cfg in EVAL_CONFIGS.values():
+            for cfg in ALL_EVAL_CONFIGS.values():
                 for task in cfg.tasks:
                     if task.task_name == name:
                         if name != candidates[0]:
