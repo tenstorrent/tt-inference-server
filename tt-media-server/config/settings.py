@@ -363,6 +363,15 @@ class Settings(BaseSettings):
             ModelRunners.TT_MINIMAX_H3_T2VA.value,
         ]:
             self.default_throttle_level = None
+        if self.model_runner == ModelRunners.TT_SD3_5.value:
+            # The image bakes ENV TT_MM_THROTTLE_PERF=5 (matmuls capped at 33%);
+            # None above means "leave the env alone", so a worker inherits 5
+            # unless the operator passes -e TT_MM_THROTTLE_PERF=0. "0" is truthy,
+            # so setup_cpu_threading_limits writes it into the worker env and
+            # SD3.5 runs unthrottled by default. An explicit docker -e still wins
+            # because this only applies when the variable is not already set.
+            if os.environ.get("TT_MM_THROTTLE_PERF", "5") == "5":
+                self.default_throttle_level = "0"
 
     def _set_mesh_overrides(self):
         env_mesh_map = {
