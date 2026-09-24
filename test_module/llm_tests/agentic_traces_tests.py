@@ -61,7 +61,12 @@ logger = logging.getLogger(__name__)
 # tokenization of ~400 long traces, and the scenario's own configuration phase
 # all happen before the clock starts, and AIPerf needs time to drain in-flight
 # trajectories after it stops.
-_TIMEOUT_HEADROOM_SECONDS = 3600
+#
+# Sized for a saturated server, where the request-bounded warmup overruns its
+# warmup_grace_period allowance: a GLM-5.3 c16 run spent 5642s in warmup and
+# was killed 52 min into profiling at the old 3600s headroom. 9000s gives a
+# full run 4h (3600 profiling + 1800 warmup allowance + 9000).
+_TIMEOUT_HEADROOM_SECONDS = 9000
 
 
 def run_agentic_traces(
