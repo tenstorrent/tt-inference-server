@@ -103,8 +103,8 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (131072, 128),
 ]
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
-# endpoints, whose token budget is context*concurrency (see
-# DeviceModelSpec._infer_data) so concurrency does not collapse at high ISL.
+# endpoints. Like every point above SWEEP_MULTI_USER_MAX_ISL they run at
+# concurrency 1 only.
 # They extend the sweep toward ~250K ISL while staying below the 256K cap, and
 # are still filtered per model by ``isl + osl <= max_context`` at build time
 # (e.g. reachable by Kimi's 256K context, skipped for a 128K-context model).
@@ -121,6 +121,9 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # SUPER_CLUSTER sweep point sends at least this many multiples of the model's
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
+# Text sweep points with ISL above this run single-user (concurrency 1) only;
+# multi-user points at long ISL are too slow to be worth sweeping.
+SWEEP_MULTI_USER_MAX_ISL = 10000
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -168,7 +171,7 @@ def _expand_text_sweep_params(
         isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
     concurrencies = [1]
-    if allowed_max_concurrency > 1:
+    if allowed_max_concurrency > 1 and isl <= SWEEP_MULTI_USER_MAX_ISL:
         concurrencies.append(allowed_max_concurrency)
 
     return [
