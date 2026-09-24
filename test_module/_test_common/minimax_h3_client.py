@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp  # pyright: ignore[reportMissingImports]
+
+logger = logging.getLogger(__name__)
 
 CREATE_PATH = "/v1/videos/generations"
 QUERY_PATH = "/v1/videos/generations/{job_id}"
@@ -28,6 +31,8 @@ DOCUMENTED_STATUSES = frozenset(
 TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled"})
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 RESPONSE_EXCERPT_LENGTH = 500
+# Below uvicorn's default --timeout-keep-alive (5 s); see MiniMaxH3Client.__aenter__.
+CLIENT_KEEPALIVE_SECONDS = 1.0
 DEFAULT_API_KEY = "your-secret-key"
 
 
@@ -59,6 +64,10 @@ class MiniMaxClientError(RuntimeError):
         if self.task_id:
             data["task_id"] = self.task_id
         return data
+
+
+class MiniMaxTransportError(MiniMaxClientError):
+    """The request never got an HTTP response (timeout, reset, refused)."""
 
 
 @dataclass(frozen=True)
@@ -125,7 +134,14 @@ class MiniMaxH3Client:
 
     async def __aenter__(self) -> "MiniMaxH3Client":
         timeout = aiohttp.ClientTimeout(total=self.request_timeout)
-        self._session = aiohttp.ClientSession(timeout=timeout)
+        # uvicorn drops an idle keep-alive connection after 5 s, the same as the poll
+        # interval. A poll that reuses a connection just as the server closes it can be lost
+        # in the Docker port proxy and hang for the whole request timeout: in tt-shield run
+        # 36042442377 the second status poll never reached the server (its access log shows
+        # the POST and first GET on one connection and nothing after). Retire idle
+        # connections well before the server does, so every poll after a sleep reconnects.
+        connector = aiohttp.TCPConnector(keepalive_timeout=CLIENT_KEEPALIVE_SECONDS)
+        self._session = aiohttp.ClientSession(timeout=timeout, connector=connector)
         return self
 
     async def __aexit__(self, *_: Any) -> None:
@@ -231,8 +247,26 @@ class MiniMaxH3Client:
         observed: list[str] = []
         created_at: int | None = None
 
+        transport_failures = 0
+        last_transport_error: MiniMaxTransportError | None = None
+
         while time.monotonic() - started < self.poll_timeout:
-            task = await self.query_task(task_id)
+            # A status GET that gets no response is not a verdict on the job (a lost poll
+            # once cost a completed clip its eval). Keep polling to the deadline; HTTP errors
+            # and contract violations still fail at once.
+            try:
+                task = await self.query_task(task_id)
+            except MiniMaxTransportError as exc:
+                transport_failures += 1
+                last_transport_error = exc
+                logger.warning(
+                    "Status poll %d for video job %s got no response (%s); still polling",
+                    transport_failures,
+                    task_id,
+                    exc,
+                )
+                await asyncio.sleep(self.poll_interval)
+                continue
             status = str(task["status"])
             if not observed or observed[-1] != status:
                 observed.append(status)
@@ -264,10 +298,13 @@ class MiniMaxH3Client:
                 )
             await asyncio.sleep(self.poll_interval)
 
-        raise MiniMaxClientError(
-            f"video job did not finish within {self.poll_timeout:.1f} seconds",
-            task_id=task_id,
-        )
+        message = f"video job did not finish within {self.poll_timeout:.1f} seconds"
+        if last_transport_error is not None:
+            message += (
+                f" ({transport_failures} status poll(s) got no response; last: "
+                f"{last_transport_error})"
+            )
+        raise MiniMaxClientError(message, task_id=task_id)
 
     async def download_video(
         self,
@@ -373,7 +410,7 @@ class MiniMaxH3Client:
                 response_text = await response.text()
                 return response.status, _decode_json(response_text), response_text
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            raise MiniMaxClientError(
+            raise MiniMaxTransportError(
                 f"{method} {url} failed: {type(exc).__name__}: {exc}"
             ) from exc
 
@@ -398,5 +435,6 @@ __all__ = [
     "MiniMaxDownload",
     "MiniMaxH3Client",
     "MiniMaxTerminalTask",
+    "MiniMaxTransportError",
     "resolve_server_api_key",
 ]
