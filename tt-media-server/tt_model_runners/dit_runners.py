@@ -330,6 +330,14 @@ SD35_BH_GALAXY_PARENT_MESH_PLANS = {
 class TTSD35Runner(TTDiTRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        # Four-chips-in-a-line layouts: decode the VAE as one trace and read the image back as
+        # four spatial shards stitched on the host instead of all-gathering it onto every chip
+        # and DMA-reading four identical copies. Pixel-identical; removes the VAE slowdown seen
+        # when all 8 column workers read back at the same moment (0.33 s -> 0.16 s per image).
+        # Read by tt-metal at call time; an explicit env value still wins.
+        if tuple(self.settings.device_mesh_shape) in ((1, 4), (4, 1)):
+            os.environ.setdefault("SD35_VAE_NOGATHER", "1")
+            os.environ.setdefault("SD35_VAE_FOLD", "1")
 
     def get_parent_mesh_plan(self):
         """Slice a (4, 1) column out of the full (4, 8) mesh on a BH Galaxy.
