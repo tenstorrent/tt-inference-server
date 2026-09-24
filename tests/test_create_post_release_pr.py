@@ -273,3 +273,54 @@ def test_ci_job_link_follows_the_configured_impl():
     ]
     rows = build_rows(scope, prod, {}, jobs, "repo/name", "123", "1.2.3")
     assert rows[0]["ci_url"].endswith("/job/2")
+
+
+QB2 = ("meta-llama/Llama-3.1-8B-Instruct", "P300X2", "vLLM", "llama31_8b_qb2")
+LEGACY_JOB = {
+    "id": 7,
+    "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300x2",
+}
+
+
+def _qb2_rows(jobs, job_log=None):
+    scope = [
+        SimpleNamespace(identity=QB2, combo=SimpleNamespace(impl="llama31-8b-qb2"))
+    ]
+    prod = {QB2: ProdLeaf(QB2, ProdPin("1.2.3", "metal", "vllm", None), "FUNCTIONAL")}
+    return build_rows(
+        scope, prod, {}, jobs, "repo/name", "123", "1.2.3", job_log=job_log
+    )
+
+
+def test_legacy_run_links_the_bare_model_job_its_log_proves_ran_the_impl():
+    """Runs from before ``<model>@<impl>`` job names: the bare-model job is only
+    linked when its log shows ``--impl <impl>`` -- it may be the default impl."""
+    log = '  arguments+=("--impl" "llama31-8b-qb2")\n'
+    assert _qb2_rows([LEGACY_JOB], job_log=lambda _id: log)[0]["ci_url"].endswith(
+        "/job/7"
+    )
+
+
+@pytest.mark.parametrize(
+    "log",
+    [None, 'if [ "" != "" ]; then', '  arguments+=("--impl" "llama31-8b-qb2-fast")'],
+)
+def test_legacy_run_without_proof_of_the_impl_is_not_linked(log):
+    assert _qb2_rows([LEGACY_JOB], job_log=lambda _id: log)[0]["ci_url"] is None
+    assert _qb2_rows([LEGACY_JOB])[0]["ci_url"] is None
+
+
+def test_a_run_with_leaf_job_names_never_falls_back_to_the_bare_model_job():
+    other = {"id": 8, "name": "run-release-org__Other@impl-x-p150-P150"}
+    rows = _qb2_rows(
+        [LEGACY_JOB, other], job_log=lambda _id: '"--impl" "llama31-8b-qb2"'
+    )
+    assert rows[0]["ci_url"] is None
+
+
+def test_rows_record_the_matched_job_id():
+    job = {
+        "id": 9,
+        "name": LEGACY_JOB["name"].replace("Instruct-", "Instruct@llama31-8b-qb2-"),
+    }
+    assert _qb2_rows([job])[0]["ci_job_id"] == 9

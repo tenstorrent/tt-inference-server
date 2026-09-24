@@ -22,6 +22,7 @@ from utils.model_naming import (
     ci_job_matches_device,
     ci_job_name,
     device_from_ci_job_name,
+    has_leaf_job_names,
     is_artifact_name_safe,
     leaf_token,
     model_name_variants,
@@ -482,6 +483,40 @@ class TestCiJobNameWithImpl:
         assert not ci_job_matches_device(
             self.DEFAULT_JOB, "release", self.MODEL, "P300X2", impl=self.IMPL
         )
+
+    def test_an_impl_does_not_claim_a_longer_impls_job(self):
+        """Impl names contain "-", so "qb2" also explains a "qb2-fast" job;
+        the other impls in scope rank it, the longer explanation wins."""
+        fast_job = self.IMPL_JOB.replace(self.IMPL, f"{self.IMPL}-fast")
+        others = [f"{self.IMPL}-fast"]
+        assert not ci_job_matches_device(
+            fast_job,
+            "release",
+            self.MODEL,
+            "P300X2",
+            impl=self.IMPL,
+            other_impls=others,
+        )
+        assert ci_job_matches_device(
+            self.IMPL_JOB,
+            "release",
+            self.MODEL,
+            "P300X2",
+            impl=self.IMPL,
+            other_impls=others,
+        )
+        assert ci_job_matches_device(
+            fast_job,
+            "release",
+            self.MODEL,
+            "P300X2",
+            impl=f"{self.IMPL}-fast",
+            other_impls=[self.IMPL],
+        )
+
+    def test_has_leaf_job_names(self):
+        assert has_leaf_job_names([self.DEFAULT_JOB, self.IMPL_JOB])
+        assert not has_leaf_job_names([self.DEFAULT_JOB, "", "build-image"])
 
     def test_cli_job_name_accepts_an_impl(self):
         out = subprocess.run(

@@ -300,3 +300,31 @@ def test_device_from_jobs_keeps_default_and_impl_jobs_apart():
     ]
     assert device_from_jobs(jobs, model, "bh-qb-ge", impl="llama31-8b-qb2") == "p300x2"
     assert device_from_jobs(jobs, model, "bh-qb-ge") == "p300"
+
+
+def test_device_from_jobs_reads_runs_from_before_leaf_job_names():
+    """Before tt-shield named jobs ``<model>@<impl>``, an impl's job carried the
+    bare model. The logs artifact already proves which impl ran, and the runner
+    label pins its job, so such a run still resolves."""
+    model = "meta-llama/Llama-3.1-8B-Instruct"
+    legacy = [
+        {
+            "name": "_ / vLLM / run-training_tests-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300x2"
+        }
+    ]
+    assert (
+        device_from_jobs(
+            legacy, model, "bh-qb-ge", "training_tests", impl="trainer-training-lora"
+        )
+        == "p300x2"
+    )
+    # A run that already uses leaf names never falls back to the bare-model job.
+    current = legacy + [
+        {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct@other-bh-qb-ge-p300"}
+    ]
+    assert (
+        device_from_jobs(
+            current, model, "bh-qb-ge", "training_tests", impl="trainer-training-lora"
+        )
+        is None
+    )

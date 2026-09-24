@@ -79,6 +79,7 @@ __all__ = [
     "ci_job_name",
     "device_from_ci_job_name",
     "ci_job_matches_device",
+    "has_leaf_job_names",
 ]
 
 #: Escape sequence standing in for the HF org separator inside a name token.
@@ -345,6 +346,7 @@ def ci_job_matches_device(
     device: str,
     other_model_ids: Iterable[str] = (),
     impl: Optional[str] = None,
+    other_impls: Iterable[Optional[str]] = (),
 ) -> bool:
     """True if ``job_name`` is the job for this ``(model, device[, impl])`` leaf.
 
@@ -363,7 +365,9 @@ def ci_job_matches_device(
     ``Qwen/Qwen3-32B`` and ``Qwen/Qwen3-32B-FP8`` both explain
     ``run-release-Qwen__Qwen3-32B-FP8-p150-P150``. Pass the other models in
     scope as ``other_model_ids`` and the longer explanation wins, so the
-    sibling's job is left to the sibling.
+    sibling's job is left to the sibling. Impl names contain ``-`` too
+    (``qb2`` explains a ``qb2-fast`` job), so pass the model's other impls in
+    scope as ``other_impls`` for the same ranking.
 
     >>> ci_job_matches_device(
     ...     "run-tests / run-release-meta-llama__Llama-3.3-70B-Instruct-bh-qb-ge-p300x2",
@@ -387,7 +391,26 @@ def ci_job_matches_device(
         rival = _longest_matching_token(job_name, workflow, other, suffix)
         if rival is not None and rival > own:
             return False
+    for other_impl in other_impls:
+        if not other_impl or other_impl == impl:
+            continue
+        rival = _longest_matching_token(
+            job_name, workflow, model_id, suffix, other_impl
+        )
+        if rival is not None and rival > own:
+            return False
     return True
+
+
+def has_leaf_job_names(job_names: Iterable[str]) -> bool:
+    """True if a run's job names carry leaf tokens (``<model>@<impl>``).
+
+    Runs from before tt-shield added ``@<impl>`` named an impl's job with the
+    bare model token; a reader that must still link such a run falls back to
+    the bare-model job only when no job of the run has a leaf token -- and
+    only with other proof of the impl, since that job may be the default's.
+    """
+    return any(IMPL_SEP in (name or "") for name in job_names)
 
 
 # ---------------------------------------------------------------------------

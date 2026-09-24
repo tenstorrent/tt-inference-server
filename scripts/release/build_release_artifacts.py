@@ -92,7 +92,12 @@ from scripts.release.model_spec_resolver import (  # noqa: E402
     resolve_release_combos,
 )
 from scripts.release.release_scope import extract_bundle_identity  # noqa: E402
-from utils.model_naming import IMPL_SEP, model_name_variants, slugify_model_id  # noqa: E402
+from utils.model_naming import (  # noqa: E402
+    device_from_ci_job_name,
+    has_leaf_job_names,
+    model_name_variants,
+    slugify_model_id,
+)
 
 # Which tt-shield workflow ran a released entry's jobs. Deliberately duplicated
 # in scripts/release/create_post_release_pr.py rather than shared, so each
@@ -120,11 +125,6 @@ def workflow_kind(model_spec) -> str:
 def artifact_prefix(kind: str = RELEASE_KIND) -> str:
     """``workflow_logs_<kind>_`` -- the prefix tt-shield gives a logs bundle."""
     return f"workflow_logs_{kind}_"
-
-
-def job_marker(kind: str = RELEASE_KIND) -> str:
-    """``run-<kind>-`` -- the job-name prefix for that workflow."""
-    return f"run-{kind}-"
 
 
 # The release prefix. Still used for the inner-zip filenames inside the produced
@@ -258,19 +258,22 @@ def device_from_jobs(
     kind: str = RELEASE_KIND,
     impl: str | None = None,
 ) -> str | None:
-    """Find the device a (model, runner[, impl]) leaf ran on, from the job name
-    pattern ``run-<kind>-<leaf>-<runner>-<device>`` (``<leaf>`` is
-    ``<model>@<impl>`` for a non-default impl)."""
-    suffix = f"{IMPL_SEP}{impl}" if impl else ""
-    for job in jobs:
-        name = job.get("name", "").strip()
-        for token in model_name_variants(model):
-            marker = f"{job_marker(kind)}{token}{suffix}-{runner}-"
-            idx = name.find(marker)
-            if idx != -1:
-                tail = name[idx + len(marker) :].strip()
-                if tail:
-                    return tail.split()[0]
+    """Find the device a (model, runner[, impl]) leaf ran on, from its job name
+    (:func:`utils.model_naming.device_from_ci_job_name`).
+
+    A run from before tt-shield named jobs ``<model>@<impl>`` gave the impl's
+    job the bare model token. The logs artifact already proves the impl ran and
+    the runner label pins its job, so such a run falls back to that name.
+    """
+    names = [job.get("name", "") for job in jobs]
+    impls = [impl]
+    if impl and not has_leaf_job_names(names):
+        impls.append(None)
+    for candidate in impls:
+        for name in names:
+            device = device_from_ci_job_name(name, kind, model, runner, candidate)
+            if device:
+                return device
     return None
 
 
