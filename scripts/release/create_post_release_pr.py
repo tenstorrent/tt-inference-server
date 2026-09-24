@@ -128,7 +128,7 @@ def resolve_release_scope(ci_config: dict, dev_dir: Path):
     )
     # Release artifacts are still named per (repository, device), so two
     # identities that share that pair cannot both be released in one run, even
-    # though a non-default impl's CI job name now carries ``@<impl>``.
+    # though a non-default impl's CI job name now carries ``@<impl>@``.
     # Check the whole scope here rather than while matching jobs: that path is
     # skipped whenever the GitHub API returns nothing, which would make an
     # ambiguous release scope pass or fail depending on the network.
@@ -237,7 +237,6 @@ def _matching_ci_jobs(
     scope_identities,
     workflow=RELEASE_KIND,
     impl=None,
-    other_impls=(),
     job_log=None,
 ) -> list[dict]:
     """The tt-shield job for one release identity.
@@ -245,11 +244,10 @@ def _matching_ci_jobs(
     ``workflow`` is the tt-shield workflow that ran it -- TRAINING entries run
     under ``training_tests``, so hardcoding ``release`` here would silently miss
     their job and render the CI link as UNKNOWN. ``impl`` is the CI config's
-    explicit impl, which tt-shield appends to the job name as ``@<impl>``;
-    ``other_impls`` are the same model's other impls in scope, so ``qb2``
-    never claims a ``qb2-fast`` job.
+    explicit impl, which tt-shield encloses in ``@<impl>@``. The closing
+    delimiter prevents ``qb2`` from claiming a ``qb2-fast`` job outside scope.
 
-    A run from before ``@<impl>`` job names gave the impl's job the bare model
+    A run from before ``@<impl>@`` job names gave the impl's job the bare model
     token, which the default impl's job also has. Such a job is only accepted
     when ``job_log(job_id)`` shows it ran ``--impl <impl>``.
     """
@@ -257,7 +255,7 @@ def _matching_ci_jobs(
         return []
     other_repos = [candidate[0] for candidate in scope_identities]
 
-    def matching(candidate_impl, rivals):
+    def matching(candidate_impl):
         return [
             job
             for job in jobs
@@ -268,18 +266,15 @@ def _matching_ci_jobs(
                 identity[1],
                 other_repos,
                 impl=candidate_impl,
-                other_impls=rivals,
             )
         ]
 
-    matches = matching(impl, other_impls)
+    matches = matching(impl)
     if matches or not impl or job_log is None:
         return matches
     if has_leaf_job_names(job.get("name", "") for job in jobs):
         return []
-    return [
-        job for job in matching(None, ()) if _log_runs_impl(job_log(job["id"]), impl)
-    ]
+    return [job for job in matching(None) if _log_runs_impl(job_log(job["id"]), impl)]
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +306,6 @@ def build_rows(
                 scope_identities=identities,
                 workflow=workflows[identity],
                 impl=impls[identity],
-                other_impls=[
-                    impls[other] for other in identities if other[0] == identity[0]
-                ],
                 job_log=job_log,
             )
             if len(matches) > 1:

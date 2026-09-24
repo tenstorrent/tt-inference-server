@@ -19,7 +19,7 @@ A model has two representations and they must not be confused.
 |---|---|---|
 | **data identity** | `Qwen/Qwen3-32B` | `models-ci-config.json` keys, report `metadata`, HTTP `model` params, performance-target lookup, DB columns. **Never escaped.** |
 | **name token** | `Qwen__Qwen3-32B` | filenames, directory names, GitHub artifact names, CI job names. **Always escaped.** |
-| **leaf token** | `meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2` | CI job names of a CI entry with an explicit `impl`: name token + `@<impl>`. The default impl keeps the plain name token. |
+| **leaf token** | `meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@` | CI job names of a CI entry with an explicit `impl`: name token + `@<impl>@`. The default impl keeps the plain name token. |
 
 The org prefix is **escaped, never stripped**, so a token stays unique
 (`a/model` and `b/model` do not collide) and round-trips exactly.
@@ -47,7 +47,7 @@ unslugify_model_id("Qwen__Qwen3-32B")  # "Qwen/Qwen3-32B"
 | `is_artifact_name_safe(name)` | assert on the producing side, before `upload-artifact` rejects it |
 | `workflow_logs_artifact_prefix(workflow, model_id)` | `workflow_logs_<workflow>_<model>_` |
 | `split_workflow_logs_artifact_name(name, workflow, model_id)` | → `(runner, suffix)` or `None` |
-| `leaf_token(model_id, impl=None)` | name token, plus `@<impl>` for an explicit impl |
+| `leaf_token(model_id, impl=None)` | name token, plus `@<impl>@` for an explicit impl |
 | `ci_job_name(workflow, model_id, runner_label, runner_type, impl=None)` | `run-<workflow>-<leaf>-<label>-<type>` |
 | `device_from_ci_job_name(name, workflow, model_id, runner_label, impl=None)` | → device or `None` |
 | `ci_job_matches_device(name, workflow, model_id, device, impl=None)` | the same match run the other way, for a caller that knows the device but not the runner label. Without `impl`, only the default-impl job matches |
@@ -150,7 +150,7 @@ themselves, or compute it in a small `model-token` step via the CLI
 | step / field | uses |
 |---|---|
 | `⬆️ Upload workflow logs` / any artifact `name:` | `${{ matrix.config.model_slug }}` — `upload-artifact` rejects `/` |
-| job `name:` (`run-<workflow>-<leaf>-<label>-<type>`) | `${{ matrix.config.leaf_slug \|\| matrix.config.model_slug }}` — `leaf_slug` adds `@<impl>` |
+| job `name:` (`run-<workflow>-<leaf>-<label>-<type>`) | `${{ matrix.config.leaf_slug \|\| matrix.config.model_slug }}` — `leaf_slug` adds `@<impl>@` |
 | `--model` to `run.py`, `generate-empty-report.sh`, report payloads | `${{ matrix.config.model }}` — the identity |
 
 The old *"Sanitize model name for artifacts"* steps (`${MODEL//\//_}`, a single
@@ -207,3 +207,17 @@ HF) still render via that fallback.
   (HF cache dirs), `llm_module/drivers/aiperf_*.py`,
   `llm_module/prefix_cache/scenarios.py`, `test_fixtures/server_helper.py`,
   `test_module/load_param_tests/server_helper.py`.
+
+## Exact implementation boundary in CI jobs
+
+An explicit implementation uses `model@impl@`, followed by `-runner-device`.
+For example: `run-release-org__Model@qb2@-bh-qb-ge-p300x2`.
+Both delimiters are required because implementation names can contain hyphens.
+Thus, `qb2` cannot match `qb2-fast`, even when the release scope contains only `qb2`.
+Matching does not need a list of sibling implementations.
+
+Default job names and artifact names keep their existing format.
+Issue titles display `Model@impl` without the closing delimiter.
+For old jobs without an implementation token, release links require log evidence of the requested `--impl`.
+The intermediate draft format `model@impl-runner-device` is ambiguous and is not accepted as an exact implementation match.
+Update the tt-shield producer and tt-inference-server reader together.

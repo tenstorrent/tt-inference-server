@@ -268,7 +268,7 @@ def test_ci_job_link_follows_the_configured_impl():
         },
         {
             "id": 2,
-            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2-bh-qb-ge-p300x2",
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@-bh-qb-ge-p300x2",
         },
     ]
     rows = build_rows(scope, prod, {}, jobs, "repo/name", "123", "1.2.3")
@@ -311,7 +311,7 @@ def test_legacy_run_without_proof_of_the_impl_is_not_linked(log):
 
 
 def test_a_run_with_leaf_job_names_never_falls_back_to_the_bare_model_job():
-    other = {"id": 8, "name": "run-release-org__Other@impl-x-p150-P150"}
+    other = {"id": 8, "name": "run-release-org__Other@impl-x@-p150-P150"}
     rows = _qb2_rows(
         [LEGACY_JOB, other], job_log=lambda _id: '"--impl" "llama31-8b-qb2"'
     )
@@ -321,6 +321,16 @@ def test_a_run_with_leaf_job_names_never_falls_back_to_the_bare_model_job():
 def test_rows_record_the_matched_job_id():
     job = {
         "id": 9,
-        "name": LEGACY_JOB["name"].replace("Instruct-", "Instruct@llama31-8b-qb2-"),
+        "name": LEGACY_JOB["name"].replace("Instruct-", "Instruct@llama31-8b-qb2@-"),
     }
     assert _qb2_rows([job])[0]["ci_job_id"] == 9
+
+
+def test_longer_impl_outside_release_scope_is_not_linked():
+    job = {
+        "id": 10,
+        "name": LEGACY_JOB["name"].replace(
+            "Instruct-", "Instruct@llama31-8b-qb2-fast@-"
+        ),
+    }
+    assert _qb2_rows([job])[0]["ci_url"] is None

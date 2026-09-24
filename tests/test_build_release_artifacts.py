@@ -268,7 +268,7 @@ def test_job_matching_uses_the_impl_from_the_logs_artifact(tmp_path, monkeypatch
     ]
     jobs = [
         {
-            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2-bh-qb-ge-p300x2"
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@-bh-qb-ge-p300x2"
         },
     ]
 
@@ -294,7 +294,7 @@ def test_device_from_jobs_keeps_default_and_impl_jobs_apart():
     model = "meta-llama/Llama-3.1-8B-Instruct"
     jobs = [
         {
-            "name": "run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2-bh-qb-ge-p300x2"
+            "name": "run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@-bh-qb-ge-p300x2"
         },
         {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300"},
     ]
@@ -320,7 +320,7 @@ def test_device_from_jobs_reads_runs_from_before_leaf_job_names():
     )
     # A run that already uses leaf names never falls back to the bare-model job.
     current = legacy + [
-        {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct@other-bh-qb-ge-p300"}
+        {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct@other@-bh-qb-ge-p300"}
     ]
     assert (
         device_from_jobs(

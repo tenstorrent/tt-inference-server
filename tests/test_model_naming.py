@@ -428,9 +428,9 @@ class TestLeafToken:
             (
                 "meta-llama/Llama-3.1-8B-Instruct",
                 "llama31-8b-qb2",
-                "meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2",
+                "meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@",
             ),
-            ("resnet-50", "quetzal", "resnet-50@quetzal"),
+            ("resnet-50", "quetzal", "resnet-50@quetzal@"),
         ],
     )
     def test_shared_vectors(self, model_id, impl, token):
@@ -441,7 +441,7 @@ class TestCiJobNameWithImpl:
     MODEL = "meta-llama/Llama-3.1-8B-Instruct"
     IMPL = "llama31-8b-qb2"
     IMPL_JOB = (
-        "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2"
+        "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@"
         "-bh-qb-ge-p300x2"
     )
     DEFAULT_JOB = (
@@ -485,17 +485,14 @@ class TestCiJobNameWithImpl:
         )
 
     def test_an_impl_does_not_claim_a_longer_impls_job(self):
-        """Impl names contain "-", so "qb2" also explains a "qb2-fast" job;
-        the other impls in scope rank it, the longer explanation wins."""
+        """The closing delimiter rejects longer impls without a sibling list."""
         fast_job = self.IMPL_JOB.replace(self.IMPL, f"{self.IMPL}-fast")
-        others = [f"{self.IMPL}-fast"]
         assert not ci_job_matches_device(
             fast_job,
             "release",
             self.MODEL,
             "P300X2",
             impl=self.IMPL,
-            other_impls=others,
         )
         assert ci_job_matches_device(
             self.IMPL_JOB,
@@ -503,7 +500,6 @@ class TestCiJobNameWithImpl:
             self.MODEL,
             "P300X2",
             impl=self.IMPL,
-            other_impls=others,
         )
         assert ci_job_matches_device(
             fast_job,
@@ -511,7 +507,6 @@ class TestCiJobNameWithImpl:
             self.MODEL,
             "P300X2",
             impl=f"{self.IMPL}-fast",
-            other_impls=[self.IMPL],
         )
 
     def test_has_leaf_job_names(self):

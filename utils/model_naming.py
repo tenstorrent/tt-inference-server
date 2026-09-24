@@ -18,7 +18,7 @@ name token       ``Qwen__Qwen3-32B``  filenames, directory names, GitHub
 
 A CI *leaf* is one model on one device, engine and impl. When a CI entry names
 an explicit ``impl``, tt-shield's job name carries the **leaf token**
-``<name token>@<impl>`` (``meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2``)
+``<name token>@<impl>@`` (``meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@``)
 so two impls of one model stay apart. ``@`` occurs in neither HF repo ids nor
 impl names, so the split is unambiguous.
 
@@ -242,21 +242,21 @@ def split_workflow_logs_artifact_name(
 
 
 def leaf_token(model_id: str, impl: Optional[str] = None) -> str:
-    """Name token for one CI leaf: the model token plus ``@<impl>`` for an
+    """Name token for one CI leaf: the model token plus ``@<impl>@`` for an
     explicit impl (the CI config's ``impl``, i.e. the ``run.py --impl`` value).
 
     >>> leaf_token("meta-llama/Llama-3.1-8B-Instruct", "llama31-8b-qb2")
-    'meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2'
+    'meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@'
     >>> leaf_token("Qwen/Qwen3-32B")
     'Qwen__Qwen3-32B'
     """
     token = slugify_model_id(model_id)
-    return f"{token}{IMPL_SEP}{impl}" if impl else token
+    return f"{token}{IMPL_SEP}{impl}{IMPL_SEP}" if impl else token
 
 
 def _leaf_variants(model_id: str, impl: Optional[str]) -> Tuple[str, ...]:
-    """:func:`model_name_variants`, each carrying ``@<impl>`` when one is set."""
-    suffix = f"{IMPL_SEP}{impl}" if impl else ""
+    """:func:`model_name_variants`, each carrying ``@<impl>@`` when one is set."""
+    suffix = f"{IMPL_SEP}{impl}{IMPL_SEP}" if impl else ""
     return tuple(f"{token}{suffix}" for token in model_name_variants(model_id))
 
 
@@ -334,6 +334,8 @@ def _longest_matching_token(
         if idx == -1:
             continue
         tail = job_name[idx + len(marker) :].strip().rstrip(",)")
+        if IMPL_SEP in tail:
+            continue
         if tail.lower().endswith(device_suffix) and (best is None or len(token) > best):
             best = len(token)
     return best
@@ -346,12 +348,11 @@ def ci_job_matches_device(
     device: str,
     other_model_ids: Iterable[str] = (),
     impl: Optional[str] = None,
-    other_impls: Iterable[Optional[str]] = (),
 ) -> bool:
     """True if ``job_name`` is the job for this ``(model, device[, impl])`` leaf.
 
     Without ``impl`` only the default-impl job matches: a non-default impl's job
-    carries ``@<impl>`` right after the model, which no default marker accepts.
+    carries ``@<impl>@`` right after the model, which no default marker accepts.
 
     :func:`device_from_ci_job_name` run backwards, for a caller that knows the
     device but not the runner label -- ``models-ci-config.json`` records the
@@ -365,9 +366,8 @@ def ci_job_matches_device(
     ``Qwen/Qwen3-32B`` and ``Qwen/Qwen3-32B-FP8`` both explain
     ``run-release-Qwen__Qwen3-32B-FP8-p150-P150``. Pass the other models in
     scope as ``other_model_ids`` and the longer explanation wins, so the
-    sibling's job is left to the sibling. Impl names contain ``-`` too
-    (``qb2`` explains a ``qb2-fast`` job), so pass the model's other impls in
-    scope as ``other_impls`` for the same ranking.
+    sibling's job is left to the sibling. Explicit impls have a closing
+    ``@`` boundary, so ``qb2`` cannot match ``qb2-fast``, even outside scope.
 
     >>> ci_job_matches_device(
     ...     "run-tests / run-release-meta-llama__Llama-3.3-70B-Instruct-bh-qb-ge-p300x2",
@@ -391,21 +391,13 @@ def ci_job_matches_device(
         rival = _longest_matching_token(job_name, workflow, other, suffix)
         if rival is not None and rival > own:
             return False
-    for other_impl in other_impls:
-        if not other_impl or other_impl == impl:
-            continue
-        rival = _longest_matching_token(
-            job_name, workflow, model_id, suffix, other_impl
-        )
-        if rival is not None and rival > own:
-            return False
     return True
 
 
 def has_leaf_job_names(job_names: Iterable[str]) -> bool:
-    """True if a run's job names carry leaf tokens (``<model>@<impl>``).
+    """True if a run's job names carry leaf tokens (``<model>@<impl>@``).
 
-    Runs from before tt-shield added ``@<impl>`` named an impl's job with the
+    Runs from before tt-shield added ``@<impl>@`` named an impl's job with the
     bare model token; a reader that must still link such a run falls back to
     the bare-model job only when no job of the run has a leaf token -- and
     only with other proof of the impl, since that job may be the default's.
