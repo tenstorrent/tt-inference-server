@@ -363,15 +363,23 @@ class Settings(BaseSettings):
             ModelRunners.TT_MINIMAX_H3_T2VA.value,
         ]:
             self.default_throttle_level = None
-        if self.model_runner == ModelRunners.TT_SD3_5.value:
-            # The image bakes ENV TT_MM_THROTTLE_PERF=5 (matmuls capped at 33%);
-            # None above means "leave the env alone", so a worker inherits 5
-            # unless the operator passes -e TT_MM_THROTTLE_PERF=0. "0" is truthy,
-            # so setup_cpu_threading_limits writes it into the worker env and
-            # SD3.5 runs unthrottled by default. An explicit docker -e still wins
-            # because this only applies when the variable is not already set.
-            if os.environ.get("TT_MM_THROTTLE_PERF", "5") == "5":
-                self.default_throttle_level = "0"
+        # Blackhole images bake ENV TT_MM_THROTTLE_PERF=5 (matmuls capped at 33%). For the models the
+        # BH Galaxy image serves, run unthrottled by default: None above means "leave the env alone"
+        # (a worker inherits 5), and SDXL's default "5" even overrides an operator's -e 0. "0" is
+        # truthy, so setup_cpu_threading_limits writes it into the worker env. An explicit operator
+        # value other than the baked 5 still wins (we only act when the env carries the image default).
+        _bh_unthrottled = {
+            ModelRunners.TT_SD3_5.value,
+            ModelRunners.TT_SDXL_TRACE.value,
+            ModelRunners.TT_SDXL_IMAGE_TO_IMAGE.value,
+            ModelRunners.TT_SDXL_EDIT.value,
+            ModelRunners.TT_WAN_2_2.value,
+            ModelRunners.TT_WAN_2_2_I2V.value,
+        }
+        _is_blackhole_device = str(self.device).startswith(("bh-", "p150", "p300"))
+        if self.model_runner in _bh_unthrottled and _is_blackhole_device:
+            env_level = os.environ.get("TT_MM_THROTTLE_PERF", "5")
+            self.default_throttle_level = "0" if env_level == "5" else None
 
     def _set_mesh_overrides(self):
         env_mesh_map = {

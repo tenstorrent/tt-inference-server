@@ -10,9 +10,11 @@ from abc import abstractmethod
 
 import ttnn
 from domain.image_generate_request import ImageGenerateRequest
+from models.common.utility_functions import is_blackhole
 from models.demos.stable_diffusion_xl_base.tests.test_common import (
     SDXL_FABRIC_CONFIG,
     SDXL_L1_SMALL_SIZE,
+    SDXL_L1_SMALL_SIZE_BH,
 )
 from models.demos.stable_diffusion_xl_base.tt.tt_sdxl_pipeline import (
     TtSDXLPipeline,
@@ -46,7 +48,9 @@ class BaseSDXLRunner(BaseMetalDeviceRunner):
 
     def get_pipeline_device_params(self):
         device_params = {
-            "l1_small_size": SDXL_L1_SMALL_SIZE,
+            # tt-metal's SDXL conftest opens Blackhole with SDXL_L1_SMALL_SIZE_BH (38000), the server
+            # used the Wormhole value (32000) everywhere.
+            "l1_small_size": SDXL_L1_SMALL_SIZE_BH if is_blackhole() else SDXL_L1_SMALL_SIZE,
         }
         if self.is_tensor_parallel:
             device_params["fabric_config"] = SDXL_FABRIC_CONFIG
