@@ -29,7 +29,7 @@ from utils.logger import TTLogger
 
 TASK_QUEUE_FULL_DETAIL = "Task queue is full. Please try again later."
 MAX_JOBS_REACHED_DETAIL = "Maximum job limit reached"
-AUTOMATIC_RETENTION_EXEMPT_JOB_TYPES = frozenset(
+AUTO_CLEANUP_EXEMPT_JOB_TYPES = frozenset(
     {
         JobTypes.TRAINING.value,
         JobTypes.ADAPTER_MERGE.value,
@@ -491,7 +491,7 @@ class JobManager:
             for job in self._jobs.values():
                 is_old_terminal = (
                     job.is_terminal()
-                    and job.job_type not in AUTOMATIC_RETENTION_EXEMPT_JOB_TYPES
+                    and job.job_type not in AUTO_CLEANUP_EXEMPT_JOB_TYPES
                     and job.completed_at
                     and job.completed_at < retention_cutoff
                 )
@@ -539,7 +539,7 @@ class JobManager:
                 self._jobs.pop(job.id, None)
                 removed_jobs.append(job)
 
-        cleaned_jobs = []
+        deleted_jobs = []
         for job in removed_jobs:
             try:
                 result_path = self._get_result_path_for_deletion(job)
@@ -551,12 +551,12 @@ class JobManager:
                 with self._jobs_lock:
                     self._jobs.setdefault(job.id, job)
                 continue
-            cleaned_jobs.append(job)
+            deleted_jobs.append(job)
 
-        if cleaned_jobs:
+        if deleted_jobs:
             self._logger.info(
-                f"Cleaned up {len(cleaned_jobs)} old job(s): "
-                f"{', '.join(job.id for job in cleaned_jobs)}"
+                f"Deleted {len(deleted_jobs)} old job(s): "
+                f"{', '.join(job.id for job in deleted_jobs)}"
             )
 
     def _is_job_stuck(self, job: Job, progress_cutoff: float) -> bool:
