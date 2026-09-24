@@ -403,6 +403,15 @@ class TTSD35Runner(TTDiTRunner):
         if tuple(self.settings.device_mesh_shape) in ((1, 4), (4, 1)):
             params["trace_region_size"] = 50000000
             params["fabric_config"] = ttnn.FabricConfig.FABRIC_1D_RING
+            # Match the tt-metal reference for this layout (StableDiffusion35.md,
+            # "Blackhole, four chips in a line"; run_sd35_submesh.py defaults):
+            # 64 KB l1_small for the spatial-VAE halo convs, and an 8192-byte
+            # fabric packet payload, which tt-metal measured ~5% faster per
+            # denoise step than the 4352-byte FabricRouterConfig() default.
+            params["l1_small_size"] = 65536
+            fabric_router_config = ttnn.FabricRouterConfig()
+            fabric_router_config.max_packet_payload_size_bytes = 8192
+            params["fabric_router_config"] = fabric_router_config
 
         return params
 
