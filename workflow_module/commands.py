@@ -90,6 +90,31 @@ _HANG_MARKERS = (
 )
 
 
+def _reset_devices_between_attempts() -> bool:
+    """Whether to `tt-smi -r` the cards after a failed bring-up attempt.
+
+    A bring-up that hangs the device leaves the cards wedged, so without a reset every later
+    attempt fails for a DIFFERENT reason than the first (typically
+    "Timed out waiting for ETH heartbeat"), which makes retries useless as independent samples
+    and buries the real first failure. Default on; set TT_RESET_DEVICES_BETWEEN_ATTEMPTS=0 to
+    disable (e.g. a shared runner where resetting would disturb another job).
+    """
+    import os
+
+    return os.environ.get("TT_RESET_DEVICES_BETWEEN_ATTEMPTS", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+    )
+
+
+def _reset_device_ids() -> str:
+    """Device ids for `tt-smi -r`, e.g. "0,1,2,3" on a 4-card LoudBox. Empty = all cards."""
+    import os
+
+    return os.environ.get("TT_RESET_DEVICE_IDS", "").strip()
+
+
 def _server_boot_attempts() -> int:
     """How many times to try bringing the server up.
 
@@ -283,6 +308,40 @@ def _teardown_server(spec: ServerLaunchSpec, payload: Any) -> None:
                 )
     except Exception:  # teardown is best-effort; never mask the original failure
         logger.exception("Server teardown failed (continuing)")
+
+    # Stopping the server hands back the device handles but does NOT clear a wedged device.
+    # Do this in its own best-effort block: a failed docker stop above must not skip the reset.
+    if not _reset_devices_between_attempts():
+        return
+    cmd = ["tt-smi", "-r"]
+    ids = _reset_device_ids()
+    if ids:
+        cmd.append(ids)
+    try:
+        # stdin=DEVNULL: tt-smi drops into its interactive UI and hangs when it thinks it has
+        # a terminal. timeout: a reset takes ~10-30 s per card.
+        proc = subprocess.run(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if proc.returncode == 0:
+            logger.warning("TT_DEVICE_RESET_OK cmd=%s", " ".join(cmd))
+        else:
+            logger.error(
+                "TT_DEVICE_RESET_FAILED rc=%d cmd=%s err=%s",
+                proc.returncode,
+                " ".join(cmd),
+                (proc.stderr or proc.stdout or "").strip()[:500],
+            )
+    except FileNotFoundError:
+        logger.error("TT_DEVICE_RESET_FAILED tt-smi not found on PATH (pip install tt-smi)")
+    except subprocess.TimeoutExpired:
+        logger.error("TT_DEVICE_RESET_FAILED timed out after 300s: %s", " ".join(cmd))
+    except Exception:
+        logger.exception("TT_DEVICE_RESET_FAILED (continuing)")
 
 
 class ServerCommand(Command):
