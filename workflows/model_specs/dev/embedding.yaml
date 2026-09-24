@@ -56,8 +56,13 @@ templates:
         VLLM__MIN_CONTEXT_LENGTH: "32"
         VLLM__MAX_NUM_SEQS: "8"
         MAX_BATCH_SIZE: "8"
+        # Let a newly idle worker linger up to 25ms for a full batch instead of
+        # instantly shipping a partial one (default is 2ms).
+        MAX_BATCH_DELAY_TIME_MS: "25"
         DEFAULT_THROTTLE_LEVEL: "0"
-        BENCHMARK_MAX_CONCURRENCY: "512"
+        # 2x absorption capacity (32 workers x 8 batch x 2 in flight = 512) so
+        # the queue always has a backlog and every batch fills to 8.
+        BENCHMARK_MAX_CONCURRENCY: "1024"
         BENCHMARK_NUM_PROMPTS: "20000"
         BENCHMARK_NUM_CLIENTS: "4"
         TT_METAL_INSPECTOR_RPC: "0"
@@ -86,11 +91,17 @@ templates:
       max_context: 65536
       default_impl: true
       env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
+        VLLM__MAX_NUM_BATCHED_TOKENS: "98304"
         VLLM__MAX_MODEL_LENGTH: "8192"
         VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "32"
-        MAX_BATCH_SIZE: "32"
+        VLLM__MAX_NUM_SEQS: "12"
+        MAX_BATCH_SIZE: "12"
+        MAX_BATCH_DELAY_TIME_MS: "300"
+        # 2x device batch so the server always has a second batch to tokenize
+        # while the first one runs on the device (double buffering).
+        BENCHMARK_MAX_CONCURRENCY: "24"
+        BENCHMARK_NUM_PROMPTS: "120"
+        BENCHMARK_NUM_WARMUPS: "24"
         DEFAULT_THROTTLE_LEVEL: "0"
     - device: T3K
       max_concurrency: 4

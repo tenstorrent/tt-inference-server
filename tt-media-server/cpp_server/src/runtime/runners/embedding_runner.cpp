@@ -70,6 +70,21 @@ void applyTorchThreadLimits() {
 namespace detail {
 
 /**
+ * Holds the tokenized inputs between prepare() and runPrepared(). The
+ * destructor may run on a thread that does not hold the GIL, so it acquires
+ * it before dropping the Python reference.
+ */
+struct TokenizedPayload {
+  py::object tokenized;
+
+  ~TokenizedPayload() {
+    if (!Py_IsInitialized()) return;
+    py::gil_scoped_acquire gil;
+    tokenized = py::object();
+  }
+};
+
+/**
  * Template-method base: owns the full pipeline (device open, tokenizer,
  * model construction, warmup forward, tokenize->forward->extract, close) and
  * defers the model-specific steps to virtuals. A new model is onboarded by
@@ -162,34 +177,59 @@ struct EmbeddingImpl {
     return ok;
   }
 
-  std::vector<domain::EmbeddingResponse> runInference(
-      const std::vector<domain::EmbeddingRequest>& requests) {
+  runners::PreparedBatch prepareInference(
+      std::vector<domain::EmbeddingRequest> requests) {
+    runners::PreparedBatch prepared;
+    prepared.requests = std::move(requests);
+
+    py::gil_scoped_acquire gil;
+    // Same contract as the Python runner's _validate_requests: a model
+    // mismatch anywhere fails the whole batch.
+    for (const auto& req : prepared.requests) {
+      if (req.model != config.hf_model_id) {
+        const std::string message =
+            "Only " + config.hf_model_id + " embeddings are supported";
+        for (const auto& r : prepared.requests) {
+          domain::EmbeddingResponse resp(r.task_id);
+          resp.error = message;
+          prepared.immediate.push_back(std::move(resp));
+        }
+        return prepared;
+      }
+    }
+
+    try {
+      py::list texts;
+      for (const auto& req : prepared.requests) {
+        texts.append(req.input);
+      }
+      auto payload = std::make_shared<TokenizedPayload>();
+      payload->tokenized = tokenize(texts);
+      prepared.payload = std::move(payload);
+    } catch (const py::error_already_set& e) {
+      TT_LOG_ERROR("[EmbeddingRunner] Tokenization failed:\n{}", e.what());
+      const std::string message = firstLine(e.what());
+      for (const auto& req : prepared.requests) {
+        domain::EmbeddingResponse resp(req.task_id);
+        resp.error = message;
+        prepared.immediate.push_back(std::move(resp));
+      }
+    }
+    return prepared;
+  }
+
+  std::vector<domain::EmbeddingResponse> runPrepared(
+      runners::PreparedBatch& batch) {
+    if (!batch.immediate.empty()) return std::move(batch.immediate);
+
+    const auto& requests = batch.requests;
     std::vector<domain::EmbeddingResponse> responses;
     responses.reserve(requests.size());
 
     py::gil_scoped_acquire gil;
     try {
-      // Same contract as the Python runner's _validate_requests: a model
-      // mismatch anywhere fails the whole batch.
-      for (const auto& req : requests) {
-        if (req.model != config.hf_model_id) {
-          const std::string message =
-              "Only " + config.hf_model_id + " embeddings are supported";
-          for (const auto& r : requests) {
-            domain::EmbeddingResponse resp(r.task_id);
-            resp.error = message;
-            responses.push_back(std::move(resp));
-          }
-          return responses;
-        }
-      }
-
-      py::list texts;
-      for (const auto& req : requests) {
-        texts.append(req.input);
-      }
-
-      py::object tokenized = tokenize(texts);
+      py::object tokenized =
+          static_cast<TokenizedPayload*>(batch.payload.get())->tokenized;
       py::object result = forwardAndSync(tokenized);
       py::object dense = extractDense(result);
 
@@ -258,6 +298,16 @@ struct EmbeddingImpl {
  private:
   void openMeshDevice() {
     py::object meshShape = ttnn.attr("MeshShape")(py::cast(config.mesh_shape));
+    size_t meshDevices = 1;
+    for (size_t dim : config.mesh_shape) {
+      meshDevices *= dim;
+    }
+    if (meshDevices > 1) {
+      ttnn.attr("set_fabric_config")(
+          ttnn.attr("FabricConfig").attr("FABRIC_1D"));
+      TT_LOG_INFO("[EmbeddingRunner] Fabric FABRIC_1D enabled for {}-chip mesh",
+                  meshDevices);
+    }
     py::dict params;
     params["dispatch_core_config"] =
         ttnn.attr("DispatchCoreConfig")(py::none(), py::none(), py::none());
@@ -390,12 +440,34 @@ void EmbeddingRunner::close() {
 
 std::vector<domain::EmbeddingResponse> EmbeddingRunner::run(
     const std::vector<domain::EmbeddingRequest>& requests) {
+  PreparedBatch prepared = prepare(requests);
+  return runPrepared(prepared);
+}
+
+PreparedBatch EmbeddingRunner::prepare(
+    std::vector<domain::EmbeddingRequest> requests) {
+  if (!impl_ || !impl_->model) {
+    TT_LOG_ERROR("[EmbeddingRunner] Runner not initialized");
+    PreparedBatch prepared;
+    prepared.requests = std::move(requests);
+    for (const auto& req : prepared.requests) {
+      domain::EmbeddingResponse resp(req.task_id);
+      resp.error = "Runner not initialized";
+      prepared.immediate.push_back(std::move(resp));
+    }
+    return prepared;
+  }
+  return impl_->prepareInference(std::move(requests));
+}
+
+std::vector<domain::EmbeddingResponse> EmbeddingRunner::runPrepared(
+    PreparedBatch& batch) {
+  if (!batch.immediate.empty()) return std::move(batch.immediate);
   if (!impl_ || !impl_->model) {
     TT_LOG_ERROR("[EmbeddingRunner] Runner not initialized");
     return {};
   }
-
-  return impl_->runInference(requests);
+  return impl_->runPrepared(batch);
 }
 
 }  // namespace tt::runners

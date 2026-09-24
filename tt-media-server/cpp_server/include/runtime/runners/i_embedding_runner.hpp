@@ -13,9 +13,26 @@
 namespace tt::runners {
 
 /**
+ * A batch whose host-side stage (validation, tokenization) already ran.
+ * Produced by prepare() on one thread and consumed by runPrepared() on
+ * another, so the worker can tokenize batch N+1 while batch N occupies the
+ * device (double buffering).
+ */
+struct PreparedBatch {
+  std::vector<domain::EmbeddingRequest> requests;
+
+  /// Non-empty when preparation already produced the final answers (e.g.
+  /// validation or tokenization failed); runPrepared() then returns these.
+  std::vector<domain::EmbeddingResponse> immediate;
+
+  /// Runner-specific host state (e.g. tokenized input tensors).
+  std::shared_ptr<void> payload;
+};
+
+/**
  * What an embedding worker needs from a runner, and nothing more.
  * EmbeddingService owns the loop and drives the runner directly with these
- * three calls.
+ * calls.
  */
 class IEmbeddingRunner {
  public:
@@ -27,6 +44,21 @@ class IEmbeddingRunner {
   /** One forward pass. responses[i] answers requests[i], positionally. */
   virtual std::vector<domain::EmbeddingResponse> run(
       const std::vector<domain::EmbeddingRequest>& requests) = 0;
+
+  /** Host-side stage of a forward pass. Must be safe to run concurrently
+   * with runPrepared() of an earlier batch. */
+  virtual PreparedBatch prepare(
+      std::vector<domain::EmbeddingRequest> requests) {
+    return PreparedBatch{std::move(requests), {}, nullptr};
+  }
+
+  /** Device stage of a forward pass. responses[i] answers
+   * batch.requests[i], positionally. */
+  virtual std::vector<domain::EmbeddingResponse> runPrepared(
+      PreparedBatch& batch) {
+    if (!batch.immediate.empty()) return std::move(batch.immediate);
+    return run(batch.requests);
+  }
 
   /** Release model/device resources. Safe to call more than once. */
   virtual void close() = 0;

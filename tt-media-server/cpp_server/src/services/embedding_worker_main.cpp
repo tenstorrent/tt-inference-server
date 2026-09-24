@@ -3,14 +3,19 @@
 
 #include "services/embedding_worker_main.hpp"
 
+#include <signal.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <condition_variable>
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "config/settings.hpp"
@@ -57,6 +62,16 @@ void exportWorkerEnvironment(int workerId,
     const std::string metalCache =
         std::string(metalHome) + "/built/" + deviceSuffix;
     setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
+
+    if (chdir(metalHome) == 0) {
+      TT_LOG_INFO("[Worker {}] Working directory set to TT_METAL_HOME: {}",
+                  workerId, metalHome);
+    } else {
+      TT_LOG_ERROR(
+          "[Worker {}] chdir to TT_METAL_HOME '{}' failed; kernels with "
+          "tt-metal-relative include paths will not compile",
+          workerId, metalHome);
+    }
   }
 
   const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
@@ -117,32 +132,78 @@ std::optional<std::vector<domain::EmbeddingRequest>> parseBatch(
   return batch;
 }
 
-/** Serve loop: read a batch, run it, write the encoded responses. Returns
- * when the request pipe reports EOF (parent closed it — shutdown). */
+/**
+ * Serve loop with a two-stage pipeline (double buffer). A prepare thread
+ * reads and tokenizes the next batch while this thread runs the device
+ * forward pass of the current one; ttnn releases the GIL during ops and
+ * synchronize_device, so the two stages genuinely overlap. The single-slot
+ * handoff bounds the pipeline to one batch on the device plus one prepared.
+ * Returns when the request pipe reports EOF (parent closed it — shutdown).
+ */
 void serveLoop(runners::IEmbeddingRunner& runner, int workerId, int readFd,
                int writeFd) {
-  while (true) {
-    std::string requestJson = pipeReadString(readFd);
-    if (requestJson.empty()) break;
+  std::mutex mutex;
+  std::condition_variable cv;
+  std::optional<runners::PreparedBatch> slot;
+  bool eof = false;
 
-    auto batch = parseBatch(requestJson, workerId);
-    if (!batch) continue;
+  std::thread prepareThread([&] {
+    while (true) {
+      std::string requestJson = pipeReadString(readFd);
+      if (requestJson.empty()) break;
+
+      auto batch = parseBatch(requestJson, workerId);
+      if (!batch) continue;
+
+      TT_LOG_INFO("[Worker {}] Preparing batch of {} requests", workerId,
+                  batch->size());
+      auto prepared = runner.prepare(std::move(*batch));
+
+      std::unique_lock lock(mutex);
+      cv.wait(lock, [&] { return !slot.has_value(); });
+      slot.emplace(std::move(prepared));
+      cv.notify_all();
+    }
+    std::lock_guard lock(mutex);
+    eof = true;
+    cv.notify_all();
+  });
+
+  while (true) {
+    runners::PreparedBatch prepared;
+    {
+      std::unique_lock lock(mutex);
+      cv.wait(lock, [&] { return slot.has_value() || eof; });
+      if (!slot.has_value()) break;
+      prepared = std::move(*slot);
+      slot.reset();
+      cv.notify_all();
+    }
 
     TT_LOG_INFO("[Worker {}] Processing batch of {} requests", workerId,
-                batch->size());
+                prepared.requests.size());
 
-    auto responses = runner.run(*batch);
-    auto buf = embedding_codec::encodeResponses(*batch, responses);
+    auto responses = runner.runPrepared(prepared);
+    auto buf = embedding_codec::encodeResponses(prepared.requests, responses);
 
     if (!pipeWrite(writeFd, buf.data(), buf.size())) {
       TT_LOG_ERROR("[Worker {}] Failed to write response", workerId);
     }
   }
+
+  prepareThread.join();
 }
 
 }  // namespace
 
 [[noreturn]] void workerProcessMain(int workerId, int readFd, int writeFd) {
+  // The fork inherits the parent's SIGTERM/SIGINT handlers (Drogon's), which
+  // in the child only poke an event loop that does not exist here — leaving
+  // the worker unkillable and the parent's terminate() stuck in waitpid.
+  // Restore the default die-on-signal behaviour.
+  signal(SIGTERM, SIG_DFL);
+  signal(SIGINT, SIG_DFL);
+
   const size_t wid = static_cast<size_t>(workerId);
   const auto cfg = tt::config::embeddingEngineConfig();
   const std::string visibleDevices = tt::config::visibleDevicesForWorker(wid);

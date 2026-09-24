@@ -308,6 +308,11 @@ unsigned embeddingWarmupTimeoutMs() {
                                         defaults::EMBEDDING_WARMUP_TIMEOUT_MS));
 }
 
+unsigned embeddingWarmupMaxRetries() {
+  return static_cast<unsigned>(envUlong(
+      "EMBEDDING_WARMUP_MAX_RETRIES", defaults::EMBEDDING_WARMUP_MAX_RETRIES));
+}
+
 std::string ttTaskQueueName() {
   return envString("TT_TASK_QUEUE", defaults::TT_TASK_QUEUE);
 }
@@ -556,11 +561,10 @@ constexpr ModelRunnerType DEFAULT_EMBEDDING_MODEL =
     ModelRunnerType::TT_BGE_LARGE_EN;
 
 const std::vector<EmbeddingModelEntry>& embeddingModels() {
-  // Device entries are {DEVICE, max_batch_size, max_seq_len, mesh_shape}.
   static const std::vector<EmbeddingModelEntry> kModels = {
       {ModelRunnerType::TT_BGE_LARGE_EN,
        "BAAI/bge-large-en-v1.5",
-       /*num_command_queues=*/2,
+       2,
        EMBEDDING_TRACE_REGION_SIZE,
        {{"n150", 8, 384, {1, 1}},
         {"n300", 16, 384, {2, 1}},
@@ -568,28 +572,26 @@ const std::vector<EmbeddingModelEntry>& embeddingModels() {
         {"galaxy", 8, 384, {1, 1}}}},
       {ModelRunnerType::TT_BGE_M3,
        "BAAI/bge-m3",
-       /*num_command_queues=*/2,
+       2,
        EMBEDDING_TRACE_REGION_SIZE,
        {{"n150", 32, 8192, {1, 1}},
-        {"n300", 32, 8192, {2, 1}},
+        {"n300", 12, 8192, {2, 1}},
         {"t3k", 32, 8192, {2, 1}},
         {"galaxy", 32, 8192, {1, 1}}}},
-      // Galaxy batch 1: ModelConfigs has no max_batch_size key there, so
-      // Python resolved the Settings default (1); max_num_seqs=1 keeps it.
+
       {ModelRunnerType::TT_QWEN_EMBEDDING_8B,
        "Qwen/Qwen3-Embedding-8B",
-       /*num_command_queues=*/0,
+       0,
        EMBEDDING_TRACE_REGION_SIZE,
        {{"n150", 1, 1024, {1, 1}},
         {"n300", 2, 4096, {2, 1}},
         {"t3k", 2, 4096, {2, 1}},
         {"galaxy", 1, 1024, {1, 1}}}},
-      // The mock needs no device and no Python. The "" device entry is
-      // deliberate: CI runs it with nothing set.
+
       {ModelRunnerType::EMBEDDING_MOCK,
        "BAAI/bge-large-en-v1.5",
-       /*num_command_queues=*/0,
-       /*trace_region_size=*/0,
+       0,
+       0,
        {{"", 8, 384, {1, 1}},
         {"n150", 8, 384, {1, 1}},
         {"n300", 16, 384, {1, 1}},

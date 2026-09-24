@@ -181,6 +181,9 @@ def _run_embedding_transcription_benchmark(ctx: MediaContext) -> dict:
             "--result-dir",
             result_dir,
         ]
+        num_warmups = env.get("BENCHMARK_NUM_WARMUPS")
+        if num_warmups:
+            cmd += ["--num-warmups", str(num_warmups)]
         if num_clients > 1:
             # Distinct prompt sets per client; irrelevant to the server but
             # keeps the combined run equivalent to one big random dataset.
