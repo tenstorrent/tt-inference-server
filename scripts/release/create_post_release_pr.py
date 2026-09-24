@@ -126,8 +126,9 @@ def resolve_release_scope(ci_config: dict, dev_dir: Path):
         collect_release_combos(ci_config),
         load_dev_model_spec_sources(dev_dir),
     )
-    # A CI job name carries only repository and device, so two identities that
-    # share that pair cannot be told apart when a row is linked to its job.
+    # Release artifacts are still named per (repository, device), so two
+    # identities that share that pair cannot both be released in one run, even
+    # though a non-default impl's CI job name now carries ``@<impl>``.
     # Check the whole scope here rather than while matching jobs: that path is
     # skipped whenever the GitHub API returns nothing, which would make an
     # ambiguous release scope pass or fail depending on the network.
@@ -219,13 +220,14 @@ def fetch_job_log(repo: str, job_id, token: str) -> str | None:
 
 
 def _matching_ci_jobs(
-    jobs, *, identity, scope_identities, workflow=RELEASE_KIND
+    jobs, *, identity, scope_identities, workflow=RELEASE_KIND, impl=None
 ) -> list[dict]:
     """The tt-shield job for one release identity.
 
     ``workflow`` is the tt-shield workflow that ran it -- TRAINING entries run
     under ``training_tests``, so hardcoding ``release`` here would silently miss
-    their job and render the CI link as UNKNOWN.
+    their job and render the CI link as UNKNOWN. ``impl`` is the CI config's
+    explicit impl, which tt-shield appends to the job name as ``@<impl>``.
     """
     if not jobs:
         return []
@@ -239,6 +241,7 @@ def _matching_ci_jobs(
             identity[0],
             identity[1],
             other_repos,
+            impl=impl,
         )
     ]
 
@@ -254,6 +257,11 @@ def build_rows(scope, current_prod, base_prod, jobs, tt_shield_repo, run_id, ver
         item.identity: workflow_kind(getattr(item, "model_spec", None))
         for item in scope
     }
+    # The CI config's explicit impl (None = default), as tt-shield names the job.
+    impls = {
+        item.identity: getattr(getattr(item, "combo", None), "impl", None)
+        for item in scope
+    }
     job_urls: dict = {}
     job_owners: dict = {}
     if jobs and run_id:
@@ -263,6 +271,7 @@ def build_rows(scope, current_prod, base_prod, jobs, tt_shield_repo, run_id, ver
                 identity=identity,
                 scope_identities=identities,
                 workflow=workflows[identity],
+                impl=impls[identity],
             )
             if len(matches) > 1:
                 raise ValueError(

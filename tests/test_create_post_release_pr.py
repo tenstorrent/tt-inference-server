@@ -249,3 +249,27 @@ def test_one_legacy_basename_job_cannot_link_two_repositories():
 
     with pytest.raises(ValueError, match="ambiguously matches"):
         build_rows(scope, prod, {}, jobs, "repo/name", "123", "1.2.3")
+
+
+def test_ci_job_link_follows_the_configured_impl():
+    identity = ("meta-llama/Llama-3.1-8B-Instruct", "P300X2", "vLLM", "llama31_8b_qb2")
+    scope = [
+        SimpleNamespace(identity=identity, combo=SimpleNamespace(impl="llama31-8b-qb2"))
+    ]
+    prod = {
+        identity: ProdLeaf(
+            identity, ProdPin("1.2.3", "metal", "vllm", None), "FUNCTIONAL"
+        )
+    }
+    jobs = [
+        {
+            "id": 1,
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300x2",
+        },
+        {
+            "id": 2,
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2-bh-qb-ge-p300x2",
+        },
+    ]
+    rows = build_rows(scope, prod, {}, jobs, "repo/name", "123", "1.2.3")
+    assert rows[0]["ci_url"].endswith("/job/2")

@@ -19,6 +19,7 @@ A model has two representations and they must not be confused.
 |---|---|---|
 | **data identity** | `Qwen/Qwen3-32B` | `models-ci-config.json` keys, report `metadata`, HTTP `model` params, performance-target lookup, DB columns. **Never escaped.** |
 | **name token** | `Qwen__Qwen3-32B` | filenames, directory names, GitHub artifact names, CI job names. **Always escaped.** |
+| **leaf token** | `meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2` | CI job names of a CI entry with an explicit `impl`: name token + `@<impl>`. The default impl keeps the plain name token. |
 
 The org prefix is **escaped, never stripped**, so a token stays unique
 (`a/model` and `b/model` do not collide) and round-trips exactly.
@@ -46,9 +47,10 @@ unslugify_model_id("Qwen__Qwen3-32B")  # "Qwen/Qwen3-32B"
 | `is_artifact_name_safe(name)` | assert on the producing side, before `upload-artifact` rejects it |
 | `workflow_logs_artifact_prefix(workflow, model_id)` | `workflow_logs_<workflow>_<model>_` |
 | `split_workflow_logs_artifact_name(name, workflow, model_id)` | → `(runner, suffix)` or `None` |
-| `ci_job_name(workflow, model_id, runner_label, runner_type)` | `run-<workflow>-<model>-<label>-<type>` |
-| `device_from_ci_job_name(name, workflow, model_id, runner_label)` | → device or `None` |
-| `ci_job_matches_device(name, workflow, model_id, device)` | the same match run the other way, for a caller that knows the device but not the runner label |
+| `leaf_token(model_id, impl=None)` | name token, plus `@<impl>` for an explicit impl |
+| `ci_job_name(workflow, model_id, runner_label, runner_type, impl=None)` | `run-<workflow>-<leaf>-<label>-<type>` |
+| `device_from_ci_job_name(name, workflow, model_id, runner_label, impl=None)` | → device or `None` |
+| `ci_job_matches_device(name, workflow, model_id, device, impl=None)` | the same match run the other way, for a caller that knows the device but not the runner label. Without `impl`, only the default-impl job matches |
 
 ### From shell
 
@@ -57,7 +59,7 @@ The module is also a CLI, so a producer that builds names in YAML/bash needs no
 
 ```bash
 SLUG=$(python tt-inference-server/utils/model_naming.py slugify "$MODEL")
-# also: unslugify <slug> | artifact-prefix <workflow> <model> | job-name <workflow> <model> <label> <type>
+# also: unslugify <slug> | artifact-prefix <workflow> <model> | job-name <workflow> <model> <label> <type> [impl]
 ```
 
 ## Which side does what
@@ -148,7 +150,7 @@ themselves, or compute it in a small `model-token` step via the CLI
 | step / field | uses |
 |---|---|
 | `⬆️ Upload workflow logs` / any artifact `name:` | `${{ matrix.config.model_slug }}` — `upload-artifact` rejects `/` |
-| job `name:` (`run-<workflow>-<model>-<label>-<type>`) | `${{ matrix.config.model_slug }}` |
+| job `name:` (`run-<workflow>-<leaf>-<label>-<type>`) | `${{ matrix.config.leaf_slug \|\| matrix.config.model_slug }}` — `leaf_slug` adds `@<impl>` |
 | `--model` to `run.py`, `generate-empty-report.sh`, report payloads | `${{ matrix.config.model }}` — the identity |
 
 The old *"Sanitize model name for artifacts"* steps (`${MODEL//\//_}`, a single

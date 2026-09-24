@@ -92,7 +92,7 @@ from scripts.release.model_spec_resolver import (  # noqa: E402
     resolve_release_combos,
 )
 from scripts.release.release_scope import extract_bundle_identity  # noqa: E402
-from utils.model_naming import model_name_variants, slugify_model_id  # noqa: E402
+from utils.model_naming import IMPL_SEP, model_name_variants, slugify_model_id  # noqa: E402
 
 # Which tt-shield workflow ran a released entry's jobs. Deliberately duplicated
 # in scripts/release/create_post_release_pr.py rather than shared, so each
@@ -245,15 +245,27 @@ def artifact_model_token(
     return max(matches, key=len) if matches else None
 
 
+def impl_of(artifact_name: str) -> str | None:
+    """workflow_logs_..._<impl-or-default>  ->  impl, or None for ``default``."""
+    suffix = artifact_name.rsplit("_", 1)[-1]
+    return None if suffix == "default" else suffix
+
+
 def device_from_jobs(
-    jobs: list[dict], model: str, runner: str, kind: str = RELEASE_KIND
+    jobs: list[dict],
+    model: str,
+    runner: str,
+    kind: str = RELEASE_KIND,
+    impl: str | None = None,
 ) -> str | None:
-    """Find the device a (model, runner) pair ran on, from the job name
-    pattern ``run-<kind>-<model>-<runner>-<device>``."""
+    """Find the device a (model, runner[, impl]) leaf ran on, from the job name
+    pattern ``run-<kind>-<leaf>-<runner>-<device>`` (``<leaf>`` is
+    ``<model>@<impl>`` for a non-default impl)."""
+    suffix = f"{IMPL_SEP}{impl}" if impl else ""
     for job in jobs:
         name = job.get("name", "").strip()
         for token in model_name_variants(model):
-            marker = f"{job_marker(kind)}{token}-{runner}-"
+            marker = f"{job_marker(kind)}{token}{suffix}-{runner}-"
             idx = name.find(marker)
             if idx != -1:
                 tail = name[idx + len(marker) :].strip()
@@ -378,7 +390,7 @@ def resolve_model(
     for a in candidates:
         kind = kind_of[a["name"]]
         runner = runner_of(a["name"], model, kind)
-        dev = device_from_jobs(jobs, model, runner, kind)
+        dev = device_from_jobs(jobs, model, runner, kind, impl_of(a["name"]))
         if dev:
             by_device.setdefault(dev, []).append(a)
 

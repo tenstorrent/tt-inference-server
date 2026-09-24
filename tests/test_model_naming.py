@@ -23,6 +23,7 @@ from utils.model_naming import (
     ci_job_name,
     device_from_ci_job_name,
     is_artifact_name_safe,
+    leaf_token,
     model_name_variants,
     slugify_model_id,
     slugify_name_parts,
@@ -404,3 +405,98 @@ class TestStandaloneUsability:
         assert main(["nope", "x"]) == 2
         assert main(["slugify"]) == 2
         assert main([]) == 0  # help
+
+
+class TestLeafToken:
+    """A non-default impl is appended after ``@``; tt-shield builds the same token
+    (``.github/scripts/model_naming.py leaf``) for its CI job names."""
+
+    @pytest.mark.parametrize(
+        "model_id, impl, token",
+        [
+            (
+                "meta-llama/Llama-3.1-8B-Instruct",
+                None,
+                "meta-llama__Llama-3.1-8B-Instruct",
+            ),
+            (
+                "meta-llama/Llama-3.1-8B-Instruct",
+                "",
+                "meta-llama__Llama-3.1-8B-Instruct",
+            ),
+            (
+                "meta-llama/Llama-3.1-8B-Instruct",
+                "llama31-8b-qb2",
+                "meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2",
+            ),
+            ("resnet-50", "quetzal", "resnet-50@quetzal"),
+        ],
+    )
+    def test_shared_vectors(self, model_id, impl, token):
+        assert leaf_token(model_id, impl) == token
+
+
+class TestCiJobNameWithImpl:
+    MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+    IMPL = "llama31-8b-qb2"
+    IMPL_JOB = (
+        "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2"
+        "-bh-qb-ge-p300x2"
+    )
+    DEFAULT_JOB = (
+        "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300x2"
+    )
+
+    def test_build(self):
+        assert (
+            ci_job_name("release", self.MODEL, "bh-qb-ge", "p300x2", self.IMPL)
+            == (self.IMPL_JOB.split(" / ")[-1])
+        )
+
+    def test_device_from_impl_job(self):
+        assert (
+            device_from_ci_job_name(
+                self.IMPL_JOB, "release", self.MODEL, "bh-qb-ge", self.IMPL
+            )
+            == "p300x2"
+        )
+
+    def test_default_and_impl_jobs_do_not_cross_match(self):
+        assert (
+            device_from_ci_job_name(self.IMPL_JOB, "release", self.MODEL, "bh-qb-ge")
+            is None
+        )
+        assert (
+            device_from_ci_job_name(
+                self.DEFAULT_JOB, "release", self.MODEL, "bh-qb-ge", self.IMPL
+            )
+            is None
+        )
+
+    def test_matches_device_per_leaf(self):
+        assert ci_job_matches_device(
+            self.IMPL_JOB, "release", self.MODEL, "P300X2", impl=self.IMPL
+        )
+        assert not ci_job_matches_device(self.IMPL_JOB, "release", self.MODEL, "P300X2")
+        assert ci_job_matches_device(self.DEFAULT_JOB, "release", self.MODEL, "P300X2")
+        assert not ci_job_matches_device(
+            self.DEFAULT_JOB, "release", self.MODEL, "P300X2", impl=self.IMPL
+        )
+
+    def test_cli_job_name_accepts_an_impl(self):
+        out = subprocess.run(
+            [
+                sys.executable,
+                str(MODULE_PATH),
+                "job-name",
+                "release",
+                self.MODEL,
+                "bh-qb-ge",
+                "p300x2",
+                self.IMPL,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+        assert out == self.IMPL_JOB.split(" / ")[-1] + "\n"

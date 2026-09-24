@@ -255,3 +255,48 @@ templates:
 
     with pytest.raises(ValueError, match="collide on artifact filename"):
         resolve_configured_scope(config, dev)
+
+
+def test_job_matching_uses_the_impl_from_the_logs_artifact(tmp_path, monkeypatch):
+    """tt-shield names a non-default impl's job ``run-release-<model>@<impl>-...``;
+    the impl comes from the logs artifact's ``_<impl-or-default>`` suffix."""
+    artifacts = [
+        {
+            "id": 1,
+            "name": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_bh-qb-ge_llama31-8b-qb2",
+        },
+    ]
+    jobs = [
+        {
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2-bh-qb-ge-p300x2"
+        },
+    ]
+
+    def no_download(*_args):
+        raise AssertionError("device should come from the job name, not the bundle")
+
+    monkeypatch.setattr(
+        "scripts.release.build_release_artifacts.download_artifact", no_download
+    )
+    chosen = resolve_model(
+        "meta-llama/Llama-3.1-8B-Instruct",
+        ["p300x2"],
+        artifacts,
+        jobs,
+        "org/repo",
+        tmp_path,
+        {},
+    )
+    assert chosen == {"p300x2": artifacts[0]}
+
+
+def test_device_from_jobs_keeps_default_and_impl_jobs_apart():
+    model = "meta-llama/Llama-3.1-8B-Instruct"
+    jobs = [
+        {
+            "name": "run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2-bh-qb-ge-p300x2"
+        },
+        {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300"},
+    ]
+    assert device_from_jobs(jobs, model, "bh-qb-ge", impl="llama31-8b-qb2") == "p300x2"
+    assert device_from_jobs(jobs, model, "bh-qb-ge") == "p300"
