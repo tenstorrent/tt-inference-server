@@ -58,6 +58,7 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
+    adapter_merge_job_ids: set[str] = field(default_factory=set)
     local_progress_time: Optional[float] = None
     _task: Callable = None
     _progress_tracker: Any = None
@@ -133,6 +134,8 @@ class Job:
             "model": self.model,
             "request_parameters": self.request_parameters,
         }
+        if self.job_type == JobTypes.TRAINING.value:
+            data["adapter_merge_job_ids"] = sorted(self.adapter_merge_job_ids)
         if self.org_id:
             data["org_id"] = self.org_id
         if self.completed_at:
@@ -148,6 +151,7 @@ class JobManager:
         self._settings = get_settings()
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
+        self._deleting_job_ids: set[str] = set()
         self._jobs_lock = Lock()
 
         self.db = None
@@ -182,14 +186,25 @@ class JobManager:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
             self._enforceAdmissionLimits()
+            request_parameters = request.model_dump(mode="json")
+
             job = Job(
                 id=job_id,
                 job_type=job_type.value,
                 model=model,
-                request_parameters=request.model_dump(mode="json"),
+                request_parameters=request_parameters,
                 org_id=org_id,
                 _progress_tracker=progress_tracker,
             )
+
+            parent_job = None
+            if job_type == JobTypes.ADAPTER_MERGE:
+                source_job_id = request_parameters.get("source_job_id")
+                if not source_job_id:
+                    raise ValueError("Adapter merge jobs must provide source_job_id")
+                parent_job = self._get_job_if_authorized(source_job_id, org_id)
+                if parent_job is None or parent_job.job_type != JobTypes.TRAINING.value:
+                    raise ValueError(f"Training job '{source_job_id}' not found")
 
             if result_path:
                 job.result_path = result_path
@@ -225,6 +240,8 @@ class JobManager:
 
             # we only add the job to the in-memory storage if the database insert was successful
             self._jobs[job_id] = job
+            if parent_job is not None:
+                parent_job.adapter_merge_job_ids.add(job.id)
             self._logger.info(f"Job {job_id} created.")
 
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
@@ -349,26 +366,70 @@ class JobManager:
         job_id: str,
         org_id: Optional[str] = None,
     ) -> bool:
-        """Delete a terminal job, its persisted data, and its result artifacts."""
+        """Delete a terminal job, its child merge jobs, and their result artifacts."""
         with self._jobs_lock:
             job = self._get_job_if_authorized(job_id, org_id)
             if job is None:
                 return False
-            if not job.is_terminal():
-                raise ValueError("Only terminal jobs can be deleted")
 
-            self._jobs.pop(job.id, None)
+            jobs_to_delete = self._collect_jobs_for_manual_deletion(job)
+            self._deleting_job_ids.update(
+                job_to_delete.id for job_to_delete in jobs_to_delete
+            )
+            for job_to_delete in jobs_to_delete:
+                self._jobs.pop(job_to_delete.id, None)
 
         try:
-            result_path = self._get_result_path_for_deletion(job)
-            self._delete_job_record_and_result(job, result_path)
+            jobs_and_result_paths = [
+                (job_to_delete, self._get_result_path_for_deletion(job_to_delete))
+                for job_to_delete in jobs_to_delete
+            ]
+            self._delete_job_records_and_results(jobs_and_result_paths)
         except Exception:
             with self._jobs_lock:
-                self._jobs.setdefault(job.id, job)
+                for job_to_restore in jobs_to_delete:
+                    self._jobs.setdefault(job_to_restore.id, job_to_restore)
+                    self._deleting_job_ids.discard(job_to_restore.id)
             raise
 
-        self._logger.info(f"Manually deleted job {job.id}")
+        with self._jobs_lock:
+            for deleted_job in jobs_to_delete:
+                self._deleting_job_ids.discard(deleted_job.id)
+                if deleted_job.job_type != JobTypes.ADAPTER_MERGE.value:
+                    continue
+                source_job_id = deleted_job.request_parameters.get("source_job_id")
+                parent_job = self._jobs.get(source_job_id)
+                if parent_job is not None:
+                    parent_job.adapter_merge_job_ids.discard(deleted_job.id)
+
+        self._logger.info(
+            f"Manually deleted {len(jobs_to_delete)} job(s): "
+            f"{', '.join(job.id for job in jobs_to_delete)}"
+        )
         return True
+
+    def _collect_jobs_for_manual_deletion(self, job: Job) -> list[Job]:
+        """Collect the job and its merge children while ``_jobs_lock`` is held."""
+        jobs_to_delete = [job]
+        if job.job_type == JobTypes.TRAINING.value:
+            for child_job_id in sorted(job.adapter_merge_job_ids):
+                if child_job_id in self._deleting_job_ids:
+                    raise ValueError(
+                        f"Adapter merge job '{child_job_id}' is being deleted"
+                    )
+                child_job = self._jobs.get(child_job_id)
+                if child_job is not None:
+                    jobs_to_delete.append(child_job)
+
+        for job_to_delete in jobs_to_delete:
+            if job_to_delete.id in self._deleting_job_ids:
+                raise ValueError(f"Job '{job_to_delete.id}' is being deleted")
+            if not job_to_delete.is_terminal():
+                raise ValueError(
+                    f"Only terminal jobs can be deleted; job "
+                    f"'{job_to_delete.id}' is {job_to_delete.status.value}"
+                )
+        return jobs_to_delete
 
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""
@@ -543,7 +604,7 @@ class JobManager:
         for job in removed_jobs:
             try:
                 result_path = self._get_result_path_for_deletion(job)
-                self._delete_job_record_and_result(job, result_path)
+                self._delete_job_records_and_results([(job, result_path)])
             except Exception as e:
                 self._logger.error(
                     f"Deletion failed for job {job.id} during cleanup: {e}"
@@ -593,14 +654,18 @@ class JobManager:
         elif os.path.isdir(result_path):
             shutil.rmtree(result_path)
 
-    def _delete_job_record_and_result(
-        self, job: Job, result_path: Optional[str]
+    def _delete_job_records_and_results(
+        self, jobs_and_result_paths: list[tuple[Job, Optional[str]]]
     ) -> None:
         if self.db:
-            with self.db.delete_job(job.id):
-                self._delete_result_path(result_path)
+            with self.db.job_deletion_transaction(
+                [job.id for job, _ in jobs_and_result_paths]
+            ):
+                for _, result_path in jobs_and_result_paths:
+                    self._delete_result_path(result_path)
         else:
-            self._delete_result_path(result_path)
+            for _, result_path in jobs_and_result_paths:
+                self._delete_result_path(result_path)
 
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
@@ -797,6 +862,18 @@ class JobManager:
                     )
 
                 restored_jobs[job.id] = job
+
+            for job in restored_jobs.values():
+                if job.job_type != JobTypes.ADAPTER_MERGE.value:
+                    continue
+                source_job_id = job.request_parameters.get("source_job_id")
+                parent_job = restored_jobs.get(source_job_id)
+                if (
+                    parent_job is not None
+                    and parent_job.job_type == JobTypes.TRAINING.value
+                    and parent_job.org_id == job.org_id
+                ):
+                    parent_job.adapter_merge_job_ids.add(job.id)
 
             with self._jobs_lock:
                 self._jobs.update(restored_jobs)

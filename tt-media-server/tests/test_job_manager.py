@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 from config.constants import JobTypes
+from domain.adapter_merge_request import AdapterMergeRequest
 from domain.base_request import BaseRequest
 from utils.job_manager import (
     Job,
@@ -290,6 +291,19 @@ class TestJobManager:
             assert db_job.get("completed_at") is None
             assert db_job.get("result_path") is None
             assert db_job.get("error_message") is None
+
+    @pytest.mark.asyncio
+    async def test_create_adapter_merge_job_requires_source_job_id(
+        self, job_manager, mock_request
+    ):
+        with pytest.raises(ValueError, match="must provide source_job_id"):
+            await job_manager.create_job(
+                job_id="merge-job",
+                job_type=JobTypes.ADAPTER_MERGE,
+                model="test-model",
+                request=mock_request,
+                task_function=None,
+            )
 
     @pytest.mark.asyncio
     async def test_create_job_max_limit(self, job_manager, mock_request):
@@ -1140,14 +1154,29 @@ class TestJobManager:
         result_dir = tmp_path / "merged-model"
         result_dir.mkdir()
 
+        async def training_task(req):
+            return None
+
         async def task_func(req):
             return str(result_dir)
+
+        await job_manager.create_job(
+            job_id="training-parent",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=training_task,
+        )
+        await asyncio.sleep(0.1)
 
         await job_manager.create_job(
             job_id="merge-job",
             job_type=JobTypes.ADAPTER_MERGE,
             model="test-model",
-            request=mock_request,
+            request=AdapterMergeRequest(
+                source_job_id="training-parent",
+                checkpoint_id="checkpoint-1",
+            ),
             task_function=task_func,
             result_path=str(result_dir),
         )
@@ -1169,14 +1198,29 @@ class TestJobManager:
         result_dir = merged_models_dir / "merged-model"
         result_dir.mkdir(parents=True)
 
+        async def training_task(req):
+            return None
+
         async def task_func(req):
             return str(result_dir)
+
+        await job_manager.create_job(
+            job_id="training-parent",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=training_task,
+        )
+        await asyncio.sleep(0.1)
 
         await job_manager.create_job(
             job_id="merge-job-delete",
             job_type=JobTypes.ADAPTER_MERGE,
             model="test-model",
-            request=mock_request,
+            request=AdapterMergeRequest(
+                source_job_id="training-parent",
+                checkpoint_id="checkpoint-1",
+            ),
             task_function=task_func,
             result_path=str(result_dir),
         )
@@ -1221,6 +1265,121 @@ class TestJobManager:
             assert job_manager.db.get_job_by_id("job-delete") is None
 
     @pytest.mark.asyncio
+    async def test_manual_delete_training_job_cascades_to_adapter_merge_jobs(
+        self, job_manager, mock_request, tmp_path
+    ):
+        adapters_dir = tmp_path / "adapters"
+        training_result_dir = adapters_dir / "training-job"
+        training_result_dir.mkdir(parents=True)
+        merged_models_dir = tmp_path / "merged-models"
+        merge_result_dir = merged_models_dir / "merge-job"
+        merge_result_dir.mkdir(parents=True)
+
+        async def training_task(req):
+            return str(training_result_dir)
+
+        async def merge_task(req):
+            return str(merge_result_dir)
+
+        await job_manager.create_job(
+            job_id="training-job",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=training_task,
+            result_path=str(training_result_dir),
+        )
+        await asyncio.sleep(0.1)
+
+        merge_request = AdapterMergeRequest(
+            source_job_id="training-job",
+            checkpoint_id="checkpoint-1",
+        )
+        await job_manager.create_job(
+            job_id="merge-job",
+            job_type=JobTypes.ADAPTER_MERGE,
+            model="test-model",
+            request=merge_request,
+            task_function=merge_task,
+            result_path=str(merge_result_dir),
+        )
+        await asyncio.sleep(0.1)
+
+        assert job_manager.get_job_metadata("training-job")[
+            "adapter_merge_job_ids"
+        ] == ["merge-job"]
+
+        with patch(
+            "utils.job_manager.adapters_root", return_value=str(adapters_dir)
+        ), patch(
+            "utils.job_manager.merged_models_root",
+            return_value=str(merged_models_dir),
+        ):
+            assert job_manager.delete_job("training-job") is True
+
+        assert job_manager.get_job_metadata("training-job") is None
+        assert job_manager.get_job_metadata("merge-job") is None
+        assert not training_result_dir.exists()
+        assert not merge_result_dir.exists()
+        if job_manager.db:
+            assert job_manager.db.get_job_by_id("training-job") is None
+            assert job_manager.db.get_job_by_id("merge-job") is None
+
+    @pytest.mark.asyncio
+    async def test_manual_delete_training_job_rejects_active_merge_child(
+        self, job_manager
+    ):
+        training_job = Job(
+            id="training-job",
+            job_type=JobTypes.TRAINING.value,
+            model="test-model",
+            status=JobStatus.COMPLETED,
+            adapter_merge_job_ids={"merge-job"},
+        )
+        merge_job = Job(
+            id="merge-job",
+            job_type=JobTypes.ADAPTER_MERGE.value,
+            model="test-model",
+            request_parameters={"source_job_id": "training-job"},
+            status=JobStatus.IN_PROGRESS,
+        )
+        with job_manager._jobs_lock:
+            job_manager._jobs[training_job.id] = training_job
+            job_manager._jobs[merge_job.id] = merge_job
+
+        with pytest.raises(ValueError, match="'merge-job' is in_progress"):
+            job_manager.delete_job("training-job")
+
+        assert job_manager.get_job_metadata("training-job") is not None
+        assert job_manager.get_job_metadata("merge-job") is not None
+
+    @pytest.mark.asyncio
+    async def test_manual_delete_merge_job_unlinks_it_from_parent(self, job_manager):
+        training_job = Job(
+            id="training-job",
+            job_type=JobTypes.TRAINING.value,
+            model="test-model",
+            status=JobStatus.COMPLETED,
+            adapter_merge_job_ids={"merge-job"},
+        )
+        merge_job = Job(
+            id="merge-job",
+            job_type=JobTypes.ADAPTER_MERGE.value,
+            model="test-model",
+            request_parameters={"source_job_id": "training-job"},
+            status=JobStatus.COMPLETED,
+        )
+        with job_manager._jobs_lock:
+            job_manager._jobs[training_job.id] = training_job
+            job_manager._jobs[merge_job.id] = merge_job
+
+        assert job_manager.delete_job("merge-job") is True
+
+        assert (
+            job_manager.get_job_metadata("training-job")["adapter_merge_job_ids"] == []
+        )
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("job_manager", [True], indirect=True)
     async def test_manual_delete_db_failure_preserves_training_results(
         self, job_manager, mock_request, tmp_path
@@ -1246,7 +1405,7 @@ class TestJobManager:
             "utils.job_manager.adapters_root", return_value=str(adapters_dir)
         ), patch.object(
             job_manager.db,
-            "delete_job",
+            "job_deletion_transaction",
             side_effect=RuntimeError("db unavailable"),
         ), pytest.raises(RuntimeError, match="db unavailable"):
             job_manager.delete_job("job-delete-db-failure")
@@ -1742,6 +1901,44 @@ class TestJobManager:
 
             finally:
                 await m2.shutdown()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("job_manager", [True], indirect=True)
+    async def test_restore_rebuilds_adapter_merge_relationship(self, job_manager):
+        db_path = job_manager.db.db_path
+        job_manager.db.insert_job(
+            "training-job",
+            JobTypes.TRAINING.value,
+            "test-model",
+            {},
+            "completed",
+            1000,
+            org_id="org-a",
+        )
+        job_manager.db.insert_job(
+            "merge-job",
+            JobTypes.ADAPTER_MERGE.value,
+            "test-model",
+            {
+                "source_job_id": "training-job",
+                "checkpoint_id": "checkpoint-1",
+            },
+            "completed",
+            1001,
+            org_id="org-a",
+        )
+
+        with patch("utils.job_manager.get_settings") as mock_settings, patch(
+            "utils.job_manager.job_database_path", return_value=str(db_path)
+        ):
+            mock_settings.return_value.enable_job_persistence = True
+            restored_manager = JobManager()
+            try:
+                assert restored_manager.get_job_metadata(
+                    "training-job", org_id="org-a"
+                )["adapter_merge_job_ids"] == ["merge-job"]
+            finally:
+                await restored_manager.shutdown()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("job_manager", [True], indirect=True)

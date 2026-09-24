@@ -163,10 +163,13 @@ class JobDatabase:
             print(f"Rows affected: {cursor.rowcount}")
 
     @contextmanager
-    def delete_job(self, job_id: str):
-        """Open a deletion transaction that commits when the context exits."""
+    def job_deletion_transaction(self, job_ids: list[str]):
+        """Open one deletion transaction for a collection of jobs."""
         with self._get_cursor() as cursor:
-            cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
+            cursor.executemany(
+                "DELETE FROM jobs WHERE id = ?",
+                ((job_id,) for job_id in job_ids),
+            )
             yield
 
     def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
