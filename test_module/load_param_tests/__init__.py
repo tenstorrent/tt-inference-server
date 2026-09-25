@@ -31,6 +31,10 @@ from .image_generation_lora_load_test import (
     ImageGenerationLoraLoadTest,
     run_image_generation_lora_load,
 )
+from .image_generation_lora_rollback_test import (
+    ImageGenerationLoraRollbackTest,
+    run_image_generation_lora_rollback,
+)
 from .image_generation_param_test import (
     ImageGenerationParamTest,
     run_image_generation_param,
@@ -75,6 +79,7 @@ __all__ = [
     "EmbeddingParamTest",
     "ImageGenerationLoadTest",
     "ImageGenerationLoraLoadTest",
+    "ImageGenerationLoraRollbackTest",
     "ImageGenerationParamTest",
     "Img2ImgGenerationParamTest",
     "InpaintingGenerationParamTest",
@@ -98,6 +103,7 @@ __all__ = [
     "run_embedding_param",
     "run_image_generation_load",
     "run_image_generation_lora_load",
+    "run_image_generation_lora_rollback",
     "run_image_generation_param",
     "run_img2img_generation_param",
     "run_inpainting_generation_param",
