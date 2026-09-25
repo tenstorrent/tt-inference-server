@@ -24,6 +24,7 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.forge_training_runners.torch_utils import (
     OPTIMIZER_MAP,
     resolve_dtype,
+    seed_rngs,
 )
 from utils.dataset_loaders.dataset_resolver import get_dataset_loader
 from utils.dataset_loaders.dataset_utils import collate_fn_for_causal_lm
@@ -210,6 +211,9 @@ class TrainingLoraRunner(BaseDeviceRunner):
         if request._start_event:
             request._start_event.set()
             self.logger.info(f"Device {self.device_id}: Start event set")
+
+        seed_rngs(request.seed)
+        self.logger.info(f"Device {self.device_id}: Seeded RNGs with {request.seed}")
 
         mesh = self._create_mesh() if self._is_multichip else None
 

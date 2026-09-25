@@ -117,9 +117,11 @@ class TestJobConfig:
             lora_alpha=32,
             steps_freq=5,
             save_interval=25,
+            seed=23,
         )
         config = runner._job_config(request)
 
+        assert config.seed == 23
         assert config.dataset_id == "sst2"
         assert config.model_name == HF_REPO_ID
         assert config.batch_size == 8
@@ -134,6 +136,9 @@ class TestJobConfig:
         assert config.checkpoint.project_dir == "/tmp/job"
         assert config.checkpoint.save_strategy == "step"
         assert config.checkpoint.steps_freq == 25
+
+    def test_seed_defaults_to_zero(self, runner):
+        assert runner._job_config(_request()).seed == 0
 
     def test_save_interval_zero_disables_step_saves(self, runner):
         config = runner._job_config(_request(save_interval=0))

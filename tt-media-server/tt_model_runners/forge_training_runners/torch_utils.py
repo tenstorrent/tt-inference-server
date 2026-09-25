@@ -2,12 +2,27 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import random
+
+import numpy as np
 import torch
 from config.constants import TrainingOptimizers
 
 OPTIMIZER_MAP = {
     TrainingOptimizers.ADAMW.value: torch.optim.AdamW,
 }
+
+
+def seed_rngs(seed: int) -> None:
+    """Seed Python, NumPy, and Torch RNGs for reproducible runs.
+
+    Covers host-side randomness (dataset shuffling, LoRA init, dropout);
+    device-side TT RNG is not seeded here.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 DTYPE_MAP = {
     "torch.bfloat16": torch.bfloat16,
