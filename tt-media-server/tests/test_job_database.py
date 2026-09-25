@@ -35,6 +35,12 @@ class TestInsertJobOrgId:
         assert result["org_id"] is None
 
 
+class TestDeleteJob:
+    def test_delete_job(self, db_with_job):
+        db_with_job.delete_job("job-1")
+        assert db_with_job.get_job_by_id("job-1") is None
+
+
 class TestInsertCheckpoint:
     def test_insert_and_retrieve_single_checkpoint(self, db_with_job):
         db_with_job.insert_checkpoint(

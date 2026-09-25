@@ -94,3 +94,37 @@ class TestGetCatalog:
         assert "optimizers" in data
         assert "clusters" in data
         assert "supported" in data
+
+
+class TestDeleteJob:
+    def test_delete_terminal_job(self, client, mock_service):
+        mock_service.delete_job.return_value = True
+
+        response = client.delete("/jobs/job-1")
+
+        assert response.status_code == 204
+        mock_service.delete_job.assert_called_once_with("job-1", org_id="test-org")
+
+    def test_delete_active_job_returns_conflict(self, client, mock_service):
+        mock_service.delete_job.side_effect = ValueError(
+            "Only terminal jobs can be deleted"
+        )
+
+        response = client.delete("/jobs/job-1")
+
+        assert response.status_code == 409
+
+    def test_delete_missing_job_returns_404(self, client, mock_service):
+        mock_service.delete_job.return_value = False
+
+        response = client.delete("/jobs/missing")
+
+        assert response.status_code == 404
+
+    def test_delete_adapter_merge_job(self, client, mock_service):
+        mock_service.delete_job.return_value = True
+
+        response = client.delete("/jobs/merge-1")
+
+        assert response.status_code == 204
+        mock_service.delete_job.assert_called_once_with("merge-1", org_id="test-org")
