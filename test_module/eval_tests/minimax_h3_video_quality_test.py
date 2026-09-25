@@ -8,6 +8,9 @@ This evaluator uses the inference server's V1 video job lifecycle, downloads
 each output immediately, and computes spatial, temporal, and optional CLIP
 metrics. When a matching reference is configured, the metrics are graded;
 otherwise the result is informational with ``accuracy_check=NA``.
+
+The prompt is sent in the request shape the deployment's task accepts
+(``request_task_for``): text-only on t2va and fl2va, plus one reference image on ref2va.
 """
 
 from __future__ import annotations
@@ -35,8 +38,14 @@ from test_module._test_common import (
     block_id,
 )
 from test_module._test_common.minimax_h3_client import (
+    DEFAULT_TASK,
+    H3_TASKS,
     MiniMaxClientError,
     MiniMaxH3Client,
+    build_create_payload,
+    echoed_request_fields,
+    request_task_for,
+    resolve_h3_task,
     resolve_server_api_key,
 )
 from test_module._test_common.video_quality_metrics import (
@@ -114,13 +123,13 @@ def _resolved_samples_per_prompt(requested: int | None) -> int:
     return samples
 
 
-def _create_payload(prompt: str) -> dict[str, Any]:
-    return {
-        "prompt": prompt,
-        "aspect_ratio": ASPECT_RATIO,
-        "duration_seconds": DURATION_SECONDS,
-        "seed": 0,
-    }
+def _create_payload(prompt: str, request_task: str = DEFAULT_TASK) -> dict[str, Any]:
+    return build_create_payload(
+        request_task,
+        prompt=prompt,
+        aspect_ratio=ASPECT_RATIO,
+        duration_seconds=DURATION_SECONDS,
+    )
 
 
 def _validate_completed_task(
@@ -146,7 +155,8 @@ def _validate_completed_task(
             "completed video job has no request_parameters object",
             task_id=task_id,
         )
-    expected = _create_payload(prompt)
+    # Every task's body shares these shape fields; its inline media is echoed redacted.
+    expected = echoed_request_fields(_create_payload(prompt))
     mismatches = {
         field: {"expected": value, "actual": request.get(field)}
         for field, value in expected.items()
@@ -167,6 +177,7 @@ async def _evaluate_sample(
     output_dir: Path,
     sample_count: int,
     clip_scorer: BatchedCLIPScorer | None,
+    request_task: str = DEFAULT_TASK,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "prompt_id": prompt_case.id,
@@ -180,7 +191,9 @@ async def _evaluate_sample(
     task_id: str | None = None
 
     try:
-        task_id = await client.create_video(_create_payload(prompt_case.prompt))
+        task_id = await client.create_video(
+            _create_payload(prompt_case.prompt, request_task), task=request_task
+        )
         result["task_id"] = task_id
         terminal = await client.wait_for_terminal(task_id)
         result["observed_statuses"] = list(terminal.observed_statuses)
@@ -550,12 +563,14 @@ async def run_video_quality_evaluation(
     download_timeout: float = DEFAULT_DOWNLOAD_TIMEOUT_SECONDS,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
     poll_timeout: float = DEFAULT_POLL_TIMEOUT_SECONDS,
+    task: str = DEFAULT_TASK,
 ) -> dict[str, Any]:
     """Generate, score, and preserve a MiniMax-H3 quality run."""
 
     resolved_samples = _resolved_samples_per_prompt(samples_per_prompt)
     if sample_count < 2:
         raise ValueError("sample_count must be at least 2")
+    request_task = request_task_for(task)
 
     selected_prompts = (T2V_PROMPT,)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -586,6 +601,7 @@ async def run_video_quality_evaluation(
                         output_dir=output_dir,
                         sample_count=sample_count,
                         clip_scorer=clip_scorer,
+                        request_task=request_task,
                     )
                 )
 
@@ -597,6 +613,8 @@ async def run_video_quality_evaluation(
         "task_name": "minimax_h3_video_quality",
         "base_url": base_url.rstrip("/"),
         "model": MODEL_NAME,
+        "deployment_task": task,
+        "request_task": request_task,
         "evaluation_type": "calibration",
         "samples_per_prompt": resolved_samples,
         "frame_sample_count": sample_count,
@@ -654,6 +672,7 @@ class MiniMaxH3VideoQualityTest(BaseTest):
                     DEFAULT_POLL_TIMEOUT_SECONDS,
                 )
             ),
+            task=resolve_h3_task(self.ctx),
         )
 
 
@@ -697,6 +716,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--base-url", required=True)
+    parser.add_argument(
+        "--task",
+        choices=H3_TASKS,
+        help="task the deployment serves (default: from MODEL_RUNNER, else t2va)",
+    )
     parser.add_argument("--samples-per-prompt", type=int)
     parser.add_argument("--sample-count", type=int, default=DEFAULT_SAMPLE_COUNT)
     parser.add_argument("--skip-clip", action="store_true")
@@ -736,6 +760,7 @@ def main(argv: list[str] | None = None) -> int:
                 download_timeout=args.download_timeout,
                 poll_interval=args.poll_interval,
                 poll_timeout=args.poll_timeout,
+                task=args.task or resolve_h3_task(),
             )
         )
     except Exception as exc:  # noqa: BLE001 - CLI must emit a structured report

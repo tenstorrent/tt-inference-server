@@ -2,7 +2,11 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""End-to-end MiniMax-H3 lifecycle, download, video, and audio checks."""
+"""End-to-end MiniMax-H3 lifecycle, download, video, and audio checks.
+
+The job is created in the request shape the deployment's task accepts (``request_task_for``):
+text-only on t2va and fl2va, one reference image on ref2va.
+"""
 
 from __future__ import annotations
 
@@ -20,8 +24,14 @@ from typing import TYPE_CHECKING, Any
 
 from test_module._test_common import BaseTest, HardwareRequirement, TestConfig
 from test_module._test_common.minimax_h3_client import (
+    DEFAULT_TASK,
+    H3_TASKS,
     MiniMaxClientError,
     MiniMaxH3Client,
+    build_create_payload,
+    echoed_request_fields,
+    request_task_for,
+    resolve_h3_task,
     resolve_server_api_key,
 )
 from test_module._test_common.video_quality_metrics import (
@@ -50,13 +60,13 @@ DEFAULT_TEST_TIMEOUT_SECONDS = 2400
 DEFAULT_FRAME_SAMPLE_COUNT = 8
 
 
-def _create_payload() -> dict[str, Any]:
-    return {
-        "prompt": PROMPT,
-        "aspect_ratio": ASPECT_RATIO,
-        "duration_seconds": DURATION_SECONDS,
-        "seed": 0,
-    }
+def _create_payload(request_task: str = DEFAULT_TASK) -> dict[str, Any]:
+    return build_create_payload(
+        request_task,
+        prompt=PROMPT,
+        aspect_ratio=ASPECT_RATIO,
+        duration_seconds=DURATION_SECONDS,
+    )
 
 
 def _validate_job_metadata(task: dict[str, Any], *, task_id: str) -> None:
@@ -71,12 +81,8 @@ def _validate_job_metadata(task: dict[str, Any], *, task_id: str) -> None:
             "completed video job has no request_parameters object",
             task_id=task_id,
         )
-    expected = {
-        "prompt": PROMPT,
-        "aspect_ratio": ASPECT_RATIO,
-        "duration_seconds": DURATION_SECONDS,
-        "seed": 0,
-    }
+    # Every task's body shares these shape fields; its inline media is echoed redacted.
+    expected = echoed_request_fields(_create_payload())
     mismatches = {
         key: {"expected": value, "actual": request.get(key)}
         for key, value in expected.items()
@@ -187,8 +193,10 @@ async def run_lifecycle_download(
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
     poll_timeout: float = DEFAULT_POLL_TIMEOUT_SECONDS,
     sample_count: int = DEFAULT_FRAME_SAMPLE_COUNT,
+    task: str = DEFAULT_TASK,
 ) -> dict[str, Any]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    request_task = request_task_for(task)
 
     async with MiniMaxH3Client(
         base_url=base_url,
@@ -198,7 +206,9 @@ async def run_lifecycle_download(
         poll_interval=poll_interval,
         poll_timeout=poll_timeout,
     ) as client:
-        task_id = await client.create_video(_create_payload())
+        task_id = await client.create_video(
+            _create_payload(request_task), task=request_task
+        )
 
         initial_task = await client.query_task(task_id)
         _validate_job_metadata(initial_task, task_id=task_id)
@@ -242,6 +252,8 @@ async def run_lifecycle_download(
     return {
         "task_name": "minimax_h3_lifecycle_download",
         "base_url": base_url.rstrip("/"),
+        "deployment_task": task,
+        "request_task": request_task,
         "task_id": task_id,
         "initial_status": initial_task["status"],
         "initial_listed_status": initial_listed_task["status"],
@@ -308,6 +320,7 @@ class MiniMaxH3LifecycleDownloadTest(BaseTest):
             sample_count=int(
                 self.targets.get("sample_count", DEFAULT_FRAME_SAMPLE_COUNT)
             ),
+            task=resolve_h3_task(self.ctx),
         )
 
 
@@ -346,11 +359,16 @@ def run_minimax_h3_lifecycle_delete(
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Generate MiniMax-H3 media through /v1/videos/generations and "
+            "Generate MiniMax-H3 media through the V1 video job API and "
             "verify video plus non-silent audio."
         )
     )
     parser.add_argument("--base-url", required=True)
+    parser.add_argument(
+        "--task",
+        choices=H3_TASKS,
+        help="task the deployment serves (default: from MODEL_RUNNER, else t2va)",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument(
         "--request-timeout",
@@ -393,6 +411,7 @@ def main(argv: list[str] | None = None) -> int:
                 poll_interval=args.poll_interval,
                 poll_timeout=args.poll_timeout,
                 sample_count=args.sample_count,
+                task=args.task or resolve_h3_task(),
             )
         )
     except Exception as exc:  # noqa: BLE001 - CLI emits a structured failure

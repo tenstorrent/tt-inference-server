@@ -7,19 +7,40 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
 import time
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import aiohttp  # pyright: ignore[reportMissingImports]
 
+from .video_generation_routing import FIXTURE_IMAGE_PATH
+
 logger = logging.getLogger(__name__)
 
 CREATE_PATH = "/v1/videos/generations"
+# One route per H3 task. A deployment serves one task and answers 422 (string detail) on a
+# route it cannot serve; an FL2VA deployment also accepts text-only CREATE_PATH.
+CREATE_PATHS = {
+    "t2va": CREATE_PATH,
+    "fl2va": "/v1/videos/generations/i2v",
+    "ref2va": "/v1/videos/generations/ref2va",
+}
+H3_TASKS = tuple(CREATE_PATHS)
+DEFAULT_TASK = "t2va"
+# tt-media-server ModelRunners.TT_MINIMAX_H3_<TASK> values: "tt-minimax-h3-" + task.
+H3_MODEL_RUNNER_PREFIX = "tt-minimax-h3-"
+# Request fields that carry media. A job echoes its request in request_parameters with inline
+# base64 replaced by a size note (tt-media-server utils/job_manager.redact_inline_media), so
+# echo checks compare only the other fields.
+MEDIA_FIELDS = frozenset({"image_prompts", "references"})
+# The committed 500x375 JPEG the Wan I2V tests send; within the H3 image card (256-5760 px).
+REFERENCE_IMAGE_PATH = Path(__file__).resolve().parents[2] / FIXTURE_IMAGE_PATH
 QUERY_PATH = "/v1/videos/generations/{job_id}"
 LIST_PATH = "/v1/videos/jobs"
 DOWNLOAD_PATH = "/v1/videos/generations/{job_id}/download"
@@ -103,6 +124,81 @@ def resolve_server_api_key() -> str:
     return DEFAULT_API_KEY
 
 
+def resolve_h3_task(ctx: Any = None) -> str:
+    """The H3 task the deployment under test serves: t2va, fl2va or ref2va.
+
+    Read from the model spec's MODEL_RUNNER (``ctx.model_spec.env_vars``, the env the
+    harness starts the container with) or, without a context (standalone CLI), from this
+    process's MODEL_RUNNER. No runner, or a non-H3 one, is t2va; an H3 runner naming an
+    unknown task raises rather than run the wrong request shapes.
+    """
+
+    if ctx is not None:
+        env = getattr(getattr(ctx, "model_spec", None), "env_vars", None) or {}
+    else:
+        env = os.environ
+    runner = str(env.get("MODEL_RUNNER") or "").strip()
+    if not runner.startswith(H3_MODEL_RUNNER_PREFIX):
+        return DEFAULT_TASK
+    task = runner[len(H3_MODEL_RUNNER_PREFIX) :]
+    if task not in CREATE_PATHS:
+        raise ValueError(
+            f"MODEL_RUNNER={runner!r} names no MiniMax-H3 task; expected "
+            f"{H3_MODEL_RUNNER_PREFIX}{{{','.join(H3_TASKS)}}}"
+        )
+    return task
+
+
+def request_task_for(deployment_task: str) -> str:
+    """The request shape the lifecycle, quality and contract tests send to a deployment.
+
+    FL2VA runs text-only requests on the same transformer/ as T2VA and accepts them on
+    CREATE_PATH, so it gets the t2va shape (h3-benchmark's FL2VA cases send keyframes);
+    Ref2VA refuses text-only, so it gets one reference image.
+    """
+
+    if deployment_task not in CREATE_PATHS:
+        raise ValueError(f"unknown MiniMax-H3 task {deployment_task!r}")
+    return "ref2va" if deployment_task == "ref2va" else "t2va"
+
+
+@lru_cache(maxsize=1)
+def _reference_image_b64() -> str:
+    return base64.b64encode(REFERENCE_IMAGE_PATH.read_bytes()).decode("ascii")
+
+
+def build_create_payload(
+    task: str,
+    *,
+    prompt: str,
+    aspect_ratio: str,
+    duration_seconds: int,
+    seed: int = 0,
+) -> dict[str, Any]:
+    """The JSON body of one ``task`` job: the shape fields, plus REFERENCE_IMAGE_PATH as the
+    first keyframe (fl2va) or as the one reference image (ref2va)."""
+
+    payload: dict[str, Any] = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "duration_seconds": duration_seconds,
+        "seed": seed,
+    }
+    if task == "fl2va":
+        payload["image_prompts"] = [{"image": _reference_image_b64(), "frame_pos": 0}]
+    elif task == "ref2va":
+        payload["references"] = {"images": [{"b64": _reference_image_b64()}]}
+    elif task != "t2va":
+        raise ValueError(f"unknown MiniMax-H3 task {task!r}")
+    return payload
+
+
+def echoed_request_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    """The fields of ``payload`` a job's request_parameters echoes verbatim."""
+
+    return {key: value for key, value in payload.items() if key not in MEDIA_FIELDS}
+
+
 class MiniMaxH3Client:
     """Create, poll, download, and cancel inference-server video jobs."""
 
@@ -152,15 +248,22 @@ class MiniMaxH3Client:
             await self._session.close()
         self._session = None
 
-    async def create_video(self, payload: dict[str, Any]) -> str:
+    async def create_video(
+        self, payload: dict[str, Any], *, task: str = DEFAULT_TASK
+    ) -> str:
+        """POST ``payload`` to ``task``'s create route and return the new job id."""
+
+        path = CREATE_PATHS.get(task)
+        if path is None:
+            raise ValueError(f"unknown MiniMax-H3 task {task!r}")
         status, data, response_text = await self._api_json_request(
             "POST",
-            f"{self.base_url}{CREATE_PATH}",
+            f"{self.base_url}{path}",
             json_payload=payload,
         )
         if status != 202:
             raise MiniMaxClientError(
-                f"video job creation returned HTTP {status}",
+                f"video job creation ({path}) returned HTTP {status}",
                 status_code=status,
                 response_body=_excerpt(response_text),
             )
@@ -430,11 +533,17 @@ def _excerpt(response_text: str) -> str:
 
 __all__ = [
     "CREATE_PATH",
+    "CREATE_PATHS",
+    "H3_TASKS",
     "LIST_PATH",
     "MiniMaxClientError",
     "MiniMaxDownload",
     "MiniMaxH3Client",
     "MiniMaxTerminalTask",
     "MiniMaxTransportError",
+    "build_create_payload",
+    "echoed_request_fields",
+    "request_task_for",
+    "resolve_h3_task",
     "resolve_server_api_key",
 ]

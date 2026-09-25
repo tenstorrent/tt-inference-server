@@ -33,11 +33,15 @@ MINIMAX_H3_EVAL_TARGETS = {
 def _run_minimax_h3_eval(ctx: MediaContext) -> Block:
     """MiniMax-H3 refuses num_inference_steps and fixes its schedule at 50 steps, so
     the generic VideoGenerationEvalsTest payload cannot be used; its evaluator drives
-    the V1 job lifecycle with the H3 request fields."""
+    the V1 job lifecycle with the H3 request fields, in the request shape of the task
+    the spec's MODEL_RUNNER deploys (t2va, fl2va or ref2va)."""
 
+    from .._test_common.minimax_h3_client import resolve_h3_task
     from .minimax_h3_video_quality_test import run_minimax_h3_video_quality
 
-    logger.info("Running MiniMax-H3 video quality evaluation.")
+    logger.info(
+        "Running MiniMax-H3 video quality evaluation (task %s).", resolve_h3_task(ctx)
+    )
     return run_minimax_h3_video_quality(ctx, targets=MINIMAX_H3_EVAL_TARGETS)
 
 

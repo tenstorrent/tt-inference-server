@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Tests for video benchmark dispatch guards and T2V/I2V routing."""
+"""Tests for video benchmark dispatch guards, T2V/I2V routing and MiniMax-H3 task routing."""
 
 from __future__ import annotations
 
@@ -153,3 +153,92 @@ def test_minimax_h3_generation_sends_shape_fields_not_steps(monkeypatch):
     }
     assert "num_inference_steps" not in captured["payload"]
     assert captured["poll_timeout"] == mod.MINIMAX_H3_VIDEO_TIMEOUT_SECONDS
+
+
+@pytest.mark.parametrize(
+    ("runner", "path", "media"),
+    [
+        # FL2VA serves text-only /generations: the t2va request as-is.
+        ("tt-minimax-h3-fl2va", "v1/videos/generations", set()),
+        # Ref2VA refuses text-only: its own route, the same fields plus one image.
+        ("tt-minimax-h3-ref2va", "v1/videos/generations/ref2va", {"references"}),
+    ],
+)
+def test_minimax_h3_generation_follows_the_spec_task(runner, path, media, monkeypatch):
+    captured = {}
+
+    class _Resp:
+        status_code = 202
+
+        @staticmethod
+        def json():
+            return {"id": "job-h3"}
+
+    def _fake_post(url, json=None, headers=None, timeout=None):
+        captured["url"] = url
+        captured["payload"] = json
+        return _Resp()
+
+    monkeypatch.setattr(mod.requests, "post", _fake_post)
+    monkeypatch.setattr(mod, "_poll_video_completion", lambda *a, **k: "/tmp/out.mp4")
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(
+            model_name="MiniMax-H3",
+            hf_model_repo="MiniMaxAI/MiniMax-H3",
+            env_vars={"MODEL_RUNNER": runner},
+        ),
+        base_url="http://localhost:8000",
+    )
+    ok, _elapsed, _job_id, _path = mod._generate_video(
+        ctx, prompt="a fox", num_inference_steps=50
+    )
+    assert ok
+    assert captured["url"] == f"http://localhost:8000/{path}"
+    payload = captured["payload"]
+    assert {"references", "image_prompts"} & set(payload) == media
+    assert {k: payload[k] for k in ("prompt", "aspect_ratio", "duration_seconds")} == {
+        "prompt": "a fox",
+        "aspect_ratio": "16:9",
+        "duration_seconds": 5,
+    }
+    assert "num_inference_steps" not in payload
+    if media:
+        assert len(payload["references"]["images"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("model", "runner", "tasks"),
+    [
+        ("MiniMaxAI/MiniMax-H3", "tt-minimax-h3-t2va", ("t2va", "t2va")),
+        ("MiniMaxAI/MiniMax-H3", "tt-minimax-h3-fl2va", ("fl2va", "t2va")),
+        ("MiniMaxAI/MiniMax-H3", "tt-minimax-h3-ref2va", ("ref2va", "ref2va")),
+        ("Wan-AI/Wan2.2-T2V-A14B-Diffusers", "tt-wan2.2", None),
+    ],
+)
+def test_benchmark_block_reports_the_h3_task(model, runner, tasks, monkeypatch):
+    from test_module.test_status import VideoGenerationTestStatus
+
+    monkeypatch.setattr(mod, "require_health", lambda ctx: "runner")
+    monkeypatch.setattr(mod, "get_num_calls", lambda ctx: 1)
+    monkeypatch.setattr(mod, "block_id", lambda ctx: "")
+    monkeypatch.setattr(mod, "_video_target_checks", lambda *a: ({}, 2))
+    monkeypatch.setattr(
+        mod,
+        "_run_video_generation_benchmark",
+        lambda ctx, n: [
+            VideoGenerationTestStatus(
+                status=True, elapsed=70.0, num_inference_steps=50, job_id="j"
+            )
+        ],
+    )
+    ctx = SimpleNamespace(
+        model_spec=SimpleNamespace(
+            model_name=model.split("/")[-1],
+            hf_model_repo=model,
+            env_vars={"MODEL_RUNNER": runner},
+        ),
+        device=SimpleNamespace(name="galaxy"),
+    )
+    benchmarks = mod.run_video_benchmark(ctx).data["Benchmarks"]
+    reported = (benchmarks.get("deployment_task"), benchmarks.get("request_task"))
+    assert reported == (tasks or (None, None))

@@ -33,6 +33,7 @@ from .._test_common import (
     is_i2v_video_model,
     run_tiered_check,
 )
+from .._test_common import minimax_h3_client as h3
 from ..context import MediaContext, require_health
 from ..test_status import VideoGenerationTestStatus
 
@@ -149,27 +150,31 @@ def _generate_video(
 ) -> tuple[bool, float, str, str]:
     logger.info(f"🎬 Generating video with prompt: {prompt}")
     model_name = ctx.model_spec.model_name
-    submit_endpoint = get_video_generation_submit_endpoint(model_name)
     headers = {
         "accept": "application/json",
         "Authorization": "Bearer your-secret-key",
         "Content-Type": "application/json",
     }
-    payload = build_video_generation_payload(
-        prompt=prompt,
-        num_inference_steps=num_inference_steps,
-        model_name=model_name,
-        image_b64=image_b64,
-    )
     if is_minimax_h3_model(model_name):
         # The shape is chosen with the two H3 request fields; num_inference_steps is
-        # refused by the deployment, so it must not be sent.
-        payload = {
-            "prompt": prompt,
-            "aspect_ratio": MINIMAX_H3_ASPECT_RATIO,
-            "duration_seconds": MINIMAX_H3_DURATION_SECONDS,
-            "seed": 0,
-        }
+        # refused by the deployment, so it must not be sent. The route and media follow
+        # the task the spec deploys (a Ref2VA deployment refuses text-only requests).
+        request_task = h3.request_task_for(h3.resolve_h3_task(ctx))
+        submit_endpoint = h3.CREATE_PATHS[request_task].lstrip("/")
+        payload = h3.build_create_payload(
+            request_task,
+            prompt=prompt,
+            aspect_ratio=MINIMAX_H3_ASPECT_RATIO,
+            duration_seconds=MINIMAX_H3_DURATION_SECONDS,
+        )
+    else:
+        submit_endpoint = get_video_generation_submit_endpoint(model_name)
+        payload = build_video_generation_payload(
+            prompt=prompt,
+            num_inference_steps=num_inference_steps,
+            model_name=model_name,
+            image_b64=image_b64,
+        )
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 
@@ -334,6 +339,14 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             "target_checks": target_checks,
         },
     }
+    if is_minimax_h3_model(ctx.model_spec.model_name):
+        # The request shape the timings were measured with: a Ref2VA deployment is
+        # benchmarked with ref2va requests (_generate_video), not text-only ones.
+        deployment_task = h3.resolve_h3_task(ctx)
+        block_data["Benchmarks"].update(
+            deployment_task=deployment_task,
+            request_task=h3.request_task_for(deployment_task),
+        )
 
     # A benchmark where any generation failed is not a valid PASS regardless of
     # the timing of the survivors: surface it as a blocking failure so a broken

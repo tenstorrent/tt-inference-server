@@ -2,7 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Contract checks for MiniMax-H3 on the inference-server video V1 API."""
+"""Contract checks for MiniMax-H3 on the inference-server video V1 API.
+
+The checks follow the task the deployment serves (``resolve_h3_task``): they are sent to
+that task's create route with a valid body of its request shape (``request_task_for``), and
+every route the deployment cannot serve must refuse an empty body with a 422 route refusal.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +17,7 @@ import json
 import logging
 import sys
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit, urlunsplit
 
@@ -20,9 +25,14 @@ import aiohttp  # pyright: ignore[reportMissingImports]
 
 from test_module._test_common import BaseTest, HardwareRequirement, TestConfig
 from test_module._test_common.minimax_h3_client import (
-    CREATE_PATH,
+    CREATE_PATHS,
+    DEFAULT_TASK,
+    H3_TASKS,
     MiniMaxClientError,
     MiniMaxH3Client,
+    build_create_payload,
+    request_task_for,
+    resolve_h3_task,
     resolve_server_api_key,
 )
 
@@ -37,6 +47,17 @@ DEFAULT_PROFILE: Profile = "validation"
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
 DEFAULT_TEST_TIMEOUT_SECONDS = 300
 _PROFILES = frozenset({"validation", "smoke"})
+# Routes each deployment refuses with a 422 naming the deployment (tt-media-server
+# open_ai_api/video.py). FL2VA serves text-only /generations, so it refuses only Ref2VA.
+REFUSED_TASKS = {
+    "t2va": ("fl2va", "ref2va"),
+    "fl2va": ("ref2va",),
+    "ref2va": ("t2va", "fl2va"),
+}
+PROMPT = (
+    "A red fox steps through wet grass at dawn while birds sing in "
+    "the background and the camera tracks alongside."
+)
 
 
 @dataclass(frozen=True)
@@ -46,23 +67,24 @@ class _RequestCase:
     expected_status: int
     auth_mode: Literal["valid", "missing", "invalid"] = "valid"
     requires_job_id: bool = False
+    # Request shape whose route the case is posted to (CREATE_PATHS).
+    route_task: str = DEFAULT_TASK
+    # A route refusal: 422 with a string detail, not a list of field errors.
+    expects_refusal: bool = False
 
 
-def _valid_payload() -> dict[str, Any]:
-    return {
-        "prompt": (
-            "A red fox steps through wet grass at dawn while birds sing in "
-            "the background and the camera tracks alongside."
-        ),
-        "aspect_ratio": "16:9",
-        "duration_seconds": 5,
-        "seed": 0,
-    }
+def _valid_payload(task: str = DEFAULT_TASK) -> dict[str, Any]:
+    return build_create_payload(
+        task, prompt=PROMPT, aspect_ratio="16:9", duration_seconds=5
+    )
 
 
-def _validation_cases() -> list[_RequestCase]:
-    valid = _valid_payload()
-    return [
+def _validation_cases(task: str = DEFAULT_TASK) -> list[_RequestCase]:
+    """The field checks on ``task``'s own route, then the routes it refuses."""
+
+    route_task = request_task_for(task)
+    valid = _valid_payload(route_task)
+    field_cases = [
         _RequestCase("missing_bearer_authentication", valid, 401, "missing"),
         _RequestCase("invalid_bearer_authentication", valid, 401, "invalid"),
         _RequestCase(
@@ -111,17 +133,31 @@ def _validation_cases() -> list[_RequestCase]:
             422,
         ),
     ]
+    # The route gate runs before body validation, so an empty body tells a refused route
+    # (string detail) from a served one (list of field errors) without ever creating a job.
+    return [replace(case, route_task=route_task) for case in field_cases] + [
+        _RequestCase(
+            f"{refused}_route_is_refused",
+            {},
+            422,
+            route_task=refused,
+            expects_refusal=True,
+        )
+        for refused in REFUSED_TASKS[task]
+    ]
 
 
-def _cases(profile: Profile) -> list[_RequestCase]:
-    cases = _validation_cases()
+def _cases(profile: Profile, task: str = DEFAULT_TASK) -> list[_RequestCase]:
+    cases = _validation_cases(task)
     if profile == "smoke":
+        route_task = request_task_for(task)
         cases.append(
             _RequestCase(
-                "valid_text_to_video_job",
-                _valid_payload(),
+                f"valid_{route_task}_job",
+                _valid_payload(route_task),
                 202,
                 requires_job_id=True,
+                route_task=route_task,
             )
         )
     return cases
@@ -163,7 +199,7 @@ async def _cancel_created_job(
     task_id: str,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any] | None:
-    """Cancel the smoke job through the shared client; None when it could not be cancelled."""
+    """Cancel a job the suite created through the shared client; None when it could not be."""
     job_id = _job_uuid(task_id)
     if job_id is None:
         return None
@@ -181,12 +217,12 @@ async def _cancel_created_job(
 async def _run_case(
     session: aiohttp.ClientSession,
     *,
-    endpoint_url: str,
     base_url: str,
     api_key: str,
     case: _RequestCase,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
+    endpoint_url = f"{base_url}{CREATE_PATHS[case.route_task]}"
     try:
         async with session.post(
             endpoint_url,
@@ -202,19 +238,22 @@ async def _run_case(
             passed = response.status == case.expected_status
             message = ""
             task_id: str | None = None
+            job_id: str | None = None
             cancellation: dict[str, Any] | None = None
-            if case.requires_job_id:
+            if case.requires_job_id or 200 <= response.status < 300:
                 task_id = data.get("id") if isinstance(data, dict) else None
                 job_id = _job_uuid(task_id) if isinstance(task_id, str) else None
-                passed = passed and job_id is not None
                 if job_id:
+                    # Also a job a negative check was wrongly accepted with, so it cannot
+                    # hold the queue for the tests that run after this suite.
                     cancellation = await _cancel_created_job(
                         base_url=base_url,
                         api_key=api_key,
                         task_id=job_id,
                         request_timeout=request_timeout,
                     )
-                    passed = passed and cancellation is not None
+            if case.requires_job_id:
+                passed = passed and job_id is not None and cancellation is not None
                 if not task_id:
                     message = "accepted response did not include a non-empty id"
                 elif job_id is None:
@@ -225,9 +264,19 @@ async def _run_case(
                 passed = passed and isinstance(data, dict) and "detail" in data
                 if not isinstance(data, dict) or "detail" not in data:
                     message = "error response did not include FastAPI detail"
+                elif case.expects_refusal and not isinstance(data["detail"], str):
+                    passed = False
+                    message = "422 was field validation, not a route refusal"
+            elif job_id:
+                message = "request was accepted; " + (
+                    "its job was cancelled"
+                    if cancellation is not None
+                    else "its job could not be cancelled"
+                )
 
             return {
                 "check": case.name,
+                "endpoint_url": endpoint_url,
                 "passed": passed,
                 "expected_status": case.expected_status,
                 "actual_status": response.status,
@@ -239,6 +288,7 @@ async def _run_case(
     except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
         return {
             "check": case.name,
+            "endpoint_url": endpoint_url,
             "passed": False,
             "expected_status": case.expected_status,
             "actual_status": "request_error",
@@ -252,31 +302,34 @@ async def run_create_contract(
     api_key: str,
     profile: Profile = DEFAULT_PROFILE,
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    task: str = DEFAULT_TASK,
 ) -> dict[str, Any]:
     normalized_profile = str(profile).lower()
     if normalized_profile not in _PROFILES:
         raise ValueError(f"profile must be one of {sorted(_PROFILES)}, got {profile!r}")
+    if task not in REFUSED_TASKS:
+        raise ValueError(f"task must be one of {list(H3_TASKS)}, got {task!r}")
 
     root = _service_root(base_url)
-    endpoint_url = f"{root}{CREATE_PATH}"
+    endpoint_url = f"{root}{CREATE_PATHS[request_task_for(task)]}"
     timeout = aiohttp.ClientTimeout(total=request_timeout)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         results = [
             await _run_case(
                 session,
-                endpoint_url=endpoint_url,
                 base_url=root,
                 api_key=api_key,
                 case=case,
                 request_timeout=request_timeout,
             )
-            for case in _cases(normalized_profile)  # type: ignore[arg-type]
+            for case in _cases(normalized_profile, task)  # type: ignore[arg-type]
         ]
 
     passed = sum(bool(result["passed"]) for result in results)
     return {
         "endpoint_url": endpoint_url,
         "task_name": "minimax_h3_create_contract",
+        "deployment_task": task,
         "profile": normalized_profile,
         "summary": f"{passed}/{len(results)} checks passed",
         "detailed_test_results": results,
@@ -302,6 +355,7 @@ class MiniMaxH3CreateContractTest(BaseTest):
                     DEFAULT_REQUEST_TIMEOUT_SECONDS,
                 )
             ),
+            task=resolve_h3_task(self.ctx),
         )
 
 
@@ -325,10 +379,15 @@ def run_minimax_h3_create_contract(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Check MiniMax-H3 on POST /v1/videos/generations."
+        description="Check the MiniMax-H3 V1 create contract of one deployment."
     )
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--profile", choices=sorted(_PROFILES), default=DEFAULT_PROFILE)
+    parser.add_argument(
+        "--task",
+        choices=H3_TASKS,
+        help="task the deployment serves (default: from MODEL_RUNNER, else t2va)",
+    )
     parser.add_argument(
         "--request-timeout",
         type=float,
@@ -346,6 +405,7 @@ def main(argv: list[str] | None = None) -> int:
                 api_key=resolve_server_api_key(),
                 profile=args.profile,
                 request_timeout=args.request_timeout,
+                task=args.task or resolve_h3_task(),
             )
         )
     except Exception as exc:  # noqa: BLE001 - CLI emits a structured failure

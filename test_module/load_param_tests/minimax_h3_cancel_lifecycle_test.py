@@ -15,8 +15,13 @@ from typing import TYPE_CHECKING, Any
 
 from test_module._test_common import BaseTest, HardwareRequirement, TestConfig
 from test_module._test_common.minimax_h3_client import (
+    DEFAULT_TASK,
+    H3_TASKS,
     MiniMaxClientError,
     MiniMaxH3Client,
+    build_create_payload,
+    request_task_for,
+    resolve_h3_task,
     resolve_server_api_key,
 )
 
@@ -38,13 +43,13 @@ DEFAULT_POLL_TIMEOUT_SECONDS = 300.0
 DEFAULT_TEST_TIMEOUT_SECONDS = 600
 
 
-def _create_payload() -> dict[str, Any]:
-    return {
-        "prompt": PROMPT,
-        "aspect_ratio": ASPECT_RATIO,
-        "duration_seconds": DURATION_SECONDS,
-        "seed": 0,
-    }
+def _create_payload(request_task: str = DEFAULT_TASK) -> dict[str, Any]:
+    return build_create_payload(
+        request_task,
+        prompt=PROMPT,
+        aspect_ratio=ASPECT_RATIO,
+        duration_seconds=DURATION_SECONDS,
+    )
 
 
 def _validate_cancelled_task(task: dict[str, Any], *, task_id: str) -> None:
@@ -88,8 +93,12 @@ async def run_cancel_lifecycle(
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
     poll_timeout: float = DEFAULT_POLL_TIMEOUT_SECONDS,
+    task: str = DEFAULT_TASK,
 ) -> dict[str, Any]:
-    """Create a T2V job, cancel it immediately, then verify query/list state."""
+    """Create a job in ``task``'s request shape, cancel it immediately, then verify
+    query/list state."""
+
+    request_task = request_task_for(task)
 
     async with MiniMaxH3Client(
         base_url=base_url,
@@ -98,7 +107,9 @@ async def run_cancel_lifecycle(
         poll_interval=poll_interval,
         poll_timeout=poll_timeout,
     ) as client:
-        task_id = await client.create_video(_create_payload())
+        task_id = await client.create_video(
+            _create_payload(request_task), task=request_task
+        )
         cancellation = await client.cancel_task(task_id)
         terminal = await client.wait_for_terminal(task_id)
         _validate_cancelled_task(terminal.task, task_id=task_id)
@@ -110,6 +121,8 @@ async def run_cancel_lifecycle(
     return {
         "task_name": "minimax_h3_cancel_lifecycle",
         "base_url": base_url.rstrip("/"),
+        "deployment_task": task,
+        "request_task": request_task,
         "task_id": task_id,
         "cancellation_response_status": cancellation["status"],
         "observed_statuses": list(terminal.observed_statuses),
@@ -146,6 +159,7 @@ class MiniMaxH3CancelLifecycleTest(BaseTest):
                     DEFAULT_POLL_TIMEOUT_SECONDS,
                 )
             ),
+            task=resolve_h3_task(self.ctx),
         )
 
 
@@ -176,6 +190,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--base-url", required=True)
     parser.add_argument(
+        "--task",
+        choices=H3_TASKS,
+        help="task the deployment serves (default: from MODEL_RUNNER, else t2va)",
+    )
+    parser.add_argument(
         "--request-timeout",
         type=float,
         default=DEFAULT_REQUEST_TIMEOUT_SECONDS,
@@ -203,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
                 request_timeout=args.request_timeout,
                 poll_interval=args.poll_interval,
                 poll_timeout=args.poll_timeout,
+                task=args.task or resolve_h3_task(),
             )
         )
     except Exception as exc:  # noqa: BLE001 - CLI emits a structured failure
