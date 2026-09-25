@@ -17,7 +17,6 @@ namespace tt::services::embedding_detail {
 
 namespace {
 
-/// pipe(2) into two ScopedFds; logs and returns false on failure.
 bool createPipe(int wid, tt::utils::ScopedFd& readEnd,
                 tt::utils::ScopedFd& writeEnd) {
   int raw[2] = {-1, -1};
@@ -42,26 +41,22 @@ bool WorkerProcess::spawn(
 
   tt::utils::ScopedFd respRead, respWrite;
   if (!createPipe(wid, respRead, respWrite)) {
-    return false;  // reqRead + reqWrite auto-close
+    return false;
   }
 
   pid_t child = fork();
   if (child < 0) {
     TT_LOG_ERROR("[EmbeddingService] Failed to fork worker {}", wid);
-    return false;  // all 4 FDs auto-close
+    return false;
   }
 
   if (child == 0) {
-    // Child: close parent ends, run child main.
     reqWrite.reset();
     respRead.reset();
     childMain(reqRead.release(), respWrite.release());
-    _exit(0);  // childMain is [[noreturn]], but just in case
+    _exit(0);
   }
 
-  // Parent: close child ends, transfer ownership to members. The worker is
-  // NOT ready yet: isReady only flips once the child sends the READY
-  // sentinel after warmup (see awaitWorkersReady).
   reqRead.reset();
   respWrite.reset();
   pid.store(child);
@@ -91,6 +86,8 @@ bool WorkerProcess::checkAlive() {
     TT_LOG_ERROR("[EmbeddingService] Worker {} killed by signal {}", workerId,
                  WTERMSIG(status));
   }
+  // The child is reaped; clear the pid so nobody signals a recycled one.
+  pid.store(-1);
   isReady.store(false);
   return false;
 }
@@ -119,6 +116,7 @@ void WorkerProcess::terminate() {
   if (p > 0) {
     kill(p, SIGTERM);
     waitpid(p, nullptr, 0);
+    pid.store(-1);
     TT_LOG_INFO("[EmbeddingService] Worker {} terminated", workerId);
   }
   writeFd.reset();
