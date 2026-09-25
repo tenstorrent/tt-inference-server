@@ -165,7 +165,9 @@ class VideoService(BaseJobService):
         work and must share a series, while an I2V-capable deployment can still
         serve text-only requests.
         """
-        if getattr(request, "image_prompts", None):
+        if getattr(request, "image_prompts", None) or getattr(
+            request, "references", None
+        ):
             return VIDEO_REQUEST_TYPE_I2V
         return VIDEO_REQUEST_TYPE_T2V
 

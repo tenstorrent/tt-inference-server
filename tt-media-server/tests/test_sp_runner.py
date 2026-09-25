@@ -186,6 +186,29 @@ class TestWriteImageSideFile:
             {"image": "b64-frame-40", "frame_pos": 40},
         ]
 
+    def test_writes_ref2va_object_with_references(self, tmp_video_dir):
+        class _Refs:
+            def model_dump(self, exclude_none=True):
+                return {
+                    "images": [{"b64": "img"}],
+                    "videos": [{"b64": "vid"}],
+                    "audios": [],
+                }
+
+        request = _MockT2VRequest(task_id="ref-1")
+        request.aspect_ratio = "16:9"
+        request.duration_seconds = 5
+        request.references = _Refs()
+
+        path = SPRunner._write_image_side_file(request, "ref-1")
+
+        assert os.path.exists(path)
+        with open(path) as f:
+            payload = json.load(f)
+        assert payload["aspect_ratio"] == "16:9"
+        assert payload["duration_seconds"] == 5
+        assert payload["references"]["videos"] == [{"b64": "vid"}]
+
     def test_path_is_under_video_file_dir(self, tmp_video_dir):
         """Side-file location must be configurable via ``TT_VIDEO_FILE_DIR``
         for tests + multi-tenant deployments. The helper uses

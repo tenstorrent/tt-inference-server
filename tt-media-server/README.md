@@ -48,7 +48,8 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 | `/v1/videos/generations/i2v`                                | `/video/generations/i2v`                             | POST   | Image-to-video generation (Wan2.2 I2V)     |
 | `/v1/videos/generations/{job_id}`                           | `/video/generations/{job_id}`                        | GET    | Get video job metadata                     |
 | `/v1/videos/generations/{job_id}/download`                  | `/video/generations/{job_id}/download`               | GET    | Download generated video                   |
-| `/v1/videos/generations/{job_id}/cancel`                    | `/video/generations/{job_id}/cancel`                 | POST   | Cancel video job and assets                |
+| `/v1/videos/generations/{job_id}/cancel`                    | `/video/generations/{job_id}/cancel`                 | POST   | Cancel video job (record is kept)          |
+| `/v1/videos/generations/{job_id}`                           | `/video/generations/{job_id}`                        | DELETE | Delete finished video job and its file     |
 | `/v1/videos/jobs`                                           | `/video/jobs`                                        | GET    | List all video jobs                        |
 | `/v1/cnn/search-image`                                      | `/cnn/search-image`                                  | POST   | CNN image search                           |
 | `/v1/fine_tuning/catalog`                                   | n/a                                                  | GET    | Available fine-tuning catalog              |
@@ -710,13 +711,32 @@ curl -X 'GET' \
   -o output.mp4
 ```
 
-## Cancel video job and assets
+## Cancel video job
+
+Stops a queued or running job. The job record is kept (status moves to `cancelling`, then `cancelled`), so it still appears in `/v1/videos/jobs`.
 
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/v1/videos/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
+```
+
+## Delete video job and assets
+
+Permanently removes a **finished** job (`completed`, `failed` or `cancelled`) together with its stored video file. A job that is still queued or running is refused with `409 Conflict`: cancel it first, then delete it once it has reached a terminal state. Unknown ids return `404`.
+
+```bash
+curl -X 'DELETE' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+Response:
+
+```json
+{"id": "{video_id}", "object": "video", "deleted": true}
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.

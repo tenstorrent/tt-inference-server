@@ -9,6 +9,50 @@ from domain.video_generate_request import VideoGenerateRequest
 from pydantic import ValidationError
 
 
+# The serving envelope (aspect ratios, durations, step count) is re-exported lazily by
+# tt_model_runners.minimax_h3_policy from tt-metal's models.tt_dit.pipelines.minimax_h3.policy.
+# Where tt-metal is on the path the real module answers; otherwise these stand-ins carry the
+# published values, set on the re-exporting module the way test_video_api.py stubs durations.
+_PUBLISHED_ASPECT_RATIOS = ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16))
+
+
+def _parse_published_aspect_ratio(value: str) -> tuple[int, int]:
+    parts = str(value).strip().replace("x", ":").replace("/", ":").split(":")
+    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+        raise ValueError(f"aspect_ratio must look like 'W:H' (got {value!r})")
+    pair = (int(parts[0]), int(parts[1]))
+    if pair not in _PUBLISHED_ASPECT_RATIOS:
+        raise ValueError(f"aspect_ratio {pair[0]}:{pair[1]} is not served")
+    return pair
+
+
+@pytest.fixture(autouse=True)
+def metal_policy():
+    try:
+        import models.tt_dit.pipelines.minimax_h3.policy  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        yield
+        return
+    # Plain setattr/delattr, not monkeypatch: monkeypatch reads the old value first, and on this
+    # module that read goes through the lazy __getattr__ and raises ModuleNotFoundError.
+    import tt_model_runners.minimax_h3_policy as policy
+
+    stubs = {
+        "MINIMAX_H3_DURATIONS_S": tuple(range(4, 16)),
+        "MINIMAX_H3_NUM_INFERENCE_STEPS": 50,
+        "minimax_h3_parse_aspect_ratio": _parse_published_aspect_ratio,
+    }
+    for name, value in stubs.items():
+        setattr(policy, name, value)
+    try:
+        yield
+    finally:
+        for name in stubs:
+            vars(policy).pop(name, None)
+
+
 @pytest.fixture
 def minimax_request_validation():
     with patch("domain.video_generate_request._is_minimax_h3", return_value=True):

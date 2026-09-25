@@ -256,6 +256,24 @@ class TestVideoRequestToGenerateRequest:
         assert gen.num_inference_steps == 20
         assert gen.seed == 42
 
+    @patch("domain.video_generate_request.get_settings")
+    def test_h3_does_not_forward_shm_inference_steps(self, mock_settings):
+        mock_settings.return_value.model_runner = "tt-minimax-h3-t2va"
+        req = VideoRequest(
+            task_id="t1",
+            prompt="hello",
+            negative_prompt="blurry",
+            num_inference_steps=20,
+            seed=42,
+            height=480,
+            width=832,
+            num_frames=81,
+            guidance_scale=3.0,
+            guidance_scale_2=4.0,
+        )
+        gen = video_request_to_generate_request(req)
+        assert gen.prompt == "hello"
+
     def test_returns_t2v_when_image_prompts_empty(self):
         """Empty / None ``image_prompts`` falls through to the T2V path so
         single-host T2V behaviour is byte-identical to before the change."""
@@ -291,6 +309,27 @@ class TestVideoRequestToGenerateRequest:
         assert all(isinstance(p, ImagePromptEntry) for p in gen.image_prompts)
         assert gen.image_prompts[0].frame_pos == 0
         assert gen.image_prompts[1].frame_pos == 40
+
+    def test_returns_ref2va_when_side_payload_has_references(self):
+        from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
+
+        req = _make_request()
+        gen = video_request_to_generate_request(
+            req,
+            image_prompts={
+                "aspect_ratio": "16:9",
+                "duration_seconds": 5,
+                "references": {
+                    "images": [{"b64": _tiny_png_b64()}],
+                    "videos": [],
+                    "audios": [],
+                },
+            },
+        )
+        assert isinstance(gen, VideoRef2VAGenerateRequest)
+        assert gen.aspect_ratio == "16:9"
+        assert gen.duration_seconds == 5
+        assert len(gen.references.images) == 1
 
 
 class TestHandleSigterm:
@@ -888,7 +927,29 @@ class TestEncoderLoop:
         assert args[1] is audio
         assert args[2] == 16000
         assert kwargs["fps"] == 25
+        assert kwargs["pixel_format"] == "rgb24"
         output_shm.write_response.assert_called_once()
+
+    def test_video_audio_result_forwards_yuv420p_pixel_format(self):
+        import numpy as np
+
+        from utils.video_manager import VideoAudioResult
+
+        frames = np.zeros((2, 6, 4), dtype=np.uint8)
+        audio = np.zeros((2, 100), dtype=np.float32)
+        payload = VideoAudioResult(
+            frames, audio, sampling_rate=16000, fps=25, pixel_format="yuv420p"
+        )
+        job = _EncodeJob(task_id="t-yuv", frames=payload)
+
+        with patch(
+            "utils.video_manager.VideoManager.export_to_mp4_with_audio",
+            return_value="/tmp/out.mp4",
+        ) as mux:
+            self._drain(job)
+
+        _, kwargs = mux.call_args
+        assert kwargs["pixel_format"] == "yuv420p"
 
     def test_raw_frames_use_video_only_export(self):
         import numpy as np

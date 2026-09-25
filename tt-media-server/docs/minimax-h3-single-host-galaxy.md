@@ -213,6 +213,10 @@ curl -H 'Authorization: Bearer your-secret-key' \
 # download the muxed mp4
 curl -H 'Authorization: Bearer your-secret-key' \
   localhost:8000/v1/videos/generations/<job_id>/download -o out.mp4
+
+# optional: remove the finished job and its mp4 from the server (409 while it is still running)
+curl -X DELETE -H 'Authorization: Bearer your-secret-key' \
+  localhost:8000/v1/videos/generations/<job_id>
 ```
 
 Forward port 8000 to your machine for web access / the video request UI.
@@ -291,7 +295,40 @@ row drops to 0.0 s.
 | `duration_seconds` | Any integer `4`..`15` -- what the MiniMax API accepts. Anything else is a 422. Omitted gives `5`. The video VAE encodes in 17-frame chunks, so only `17n + 5` frame counts exist and a request rounds **up** to the next one: the clip is never shorter than asked, by at most 0.67 s (`13` -> 13.667 s). `8` is the only exact fit (192 frames). |
 | Unknown fields | Rejected, not ignored. `{"resolution": "1080P", "duration": 9}` is a 422 naming the fields this deployment reads -- silently dropping them would tell a caller it got something it did not. Note the field is `duration_seconds`, and resolution is chosen with `aspect_ratio`. |
 | Resolution | 768P throughout: short edge 768 from 16:9 to 9:16, area capped at ~1 MPix for wider (21:9 is 1536x672). Derived by the model's `resolve_canvas_size`, not settable directly. |
-| `num_inference_steps` | Not a request lever. An explicit value is a 422: `num_inference_steps is not accepted for MiniMax-H3 t2va: the deployment runs a fixed 50-step schedule. Omit the field.` Omitted, the request runs that fixed 50-step schedule (`tt_model_runners/minimax_h3_policy.MINIMAX_H3_NUM_INFERENCE_STEPS`). |
+| `num_inference_steps` | Not a request lever, on any task (`t2va`, `fl2va`, `ref2va`). Sending the field is a 422: `num_inference_steps is not accepted for MiniMax-H3: the deployment runs a fixed 50-step schedule. Omit the field.` Omitted, the request runs that fixed schedule -- the metal policy count (`models.tt_dit.pipelines.minimax_h3.policy.MINIMAX_H3_NUM_INFERENCE_STEPS`, 50, re-exported by `tt_model_runners/minimax_h3_policy`) -- and the request echo carries the same count. |
 | Warmup | Nothing is warmed by default; the first request per shape compiles. See section 6. |
 | One request at a time | One device worker owns the mesh; further requests queue. |
-| `t2va` only | `ref2va` needs the `transformer_ref/` partition, and switching task in-process is a 62 GB reload. Separate deployment. |
+| Task | One of `t2va`, `fl2va`, `ref2va` per process. `MODEL_RUNNER` selects it; switching `ref2va` is a 62 GB reload (`transformer_ref/`). |
+
+## FL2VA (`MODEL_RUNNER=tt-minimax-h3-fl2va`)
+
+Same weights as t2va (`transformer/`). Keyframes ride Wan's `image_prompts` with sentinels: `frame_pos=0` is the first frame, `frame_pos=-1` is the last. Any other position is a 422. Warmup must include a keyframe (the runner does this); a t2va-shaped warm misses ~1010 vision rows.
+
+```bash
+export MODEL="MiniMax-H3-FL2VA"
+export MODEL_RUNNER=tt-minimax-h3-fl2va
+
+curl -X POST localhost:8000/v1/videos/generations/i2v \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -d '{"prompt":"Brad Pitt from age 18 to age 60","aspect_ratio":"16:9","duration_seconds":5,"seed":0,"image_prompts":[{"image":"<b64 first>","frame_pos":0},{"image":"<b64 last>","frame_pos":-1}]}'
+```
+
+`POST /generations` (text-only) is accepted: same transformer as t2va, no keyframes.
+
+## Ref2VA (`MODEL_RUNNER=tt-minimax-h3-ref2va`)
+
+Loads `transformer_ref/` — do not `--exclude transformer_ref/*` when downloading. Device open uses `l1_small_size=16384`. Warmup uses a single placeholder image reference.
+
+```bash
+export MODEL="MiniMax-H3-Ref2VA"
+export MODEL_RUNNER=tt-minimax-h3-ref2va
+
+curl -X POST localhost:8000/v1/videos/generations/ref2va \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer your-secret-key' \
+  -d '{"prompt":"a slow push-in through a quiet room","aspect_ratio":"16:9","duration_seconds":5,"seed":0,"references":{"images":[{"b64":"<png>"}],"videos":[{"url":"https://.../clip.mp4"}],"audios":[]}}'
+```
+
+`references` is a `MultimodalReferences` object: `images` / `videos` / `audios` are lists of `{b64}` **or** `{url}` (exactly one). Limits: 9 images, 3 videos, 3 audios. Each video/audio clip must be 2–15 s, combined duration per modality ≤ 15 s. Audio cannot stand alone. Pack order is images, then videos, then audios. URLs are fetched at the API (same allowlist as I2V); the worker only sees `b64`. Prefer URLs for video/audio — inline base64 of a clip is large. Raise `media_url_max_bytes` if the 7.5 MB default 413s a reference clip.
+
