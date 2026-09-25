@@ -41,6 +41,12 @@ class PerformanceTargets:
     e2el_ms: float = None
     tput: float = None
     rtr: float = None
+    fc_p50_ms: float = None
+    fc_p95_ms: float = None
+    sc_p50_ms: float = None
+    sc_p95_ms: float = None
+    tc_p50_ms: float = None
+    tc_p95_ms: float = None
     tolerance: float = 0.05
     max_concurrency: int = None
     num_eval_runs: int = None
@@ -63,6 +69,12 @@ class PerformanceTargets:
             e2el_ms=theoretical.get("e2el_ms"),
             tput=theoretical.get("tput"),
             rtr=theoretical.get("rtr"),
+            fc_p50_ms=theoretical.get("fc_p50_ms"),
+            fc_p95_ms=theoretical.get("fc_p95_ms"),
+            sc_p50_ms=theoretical.get("sc_p50_ms"),
+            sc_p95_ms=theoretical.get("sc_p95_ms"),
+            tc_p50_ms=theoretical.get("tc_p50_ms"),
+            tc_p95_ms=theoretical.get("tc_p95_ms"),
             tolerance=theoretical.get("tolerance", 0.05),
             max_concurrency=device_config.get("max_concurrency"),
             num_eval_runs=device_config.get("num_eval_runs"),

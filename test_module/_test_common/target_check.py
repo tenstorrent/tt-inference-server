@@ -44,6 +44,12 @@ class PerformanceTargets:
     e2el_ms: Optional[float] = None
     tput: Optional[float] = None
     rtr: Optional[float] = None
+    fc_p50_ms: Optional[float] = None
+    fc_p95_ms: Optional[float] = None
+    sc_p50_ms: Optional[float] = None
+    sc_p95_ms: Optional[float] = None
+    tc_p50_ms: Optional[float] = None
+    tc_p95_ms: Optional[float] = None
     tolerance: float = 0.05
     max_concurrency: Optional[int] = None
     num_eval_runs: Optional[int] = None
@@ -62,6 +68,12 @@ class PerformanceTargets:
             e2el_ms=theoretical.get("e2el_ms"),
             tput=theoretical.get("tput"),
             rtr=theoretical.get("rtr"),
+            fc_p50_ms=theoretical.get("fc_p50_ms"),
+            fc_p95_ms=theoretical.get("fc_p95_ms"),
+            sc_p50_ms=theoretical.get("sc_p50_ms"),
+            sc_p95_ms=theoretical.get("sc_p95_ms"),
+            tc_p50_ms=theoretical.get("tc_p50_ms"),
+            tc_p95_ms=theoretical.get("tc_p95_ms"),
             tolerance=theoretical.get("tolerance", 0.05),
             max_concurrency=device_config.get("max_concurrency"),
             num_eval_runs=device_config.get("num_eval_runs"),
@@ -136,7 +148,8 @@ class MetricSpec:
     ``target_attr`` names a field on ``PerformanceTargets`` (e.g.
     ``"ttft_ms"``). ``lower_is_better=True`` for latency-style metrics,
     ``False`` for throughput-style. ``field_name`` is the key prefix used
-    in the emitted ``target_checks`` dict.
+    in the emitted ``target_checks`` dict. ``inclusive`` allows an SLO that
+    explicitly treats equality with the threshold as a pass.
     """
 
     name: str
@@ -144,6 +157,7 @@ class MetricSpec:
     target_attr: str
     lower_is_better: bool
     field_name: str
+    inclusive: bool = False
 
 
 def load_targets(ctx: "MediaContext") -> PerformanceTargets:
@@ -159,8 +173,13 @@ def _tier_threshold(
     return target_value * multiplier if lower_is_better else target_value / multiplier
 
 
-def _check_from_ratio(ratio: float, lower_is_better: bool) -> ReportCheckTypes:
-    passed = ratio < 1.0 if lower_is_better else ratio > 1.0
+def _check_from_ratio(
+    ratio: float, lower_is_better: bool, inclusive: bool = False
+) -> ReportCheckTypes:
+    if lower_is_better:
+        passed = ratio <= 1.0 if inclusive else ratio < 1.0
+    else:
+        passed = ratio >= 1.0 if inclusive else ratio > 1.0
     return ReportCheckTypes.PASS if passed else ReportCheckTypes.FAIL
 
 
@@ -196,7 +215,9 @@ def evaluate_tiered(
 
             ratio = spec.actual / threshold
             tier_dict[f"{field}_ratio"] = ratio
-            tier_dict[f"{field}_check"] = _check_from_ratio(ratio, spec.lower_is_better)
+            tier_dict[f"{field}_check"] = _check_from_ratio(
+                ratio, spec.lower_is_better, spec.inclusive
+            )
         result[tier_name] = tier_dict
     return result
 

@@ -42,3 +42,10 @@ def test_target_checks_header_ratio_suffix():
 def test_target_checks_header_plain_metric_is_target():
     # The unit suffix is stripped before appending the "Target" label.
     assert target_checks_header("mean_ttft_ms") == "TTFT Target"
+
+
+def test_tts_load_metrics_have_human_readable_headers():
+    assert display_name("fc_p50_ms") == "FC P50 (ms)"
+    assert display_name("sc_p95_ms") == "SC P95 (ms)"
+    assert display_name("tc_p95_ms") == "TC P95 (ms)"
+    assert target_checks_header("fc_p50_ms_check") == "FC P50 Check"

@@ -239,6 +239,22 @@ templates:
   status: COMPLETE
 
 - weights:
+    - propritery/tts-2
+  version: "0.22.0"
+  tt_metal_commit: "ef0bca3c7f7ab93b7d8125fe3b9d27d61a3f7512"
+  impl: tt_tts
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: QUAD_GALAXY
+      max_concurrency: 16
+      max_context: 65536      # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
+- weights:
     - microsoft/speecht5_tts
   version: "0.15.0"
   tt_metal_commit: "25891d3"

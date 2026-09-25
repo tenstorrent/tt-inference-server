@@ -1130,6 +1130,30 @@ class TestModelSpecsStructure:
             assert not hasattr(spec, "device_model_specs")
             assert not hasattr(spec, "weights")
 
+    def test_proprietary_tts_resolves_to_new_quad_implementation(self):
+        spec = resolve_model_spec(
+            MODEL_SPECS.values(),
+            model="propritery/tts-2",
+            device="quad_galaxy",
+            impl="tt-tts",
+        )
+
+        assert spec.hf_model_repo == "propritery/tts-2"
+        assert spec.impl.impl_id == "tt_tts"
+        assert spec.impl.impl_name == "tt-tts"
+        assert spec.model_type.name == "TEXT_TO_SPEECH"
+        assert spec.inference_engine == InferenceEngine.MEDIA.value
+
+    def test_existing_speecht5_resolution_is_unchanged(self):
+        spec = resolve_model_spec(
+            MODEL_SPECS.values(),
+            model="microsoft/speecht5_tts",
+            device="n150",
+        )
+
+        assert spec.impl.impl_id == "speecht5_tts"
+        assert spec.impl.impl_name == "speecht5-tts"
+
 
 class TestRequiredTargetTiers:
     """Tests for ModelStatusTypes.required_target_tiers property."""
