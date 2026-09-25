@@ -9,14 +9,14 @@
 # for our common eval suites (api, ifeval, math, sentencepiece, r1_evals,
 # ruler, longbench, hf).
 #
-# Temporarily pinned to ipastalTT/evals-common, which carries the in-stream SSE
-# error propagation fix. Point this back at tstescoTT/evals-common once that is
-# merged upstream.
+# Pinned prompt correction: Xnhyacinth code contexts already include the opening
+# instruction; retain it once and restore the final next-line cue newline.
+# Scoring, transport and other task definitions are unchanged.
 
 -c constraints.txt
 --extra-index-url https://download.pytorch.org/whl/cpu
 
-git+https://github.com/tstescoTT/lm-evaluation-harness.git@evals-common#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
+git+https://github.com/yieldthought/lm-evaluation-harness.git@6796df6a9a46e8ebfe9867cdb7e6e72441d56dfb#egg=lm-eval[api,ifeval,math,sentencepiece,r1_evals,ruler,longbench,hf]
 protobuf
 pyjwt
 pillow
