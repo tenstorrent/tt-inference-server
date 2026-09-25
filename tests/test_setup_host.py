@@ -11,6 +11,7 @@ Each test verifies SetupConfig fields, setup_host() completion, and docker comma
 import json
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, mock_open, patch
@@ -1015,6 +1016,7 @@ class TestSetupWeightsHostVolumeResume:
 
 
 H3_HF_REPO = "MiniMaxAI/MiniMax-H3"
+H3_REF2VA_RUNNER = "tt-minimax-h3-ref2va"
 H3_EXTRA_EXCLUDES = [
     "FL2VA/*",
     "Ref2VA/*",
@@ -1023,29 +1025,89 @@ H3_EXTRA_EXCLUDES = [
     "docs/*",
     "scripts/*",
 ]
+H3_REF2VA_EXTRA_EXCLUDES = [
+    "FL2VA/*",
+    "Ref2VA/*",
+    "transformer/*",
+    "assets/*",
+    "docs/*",
+    "scripts/*",
+]
+# MODEL_RUNNER values that read transformer/ (None = unset).
+H3_T2VA_RUNNERS = ["tt-minimax-h3-t2va", "tt-minimax-h3-fl2va", None]
+
+
+def _h3_model_spec(impl, model_runner=None, device_model_runner=None):
+    """MiniMax-H3 spec with MODEL_RUNNER in the template and/or device env_vars."""
+    return ModelSpec(
+        device_type=DeviceTypes.N150,
+        impl=impl,
+        hf_model_repo=H3_HF_REPO,
+        model_id="id_tt-transformers_MiniMax-H3_n150",
+        model_name="MiniMax-H3",
+        tt_metal_commit="v1.0.0",
+        vllm_commit="abc123",
+        inference_engine=InferenceEngine.VLLM.value,
+        env_vars={"MODEL_RUNNER": model_runner} if model_runner else {},
+        device_model_spec=DeviceModelSpec(
+            device=DeviceTypes.N150,
+            max_concurrency=16,
+            max_context=4096,
+            default_impl=True,
+            env_vars=(
+                {"MODEL_RUNNER": device_model_runner} if device_model_runner else {}
+            ),
+        ),
+        docker_image="test-image:latest",
+        min_disk_gb=1,
+        min_ram_gb=1,
+    )
+
+
+def _write_h3_snapshot(root, transformer_dirs=("transformer",)):
+    """A diffusers-modular MiniMax-H3 snapshot holding the given transformer folders."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "model_index.json").write_text("{}", encoding="utf-8")
+    (root / "modular_model_index.json").write_text("{}", encoding="utf-8")
+    for name in transformer_dirs:
+        (root / name).mkdir()
+        (root / name / "config.json").write_text("{}", encoding="utf-8")
+        (root / name / "diffusion_pytorch_model.safetensors").write_bytes(b"w")
+    for name in ("text_encoder", "vae", "audio_vae"):
+        (root / name).mkdir()
+        (root / name / "model.safetensors").write_bytes(b"w")
+    (root / "tokenizer").mkdir()
+    (root / "tokenizer" / "tokenizer.json").write_text("{}", encoding="utf-8")
+
+
+def _write_sharded_weights(folder, stem, num_shards):
+    """`<stem>.safetensors.index.json` (two tensors per shard) plus its shards; returns the
+    shard paths."""
+    folder.mkdir(parents=True, exist_ok=True)
+    shards = [
+        f"{stem}-{i:05d}-of-{num_shards:05d}.safetensors"
+        for i in range(1, num_shards + 1)
+    ]
+    weight_map = {f"{s}.{k}": s for s in shards for k in ("weight", "bias")}
+    (folder / f"{stem}.safetensors.index.json").write_text(
+        json.dumps({"metadata": {}, "weight_map": weight_map}), encoding="utf-8"
+    )
+    for s in shards:
+        (folder / s).write_bytes(b"w")
+    return [folder / s for s in shards]
+
+
+def _write_staging_file(root, repo_dir):
+    """An `hf download --local-dir` in-flight file for a repo file under repo_dir."""
+    staging = root / ".cache" / "huggingface" / "download" / repo_dir
+    staging.mkdir(parents=True, exist_ok=True)
+    (staging / "a1b2c3d4.0123abcd.incomplete").write_bytes(b"partial")
 
 
 class TestHfDownloadExtraExcludes:
     """HF_DOWNLOAD_EXTRA_EXCLUDES reaches both `hf download` invocations as
-    `--exclude <pattern>` pairs after the shared `original/**`; other repos keep
-    only the shared exclude."""
-
-    @pytest.fixture
-    def h3_model_spec(self, tiny_impl, tiny_device_model_spec):
-        return ModelSpec(
-            device_type=DeviceTypes.N150,
-            impl=tiny_impl,
-            hf_model_repo=H3_HF_REPO,
-            model_id="id_tt-transformers_MiniMax-H3_n150",
-            model_name="MiniMax-H3",
-            tt_metal_commit="v1.0.0",
-            vllm_commit="abc123",
-            inference_engine=InferenceEngine.VLLM.value,
-            device_model_spec=tiny_device_model_spec,
-            docker_image="test-image:latest",
-            min_disk_gb=1,
-            min_ram_gb=1,
-        )
+    `--exclude <pattern>` pairs after the shared `original/**`, picked by the spec's
+    MODEL_RUNNER; other repos keep only the shared exclude."""
 
     @pytest.fixture
     def fake_hf_venv(self, temp_dir):
@@ -1063,36 +1125,22 @@ class TestHfDownloadExtraExcludes:
     def _exclude_patterns(cmd):
         return [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--exclude"]
 
-    def test_table_entry(self):
-        assert HF_DOWNLOAD_EXTRA_EXCLUDES[H3_HF_REPO] == H3_EXTRA_EXCLUDES
-
-    def test_host_volume_download_carries_h3_excludes(
-        self, h3_model_spec, temp_dir, fake_hf_venv
-    ):
+    def _host_volume_cmd(self, model_spec, temp_dir):
         manager = HostSetupManager(
-            model_spec=h3_model_spec,
+            model_spec=model_spec,
             hf_token="hf_test_token_123456",
             host_volume=str(temp_dir / "persistent_volume"),
         )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value.returncode = 0
             manager.setup_weights_huggingface()
-        cmd = mock_run.call_args.args[0]
-        assert cmd[:3] == [
-            str(fake_hf_venv.venv_path / "bin" / "hf"),
-            "download",
-            H3_HF_REPO,
-        ]
-        assert "--local-dir" in cmd
-        assert self._exclude_patterns(cmd) == ["original/**", *H3_EXTRA_EXCLUDES]
+        return mock_run.call_args.args[0]
 
-    def test_host_hf_cache_download_carries_h3_excludes(
-        self, h3_model_spec, temp_dir, fake_hf_venv
-    ):
+    def _host_hf_cache_cmd(self, model_spec, temp_dir):
         hf_cache = temp_dir / "hf_cache"
         hf_cache.mkdir()
         manager = HostSetupManager(
-            model_spec=h3_model_spec,
+            model_spec=model_spec,
             hf_token="hf_test_token_123456",
             host_hf_cache=str(hf_cache),
         )
@@ -1102,23 +1150,297 @@ class TestHfDownloadExtraExcludes:
         ), patch.object(manager.setup_config, "update_host_model_weights_snapshot_dir"):
             mock_run.return_value.returncode = 0
             manager.setup_weights_huggingface()
-        cmd = mock_run.call_args.args[0]
+        return mock_run.call_args.args[0]
+
+    def test_table_entry(self):
+        assert HF_DOWNLOAD_EXTRA_EXCLUDES[H3_HF_REPO] == {
+            None: H3_EXTRA_EXCLUDES,
+            H3_REF2VA_RUNNER: H3_REF2VA_EXTRA_EXCLUDES,
+        }
+
+    @pytest.mark.parametrize(
+        "model_runner, expected",
+        [
+            *[(runner, H3_EXTRA_EXCLUDES) for runner in H3_T2VA_RUNNERS],
+            (H3_REF2VA_RUNNER, H3_REF2VA_EXTRA_EXCLUDES),
+        ],
+    )
+    def test_host_volume_download_carries_task_excludes(
+        self, tiny_impl, temp_dir, fake_hf_venv, model_runner, expected
+    ):
+        cmd = self._host_volume_cmd(_h3_model_spec(tiny_impl, model_runner), temp_dir)
+        assert cmd[:3] == [
+            str(fake_hf_venv.venv_path / "bin" / "hf"),
+            "download",
+            H3_HF_REPO,
+        ]
+        assert "--local-dir" in cmd
+        assert self._exclude_patterns(cmd) == ["original/**", *expected]
+
+    @pytest.mark.parametrize(
+        "model_runner, expected",
+        [
+            *[(runner, H3_EXTRA_EXCLUDES) for runner in H3_T2VA_RUNNERS],
+            (H3_REF2VA_RUNNER, H3_REF2VA_EXTRA_EXCLUDES),
+        ],
+    )
+    def test_host_hf_cache_download_carries_task_excludes(
+        self, tiny_impl, temp_dir, fake_hf_venv, model_runner, expected
+    ):
+        cmd = self._host_hf_cache_cmd(_h3_model_spec(tiny_impl, model_runner), temp_dir)
         assert cmd[1:3] == ["download", H3_HF_REPO]
         assert "--local-dir" not in cmd
-        assert self._exclude_patterns(cmd) == ["original/**", *H3_EXTRA_EXCLUDES]
+        assert self._exclude_patterns(cmd) == ["original/**", *expected]
+
+    def test_device_model_runner_overrides_template(
+        self, tiny_impl, temp_dir, fake_hf_venv
+    ):
+        """The task is the merged spec's MODEL_RUNNER: a device-level value wins."""
+        model_spec = _h3_model_spec(
+            tiny_impl,
+            model_runner="tt-minimax-h3-t2va",
+            device_model_runner=H3_REF2VA_RUNNER,
+        )
+        cmd = self._host_volume_cmd(model_spec, temp_dir)
+        assert self._exclude_patterns(cmd) == [
+            "original/**",
+            *H3_REF2VA_EXTRA_EXCLUDES,
+        ]
 
     def test_other_repos_keep_only_the_shared_exclude(
         self, tiny_model_spec, temp_dir, fake_hf_venv
     ):
+        cmd = self._host_volume_cmd(tiny_model_spec, temp_dir)
+        assert self._exclude_patterns(cmd) == ["original/**"]
+
+
+class TestH3TaskRequiredPaths:
+    """check_model_weights_dir holds a MiniMax-H3 snapshot to the task's paths
+    (HF_SNAPSHOT_REQUIRED_GLOBS): a volume warmed by t2va must not pass for ref2va,
+    and staging files under the task's excluded dirs do not make it partial."""
+
+    def _check(self, tiny_impl, weights_dir, model_runner):
         manager = HostSetupManager(
-            model_spec=tiny_model_spec,
+            model_spec=_h3_model_spec(tiny_impl, model_runner),
+            host_weights_dir=str(weights_dir),
+        )
+        return manager.check_model_weights_dir(weights_dir)
+
+    @pytest.mark.parametrize("model_runner", H3_T2VA_RUNNERS)
+    def test_t2va_snapshot_passes_for_transformer_tasks(
+        self, tiny_impl, temp_dir, model_runner
+    ):
+        _write_h3_snapshot(temp_dir)
+        assert self._check(tiny_impl, temp_dir, model_runner) is True
+
+    def test_t2va_snapshot_fails_for_ref2va(self, tiny_impl, temp_dir):
+        _write_h3_snapshot(temp_dir)
+        assert self._check(tiny_impl, temp_dir, H3_REF2VA_RUNNER) is False
+
+    def test_ref2va_snapshot_passes_for_ref2va_only(self, tiny_impl, temp_dir):
+        _write_h3_snapshot(temp_dir, transformer_dirs=("transformer_ref",))
+        assert self._check(tiny_impl, temp_dir, H3_REF2VA_RUNNER) is True
+        assert self._check(tiny_impl, temp_dir, "tt-minimax-h3-t2va") is False
+
+    @pytest.mark.parametrize("model_runner", [*H3_T2VA_RUNNERS, H3_REF2VA_RUNNER])
+    def test_shared_volume_with_both_transformers_passes(
+        self, tiny_impl, temp_dir, model_runner
+    ):
+        _write_h3_snapshot(
+            temp_dir, transformer_dirs=("transformer", "transformer_ref")
+        )
+        assert self._check(tiny_impl, temp_dir, model_runner) is True
+
+    @pytest.mark.parametrize(
+        "model_runner, transformer_dir",
+        [("tt-minimax-h3-t2va", "transformer"), (H3_REF2VA_RUNNER, "transformer_ref")],
+    )
+    @pytest.mark.parametrize(
+        "missing", ["config.json", "diffusion_pytorch_model.safetensors"]
+    )
+    def test_transformer_needs_config_and_safetensors(
+        self, tiny_impl, temp_dir, model_runner, transformer_dir, missing
+    ):
+        _write_h3_snapshot(temp_dir, transformer_dirs=(transformer_dir,))
+        (temp_dir / transformer_dir / missing).unlink()
+        assert self._check(tiny_impl, temp_dir, model_runner) is False
+
+    @pytest.mark.parametrize("model_runner", ["tt-minimax-h3-t2va", H3_REF2VA_RUNNER])
+    @pytest.mark.parametrize(
+        "shared", ["text_encoder", "tokenizer", "vae", "audio_vae"]
+    )
+    def test_shared_components_must_be_non_empty(
+        self, tiny_impl, temp_dir, model_runner, shared
+    ):
+        _write_h3_snapshot(
+            temp_dir, transformer_dirs=("transformer", "transformer_ref")
+        )
+        for f in (temp_dir / shared).iterdir():
+            f.unlink()
+        assert self._check(tiny_impl, temp_dir, model_runner) is False
+        (temp_dir / shared).rmdir()
+        assert self._check(tiny_impl, temp_dir, model_runner) is False
+
+    @pytest.mark.parametrize(
+        "model_runner, folder, stem",
+        [
+            ("tt-minimax-h3-t2va", "transformer", "diffusion_pytorch_model"),
+            (None, "transformer", "diffusion_pytorch_model"),
+            (H3_REF2VA_RUNNER, "transformer_ref", "diffusion_pytorch_model"),
+            ("tt-minimax-h3-fl2va", "vae", "diffusion_pytorch_model"),
+            (H3_REF2VA_RUNNER, "text_encoder", "model"),
+        ],
+    )
+    def test_sharded_folder_needs_every_indexed_shard(
+        self, tiny_impl, temp_dir, model_runner, folder, stem
+    ):
+        """A download stopped between two shards leaves no staging file behind."""
+        _write_h3_snapshot(
+            temp_dir, transformer_dirs=("transformer", "transformer_ref")
+        )
+        shards = _write_sharded_weights(temp_dir / folder, stem, 3)
+        assert self._check(tiny_impl, temp_dir, model_runner) is True
+        shards[1].unlink()
+        assert self._check(tiny_impl, temp_dir, model_runner) is False
+
+    @pytest.mark.parametrize("index_text", ["{", "[]", '{"weight_map": []}'])
+    def test_unreadable_shard_index_fails(self, tiny_impl, temp_dir, index_text):
+        _write_h3_snapshot(temp_dir)
+        (
+            temp_dir / "vae" / "diffusion_pytorch_model.safetensors.index.json"
+        ).write_text(index_text, encoding="utf-8")
+        assert self._check(tiny_impl, temp_dir, "tt-minimax-h3-t2va") is False
+
+    @pytest.mark.parametrize(
+        "model_runner, excluded_dir, read_dir",
+        [
+            ("tt-minimax-h3-t2va", "transformer_ref", "transformer"),
+            (H3_REF2VA_RUNNER, "transformer", "transformer_ref"),
+        ],
+    )
+    def test_shard_index_in_unread_dirs_is_ignored(
+        self, tiny_impl, temp_dir, model_runner, excluded_dir, read_dir
+    ):
+        _write_h3_snapshot(temp_dir, transformer_dirs=(read_dir,))
+        for folder in (excluded_dir, "FL2VA/transformer"):
+            shards = _write_sharded_weights(
+                temp_dir / folder, "diffusion_pytorch_model", 2
+            )
+            shards[1].unlink()
+        assert self._check(tiny_impl, temp_dir, model_runner) is True
+
+    @pytest.mark.parametrize(
+        "model_runner, excluded_dir, read_dir",
+        [
+            ("tt-minimax-h3-t2va", "transformer_ref", "transformer"),
+            (None, "transformer_ref", "transformer"),
+            (H3_REF2VA_RUNNER, "transformer", "transformer_ref"),
+        ],
+    )
+    def test_staging_under_excluded_dirs_is_ignored(
+        self, tiny_impl, temp_dir, model_runner, excluded_dir, read_dir
+    ):
+        _write_h3_snapshot(temp_dir, transformer_dirs=(read_dir,))
+        _write_staging_file(temp_dir, excluded_dir)
+        _write_staging_file(temp_dir, "FL2VA/transformer")
+        assert self._check(tiny_impl, temp_dir, model_runner) is True
+
+        _write_staging_file(temp_dir, read_dir)
+        assert self._check(tiny_impl, temp_dir, model_runner) is False
+
+    @pytest.mark.parametrize("model_runner", ["tt-minimax-h3-t2va", H3_REF2VA_RUNNER])
+    def test_staging_for_top_level_files_still_counts(
+        self, tiny_impl, temp_dir, model_runner
+    ):
+        _write_h3_snapshot(
+            temp_dir, transformer_dirs=("transformer", "transformer_ref")
+        )
+        _write_staging_file(temp_dir, "")
+        assert self._check(tiny_impl, temp_dir, model_runner) is False
+
+    def test_other_repos_count_staging_under_any_dir(self, tiny_model_spec, temp_dir):
+        """Only H3's per-task excludes are skipped; other repos are unchanged."""
+        (temp_dir / "model_index.json").write_text("{}", encoding="utf-8")
+        (temp_dir / "transformer").mkdir()
+        (temp_dir / "transformer" / "model.safetensors").write_bytes(b"w")
+        manager = HostSetupManager(
+            model_spec=tiny_model_spec, host_weights_dir=str(temp_dir)
+        )
+        assert manager.check_model_weights_dir(temp_dir) is True
+        _write_staging_file(temp_dir, "transformer_ref")
+        assert manager.check_model_weights_dir(temp_dir) is False
+        # The shared `original/**` exclude does not skip staging files either.
+        shutil.rmtree(temp_dir / ".cache")
+        _write_staging_file(temp_dir, "original")
+        assert manager.check_model_weights_dir(temp_dir) is False
+
+    def test_other_repos_ignore_shard_indexes(self, tiny_model_spec, temp_dir):
+        (temp_dir / "model_index.json").write_text("{}", encoding="utf-8")
+        shards = _write_sharded_weights(
+            temp_dir / "transformer", "diffusion_pytorch_model", 2
+        )
+        shards[1].unlink()
+        manager = HostSetupManager(
+            model_spec=tiny_model_spec, host_weights_dir=str(temp_dir)
+        )
+        assert manager.check_model_weights_dir(temp_dir) is True
+
+    @pytest.mark.parametrize(
+        "model_runner, setup_ran",
+        [("tt-minimax-h3-t2va", False), (H3_REF2VA_RUNNER, True)],
+    )
+    def test_run_setup_on_t2va_warmed_volume(
+        self, tiny_impl, temp_dir, model_runner, setup_ran
+    ):
+        """A host volume warmed by t2va short-circuits run_setup for t2va only; ref2va
+        goes on to the (incremental) download."""
+        manager = HostSetupManager(
+            model_spec=_h3_model_spec(tiny_impl, model_runner),
             hf_token="hf_test_token_123456",
             host_volume=str(temp_dir / "persistent_volume"),
         )
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value.returncode = 0
-            manager.setup_weights_huggingface()
-        assert self._exclude_patterns(mock_run.call_args.args[0]) == ["original/**"]
+        _write_h3_snapshot(
+            manager.setup_config.host_model_volume_root / "weights" / "MiniMax-H3"
+        )
+        with patch.object(manager, "setup_model_environment") as mock_env, patch.object(
+            manager, "setup_weights_huggingface"
+        ) as mock_download:
+            manager.run_setup()
+        assert mock_env.called is setup_ran
+        assert mock_download.called is setup_ran
+
+    @pytest.mark.parametrize(
+        "model_runner, setup_ran",
+        [("tt-minimax-h3-t2va", False), (H3_REF2VA_RUNNER, True)],
+    )
+    def test_run_setup_resumes_ref2va_stopped_between_shards(
+        self, tiny_impl, temp_dir, model_runner, setup_ran
+    ):
+        """t2va volume plus a ref2va download stopped after shard 1 of 2 (no staging
+        file left): ref2va must download again, t2va is unaffected."""
+        manager = HostSetupManager(
+            model_spec=_h3_model_spec(tiny_impl, model_runner),
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        weights_dir = (
+            manager.setup_config.host_model_volume_root / "weights" / "MiniMax-H3"
+        )
+        _write_h3_snapshot(weights_dir)
+        (weights_dir / "transformer_ref").mkdir()
+        (weights_dir / "transformer_ref" / "config.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        shards = _write_sharded_weights(
+            weights_dir / "transformer_ref", "diffusion_pytorch_model", 2
+        )
+        shards[1].unlink()
+        with patch.object(manager, "setup_model_environment") as mock_env, patch.object(
+            manager, "setup_weights_huggingface"
+        ) as mock_download:
+            manager.run_setup()
+        assert mock_env.called is setup_ran
+        assert mock_download.called is setup_ran
 
 
 CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"

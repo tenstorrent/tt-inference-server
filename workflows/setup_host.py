@@ -16,6 +16,7 @@ import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -48,29 +49,91 @@ def _dir_bytes(path: Path) -> int:
     return total
 
 
-# Extra `hf download --exclude` patterns per weights repo, on top of the shared `original/**`.
-# MiniMaxAI/MiniMax-H3 is 498.5 GB in total; the t2va deployment serves text_encoder,
-# transformer, vae, audio_vae, tokenizer, processor, scheduler, audio_scheduler,
-# model_index.json and modular_model_index.json (~144 GB). The excluded dirs are the
-# FL2VA/Ref2VA task partitions (144.1 GB each), the reference transformer
-# transformer_ref/ (66.3 GB) and the repo's non-weight assets/docs/scripts.
+# Extra `hf download --exclude` patterns per weights repo and task (the spec's MODEL_RUNNER),
+# on top of the shared `original/**`; a repo's None entry serves any other or unset runner.
+# MiniMaxAI/MiniMax-H3 is 498.5 GB in total. Every task downloads text_encoder, tokenizer,
+# vae, audio_vae, processor, scheduler, audio_scheduler, model_index.json and
+# modular_model_index.json, of which the pipeline reads text_encoder, tokenizer, vae and
+# audio_vae; t2va and fl2va (pipeline task t2va) read transformer/ and ref2va reads
+# transformer_ref/ instead (66.3 GB each), so each deployment pulls ~144 GB. The
+# FL2VA/Ref2VA task partitions (144.1 GB each) and the non-weight assets/docs/scripts are
+# read by no task.
 HF_DOWNLOAD_EXTRA_EXCLUDES = {
-    "MiniMaxAI/MiniMax-H3": [
-        "FL2VA/*",
-        "Ref2VA/*",
-        "transformer_ref/*",
-        "assets/*",
-        "docs/*",
-        "scripts/*",
-    ],
+    "MiniMaxAI/MiniMax-H3": {
+        None: [
+            "FL2VA/*",
+            "Ref2VA/*",
+            "transformer_ref/*",
+            "assets/*",
+            "docs/*",
+            "scripts/*",
+        ],
+        "tt-minimax-h3-ref2va": [
+            "FL2VA/*",
+            "Ref2VA/*",
+            "transformer/*",
+            "assets/*",
+            "docs/*",
+            "scripts/*",
+        ],
+    },
+}
+
+# Globs a snapshot must each match at least once before check_model_weights_dir calls it
+# complete, keyed like HF_DOWNLOAD_EXTRA_EXCLUDES; every shard that a *.safetensors.index.json
+# in their top-level folders names must be on disk too. The generic format check accepts any
+# **/*.safetensors + model_index.json, so without these a MiniMax-H3 volume warmed by t2va
+# (transformer/ only) would pass for ref2va and transformer_ref/ would never be downloaded.
+HF_SNAPSHOT_REQUIRED_GLOBS = {
+    "MiniMaxAI/MiniMax-H3": {
+        None: [
+            "transformer/config.json",
+            "transformer/*.safetensors",
+            "text_encoder/*",
+            "tokenizer/*",
+            "vae/*",
+            "audio_vae/*",
+        ],
+        "tt-minimax-h3-ref2va": [
+            "transformer_ref/config.json",
+            "transformer_ref/*.safetensors",
+            "text_encoder/*",
+            "tokenizer/*",
+            "vae/*",
+            "audio_vae/*",
+        ],
+    },
 }
 
 
-def _hf_download_exclude_args(hf_repo: str) -> list:
+def _task_entry(table: dict, model_spec: ModelSpec) -> list:
+    """The spec's entry in a per-repo, per-MODEL_RUNNER table ([] for repos without one)."""
+    by_runner = table.get(model_spec.hf_weights_repo, {})
+    # ModelSpec.env_vars already has device_model_spec.env_vars merged over the template's.
+    model_runner = model_spec.env_vars.get("MODEL_RUNNER")
+    return by_runner.get(model_runner, by_runner.get(None, []))
+
+
+def _missing_index_shards(folder: Path) -> list:
+    """Shards named by the weight_map of a *.safetensors.index.json in folder that are not
+    on disk; an unreadable index counts as missing itself."""
+    missing = []
+    for index in sorted(folder.glob("*.safetensors.index.json")):
+        try:
+            shards = set(json.loads(index.read_text())["weight_map"].values())
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            missing.append(index)
+            continue
+        missing.extend(folder / s for s in sorted(shards) if not (folder / s).is_file())
+    return missing
+
+
+def _hf_download_exclude_args(model_spec: ModelSpec) -> list:
     """`--exclude <pattern>` pairs for `hf download`: `original/**` for every repo plus the
-    repo's HF_DOWNLOAD_EXTRA_EXCLUDES entries."""
+    spec's HF_DOWNLOAD_EXTRA_EXCLUDES entries."""
     args = []
-    for pattern in ["original/**", *HF_DOWNLOAD_EXTRA_EXCLUDES.get(hf_repo, [])]:
+    extra = _task_entry(HF_DOWNLOAD_EXTRA_EXCLUDES, model_spec)
+    for pattern in ["original/**", *extra]:
         args.extend(["--exclude", pattern])
     return args
 
@@ -340,16 +403,50 @@ class HostSetupManager:
         # `hf download --local-dir` stages in-flight files as
         # .cache/huggingface/download/**/*.incomplete; while any remain the snapshot is
         # partial however complete the format check below looks, and run_setup must run
-        # `hf download` again (it resumes).
-        incomplete = list(
-            host_weights_dir.glob(".cache/huggingface/download/**/*.incomplete")
-        )
+        # `hf download` again (it resumes). The staging tree mirrors the repo's dirs, so a
+        # file under one of this task's HF_DOWNLOAD_EXTRA_EXCLUDES (e.g. transformer_ref/
+        # left by an interrupted ref2va run on the volume t2va shares) is never resumed
+        # and does not count.
+        staging_dir = host_weights_dir / ".cache" / "huggingface" / "download"
+        excludes = _task_entry(HF_DOWNLOAD_EXTRA_EXCLUDES, self.model_spec)
+        incomplete = [
+            f
+            for f in staging_dir.glob("**/*.incomplete")
+            if not any(
+                fnmatchcase(f.relative_to(staging_dir).as_posix(), pattern)
+                for pattern in excludes
+            )
+        ]
         if incomplete:
             logger.warning(
                 f"Incomplete model setup for {self.model_spec.model_name}: "
-                f"{len(incomplete)} partial download(s) under "
-                f"{host_weights_dir / '.cache' / 'huggingface' / 'download'} "
+                f"{len(incomplete)} partial download(s) under {staging_dir} "
                 f"(e.g. {incomplete[0].name}); `hf download` will resume them."
+            )
+            return False
+
+        required = _task_entry(HF_SNAPSHOT_REQUIRED_GLOBS, self.model_spec)
+        missing = [
+            pattern for pattern in required if not any(host_weights_dir.glob(pattern))
+        ]
+        if missing:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}: nothing in "
+                f"{host_weights_dir} matches {', '.join(missing)}."
+            )
+            return False
+        # A download stopped between two shards leaves no *.incomplete behind, and the
+        # pipeline loads every shard its index names, so a sharded folder needs them all.
+        missing_shards = [
+            shard
+            for folder in dict.fromkeys(pattern.split("/")[0] for pattern in required)
+            for shard in _missing_index_shards(host_weights_dir / folder)
+        ]
+        if missing_shards:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}: "
+                f"{len(missing_shards)} indexed shard(s) missing under {host_weights_dir} "
+                f"(e.g. {missing_shards[0].relative_to(host_weights_dir)})."
             )
             return False
 
@@ -643,7 +740,7 @@ class HostSetupManager:
                 str(hf_exec),
                 "download",
                 hf_repo,
-                *_hf_download_exclude_args(hf_repo),
+                *_hf_download_exclude_args(self.model_spec),
             ]
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
@@ -673,7 +770,7 @@ class HostSetupManager:
             hf_repo,
             "--local-dir",
             str(host_weights_dir),
-            *_hf_download_exclude_args(hf_repo),
+            *_hf_download_exclude_args(self.model_spec),
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
