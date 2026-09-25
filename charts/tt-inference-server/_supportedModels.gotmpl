@@ -20,6 +20,12 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
        passthrough devices. Others (e.g. galaxy_t3k) fail at render, so exclude
        them from the catalogue. */ -}}
 {{- $supported := concat (keys (default (dict) $values.deviceBoardCounts)) (list "gpu" "cpu") -}}
+{{- /* Rows whose pinned image predates the engine's floor are refused at render
+       too, so they are left out the same way. The floor is judged on the impl
+       an install resolves — defaultImpl — not on the best impl of the row.
+       Only vllm is gated outright: the media/forge floor applies to
+       auth.disabled, not to installing the row. */ -}}
+{{- $floors := default (dict) $values.imageFloor -}}
 {{- $groups := dict -}}
 {{- range $name, $cfg := $values.models -}}
   {{- range $engine, $devices := $cfg -}}
@@ -33,18 +39,44 @@ next helm-docs run — no manual edit to this file or README.md.gotmpl.
 {{- range $engineOrder }}
 {{- $engine := . }}
 {{- if hasKey $groups $engine }}
+{{- $floor := ternary (dig "vllm" "" $floors) "" (eq $engine "vllm") }}
 
 ### {{ index $labels $engine | default ($engine | title) }}
 
 | Model | Devices |
 |---|---|
+{{- $omitted := 0 }}
 {{- range (index $groups $engine) }}
 {{- $name := .name }}
 {{- $devs := list }}
-{{- range $device, $_ := .devices }}{{- if has $device $supported }}{{- $devs = append $devs $device }}{{- end }}{{- end }}
+{{- range $device, $dcfg := .devices }}
+{{- if has $device $supported }}
+{{- if $floor }}
+{{- $ok := dict "v" false }}
+{{- $default := $dcfg.defaultImpl }}
+{{- range $impl, $icfg := (default (dict) $dcfg.impls) }}
+{{- /* Without a defaultImpl the row needs --set impl anyway, so any impl
+       clearing the floor keeps it listed. */ -}}
+{{- if or (not $default) (eq $impl $default) }}
+{{- $rel := regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" (toString $icfg.image.tag) }}
+{{- if or (not $rel) (semverCompare (printf ">=%s" $floor) $rel) }}{{- $_ := set $ok "v" true }}{{- end }}
+{{- end }}
+{{- end }}
+{{- if $ok.v }}{{- $devs = append $devs $device }}{{- else }}{{- $omitted = add1 $omitted }}{{- end }}
+{{- else }}
+{{- $devs = append $devs $device }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if $devs }}
 | `{{ $name }}` | {{ $devs | sortAlpha | join ", " }} |
 {{- end }}
+{{- end }}
+{{- if $omitted }}
+
+> {{ $omitted }} model/device rows are left out: their pinned image predates the
+> {{ $floor }} floor for this engine, so the chart refuses them at render. See
+> [Supported Image Releases](#supported-image-releases).
 {{- end }}
 {{- end }}
 {{- end }}
