@@ -216,6 +216,42 @@ def test_eval_accuracy_check_fail():
     assert "Accuracy check failed" in blockers["evals:E"]
 
 
+def test_eval_failed_samples_block():
+    # lm-eval scores its own error sentinels as answers, so a run whose server died still
+    # produces a number. 195 of 198 is the real shape of one such run.
+    _, blockers, _ = acceptance_criteria_check(
+        _schema(_eval({"accuracy_check": 3, "samples_scored": 198, "samples_failed": 195}))
+    )
+    assert "195 of 198" in blockers["evals:E.samples"]
+
+
+def test_eval_failed_samples_block_even_at_experimental_status():
+    # EXPERIMENTAL waives a low score, but a score computed from requests that never ran is
+    # not a measurement to waive -- this is why the gate runs before tier masking.
+    accepted, blockers, cats = acceptance_criteria_check(
+        _schema(_eval({"accuracy_check": 3, "samples_scored": 198, "samples_failed": 195})),
+        model_status="EXPERIMENTAL",
+    )
+    assert accepted is False
+    assert "evals:E.samples" in blockers
+    assert {c.name: c for c in cats}[CATEGORY_EVALS].status == "FAIL"
+
+
+def test_eval_clean_samples_do_not_block():
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_eval({"accuracy_check": 2, "samples_scored": 198, "samples_failed": 0}))
+    )
+    assert accepted is True and blockers == {}
+
+
+def test_eval_without_sample_logs_is_unaffected():
+    # No --log_samples -> no counts -> the gate must stay silent rather than guess.
+    accepted, blockers, _ = acceptance_criteria_check(
+        _schema(_eval({"accuracy_check": 2}))
+    )
+    assert accepted is True and blockers == {}
+
+
 def test_eval_should_priority_failure_is_informational():
     # A failed eval marked priority="should" (requirements-driven) is waived,
     # not a blocker, so acceptance still passes.

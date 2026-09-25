@@ -490,6 +490,15 @@ def _check_evals(
                 na += 1
             continue
 
+        sample_failure = _eval_sample_failure(block)
+        if sample_failure is not None:
+            if _block_priority(block) == PRIORITY_SHOULD:
+                waived[block_key] = f"{sample_failure} {_should_priority_suffix()}"
+            else:
+                blockers[f"{block_key}.samples"] = sample_failure
+                failed += 1
+            continue
+
         # success=False is decisive — a test that self-reported failure
         # is a blocker regardless of any accuracy_check value alongside it.
         if data is not None and data.get("success") is False:
@@ -758,6 +767,26 @@ def _request_failure(block: Block) -> str | None:
     if isinstance(failed, (int, float)) and not isinstance(failed, bool) and failed > 0:
         return f"{int(failed)} request(s) failed at this point; zero are required."
     return None
+
+
+def _eval_sample_failure(block: Block) -> str | None:
+    """Return a blocker when an eval scored responses that were never produced by the model.
+
+    lm-eval writes a sentinel into the response slot for a request it could not serve and then
+    scores it like an answer, so a server that dies mid-run still yields a number. That number is
+    not a measurement, which is why this is checked before tier masking: an EXPERIMENTAL model may
+    legitimately waive a low score, but not a score computed from requests that never ran.
+    """
+    scored = _resolve_nested(block.data, "samples_scored")
+    failed = _resolve_nested(block.data, "samples_failed")
+    if not isinstance(scored, int) or isinstance(scored, bool) or scored <= 0:
+        return None
+    if not isinstance(failed, int) or isinstance(failed, bool) or failed <= 0:
+        return None
+    return (
+        f"{failed} of {scored} eval sample(s) failed inference and were scored as answers; "
+        "the score is not a valid measurement."
+    )
 
 
 def _resolve_nested(data: Any, key: str) -> Any:

@@ -139,6 +139,47 @@ def collect_sample_counts(files) -> dict:
     return counts
 
 
+# lm-eval substitutes these into the response slot when a request could not be served, or when
+# its stream was cut mid-generation, and then scores the sentinel like any other answer. The
+# extractor pattern-matches a letter out of the error text, so a dead server yields a plausible
+# score rather than an error -- 190 of 198 failed requests once produced a 21.7% "accuracy".
+_FAILED_RESPONSE_SENTINELS = ("__INFERENCE_ERROR__", "__PARTIAL_OUTPUT__")
+
+
+def collect_sample_health(files) -> dict:
+    """Map task_name -> {"samples_scored", "samples_failed"} from lm-eval sample logs.
+
+    Needs ``--log_samples``; returns ``{}`` when the logs are absent, in which case the
+    acceptance gate cannot assert anything and stays silent rather than guessing.
+    """
+    health: dict = {}
+    for json_file in files:
+        directory = Path(json_file).parent
+        try:
+            with Path(json_file).open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        for task_name in data.get("n-samples", {}) or {}:
+            if task_name in health:
+                continue
+            scored = failed = 0
+            for sample_file in sorted(directory.glob(f"samples_{task_name}_*.jsonl")):
+                try:
+                    with sample_file.open("r", encoding="utf-8") as f:
+                        for line in f:
+                            if not line.strip():
+                                continue
+                            scored += 1
+                            if any(s in line for s in _FAILED_RESPONSE_SENTINELS):
+                                failed += 1
+                except OSError:
+                    continue
+            if scored:
+                health[task_name] = {"samples_scored": scored, "samples_failed": failed}
+    return health
+
+
 # --- scoring one task's results into Block(kind="evals") ---------------------
 
 
@@ -223,6 +264,7 @@ def blocks_for_task(
     results: dict,
     sample_counts: Optional[dict] = None,
     elapsed_seconds: Optional[float] = None,
+    sample_health: Optional[dict] = None,
 ) -> List[Block]:
     """Score ``task`` against ``results`` and build one Block per task/subtask.
 
@@ -240,6 +282,7 @@ def blocks_for_task(
         return [_status_block(ctx, task, TestStatus.NA, reason)]
 
     sample_counts = sample_counts or {}
+    sample_health = sample_health or {}
 
     # Under --ci-mode / --limit-samples-mode, compare the subset score against
     # the matching subset reference (mode_reference_scores) instead of the
@@ -281,6 +324,7 @@ def blocks_for_task(
             "accuracy_check": accuracy_check,
             "priority": getattr(task, "priority", "must"),
         }
+        data.update(sample_health.get(t_key, {}))
         if mean_seconds_per_task is not None:
             data["mean_seconds_per_task"] = mean_seconds_per_task
         blocks.append(
@@ -464,6 +508,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
     results = merge_eval_results(result_files)
     sample_counts = collect_sample_counts(result_files)
+    sample_health = collect_sample_health(result_files)
     blocks: List[Block] = list(skipped_blocks)
     for task in ran_tasks:
         task_blocks = blocks_for_task(
@@ -472,6 +517,7 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
             results,
             sample_counts,
             elapsed_seconds=elapsed_seconds_by_task.get(task.task_name),
+            sample_health=sample_health,
         )
         if task_blocks:
             blocks.extend(task_blocks)
