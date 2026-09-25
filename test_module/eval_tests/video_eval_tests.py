@@ -20,6 +20,26 @@ from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
+MINIMAX_H3_MODEL_NAMES = frozenset({"MiniMaxAI/MiniMax-H3", "MiniMax-H3"})
+MINIMAX_H3_EVAL_TARGETS = {
+    "samples_per_prompt": 1,
+    "sample_count": 8,
+    "enable_clip": False,
+    "poll_timeout": 1800,
+    "download_timeout": 600,
+}
+
+
+def _run_minimax_h3_eval(ctx: MediaContext) -> Block:
+    """MiniMax-H3 refuses num_inference_steps and fixes its schedule at 50 steps, so
+    the generic VideoGenerationEvalsTest payload cannot be used; its evaluator drives
+    the V1 job lifecycle with the H3 request fields."""
+
+    from .minimax_h3_video_quality_test import run_minimax_h3_video_quality
+
+    logger.info("Running MiniMax-H3 video quality evaluation.")
+    return run_minimax_h3_video_quality(ctx, targets=MINIMAX_H3_EVAL_TARGETS)
+
 
 def _run_video_generation_eval(ctx: MediaContext) -> dict:
     """Delegate to VideoGenerationEvalsTest."""
@@ -146,6 +166,8 @@ def run_video_eval(ctx: MediaContext) -> Block:
         f"Running evals for model: {ctx.model_spec.model_name} on device: {ctx.device.name}"
     )
     require_health(ctx, HardwareRequirement.ANY_CHIP)
+    if ctx.model_spec.hf_model_repo in MINIMAX_H3_MODEL_NAMES:
+        return _run_minimax_h3_eval(ctx)
 
     try:
         eval_result = _run_video_generation_eval(ctx)

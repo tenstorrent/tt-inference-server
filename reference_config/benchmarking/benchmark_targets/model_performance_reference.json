@@ -6311,6 +6311,23 @@
             }
         ]
     },
+    "MiniMaxAI/MiniMax-H3": {
+        "blackhole_galaxy": [
+            {
+                "max_concurrency": 1,
+                "num_inference_steps": 50,
+                "task_type": "video",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 72000,
+                        "end_to_end_latency_ms": 72000,
+                        "inference_steps_per_second": 0.694,
+                        "tput_user": 0.694
+                    }
+                }
+            }
+        ]
+    },
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": {
         "t3k": [
             {

@@ -16,6 +16,7 @@ Directory of development docs for working on tt-inference-server.
 ## Testing & Debugging
 
 - [Running vLLM Parameter Tests](run_vllm_param_tests.md) - How to run vLLM parameter-specific tests for development and debugging
+- [MiniMax-H3 in CI](minimax_h3_ci.md) - How the MiniMax-H3 video model is tested on a single Blackhole Galaxy: tiers, the generation benchmark and its clip contract, budgets, running it by hand
 - [Running TT-Triage](running_tt_triage.md) - Using the TT-Triage debugging tool to diagnose system hangs on Tenstorrent hardware
 
 ## Benchmarking & Performance

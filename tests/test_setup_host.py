@@ -31,7 +31,12 @@ from workflows.run_docker_server import (
     _vllm_override_cli_args,
     _RESERVED_WRAPPER_FLAGS,
 )
-from workflows.setup_host import HostSetupManager, SetupConfig, setup_host
+from workflows.setup_host import (
+    HF_DOWNLOAD_EXTRA_EXCLUDES,
+    HostSetupManager,
+    SetupConfig,
+    setup_host,
+)
 from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
@@ -89,6 +94,39 @@ def temp_dir():
     """Create a temporary directory for test artifacts."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         yield Path(tmp_dir)
+
+
+def test_modular_diffusers_snapshot_is_detected(tiny_model_spec, temp_dir):
+    (temp_dir / "transformer").mkdir()
+    (temp_dir / "transformer" / "model.safetensors").write_bytes(b"weights")
+    (temp_dir / "modular_model_index.json").write_text("{}", encoding="utf-8")
+
+    manager = HostSetupManager(
+        model_spec=tiny_model_spec,
+        host_weights_dir=str(temp_dir),
+    )
+
+    assert manager.check_model_weights_dir(temp_dir)
+    assert manager.setup_config.model_weights_format == "diffusers_modular"
+
+
+def test_partial_download_is_not_complete(tiny_model_spec, temp_dir):
+    """A snapshot that still holds `hf download` staging files is partial even when
+    the format check would pass; run_setup must re-run the (resuming) download."""
+    (temp_dir / "transformer").mkdir()
+    (temp_dir / "transformer" / "model.safetensors").write_bytes(b"weights")
+    (temp_dir / "model_index.json").write_text("{}", encoding="utf-8")
+    staging = temp_dir / ".cache" / "huggingface" / "download"
+    staging.mkdir(parents=True)
+    (staging / "x.incomplete").write_bytes(b"partial")
+
+    manager = HostSetupManager(
+        model_spec=tiny_model_spec,
+        host_weights_dir=str(temp_dir),
+    )
+
+    assert manager.check_model_weights_dir(temp_dir) is False
+    assert manager.setup_config.model_weights_format == ""
 
 
 @pytest.fixture
@@ -974,6 +1012,113 @@ class TestSetupWeightsHostVolumeResume:
             mock_run.return_value.returncode = 1
             with pytest.raises(AssertionError):
                 manager.setup_weights_huggingface()
+
+
+H3_HF_REPO = "MiniMaxAI/MiniMax-H3"
+H3_EXTRA_EXCLUDES = [
+    "FL2VA/*",
+    "Ref2VA/*",
+    "transformer_ref/*",
+    "assets/*",
+    "docs/*",
+    "scripts/*",
+]
+
+
+class TestHfDownloadExtraExcludes:
+    """HF_DOWNLOAD_EXTRA_EXCLUDES reaches both `hf download` invocations as
+    `--exclude <pattern>` pairs after the shared `original/**`; other repos keep
+    only the shared exclude."""
+
+    @pytest.fixture
+    def h3_model_spec(self, tiny_impl, tiny_device_model_spec):
+        return ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=tiny_impl,
+            hf_model_repo=H3_HF_REPO,
+            model_id="id_tt-transformers_MiniMax-H3_n150",
+            model_name="MiniMax-H3",
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.VLLM.value,
+            device_model_spec=tiny_device_model_spec,
+            docker_image="test-image:latest",
+            min_disk_gb=1,
+            min_ram_gb=1,
+        )
+
+    @pytest.fixture
+    def fake_hf_venv(self, temp_dir):
+        venv = MagicMock()
+        venv.venv_path = temp_dir / "fake_venv"
+        (venv.venv_path / "bin").mkdir(parents=True, exist_ok=True)
+        (venv.venv_path / "bin" / "hf").write_text("#!/bin/bash")
+        with patch(
+            "workflows.setup_host.VENV_CONFIGS"
+        ) as mock_venv_configs, patch.dict(os.environ, {}, clear=False):
+            mock_venv_configs.__getitem__ = MagicMock(return_value=venv)
+            yield venv
+
+    @staticmethod
+    def _exclude_patterns(cmd):
+        return [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--exclude"]
+
+    def test_table_entry(self):
+        assert HF_DOWNLOAD_EXTRA_EXCLUDES[H3_HF_REPO] == H3_EXTRA_EXCLUDES
+
+    def test_host_volume_download_carries_h3_excludes(
+        self, h3_model_spec, temp_dir, fake_hf_venv
+    ):
+        manager = HostSetupManager(
+            model_spec=h3_model_spec,
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+        cmd = mock_run.call_args.args[0]
+        assert cmd[:3] == [
+            str(fake_hf_venv.venv_path / "bin" / "hf"),
+            "download",
+            H3_HF_REPO,
+        ]
+        assert "--local-dir" in cmd
+        assert self._exclude_patterns(cmd) == ["original/**", *H3_EXTRA_EXCLUDES]
+
+    def test_host_hf_cache_download_carries_h3_excludes(
+        self, h3_model_spec, temp_dir, fake_hf_venv
+    ):
+        hf_cache = temp_dir / "hf_cache"
+        hf_cache.mkdir()
+        manager = HostSetupManager(
+            model_spec=h3_model_spec,
+            hf_token="hf_test_token_123456",
+            host_hf_cache=str(hf_cache),
+        )
+        with patch("subprocess.run") as mock_run, patch(
+            "workflows.setup_host.resolve_hf_snapshot_dir",
+            return_value=hf_cache / "snapshot",
+        ), patch.object(manager.setup_config, "update_host_model_weights_snapshot_dir"):
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+        cmd = mock_run.call_args.args[0]
+        assert cmd[1:3] == ["download", H3_HF_REPO]
+        assert "--local-dir" not in cmd
+        assert self._exclude_patterns(cmd) == ["original/**", *H3_EXTRA_EXCLUDES]
+
+    def test_other_repos_keep_only_the_shared_exclude(
+        self, tiny_model_spec, temp_dir, fake_hf_venv
+    ):
+        manager = HostSetupManager(
+            model_spec=tiny_model_spec,
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+        assert self._exclude_patterns(mock_run.call_args.args[0]) == ["original/**"]
 
 
 CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"

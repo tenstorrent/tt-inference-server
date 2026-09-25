@@ -58,7 +58,20 @@ class VideoGenerateRequest(BaseRequest):
                 f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
                 "is `duration_seconds` -- and resolution is selected with `aspect_ratio`."
             )
-        return data
+        # The schedule is fixed (minimax_h3_policy.MINIMAX_H3_NUM_INFERENCE_STEPS); a client that
+        # names a step count would otherwise get a 202 and a clip made with a different one. The
+        # hosted deployments already refuse it, and the H3 benchmark contract expects the 422.
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+
+        if "num_inference_steps" in data:
+            raise ValueError(
+                "num_inference_steps is not accepted for MiniMax-H3 t2va: the deployment runs a "
+                f"fixed {MINIMAX_H3_NUM_INFERENCE_STEPS}-step schedule. Omit the field."
+            )
+        # Pin the schedule the deployment documents. Without this the shared schema default
+        # (20) reached the runner and the pipeline honoured it, so the request echo and the
+        # clip disagreed with the "fixed 50 steps" the H3 contract states.
+        return {**data, "num_inference_steps": MINIMAX_H3_NUM_INFERENCE_STEPS}
 
     # TODO: Make generic for all video models, and remove model specific logic
     # Admission-time validation. The device worker validates too (it owns the shape it warmed),

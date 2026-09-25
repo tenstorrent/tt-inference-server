@@ -445,6 +445,21 @@
                 }
             }
         },
+        "MiniMaxAI/MiniMax-H3": {
+            "inference_engine": "MEDIA",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "BH_GALAXY"
+                    ]
+                },
+                "weekly": {
+                    "devices": [
+                        "BH_GALAXY"
+                    ]
+                }
+            }
+        },
         "BAAI/bge-large-en-v1.5": {
             "inference_engine": "MEDIA",
             "ci": {
