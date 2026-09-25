@@ -349,3 +349,43 @@ def test_galaxy_sw_versions_read_the_first_galaxy_row_that_has_a_job(monkeypatch
     ]
     resolve_galaxy_sw_versions(rows, [{"id": 42}], "repo/name", "123", "token")
     assert fetched == [42]
+
+
+TT_IDENTITY = ("Qwen/Qwen3-32B", "GALAXY", "vLLM", "tt_transformers")
+
+
+def test_two_impls_of_one_model_device_are_released_and_linked_separately(tmp_path):
+    config = {
+        "models": {
+            "Qwen3-32B": {
+                "implementations": [
+                    {
+                        "inference_engine": "vLLM",
+                        "ci": {"release": {"devices": ["GALAXY"]}},
+                    },
+                    {
+                        "inference_engine": "vLLM",
+                        "impl": "tt-transformers",
+                        "ci": {"release": {"devices": ["GALAXY"]}},
+                    },
+                ]
+            }
+        }
+    }
+    scope = resolve_release_scope(config, _write_dev(tmp_path))
+    assert {item.identity for item in scope} == {IDENTITY, TT_IDENTITY}
+
+    pin = ProdPin("1.2.3", "metal", "vllm", None)
+    prod = {i: ProdLeaf(i, pin, "FUNCTIONAL") for i in (IDENTITY, TT_IDENTITY)}
+    jobs = [
+        {"id": 1, "name": "_ / vLLM / run-release-Qwen__Qwen3-32B-6u-galaxy"},
+        {
+            "id": 2,
+            "name": "_ / vLLM / run-release-Qwen__Qwen3-32B@tt-transformers@-6u-galaxy",
+        },
+    ]
+    rows = build_rows(scope, prod, {}, jobs, "repo/name", "123", "1.2.3")
+    assert {r["identity"]: r["ci_job_id"] for r in rows} == {
+        IDENTITY: 1,
+        TT_IDENTITY: 2,
+    }

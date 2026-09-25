@@ -18,6 +18,11 @@ What it produces (matches the v0.14.0 / v0.15.0 release package layout):
         ├── workflow_logs_release_<model>_<device>.zip
         └── ...
 
+A model/device released with more than one impl (e.g. the default impl and
+``llama31-8b-qb2`` on p300x2) keeps the plain name for its default impl and adds
+``_<impl>`` for each explicit one: ``workflow_logs_release_<model>_<device>_<impl>.zip``.
+Every other bundle keeps the plain name.
+
 Each inner ``workflow_logs_release_<model>_<device>.zip`` is the full GitHub
 artifact bundle for that job (ai_summaries/, docker_server/, benchmarks_output/,
 evals_output/, reports_output/{benchmarks,benchmarks_aiperf,evals,release}/,
@@ -128,8 +133,11 @@ def artifact_prefix(kind: str = RELEASE_KIND) -> str:
 
 
 # The release prefix. Still used for the inner-zip filenames inside the produced
-# bundle, which are a downstream contract and deliberately left unchanged.
+# bundle, which are a downstream contract: see bundle_name().
 ARTIFACT_PREFIX = artifact_prefix()
+
+#: impl selector for a manual --model scope: any impl's bundle for the device.
+ANY_IMPL = object()
 DEFAULT_REPO = "tenstorrent/tt-shield"
 DEFAULT_CI_CONFIG = REPO_ROOT / ".github" / "workflows" / "models-ci-config.json"
 DEFAULT_DEV_DIR = REPO_ROOT / "workflows" / "model_specs" / "dev"
@@ -142,20 +150,34 @@ DEFAULT_RUN_ID = "26592936143"
 
 
 def resolve_configured_scope(ci_config: dict, dev_dir: Path):
+    """Release scope from the CI config's ``release`` entries.
+
+    Returns ``(targets, expected, kinds)``:
+
+    * ``targets``  -- ``{(model, impl): [devices]}``; ``impl`` is the CI
+      config's explicit impl (``None`` = default), so two impls of one
+      model/device are two targets.
+    * ``expected`` -- ``{(model, device, impl): identity}``, the exact runtime
+      identity each bundle must carry.
+    * ``kinds``    -- ``{model: [workflow kinds]}``.
+    """
     # resolve_release_combos() rejects two selectors resolving to one identity.
     resolved = resolve_release_combos(
         collect_release_combos(ci_config),
         load_dev_model_spec_sources(dev_dir),
     )
     expected = {}
-    models = {}
+    targets: dict[tuple, list[str]] = {}
     kinds: dict[str, list[str]] = {}
     archive_owners = {}
     for item in resolved:
         model = item.identity[0]
         device = item.combo.device.name.lower()
-        key = (model, device)
-        archive_key = (slugify_model_id(model), device)
+        impl = item.combo.impl
+        # The logs artifact carries model token, runner and impl -- not the
+        # engine -- so two identities that differ only by engine (or whose
+        # model ids escape to one token) cannot be told apart.
+        archive_key = (slugify_model_id(model), device, impl)
         archive_owner = archive_owners.get(archive_key)
         if archive_owner is not None and archive_owner != item.identity:
             raise ValueError(
@@ -163,15 +185,16 @@ def resolve_configured_scope(ci_config: dict, dev_dir: Path):
                 f"collide on artifact filename token {archive_key!r}"
             )
         archive_owners[archive_key] = item.identity
+        key = (model, device, impl)
         if key in expected and expected[key] != item.identity:
             raise ValueError(
                 f"Artifact names cannot distinguish exact identities "
                 f"{expected[key]!r} and {item.identity!r}"
             )
         expected[key] = item.identity
-        models.setdefault(model, [])
-        if device not in models[model]:
-            models[model].append(device)
+        targets.setdefault((model, impl), [])
+        if device not in targets[(model, impl)]:
+            targets[(model, impl)].append(device)
         # The same HF model can be released under both a serving impl and a
         # TRAINING impl, which tt-shield runs in different workflows -- so the
         # kinds are collected per model, not assumed to be one.
@@ -179,7 +202,21 @@ def resolve_configured_scope(ci_config: dict, dev_dir: Path):
         kinds.setdefault(model, [])
         if kind not in kinds[model]:
             kinds[model].append(kind)
-    return models, expected, kinds
+    return targets, expected, kinds
+
+
+def bundle_name(
+    model: str, device: str, impl: str | None = None, shared: bool = False
+) -> str:
+    """Inner zip name for one released bundle.
+
+    ``workflow_logs_release_<model>_<device>.zip`` -- the name every release so
+    far has used, which downstream readers rely on. Only when ``shared`` (the
+    model/device ships more than one impl in this release) does an explicit
+    impl add ``_<impl>``; the default impl keeps the plain name.
+    """
+    base = f"{ARTIFACT_PREFIX}{slugify_model_id(model)}_{device}"
+    return f"{base}_{impl}.zip" if impl and shared else f"{base}.zip"
 
 
 # ---------------------------------------------------------------------------
@@ -348,10 +385,17 @@ def resolve_model(
     repo: str,
     tmp: Path,
     cache: dict[int, Path],
-    expected_identities: dict[tuple[str, str], tuple] | None = None,
+    expected_identities: dict[tuple, tuple] | None = None,
     kinds: list[str] | None = None,
+    impl=ANY_IMPL,
 ) -> dict[str, dict]:
-    """Return {device: artifact} for the requested devices of one model."""
+    """Return {device: artifact} for the requested devices of one (model, impl).
+
+    ``impl`` is the CI config's explicit impl (``None`` = the default impl): only
+    bundles whose artifact suffix names it are candidates, so two impls of one
+    model/device each get their own bundle. ``ANY_IMPL`` (a manual --model
+    scope) considers every bundle of the model.
+    """
     expected_identities = expected_identities or {}
     kinds = list(kinds) if kinds else [RELEASE_KIND]
     # Remember which kind each candidate matched: the runner and job-name
@@ -359,6 +403,8 @@ def resolve_model(
     kind_of: dict[str, str] = {}
     candidates = []
     for artifact in artifacts:
+        if impl is not ANY_IMPL and impl_of(artifact["name"]) != impl:
+            continue
         for kind in kinds:
             if artifact_model_token(artifact["name"], model, kind) is not None:
                 kind_of[artifact["name"]] = kind
@@ -379,8 +425,9 @@ def resolve_model(
             a["name"] for a in artifacts if a["name"].startswith("workflow_logs_")
         )
         listed = "\n".join(f"         - {n}" for n in present) or "         (none)"
+        which = "" if impl is ANY_IMPL else f" impl '{impl or 'default'}'"
         sys.exit(
-            f"ERROR: no {'/'.join(kinds)} workflow-logs artifact for model '{model}'.\n"
+            f"ERROR: no {'/'.join(kinds)} workflow-logs artifact for model '{model}'{which}.\n"
             f"       Tried: {tried}\n"
             f"       workflow_logs_* artifacts present in this run:\n{listed}\n"
             f"       If those are all for another workflow kind, this run did not\n"
@@ -421,7 +468,9 @@ def resolve_model(
                 f"       Candidate runner labels seen: {runners}."
             )
         device_candidates = by_device[d]
-        expected_identity = expected_identities.get((model, d))
+        expected_identity = expected_identities.get(
+            (model, d, None if impl is ANY_IMPL else impl)
+        )
         if expected_identity is None:
             chosen[d] = device_candidates[0]
             continue
@@ -550,7 +599,10 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.model:
-        models = parse_model_specs(args.model)
+        targets = {
+            (model, ANY_IMPL): devices
+            for model, devices in parse_model_specs(args.model).items()
+        }
         expected_identities = {}
         model_kinds = {}
         print(
@@ -565,13 +617,13 @@ def main() -> None:
         except FileNotFoundError:
             sys.exit(f"ERROR: CI config not found: {ci_config_path}")
         try:
-            models, expected_identities, model_kinds = resolve_configured_scope(
+            targets, expected_identities, model_kinds = resolve_configured_scope(
                 ci_config,
                 Path(args.dev_dir).expanduser(),
             )
         except ValueError as exc:
             sys.exit(f"ERROR: {exc}")
-        if not models:
+        if not targets:
             sys.exit(
                 f"ERROR: no models are marked 'release' in {ci_config_path}.\n"
                 f"       Add a ci.release entry, or pass --model MODEL=dev1,dev2 explicitly."
@@ -584,10 +636,11 @@ def main() -> None:
     print(f"Run:     {args.run_id}")
     print(f"Version: {args.version}")
     print("Scope:")
-    for m, devs in models.items():
+    for (m, impl), devs in targets.items():
         kinds = model_kinds.get(m) or [RELEASE_KIND]
         suffix = "" if kinds == [RELEASE_KIND] else f"  [{'/'.join(kinds)}]"
-        print(f"  - {m}: {', '.join(devs)}{suffix}")
+        label = "" if impl is ANY_IMPL else f" [{impl or 'default'}]"
+        print(f"  - {m}{label}: {', '.join(devs)}{suffix}")
     print()
 
     print("Fetching artifact and job listings ...")
@@ -595,13 +648,20 @@ def main() -> None:
     jobs = list_jobs(args.repo, args.run_id)
     print(f"  {len(artifacts)} artifacts, {len(jobs)} jobs.\n")
 
+    # A model/device shipping several impls names its explicit-impl bundles
+    # apart (bundle_name); every other bundle keeps the plain name.
+    per_device: dict[tuple[str, str], int] = {}
+    for (model, _impl), devices in targets.items():
+        for device in devices:
+            per_device[(model, device)] = per_device.get((model, device), 0) + 1
+
     tmp_dir = Path(tempfile.mkdtemp(prefix="release_artifacts_"))
     cache: dict[int, Path] = {}
     staged: dict[str, Path] = {}  # inner-zip filename -> staged path
     validated_identities = set()
 
     try:
-        for model, devices in models.items():
+        for (model, impl), devices in targets.items():
             chosen = resolve_model(
                 model,
                 devices,
@@ -612,12 +672,16 @@ def main() -> None:
                 cache,
                 expected_identities,
                 model_kinds.get(model),
+                impl=impl,
             )
+            config_impl = None if impl is ANY_IMPL else impl
             for device in devices:
                 artifact = chosen[device]
                 src = download_artifact(args.repo, artifact, tmp_dir, cache)
 
-                expected_identity = expected_identities.get((model, device))
+                expected_identity = expected_identities.get(
+                    (model, device, config_impl)
+                )
                 if expected_identity is not None:
                     try:
                         validated_identities.add(
@@ -642,7 +706,9 @@ def main() -> None:
                         sys.exit(f"ERROR: {msg}")
                     print(f"  WARNING: {msg}")
 
-                inner_name = f"{ARTIFACT_PREFIX}{slugify_model_id(model)}_{device}.zip"
+                inner_name = bundle_name(
+                    model, device, config_impl, per_device[(model, device)] > 1
+                )
                 staged_path = tmp_dir / inner_name
                 staged_path.write_bytes(src.read_bytes())
                 staged[inner_name] = staged_path

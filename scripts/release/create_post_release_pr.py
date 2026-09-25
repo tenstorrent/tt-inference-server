@@ -126,22 +126,9 @@ def resolve_release_scope(ci_config: dict, dev_dir: Path):
         collect_release_combos(ci_config),
         load_dev_model_spec_sources(dev_dir),
     )
-    # Release artifacts are still named per (repository, device), so two
-    # identities that share that pair cannot both be released in one run, even
-    # though a non-default impl's CI job name now carries ``@<impl>@``.
-    # Check the whole scope here rather than while matching jobs: that path is
-    # skipped whenever the GitHub API returns nothing, which would make an
-    # ambiguous release scope pass or fail depending on the network.
-    owner_by_repo_device = {}
-    for item in resolved:
-        repo_device = item.identity[:2]
-        owner = owner_by_repo_device.get(repo_device)
-        if owner is not None:
-            raise ValueError(
-                f"CI job names cannot distinguish release identities "
-                f"{[owner, item.identity]!r}"
-            )
-        owner_by_repo_device[repo_device] = item.identity
+    # Two impls of one repository/device may both be released: tt-shield names
+    # an explicit impl's job ``<model>@<impl>@``, so each row links to its own
+    # job, and build_rows() still refuses a job that matches two rows.
     return tuple(resolved)
 
 

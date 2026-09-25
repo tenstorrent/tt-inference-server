@@ -100,6 +100,7 @@ Cuts a `v<version>` branch from the release HEAD (the same commit the tag points
 
 ### 4.12 Build the release-artifacts zip
 Downloads the per-model/device workflow artifacts from the tt-shield run and packs them into `v<version>-release_artifacts.zip` (kept on the runner). This same zip is attached to the Release automatically in 4.19 (it is also uploaded as a workflow artifact for the Actions UI).
+One bundle per released model/device: `workflow_logs_release_<model>_<device>.zip`. A model/device released with more than one impl keeps that name for its default impl and adds `_<impl>` for each explicit one (e.g. `..._p300x2_llama31-8b-qb2.zip`).
 
 ### 4.13 Resolve source images and map to release images
 Finds the `vllm` / `media` / `forge` dev images the tt-shield run built, and computes the destination release image tags. Example:
