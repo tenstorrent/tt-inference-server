@@ -16,6 +16,16 @@
 {{- $uid := printf "%s-%s" $json.uid $scope | trunc 31 | trimSuffix "-" }}
 {{- $_ := set $json "uid" (printf "%s-%s" $uid (sha256sum $scope | trunc 8)) }}
 {{- $_ := set $json "title" (printf "%s (%s/%s)" $json.title .Release.Namespace $fullname) }}
+{{- /* Several releases of one engine scrape into one Prometheus, so the panels
+       would mix them. Prometheus names the job after the PodMonitor, which is
+       this release, so the dashboard opens on its own release; the picker
+       still lists the others and All for comparing them. */ -}}
+{{- $job := printf "%s/%s" .Release.Namespace $fullname }}
+{{- range $var := (dig "templating" "list" (list) $json) }}
+{{- if eq (dig "name" "" $var) "job" }}
+{{- $_ := set $var "current" (dict "selected" true "text" (list $job) "value" (list $job)) }}
+{{- end }}
+{{- end }}
 # One dashboard per engine, picked from the resolved engine: media and forge run
 # the same server (the forge image is built from tt-media-server), so they share
 # one. The Grafana dashboard sidecar discovers this by the labels below; nothing

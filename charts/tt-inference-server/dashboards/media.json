@@ -30,8 +30,8 @@
         "refresh": 1
       },
       {
-        "name": "namespace",
-        "label": "namespace",
+        "name": "job",
+        "label": "job",
         "type": "query",
         "datasource": {
           "type": "prometheus",
@@ -39,14 +39,14 @@
         },
         "allValue": ".*",
         "query": {
-          "query": "label_values(tt_media_server_requests_base_total, namespace)",
-          "refId": "namespace"
+          "query": "label_values(tt_media_server_requests_base_total, job)",
+          "refId": "job"
         },
-        "definition": "label_values(tt_media_server_requests_base_total, namespace)",
+        "definition": "label_values(tt_media_server_requests_base_total, job)",
         "refresh": 2,
         "sort": 1,
-        "multi": false,
-        "includeAll": false,
+        "multi": true,
+        "includeAll": true,
         "current": {},
         "options": [],
         "hide": 0
@@ -125,7 +125,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(rate(tt_media_server_requests_base_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+          "expr": "sum(rate(tt_media_server_requests_base_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(tt_media_server_jobs_in_progress{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"})",
+          "expr": "sum(tt_media_server_jobs_in_progress{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"})",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -237,7 +237,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum(rate(tt_media_server_model_inference_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(tt_media_server_model_inference_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])), 1e-9)",
+          "expr": "(sum(rate(tt_media_server_model_inference_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(tt_media_server_model_inference_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])), 1e-9)",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -301,7 +301,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -357,7 +357,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (model_type) (rate(tt_media_server_requests_base_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+          "expr": "sum by (model_type) (rate(tt_media_server_requests_base_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
           "legendFormat": "{{model_type}}",
           "refId": "A",
           "editorMode": "code",
@@ -414,7 +414,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "p50",
           "refId": "A",
           "editorMode": "code",
@@ -425,7 +425,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "p95",
           "refId": "B",
           "editorMode": "code",
@@ -436,7 +436,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "p99",
           "refId": "C",
           "editorMode": "code",
@@ -493,7 +493,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_pre_processing_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_pre_processing_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "pre-processing",
           "refId": "A",
           "editorMode": "code",
@@ -504,7 +504,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_model_inference_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_model_inference_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "inference",
           "refId": "B",
           "editorMode": "code",
@@ -515,7 +515,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_post_processing_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_post_processing_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "post-processing",
           "refId": "C",
           "editorMode": "code",
@@ -572,7 +572,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "tt_media_server_info_info{namespace=\"$namespace\", pod=~\"$pod\"}",
+          "expr": "tt_media_server_info_info{job=~\"$job\", pod=~\"$pod\"}",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -629,7 +629,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_download_result_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_download_result_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "download",
           "refId": "A",
           "editorMode": "code",
@@ -699,7 +699,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(increase(tt_media_server_device_warmup_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(tt_media_server_device_warmup_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__range])) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -759,7 +759,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum(increase(tt_media_server_model_load_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(tt_media_server_model_load_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__range])) or vector(0)",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -819,7 +819,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max((tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"dead\"} == 1) * 4 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"suspect\"} == 1) * 3 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"probing\"} == 1) * 2 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"starting\"} == 1) * 1 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"healthy\"} == 1) * 0 or vector(-1))",
+          "expr": "max((tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"dead\"} == 1) * 4 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"suspect\"} == 1) * 3 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"probing\"} == 1) * 2 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"starting\"} == 1) * 1 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"healthy\"} == 1) * 0 or vector(-1))",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -926,7 +926,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "time() - max(tt_canary_last_success_timestamp{namespace=\"$namespace\", pod=~\"$pod\"})",
+          "expr": "time() - max(tt_canary_last_success_timestamp{job=~\"$job\", pod=~\"$pod\"})",
           "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
@@ -982,7 +982,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, device_id) (rate(tt_media_server_model_inference_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, device_id) (rate(tt_media_server_model_inference_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "{{device_id}}",
           "refId": "A",
           "editorMode": "code",
@@ -1039,7 +1039,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, device_id) (rate(tt_media_server_device_warmup_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, device_id) (rate(tt_media_server_device_warmup_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
           "legendFormat": "{{device_id}}",
           "refId": "A",
           "editorMode": "code",
@@ -1096,7 +1096,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, depth) (rate(tt_canary_probe_latency_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, depth) (rate(tt_canary_probe_latency_seconds_bucket{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])))",
           "legendFormat": "{{depth}}",
           "refId": "A",
           "editorMode": "code",
@@ -1153,7 +1153,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (depth) (rate(tt_canary_failures_total{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) or vector(0)",
+          "expr": "sum by (depth) (rate(tt_canary_failures_total{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])) or vector(0)",
           "legendFormat": "{{depth}}",
           "refId": "A",
           "editorMode": "code",
@@ -1222,7 +1222,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_stt_realtime_factor_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_stt_realtime_factor_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1278,7 +1278,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_stt_requests_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_stt_requests_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1334,7 +1334,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_stt_input_audio_seconds_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_stt_input_audio_seconds_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1390,7 +1390,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_stt_output_characters_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_stt_output_characters_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1446,7 +1446,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "p50",
               "refId": "A",
               "editorMode": "code",
@@ -1457,7 +1457,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "p95",
               "refId": "B",
               "editorMode": "code",
@@ -1468,7 +1468,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.99, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "p99",
               "refId": "C",
               "editorMode": "code",
@@ -1525,7 +1525,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_first_partial_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_first_partial_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "first partial",
               "refId": "A",
               "editorMode": "code",
@@ -1536,7 +1536,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_partial_interval_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_partial_interval_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "partial interval",
               "refId": "B",
               "editorMode": "code",
@@ -1547,7 +1547,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_finalization_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_finalization_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "finalization",
               "refId": "C",
               "editorMode": "code",
@@ -1604,7 +1604,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_input_preparation_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_input_preparation_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "input prep",
               "refId": "A",
               "editorMode": "code",
@@ -1615,7 +1615,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_chunking_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_chunking_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "chunking",
               "refId": "B",
               "editorMode": "code",
@@ -1626,7 +1626,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_feature_extraction_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_feature_extraction_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "feature extraction",
               "refId": "C",
               "editorMode": "code",
@@ -1637,7 +1637,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_encoder_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_encoder_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "encoder",
               "refId": "D",
               "editorMode": "code",
@@ -1648,7 +1648,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_vad_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_vad_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "VAD",
               "refId": "E",
               "editorMode": "code",
@@ -1705,7 +1705,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.9, sum by (le) (rate(tt_media_server_audio_stt_no_speech_probability_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.9, sum by (le) (rate(tt_media_server_audio_stt_no_speech_probability_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "p90",
               "refId": "A",
               "editorMode": "code",
@@ -1776,7 +1776,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_tts_realtime_factor_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_tts_realtime_factor_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1832,7 +1832,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_tts_requests_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_tts_requests_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1888,7 +1888,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_tts_output_audio_seconds_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_tts_output_audio_seconds_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -1944,7 +1944,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_tts_first_chunk_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_tts_first_chunk_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2000,7 +2000,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le, response_format) (rate(tt_media_server_audio_tts_request_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le, response_format) (rate(tt_media_server_audio_tts_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "{{response_format}}",
               "refId": "A",
               "editorMode": "code",
@@ -2057,7 +2057,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_tts_chunk_generation_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_tts_chunk_generation_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "chunk generation",
               "refId": "A",
               "editorMode": "code",
@@ -2114,7 +2114,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_tts_input_characters_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_tts_input_characters_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "characters/s",
               "refId": "A",
               "editorMode": "code",
@@ -2125,7 +2125,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_tts_input_tokens_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_tts_input_tokens_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "tokens/s",
               "refId": "B",
               "editorMode": "code",
@@ -2136,7 +2136,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_audio_tts_input_words_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_audio_tts_input_words_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "words/s",
               "refId": "C",
               "editorMode": "code",
@@ -2207,7 +2207,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_image_vae_images_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_image_vae_images_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2263,7 +2263,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_image_denoise_steps_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_image_denoise_steps_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2319,7 +2319,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_engine_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_engine_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2375,7 +2375,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_image_vae_pixels_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_image_vae_pixels_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2431,7 +2431,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "conditioning",
               "refId": "A",
               "editorMode": "code",
@@ -2442,7 +2442,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_denoise_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_denoise_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "denoise",
               "refId": "B",
               "editorMode": "code",
@@ -2453,7 +2453,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "VAE decode",
               "refId": "C",
               "editorMode": "code",
@@ -2464,7 +2464,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_engine_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_engine_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "engine total",
               "refId": "D",
               "editorMode": "code",
@@ -2521,7 +2521,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "per step",
               "refId": "A",
               "editorMode": "code",
@@ -2592,7 +2592,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(tt_media_server_video_generations_in_progress{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"})",
+              "expr": "sum(tt_media_server_video_generations_in_progress{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"})",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2648,7 +2648,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_video_realtime_factor_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_video_realtime_factor_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2704,7 +2704,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_video_frames_generated_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_video_frames_generated_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2760,7 +2760,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "time() - max(tt_media_server_video_last_generation_timestamp{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"})",
+              "expr": "time() - max(tt_media_server_video_last_generation_timestamp{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"})",
               "legendFormat": "",
               "refId": "A",
               "editorMode": "code",
@@ -2816,7 +2816,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le, resolution) (rate(tt_media_server_video_generation_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le, resolution) (rate(tt_media_server_video_generation_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "{{resolution}}",
               "refId": "A",
               "editorMode": "code",
@@ -2873,7 +2873,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_step_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_step_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "denoise step",
               "refId": "A",
               "editorMode": "code",
@@ -2884,7 +2884,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_denoise_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_denoise_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "denoise total",
               "refId": "B",
               "editorMode": "code",
@@ -2895,7 +2895,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_vae_decode_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_vae_decode_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "VAE decode",
               "refId": "C",
               "editorMode": "code",
@@ -2906,7 +2906,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_encode_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_encode_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "encode",
               "refId": "D",
               "editorMode": "code",
@@ -2963,7 +2963,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum by (status) (rate(tt_media_server_video_generation_total{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "expr": "sum by (status) (rate(tt_media_server_video_generation_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
               "legendFormat": "{{status}}",
               "refId": "A",
               "editorMode": "code",
@@ -3020,7 +3020,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_output_size_bytes_bucket{namespace=\"$namespace\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_output_size_bytes_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
               "legendFormat": "per generation",
               "refId": "A",
               "editorMode": "code",
@@ -3091,7 +3091,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum by (status) (rate(tt_media_server_requests_http_request_duration_seconds_count{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+              "expr": "sum by (status) (rate(tt_media_server_requests_http_request_duration_seconds_count{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval]))",
               "legendFormat": "{{status}}",
               "refId": "A",
               "editorMode": "code",
@@ -3148,7 +3148,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(tt_media_server_requests_http_request_duration_seconds_bucket{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])))",
+              "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(tt_media_server_requests_http_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])))",
               "legendFormat": "{{handler}}",
               "refId": "A",
               "editorMode": "code",
@@ -3205,7 +3205,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_requests_http_request_size_bytes_sum{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) / sum(rate(tt_media_server_requests_http_request_size_bytes_count{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_requests_http_request_size_bytes_sum{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])) / sum(rate(tt_media_server_requests_http_request_size_bytes_count{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval]))",
               "legendFormat": "request",
               "refId": "A",
               "editorMode": "code",
@@ -3216,7 +3216,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(rate(tt_media_server_responses_http_response_size_bytes_sum{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])) / sum(rate(tt_media_server_responses_http_response_size_bytes_count{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval]))",
+              "expr": "sum(rate(tt_media_server_responses_http_response_size_bytes_sum{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])) / sum(rate(tt_media_server_responses_http_response_size_bytes_count{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval]))",
               "legendFormat": "response",
               "refId": "B",
               "editorMode": "code",
@@ -3273,7 +3273,7 @@
                 "type": "prometheus",
                 "uid": "${datasource}"
               },
-              "expr": "sum(tt_media_server_requests_inprogress{namespace=\"$namespace\", pod=~\"$pod\"})",
+              "expr": "sum(tt_media_server_requests_inprogress{job=~\"$job\", pod=~\"$pod\"})",
               "legendFormat": "in progress",
               "refId": "A",
               "editorMode": "code",

@@ -447,7 +447,7 @@ The chart writes the dashboard into a `ConfigMap`, and a Grafana-side sidecar tu
 
 `grafanaDashboard.namespace` moves the `ConfigMap` for a sidecar that only watches Grafana's own namespace.
 
-Every release gets its own dashboard, titled and keyed by `<namespace>/<release>`, so two releases of one engine sit side by side instead of overwriting each other. Point the `namespace` and `pod` variables at the release you want; both default to everything the datasource holds.
+Every release gets its own dashboard, titled and keyed by `<namespace>/<release>`, so two releases of one engine sit side by side instead of overwriting each other. Each one opens on the release that shipped it: its `job` variable — Prometheus names the job after the `PodMonitor`, which is the release — is preselected. Widen it to `All`, or pick another job, to compare releases in one view.
 
 #### Reading the dashboards
 
