@@ -389,6 +389,13 @@ quetzal_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-quetzalcoatlus",
     code_path="serving",
 )
+# Own impl, not a tt_transformers config: resolving there would score a text-only model.
+paddleocr_vl_blackhole_impl = ImplSpec(
+    impl_id="paddleocr_vl_blackhole",
+    impl_name="paddleocr-vl-blackhole",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/paddleocr_vl",
+)
 
 # --- Gemma4 speculative-decoding serving profiles (same tt-metal code path) ---
 #
@@ -443,6 +450,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
+    "paddleocr_vl_blackhole": paddleocr_vl_blackhole_impl,
 }
 
 
