@@ -37,9 +37,10 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Track the runtime branch during development. It will be protected and require
 # review before merging changes. Switch to a specific commit once development
 # is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
-
+# HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
+# HARBOR_REF = "tt-inference-server"
+HARBOR_REPO = "https://github.com/ipastalTT/harbor.git"
+HARBOR_REF = "ipastal/tau3-agent-response-logging"
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     """Materialize *repo* at exactly *ref* in *dest*. Returns success.
