@@ -418,6 +418,83 @@ Six things to know when reading these:
   crediting no frames, since that span never closed. Every frame counted has a
   timed decode behind it, and the two series stay dividable.
 
+## Shipping metrics off the box (fleet aggregation)
+
+This stack is local by default: it scrapes one deployment and keeps the data in
+its own TSDB. That is enough to debug a single host and not enough to answer
+anything fleet-wide — there is no `remote_write`, so nothing leaves the box,
+and the per-job `instance` labels name which *process* a series came from
+(`tt_media_server`, `..._prefill`, `..._decode`, `prefill_gateway`,
+`..._host`), identically on every deployment. The dashboards filter on `role`
+and `service`, so that is fine locally and collides the moment two deployments
+write to one store: every host claims `instance="tt_media_server"`, a `sum()`
+across the fleet reads one series instead of N, and skew between instances
+cannot be computed at all.
+
+Two env vars turn it on, and both are required together:
+
+```bash
+REMOTE_WRITE_URL=https://<central-prometheus>/api/v1/write \
+DEPLOYMENT_NAME=sc16-aus \
+SERVER_TARGET=<your-inference-container-name>:8000 \
+  docker compose -f monitoring/docker-compose.yml up -d
+```
+
+`DEPLOYMENT_NAME` becomes the `deployment` external label, stamped on every
+remote-written series. Make it stable and unique per deployment — a site or
+cluster name. **Do not use the container hostname:** inside a container that is
+the container id, so it changes on every restart and each restart mints a new
+set of series.
+
+`DEPLOYMENT_NAME` is restricted to letters, digits, dot, underscore and
+hyphen. It is substituted into the config, where an `&` or `|` would be
+interpreted rather than inserted (`&` silently yields a bogus identity, `|`
+aborts the render), so both are refused up front.
+
+Setting `REMOTE_WRITE_URL` without `DEPLOYMENT_NAME` is refused at startup
+rather than silently shipping colliding series. Leaving both unset keeps the
+stack local, so a dev box never starts writing to a shared store by accident.
+
+**A refusal looks like a restart loop, not a failed `up`.** The Prometheus
+service runs under `restart: unless-stopped`, so a rejected configuration
+exits 1 and is restarted forever: `docker compose up -d` still returns 0 and
+Grafana still comes up, pointing at a datasource that never starts. If
+Grafana's panels are all empty after enabling remote_write, check
+`docker logs tt_prometheus` for the message.
+
+## Request-shape metrics
+
+Alongside the stage timings (which measure what the engine *did*), these
+record what each request *asked for*, so a change in the timings can be
+attributed to a shift in incoming workload rather than to the engine. All are
+labelled `{model_type, conditioning}` for image and `{model_type,
+request_type}` for video.
+
+| Metric | Meaning |
+| --- | --- |
+| `tt_media_server_image_requests_by_shape_total` | requests by conditioning path (`t2i`, `i2i`, `edit`) |
+| `tt_media_server_image_requested_steps` | denoising steps requested |
+| `tt_media_server_image_requested_guidance_scale` | guidance scale requested |
+| `tt_media_server_image_requested_images` | batch size requested, before segmentation |
+| `tt_media_server_image_requested_megapixels` | requested output resolution, width x height |
+| `tt_media_server_video_requested_aspect_ratio_total` | requests by bucketed aspect ratio |
+| `tt_media_server_video_requested_duration_seconds` | clip duration requested |
+
+Two label values on `aspect_ratio` need explaining, because they are not
+guessable: **`unset`** means the caller omitted the field and the model's own
+default output shape applies, while **`other`** means the caller asked for a
+ratio this deployment does not name. Only `other` is a product signal —
+sustained traffic there means someone wants a shape we do not serve. Values
+are normalised (`strip()`, `x` and `/` mapped to `:`) the same way the runners
+normalise them, so `16x9` and `16/9` are counted as `16:9` rather than
+misfiled under `other`.
+
+`image_requested_images` and `image_requested_megapixels` have no equivalent
+elsewhere. The `batch` label on the stage metrics is the *device-side* batch,
+and segmentation has already reduced `number_of_images` to 1 by the time a
+runner sees a request; the `resolution` label is read off the *produced*
+image, so it is absent entirely when a run fails.
+
 ## Directory layout
 
 ```
