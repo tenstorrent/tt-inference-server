@@ -382,6 +382,9 @@ class TestJobControlCallback:
         tracker = MagicMock()
         tracker.value = 1.0
         request._progress_tracker = tracker
+        replacement_required = MagicMock()
+        replacement_required.value = True
+        request._worker_replacement_required = replacement_required
         callback = self._callback(request)
 
         with patch("domain.training_request.time.monotonic", return_value=11.0), patch(
@@ -391,6 +394,7 @@ class TestJobControlCallback:
             callback.on_train_batch_end(_fake_trainer())
 
         assert tracker.value == 11.0
+        assert replacement_required.value is False
 
     @pytest.mark.parametrize(
         "callback_method", ["on_train_start", "on_validation_start"]
@@ -400,6 +404,9 @@ class TestJobControlCallback:
         tracker = MagicMock()
         tracker.value = 1.0
         request._progress_tracker = tracker
+        replacement_required = MagicMock()
+        replacement_required.value = False
+        request._worker_replacement_required = replacement_required
         callback = self._callback(request)
 
         with patch("domain.training_request.time.monotonic", return_value=11.0), patch(
@@ -409,6 +416,18 @@ class TestJobControlCallback:
             getattr(callback, callback_method)(_fake_trainer())
 
         assert tracker.value == 11.0
+        assert replacement_required.value is True
+
+    def test_validation_end_allows_cooperative_cancellation(self):
+        request = _request(max_steps=0)
+        replacement_required = MagicMock()
+        replacement_required.value = True
+        request._worker_replacement_required = replacement_required
+        callback = self._callback(request)
+
+        callback.on_validation_end(_fake_trainer(), 1.0)
+
+        assert replacement_required.value is False
 
     def test_stops_on_cancel(self):
         from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
