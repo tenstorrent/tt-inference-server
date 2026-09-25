@@ -19,6 +19,8 @@ run-name: ${{ inputs.version && format('Release automation v{0}', inputs.version
 #   - create post-release-v<version> off main (carry VERSION + models-ci-config,
 #     re-run the 4 generators) and open a draft PR to main.
 # Suffixes (tag-suffix / post-release-suffix) mark testing artifacts; empty = real release.
+# dry-run runs every step but writes nothing outside this run: no git push,
+# tag, crane copy/append, PR or GitHub Release. It may run from any branch.
 # ---------------------------------------------------------------------------
 
 on:
@@ -50,6 +52,11 @@ on:
         required: false
         default: ""
         type: string
+      dry-run:
+        description: "Run every step but publish nothing (no push, tag, image copy, PR or Release). Allowed from any branch."
+        required: false
+        default: false
+        type: boolean
 
 # The pipeline commits generated files + a tag to the branch and opens a draft PR.
 permissions:
@@ -72,6 +79,7 @@ jobs:
     timeout-minutes: 30
     env:
       PYTHONPATH: ${{ github.workspace }}
+      DRY_RUN: ${{ inputs.dry-run && 'true' || 'false' }}
     steps:
       # Refuse to run from anywhere but the sanctioned release branches. Runs
       # first (before checkout) so a wrong branch (e.g. main) fails immediately.
@@ -79,6 +87,10 @@ jobs:
         env:
           REF: ${{ github.ref_name }}
         run: |
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run: branch '$REF' allowed, nothing will be published."
+            exit 0
+          fi
           case "$REF" in
             stable | vcankovic/improve-release-automation)
               echo "Branch '$REF' is allowed — proceeding." ;;
@@ -250,13 +262,20 @@ jobs:
 
       - name: "git push on stable branch"
         if: env.COMMITTED == 'true'
-        run: git push origin "HEAD:${{ github.ref_name }}"
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run: would push HEAD to '${{ github.ref_name }}'."; exit 0
+          fi
+          git push origin "HEAD:${{ github.ref_name }}"
 
       - name: "git tag + git push origin <tag>"
         # Force so re-runs of the pipeline re-point/replace the (temp) tag
         # instead of failing on an already-existing tag.
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run: would tag HEAD and push '${TAG}'."; exit 0
+          fi
           git tag -f "${TAG}"
           git push -f origin "refs/tags/${TAG}"
           echo "Tagged HEAD and pushed '${TAG}'."
@@ -270,6 +289,9 @@ jobs:
         # so a re-run re-points the (temp) branch instead of failing.
         run: |
           TAG="v${RELEASE_VERSION}${TAG_SUFFIX}"
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run: would create and push branch '${TAG}'."; exit 0
+          fi
           git branch -f "${TAG}" HEAD
           git push -f origin "refs/heads/${TAG}"
           echo "Created branch '${TAG}' at release HEAD and pushed it (stable left intact)."
@@ -467,7 +489,11 @@ jobs:
               echo "${cmd}"
               copy_cmds="${copy_cmds}${cmd}"$'\n'
               promoted="${promoted}${dst}"$'\n'
-              crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
+              if [ "$DRY_RUN" = true ]; then
+                echo "  (dry run: not copied)"
+              else
+                crane copy "${src}" "${dst}" || { echo "::error::crane copy failed: ${src} -> ${dst}"; exit 1; }
+              fi
             fi
           done
 
@@ -485,7 +511,7 @@ jobs:
             echo
             echo "Release engine families: \`${RELEASE_FAMS:-<none>}\`"
             echo
-            echo "Commands executed:"
+            if [ "$DRY_RUN" = true ]; then echo "Dry run, commands NOT executed:"; else echo "Commands executed:"; fi
             echo '```bash'
             if [ -n "$copy_cmds" ]; then printf '%s' "$copy_cmds"; else echo "# (nothing to publish)"; fi
             echo '```'
@@ -513,6 +539,16 @@ jobs:
           set -euo pipefail
           if [ -z "${DST_VLLM}" ] || [ "${DST_VLLM}" = "None" ]; then
             echo "No vLLM image published this release - nothing to re-bake."
+            exit 0
+          fi
+          if [ "$DRY_RUN" = true ]; then
+            python3 -c "from scripts.build_docker_images import generate_model_specs_json; generate_model_specs_json()"
+            BAKED_VER=$(python3 -c "import json; print(json.load(open('model_spec.json'))['release_version'])")
+            if [ "${BAKED_VER}" != "${RELEASE_VERSION}" ]; then
+              echo "::error::generated catalogue says ${BAKED_VER}, expected ${RELEASE_VERSION} - wrong branch or VERSION not bumped"
+              exit 1
+            fi
+            echo "Dry run: catalogue v${BAKED_VER} built; would append it to ${DST_VLLM}."
             exit 0
           fi
           if ! crane manifest "${DST_VLLM}" >/dev/null 2>&1; then
@@ -565,6 +601,8 @@ jobs:
       #       every spec that points at it. Catches both known causes above and
       #       any future one.
       - name: "Verify published vLLM image resolves every spec pinned to it"
+        # Dry run publishes nothing, and an existing image with this tag is not ours to verify.
+        if: env.DRY_RUN != 'true'
         env:
           DST_VLLM: ${{ steps.image-mapping.outputs.vllm_dest }}
         run: |
@@ -690,6 +728,9 @@ jobs:
           else
             git commit -m "post-release v${RELEASE_VERSION}${POST_RELEASE_SUFFIX}: carry VERSION/models-ci-config.json + regenerate prod specs, docs & helm (from ${POST_RELEASE_SRC_REF})"
           fi
+          if [ "$DRY_RUN" = true ]; then
+            echo "Dry run: would push '${POST_RELEASE_BRANCH}'."; exit 0
+          fi
           git push -f origin "${POST_RELEASE_BRANCH}"
           echo "Pushed '${POST_RELEASE_BRANCH}'."
 
@@ -704,11 +745,25 @@ jobs:
           PROMOTED_IMAGES: ${{ steps.crane-plan.outputs.promoted_images }}
         run: |
           cp "${RUNNER_TEMP}/create_post_release_pr.py" scripts/release/create_post_release_pr.py
+          DRY_ARGS=()
+          if [ "$DRY_RUN" = true ]; then
+            DRY_ARGS=(--dry-run --output "${RUNNER_TEMP}/post_release_pr_body.md")
+          fi
           python3 scripts/release/create_post_release_pr.py \
             --tt-shield-run-id "${TT_SHIELD_RUN_ID}" \
             --head-branch "${POST_RELEASE_BRANCH}" \
             --base main \
-            --promoted-images "${PROMOTED_IMAGES}"
+            --promoted-images "${PROMOTED_IMAGES}" \
+            "${DRY_ARGS[@]}"
+
+      - name: "Dry run: upload the post-release PR body"
+        if: always() && env.DRY_RUN == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: dry-run-post-release-pr-body
+          path: ${{ runner.temp }}/post_release_pr_body.md
+          if-no-files-found: warn
+          retention-days: 7
 
       # ----- FINAL step: create a DRAFT GitHub Release named after the version,
       #       referencing the tag pushed earlier in THIS run. (Verified: a Release
@@ -717,6 +772,7 @@ jobs:
       #       the PR notes). Idempotent: skips if a Release for the tag already
       #       exists (GitHub allows only one Release per tag). -----
       - name: "Create draft GitHub Release (v<version>)"
+        if: env.DRY_RUN != 'true'
         env:
           # Use the PAT (vcankovicTT) so the Release is created/owned by that user,
           # not github-actions[bot] — matches publish-release.yml. Needs contents:write.
@@ -742,6 +798,7 @@ jobs:
       #       double-zipped release-artifacts-v<version>.zip. --clobber overwrites
       #       the asset on re-runs. -----
       - name: "Upload release-artifacts zip as a Release asset"
+        if: env.DRY_RUN != 'true'
         env:
           # PAT (vcankovicTT) so the asset upload is attributed to that user too.
           GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
