@@ -276,7 +276,6 @@ def test_prod_catalog_requires_tt_metal_commit_and_version(tmp_path):
         ("tt_metal_commit", "abc1234"),
         ("vllm_commit", "def5678"),
         ("version", '"0.10.0"'),
-        ("docker_image", '"ghcr.io/x/y:1.0"'),
     ],
 )
 def test_dev_catalog_forbids_pinning_fields(tmp_path, field, value):
@@ -286,13 +285,37 @@ def test_dev_catalog_forbids_pinning_fields(tmp_path, field, value):
         load_templates_from_yaml(p)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        '"ghcr.io/x/y:latest"',
+        '"ghcr.io/x/y@sha256:not-a-digest"',
+        '"ghcr.io/x/y@sha256:' + "a" * 63 + '"',
+    ],
+)
+def test_dev_catalog_rejects_mutable_or_malformed_docker_image(tmp_path, value):
+    p = _write_catalog(tmp_path, "dev", {"docker_image": value})
+    with pytest.raises(ValueError, match="immutable OCI repo@sha256 digest"):
+        load_templates_from_yaml(p)
+
+
+def test_dev_catalog_accepts_immutable_docker_image(tmp_path):
+    image = "ghcr.io/x/y@sha256:" + "a" * 64
+    p = _write_catalog(tmp_path, "dev", {"docker_image": f'"{image}"'})
+    template = load_templates_from_yaml(p)[0]
+    assert template.docker_image == image
+    assert template.image_pinned is True
+    assert template.expand_to_specs()[0].docker_image == image
+
+
 def test_dev_catalog_without_pinning_fields_loads(tmp_path):
     p = _write_catalog(tmp_path, "dev", {})
     templates = load_templates_from_yaml(p)
     assert len(templates) == 1
-    # dev (base) template carries no pin fields at all.
+    # dev (base) template carries no source/build release pins.
     assert not hasattr(templates[0], "tt_metal_commit")
     assert not hasattr(templates[0], "version")
+    assert templates[0].docker_image is None
     # expanded spec has them as None and skips docker/code-link synthesis.
     spec = templates[0].expand_to_specs()[0]
     assert spec.tt_metal_commit is None
