@@ -808,7 +808,7 @@
     {
       "type": "stat",
       "title": "Canary state",
-      "description": "tt_canary_state is one-hot across the state label, so the live state is the series that equals 1 \u2014 collapsing it with min/max would report a constant.",
+      "description": "The canary probes the inference path itself, so this is liveness as the server sees it, not just a port being open.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -819,8 +819,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "max by (state) (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\"}) == 1",
-          "legendFormat": "{{state}}",
+          "expr": "max((tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"dead\"} == 1) * 4 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"suspect\"} == 1) * 3 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"probing\"} == 1) * 2 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"starting\"} == 1) * 1 or (tt_canary_state{namespace=\"$namespace\", pod=~\"$pod\", state=\"healthy\"} == 1) * 0 or vector(-1))",
+          "legendFormat": "",
           "refId": "A",
           "editorMode": "code",
           "range": true
@@ -835,9 +835,60 @@
               {
                 "color": "text",
                 "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 2
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 4
               }
             ]
-          }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no canary",
+                  "index": 0
+                },
+                "0": {
+                  "text": "healthy",
+                  "index": 1
+                },
+                "1": {
+                  "text": "starting",
+                  "index": 2
+                },
+                "2": {
+                  "text": "probing",
+                  "index": 3
+                },
+                "3": {
+                  "text": "suspect",
+                  "index": 4
+                },
+                "4": {
+                  "text": "dead",
+                  "index": 5
+                }
+              }
+            }
+          ]
         },
         "overrides": []
       },
@@ -849,9 +900,9 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "none",
+        "colorMode": "background",
         "graphMode": "none",
-        "textMode": "name"
+        "textMode": "auto"
       },
       "gridPos": {
         "x": 12,
