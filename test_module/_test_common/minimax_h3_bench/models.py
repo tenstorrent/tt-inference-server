@@ -26,24 +26,55 @@ from pathlib import Path
 BASE = os.path.dirname(os.path.abspath(__file__))
 CASES = os.path.join(BASE, "cases.json")
 # The pinned input pack. The repo carries the prompts and the manifests; media files
-# are staged next to them (see ``host.resolve_assets_dir``).
+# are staged next to them or in one of ``staged_asset_dirs()`` (see ``asset_dirs``).
 REPO_ASSETS = os.path.normpath(
     os.path.join(BASE, "..", "..", "..", "test_fixtures", "datasets", "minimax_h3")
 )
 SHARED_ASSETS = "/mnt/MLPerf/tt-shield/persistent-volume/h3-assets"
+# tt-shield's volume on runners without the shared mount.
+LOCALDEV_ASSETS = "/localdev/persistent-volume/h3-assets"
+
+
+def staged_asset_dirs() -> list:
+    """Where a staged media pack may be, in search order (read at call time): ``H3_ASSETS``,
+    the shared CI volume, ``$PERSISTENT_VOLUME_ROOT/h3-assets``, tt-shield's fallback volume."""
+    volume = os.environ.get("PERSISTENT_VOLUME_ROOT")
+    dirs = (
+        os.environ.get("H3_ASSETS"),
+        SHARED_ASSETS,
+        os.path.join(volume, "h3-assets") if volume else None,
+        LOCALDEV_ASSETS,
+    )
+    return [d for d in dirs if d]
+
 
 _STATE = {
     "assets": os.environ.get("H3_ASSETS") or REPO_ASSETS,
+    # The pack was named by the caller (``assets_dir`` / ``--assets``): a file there wins.
+    "explicit_assets": False,
+    # Among the other locations prefer a copy that matches its pin (off with pinning off).
+    "prefer_pinned": True,
     # Never inside the package: a test that logs before configure() must not litter the repo.
     "out": os.environ.get("H3_OUT")
     or os.path.join(tempfile.gettempdir(), "minimax_h3_bench"),
 }
 
 
-def configure(assets_dir: str | None = None, out_dir: str | None = None) -> None:
-    """Point the engine at an asset pack and a results directory for this run."""
+def configure(
+    assets_dir: str | None = None,
+    out_dir: str | None = None,
+    *,
+    explicit: bool = True,
+    prefer_pinned: bool = True,
+) -> None:
+    """Point the engine at an asset pack and a results directory for this run. ``explicit``
+    False marks ``assets_dir`` as found rather than named (``host.resolve_assets_dir``);
+    ``prefer_pinned`` (set by every call) False, for a run without the manifest check,
+    makes ``asset_path`` plain first-found."""
     if assets_dir:
         _STATE["assets"] = str(assets_dir)
+        _STATE["explicit_assets"] = bool(explicit)
+    _STATE["prefer_pinned"] = bool(prefer_pinned)
     if out_dir:
         _STATE["out"] = str(out_dir)
 
@@ -79,7 +110,7 @@ CSV_COLUMNS = [
     "out_sha256", "submit_http", "content_http", "job_id", "attempt",
     "timeout_s", "steps_requested", "steps_effective", "error_message", "out_file",
 ]  # fmt: skip
-POLL_S = 2.0
+POLL_S = max(0.1, float(os.environ.get("H3_POLL_S", "2.0")))
 # Re-submits of a TRANSIENT submit/transport failure (connection reset, 5xx, non-JSON
 # body); is_transient() never retries a live job, a timeout, a refusal or a device fault.
 MAX_RETRIES = int(os.environ.get("H3_MAX_RETRIES", "2"))
@@ -94,8 +125,10 @@ POLL_HISTORY_SAMPLE_S = 30
 POLL_HISTORY_MAX = 200
 TERMINAL_STATUSES = {"completed", "succeeded", "failed", "cancelled"}
 QUEUED_STATUSES = {"queued", "pending", "submitted", "accepted"}
-LOST_POLLS = int(os.environ.get("H3_LOST_POLLS", "30"))
-TRANSPORT_POLLS = 150  # ~5 min of continuous unreachability at POLL_S
+# Give-up windows in seconds, counted as consecutive polls at POLL_S so that H3_POLL_S does
+# not stretch or shrink them: a job record lost for 60 s, the endpoint unreachable for ~5 min.
+LOST_POLLS = int(os.environ.get("H3_LOST_POLLS") or max(1, round(60 / POLL_S)))
+TRANSPORT_POLLS = max(1, round(300 / POLL_S))
 
 # Per-(table, case) budgets in seconds: 3x the slowest observed run of that shape.
 #   T1-T4    Tenstorrent hosted single Galaxy, T2VA only (measured 2026-08-19).
@@ -140,7 +173,7 @@ TIMEOUT_TABLE_S = {
     "BH1X": {
         "SMOKE": 600,
         "SMOKE-FL2VA": 600,
-        "SMOKE-REF2VA": 1200,
+        "SMOKE-REF2VA": 2400,  # the first ref2va request also compiles the video/audio encoders
         "T2VA-L": 600,
         "T2VA-M": 1500,
         "T2VA-H": 1800,
@@ -402,19 +435,44 @@ def classify_failure(rec: dict) -> str | None:
 
 # ---------------------------------------------------------------- assets
 def asset_dirs() -> list:
-    """Directories searched per file, in order: the configured pack (explicit / H3_ASSETS /
-    the shared volume), then the in-repo pack. A partially staged shared directory can
-    therefore never hide the prompts and manifests that are in git."""
-    dirs = [assets_dir(), REPO_ASSETS]
-    return [d for i, d in enumerate(dirs) if d and d not in dirs[:i]]
+    """Directories searched per file, in order: the configured pack (named by the caller,
+    else the first staged one found), every other staged directory that exists, then the
+    in-repo pack (last unless it is the named one). A partially staged directory can
+    therefore never hide a file that another location -- or git -- holds."""
+    staged = [d for d in staged_asset_dirs() if os.path.isdir(d)]
+    first = assets_dir()
+    if first == REPO_ASSETS and not _STATE["explicit_assets"]:
+        first = None
+    return list(dict.fromkeys(d for d in (first, *staged, REPO_ASSETS) if d))
+
+
+def pinned_hashes() -> dict:
+    """{name: sha256} from the first repo manifest that exists; {} when there is none."""
+    for path in PIN_MANIFESTS:
+        if os.path.exists(path):
+            return read_manifest(path)
+    return {}
 
 
 def asset_path(name: str) -> str | None:
-    for root in asset_dirs():
-        path = os.path.join(root, name)
-        if os.path.exists(path):
-            return path
-    return None
+    """The copy of ``name`` to use. A pack the caller named holds it: that copy, whatever
+    its hash (``verify_assets`` judges it). Otherwise the first one in ``asset_dirs()`` order
+    that matches its pin, else the first one found, so a stale staged copy never hides the
+    pinned file a later location holds, such as media committed to the in-repo pack. With
+    ``prefer_pinned`` off it is the first one found. Only a file found twice is hashed."""
+    if _STATE["explicit_assets"]:
+        named = os.path.join(assets_dir(), name)
+        if os.path.exists(named):
+            return named
+    found = [os.path.join(root, name) for root in asset_dirs()]
+    found = [path for path in found if os.path.exists(path)]
+    pin = _STATE["prefer_pinned"] and len(found) > 1
+    want = pinned_hashes().get(name) if pin else None
+    if want:
+        match = next((path for path in found if sha256(path) == want), None)
+        if match:
+            return match
+    return found[0] if found else None
 
 
 def asset(name: str) -> str:
@@ -469,11 +527,7 @@ def verify_assets(names) -> list:
     """Problems with the named assets against the repo manifest: missing files, hash
     mismatches, and a missing manifest entry. [] means every named asset is pinned."""
     problems = []
-    manifest = {}
-    for path in PIN_MANIFESTS:
-        if os.path.exists(path):
-            manifest = read_manifest(path)
-            break
+    manifest = pinned_hashes()
     if not manifest:
         problems.append(f"no asset manifest found ({', '.join(PIN_MANIFESTS)})")
     for name in sorted(set(names)):
@@ -499,10 +553,18 @@ def case_cost(case: dict) -> int:
 def case_timeout_s(case: dict, table: str = DEFAULT_TIMEOUT_TABLE) -> int:
     """Budget for one generation: ``H3_TIMEOUT`` overrides; else the table, the TT-SJC3
     row for a case the table lacks, else the cost formula clamped to the floor/ceiling."""
+    budget, source = case_budget_s(case, table)
+    if source != "H3_TIMEOUT":
+        log(f"[timeout] {case['id']}: {budget}s ({source})")
+    return budget
+
+
+def case_budget_s(case: dict, table: str = DEFAULT_TIMEOUT_TABLE) -> tuple[int, str]:
+    """(budget, where it came from) for ``case_timeout_s``, without logging it."""
     cid = case["id"]
     override = os.environ.get("H3_TIMEOUT")
     if override:
-        return int(override)
+        return int(override), "H3_TIMEOUT"
     base = TIMEOUT_TABLE_S.get(table, {}).get(cid)
     source = table
     if base is None:
@@ -512,9 +574,7 @@ def case_timeout_s(case: dict, table: str = DEFAULT_TIMEOUT_TABLE) -> int:
         est = case_cost(case) * COST_SECONDS_PER_UNIT * 3
         base = int(min(TIMEOUT_CEIL_S, max(TIMEOUT_FLOOR_S, est)))
         source = "cost formula"
-    budget = int(min(TIMEOUT_CEIL_S, max(TIMEOUT_FLOOR_S, base)))
-    log(f"[timeout] {cid}: {budget}s ({source})")
-    return budget
+    return int(min(TIMEOUT_CEIL_S, max(TIMEOUT_FLOOR_S, base))), source
 
 
 def ensure_dirs() -> None:

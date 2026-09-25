@@ -14,6 +14,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 
@@ -44,6 +45,18 @@ def _ffmpeg_gate():
 
 
 needs_ffmpeg = pytest.mark.usefixtures("_ffmpeg_gate")
+MEDIA = ("*.jpg", "*.mp4", "*.wav")  # the part of the input pack that is not in git
+
+
+@pytest.fixture(autouse=True)
+def _no_staged_packs(monkeypatch, tmp_path_factory):
+    """Hermetic asset lookup: a pack staged on this machine (H3_ASSETS, the CI volumes)
+    must not stand in for a file a test expects to be missing or to come from its pack."""
+    for name in ("H3_ASSETS", "PERSISTENT_VOLUME_ROOT"):
+        monkeypatch.delenv(name, raising=False)
+    absent = tmp_path_factory.mktemp("no-staged-pack")
+    monkeypatch.setattr(M, "SHARED_ASSETS", str(absent / "shared"))
+    monkeypatch.setattr(M, "LOCALDEV_ASSETS", str(absent / "localdev"))
 
 
 @pytest.fixture
@@ -681,33 +694,53 @@ def test_probes_on_a_missing_clip_answer_like_a_failed_probe(tmp_path):
 # -- review round 2: assets, metrics, probes, verdicts ---------------------------------------
 
 
-def test_assets_resolve_per_file_and_pin_against_the_repo_manifest(tmp_path):
+def test_assets_resolve_per_file_and_pin_against_the_repo_manifest(
+    tmp_path, monkeypatch
+):
+    # the git part of the in-repo pack only, so this holds whether or not media is
+    # committed there; the pins stay the real repo manifests (PIN_MANIFESTS)
+    repo = tmp_path / "repo"
+    shutil.copytree(M.REPO_ASSETS, repo, ignore=shutil.ignore_patterns(*MEDIA))
+    monkeypatch.setattr(M, "REPO_ASSETS", str(repo))
     shared = tmp_path / "shared"
     shared.mkdir()
     (shared / "img_std_old_man_portrait.jpg").write_bytes(b"\xff\xd8\xff" + b"9" * 50)
     (shared / "prompt_min.txt").write_text("tampered\n")
-    (shared / "sha256s-bundle.txt").write_text(  # vouches for the tampered prompt
-        f"{M.sha256(str(shared / 'prompt_min.txt'))}  prompt_min.txt\n"
+    (shared / "sha256s-bundle.txt").write_text(  # vouches for both of its files
+        "".join(
+            f"{M.sha256(str(shared / n))}  {n}\n"
+            for n in ("prompt_min.txt", "img_std_old_man_portrait.jpg")
+        )
     )
     M.configure(assets_dir=str(shared), out_dir=str(tmp_path / "out"))
     try:
-        assert M.asset_dirs() == [str(shared), M.REPO_ASSETS]
+        assert M.asset_dirs() == [str(shared), str(repo)]
         assert M.asset_path("img_std_old_man_portrait.jpg") == str(
             shared / "img_std_old_man_portrait.jpg"
         )
         # a file the staged directory lacks comes from the repo pack, per file
-        assert M.asset_path("prompt_std.txt") == os.path.join(
-            M.REPO_ASSETS, "prompt_std.txt"
-        )
+        assert M.asset_path("prompt_std.txt") == str(repo / "prompt_std.txt")
+        # the named directory's copy is the one used, pinned or not ...
         assert M.asset_path("prompt_min.txt") == str(shared / "prompt_min.txt")
         assert M.asset_path("nope.txt") is None
-        problems = M.verify_assets(["prompt_min.txt", "prompt_std.txt", "nope.txt"])
-        # the shared directory's own manifest pins nothing: the repo manifest rules
-        assert any(p.startswith("prompt_min.txt: sha256 differs") for p in problems), (
-            problems
+        problems = M.verify_assets(
+            [
+                "img_std_old_man_portrait.jpg",
+                "prompt_min.txt",
+                "prompt_std.txt",
+                "nope.txt",
+            ]
         )
+        # ... and the shared directory's own manifest pins nothing: the repo manifest rules
+        for name in ("img_std_old_man_portrait.jpg", "prompt_min.txt"):
+            assert any(p.startswith(f"{name}: sha256 differs") for p in problems), (
+                problems
+            )
         assert not any("prompt_std.txt" in p for p in problems), problems
         assert any(p.startswith("missing asset nope.txt") for p in problems), problems
+        # found rather than named (the shared volume, say): the pinned copy in git wins
+        M.configure(assets_dir=str(shared), explicit=False)
+        assert M.asset_path("prompt_min.txt") == str(repo / "prompt_min.txt")
     finally:
         M.configure(
             assets_dir=M.REPO_ASSETS,
@@ -817,3 +850,388 @@ def test_median_is_the_statistical_median_for_even_counts(pack):
         "stop": "",
     }
     assert H.case_result("C", case, 2, outcome)["median_s"] == 20.0
+
+
+# -- per-task plumbing: the task from the spec, per-task plans, out dirs, smoke, assets ------
+
+
+def _ctx(runner=None, ci=True, output_path="/nonexistent"):
+    env = {"MODEL_RUNNER": runner} if runner else {}
+    return SimpleNamespace(
+        model_spec=SimpleNamespace(env_vars=env),
+        runtime_config=SimpleNamespace(ci_mode=ci, limit_samples_mode=None),
+        output_path=output_path,
+        service_port=8000,
+        base_url="http://127.0.0.1:1",
+    )
+
+
+def _bench(targets, ctx=None):
+    from test_module._test_common import TestConfig
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    config = TestConfig({"timeout": 900, "retry_attempts": 0, "retry_delay": 0,
+                         "break_on_failure": False})  # fmt: skip
+    return T.MiniMaxH3BenchmarkTest(config, targets, ctx=ctx)
+
+
+def _plan_ids(plan):
+    return [cid for item in plan for cid in item["cases"]]
+
+
+@pytest.mark.parametrize("task", A.TASKS)
+def test_default_plans_cover_every_case_of_their_task(task):
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    ids = [c["id"] for c in M.load_cases()["cases"] if c["task"] == task]
+    for plan in (T.DEFAULT_PLAN_CI[task], T.DEFAULT_PLAN_FULL[task]):
+        assert sorted(_plan_ids(plan)) == sorted(ids)  # each case exactly once
+    assert all(item["runs"] == 3 for item in T.DEFAULT_PLAN_FULL[task])
+    assert _plan_ids(T.DEFAULT_PLAN_FULL[task]) == _plan_ids(T.DEFAULT_PLAN_CI[task])
+
+
+def test_default_plans_per_task():
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    assert T.DEFAULT_PLAN_CI["t2va"] == [
+        {"cases": ["T2VA-L"], "runs": 3},
+        {"cases": ["T2VA-M", "T2VA-H"], "runs": 1},
+    ]
+    assert T.DEFAULT_PLAN_FULL["t2va"] == [
+        {"cases": ["T2VA-L", "T2VA-M", "T2VA-H"], "runs": 3}
+    ]
+    assert T.DEFAULT_PLAN_CI["fl2va"] == [
+        {"cases": ["FL2VA-L"], "runs": 3},
+        {
+            "cases": ["FL2VA-M", "FL2VA-H1", "FL2VA-L2", "FL2VA-M2", "FL2VA-H"],
+            "runs": 1,
+        },
+    ]
+    (ref,) = T.DEFAULT_PLAN_CI["ref2va"]
+    assert ref["runs"] == 1
+    by_id = {c["id"]: c for c in M.load_cases()["cases"]}
+    order = ref["cases"]
+    h_family = [cid for cid in order if cid.startswith("REF2VA-H")]
+    assert (
+        order[-len(h_family) :] == h_family == ["REF2VA-H5", "REF2VA-H10", "REF2VA-H"]
+    )
+    rest = order[: -len(h_family)]
+    durations = [by_id[cid]["duration_s"] for cid in rest]
+    assert durations == sorted(durations) and durations[:3] == [5, 5, 5]
+    # within a duration the cheaper inputs go first (the BH1X budget is the risk proxy)
+    for i in range(0, len(rest), 3):
+        budgets = [M.TIMEOUT_TABLE_S["BH1X"][cid] for cid in rest[i : i + 3]]
+        assert budgets == sorted(budgets), rest[i : i + 3]
+
+
+def test_the_task_comes_from_the_model_runner():
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    for task in A.TASKS:
+        assert T.deployment_task(_ctx(f"tt-minimax-h3-{task}")) == task
+        assert T.deployment_task(_ctx(f"tt-minimax-h3-{task}"), task) == task
+    # no spec (CLI, hardware-free tests): the target, else t2va as before
+    assert T.deployment_task(None) == "t2va"
+    assert T.deployment_task(None, "ref2va") == "ref2va"
+    assert T.deployment_task(_ctx(None), "fl2va") == "fl2va"
+    with pytest.raises(ValueError, match="wrong task"):
+        T.deployment_task(_ctx("tt-minimax-h3-fl2va"), "t2va")
+    with pytest.raises(ValueError, match="not a MiniMax-H3 runner"):
+        T.deployment_task(_ctx("tt-wan2.2"))
+    assert T.deployment_task(_ctx("tt-wan2.2"), "fl2va") == "fl2va"  # the target says
+    with pytest.raises(ValueError, match="not one of"):
+        T.deployment_task(None, "i2v")
+
+
+def test_the_wrapper_runs_the_default_plan_of_the_derived_task():
+    ctx = _ctx("tt-minimax-h3-ref2va")
+    test = _bench({}, ctx)
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    assert test._task() == "ref2va"
+    assert test._plan("ref2va") == T.DEFAULT_PLAN_CI["ref2va"]
+    full = _bench({}, _ctx("tt-minimax-h3-fl2va", ci=False))
+    assert full._plan(full._task()) == T.DEFAULT_PLAN_FULL["fl2va"]
+    own = [{"cases": ["FL2VA-L"], "runs": 1}]
+    assert _bench({"plan_ci": own}, _ctx("tt-minimax-h3-fl2va"))._plan("fl2va") == own
+
+
+def test_a_contradicting_task_fails_before_anything_is_sent(monkeypatch):
+    import asyncio
+
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    def never(**_kw):
+        raise AssertionError("run_benchmark must not start")
+
+    monkeypatch.setattr(T, "run_benchmark", never)
+    test = _bench({"task": "t2va"}, _ctx("tt-minimax-h3-fl2va"))
+    with pytest.raises(
+        ValueError, match="MODEL_RUNNER='tt-minimax-h3-fl2va' serves fl2va"
+    ):
+        asyncio.run(test._run_specific_test_async())
+
+
+def test_each_entry_gets_its_own_output_directory(monkeypatch, tmp_path):
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    monkeypatch.setattr(T, "_OUT_DIR_OWNERS", {})
+    base = tmp_path / "minimax_h3_bench"
+    ctx = _ctx("tt-minimax-h3-ref2va", output_path=str(tmp_path))
+    first = [{"cases": ["REF2VA-L", "REF2VA-M5"], "runs": 1}]
+    second = [{"cases": ["REF2VA-H5"], "runs": 1}]
+    # the single-entry layout: the first entry keeps <output>/minimax_h3_bench
+    assert _bench({}, ctx)._out_dir(first) == str(base)
+    assert _bench({}, ctx)._out_dir(first) == str(base)  # the same entry again (retry)
+    # a later entry with other cases writes below it, named after its cases
+    assert _bench({}, ctx)._out_dir(second) == str(base / "REF2VA-H5")
+    assert _bench({"out_subdir": "h-family"}, ctx)._out_dir(second) == str(
+        base / "h-family"
+    )
+    assert _bench({"out_dir": str(tmp_path / "x"), "out_subdir": "a/b"}, ctx)._out_dir(
+        second
+    ) == str(tmp_path / "x" / "a" / "b")
+    for bad in ("../elsewhere", "/abs"):
+        with pytest.raises(ValueError, match="relative path"):
+            _bench({"out_subdir": bad}, ctx)._out_dir(second)
+    # two entries may not share an explicit out_subdir; the same entry again may
+    with pytest.raises(ValueError, match="already another entry's directory"):
+        _bench({"out_subdir": "h-family", "skip_smoke": True}, ctx)._out_dir(second)
+    assert _bench({"out_subdir": "h-family"}, ctx)._out_dir(second) == str(
+        base / "h-family"
+    )
+    # a long case list gets a bounded, stable name
+    slug = T._cases_slug(T.DEFAULT_PLAN_CI["ref2va"])
+    assert len(slug) <= 64 and slug == T._cases_slug(T.DEFAULT_PLAN_CI["ref2va"])
+    assert slug.startswith("REF2VA-L_to_REF2VA-H_12cases_")
+
+
+def test_entries_that_run_the_same_plan_still_get_their_own_directory(
+    monkeypatch, tmp_path
+):
+    # run-full-evals: entries that set only plan_ci all fall back to the same full plan
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    monkeypatch.setattr(T, "_OUT_DIR_OWNERS", {})
+    base = tmp_path / "minimax_h3_bench"
+    ctx = _ctx("tt-minimax-h3-ref2va", ci=False, output_path=str(tmp_path))
+    entries = [
+        _bench({"plan_ci": [{"cases": [cid], "runs": 1}]}, ctx)
+        for cid in ("REF2VA-L", "REF2VA-H", "SIZE-V")
+    ]
+    plans = [e._plan(e._task()) for e in entries]
+    assert plans == [T.DEFAULT_PLAN_FULL["ref2va"]] * 3
+    slug = T._cases_slug(plans[0])
+    dirs = [e._out_dir(plan) for e, plan in zip(entries, plans)]
+    assert dirs == [str(base), str(base / slug), str(base / f"{slug}-2")]
+    # each keeps its own directory when it runs again (a retry)
+    assert [e._out_dir(plan) for e, plan in zip(entries, plans)] == dirs
+
+
+def test_plan_estimate_is_the_budgets_over_their_safety_factor(pack, tmp_path):
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    bh1x = M.TIMEOUT_TABLE_S["BH1X"]
+    plan = [{"cases": ["REF2VA-L"], "runs": 2}, {"cases": ["SIZE-V"], "runs": 1}]
+    gens = bh1x["SMOKE-REF2VA"] + 3 * bh1x["REF2VA-L"] + 2 * bh1x["SIZE-V"]
+    assert T.plan_estimate_s("ref2va", plan) == round(gens / T.BUDGET_FACTOR)
+    assert T.plan_estimate_s("ref2va", plan, skip_smoke=True) == round(
+        (gens - bh1x["SMOKE-REF2VA"]) / T.BUDGET_FACTOR
+    )
+    # the defaults: t2va and fl2va fit the template's 14400 s entry, ref2va does not
+    deadline = 14400 - 600
+    assert T.plan_estimate_s("t2va", T.DEFAULT_PLAN_CI["t2va"]) == 3200
+    assert T.plan_estimate_s("t2va", T.DEFAULT_PLAN_FULL["t2va"]) == 5400
+    assert T.plan_estimate_s("fl2va", T.DEFAULT_PLAN_CI["fl2va"]) == 4600
+    assert T.plan_estimate_s("fl2va", T.DEFAULT_PLAN_FULL["fl2va"]) <= deadline
+    assert T.plan_estimate_s("ref2va", T.DEFAULT_PLAN_CI["ref2va"]) > deadline
+    # a run whose plan cannot fit its deadline says so up front
+    result = T.run_benchmark(
+        base_url="http://127.0.0.1:1", task="ref2va", out_dir=str(tmp_path / "o"),
+        assets_dir=str(pack), verify_manifest=False, deadline_s=deadline,
+    )  # fmt: skip
+    assert result["estimate_s"] == T.plan_estimate_s(
+        "ref2va", T.DEFAULT_PLAN_CI["ref2va"]
+    )
+    log = (tmp_path / "o" / "run.log").read_text()
+    assert f"~{result['estimate_s']}s at the BH1X pace, over the {deadline}s" in log
+
+
+def test_a_named_asset_directory_wins_over_a_pinned_copy(monkeypatch, tmp_path):
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    repo = tmp_path / "repo"
+    shutil.copytree(M.REPO_ASSETS, repo, ignore=shutil.ignore_patterns(*MEDIA))
+    monkeypatch.setattr(M, "REPO_ASSETS", str(repo))
+    mine = tmp_path / "mine"
+    mine.mkdir()
+    (mine / "prompt_min.txt").write_text("an edited prompt\n")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    (staged / "prompt_std.txt").write_text("a stale staged prompt\n")
+    monkeypatch.setenv("H3_ASSETS", str(staged))
+    plan = [{"cases": ["T2VA-L", "T2VA-M"], "runs": 1}]
+    kw = dict(base_url="http://127.0.0.1:1", task="t2va", plan=plan)
+    try:
+        # named: its unpinned prompt is the one used, and the probe says it is not pinned
+        ran = T.run_benchmark(out_dir=str(tmp_path / "a"), assets_dir=str(mine), **kw)
+        assert M.asset_path("prompt_min.txt") == str(mine / "prompt_min.txt")
+        assert (
+            "prompt_min.txt: sha256 differs from the manifest (not the pinned file)"
+            in (ran["probe"])
+        )
+        # among found locations the pinned copy in git still beats the stale staged one
+        assert M.asset_path("prompt_std.txt") == str(repo / "prompt_std.txt")
+        # --no-manifest: no pin preference at all, the first copy found
+        T.run_benchmark(out_dir=str(tmp_path / "b"), assets_dir=str(mine),
+                        verify_manifest=False, **kw)  # fmt: skip
+        assert M.asset_path("prompt_min.txt") == str(mine / "prompt_min.txt")
+        assert M.asset_path("prompt_std.txt") == str(staged / "prompt_std.txt")
+        # a named directory that does not exist is not named: the staged pack is found
+        T.run_benchmark(out_dir=str(tmp_path / "c"), assets_dir=str(tmp_path / "gone"),
+                        **kw)  # fmt: skip
+        assert M.assets_dir() == str(staged) and not M._STATE["explicit_assets"]
+        assert M.asset_path("prompt_std.txt") == str(repo / "prompt_std.txt")
+    finally:
+        M.configure(
+            assets_dir=M.REPO_ASSETS,
+            out_dir=os.path.join(tempfile.gettempdir(), "minimax_h3_bench"),
+        )
+        M._prompt_cache.clear()
+
+
+@pytest.mark.parametrize(
+    "argv,plan",
+    [
+        ([], [{"cases": ["T2VA-L"], "runs": 3}]),  # unchanged for t2va
+        (["--task", "fl2va"], [{"cases": ["FL2VA-L"], "runs": 3}]),
+        (["--task", "ref2va", "--runs", "1"], [{"cases": ["REF2VA-L"], "runs": 1}]),
+        (
+            ["--task", "ref2va", "--cases", "SIZE-V, REF2VA-M"],
+            [{"cases": ["SIZE-V", "REF2VA-M"], "runs": 3}],
+        ),
+    ],
+)
+def test_cli_defaults_to_the_first_case_of_its_task(monkeypatch, argv, plan):
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    seen = {}
+
+    def fake(**kw):
+        seen.update(kw)
+        return {"success": True}
+
+    monkeypatch.setattr(T, "run_benchmark", fake)
+    assert T.main(["--base-url", "http://127.0.0.1:1", *argv]) == 0
+    assert seen["plan"] == plan
+
+
+def test_skip_smoke_drops_the_smoke_assets_from_the_probe(pack, monkeypatch, tmp_path):
+    from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+    # SIZE-V needs prompt_std.txt + the 47 MB video; the ref2va smoke needs four other files
+    (pack / "vid_max_8s_47mb_robot_street.mp4").write_bytes(b"\x00" * 64)
+    (pack / "sha256s-bundle.txt").write_text(
+        "".join(f"{M.sha256(str(p))}  {p.name}\n" for p in sorted(pack.iterdir()))
+    )
+    for name in ("prompt_min.txt", "vid_min_2s_city_skyline.mp4"):
+        os.remove(pack / name)
+    monkeypatch.setattr(M, "REPO_ASSETS", str(tmp_path / "no-repo-pack"))
+    plan = [{"cases": ["SIZE-V"], "runs": 1}]
+    kw = dict(
+        base_url="http://127.0.0.1:1", task="ref2va", plan=plan, assets_dir=str(pack)
+    )
+    ran = T.run_benchmark(out_dir=str(tmp_path / "a"), **kw)
+    assert sorted(p.split(" (")[0] for p in ran["probe"]) == [
+        "missing asset prompt_min.txt",
+        "missing asset vid_min_2s_city_skyline.mp4",
+    ]
+    skipped = T.run_benchmark(out_dir=str(tmp_path / "b"), skip_smoke=True, **kw)
+    assert skipped["probe"] == []
+    assert skipped["pregate"] and "unreachable" in skipped["pregate"][0]
+
+
+def _poll_settings(**env):
+    """(POLL_S, LOST_POLLS, TRANSPORT_POLLS) as a fresh import under ``env`` computes them."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("H3_")} | env
+    code = ("from test_module._test_common.minimax_h3_bench import models as M; "
+            "print(M.POLL_S, M.LOST_POLLS, M.TRANSPORT_POLLS)")  # fmt: skip
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env, timeout=60,
+        cwd=os.path.dirname(os.path.dirname(os.path.dirname(M.BASE))),
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    poll, lost, transport = out.stdout.split()
+    return float(poll), int(lost), int(transport)
+
+
+def test_poll_interval_keeps_the_give_up_windows_and_the_ref2va_smoke_budget():
+    assert M.TIMEOUT_TABLE_S["BH1X"]["SMOKE-REF2VA"] == 2400
+    assert _poll_settings() == (2.0, 30, 150)  # 60 s lost, 300 s unreachable
+    # a faster or slower poll changes the counts, not the windows
+    assert _poll_settings(H3_POLL_S="0.5") == (0.5, 120, 600)
+    assert _poll_settings(H3_POLL_S="10") == (10.0, 6, 30)
+    assert _poll_settings(H3_POLL_S="0") == (0.1, 600, 3000)  # never a busy loop
+    # H3_LOST_POLLS is a count and still wins when set
+    assert _poll_settings(H3_POLL_S="0.5", H3_LOST_POLLS="7") == (0.5, 7, 600)
+
+
+def test_asset_search_order(monkeypatch, tmp_path):
+    names = ("explicit", "env", "shared", "volume", "localdev", "repo")
+    dirs = {k: tmp_path / k for k in names}
+    dirs["volume"] = tmp_path / "pv" / "h3-assets"
+    for d in dirs.values():
+        d.mkdir(parents=True)
+    monkeypatch.setenv("H3_ASSETS", str(dirs["env"]))
+    monkeypatch.setattr(M, "SHARED_ASSETS", str(dirs["shared"]))
+    monkeypatch.setenv("PERSISTENT_VOLUME_ROOT", str(tmp_path / "pv"))
+    monkeypatch.setattr(M, "LOCALDEV_ASSETS", str(dirs["localdev"]))
+    monkeypatch.setattr(M, "REPO_ASSETS", str(dirs["repo"]))
+    monkeypatch.setattr(M, "PIN_MANIFESTS", (str(dirs["repo"] / "sha256s-bundle.txt"),))
+    staged = [str(dirs[k]) for k in ("env", "shared", "volume", "localdev")]
+    assert M.staged_asset_dirs() == staged
+    assert H.resolve_assets_dir(str(dirs["explicit"])) == str(dirs["explicit"])
+    assert H.resolve_assets_dir(str(tmp_path / "missing")) == str(dirs["env"])
+    monkeypatch.delenv("H3_ASSETS")
+    assert H.resolve_assets_dir(None) == str(dirs["shared"])
+    monkeypatch.setenv("H3_ASSETS", str(dirs["env"]))
+    try:
+        M.configure(assets_dir=str(dirs["explicit"]))
+        assert M.asset_dirs() == [str(dirs["explicit"]), *staged, str(dirs["repo"])]
+        # per file, first hit wins: each location holds one file only it has
+        for key in dirs:
+            (dirs[key] / f"only_{key}.jpg").write_bytes(key.encode())
+            assert M.asset_path(f"only_{key}.jpg") == str(dirs[key] / f"only_{key}.jpg")
+        # the in-repo pack (media committed there) outranks a stale staged copy ...
+        (dirs["repo"] / "vid.mp4").write_bytes(b"pinned")
+        (dirs["shared"] / "vid.mp4").write_bytes(b"stale")
+        (dirs["repo"] / "sha256s-bundle.txt").write_text(
+            f"{M.sha256(str(dirs['repo'] / 'vid.mp4'))}  vid.mp4\n"
+        )
+        assert M.asset_path("vid.mp4") == str(dirs["repo"] / "vid.mp4")
+        assert M.verify_assets(["vid.mp4"]) == []
+        # ... but not a staged copy that is pinned too: the earlier location still wins
+        (dirs["env"] / "vid.mp4").write_bytes(b"pinned")
+        assert M.asset_path("vid.mp4") == str(dirs["env"] / "vid.mp4")
+        # no copy matches: the first one found, and the probe says why
+        (dirs["repo"] / "sha256s-bundle.txt").write_text(f"{'0' * 64}  vid.mp4\n")
+        assert M.asset_path("vid.mp4") == str(dirs["env"] / "vid.mp4")
+        assert M.verify_assets(["vid.mp4"]) == [
+            "vid.mp4: sha256 differs from the manifest (not the pinned file)"
+        ]
+        # a directory that does not exist is not searched; the repo pack is last ...
+        monkeypatch.setattr(M, "SHARED_ASSETS", str(tmp_path / "not-mounted"))
+        assert str(tmp_path / "not-mounted") not in M.asset_dirs()
+        M.configure(assets_dir=str(dirs["repo"]), explicit=False)
+        assert M.asset_dirs()[-1] == str(dirs["repo"]) and M.asset_dirs()[0] == str(
+            dirs["env"]
+        )
+        # ... unless it is the one named
+        M.configure(assets_dir=str(dirs["repo"]))
+        assert M.asset_dirs()[0] == str(dirs["repo"])
+        assert M.asset_path("vid.mp4") == str(dirs["repo"] / "vid.mp4")
+    finally:
+        M.configure(
+            assets_dir=M.REPO_ASSETS,
+            out_dir=os.path.join(tempfile.gettempdir(), "minimax_h3_bench"),
+        )

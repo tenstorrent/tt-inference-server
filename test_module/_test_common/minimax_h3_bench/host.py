@@ -28,16 +28,13 @@ NIL_JOB = "00000000-0000-4000-8000-000000000000"
 
 
 def resolve_assets_dir(explicit: str | None = None) -> str:
-    """The preferred pack: an explicit path, ``H3_ASSETS``, the shared CI volume, else the
-    in-repo prompts + manifests (enough for the t2va cases). Files are looked up per name
-    (``models.asset_path``) with the in-repo pack as the fallback, and pinned against the
-    repo manifest, so a partially staged directory neither hides nor re-pins anything."""
-    for candidate in (
-        explicit,
-        os.environ.get("H3_ASSETS"),
-        M.SHARED_ASSETS,
-        M.REPO_ASSETS,
-    ):
+    """The preferred pack: an explicit path, else the first staged directory that exists
+    (``H3_ASSETS``, the shared CI volume, ``$PERSISTENT_VOLUME_ROOT/h3-assets``,
+    ``/localdev/persistent-volume/h3-assets``), else the in-repo pack. Files are looked up
+    per name through every one of them in that order (``models.asset_path``) and pinned
+    against the repo manifest, so a partially staged directory neither hides nor re-pins
+    anything."""
+    for candidate in (explicit, *M.staged_asset_dirs()):
         if candidate and os.path.isdir(candidate):
             return candidate
     return M.REPO_ASSETS

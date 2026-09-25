@@ -24,8 +24,15 @@ Every asset is looked up per file, in this order:
 1. the explicit directory: the `assets_dir` target of the case / `--assets` on the command line;
 2. `$H3_ASSETS`;
 3. `/mnt/MLPerf/tt-shield/persistent-volume/h3-assets` (the shared volume on the hardware runners);
-4. this directory.
+4. `$PERSISTENT_VOLUME_ROOT/h3-assets`;
+5. `/localdev/persistent-volume/h3-assets` (tt-shield's volume where the shared mount is absent);
+6. this directory.
 
 Whichever copy a file comes from, its pin is this directory's `sha256s-bundle.txt`: every file a
-selected case needs is hashed against it before a generation is started, and a missing or
-mismatching file fails the probe.
+selected case needs (and the smoke clip's, unless `skip_smoke`) is hashed against it before a
+generation is started, and a missing or mismatching file fails the probe. A file in the explicit
+directory is always the one used. Otherwise, when a file exists in more than one of places 2-6,
+the first copy that matches its pin wins, so a stale staged copy never hides the pinned one further
+down (for example media committed here); without the hash check (`verify_manifest: false` /
+`--no-manifest`) it is simply the first copy found. The media is ignored by this repo's
+`.gitignore`; committing it needs `git add -f` or a matching `!` line there.

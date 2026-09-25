@@ -19,6 +19,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -44,6 +45,17 @@ def _ffmpeg_gate():
     pytest.skip(
         "the mock encodes real clips with ffmpeg and the judge probes them with ffprobe"
     )
+
+
+@pytest.fixture(autouse=True)
+def _no_staged_packs(monkeypatch, tmp_path_factory):
+    """Hermetic asset lookup: a pack staged on this machine (H3_ASSETS, the CI volumes)
+    must not stand in for a file a test expects to be missing or to come from its pack."""
+    for name in ("H3_ASSETS", "PERSISTENT_VOLUME_ROOT"):
+        monkeypatch.delenv(name, raising=False)
+    absent = tmp_path_factory.mktemp("no-staged-pack")
+    monkeypatch.setattr(M, "SHARED_ASSETS", str(absent / "shared"))
+    monkeypatch.setattr(M, "LOCALDEV_ASSETS", str(absent / "localdev"))
 
 
 def _free_port() -> int:
@@ -91,19 +103,30 @@ def mock():
 
 
 @pytest.fixture
-def pack(tmp_path):
-    """The repo prompts plus tiny stand-ins for the media the fl2va/ref2va cases name."""
+def pack(tmp_path, monkeypatch):
+    """The repo prompts plus stand-ins for every media file the fl2va/ref2va cases name.
+    It is also the in-repo fallback, so media committed to the repo pack is never used."""
     assets = tmp_path / "assets"
-    shutil.copytree(M.REPO_ASSETS, assets)
-    for name in ("img_min_256px_scientist.jpg", "img_std_old_man_portrait.jpg"):
-        (assets / name).write_bytes(b"\xff\xd8\xff" + b"0" * 500)
-    (assets / "img_max_27mb_astronaut.jpg").write_bytes(
-        b"\xff\xd8\xff" + b"1" * 20_000_000
-    )  # over the 10 M-char cap
-    (assets / "vid_min_2s_city_skyline.mp4").write_bytes(
-        b"\x00\x00\x00\x18ftypisom" + b"2" * 2000
+    shutil.copytree(
+        M.REPO_ASSETS, assets, ignore=shutil.ignore_patterns("*.jpg", "*.mp4", "*.wav")
     )
-    (assets / "aud_min_2s_score.wav").write_bytes(b"RIFF" + b"3" * 2000)
+    names = {n for c in M.load_cases()["cases"] for n in M.case_ref_files(c)}
+    for name in sorted(names):
+        head = {".jpg": b"\xff\xd8\xff", ".mp4": b"\x00\x00\x00\x18ftypisom"}
+        (assets / name).write_bytes(head.get(name[-4:], b"RIFF") + b"0" * 2000)
+    # the two large ones are sparse: their size (and base64 length) is real, their disk use is not
+    for name, head, size in (
+        (
+            "img_max_27mb_astronaut.jpg",
+            b"\xff\xd8\xff",
+            20_000_003,
+        ),  # over the 10 M-char cap
+        ("vid_max_8s_47mb_robot_street.mp4", b"\x00\x00\x00\x18ftypisom", 47_000_012),
+    ):  # the video is under the 80 M-char media cap
+        with open(assets / name, "wb") as fh:
+            fh.write(head)
+            fh.truncate(size)
+    monkeypatch.setattr(M, "REPO_ASSETS", str(assets))
     return assets
 
 
@@ -412,3 +435,109 @@ def test_spec_test_wrapper_never_resumes_and_plumbs_key_and_deadline(
         "warmup2",
         "r2",
     ]
+
+
+# -- per-task plumbing end to end: the task from the spec, default plans, entries -----------
+
+
+def _ctx(url, runner, output_path):
+    return SimpleNamespace(
+        model_spec=SimpleNamespace(env_vars={"MODEL_RUNNER": runner}),
+        runtime_config=SimpleNamespace(ci_mode=True, limit_samples_mode=None),
+        output_path=str(output_path),
+        service_port=int(url.rsplit(":", 1)[1]),
+        base_url=url,
+    )
+
+
+def _entry(ctx, **targets):
+    targets = {"assets_dir": None, "verify_manifest": False, "idle_wait_s": 5,
+               "api_key": "mock-key", "combo": "C", **targets}  # fmt: skip
+    config = TestConfig({"timeout": 900, "retry_attempts": 0, "retry_delay": 0,
+                         "break_on_failure": False})  # fmt: skip
+    test = T.MiniMaxH3BenchmarkTest(config, targets, ctx=ctx)
+    return asyncio.run(test._run_specific_test_async())
+
+
+def _rows(out_dir):
+    return [json.loads(x) for x in (out_dir / "results.jsonl").read_text().splitlines()]
+
+
+@pytest.fixture
+def quick(monkeypatch):
+    """Sub-second polls against sub-second generations, for the whole-plan runs."""
+    monkeypatch.setenv("H3_TIMEOUT", "60")
+    monkeypatch.setattr(M, "POLL_S", 0.3)
+    monkeypatch.setattr(T, "_OUT_DIR_OWNERS", {})
+    return ("--gen-seconds", "0.8")
+
+
+def test_fl2va_deployment_runs_its_default_plan(mock, pack, tmp_path, quick):
+    url = mock("--serve", "fl2va", "--runner", "tt-minimax-h3-fl2va", *quick)
+    result = _entry(_ctx(url, "tt-minimax-h3-fl2va", tmp_path), assets_dir=str(pack))
+    assert result["task"] == "fl2va" and result["plan"] == T.DEFAULT_PLAN_CI["fl2va"]
+    assert (
+        result["smoke"]["case"] == "SMOKE-FL2VA" and result["smoke"]["outcome"] == "ok"
+    )
+    status = {c["case"]: c["status"] for c in result["cases"]}
+    assert list(status) == T.FL2VA_CASES
+    # the 27 MB keyframe is over the default 10 M-char cap: a capability xfail
+    assert status == {"FL2VA-L": "pass", "FL2VA-M": "pass", "FL2VA-H1": "pass",
+                      "FL2VA-L2": "xfail", "FL2VA-M2": "xfail", "FL2VA-H": "xfail"}  # fmt: skip
+    assert result["cases"][0]["runs_ok"] == 3
+    assert result["success"], result["summary"]
+    # a single entry keeps the historical layout
+    out = tmp_path / "minimax_h3_bench"
+    assert json.loads((out / "summary.json").read_text())["task"] == "fl2va"
+
+
+def test_ref2va_deployment_runs_every_ref2va_case(mock, pack, tmp_path, quick):
+    url = mock("--serve", "ref2va", "--runner", "tt-minimax-h3-ref2va", *quick)
+    result = _entry(_ctx(url, "tt-minimax-h3-ref2va", tmp_path), assets_dir=str(pack))
+    assert result["task"] == "ref2va" and result["smoke"]["case"] == "SMOKE-REF2VA"
+    assert [c["case"] for c in result["cases"]] == T.REF2VA_CASES
+    assert all(c["status"] == "pass" for c in result["cases"]), [
+        (c["case"], c["status"], c["failures"]) for c in result["cases"]
+    ]
+    assert result["success"], result["summary"]
+    rows = _rows(tmp_path / "minimax_h3_bench")
+    assert len(rows) == 1 + 2 * len(T.REF2VA_CASES) and all(
+        r["outcome"] == "ok" for r in rows
+    )
+
+
+def test_a_mismatched_suite_entry_fails_before_any_request(mock, pack, tmp_path):
+    url = mock("--serve", "fl2va")
+    with pytest.raises(ValueError, match="would benchmark the wrong task"):
+        _entry(_ctx(url, "tt-minimax-h3-fl2va", tmp_path), task="t2va")
+    code, _, body = _get(url, "/v1/videos/jobs")
+    assert code == 200 and json.loads(body) == []
+
+
+def test_entries_of_one_suite_keep_their_own_directory_and_summary(
+    mock, pack, tmp_path, quick
+):
+    url = mock("--serve", "t2va", *quick)
+    ctx = _ctx(url, "tt-minimax-h3-t2va", tmp_path)
+    first = _entry(ctx, task="t2va", plan_ci=[{"cases": ["T2VA-L"], "runs": 1}])
+    second = _entry(ctx, plan_ci=[{"cases": ["T2VA-M"], "runs": 1}], skip_smoke=True)
+    third = _entry(ctx, plan_ci=[{"cases": ["T2VA-H"], "runs": 1}], skip_smoke=True,
+                   out_subdir="long")  # fmt: skip
+    assert first["success"] and second["success"] and third["success"]
+    root = tmp_path / "minimax_h3_bench"
+    for out, case in (
+        (root, "T2VA-L"),
+        (root / "T2VA-M", "T2VA-M"),
+        (root / "long", "T2VA-H"),
+    ):
+        summary = json.loads((out / "summary.json").read_text())
+        assert [c["case"] for c in summary["cases"]] == [case]
+        assert {r["case"] for r in _rows(out)} <= {"SMOKE", case}
+    assert [r["tag"] for r in _rows(root)] == ["smoke", "warmup", "r1"]
+    # the later entries never ran a smoke clip: their first request is the case warmup
+    assert [r["tag"] for r in _rows(root / "T2VA-M")] == ["warmup", "r1"]
+    assert (
+        second["smoke"]["outcome"] == "skipped" and "smoke skipped" in second["summary"]
+    )
+    status_log = root / "T2VA-M" / "smoke_status_C_t2va.log"
+    assert status_log.read_text().splitlines()[0] == "skipped"
