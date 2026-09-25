@@ -205,6 +205,8 @@ class JobManager:
                 parent_job = self._get_job_if_authorized(source_job_id, org_id)
                 if parent_job is None or parent_job.job_type != JobTypes.TRAINING.value:
                     raise ValueError(f"Training job '{source_job_id}' not found")
+                if parent_job.id in self._deleting_job_ids:
+                    raise ValueError(f"Training job '{source_job_id}' is being deleted")
 
             if result_path:
                 job.result_path = result_path
@@ -376,27 +378,27 @@ class JobManager:
             self._deleting_job_ids.update(
                 job_to_delete.id for job_to_delete in jobs_to_delete
             )
-            for job_to_delete in jobs_to_delete:
-                self._jobs.pop(job_to_delete.id, None)
 
         try:
-            self._delete_jobs_and_results(jobs_to_delete)
-        except Exception:
+            # Delete children first so a partial failure never leaves a merge job
+            # whose parent training record has already been removed.
+            deletion_order = jobs_to_delete[1:] + jobs_to_delete[:1]
+            for job_to_delete in deletion_order:
+                self._delete_job_and_result(job_to_delete)
+                with self._jobs_lock:
+                    self._jobs.pop(job_to_delete.id, None)
+                    if job_to_delete.job_type == JobTypes.ADAPTER_MERGE.value:
+                        source_job_id = job_to_delete.request_parameters.get(
+                            "source_job_id"
+                        )
+                        parent_job = self._jobs.get(source_job_id)
+                        if parent_job is not None:
+                            parent_job.adapter_merge_job_ids.discard(job_to_delete.id)
+        finally:
             with self._jobs_lock:
-                for job_to_restore in jobs_to_delete:
-                    self._jobs.setdefault(job_to_restore.id, job_to_restore)
-                    self._deleting_job_ids.discard(job_to_restore.id)
-            raise
-
-        with self._jobs_lock:
-            for deleted_job in jobs_to_delete:
-                self._deleting_job_ids.discard(deleted_job.id)
-                if deleted_job.job_type != JobTypes.ADAPTER_MERGE.value:
-                    continue
-                source_job_id = deleted_job.request_parameters.get("source_job_id")
-                parent_job = self._jobs.get(source_job_id)
-                if parent_job is not None:
-                    parent_job.adapter_merge_job_ids.discard(deleted_job.id)
+                self._deleting_job_ids.difference_update(
+                    job_to_delete.id for job_to_delete in jobs_to_delete
+                )
 
         self._logger.info(
             f"Manually deleted {len(jobs_to_delete)} job(s): "
@@ -415,6 +417,11 @@ class JobManager:
                     )
                 child_job = self._jobs.get(child_job_id)
                 if child_job is not None:
+                    if child_job.org_id != job.org_id:
+                        raise ValueError(
+                            f"Adapter merge job '{child_job.id}' belongs to a "
+                            "different organization"
+                        )
                     jobs_to_delete.append(child_job)
 
         for job_to_delete in jobs_to_delete:
@@ -599,7 +606,7 @@ class JobManager:
         deleted_jobs = []
         for job in removed_jobs:
             try:
-                self._delete_jobs_and_results([job])
+                self._delete_job_and_result(job)
             except Exception as e:
                 self._logger.error(
                     f"Deletion failed for job {job.id} during cleanup: {e}"
@@ -649,15 +656,11 @@ class JobManager:
         elif os.path.isdir(result_path):
             shutil.rmtree(result_path)
 
-    def _delete_jobs_and_results(self, jobs: list[Job]) -> None:
-        result_paths = [self._validate_result_path_for_deletion(job) for job in jobs]
+    def _delete_job_and_result(self, job: Job) -> None:
+        result_path = self._validate_result_path_for_deletion(job)
+        self._delete_result_path(result_path)
         if self.db:
-            with self.db.job_deletion_transaction([job.id for job in jobs]):
-                for result_path in result_paths:
-                    self._delete_result_path(result_path)
-        else:
-            for result_path in result_paths:
-                self._delete_result_path(result_path)
+            self.db.delete_job(job.id)
 
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None

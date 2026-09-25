@@ -1354,6 +1354,80 @@ class TestJobManager:
         assert job_manager.get_job_metadata("merge-job") is not None
 
     @pytest.mark.asyncio
+    async def test_manual_delete_training_job_rejects_child_from_other_org(
+        self, job_manager
+    ):
+        training_job = Job(
+            id="training-job",
+            job_type=JobTypes.TRAINING.value,
+            model="test-model",
+            org_id="org-a",
+            status=JobStatus.COMPLETED,
+            adapter_merge_job_ids={"merge-job"},
+        )
+        merge_job = Job(
+            id="merge-job",
+            job_type=JobTypes.ADAPTER_MERGE.value,
+            model="test-model",
+            request_parameters={"source_job_id": "training-job"},
+            org_id="org-b",
+            status=JobStatus.COMPLETED,
+        )
+        with job_manager._jobs_lock:
+            job_manager._jobs[training_job.id] = training_job
+            job_manager._jobs[merge_job.id] = merge_job
+
+        with pytest.raises(ValueError, match="different organization"):
+            job_manager.delete_job("training-job", org_id="org-a")
+
+        assert job_manager.get_job_metadata("training-job") is not None
+        assert job_manager.get_job_metadata("merge-job") is not None
+
+    @pytest.mark.asyncio
+    async def test_cascade_deletion_keeps_remaining_jobs_after_child_failure(
+        self, job_manager
+    ):
+        training_job = Job(
+            id="training-job",
+            job_type=JobTypes.TRAINING.value,
+            model="test-model",
+            status=JobStatus.COMPLETED,
+            adapter_merge_job_ids={"merge-a", "merge-b"},
+        )
+        merge_a = Job(
+            id="merge-a",
+            job_type=JobTypes.ADAPTER_MERGE.value,
+            model="test-model",
+            request_parameters={"source_job_id": "training-job"},
+            status=JobStatus.COMPLETED,
+        )
+        merge_b = Job(
+            id="merge-b",
+            job_type=JobTypes.ADAPTER_MERGE.value,
+            model="test-model",
+            request_parameters={"source_job_id": "training-job"},
+            status=JobStatus.COMPLETED,
+        )
+        with job_manager._jobs_lock:
+            job_manager._jobs[training_job.id] = training_job
+            job_manager._jobs[merge_a.id] = merge_a
+            job_manager._jobs[merge_b.id] = merge_b
+
+        with patch.object(
+            job_manager,
+            "_delete_job_and_result",
+            side_effect=[None, OSError("filesystem unavailable")],
+        ), pytest.raises(OSError, match="filesystem unavailable"):
+            job_manager.delete_job("training-job")
+
+        assert job_manager.get_job_metadata("merge-a") is None
+        assert job_manager.get_job_metadata("merge-b") is not None
+        assert job_manager.get_job_metadata("training-job")[
+            "adapter_merge_job_ids"
+        ] == ["merge-b"]
+        assert job_manager._deleting_job_ids == set()
+
+    @pytest.mark.asyncio
     async def test_manual_delete_merge_job_unlinks_it_from_parent(self, job_manager):
         training_job = Job(
             id="training-job",
@@ -1381,7 +1455,7 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("job_manager", [True], indirect=True)
-    async def test_manual_delete_db_failure_preserves_training_results(
+    async def test_manual_delete_db_failure_keeps_job_after_result_deletion(
         self, job_manager, mock_request, tmp_path
     ):
         adapters_dir = tmp_path / "adapters"
@@ -1405,13 +1479,14 @@ class TestJobManager:
             "utils.job_manager.adapters_root", return_value=str(adapters_dir)
         ), patch.object(
             job_manager.db,
-            "job_deletion_transaction",
+            "delete_job",
             side_effect=RuntimeError("db unavailable"),
         ), pytest.raises(RuntimeError, match="db unavailable"):
             job_manager.delete_job("job-delete-db-failure")
 
-        assert result_dir.exists()
+        assert not result_dir.exists()
         assert job_manager.get_job_metadata("job-delete-db-failure") is not None
+        assert job_manager.db.get_job_by_id("job-delete-db-failure") is not None
 
     @pytest.mark.asyncio
     async def test_manual_delete_rejects_active_job(self, job_manager, mock_request):

@@ -162,15 +162,10 @@ class JobDatabase:
             )
             print(f"Rows affected: {cursor.rowcount}")
 
-    @contextmanager
-    def job_deletion_transaction(self, job_ids: list[str]):
-        """Open one deletion transaction for a collection of jobs."""
+    def delete_job(self, job_id: str) -> None:
+        """Delete a job and its related persisted data."""
         with self._get_cursor() as cursor:
-            cursor.executemany(
-                "DELETE FROM jobs WHERE id = ?",
-                ((job_id,) for job_id in job_ids),
-            )
-            yield
+            cursor.execute("DELETE FROM jobs WHERE id = ?", (job_id,))
 
     def get_job_by_id(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific job from the database by its ID."""

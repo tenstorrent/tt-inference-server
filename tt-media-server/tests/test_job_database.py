@@ -36,15 +36,9 @@ class TestInsertJobOrgId:
 
 
 class TestDeleteJob:
-    def test_external_cleanup_failure_rolls_back_delete(self, db_with_job):
-        def fail_cleanup():
-            raise RuntimeError("filesystem unavailable")
-
-        with pytest.raises(RuntimeError, match="filesystem unavailable"):
-            with db_with_job.job_deletion_transaction(["job-1"]):
-                fail_cleanup()
-
-        assert db_with_job.get_job_by_id("job-1") is not None
+    def test_delete_job(self, db_with_job):
+        db_with_job.delete_job("job-1")
+        assert db_with_job.get_job_by_id("job-1") is None
 
 
 class TestInsertCheckpoint:
@@ -91,8 +85,7 @@ class TestInsertCheckpoint:
     def test_checkpoints_cascade_deleted_with_job(self, db_with_job):
         db_with_job.insert_checkpoint("job-1", "ckpt-1", 100, 1, {}, 1001.0)
         assert len(db_with_job.get_checkpoints("job-1")) == 1
-        with db_with_job.job_deletion_transaction(["job-1"]):
-            pass
+        db_with_job.delete_job("job-1")
         assert db_with_job.get_checkpoints("job-1") == []
 
 
@@ -137,6 +130,5 @@ class TestInsertLog:
     def test_logs_cascade_deleted_with_job(self, db_with_job):
         db_with_job.insert_log("job-1", 0, "ts", "info", 10, "msg")
         assert len(db_with_job.get_logs("job-1")) == 1
-        with db_with_job.job_deletion_transaction(["job-1"]):
-            pass
+        db_with_job.delete_job("job-1")
         assert db_with_job.get_logs("job-1") == []
