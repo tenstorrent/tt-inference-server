@@ -52,6 +52,7 @@ def setup_runner_environment(
     _RUNNERS_REQUIRING_MESH_DESCRIPTOR = {
         ModelRunners.TT_WHISPER.value,
         ModelRunners.TT_SPEECHT5_TTS.value,
+        ModelRunners.TT_QWEN3_TTS.value,
         # Training runners init a tt-metal device directly (via torch-xla). On a
         # single Blackhole chip of a P300 board, tt-metal otherwise selects the
         # CUSTOM cluster type and asserts that a fabric mesh graph descriptor
