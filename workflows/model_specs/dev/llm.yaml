@@ -571,6 +571,10 @@ templates:
         # schedule/commit lag because TTScheduler carries each step's block
         # decision on its SchedulerOutput. Requires the model to declare
         # supports_async_decode (Gemma4DFlash does).
+        # Async decode IS supported on this rail (the contract gates it on
+        # supports_async_spec_decode) and works at DP=1: vLLM resolves the
+        # option once, before speculative_config is built, so its custom_class
+        # validation never sees both set.
         async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
@@ -649,7 +653,15 @@ templates:
       vllm_args:
         data_parallel_size: 4  # four (1,8) column engines; max_concurrency above is whole-box
         max_num_seqs: 32
-        async_scheduling: true
+        # DP>1 only: vLLM re-runs vllm_config.__post_init__ inside the DP
+        # handshake, and by then BOTH async_scheduling and speculative_config
+        # are set, so its "async scheduling is only supported with
+        # EAGLE/MTP/Draft Model/NGram" check raises and every engine dies just
+        # after KV allocation. The negative flag is required because the arg
+        # builder drops False booleans (_append_vllm_arg emits nothing), which
+        # would leave vLLM to AUTO-ENABLE it and raise anyway.
+        # Async is wanted here -- see vllm-tt-plugin#131 for the DP gap.
+        no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
