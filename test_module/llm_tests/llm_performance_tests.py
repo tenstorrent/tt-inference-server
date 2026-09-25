@@ -7,9 +7,9 @@
 Bridges ``test_module`` to ``llm_module``: builds an
 ``LLMPerformanceRunner`` from a (driver, server_controller) pair,
 executes the sweep defined by ``configs``, and forwards each resulting
-``Block`` to ``workflow_module`` as it is produced, re-checkpointing the
-report after each one, so a sweep killed mid-flight still leaves a report
-for the points that finished. The driver carries its own parser, so
+``Block`` to ``workflow_module`` as it is produced -- each accept
+checkpoints the report (``WorkflowExecution``'s accumulator hook), so a
+sweep killed mid-flight still leaves a report for the points that finished. The driver carries its own parser, so
 command-build, execute, and parse stay selected as one unit.
 
 The caller is the only place in test_module that knows about
@@ -35,7 +35,7 @@ from llm_module import (
     ServerController,
 )
 from llm_module.runner import RunnerResult
-from workflow_module import accept_blocks, checkpoint_report
+from workflow_module import accept_blocks
 
 from .._test_common import report_model_fields
 from ..context import MediaContext
@@ -106,11 +106,9 @@ def run_llm_performance(
         "device": device_label,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
-    report_dir = Path(ctx.output_path).parent  # WorkflowExecution's report dir
 
     def _persist(block) -> None:
         accept_blocks([block], envelope=envelope)
-        checkpoint_report(report_dir)
 
     result = runner.run(configs, server, context, on_block=_persist)
 
