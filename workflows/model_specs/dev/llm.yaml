@@ -1213,6 +1213,26 @@ templates:
       max_effective_input_tokens: 261888
 
 - weights:
+    - Qwen/Qwen3-0.6B
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: N150
+      max_concurrency: 32
+      max_context: 40960
+      default_impl: true
+    - device: P150
+      max_concurrency: 32  # single-chip decode RoPE core-grid ceiling
+      max_context: 40960
+      default_impl: true
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3-0.6B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: hermes
+
+- weights:
     - Qwen/Qwen3-8B
   impl: tt_transformers
   inference_engine: VLLM

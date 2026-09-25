@@ -5,20 +5,40 @@ from typing import TYPE_CHECKING, Optional, Union
 
 import torch
 import vllm.envs as envs
-from vllm.inputs import ProcessorInputs, PromptType
 from vllm.logger import init_logger
 from vllm.platforms.interface import Platform, PlatformEnum
-from vllm.sampling_params import SamplingParams
 
 if TYPE_CHECKING:
     from vllm.config import ModelConfig, VllmConfig
+    from vllm.inputs import ProcessorInputs, PromptType
     from vllm.pooling_params import PoolingParams
+    from vllm.sampling_params import SamplingParams
 else:
+    # Deferred (not imported at module top level) to avoid a circular import
+    # during vLLM platform resolution: on newer vLLM, importing
+    # vllm.sampling_params / vllm.inputs here pulls in vllm.config, which imports
+    # current_platform from vllm.platforms while that module is still resolving
+    # this very platform class -> ImportError. These names are only needed as
+    # annotations plus one isinstance check in validate_request(), which imports
+    # SamplingParams locally at call time (well after vLLM has finished loading).
     ModelConfig = None
     VllmConfig = None
     PoolingParams = None
+    ProcessorInputs = None
+    PromptType = None
+    SamplingParams = None
 
 logger = init_logger("vllm.tt_vllm_plugin.platform")
+
+
+def _vllm_use_v1() -> bool:
+    """Whether the V1 engine is active.
+
+    Newer vLLM is V1-only and removed the ``VLLM_USE_V1`` env flag (accessing
+    ``envs.VLLM_USE_V1`` now raises AttributeError). Treat its absence as V1
+    being on, while still honoring the flag on older builds that expose it.
+    """
+    return bool(getattr(envs, "VLLM_USE_V1", True))
 
 
 class TTPlatform(Platform):
@@ -42,6 +62,12 @@ class TTPlatform(Platform):
         )
         vllm_config.scheduler_config.enable_chunked_prefill = False
         vllm_config.scheduler_config.chunked_prefill_enabled = False
+        # Async scheduling (default in newer vLLM) drives max_concurrent_batches=2,
+        # which enables the batch-queue step path (step_with_batch_queue) that calls
+        # worker.sample_tokens() as a separate step. The TT worker only implements the
+        # synchronous execute_model (sampling inline), so force sync scheduling.
+        logger.info("Async scheduling is not supported for TT backend; disabling it.")
+        vllm_config.scheduler_config.async_scheduling = False
         logger.info(
             f"max_num_batched_tokens: {vllm_config.scheduler_config.max_num_batched_tokens}"
         )
@@ -69,8 +95,9 @@ class TTPlatform(Platform):
         vllm_config.cache_config.enable_prefix_caching = False
 
         parallel_config = vllm_config.parallel_config
+        cls.process_data_parallel_size = parallel_config.data_parallel_size
         if parallel_config.worker_cls == "auto":
-            if envs.VLLM_USE_V1:
+            if _vllm_use_v1():
                 parallel_config.worker_cls = (
                     "tt_vllm_plugin.v1.worker.tt_worker.TTWorker"
                 )
@@ -93,6 +120,18 @@ class TTPlatform(Platform):
             if not arch_names[i].startswith("TT"):
                 arch_names[i] = "TT" + arch_names[i]
 
+        # Qwen3-Embedding also declares Qwen3ForCausalLM, so the prefixed name
+        # alone cannot tell it apart from a Qwen3 text generator. Steer the
+        # pooling runner onto TTQwen3Model, leaving TTQwen3ForCausalLM free to
+        # mean the generative tt_transformers model.
+        if vllm_config.model_config.runner_type == "pooling":
+            for i, name in enumerate(arch_names):
+                if name == "TTQwen3ForCausalLM":
+                    arch_names[i] = "TTQwen3Model"
+                    logger.info(
+                        "Pooling runner: resolving TTQwen3ForCausalLM as TTQwen3Model."
+                    )
+
         # Setting attributes on the class level is kind of hacky, but
         # it's the only way to make validate_request depend on vllm_config
         # This is needed to catch incompatible requests early enough
@@ -100,7 +139,14 @@ class TTPlatform(Platform):
         # TODO move this to tt_model_runner when request validation
         # stops depending on vllm_config
 
-        override_tt_config = getattr(vllm_config, "additional_config", {}).get("tt", {})
+        # Prefer the tt override threaded through additional_config (upstream
+        # vLLM channel); fall back to the fork-only model_config.plugin_config.
+        additional_config = getattr(vllm_config, "additional_config", None) or {}
+        override_tt_config = additional_config.get("tt")
+        if not isinstance(override_tt_config, dict) or not override_tt_config:
+            override_tt_config = getattr(
+                vllm_config.model_config, "plugin_config", {}
+            ).get("tt", {})
         if (
             override_tt_config is not None
             and "sample_on_device_mode" in override_tt_config
@@ -120,7 +166,7 @@ class TTPlatform(Platform):
         # or if any of the requests in the batch require it.
         # For now, it is only supported with host-side sampling.
 
-        if envs.VLLM_USE_V1:  # type: ignore[attr-defined]
+        if _vllm_use_v1():  # type: ignore[attr-defined]
             logger.warning(
                 "Disabling compatibility sampling as it's not yet support for "
                 "V1 TT backend."
@@ -136,7 +182,7 @@ class TTPlatform(Platform):
                 "always_compat_sampling must be a boolean"
             )
             if always_compat_sampling:
-                if envs.VLLM_USE_V1:
+                if _vllm_use_v1():
                     raise ValueError(
                         "always_compat_sampling is not yet supported for V1 TT backend."
                     )
@@ -165,17 +211,12 @@ class TTPlatform(Platform):
     def supports_v1(cls, model_config: ModelConfig) -> bool:
         # V1 support on TT is experimental.
         # Allow users to opt in, but give a warning.
-        if envs.is_set("VLLM_USE_V1") and envs.VLLM_USE_V1:
+        if _vllm_use_v1():
             if model_config.is_encoder_decoder:
                 raise ValueError(
-                    "VLLM_USE_V1=1 was set but encoder-decoder models aren't "
-                    "yet supported in V1 for TT"
+                    "encoder-decoder models aren't yet supported in V1 for TT"
                 )
-            logger.warning(
-                "Enabling V1 since VLLM_USE_V1=1, however V1 is still "
-                "experimental for TT backend."
-            )
-            return envs.VLLM_USE_V1
+            return True
         return False
 
     @classmethod
@@ -193,18 +234,34 @@ class TTPlatform(Platform):
     @classmethod
     def validate_request(
         cls,
-        prompt: PromptType,
-        params: Union[SamplingParams, PoolingParams],
         processed_inputs: ProcessorInputs,
+        params: Union[SamplingParams, PoolingParams],
+        *,
+        prompt: PromptType = None,
     ) -> None:
         """Raises if this request is unsupported on this platform"""
+
+        from vllm.sampling_params import SamplingParams
 
         if isinstance(params, SamplingParams):
             if params.n != 1:
                 raise ValueError(f"Currently only supporting n=1 on {cls.device_name}.")
-            if params.best_of is not None:
+            if (
+                params.logprobs is not None
+                and getattr(cls, "process_data_parallel_size", 1) > 1
+            ):
                 raise ValueError(
-                    f"Currently not supporting best_of on {cls.device_name}"
+                    "logprobs are not supported with process data parallelism "
+                    "on TT; use data_parallel_size=1 or in-process "
+                    "tt_data_parallel"
+                )
+            if params.logprobs is not None and getattr(
+                cls, "sample_on_device_mode", None
+            ):
+                raise ValueError("logprobs require host-side sampling on TT")
+            if params.logprobs == -1:
+                raise ValueError(
+                    "Full-vocabulary logprobs (logprobs=-1) are not supported on TT"
                 )
             if params.prompt_logprobs is not None:
                 raise ValueError(
@@ -214,7 +271,10 @@ class TTPlatform(Platform):
     @staticmethod
     def compat_sampling_required(sampling_params) -> bool:
         # anything beyond top-k top-p sampling requires compat sampling
-        # seed pending https://github.com/tenstorrent/tt-metal/issues/32209
+        #
+        # NOTE: `seed` is deliberately absent. The V1 runner honours it directly
+        # by giving each request its own torch.Generator for the host-side
+        # multinomial draw, so a seeded request does not need compat sampling.
         return (
             sampling_params.presence_penalty != 0.0
             or sampling_params.frequency_penalty != 0.0
@@ -230,6 +290,5 @@ class TTPlatform(Platform):
             or sampling_params.guided_decoding is not None
             or sampling_params.logit_bias is not None
             or sampling_params.allowed_token_ids is not None
-            or sampling_params.seed is not None
             or sampling_params.min_tokens != 0
         )

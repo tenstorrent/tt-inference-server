@@ -685,6 +685,72 @@ def test_resolve_service_port_reads_port_from_sys_argv(
     assert run_vllm_api_server_module.resolve_service_port() == expected_port
 
 
+@pytest.mark.parametrize(
+    "plugin_config",
+    [
+        json.dumps({"tt": {}}),
+        {"tt": {}},
+        "",
+        "not-json",
+        None,
+    ],
+)
+def test_absorb_empty_plugin_config(run_vllm_api_server_module, plugin_config):
+    default_vllm_args = {"port": 8000}
+    if plugin_config is not None:
+        default_vllm_args["plugin_config"] = plugin_config
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert "plugin_config" not in default_vllm_args
+    assert "plugin-config" not in default_vllm_args
+    assert "additional_config" not in default_vllm_args
+
+
+def test_absorb_plugin_config(
+    run_vllm_api_server_module,
+):
+    default_vllm_args = {
+        "port": 8000,
+        "plugin_config": json.dumps({"tt": {"trace_mode": False, "foo": 1}}),
+    }
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert "plugin_config" not in default_vllm_args
+    assert default_vllm_args["additional_config"] == {
+        "tt": {"trace_mode": False, "foo": 1}
+    }
+
+
+def test_absorb_plugin_config_preserves_existing_tt_values(
+    run_vllm_api_server_module,
+):
+    default_vllm_args = {
+        "plugin_config": {"tt": {"tt_data_parallel": 99, "foo": 1}},
+        "additional_config": json.dumps(
+            {
+                "tt": {"tt_data_parallel": 2},
+                "other_plugin": {"enabled": True},
+            }
+        ),
+    }
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert default_vllm_args["additional_config"]["tt"] == {
+        "tt_data_parallel": 2,
+        "foo": 1,
+    }
+    assert default_vllm_args["additional_config"]["other_plugin"] == {"enabled": True}
+
+
 def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -1070,3 +1136,37 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+@pytest.mark.parametrize(
+    "canonical,colocated,disabled,expected",
+    [
+        (None, False, False, "5.0"),
+        (None, True, False, "120.0"),
+        ("42.0", True, False, "42.0"),
+        ("42.0", False, False, "42.0"),
+        ("42.0", True, True, None),
+    ],
+)
+def test_metal_timeout_override_precedence(
+    monkeypatch,
+    run_vllm_api_server_module,
+    canonical,
+    colocated,
+    disabled,
+    expected,
+):
+    for name, value in {
+        "TT_METAL_OPERATION_TIMEOUT_SECONDS": canonical,
+        "TT_COLOCATED_INFERENCE": "1" if colocated else "0",
+        "DISABLE_METAL_OP_TIMEOUT": "1" if disabled else "0",
+        "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE": "stale",
+    }.items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    run_vllm_api_server_module.set_metal_timeout_env_vars()
+    assert os.environ.get("TT_METAL_OPERATION_TIMEOUT_SECONDS") == expected
+    if disabled:
+        assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ

@@ -2128,7 +2128,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.11.1-84b4c53-222ee06
+              tag: 0.11.1-80180b9-7678b70
             resources:
               requests:
                 memory: 2Gi
@@ -2203,6 +2203,32 @@ models:
                 value: tt
               - name: WH_ARCH_YAML
                 value: wormhole_b0_80_arch_eth_dispatch.yaml
+      p150:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.11.1-80180b9-7678b70
+            resources:
+              requests:
+                memory: 2Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P150
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
     defaultEngine: vllm
   Llama-3.2-3B:
     vllm:
