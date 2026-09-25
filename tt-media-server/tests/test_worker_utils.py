@@ -54,7 +54,7 @@ if "tt_model_runners.runner_fabric" not in sys.modules:
     sys.modules["tt_model_runners.runner_fabric"] = Mock()
 
 # Now import the modules under test
-from device_workers.worker_utils import initialize_device_worker, signalJobStart
+from device_workers.worker_utils import claim_job_for_worker, initialize_device_worker
 from utils.runner_utils import (
     _setup_blackhole_mesh_config,
     _setup_galaxy_mesh_config,
@@ -283,22 +283,44 @@ class TestSetupGalaxyMeshConfig:
                 assert "TT_MESH_GRAPH_DESC_PATH" not in os.environ
 
 
-class TestSignalJobStart:
-    """Device dispatch must set the job start_event when present."""
+class TestClaimJobForWorker:
+    """Device dispatch must publish its worker and signal job start."""
 
-    def test_sets_event_when_present(self):
+    @patch("device_workers.worker_utils.os.getpid", return_value=123)
+    def test_sets_event_when_present(self, _mock_getpid):
         request = Mock()
         request._start_event = Mock()
-        signalJobStart(request)
+        request._cancel_event = None
+        request._worker_assignment = Mock()
+
+        assert claim_job_for_worker(request, "worker-0") is True
+
+        assert request._worker_assignment.worker_id == "worker-0"
+        assert request._worker_assignment.worker_pid == 123
         request._start_event.set.assert_called_once()
 
     def test_noops_when_event_missing(self):
-        signalJobStart(object())
+        assert claim_job_for_worker(object(), "worker-0") is True
 
     def test_noops_when_event_is_none(self):
         request = Mock()
         request._start_event = None
-        signalJobStart(request)
+        request._cancel_event = None
+        request._worker_assignment = None
+
+        assert claim_job_for_worker(request, "worker-0") is True
+
+    def test_skips_request_cancelled_while_queued(self):
+        request = Mock()
+        request._cancel_event.is_set.side_effect = [False, True]
+        request._worker_assignment.worker_id = None
+        request._worker_assignment.worker_pid = None
+
+        assert claim_job_for_worker(request, "worker-0") is False
+
+        assert request._worker_assignment.worker_id is None
+        assert request._worker_assignment.worker_pid is None
+        request._start_event.set.assert_not_called()
 
 
 class TestInitializeDeviceWorker:

@@ -7,7 +7,8 @@ import os
 import tempfile
 import time
 from multiprocessing import Event
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 from config.constants import JobTypes
@@ -922,6 +923,75 @@ class TestJobManager:
             assert db_job_final["completed_at"] is not None
 
     @pytest.mark.asyncio
+    async def test_cancel_training_job_replaces_its_assigned_worker(
+        self, job_manager, mock_request
+    ):
+        start_event = Event()
+        worker_assignment = SimpleNamespace(worker_id="worker-0", worker_pid=123)
+        replace_worker = Mock()
+
+        async def long_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="training-job",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=long_training,
+            start_event=start_event,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            worker_replacement_required=SimpleNamespace(value=True),
+            replace_worker=replace_worker,
+        )
+        start_event.set()
+        await asyncio.sleep(0.1)
+
+        job_manager.cancel_job("training-job")
+        await asyncio.sleep(0.1)
+
+        replace_worker.assert_called_once_with("worker-0", 123)
+        assert (
+            job_manager.get_job_metadata("training-job")["status"]
+            == JobStatus.CANCELLED
+        )
+
+    @pytest.mark.asyncio
+    async def test_cancel_rechecks_assignment_after_signalling_worker(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(worker_id=None, worker_pid=None)
+        cancel_event = Mock()
+        replace_worker = Mock()
+
+        def publish_worker_assignment():
+            worker_assignment.worker_id = "worker-0"
+            worker_assignment.worker_pid = 123
+
+        cancel_event.set.side_effect = publish_worker_assignment
+
+        async def long_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="training-dispatch-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=long_training,
+            cancel_event=cancel_event,
+            worker_assignment=worker_assignment,
+            worker_replacement_required=SimpleNamespace(value=True),
+            replace_worker=replace_worker,
+        )
+
+        job_manager.cancel_job("training-dispatch-race")
+        await asyncio.sleep(0.1)
+
+        replace_worker.assert_called_once_with("worker-0", 123)
+
+    @pytest.mark.asyncio
     async def test_cancel_job_not_found(self, job_manager):
         """Test deleting non-existent job"""
         result = job_manager.cancel_job("nonexistent")
@@ -960,6 +1030,7 @@ class TestJobManager:
     async def test_cancel_queued_job(self, job_manager, mock_request):
         """QUEUED job can be cancelled immediately."""
         start_event_1 = Event()
+        replace_worker = Mock()
 
         async def long_task(req):
             start_event_1.set()
@@ -983,6 +1054,9 @@ class TestJobManager:
             task_function=long_task,
             result_path="result.pt",
             start_event=Event(),
+            worker_assignment=SimpleNamespace(worker_id=None, worker_pid=None),
+            worker_replacement_required=SimpleNamespace(value=True),
+            replace_worker=replace_worker,
         )
 
         await asyncio.sleep(0.3)
@@ -991,6 +1065,7 @@ class TestJobManager:
 
         result = job_manager.cancel_job("job-queued")
         assert result["status"] == "cancelled"
+        replace_worker.assert_not_called()
 
         if job_manager.db:
             assert (
@@ -1813,6 +1888,7 @@ class TestJobManager:
 
         start_event = Event()
         cancel_event = Event()
+        replace_worker = Mock()
 
         async def cooperative_task(req):
             start_event.set()
@@ -1830,6 +1906,9 @@ class TestJobManager:
             result_path="models_save/result.pt",
             start_event=start_event,
             cancel_event=cancel_event,
+            worker_assignment=SimpleNamespace(worker_id="worker-0", worker_pid=123),
+            worker_replacement_required=SimpleNamespace(value=False),
+            replace_worker=replace_worker,
         )
 
         await asyncio.sleep(0.3)
@@ -1846,6 +1925,7 @@ class TestJobManager:
 
         # _cleanup_job should set the event, NOT cancel the task
         assert cancel_event.is_set()
+        replace_worker.assert_not_called()
 
         await asyncio.sleep(0.5)
 

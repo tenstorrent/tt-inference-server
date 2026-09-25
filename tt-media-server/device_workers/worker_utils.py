@@ -3,17 +3,37 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import os
 
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
 
-def signalJobStart(request) -> None:
-    """Notify JobManager that a device worker has started this request."""
-    startEvent = getattr(request, "_start_event", None)
-    if startEvent is not None:
-        startEvent.set()
+def claim_job_for_worker(request, worker_id: str) -> bool:
+    """Assign the request and signal that worker processing has started.
+
+    Returns false when the request was cancelled while waiting in the queue.
+    """
+    cancel_event = getattr(request, "_cancel_event", None)
+    if cancel_event is not None and cancel_event.is_set():
+        return False
+
+    worker_assignment = getattr(request, "_worker_assignment", None)
+    if worker_assignment is not None:
+        worker_assignment.worker_id = worker_id
+        worker_assignment.worker_pid = os.getpid()
+
+    if cancel_event is not None and cancel_event.is_set():
+        if worker_assignment is not None:
+            worker_assignment.worker_id = None
+            worker_assignment.worker_pid = None
+        return False
+
+    start_event = getattr(request, "_start_event", None)
+    if start_event is not None:
+        start_event.set()
+    return True
 
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):

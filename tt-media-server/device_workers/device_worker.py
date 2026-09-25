@@ -9,7 +9,7 @@ from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
-from device_workers.worker_utils import initialize_device_worker, signalJobStart
+from device_workers.worker_utils import claim_job_for_worker, initialize_device_worker
 from utils.logger import TTLogger
 
 
@@ -75,8 +75,11 @@ async def _continuous_fan_out(
     inflight: dict[asyncio.Task, Any] = {}
     shutdown_seen = False
 
-    def schedule(req: Any) -> None:
-        signalJobStart(req)
+    def schedule(req: Any, start_already_signaled: bool = False) -> None:
+        # The outer worker signals the initial batch before entering fan-out.
+        # Requests pulled here as top-ups still need to be claimed.
+        if not start_already_signaled and not claim_job_for_worker(req, worker_id):
+            return
         task = asyncio.create_task(device_runner._run_async([req]))
         inflight[task] = req
 
@@ -86,7 +89,7 @@ async def _continuous_fan_out(
         if isinstance(req, CanaryProbeRequest):
             _run_canary_probe(device_runner, req, worker_id, result_queue, logger)
             continue
-        schedule(req)
+        schedule(req, start_already_signaled=True)
 
     while inflight:
         done, _pending = await asyncio.wait(
@@ -203,9 +206,13 @@ def device_worker(
             )
             continue
 
+        requests = [
+            request for request in requests if claim_job_for_worker(request, worker_id)
+        ]
+        if not requests:
+            continue
+
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
-        for request in requests:
-            signalJobStart(request)
         responses = None
 
         successful = False

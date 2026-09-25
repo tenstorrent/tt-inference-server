@@ -207,10 +207,6 @@ class TrainingLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request._start_event:
-            request._start_event.set()
-            self.logger.info(f"Device {self.device_id}: Start event set")
-
         mesh = self._create_mesh() if self._is_multichip else None
 
         # Load datasets.
@@ -315,6 +311,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
                     running_loss += loss.item()
                     global_step += 1
                     request.touch_progress()
+                    request.allow_cooperative_cancellation()
 
                     # Training metrics
                     if global_step % request.steps_freq == 0:
@@ -464,11 +461,19 @@ class TrainingLoraRunner(BaseDeviceRunner):
         vocab_size: int,
     ):
         self.logger.info("Starting validation...")
+        if request._cancel_event and request._cancel_event.is_set():
+            self.logger.info("Validation cancelled before starting.")
+            return None
+        request.require_worker_replacement_on_cancel()
         model.eval()
         total_val_loss = 0.0
         num_val_batches = 0
 
         with torch.no_grad():
+            # Cancellation can race with publishing the compile-sensitive phase.
+            if request._cancel_event and request._cancel_event.is_set():
+                self.logger.info("Validation cancelled before starting.")
+                return None
             for batch in tqdm(eval_dataloader, desc="Validation"):
                 # Compute one-hot labels on CPU before device transfer.
                 expected_output, labels_mask = _transform_labels(
@@ -498,5 +503,11 @@ class TrainingLoraRunner(BaseDeviceRunner):
                 total_val_loss += loss.item()
                 num_val_batches += 1
                 request.touch_progress()
+                request.allow_cooperative_cancellation()
 
+                if request._cancel_event and request._cancel_event.is_set():
+                    self.logger.info("Validation cancelled early.")
+                    return None
+
+        request.allow_cooperative_cancellation()
         return total_val_loss / num_val_batches if num_val_batches > 0 else 0.0

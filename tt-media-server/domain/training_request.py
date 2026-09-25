@@ -65,6 +65,9 @@ class TrainingRequest(BaseRequest):
     _training_logs: list = PrivateAttr(default=None)
     _training_checkpoints: list = PrivateAttr(default=None)
     _progress_tracker: object = PrivateAttr(default=None)
+    _worker_assignment: object = PrivateAttr(default=None)
+    _worker_replacement_required: object = PrivateAttr(default=None)
+    _local_worker_replacement_required: Optional[bool] = PrivateAttr(default=None)
     # Worker-local timestamp used to throttle writes to the shared tracker.
     _last_heartbeat_time: float = PrivateAttr(default=0.0)
 
@@ -80,3 +83,20 @@ class TrainingRequest(BaseRequest):
             return
         self._progress_tracker.value = now
         self._last_heartbeat_time = now
+
+    def require_worker_replacement_on_cancel(self) -> None:
+        """Mark the current runner phase as unsafe for cooperative cancellation."""
+        self._set_worker_replacement_required(True)
+
+    def allow_cooperative_cancellation(self) -> None:
+        """Mark the current runner phase as safe to stop at a cancellation check."""
+        self._set_worker_replacement_required(False)
+
+    def _set_worker_replacement_required(self, required: bool) -> None:
+        if (
+            self._worker_replacement_required is None
+            or self._local_worker_replacement_required is required
+        ):
+            return
+        self._worker_replacement_required.value = required
+        self._local_worker_replacement_required = required

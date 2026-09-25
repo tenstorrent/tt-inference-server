@@ -4,7 +4,7 @@
 
 import asyncio
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -79,7 +79,7 @@ mock_logger = Mock()
 sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger.return_value = mock_logger
 
-from device_workers.device_worker import device_worker
+from device_workers.device_worker import _continuous_fan_out, device_worker
 
 for module_name, original_module in {
     "config.settings": _orig_config_settings,
@@ -138,6 +138,34 @@ def create_get_many_side_effect(return_values):
             raise WorkerExitException("Test complete - exiting worker loop")
 
     return side_effect
+
+
+@pytest.mark.asyncio
+async def test_continuous_fan_out_signals_top_up_request_start():
+    initial_request = MockImageGenerateRequest("initial")
+    top_up_request = MockImageGenerateRequest("top-up")
+    task_queue = Mock()
+    task_queue.get_many.side_effect = [[top_up_request], []]
+    result_queue = Mock()
+    device_runner = Mock()
+    device_runner._run_async = AsyncMock(
+        side_effect=lambda requests: [f"result-{requests[0]._task_id}"]
+    )
+
+    shutdown_seen = await _continuous_fan_out(
+        device_runner=device_runner,
+        initial_requests=[initial_request],
+        worker_id="worker-0",
+        result_queue=result_queue,
+        error_queue=Mock(),
+        task_queue=task_queue,
+        max_inflight=2,
+        logger=Mock(),
+    )
+
+    assert shutdown_seen is False
+    top_up_request._start_event.set.assert_called_once()
+    assert result_queue.put.call_count == 2
 
 
 @pytest.fixture
