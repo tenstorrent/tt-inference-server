@@ -3049,3 +3049,38 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# Generated Quetzal S128/B32/C131072 package; EXPERIMENTAL is not qualification.
+- weights:
+  - openai/gpt-oss-120b
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 131072
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: b270eb9255fed46fb25a45f90ca8aaf999df4801e602a47a847035450b36acfd
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+      QUETZAL_AUXILIARY_ROOTS_JSON: '{"openai_gpt-oss-120b-streamed-cache":"/home/container_app_user/quetzal/auxiliary/openai_gpt-oss-120b-streamed-cache/sha256-2eef319a6e078c5c2497f252f7c4a0c32c363b2901e38a5a924b2456a5c9874c"}'
+    vllm_args:
+      revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+      tokenizer_revision: b5c939de8f754692c1647ca79fbf85e8c1e70f8a
+      block_size: 64
+      enable_auto_tool_choice: true
+      tool_call_parser: openai
+      reasoning_parser: openai_gptoss
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 90000000
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 131072
+    max_tokens_all_users_override: 131072
+  status: EXPERIMENTAL
