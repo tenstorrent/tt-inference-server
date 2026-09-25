@@ -143,6 +143,47 @@ and the ttnn cache. The readiness window itself is 3600 s per boot attempt x 2 a
 covers weight load + cache build + the warm shape. If a download was interrupted, setup_host
 detects the `.incomplete` files and resumes it.
 
+## Per-task dispatch branches (FL2VA, Ref2VA)
+
+t2va, fl2va and ref2va are separate deployments of the same weights (one `MODEL_RUNNER`
+each), while the dev catalog holds one `MiniMaxAI/MiniMax-H3` BLACKHOLE_GALAXY spec. Two
+dispatch-only branches point that spec at the other runners, so tt-shield runs every case
+of `cases.json` without a shield change: `zni/h3-ci-fl2va` (6 FL2VA cases, one suite entry)
+and `zni/h3-ci-ref2va` (12 REF2VA / SIZE cases in five entries of <= 14400 s, rising risk,
+smoke only in the first). Do not merge them as is: main's spec serves t2va. This is
+`zni/h3-ci-ref2va`; `zni/h3-ci-fl2va` is the other one. Both branches share, on top of this CI branch:
+
+* `sadesoye/add_h3_fl2va_ref2va` (the FL2VA / Ref2VA runners, `/ref2va`, DELETE, the H3
+  policy read from tt-metal) merged in, with the three tasks' BLACKHOLE_GALAXY `(4, 8)`
+  configs in `tt-media-server/config/constants.py`;
+* the media-limit commits from `zni/h3-media-limits`;
+* task-aware plumbing, all keyed on the spec's `MODEL_RUNNER`: `setup_host` downloads the
+  task's weight set (ref2va reads `transformer_ref/` instead of `transformer/`) and treats a
+  volume missing the task's folders or index shards as incomplete; the benchmark takes its
+  task, default plans, output directory and `skip_smoke` per entry; the contract,
+  lifecycle, quality-eval and generic-benchmark requests follow the deployment's task
+  (fl2va gets the text-only shape it serves, ref2va one reference image);
+* the task's media, committed under `test_fixtures/datasets/minimax_h3/` with `git add -f`
+  (FL2VA ~27 MB, Ref2VA ~101 MB; pinned by `sha256s-bundle.txt`).
+
+tt-metal must be >= `816841ddc93` (#57097: the `minimax_h3/policy.py` the server imports and
+the `create_pipeline` `dit_fsdp` / `trace_denoise` / `bucket_denoise` arguments). The image of
+the t2va runs (`d9c2c92d05c`) and tt-metal stable `de546d3b` lack both. Dispatch with a pinned
+sha, a fresh build (`docker-image` empty) and `run-full-evals=false` first:
+
+```bash
+gh workflow run on-dispatch.yml -R tenstorrent/tt-shield --ref main \
+  -f model=MiniMaxAI/MiniMax-H3 -f runner-label=bh-galaxy -f device-type=blackhole_galaxy \
+  -f workflow=release -f tt-metal-git-ref=<tt-metal sha >= 816841ddc93> \
+  -f inference-server-git-ref=<40-hex sha of zni/h3-ci-ref2va> -f impl-of-model=default \
+  -f run-full-evals=false -f create-issue-comment=false -f run-ai-summary=false
+```
+
+Expect: FL2VA ~30 min of generation (CI) / ~50 min (full) plus boot; Ref2VA ~5.5 h (CI) /
+~11 h (full) plus the `transformer_ref/` download (66 GB on a volume t2va warmed, 144 GB cold).
+The max-input cases (`FL2VA-H`, the `REF2VA-H` family) have out-of-memory history on 4x8 and
+run last; an out-of-memory there leaks device DRAM until the ranks restart.
+
 ## Known gaps and next steps
 
 * **FL2VA / Ref2VA are not on main yet** (runners, `POST /generations/ref2va`,
@@ -158,9 +199,11 @@ detects the `.incomplete` files and resumes it.
   `results.jsonl` (3x the slowest observed run; target = 1.25x the median).
 * **Cancel** is disabled in CI until verified on a single host.
 * **Seed determinism** is not asserted (the hosted deployments were not deterministic).
-* **Media goes as base64 only**: the vendored engine did not take the standalone tool's
-  URL transport, so `FL2VA-H`/`FL2VA-L2`/`FL2VA-M2` (27 MB keyframe > the 10,000,000-char
-  cap) can only `xfail` until URL media is ported.
+* **Media goes as base64 only**. On main the 27 MB keyframe of `FL2VA-H`/`FL2VA-L2`/
+  `FL2VA-M2` exceeds the 10,000,000-char image cap and those cases can only `xfail`; URL
+  media would not help (downloads are capped at 7.5 MB and re-checked against the same
+  cap). The per-task dispatch branches carry the media-limit commits (image 30 MiB, video
+  50 MiB, audio 15 MiB, body 64 MiB, no base64 echo), so there they are real runs.
 * **The shared volume is not everywhere**: `/mnt/MLPerf/tt-shield/persistent-volume` exists
   only on runners that have that mount; tt-shield falls back to `/localdev/persistent-volume`
   or a per-run directory, and the media pack has to be staged wherever the volume lands.

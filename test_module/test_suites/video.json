@@ -151,7 +151,7 @@
                 {
                     "template": "MiniMaxH3CreateContractTest",
                     "enabled": true,
-                    "description": "MiniMax-H3 V1 request contract: auth, unknown fields, aspect ratio, duration, step count",
+                    "description": "MiniMax-H3 V1 request contract for the deployment's task (ref2va: /ref2va served with one reference image, /generations and /i2v refused): auth, unknown fields, aspect ratio, duration, step count",
                     "targets": {
                         "profile": "validation",
                         "request_timeout": 60
@@ -160,7 +160,7 @@
                 {
                     "template": "MiniMaxH3LifecycleDownloadTest",
                     "enabled": true,
-                    "description": "One 16:9 / 5 s t2va job: create, query, list, download, video + non-silent audio",
+                    "description": "One 16:9 / 5 s ref2va job with one reference image: create, query, list, download, video + non-silent audio",
                     "targets": {
                         "poll_timeout": 1800,
                         "download_timeout": 600,
@@ -179,22 +179,19 @@
                 {
                     "template": "MiniMaxH3BenchmarkTest",
                     "enabled": true,
-                    "description": "h3-benchmark on a single BH Galaxy: health pre-gate, probe, smoke, then the t2va cases with every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed)",
+                    "description": "h3-benchmark on a single BH Galaxy, Ref2VA deployment, entry 1/5 (5 s row): health pre-gate, probe, smoke, then REF2VA-L + REF2VA-M5 + SIZE-V, every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed). The Ref2VA plan is split into five entries, ordered by rising risk, because one pass takes ~5.5 h and a template entry has 14400 s; an out-of-memory in the max-inputs entries can leave the mesh degraded, so they run last.",
                     "targets": {
-                        "task": "t2va",
+                        "task": "ref2va",
                         "timeout_table": "BH1X",
                         "idle_wait_s": 60,
+                        "out_subdir": "ref2va_1",
+                        "skip_smoke": false,
                         "plan_ci": [
                             {
                                 "cases": [
-                                    "T2VA-L"
-                                ],
-                                "runs": 3
-                            },
-                            {
-                                "cases": [
-                                    "T2VA-M",
-                                    "T2VA-H"
+                                    "REF2VA-L",
+                                    "REF2VA-M5",
+                                    "SIZE-V"
                                 ],
                                 "runs": 1
                             }
@@ -202,18 +199,139 @@
                         "plan_full": [
                             {
                                 "cases": [
-                                    "T2VA-L",
-                                    "T2VA-M",
-                                    "T2VA-H"
+                                    "REF2VA-L",
+                                    "REF2VA-M5",
+                                    "SIZE-V"
                                 ],
                                 "runs": 3
                             }
                         ],
-                        "target_times_s": {
-                            "T2VA-L": 90,
-                            "T2VA-M": 160,
-                            "T2VA-H": 225
-                        },
+                        "enforce_timing": false
+                    }
+                },
+                {
+                    "template": "MiniMaxH3BenchmarkTest",
+                    "enabled": true,
+                    "description": "h3-benchmark on a single BH Galaxy, Ref2VA deployment, entry 2/5 (10 s row): health pre-gate and probe (smoke ran in entry 1), then REF2VA-L10 + REF2VA-M + SIZE-V10, every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed).",
+                    "targets": {
+                        "task": "ref2va",
+                        "timeout_table": "BH1X",
+                        "idle_wait_s": 60,
+                        "out_subdir": "ref2va_2",
+                        "skip_smoke": true,
+                        "plan_ci": [
+                            {
+                                "cases": [
+                                    "REF2VA-L10",
+                                    "REF2VA-M",
+                                    "SIZE-V10"
+                                ],
+                                "runs": 1
+                            }
+                        ],
+                        "plan_full": [
+                            {
+                                "cases": [
+                                    "REF2VA-L10",
+                                    "REF2VA-M",
+                                    "SIZE-V10"
+                                ],
+                                "runs": 3
+                            }
+                        ],
+                        "enforce_timing": false
+                    }
+                },
+                {
+                    "template": "MiniMaxH3BenchmarkTest",
+                    "enabled": true,
+                    "description": "h3-benchmark on a single BH Galaxy, Ref2VA deployment, entry 3/5 (15 s row): health pre-gate and probe (smoke ran in entry 1), then REF2VA-L15 + REF2VA-M15 + SIZE-V15, every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed).",
+                    "targets": {
+                        "task": "ref2va",
+                        "timeout_table": "BH1X",
+                        "idle_wait_s": 60,
+                        "out_subdir": "ref2va_3",
+                        "skip_smoke": true,
+                        "plan_ci": [
+                            {
+                                "cases": [
+                                    "REF2VA-L15",
+                                    "REF2VA-M15",
+                                    "SIZE-V15"
+                                ],
+                                "runs": 1
+                            }
+                        ],
+                        "plan_full": [
+                            {
+                                "cases": [
+                                    "REF2VA-L15",
+                                    "REF2VA-M15",
+                                    "SIZE-V15"
+                                ],
+                                "runs": 3
+                            }
+                        ],
+                        "enforce_timing": false
+                    }
+                },
+                {
+                    "template": "MiniMaxH3BenchmarkTest",
+                    "enabled": true,
+                    "description": "h3-benchmark on a single BH Galaxy, Ref2VA deployment, entry 4/5 (max inputs, 5 s / 10 s): health pre-gate and probe (smoke ran in entry 1), then REF2VA-H5 + REF2VA-H10, every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed).",
+                    "targets": {
+                        "task": "ref2va",
+                        "timeout_table": "BH1X",
+                        "idle_wait_s": 60,
+                        "out_subdir": "ref2va_4",
+                        "skip_smoke": true,
+                        "plan_ci": [
+                            {
+                                "cases": [
+                                    "REF2VA-H5",
+                                    "REF2VA-H10"
+                                ],
+                                "runs": 1
+                            }
+                        ],
+                        "plan_full": [
+                            {
+                                "cases": [
+                                    "REF2VA-H5",
+                                    "REF2VA-H10"
+                                ],
+                                "runs": 3
+                            }
+                        ],
+                        "enforce_timing": false
+                    }
+                },
+                {
+                    "template": "MiniMaxH3BenchmarkTest",
+                    "enabled": true,
+                    "description": "h3-benchmark on a single BH Galaxy, Ref2VA deployment, entry 5/5 (max inputs, 15 s): health pre-gate and probe (smoke ran in entry 1), then REF2VA-H, every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed). REF2VA-H (6 images + 3 videos + 3 audios at 15 s) has out-of-memory history on 4x8.",
+                    "targets": {
+                        "task": "ref2va",
+                        "timeout_table": "BH1X",
+                        "idle_wait_s": 60,
+                        "out_subdir": "ref2va_5",
+                        "skip_smoke": true,
+                        "plan_ci": [
+                            {
+                                "cases": [
+                                    "REF2VA-H"
+                                ],
+                                "runs": 1
+                            }
+                        ],
+                        "plan_full": [
+                            {
+                                "cases": [
+                                    "REF2VA-H"
+                                ],
+                                "runs": 3
+                            }
+                        ],
                         "enforce_timing": false
                     }
                 }

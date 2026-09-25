@@ -295,34 +295,44 @@ class TestVideoMatrixExpansion:
             assert suite["num_of_devices"] == 1
 
     def test_minimax_h3_suite_contract_lifecycle_and_benchmark(self):
-        # One single-host BH Galaxy serves t2va; the suite drives the V1 contract, one
-        # judged lifecycle, then the h3-benchmark cases. Cancel stays disabled until a
+        # On this dispatch branch the single-host BH Galaxy serves ref2va; the suite drives the
+        # V1 contract, one judged lifecycle, then every REF2VA / SIZE h3-benchmark case. Cancel stays disabled until a
         # single-host cancel is verified not to take the deployment down.
         suite = self._suite_map()["minimax-h3-blackhole_galaxy"]
         enabled = [
             tc["template"] for tc in suite["test_cases"] if tc.get("enabled", True)
         ]
-        assert enabled == [
-            "MiniMaxH3CreateContractTest",
-            "MiniMaxH3LifecycleDownloadTest",
-            "MiniMaxH3BenchmarkTest",
-        ]
+        assert (
+            enabled
+            == [
+                "MiniMaxH3CreateContractTest",
+                "MiniMaxH3LifecycleDownloadTest",
+            ]
+            + ["MiniMaxH3BenchmarkTest"] * 5
+        )
         disabled = [
             tc["template"] for tc in suite["test_cases"] if not tc.get("enabled", True)
         ]
         assert disabled == ["MiniMaxH3CancelLifecycleTest"]
-        bench = self._case_targets(
-            "minimax-h3-blackhole_galaxy", "MiniMaxH3BenchmarkTest"
-        )
-        assert bench["task"] == "t2va"
-        assert bench["timeout_table"] == "BH1X"
-        assert bench["plan_ci"] == [
-            {"cases": ["T2VA-L"], "runs": 3},
-            {"cases": ["T2VA-M", "T2VA-H"], "runs": 1},
+        # Every REF2VA / SIZE case exactly once, split over five entries (one pass is ~5.5 h
+        # and an entry has 14400 s), rising risk, smoke only in the first.
+        from test_module._test_common.minimax_h3_bench import models as M
+
+        benches = [
+            tc["targets"]
+            for tc in suite["test_cases"]
+            if tc["template"] == "MiniMaxH3BenchmarkTest"
         ]
-        assert bench["plan_full"] == [
-            {"cases": ["T2VA-L", "T2VA-M", "T2VA-H"], "runs": 3}
-        ]
+        ref2va = [c["id"] for c in M.load_cases()["cases"] if c["task"] == "ref2va"]
+        for key, runs in (("plan_ci", 1), ("plan_full", 3)):
+            planned = [cid for b in benches for item in b[key] for cid in item["cases"]]
+            assert sorted(planned) == sorted(ref2va), key
+            assert {item["runs"] for b in benches for item in b[key]} == {runs}, key
+        assert [b["task"] for b in benches] == ["ref2va"] * 5
+        assert [b["timeout_table"] for b in benches] == ["BH1X"] * 5
+        assert [b["skip_smoke"] for b in benches] == [False] + [True] * 4
+        assert len({b["out_subdir"] for b in benches}) == 5
+        assert benches[-1]["plan_ci"] == [{"cases": ["REF2VA-H"], "runs": 1}]
         # The expanded case carries only template/targets; its budget is the
         # template's test_config, which BaseTest reads as config["timeout"]
         # ("test_timeout" is a dead key there).
