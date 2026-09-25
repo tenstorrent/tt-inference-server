@@ -17,14 +17,18 @@ from pathlib import Path
 # Grafana's built-ins are substituted by Grafana, not declared as variables.
 BUILTINS = {"__rate_interval", "__interval", "__range", "__from", "__to",
             "__interval_ms", "__timeFilter", "__name__"}
-# Durations promtool can parse in place of Grafana's built-ins. Order matters:
-# the _ms name has to be replaced before the prefix it shares with $__interval.
+# Values promtool can parse in place of Grafana's built-ins. Order matters: the
+# _ms name has to be replaced before the prefix it shares with $__interval.
+# $__from / $__to are epoch milliseconds; any number parses.
 SUBSTITUTIONS = {"$__rate_interval": "5m", "$__interval_ms": "300000",
-                 "$__interval": "5m", "$__range": "1h"}
-# Grafana interpolates $var, ${var} and [[var]] alike, so all three have to be
-# recognised here — an undeclared one in any spelling is the silent "No data"
-# this script exists to catch.
-VAR_RE = re.compile(r"\$\{(\w+)\}|\$(\w+)|\[\[(\w+)[^\]]*\]\]")
+                 "$__interval": "5m", "$__range": "1h",
+                 "$__from": "0", "$__to": "0"}
+# Grafana interpolates $var, ${var}, ${var:format} and [[var]] alike, so all
+# four have to be recognised here — an undeclared one in any spelling is the
+# silent "No data" this script exists to catch.
+VAR_RE = re.compile(r"\$\{(\w+)(?::[^}]*)?\}|\$(\w+)|\[\[(\w+)[^\]]*\]\]")
+# Panels that carry no query at all. Their absence of targets is not a defect.
+QUERYLESS_PANELS = {"row", "text", "dashlist", "news", "alertlist"}
 
 
 def panels(items):
@@ -49,12 +53,16 @@ def check(path: Path, rules: list[dict]) -> list[str]:
             problems.append(f"{path.name}: panel id {pid} used twice "
                             f"({seen_ids[pid]!r} and {title!r})")
         seen_ids[pid] = title
-        if p.get("type") == "row":
+        if p.get("type") in QUERYLESS_PANELS:
             continue
         targets = p.get("targets") or []
         if not targets:
             problems.append(f"{path.name}: panel {title!r} has no query")
         for t in targets:
+            # A Grafana expression (reduce, math, …) computes on another
+            # target's result; it carries `expression`, never PromQL.
+            if (t.get("datasource") or {}).get("uid") == "__expr__":
+                continue
             expr = t.get("expr", "")
             if not expr.strip():
                 problems.append(f"{path.name}: panel {title!r} has an empty query")
@@ -72,7 +80,10 @@ def check(path: Path, rules: list[dict]) -> list[str]:
                 expr = expr.replace(src, dst)
             # promtool names the rule in its error, so the name carries the
             # origin; a rule ordinal alone cannot be traced back to a panel.
-            rules.append({"record": f"dashboard:{path.stem}:{pid}", "expr": expr,
+            # Multi-target panels need the refId too, or the name is ambiguous.
+            ref = re.sub(r"\W", "_", str(t.get("refId") or len(rules)))
+            rules.append({"record": f"dashboard:{path.stem}:{pid}:{ref}",
+                          "expr": expr,
                           "labels": {"dashboard": path.name, "title": title}})
     return problems
 

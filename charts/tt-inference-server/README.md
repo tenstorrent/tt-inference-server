@@ -503,7 +503,7 @@ Metrics come from two independent sources. This chart owns the app side only.
 | Source | Measures | Turn on with | Needs on the cluster |
 |---|---|---|---|
 | App metrics | request rate, latency, tokens/s, queue depth, per-stage and per-device timings | `podMonitor.enabled=true` (this chart) | the Prometheus Operator CRDs, and a Prometheus whose `podMonitorSelector` matches `podMonitor.labels` (default `release: prometheus`) |
-| App dashboard | one per engine; `media` and `forge` share one, since the forge image runs the same server | `grafanaDashboard.enabled=true` (this chart) | a Grafana whose dashboard sidecar watches `grafana_dashboard=1` |
+| App dashboard | one per release, picked from its engine; `media` and `forge` share one, since the forge image runs the same server | `grafanaDashboard.enabled=true` (this chart) | a Grafana whose dashboard sidecar watches `grafana_dashboard=1` |
 | Device telemetry, and its own dashboard | board temperature, power, chip utilization | `tt-telemetry.enabled=true` on **tt-operator** | — tt-operator owns this one end to end |
 
 Neither this chart nor tt-operator installs Prometheus or Grafana: both are cluster infrastructure with a lifecycle of their own. On media and forge, `podMonitor.enabled` also sets `ENABLE_METRICS`, which is what makes their server collect the HTTP-level families.
@@ -519,6 +519,8 @@ The chart writes the dashboard into a `ConfigMap`, and a Grafana-side sidecar tu
 | no sidecar at all — a plain deployment, the Grafana Operator, a managed Grafana | the `ConfigMap` is inert. Import `charts/tt-inference-server/dashboards/*.json` in Grafana instead; it is the same file the `ConfigMap` carries |
 
 `grafanaDashboard.namespace` moves the `ConfigMap` for a sidecar that only watches Grafana's own namespace.
+
+Every release gets its own dashboard, titled and keyed by `<namespace>/<release>`, so two releases of one engine sit side by side instead of overwriting each other. Point the `namespace` and `pod` variables at the release you want; both default to everything the datasource holds.
 
 #### Reading the dashboards
 

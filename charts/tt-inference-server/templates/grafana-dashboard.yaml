@@ -3,6 +3,19 @@
 {{- include "tt-inference-server.validateValues" . }}
 {{- $engine := include "tt-inference-server.resolvedEngine" . }}
 {{- $file := ternary "dashboards/vllm.json" "dashboards/media.json" (eq $engine "vllm") }}
+{{- $ns := dig "namespace" "" $dashboard | default .Release.Namespace }}
+{{- $fullname := include "tt-inference-server.fullname" . }}
+{{- /* The sidecar watches every namespace by default, so anything two releases
+       could share has to carry the namespace as well as the release name. */ -}}
+{{- $scope := printf "%s-%s" .Release.Namespace $fullname }}
+{{- /* Two releases of one engine ship the same dashboard, and both the uid and
+       the key the sidecar names its file after have to tell them apart, or the
+       second one overwrites the first. The digest keeps the uid unique once the
+       40-character limit truncates the readable part away. */ -}}
+{{- $json := .Files.Get $file | fromJson }}
+{{- $uid := printf "%s-%s" $json.uid $scope | trunc 31 | trimSuffix "-" }}
+{{- $_ := set $json "uid" (printf "%s-%s" $uid (sha256sum $scope | trunc 8)) }}
+{{- $_ := set $json "title" (printf "%s (%s/%s)" $json.title .Release.Namespace $fullname) }}
 # One dashboard per engine, picked from the resolved engine: media and forge run
 # the same server (the forge image is built from tt-media-server), so they share
 # one. The Grafana dashboard sidecar discovers this by the labels below; nothing
@@ -10,8 +23,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "tt-inference-server.fullname" . }}-grafana-dashboard
-  namespace: {{ dig "namespace" "" $dashboard | default .Release.Namespace }}
+  {{- /* Releases land side by side once the ConfigMap is pushed to Grafana's
+         own namespace, so there the name carries the origin namespace too. */}}
+  name: {{ if eq $ns .Release.Namespace }}{{ $fullname }}{{ else }}{{ $scope }}{{ end }}-grafana-dashboard
+  namespace: {{ $ns }}
   labels:
     {{- /* merge so user labels add to, but never duplicate, the standard label keys. */ -}}
     {{- $labels := merge (include "tt-inference-server.labels" . | fromYaml) (dig "labels" (dict) $dashboard) }}
@@ -21,6 +36,6 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 data:
-  {{ base $file }}: |
-{{ .Files.Get $file | indent 4 }}
+  {{ $scope }}-{{ base $file }}: |
+{{ toPrettyJson $json | indent 4 }}
 {{- end }}
