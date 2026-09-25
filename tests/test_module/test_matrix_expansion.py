@@ -295,8 +295,8 @@ class TestVideoMatrixExpansion:
             assert suite["num_of_devices"] == 1
 
     def test_minimax_h3_suite_contract_lifecycle_and_benchmark(self):
-        # One single-host BH Galaxy serves t2va; the suite drives the V1 contract, one
-        # judged lifecycle, then the h3-benchmark cases. Cancel stays disabled until a
+        # On this dispatch branch the single-host BH Galaxy serves fl2va; the suite drives the
+        # V1 contract, one judged lifecycle, then every FL2VA h3-benchmark case. Cancel stays disabled until a
         # single-host cancel is verified not to take the deployment down.
         suite = self._suite_map()["minimax-h3-blackhole_galaxy"]
         enabled = [
@@ -314,15 +314,14 @@ class TestVideoMatrixExpansion:
         bench = self._case_targets(
             "minimax-h3-blackhole_galaxy", "MiniMaxH3BenchmarkTest"
         )
-        assert bench["task"] == "t2va"
+        assert bench["task"] == "fl2va"
         assert bench["timeout_table"] == "BH1X"
+        fl2va = ["FL2VA-L", "FL2VA-M", "FL2VA-H1", "FL2VA-L2", "FL2VA-M2", "FL2VA-H"]
         assert bench["plan_ci"] == [
-            {"cases": ["T2VA-L"], "runs": 3},
-            {"cases": ["T2VA-M", "T2VA-H"], "runs": 1},
+            {"cases": fl2va[:1], "runs": 3},
+            {"cases": fl2va[1:], "runs": 1},
         ]
-        assert bench["plan_full"] == [
-            {"cases": ["T2VA-L", "T2VA-M", "T2VA-H"], "runs": 3}
-        ]
+        assert bench["plan_full"] == [{"cases": fl2va, "runs": 3}]
         # The expanded case carries only template/targets; its budget is the
         # template's test_config, which BaseTest reads as config["timeout"]
         # ("test_timeout" is a dead key there).

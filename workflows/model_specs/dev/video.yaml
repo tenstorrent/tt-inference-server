@@ -255,44 +255,47 @@ templates:
       default_impl: true
   status: FUNCTIONAL
 
-# MiniMax-H3 text-to-video-and-audio on one single-host Blackhole Galaxy (4x8 mesh, 32 chips,
-# one worker, requests serialise). weights basename == tt-media-server ModelNames.MINIMAX_H3 ==
-# the MODEL env the container receives; the full id keys models-ci-config.json, the eval config
-# and the reference tables. FL2VA/Ref2VA are separate deployments (MODEL_RUNNER per task) and
-# join once their runners are on main.
+# MiniMax-H3 first/last-frame-to-video-and-audio (FL2VA) on one single-host Blackhole Galaxy
+# (4x8 mesh, 32 chips, one worker, requests serialise). DISPATCH-ONLY BRANCH zni/h3-ci-fl2va:
+# t2va, fl2va and ref2va are separate deployments (MODEL_RUNNER per task) of the same weights,
+# and this branch points the one MiniMaxAI/MiniMax-H3 BLACKHOLE_GALAXY spec at the FL2VA runner
+# so tt-shield on-dispatch runs every FL2VA case by this branch's sha (docs/minimax_h3_ci.md,
+# "Per-task dispatch branches"). Do not merge it as is: main's spec serves t2va.
+# weights basename == tt-media-server ModelNames.MINIMAX_H3 == the MODEL env the container
+# receives; the full id keys models-ci-config.json, the eval config and the reference tables.
 - weights:
     - MiniMaxAI/MiniMax-H3
   impl: tt_transformers
   # The HF repo is 498.5 GB in total (FL2VA 144.1, Ref2VA 144.1, text_encoder 66.7,
   # transformer 66.3, transformer_ref 66.3, vae 10.4, audio_vae 0.6 GB; public HF API,
-  # 2026-09-23). setup_host excludes FL2VA/, Ref2VA/, transformer_ref/, assets/, docs/ and
-  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES), so ~144 GB lands on disk, plus the ~68 GB
-  # persistent ttnn cache built on first start.
+  # 2026-09-23). The FL2VA runner drives the pipeline's t2va task on transformer/ (the repo's
+  # FL2VA/ folder is never read), so setup_host downloads the t2va set: it excludes FL2VA/,
+  # Ref2VA/, transformer_ref/, assets/, docs/ and scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES, keyed by
+  # MODEL_RUNNER), ~144 GB, plus the persistent ttnn cache built on first start.
   min_disk_gb: 300
   # infer_param_count() reads no size from this name; check_ram() needs an explicit number.
   min_ram_gb: 64
   model_type: VIDEO
   inference_engine: MEDIA
   env_vars:
-    MODEL_RUNNER: tt-minimax-h3-t2va
+    MODEL_RUNNER: tt-minimax-h3-fl2va
     USE_ASYNC_VIDEO: "true"
     # One request in flight + one waiting; a queued request must not wait for hours.
     MAX_QUEUE_SIZE: "2"
-    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    # ttnn cache keys do not include the tt-metal sha, and tt-metal 816841ddc93 (the first with
+    # the minimax_h3 policy module these runners import) rewrote the VAE: a fresh directory keeps
+    # entries cached by the older t2va image on the shared volume from being reused.
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_816841
     # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/MiniMax-H3
     # and nothing sets MODEL_WEIGHTS_DIR, so the runner passes the pipeline no directory and the
     # pipeline reads this path (tt-metal pipeline_minimax_h3.py). Under --host-weights-dir /
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
     # runner uses that instead. Do not set MODEL_WEIGHTS_DIR here: spec env overrides the mount value.
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3
-    # Warm one shape only. run.py's readiness wait is TT_SERVER_READY_TIMEOUT_SECONDS=3600
-    # per boot attempt (x TT_SERVER_BOOT_ATTEMPTS=2) and covers container start, weight load,
-    # the ttnn cache build on the very first start and every warm shape; a miss stops the
-    # container and the warmups repeat. Three warm compiles (4-16 min each) plus load can
-    # exceed it. The 10 s / 15 s shapes compile inside their first request instead, which the
-    # benchmark's BH1X budgets (T2VA-M 1500 s, T2VA-H 1800 s) and each case's warmup run absorb.
-    MINIMAX_H3_WARM_SHAPES: "16:9@5"
-    # Line-cabled boxes: MINIMAX_H3_FABRIC_TOPOLOGY: linear (ring is the default and ~30% faster).
+    # Warmup is create_pipeline(warmup=True): one 3-step 16:9 / 5 s generation with a first
+    # keyframe, inside run.py's readiness wait (TT_SERVER_READY_TIMEOUT_SECONDS=3600 per boot
+    # attempt x TT_SERVER_BOOT_ATTEMPTS=2). The 10 s / 15 s shapes compile inside their first
+    # request, which the benchmark's BH1X budgets and each case's warmup run absorb.
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 1

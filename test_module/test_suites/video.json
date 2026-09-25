@@ -151,7 +151,7 @@
                 {
                     "template": "MiniMaxH3CreateContractTest",
                     "enabled": true,
-                    "description": "MiniMax-H3 V1 request contract: auth, unknown fields, aspect ratio, duration, step count",
+                    "description": "MiniMax-H3 V1 request contract for the deployment's task (fl2va: /generations and /i2v served, /ref2va refused): auth, unknown fields, aspect ratio, duration, step count",
                     "targets": {
                         "profile": "validation",
                         "request_timeout": 60
@@ -160,7 +160,7 @@
                 {
                     "template": "MiniMaxH3LifecycleDownloadTest",
                     "enabled": true,
-                    "description": "One 16:9 / 5 s t2va job: create, query, list, download, video + non-silent audio",
+                    "description": "One 16:9 / 5 s job (text-only, which an fl2va deployment serves on transformer/): create, query, list, download, video + non-silent audio",
                     "targets": {
                         "poll_timeout": 1800,
                         "download_timeout": 600,
@@ -179,22 +179,25 @@
                 {
                     "template": "MiniMaxH3BenchmarkTest",
                     "enabled": true,
-                    "description": "h3-benchmark on a single BH Galaxy: health pre-gate, probe, smoke, then the t2va cases with every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed)",
+                    "description": "h3-benchmark on a single BH Galaxy, FL2VA deployment: health pre-gate, probe, smoke, then every FL2VA case (one keyframe at 5/10/15 s; first + last keyframes, the 27 MB keyframe and the 7000-char prompt at 5/10/15 s), every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed). FL2VA-H (15 s + 2 keyframes + 7000 chars) runs last: it has out-of-memory history.",
                     "targets": {
-                        "task": "t2va",
+                        "task": "fl2va",
                         "timeout_table": "BH1X",
                         "idle_wait_s": 60,
                         "plan_ci": [
                             {
                                 "cases": [
-                                    "T2VA-L"
+                                    "FL2VA-L"
                                 ],
                                 "runs": 3
                             },
                             {
                                 "cases": [
-                                    "T2VA-M",
-                                    "T2VA-H"
+                                    "FL2VA-M",
+                                    "FL2VA-H1",
+                                    "FL2VA-L2",
+                                    "FL2VA-M2",
+                                    "FL2VA-H"
                                 ],
                                 "runs": 1
                             }
@@ -202,18 +205,16 @@
                         "plan_full": [
                             {
                                 "cases": [
-                                    "T2VA-L",
-                                    "T2VA-M",
-                                    "T2VA-H"
+                                    "FL2VA-L",
+                                    "FL2VA-M",
+                                    "FL2VA-H1",
+                                    "FL2VA-L2",
+                                    "FL2VA-M2",
+                                    "FL2VA-H"
                                 ],
                                 "runs": 3
                             }
                         ],
-                        "target_times_s": {
-                            "T2VA-L": 90,
-                            "T2VA-M": 160,
-                            "T2VA-H": 225
-                        },
                         "enforce_timing": false
                     }
                 }
