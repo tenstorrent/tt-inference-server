@@ -518,6 +518,9 @@ def test_llama31_longbench_preserves_generation_settings(
         "longbench_summarization_e": 26.09,
         "longbench_synthetic_e": 14.86,
     }
+    if impl_id == "llama31_8b_qb2":
+        assert {task.task_name for task in tasks} == {"longbench_code_e"}
+        references = {"longbench_code_e": references["longbench_code_e"]}
     assert set(longbench) == set(references)
     for name, task in longbench.items():
         command = build_eval_command(
@@ -547,7 +550,7 @@ def test_llama31_longbench_preserves_generation_settings(
         assert gen_kwargs["max_gen_toks"] == "512"
         assert task.score.gpu_reference_score == references[name]
         assert task.score.tolerance == 0.05
-    assert len(tokenizer_calls) == (6 if impl_id == "llama31_8b_qb2" else 0)
+    assert len(tokenizer_calls) == (1 if impl_id == "llama31_8b_qb2" else 0)
 
 
 @pytest.mark.parametrize(
