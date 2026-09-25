@@ -51,6 +51,16 @@ void exportWorkerEnvironment(int workerId,
     const std::string metalCache =
         std::string(metalHome) + "/built/" + deviceSuffix;
     setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
+
+    if (chdir(metalHome) == 0) {
+      TT_LOG_INFO("[Worker {}] Working directory set to TT_METAL_HOME: {}",
+                  workerId, metalHome);
+    } else {
+      TT_LOG_ERROR(
+          "[Worker {}] chdir to TT_METAL_HOME '{}' failed; kernels with "
+          "tt-metal-relative include paths will not compile",
+          workerId, metalHome);
+    }
   }
 
   const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
