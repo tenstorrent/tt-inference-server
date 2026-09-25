@@ -1302,13 +1302,38 @@ jobs:
               --set model="$model" --set device="$device" --set engine="$engine" \
               --set auth.apiKey=ci --set grafanaDashboard.enabled=true \
               --show-only templates/grafana-dashboard.yaml)
-            echo "$RENDERED" | grep -qE "^  ${want}: \|" \
+            echo "$RENDERED" | grep -qE "^  [a-z0-9.-]+-${want}: \|" \
               || { echo "::error::$engine should ship $want"; exit 1; }
             echo "$RENDERED" | grep -qE '^    grafana_dashboard: "1"$' \
               || { echo "::error::$engine dashboard lost the sidecar discovery label"; exit 1; }
             echo "$RENDERED" | python3 -c "import json,sys,yaml; cm=yaml.safe_load(sys.stdin.read()); k,b=next(iter(cm['data'].items())); d=json.loads(b); print('    %s: %r, %d top-level panels' % (k, d['title'], len(d['panels'])))" \
               || { echo "::error::$want is not valid JSON inside the ConfigMap"; exit 1; }
           done
+
+          echo "--- two releases of one engine stay apart in Grafana"
+          # Grafana keys on uid and the sidecar names its file after the
+          # ConfigMap key, so a shared one silently drops the second release.
+          for rel in one two; do
+            helm template "$rel" charts/tt-inference-server --set imageFloor.enforce=false \
+              --set model=Qwen3-Embedding-4B --set device=n150 --set engine=forge \
+              --set auth.apiKey=ci --set grafanaDashboard.enabled=true \
+              --show-only templates/grafana-dashboard.yaml > "/tmp/dash-$rel.yaml"
+          done
+          python3 - <<'PY'
+          import json, sys, yaml
+
+          seen = {}
+          for rel in ("one", "two"):
+              cm = yaml.safe_load(open(f"/tmp/dash-{rel}.yaml"))
+              key, body = next(iter(cm["data"].items()))
+              dash = json.loads(body)
+              seen[rel] = (key, dash["uid"], dash["title"])
+              print(f"    {rel}: {key} / {dash['uid']}")
+          for field, label in enumerate(("ConfigMap key", "uid", "title")):
+              if seen["one"][field] == seen["two"][field]:
+                  print(f"::error::two releases share a dashboard {label}")
+                  sys.exit(1)
+          PY
 
           echo "--- panels use declared variables only, ids are unique, PromQL parses"
           python3 .github/scripts/check_dashboards.py charts/tt-inference-server --rules /tmp/dashboard-rules.json
