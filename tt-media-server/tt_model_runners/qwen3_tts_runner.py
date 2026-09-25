@@ -365,13 +365,14 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         if codes is None:
             raise RuntimeError("Qwen3-TTS generation returned no codec frames")
 
-        if (
-            getattr(self.config, "trim_codec_frames", 0) > 0
-            and len(codes) > self.config.trim_codec_frames
-        ):
-            codes = codes[self.config.trim_codec_frames :]
-
-        audio = api.decode_audio(codes, self.decoder_weights)
+        # Decode the reference and generated codes together, then cut the
+        # reference's portion, as HF Qwen3-TTS does. Decoding the generated
+        # codes on their own leaves artifacts at the start, which the old
+        # trim_codec_frames=4 masked by dropping 4 codec frames of real
+        # speech -- that is what truncated the first word(s) of the output.
+        # tt-metal #57964 adds decode_icl_audio and defaults trim_codec_frames
+        # to 0 (deprecated), so the old trim branch is removed here.
+        audio = api.decode_icl_audio(ref_codes, codes, self.decoder_weights)
         audio_np = audio.squeeze().detach().cpu().float().numpy()
         duration_s = float(len(audio_np)) / SAMPLE_RATE_HZ
 
