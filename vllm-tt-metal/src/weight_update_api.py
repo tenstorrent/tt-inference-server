@@ -236,6 +236,18 @@ def _engine_client(request: Request):
 async def _apply_weight_update(engine_client: Any, body: WeightUpdateRequest) -> list:
     """Run the worker-side weight swap and return the raw per-worker results."""
     try:
+        statuses = await engine_client.collective_rpc("get_weight_transfer_status")
+        owners = [status for status in statuses if status.get("owns_model")]
+        if not owners:
+            raise RuntimeError("No model-owning worker reported weight-transfer status")
+        if not all(status.get("initialized") for status in owners):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "weight_transfer_not_initialized",
+                    "message": "Call /init_weight_transfer_engine successfully before updating weights.",
+                },
+            )
         # Matches the reshaped worker contract update_weights(update_info: dict).
         # sender_rank belongs to init_weight_transfer_engine(init_info), not here;
         # this route therefore requires a prior /init_weight_transfer_engine (native
@@ -244,6 +256,8 @@ async def _apply_weight_update(engine_client: Any, body: WeightUpdateRequest) ->
             "update_weights",
             kwargs={"update_info": {"hf_rope": body.hf_rope}},
         )
+    except HTTPException:
+        raise
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc))
     except Exception as exc:  # noqa: BLE001 - surface engine errors to caller

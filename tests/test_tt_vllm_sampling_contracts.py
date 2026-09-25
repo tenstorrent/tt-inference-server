@@ -150,3 +150,69 @@ def test_replica_pins_release_only_requests_without_live_kv(release):
     with pytest.raises(GroupingComplete):
         execute(runner, output)
     assert runner._req_to_mesh == ({"a": 0, "c": 1} if replacing else {"a": 0, "b": 1})
+
+
+@pytest.mark.parametrize(
+    "different_field", [None, "temperature_cpu", "top_k_cpu", "top_p_cpu"]
+)
+def test_replica_sampling_requires_matching_selected_slots(different_field):
+    params = SimpleNamespace(
+        temperature_cpu=[0.5, 0.9, 0.5],
+        top_k_cpu=[10, 20, 10],
+        top_p_cpu=[0.8, 0.5, 0.8],
+    )
+    if different_field:
+        getattr(params, different_field)[2] = (
+            0.7 if different_field != "top_k_cpu" else 30
+        )
+    choose = load_function(
+        "v1/worker/tt_model_runner.py",
+        "_mesh_sampling_params",
+        {"TTSamplingParams": SimpleNamespace},
+        "TTModelRunner",
+    )
+    batch = SimpleNamespace(sampling=params)
+    if different_field:
+        with pytest.raises(AssertionError, match="selected slots within a replica"):
+            choose(None, batch, [2, 0])
+    else:
+        result = choose(None, batch, [2, 0])
+        assert (result.temperature, result.top_k, result.top_p) == (0.5, 10, 0.8)
+    # A single selected slot is valid even when its neighbours differ.
+    assert choose(None, batch, [1]).temperature == 0.9
+
+
+@pytest.mark.parametrize(
+    "has_engine,connected,owner",
+    [
+        (False, False, True),
+        (True, False, True),
+        (True, True, True),
+        (False, False, False),
+    ],
+)
+def test_worker_weight_transfer_readiness(has_engine, connected, owner):
+    status = load_function(
+        "v1/worker/tt_worker.py", "get_weight_transfer_status", {}, "TTWorker"
+    )
+    ready = load_function(
+        "weight_transfer/tt_device_socket_engine.py",
+        "is_initialized",
+        {},
+        "TTDeviceSocketWeightTransferEngine",
+    )
+    engine = SimpleNamespace(_bridge=object() if connected else None)
+    engine.is_initialized = ready(engine)
+    worker = SimpleNamespace(
+        _colocated_rl_only=lambda _: None,
+        _owns_model=lambda: owner,
+        vllm_config=SimpleNamespace(
+            parallel_config=SimpleNamespace(data_parallel_rank=0)
+        ),
+        weight_transfer_engine=engine if has_engine else None,
+    )
+    assert status(worker) == {
+        "rank": 0,
+        "owns_model": owner,
+        "initialized": has_engine and connected,
+    }

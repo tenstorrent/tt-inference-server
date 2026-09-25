@@ -846,7 +846,7 @@ def set_metal_timeout_env_vars():
     # blocks in ttnn.synchronize_device() for several seconds while it streams
     # the full state dict, so the default 5s watchdog fires mid-transfer. Give
     # the colocated path a much larger budget (or an explicit override).
-    override = os.getenv("TT_METAL_OP_TIMEOUT_SECONDS")
+    override = os.getenv("TT_METAL_OPERATION_TIMEOUT_SECONDS")
     if override:
         timeout_seconds = override
     elif os.getenv("TT_COLOCATED_INFERENCE") == "1":

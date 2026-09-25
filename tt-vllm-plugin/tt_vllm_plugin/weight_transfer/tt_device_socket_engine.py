@@ -219,6 +219,11 @@ class TTDeviceSocketWeightTransferEngine(
             ttnn.synchronize_device(self._device)
             self._bridge.barrier()
 
+    @property
+    def is_initialized(self) -> bool:
+        """True only after the bridge handshake completes."""
+        return self._bridge is not None
+
     def shutdown(self) -> None:
         bridge = self._bridge
         self._bridge = None

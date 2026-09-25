@@ -1020,3 +1020,37 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+@pytest.mark.parametrize(
+    "canonical,colocated,disabled,expected",
+    [
+        (None, False, False, "5.0"),
+        (None, True, False, "120.0"),
+        ("42.0", True, False, "42.0"),
+        ("42.0", False, False, "42.0"),
+        ("42.0", True, True, None),
+    ],
+)
+def test_metal_timeout_override_precedence(
+    monkeypatch,
+    run_vllm_api_server_module,
+    canonical,
+    colocated,
+    disabled,
+    expected,
+):
+    for name, value in {
+        "TT_METAL_OPERATION_TIMEOUT_SECONDS": canonical,
+        "TT_COLOCATED_INFERENCE": "1" if colocated else "0",
+        "DISABLE_METAL_OP_TIMEOUT": "1" if disabled else "0",
+        "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE": "stale",
+    }.items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    run_vllm_api_server_module.set_metal_timeout_env_vars()
+    assert os.environ.get("TT_METAL_OPERATION_TIMEOUT_SECONDS") == expected
+    if disabled:
+        assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ

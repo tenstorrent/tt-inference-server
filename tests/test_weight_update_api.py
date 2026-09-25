@@ -153,6 +153,8 @@ def test_weight_update_waits_for_previously_admitted_request(weight_update_api):
 
             async def collective_rpc(self, method, kwargs=None):
                 calls.append((method, kwargs))
+                if method == "get_weight_transfer_status":
+                    return [{"owns_model": True, "initialized": True}]
                 return [{"updated": True, "version": 1}]
 
         app = SimpleNamespace(
@@ -178,8 +180,89 @@ def test_weight_update_waits_for_previously_admitted_request(weight_update_api):
         response = await update_task
 
         assert response.version == 1
-        assert calls[0][0] == "update_weights"
+        assert [method for method, _ in calls] == [
+            "get_weight_transfer_status",
+            "update_weights",
+        ]
         assert gate.inflight == 0
         assert not gate.in_progress
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "case,status",
+    [
+        ("uninitialized", 409),
+        ("update_failure", 500),
+        ("status_failure", 500),
+        ("no_owner", 500),
+        ("ready", 200),
+    ],
+)
+def test_weight_update_initialization_error_and_gate_cleanup(
+    weight_update_api, case, status
+):
+    async def scenario():
+        calls = []
+        version = 7
+
+        class Engine:
+            output_processor = SimpleNamespace(has_unfinished_requests=lambda: False)
+
+            async def collective_rpc(self, method, kwargs=None):
+                nonlocal version
+                calls.append(method)
+                if method == "get_weight_transfer_status":
+                    if case == "status_failure":
+                        raise RuntimeError("RPC failed")
+                    return [
+                        {
+                            "owns_model": case != "no_owner",
+                            "initialized": case != "uninitialized",
+                        },
+                        {"owns_model": False, "initialized": False},
+                    ]
+                if case == "update_failure":
+                    raise RuntimeError("Device transfer failed")
+                version += 1
+                return [{"updated": True, "version": version}]
+
+            async def reset_prefix_cache(self):
+                calls.append("reset_prefix_cache")
+
+        gate = weight_update_api._AdmissionGate()
+        request = SimpleNamespace(
+            app=SimpleNamespace(
+                state=SimpleNamespace(
+                    engine_client=Engine(),
+                    _tt_weight_update_gate=gate,
+                    _tt_weight_update_lock=asyncio.Lock(),
+                )
+            )
+        )
+        if status == 200:
+            response = await weight_update_api.update_weights(
+                weight_update_api.WeightUpdateRequest(), request
+            )
+            assert response.version == 8
+            assert calls == [
+                "get_weight_transfer_status",
+                "update_weights",
+                "reset_prefix_cache",
+            ]
+        else:
+            with pytest.raises(weight_update_api.HTTPException) as error:
+                await weight_update_api.update_weights(
+                    weight_update_api.WeightUpdateRequest(), request
+                )
+            assert error.value.status_code == status
+            assert version == 7
+            assert "reset_prefix_cache" not in calls
+            if status == 409:
+                assert error.value.detail["code"] == "weight_transfer_not_initialized"
+                assert calls == ["get_weight_transfer_status"]
+        assert not gate.in_progress
+        assert not request.app.state._tt_weight_update_lock.locked()
 
     asyncio.run(scenario())

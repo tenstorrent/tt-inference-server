@@ -1086,9 +1086,15 @@ class TTModelRunner:
         return self.generate_runner_output(combined, combined_logprobs)
 
     def _mesh_sampling_params(self, input_batch, idxs: list[int]) -> TTSamplingParams:
-        """Uniform sampling params for a replica's slots (first slot's values;
-        execute_with_model_input asserts equality across active replicas)."""
+        """Require uniform temperature, top-k and top-p within a replica."""
         i0 = idxs[0]
+        assert all(
+            input_batch.sampling.temperature_cpu[i]
+            == input_batch.sampling.temperature_cpu[i0]
+            and input_batch.sampling.top_k_cpu[i] == input_batch.sampling.top_k_cpu[i0]
+            and input_batch.sampling.top_p_cpu[i] == input_batch.sampling.top_p_cpu[i0]
+            for i in idxs
+        ), "Sampling params must be the same for all selected slots within a replica"
         return TTSamplingParams(
             temperature=input_batch.sampling.temperature_cpu[i0],
             top_k=input_batch.sampling.top_k_cpu[i0],

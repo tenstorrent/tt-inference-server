@@ -274,6 +274,18 @@ class TTWorker(WorkerBase):
         logger.info("Weight transfer engine initialized (rank %s)", rank)
         return {"rank": rank, "initialized": True}
 
+    def get_weight_transfer_status(self) -> dict:
+        """Report readiness without starting a transfer or changing weights."""
+        self._colocated_rl_only("Weight transfer status")
+        return {
+            "rank": self.vllm_config.parallel_config.data_parallel_rank,
+            "owns_model": self._owns_model(),
+            "initialized": bool(
+                self.weight_transfer_engine is not None
+                and self.weight_transfer_engine.is_initialized
+            ),
+        }
+
     def update_weights(self, update_info: dict) -> dict:
         """Native RL hook: in-place replace on-device weights over the bridge.
 
