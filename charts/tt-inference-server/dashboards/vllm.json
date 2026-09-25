@@ -9,6 +9,7 @@
   "uid": "ttis-vllm",
   "description": "Application metrics for the tt-inference-server vLLM engine. Panels use only the vLLM engine-core metric families, so they hold across the vLLM versions the model catalogue pins. vLLM upstream also publishes a richer dashboard that can be imported alongside this one.",
   "tags": [
+    "tenstorrent",
     "tt-inference-server"
   ],
   "time": {

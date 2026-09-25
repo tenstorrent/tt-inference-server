@@ -61,6 +61,10 @@ def check(path: Path, rules: list[dict]) -> list[str]:
                 continue
             for groups in VAR_RE.findall(expr):
                 var = next(g for g in groups if g)
+                # $1, $2 … are regex back-references inside label_replace, not
+                # Grafana variables; Grafana leaves them alone.
+                if var.isdigit():
+                    continue
                 if var not in BUILTINS and var not in declared:
                     problems.append(f"{path.name}: panel {title!r} uses ${var}, "
                                     f"which is not declared in templating")

@@ -9,6 +9,7 @@
   "uid": "ttis-media",
   "description": "Application metrics for the tt-inference-server media and forge engines (the forge image runs the same server). Overview, Device and HTTP hold for every model runner; the per-domain rows below them are emitted by the runners that implement them and stay empty otherwise. model_type carries the runner name (e.g. tt-whisper).",
   "tags": [
+    "tenstorrent",
     "tt-inference-server"
   ],
   "time": {
