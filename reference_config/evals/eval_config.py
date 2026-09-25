@@ -1833,7 +1833,7 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            "max_input_tokens": 500 * 1024,
+                            "max_input_tokens": 256 * 1024,
                             "max_output_tokens": 64 * 1024,
                         },
                         "llm_kwargs": {
