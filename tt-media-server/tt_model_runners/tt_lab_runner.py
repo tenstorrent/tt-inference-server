@@ -33,8 +33,14 @@ class TTLabRunner(BaseDeviceRunner):
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
         self.gemma = self.settings.model_runner == "tt-lab-gemma"
         self.vocab = 262144 if self.gemma else 201088
+        # Dense Gemma 4 31B owns all four cards; its native worker must not see
+        # a single-card selection.
+        self.four_cards = os.environ.get("TT_LAB_FOUR_CARDS") == "1"
         selected = os.environ.get("TT_LAB_DEVICE", "0")
-        if str(device_id).strip("() ") != selected or (self.gemma and selected == "0"):
+        if self.four_cards:
+            if not self.gemma or "TT_LAB_DEVICE" in os.environ:
+                raise ValueError("TT_LAB_FOUR_CARDS=1 serves Gemma 31B on all cards; unset TT_LAB_DEVICE")
+        elif str(device_id).strip("() ") != selected or (self.gemma and selected == "0"):
             raise ValueError("Worker ID must match TT_LAB_DEVICE; Gemma needs a separate nonzero card")
         self.process = None
         self._closing = False
@@ -59,7 +65,8 @@ class TTLabRunner(BaseDeviceRunner):
         binary = os.environ["TT_LAB_BINARY"]
         model = os.environ["TT_LAB_GGUF"]
         sidecar = os.environ["TT_LAB_TTQ"]
-        command = (["gemma", "-m", model, "--ttq", sidecar, "--native-device", "--serve", "--context", "4096"]
+        context = os.environ.get("TT_LAB_CONTEXT", "4096")
+        command = (["gemma", "-m", model, "--ttq", sidecar, "--native-device", "--serve", "--context", context]
                    if self.gemma else ["serve", "-m", model, "--ttq", sidecar, "--device"])
         self.process = subprocess.Popen(
             [sys.executable, str(Path(__file__).with_name("tt_lab_child.py")), str(os.getpid()), binary, *command],
@@ -81,7 +88,8 @@ class TTLabRunner(BaseDeviceRunner):
         # Exercise actual device inference before publishing model readiness.
         from domain.completion_request import CompletionRequest
         self.run([CompletionRequest(prompt="Hello", max_tokens=1, temperature=0)])
-        self.logger.info(f"{self.settings.model_runner} ready on Blackhole device {os.environ.get('TT_LAB_DEVICE')}; persistent tt-lab PID={self.process.pid}")
+        where = "all four cards" if self.four_cards else f"Blackhole device {os.environ.get('TT_LAB_DEVICE')}"
+        self.logger.info(f"{self.settings.model_runner} ready on {where}; persistent tt-lab PID={self.process.pid}")
         return True
 
     def _generate(self, request):

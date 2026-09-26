@@ -1,11 +1,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Validate the silicon backend contract before touching its request pipe."""
+import os
+
+
 def validate_request(request, tokenizer):
     # Tokenizer metadata identifies the serving vocabulary without relying on
-    # the request's model field to select a backend.
+    # the request's model field to select a backend. Gemma 26B and 31B share
+    # the vocabulary; a deployment names its model and context explicitly.
     gemma = getattr(tokenizer, "vocab_size", 0) == 262144
-    model = "google/gemma-4-26B-A4B-it" if gemma else "openai/gpt-oss-20b"
+    model = (os.environ.get("TT_LAB_SERVED_MODEL", "google/gemma-4-26B-A4B-it") if gemma
+             else "openai/gpt-oss-20b")
     vocab = 262144 if gemma else 201088
+    context = int(os.environ.get("TT_LAB_CONTEXT", "4096"))
     if request.model not in (None, model, model.split("/")[-1]):
         raise ValueError(f"This worker serves only {model}")
     if request.temperature not in (None, 0, 0.0) or request.n != 1:
@@ -26,8 +32,8 @@ def validate_request(request, tokenizer):
     tokens = (tokenizer.encode(request.prompt, add_special_tokens=False)
               if isinstance(request.prompt, str) else request.prompt)
     limit = request.max_tokens if request.max_tokens is not None else 256
-    if not tokens or limit < 1 or len(tokens) + limit > 4096:
-        raise ValueError("tt-lab needs 1..4095 input tokens and prompt + max_tokens <= 4096")
+    if not tokens or limit < 1 or len(tokens) + limit > context:
+        raise ValueError(f"tt-lab needs 1..{context - 1} input tokens and prompt + max_tokens <= {context}")
     if any(type(t) is not int or t < 0 or t >= vocab for t in tokens):
         raise ValueError("Invalid prompt token IDs")
     return tokens, limit
