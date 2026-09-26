@@ -33,7 +33,9 @@
         ],
         "TTS": [
             "microsoft/speecht5_tts",
-            "coqui/XTTS-v2"
+            "coqui/XTTS-v2",
+            "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+            "Qwen/Qwen3-TTS-12Hz-0.6B-Base"
         ],
         "VIDEO": [
             "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
@@ -100,7 +102,8 @@
             "wan_i2v": "Wan image-to-video generation model tests",
             "mochi": "Mochi video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
-            "bge_m3": "BGE-M3 embedding model tests"
+            "bge_m3": "BGE-M3 embedding model tests",
+            "qwen3_tts": "Qwen3-TTS model tests"
         }
     },
     "model_configs": {

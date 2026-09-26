@@ -803,6 +803,12 @@
                         "N150",
                         "N300"
                     ]
+                },
+                "release": {
+                    "devices": [
+                        "N150",
+                        "N300"
+                    ]
                 }
             }
         },
@@ -810,6 +816,12 @@
             "inference_engine": "MEDIA",
             "ci": {
                 "nightly": {
+                    "devices": [
+                        "N150",
+                        "N300"
+                    ]
+                },
+                "release": {
                     "devices": [
                         "N150",
                         "N300"
