@@ -1,0 +1,173 @@
+diff --git a/src/aiperf/controller/multiprocess_service_manager.py b/src/aiperf/controller/multiprocess_service_manager.py
+index ce197175..ca9ed4a1 100644
+--- a/src/aiperf/controller/multiprocess_service_manager.py
++++ b/src/aiperf/controller/multiprocess_service_manager.py
+@@ -4,6 +4,7 @@ import asyncio
+ import multiprocessing
+ import os
+ import uuid
++from collections import Counter
+ from multiprocessing import Process
+ from multiprocessing.context import SpawnProcess
+ 
+@@ -177,27 +178,39 @@ class MultiProcessServiceManager(BaseServiceManager):
+         # ProfileConfigureCommand would broadcast before the optionals had
+         # subscribed, leaving them un-configured and their data missing from
+         # the final export.
+-        required_types = set(
+-            info.service_type for info in self.multi_process_info
+-        ) or set(self.required_services.keys())
++        # Count replicas, not types: with several RecordProcessors the first to
++        # register would otherwise satisfy the type check, and the replicas still
++        # starting would miss ProfileConfigureCommand and
++        # DatasetConfiguredNotification. Recomputed each pass because the reaper
++        # drops dead optional entries from multi_process_info.
++        def _required_counts() -> Counter:
++            counts = Counter(info.service_type for info in self.multi_process_info)
++            return counts or Counter(self.required_services)
++
++        def _registered_counts() -> Counter:
++            return Counter(
++                service_info.service_type
++                for service_info in self.service_id_map.values()
++                if service_info.registration_status
++                == ServiceRegistrationStatus.REGISTERED
++            )
+ 
+-        # TODO: Can this be done better by using asyncio.Event()?
++        def _missing() -> dict[ServiceTypeT, int]:
++            registered = _registered_counts()
++            return {
++                service_type: needed - registered[service_type]
++                for service_type, needed in _required_counts().items()
++                if registered[service_type] < needed
++            }
+ 
+         async def _wait_for_registration():
+             while not stop_event.is_set():
+-                # Get all registered service types from the id map
+-                registered_types = {
+-                    service_info.service_type
+-                    for service_info in self.service_id_map.values()
+-                    if service_info.registration_status
+-                    == ServiceRegistrationStatus.REGISTERED
+-                }
+-
+-                # Check if all required types are registered
+-                if required_types.issubset(registered_types):
++                if not _missing():
+                     return
+ 
+-                self._reap_dead_processes_during_registration(required_types)
++                self._reap_dead_processes_during_registration(
++                    set(_required_counts().keys())
++                )
+ 
+                 # Wait a bit before checking again
+                 await asyncio.sleep(0.5)
+@@ -205,19 +218,10 @@ class MultiProcessServiceManager(BaseServiceManager):
+         try:
+             await asyncio.wait_for(_wait_for_registration(), timeout=timeout_seconds)
+         except TimeoutError as e:
+-            # Log which services didn't register in time
+-            registered_types_set = set(
+-                service_info.service_type
+-                for service_info in self.service_id_map.values()
+-                if service_info.registration_status
+-                == ServiceRegistrationStatus.REGISTERED
+-            )
+-
+-            for service_type in required_types:
+-                if service_type not in registered_types_set:
+-                    self.error(
+-                        f"Service {service_type} failed to register within timeout"
+-                    )
++            for service_type, short in _missing().items():
++                self.error(
++                    f"Service {service_type}: {short} replica(s) failed to register within timeout"
++                )
+ 
+             raise AIPerfError("Some services failed to register within timeout") from e
+ 
+diff --git a/tests/unit/controller/test_multiprocess_service_manager.py b/tests/unit/controller/test_multiprocess_service_manager.py
+index c51baba5..9e366e66 100644
+--- a/tests/unit/controller/test_multiprocess_service_manager.py
++++ b/tests/unit/controller/test_multiprocess_service_manager.py
+@@ -298,6 +298,77 @@ class TestMultiProcessServiceManager:
+                 stop_event=asyncio.Event(), timeout_seconds=1.0
+             )
+ 
++    @pytest.mark.asyncio
++    async def test_wait_blocks_until_every_replica_registers(
++        self, service_manager: MultiProcessServiceManager, mock_alive_process: MagicMock
++    ):
++        """Regression: with several replicas of one service type, the wait must
++        cover every replica, not the first one to register.
++
++        Failure mode: --record-processor-service-count 8 spawns eight
++        RecordProcessors at startup. The wait used to compare service *types*,
++        so the first RecordProcessor to register satisfied it and the controller
++        broadcast ProfileConfigureCommand and DatasetConfiguredNotification while
++        the other replicas were still starting. Those replicas never got
++        configured, blocked on their records and aborted at the dataset gate,
++        and their records were lost.
++        """
++        from aiperf.common.enums import ServiceRegistrationStatus
++        from aiperf.common.models.service_models import ServiceRunInfo
++
++        def spawned(service_type: ServiceType, service_id: str) -> MultiProcessRunInfo:
++            return MultiProcessRunInfo.model_construct(
++                process=mock_alive_process,
++                service_type=service_type,
++                service_id=service_id,
++            )
++
++        def registered(service_type: ServiceType, service_id: str) -> ServiceRunInfo:
++            return ServiceRunInfo(
++                service_type=service_type,
++                registration_status=ServiceRegistrationStatus.REGISTERED,
++                service_id=service_id,
++            )
++
++        service_manager.multi_process_info = [
++            spawned(ServiceType.DATASET_MANAGER, "dataset_manager"),
++            spawned(ServiceType.TIMING_MANAGER, "timing_manager"),
++        ] + [
++            spawned(ServiceType.RECORD_PROCESSOR, f"record_processor_{i}")
++            for i in range(3)
++        ]
++        service_manager.service_id_map = {
++            "dataset_manager": registered(
++                ServiceType.DATASET_MANAGER, "dataset_manager"
++            ),
++            "timing_manager": registered(ServiceType.TIMING_MANAGER, "timing_manager"),
++            "record_processor_0": registered(
++                ServiceType.RECORD_PROCESSOR, "record_processor_0"
++            ),
++        }
++
++        # One of three RecordProcessors registered: the type is present, but the
++        # wait must not return.
++        with pytest.raises(AIPerfError, match="failed to register within timeout"):
++            await service_manager.wait_for_all_services_registration(
++                stop_event=asyncio.Event(), timeout_seconds=1.0
++            )
++
++        # The remaining replicas register while the wait is running: it returns.
++        async def register_late() -> None:
++            await asyncio.sleep(0.6)
++            for i in (1, 2):
++                service_manager.service_id_map[f"record_processor_{i}"] = registered(
++                    ServiceType.RECORD_PROCESSOR, f"record_processor_{i}"
++                )
++
++        await asyncio.gather(
++            service_manager.wait_for_all_services_registration(
++                stop_event=asyncio.Event(), timeout_seconds=5.0
++            ),
++            register_late(),
++        )
++
+     @pytest.mark.asyncio
+     async def test_stop_event_cancels_registration_wait(
+         self, service_manager: MultiProcessServiceManager, mock_alive_process: MagicMock
