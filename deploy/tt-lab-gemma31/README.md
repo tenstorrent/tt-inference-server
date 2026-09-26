@@ -21,6 +21,9 @@ Runner settings specific to 31B:
   tt-metal workload may run on any card at the same time.
 - `TT_LAB_CONTEXT`: the native worker context and the validation limit.
 - `TT_LAB_SERVED_MODEL`: the only accepted `model` field.
+- `TT_GEMMA_PREFIX_CACHE=1`: the worker reuses cached K/V for the longest
+  prefix shared with the previous request (multi-turn chat, agent loops),
+  recomputing from a 32-aligned position; outputs are unchanged.
 
 Start (foreground):
 
