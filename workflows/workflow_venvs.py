@@ -3,9 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -261,6 +263,75 @@ INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
 # Records the revision the checkout is currently on, so a repeat run with the
 # same pin skips the fetch + reinstall and a run with a different pin does not.
 _INFERENCEX_REF_STAMP = ".inferencex_ref"
+# Patches carried here until they land upstream. Each subdirectory names the
+# path inside the InferenceX checkout the patches apply to (``aiperf`` ->
+# ``utils/aiperf``); files apply in sorted order.
+_INFERENCEX_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "inferencex"
+_INFERENCEX_PATCH_TARGETS = {"aiperf": Path("utils") / "aiperf"}
+
+
+def _inferencex_patches() -> list[tuple[Path, Path]]:
+    """(patch file, target path relative to the checkout) for every carried patch."""
+    patches: list[tuple[Path, Path]] = []
+    for subdir, target in sorted(_INFERENCEX_PATCH_TARGETS.items()):
+        patch_dir = _INFERENCEX_PATCH_DIR / subdir
+        if patch_dir.is_dir():
+            patches.extend((p, target) for p in sorted(patch_dir.glob("*.patch")))
+    return patches
+
+
+def _inferencex_stamp(git_ref: str) -> str:
+    """Ref plus a digest of the carried patches, so a patch change re-runs setup."""
+    patches = _inferencex_patches()
+    if not patches:
+        return git_ref
+    digest = hashlib.sha256()
+    for patch, _ in patches:
+        digest.update(patch.name.encode())
+        digest.update(patch.read_bytes())
+    return f"{git_ref}+patches:{digest.hexdigest()[:16]}"
+
+
+def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
+    """Quiet `git apply --check`: these probes are expected to fail on one side."""
+    result = subprocess.run(
+        ["git", "-C", str(target_dir), "apply", "--check", *flags, str(patch)],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
+    """Apply the carried patches to a fresh checkout; already-applied ones are skipped."""
+    for patch, target in _inferencex_patches():
+        target_dir = repo_dir / target
+        # An unpopulated submodule is an empty directory inside the superproject;
+        # `git apply` run there ignores every path in the patch and reports
+        # success, so require the submodule's own .git entry.
+        if not (target_dir / ".git").exists():
+            logger.error("Patch target %s is not a checkout under %s", target, repo_dir)
+            return False
+        if _patch_check(target_dir, patch, "--reverse"):
+            logger.info("Patch %s already applied to %s", patch.name, target)
+            continue
+        if not _patch_check(target_dir, patch):
+            logger.error(
+                "Patch %s does not apply to %s at this InferenceX ref; drop or "
+                "refresh it against the pinned revision.",
+                patch.name,
+                target,
+            )
+            return False
+        if (
+            run_command(
+                ["git", "-C", str(target_dir), "apply", str(patch)], logger=logger
+            )
+            != 0
+        ):
+            return False
+        logger.info("Applied %s to %s", patch.name, target)
+    return True
 
 
 def setup_agentic_traces(
@@ -313,9 +384,15 @@ def setup_agentic_traces(
     git_ref = config.inferencex_git_ref
     repo_dir = venv_config.venv_path / "InferenceX"
     stamp_file = venv_config.venv_path / _INFERENCEX_REF_STAMP
+    stamp = _inferencex_stamp(git_ref)
 
     if repo_dir.is_dir() and stamp_file.is_file():
-        if stamp_file.read_text().strip() == git_ref:
+        if stamp_file.read_text().strip() == stamp:
+            # The stamp only says the patches were applied at setup time. Check
+            # the tree on every run and re-apply if something reset it, so a
+            # run never silently proceeds without them.
+            if not _apply_inferencex_patches(repo_dir, logger):
+                return False
             logger.info(
                 "InferenceX already checked out at %s in %s; skipping setup.",
                 git_ref,
@@ -355,6 +432,8 @@ def setup_agentic_traces(
         != 0
     ):
         return False
+    if not _apply_inferencex_patches(repo_dir, logger):
+        return False
 
     logger.warning(
         "Installing the InferenceX AIPerf fork; this pulls transformers from "
@@ -381,7 +460,7 @@ def setup_agentic_traces(
     if run_command(install_cmd, logger=logger) != 0:
         return False
 
-    stamp_file.write_text(f"{git_ref}\n")
+    stamp_file.write_text(f"{stamp}\n")
     logger.info("InferenceX ready at %s (ref %s)", repo_dir, git_ref)
     return True
 
