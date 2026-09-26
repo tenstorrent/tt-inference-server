@@ -549,6 +549,24 @@ class TestRunLLMEval:
         assert out[0].data["status"] == TestStatus.SKIP.value
         assert "requires max_context >= 200000" in out[0].data["reason"]
 
+    def test_remote_server_uses_base_url_with_port(self):
+        ctx = _ctx()
+        ctx.remote_server = True
+        ctx.server_url = "http://remote-host"
+        ctx.service_port = 8080
+        ctx.base_url = "http://remote-host:8080"
+        server = MagicMock()
+        server.wait_for_healthy.return_value = False
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=[_task()]), patch(
+            f"{_MOD}.RemoteOpenAIController", return_value=server
+        ) as mock_remote, patch(f"{_MOD}.accept_blocks"), patch(
+            f"{_MOD}.block_id", return_value=""
+        ):
+            mod.run_llm_eval(ctx, auth_token="tok")
+        mock_remote.assert_called_once_with(
+            base_url="http://remote-host:8080",
+            auth_token="tok",
+        )
     def _run_killed_on_second_task(self, tasks, blocks_by_task):
         """Run ``tasks``; the second ``_run_eval_task`` call is a GitHub cancel."""
         server = MagicMock()
