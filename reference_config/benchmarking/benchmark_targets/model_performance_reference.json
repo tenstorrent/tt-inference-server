@@ -7066,5 +7066,61 @@
                 }
             }
         ]
+    },
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2000,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ]
+    },
+    "Qwen/Qwen3-TTS-12Hz-0.6B-Base": {
+        "n150": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 2000,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ],
+        "n300": [
+            {
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "tts",
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 180,
+                        "rtr": 1.97
+                    }
+                }
+            }
+        ]
     }
 }
