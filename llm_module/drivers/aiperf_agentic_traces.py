@@ -277,6 +277,10 @@ def build_aiperf_cmd(
         str(artifact_dir),
         "--public-dataset",
         run.public_dataset,
+        # Fixed count: processors auto-scaled after the dataset is configured
+        # never receive DatasetConfiguredNotification and abort mid-run.
+        "--record-processor-service-count",
+        "8",
     ]
     # Consumes multiple values after one flag, matching AIPerf's
     # ``consume_multiple`` parameter style.
