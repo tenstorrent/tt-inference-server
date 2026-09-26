@@ -21,6 +21,7 @@ config, and in ``tests/reference_config/test_agentic_traces_config.py``.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -254,7 +255,7 @@ class AgenticTracesModeSettings:
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
     warmup_requests_per_lane=14,
-    warmup_grace_period=1800,
+    warmup_grace_period=int(os.environ.get("AGENTX_WARMUP_GRACE", "1800")),
     num_dataset_entries=393,
 )
 
@@ -370,7 +371,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=64,
+                concurrency=int(os.environ.get("AGENTX_CONCURRENCY", "64")),
             ),
             # SwarmOne swo-bench replay of the recorded Kimi Claude-Code
             # SWE-bench sessions. FULL replays all three tasks (sympy-bugfix,
