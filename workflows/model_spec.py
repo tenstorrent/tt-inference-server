@@ -390,9 +390,45 @@ quetzal_impl = ImplSpec(
     code_path="serving",
 )
 
+# --- Gemma4 speculative-decoding serving profiles (same tt-metal code path) ---
+#
+# Same namespacing pattern as the qwen36 profiles above: these are NOT separate
+# implementations -- both point at models/demos/gemma4 -- but a model spec is
+# keyed by (impl_name, model_name, device), so offering the MTP (it-assistant
+# KV-shared drafter) and dFlash (z-lab block-diffusion drafter) speculative
+# profiles for the same weights needs distinct impl ids. The profile selects
+# the TT decode class via the plugin's TT_GEMMA4_SPEC env (set in the yaml
+# entry); speculation is TT-native (draft+verify inside one device step,
+# variable tokens/step) and does not use vLLM's speculative_config.
+gemma4_mtp_impl = ImplSpec(
+    impl_id="gemma4_mtp",
+    impl_name="gemma4-mtp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+gemma4_dflash_impl = ImplSpec(
+    impl_id="gemma4_dflash",
+    impl_name="gemma4-dflash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+# Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765. Unlike the
+# two profiles above this is a separate code path (models/demos/gemma4_31b_qb2,
+# architectures TTGemma4QB2ForCausalLM), not another speculative profile over
+# models/demos/gemma4.
+gemma4_31b_qb2_impl = ImplSpec(
+    impl_id="gemma4_31b_qb2",
+    impl_name="gemma4-31b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4_31b_qb2",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
+    "gemma4_mtp": gemma4_mtp_impl,
+    "gemma4_dflash": gemma4_dflash_impl,
+    "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,

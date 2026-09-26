@@ -26,6 +26,7 @@ from workflow_module.commands import (
     SummaryCommand,
     VenvCommand,
     WorkflowCommand,
+    _server_is_alive,
 )
 from workflow_module.execution import OrchestratorMetadata, WorkflowResult
 
@@ -476,3 +477,60 @@ class TestServerCommandBootRetry:
         assert result.return_code == 1
         assert len(attempts) == 3
         assert "device hang during warmup" in result.error
+
+    @pytest.mark.parametrize("mode", [ServerMode.DOCKER, ServerMode.LOCAL])
+    @pytest.mark.parametrize(("return_code", "expected"), [(None, True), (17, False)])
+    def test_process_handle_reports_server_liveness(self, mode, return_code, expected):
+        process = SimpleNamespace(poll=lambda: return_code)
+        spec = ServerLaunchSpec(
+            mode=mode,
+            model_spec=None,
+            runtime_config=None,
+            setup_config=None,
+        )
+
+        assert _server_is_alive(spec, {"process": process}) is expected
+
+    def test_exited_docker_process_retries_without_waiting_for_timeout(
+        self, monkeypatch, tmp_path
+    ):
+        import urllib.error
+        import urllib.request
+        import workflow_module.commands as commands
+
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+        log_path = tmp_path / "server.log"
+        log_path.write_text("fatal startup error\n")
+        attempts = []
+
+        def exited_docker(*args, **kwargs):
+            attempts.append(1)
+            return {
+                "process": SimpleNamespace(poll=lambda: 1),
+                "service_port": "8000",
+                "docker_log_file_path": str(log_path),
+            }
+
+        def unavailable(*args, **kwargs):
+            raise urllib.error.URLError("not listening")
+
+        _install_fake_launchers(monkeypatch, docker=exited_docker)
+        monkeypatch.setattr(urllib.request, "urlopen", unavailable)
+        monkeypatch.setattr(commands, "_teardown_server", lambda *args: None)
+        monkeypatch.setattr(
+            "time.sleep",
+            lambda seconds: pytest.fail("dead process must not sleep until timeout"),
+        )
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+
+        result = ServerCommand(spec).execute()
+
+        assert result.return_code == 1
+        assert len(attempts) == 2
+        assert result.error.endswith("server process exited during startup")

@@ -10,7 +10,7 @@ from config.settings import get_settings
 from domain.adapter_merge_request import AdapterMergeRequest
 from domain.training_request import TrainingRequest
 from fastapi import APIRouter, Depends, HTTPException, Security
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from model_services.base_job_service import BaseJobService
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
@@ -119,6 +119,23 @@ async def get_fine_tuning_job_metadata(
         raise HTTPException(status_code=404, detail="Fine-tuning job not found")
 
     return JSONResponse(content=job_data)
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+def delete_fine_tuning_job(
+    job_id: str,
+    service: BaseJobService = Depends(service_resolver),
+    api_key: str = Security(get_api_key),
+    org_id: str = Depends(get_org_id),
+):
+    """Permanently delete a terminal fine-tuning job and its results."""
+    try:
+        deleted = service.delete_job(job_id, org_id=org_id)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Fine-tuning job not found")
+    return Response(status_code=204)
 
 
 @router.get("/jobs/{job_id}/metrics")

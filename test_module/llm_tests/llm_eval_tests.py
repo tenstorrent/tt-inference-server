@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
@@ -74,69 +75,74 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     return sorted(set(files))
 
 
-def _extract_json(json_path: Path):
+def _extract_json(json_path: Path) -> tuple[str, dict, int | None]:
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("eval results must be an object")  # noqa: TRY004 -- invalid file data
 
-    results = data.get("results", {})
-    configs = data.get("configs", {})
+    results = data.get("results")
+    configs = data.get("configs")
+    if not isinstance(results, dict) or not results:
+        raise ValueError("results must be a non-empty object")
+    if not isinstance(configs, dict) or not configs:
+        raise ValueError("configs must be a non-empty object")
+    if any(not isinstance(config, dict) for config in configs.values()):
+        raise ValueError("each task config must be an object")
 
-    first_key = list(results.keys())[0]
+    task_name = next(iter(results))
+    metrics = results[task_name]
+    if not isinstance(metrics, dict):
+        raise ValueError(f"metrics for {task_name} must be an object")  # noqa: TRY004 -- invalid file data
+    config = configs.get(task_name, {})
+    if config.get("task", task_name) != task_name:
+        raise ValueError(f"task name mismatch for {task_name}")
+    first_config = next(iter(configs.values()))
+    if "dataset_path" not in first_config or any(
+        config.get("dataset_path") != first_config["dataset_path"]
+        for config in configs.values()
+    ):
+        raise ValueError("task configs must share a dataset_path")
 
-    first_results = results[first_key]
-    extracted_metrics = {
-        k: v
-        for k, v in first_results.items()
-        if "alias" not in k and "_stderr" not in k
+    metrics = {
+        k: v for k, v in metrics.items() if "alias" not in k and "_stderr" not in k
     }
-    extracted = [{first_key: extracted_metrics}]
-
-    config = configs.get(first_key, {})
-    task_name = config.get("task", first_key)
-
-    dataset_path = list(configs.values())[0]["dataset_path"]
-    for config in configs.values():
-        assert dataset_path == config.get("dataset_path")
-    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
-
-    return extracted, {"task_name": task_name, "dataset_path": dataset_path}
+    sample_counts = data.get("n-samples")
+    sample_info = (
+        sample_counts.get(task_name) if isinstance(sample_counts, dict) else None
+    )
+    count = sample_info.get("effective") if isinstance(sample_info, dict) else None
+    if not isinstance(count, int) or isinstance(count, bool):
+        count = None
+    return task_name, metrics, count
 
 
-def merge_eval_results(files) -> dict:
-    """Merge per-task lm-eval result files into one {task_name: metrics} dict."""
-    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
-    results: dict = {}
-    for json_file in files:
-        res, _meta = _extract_json(Path(json_file))
-        for task_dict in res:
-            for specific_task_name, metrics in task_dict.items():
-                results.setdefault(specific_task_name, metrics)
-    return results
+def load_eval_results(files) -> tuple[dict, dict]:
+    """Read each file once; use the newest valid metrics and count for each task.
 
-
-def collect_sample_counts(files) -> dict:
-    """Map task_name -> effective sample count from lm-eval result JSONs.
-
-    Used for the sample-count-aware acceptance check on CI/limit-mode subsets.
-    lm-eval writes ``n-samples: {task: {original, effective}}``; ``effective`` is
-    the count actually scored (after ``--limit``). Returns ``{}`` for formats
-    without this field (e.g. some lmms-eval outputs), in which case scoring falls
-    back to the ratio check.
+    Missing sample counts stay absent so scoring can use its ratio fallback.
+    Invalid files are skipped without preventing other tasks from running.
     """
-    counts: dict = {}
+    loaded = []
     for json_file in files:
         try:
-            with Path(json_file).open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError):
+            path = Path(json_file)
+            modified = path.stat().st_mtime
+            loaded.append((modified, _extract_json(path)))
+        except (OSError, ValueError) as exc:
+            logger.warning("Skipping invalid eval results %s: %s", json_file, exc)
+
+    results: dict = {}
+    counts: dict = {}
+    for _, (task_name, metrics, count) in sorted(
+        loaded, key=lambda item: item[0], reverse=True
+    ):
+        if task_name in results:
             continue
-        for task_name, info in (data.get("n-samples", {}) or {}).items():
-            if task_name in counts or not isinstance(info, dict):
-                continue
-            eff = info.get("effective")
-            if isinstance(eff, int):
-                counts[task_name] = eff
-    return counts
+        results[task_name] = metrics
+        if count is not None:
+            counts[task_name] = count
+    return results, counts
 
 
 # --- scoring one task's results into Block(kind="evals") ---------------------
@@ -352,12 +358,14 @@ def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> B
 # --- running one task --------------------------------------------------------
 
 
-def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
+def _run_eval_task(
+    ctx: MediaContext, task, auth_token: str, *, output_path: Path
+) -> int:
     cmd = build_eval_command(
         task,
         ctx.model_spec,
         _device_label(ctx),
-        ctx.output_path,
+        output_path,
         ctx.server_port,
         runtime_config=ctx.runtime_config,
         deploy_url=ctx.server_host,
@@ -422,10 +430,11 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         )
         or _DEFAULT_WAIT_HEALTHY_TIMEOUT_S
     )
+    envelope = _envelope(ctx)
     if not server.wait_for_healthy(timeout=health_timeout):
         logger.error("⛔ inference server not healthy; aborting evals.")
         blocks = [_fail_block(ctx, t, "inference server not healthy") for t in tasks]
-        _accept(ctx, blocks)
+        _accept(blocks, envelope)
         return blocks
 
     # Trace capture is skipped for evals (it's a perf warm-up; eval correctness
@@ -433,10 +442,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     device_max_context = getattr(
         getattr(ctx.model_spec, "device_model_spec", None), "max_context", None
     )
-    ran_tasks = []
-    rc_by_task = {}
-    elapsed_seconds_by_task = {}
-    skipped_blocks: List[Block] = []
+    # Each task is scored and accepted as soon as it finishes: accepting is what
+    # checkpoints the report, so a job cancelled during task N keeps 1..N-1.
+    blocks: List[Block] = []
     for task in tasks:
         min_ctx = getattr(task, "min_context_required", None)
         if min_ctx and device_max_context and device_max_context < min_ctx:
@@ -445,7 +453,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 f"{device_max_context}"
             )
             logger.warning("⏭  Skipping %s: %s.", task.task_name, reason)
-            skipped_blocks.append(_status_block(ctx, task, TestStatus.SKIP, reason))
+            task_blocks = [_status_block(ctx, task, TestStatus.SKIP, reason)]
+            _accept(task_blocks, envelope)
+            blocks.extend(task_blocks)
             continue
         health = server.get_health()
         if getattr(health, "status_code", 200) != 200:
@@ -453,49 +463,63 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 "⛔ server unhealthy mid-eval (status %s); aborting.",
                 getattr(health, "status_code", "?"),
             )
-            rc_by_task[task.task_name] = 1
-            ran_tasks.append(task)
-            break
-        started_at = time.perf_counter()
-        rc_by_task[task.task_name] = _run_eval_task(ctx, task, auth_token)
-        elapsed_seconds_by_task[task.task_name] = time.perf_counter() - started_at
-        ran_tasks.append(task)
-
-    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
-    results = merge_eval_results(result_files)
-    sample_counts = collect_sample_counts(result_files)
-    blocks: List[Block] = list(skipped_blocks)
-    for task in ran_tasks:
-        task_blocks = blocks_for_task(
-            ctx,
-            task,
-            results,
-            sample_counts,
-            elapsed_seconds=elapsed_seconds_by_task.get(task.task_name),
-        )
-        if task_blocks:
+            task_blocks = [_fail_block(ctx, task, "inference server not healthy")]
+            _accept(task_blocks, envelope)
             blocks.extend(task_blocks)
-        else:
-            # Ran but scored nothing (command failed or results unparseable) —
-            # v1's report path silently drops these; we surface a FAIL block.
-            rc = rc_by_task.get(task.task_name)
-            blocks.append(_fail_block(ctx, task, f"no eval results parsed (rc={rc})"))
+            break
+        # Keep each attempt's raw outputs, but never grade files from an older
+        # attempt when this subprocess fails or produces malformed results.
+        output_path = Path(ctx.output_path) / f"eval-attempt-{uuid.uuid4().hex}"
+        output_path.mkdir(parents=True)
+        started_at = time.perf_counter()
+        rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
+        elapsed_seconds = time.perf_counter() - started_at
+        task_blocks = _score_task(
+            ctx, task, output_path=output_path, rc=rc, elapsed_seconds=elapsed_seconds
+        )
+        _accept(task_blocks, envelope)
+        blocks.extend(task_blocks)
 
-    _accept(ctx, blocks)
     return blocks
 
 
-def _accept(ctx: MediaContext, blocks: List[Block]) -> None:
+def _score_task(
+    ctx: MediaContext,
+    task,
+    *,
+    output_path: Path,
+    rc: int,
+    elapsed_seconds: Optional[float],
+) -> List[Block]:
+    """Score one finished task using only its current attempt's result files."""
+    result_files = discover_eval_results(output_path, ctx.model_spec)
+    results, sample_counts = load_eval_results(result_files)
+    task_blocks = blocks_for_task(
+        ctx,
+        task,
+        results,
+        sample_counts,
+        elapsed_seconds=elapsed_seconds,
+    )
+    if task_blocks:
+        return task_blocks
+    # Ran but scored nothing (command failed or results unparseable) —
+    # v1's report path silently drops these; we surface a FAIL block.
+    return [_fail_block(ctx, task, f"no eval results parsed (rc={rc})")]
+
+
+def _envelope(ctx: MediaContext) -> dict:
+    return {
+        **report_model_fields(ctx.model_spec),
+        "device": _device_label(ctx),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _accept(blocks: List[Block], envelope: dict) -> None:
     if not blocks:
         return
-    accept_blocks(
-        blocks,
-        envelope={
-            **report_model_fields(ctx.model_spec),
-            "device": _device_label(ctx),
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        },
-    )
+    accept_blocks(blocks, envelope=envelope)
 
 
 __all__ = ["run_llm_eval"]

@@ -5,6 +5,11 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -96,6 +101,79 @@ class TestServingBenchWorkflowRunTasks:
 
 
 class TestServingBenchRunner:
+    def test_benchmark_shell_does_not_copy_shared_results(self, tmp_path):
+        if shutil.which("jq") is None:
+            pytest.skip("the benchmark shell wrapper requires jq")
+        repo = tmp_path / "repo"
+        media = repo / "tt-media-server"
+        script_dir = media / "cpp_server" / "benchmarks"
+        script_dir.mkdir(parents=True)
+        shared = media / "bench_results"
+        shared.mkdir()
+        (shared / "old.json").write_text('{"stale": true}')
+        benchmark = script_dir / "run_benchmarks.sh"
+        benchmark.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -eu\n"
+            'RESULTS_DIR="${RESULTS_DIR:-bench_results}"\n'
+            'mkdir -p "$RESULTS_DIR"\n'
+            "printf '%s\\n' '{\"current\": true}' > \"$RESULTS_DIR/current.json\"\n"
+        )
+        benchmark.chmod(0o700)
+        out = tmp_path / "attempt"
+        wrapper = (
+            Path(__file__).resolve().parents[2]
+            / "test_module/serving_bench/benchmark/run.sh"
+        )
+        subprocess.run(
+            ["bash", str(wrapper)],
+            env={
+                **os.environ,
+                "INFERENCE_SERVER_DIR": str(repo),
+                "OUT": str(out),
+                "RESULTS_DIR": str(shared),
+                "TARGET": "http://localhost:8000",
+                "SERVER_INFO": '{"model": "test"}',
+            },
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert sorted(path.name for path in out.iterdir()) == ["current.json"]
+        assert json.loads((out / "current.json").read_text()) == {
+            "current": True,
+            "server_info": {"model": "test"},
+        }
+        assert sorted(path.name for path in shared.iterdir()) == ["old.json"]
+
+    def test_repeat_lists_only_current_attempt_artifacts(self, tmp_path):
+        ctx = _make_ctx()
+        ctx.output_path = str(tmp_path)
+        outputs = []
+
+        def run(cmd, **kwargs):
+            output = Path(cmd[cmd.index("--output-dir") + 1])
+            outputs.append(output)
+            if len(outputs) == 1:
+                (output / "old.json").write_text("{}")
+                return MagicMock(returncode=0)
+            (output / "failure.log").write_text("benchmark failed")
+            return MagicMock(returncode=1)
+
+        with patch(
+            "test_module.serving_bench.runner.subprocess.run", side_effect=run
+        ), patch("workflow_module.accept_blocks") as accept:
+            run_serving_bench(ctx, suites="benchmark")
+            result = run_serving_bench(ctx, suites="benchmark")
+
+        current = accept.call_args.args[0][0].data
+        assert current["result_files"] == ["failure.log"]
+        assert current["results_dir"] == str(outputs[1])
+        assert result[0].return_code == current["return_code"] == 1
+        assert outputs[0] != outputs[1]
+        assert (outputs[0] / "old.json").exists()
+
     def test_available_suites_finds_all(self):
         suites = available_suites()
         assert "benchmark" in suites

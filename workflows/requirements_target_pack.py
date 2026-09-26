@@ -16,16 +16,19 @@ catalog:
   document's model + deployment metadata.
 - :class:`RequirementsTargetPack` — builds the eval config (from the document's
   ``accuracyEvals``, borrowing each task's runnable harness definition from the
-  catalog and re-gating it with the document's reference score/tolerance) and
-  the benchmark config (the document's sweep points + scalar targets / SLOs).
+  catalog, re-gating it with the document's reference score/tolerance and
+  measuring it under the document's ``genKwargs``) and the benchmark config
+  (the document's sweep points + scalar targets / SLOs).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import replace
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
 from workflow_module.model_catalog import ModelSpecProvider
 from workflow_module.requirements_schema import (
     PRIORITY_MUST,
@@ -39,17 +42,25 @@ from workflow_module.target_pack import TargetPack
 
 logger = logging.getLogger(__name__)
 
-# Human-facing accuracy-eval names (from the document) -> catalog task_name.
-# Matched case-insensitively after stripping whitespace. Extend as new evals
-# appear in requirement documents.
+# Human-facing accuracy-eval names (from the document) -> catalog task names,
+# most preferred first; matched case-insensitively after stripping whitespace.
+# A tuple, not a single name, because the same benchmark is configured under
+# several task names per model family (:meth:`_find_task_template` prefers
+# whichever the document's model configures). Tau^3 spellings are listed out
+# because ``_normalize_eval_name`` deliberately doesn't fold "^" or "benchmark".
 _EVAL_NAME_TO_TASK = {
-    "gpqa-diamond": "gpqa_diamond_cot_zeroshot",
-    "gpqa diamond": "gpqa_diamond_cot_zeroshot",
-    "swe-bench verified": "swe_bench_verified",
-    "swe-bench-verified": "swe_bench_verified",
-    "terminal-bench 2.0": "terminal_bench_2",
-    "terminal-bench 2": "terminal_bench_2",
-    "terminal-bench 2.1": "terminal_bench_2_1",
+    "gpqa-diamond": ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond"),
+    "gpqa diamond": ("gpqa_diamond_cot_zeroshot", "r1_gpqa_diamond"),
+    "swe-bench verified": ("swe_bench_verified",),
+    "swe-bench-verified": ("swe_bench_verified",),
+    "terminal-bench 2.0": ("terminal_bench_2",),
+    "terminal-bench 2": ("terminal_bench_2",),
+    "terminal-bench 2.1": ("terminal_bench_2_1",),
+    "tau^3-banking benchmark": ("tau3_bench_banking",),
+    "tau^3-banking": ("tau3_bench_banking",),
+    "tau3-banking benchmark": ("tau3_bench_banking",),
+    "tau3-banking": ("tau3_bench_banking",),
+    "tau3-bench banking": ("tau3_bench_banking",),
 }
 
 # Scenario scalar-target metric -> PerformanceTarget attribute. Only these
@@ -95,10 +106,46 @@ _TASK_PROFILES = {
     },
 }
 
-# Requests per sweep point = concurrency * this multiple, floored, so each
-# point issues enough requests to characterize steady state.
-_NUM_PROMPTS_CONCURRENCY_MULTIPLE = 8
-_MIN_NUM_PROMPTS = 16
+
+_HARNESS_MODEL_ENV_KEYS = ("TAU2_USER_MODEL", "TAU2_NL_ASSERTIONS_MODEL")
+
+# Document parameters that map to an agent key of the same name. The token
+# budget is handled separately: see :meth:`_agentic_budget`.
+_AGENTIC_SAMPLING_KEYS = ("temperature", "top_p", "top_k", "reasoning_effort")
+
+# Agent-side key -> the document parameter it carries.
+_AGENTIC_KEY_SOURCE = {
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "top_k": "top_k",
+    "reasoning_effort": "reasoning_effort",
+    "max_output_tokens": "max_gen_toks",
+    "max_tokens": "max_gen_toks",
+    "max_input_tokens": "max_gen_toks",
+}
+
+# LiteLLM's drop_params discards anything the OpenAI provider does not know, so
+# these only survive inside extra_body, which it merges verbatim.
+_LITELLM_EXTRA_BODY_KEYS = ("top_k", "reasoning_effort")
+
+# Where each agent carries that extra_body, for building one the donor lacks.
+_AGENT_EXTRA_BODY_PATH = {
+    "terminus-2": ("llm_kwargs", "extra_body"),
+    "mini-swe-agent": ("config", "model", "model_kwargs", "extra_body"),
+}
+
+# tau3's adapter builds only temperature; everything else rides in this JSON
+# string, which the borrowed donor may or may not carry.
+_JSON_ARGS_AGENT = "tau3_llm_agent"
+_JSON_ARGS_KEY = "llm_args_json"
+
+# Such a value must stay a JSON string: the adapter shlex-quotes it onto the
+# container command line, where a dict raises TypeError.
+_JSON_STRING_ARG_SUFFIX = "_json"
+
+# LiteLLM selects its OpenAI-compatible provider on this prefix; the remainder
+# is the model id sent to the server (see llm_module/drivers/agentic.py).
+_LITELLM_OPENAI_PREFIX = "openai/"
 
 
 def _normalize_eval_name(name: str) -> str:
@@ -116,10 +163,6 @@ def unknown_eval_names(doc: RequirementsDoc) -> List[str]:
         for ae in doc.accuracy_evals
         if _normalize_eval_name(ae.name) not in _EVAL_NAME_TO_TASK
     ]
-
-
-def _num_prompts_for(concurrency: int) -> int:
-    return max(_MIN_NUM_PROMPTS, concurrency * _NUM_PROMPTS_CONCURRENCY_MULTIPLE)
 
 
 class RequirementsModelSpecProvider(ModelSpecProvider):
@@ -207,14 +250,14 @@ class RequirementsTargetPack(TargetPack):
         return EvalConfig(hf_model_repo=self._doc.model.name, tasks=tasks)
 
     def _build_eval_task(self, ae: AccuracyEval) -> Any:
-        task_name = _EVAL_NAME_TO_TASK.get(_normalize_eval_name(ae.name))
-        if task_name is None:
+        candidates = _EVAL_NAME_TO_TASK.get(_normalize_eval_name(ae.name))
+        if candidates is None:
             available = sorted(set(_EVAL_NAME_TO_TASK))
             raise ValueError(
                 f"Requirements accuracy eval {ae.name!r} has no known catalog "
                 f"task mapping. Known eval names: {available}."
             )
-        template = self._find_task_template(task_name)
+        template, task_name = self._find_task_template(candidates)
         if template is None:
             return self._synthesize_eval_task(ae, task_name)
         if template.score is None:
@@ -246,65 +289,309 @@ class RequirementsTargetPack(TargetPack):
             template,
             score=new_score,
             priority=ae.priority,
-            **self._harness_concurrency_overrides(template, task_name),
+            **self._gen_kwargs_overrides(template, task_name, ae),
+            **self._harness_overrides(template, task_name, ae),
+            **self._max_length_override(template, task_name),
         )
 
-    def _harness_concurrency_overrides(
-        self, template: Any, task_name: str
+    def _gen_kwargs_overrides(
+        self, template: Any, task_name: str, ae: AccuracyEval
     ) -> Mapping[str, Any]:
-        """Re-point a borrowed harness config at the document's concurrency.
+        """The gen_kwargs a borrowed template runs with: the document's, then streaming.
 
-        The template is borrowed from whichever catalog model happens to define
-        the task, so its ``n_concurrent_trials`` describes *that* model's
-        deployment -- and which model is borrowed is decided by catalog
-        iteration order, so inheriting it would make the trial count arbitrary.
-        ``deployment.maxConcurrencyPerInstance`` is the document's own statement
-        of what the instance under test serves concurrently, so it is the
-        honest trial count here.
+        The document's ``genKwargs`` wins, per parameter and only per
+        parameter, over the borrowed template's own tuned sampling (token
+        budget, stop list, do_sample) so a document stating a temperature
+        doesn't discard a budget it never chose.
 
-        Deliberately unclamped: the document is authoritative about the
-        deployment. A trial count the host cannot afford is a property of the
-        document, not something to silently correct.
+        Then streaming, so a gateway in front of the deployed endpoint (e.g.
+        Cloudflare's ~100s window) can't time out a long chain-of-thought
+        answer before it starts responding. ``stream`` is deliberately not a
+        document parameter: which side of a gateway the run sits on is the
+        runner's knowledge, not the customer's contract.
+
+        Harbor-backed tasks (agentic benchmarks) never read gen_kwargs -- their
+        requests come from the agent via LiteLLM, not lm-eval; sampling is
+        re-pointed in the agent's own config by
+        :meth:`_repoint_agent_sampling`.
         """
-        concurrency = self._doc.deployment.max_concurrency_per_instance
-        if not concurrency:
+        if getattr(template, "agentic_eval_config", None) is not None:
             return {}
-        cfg = getattr(template, "agentic_eval_config", None)
-        if cfg is None or cfg.n_concurrent_trials == concurrency:
+        stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
+        original = dict(getattr(template, "gen_kwargs", None) or {})
+        gen_kwargs = dict(original)
+        if stated:
+            logger.info(
+                "Task %s: measuring under the document's genKwargs %r; the "
+                "borrowed template's other parameters are unchanged.",
+                task_name,
+                stated,
+            )
+            gen_kwargs.update(stated)
+        if str(gen_kwargs.get("stream", "")).lower() != "true":
+            logger.info(
+                "Task %s: streaming its generations, so a gateway cannot time "
+                "out the request before the answer is complete.",
+                task_name,
+            )
+            gen_kwargs["stream"] = "true"
+        if gen_kwargs == original:
+            return {}
+        return {"gen_kwargs": gen_kwargs}
+
+    def _max_length_override(self, template: Any, task_name: str) -> Mapping[str, Any]:
+        """Point a borrowed template's context at the document's model."""
+        if getattr(template, "agentic_eval_config", None) is not None:
+            return {}
+        context = self._doc.model.context_length
+        model_kwargs = dict(getattr(template, "model_kwargs", None) or {})
+        if not context or model_kwargs.get("max_length") == context:
             return {}
         logger.info(
-            "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
-            "the requirements document's deployment.maxConcurrencyPerInstance.",
+            "Task %s: max_length %s -> %s, the document's model.contextLength.",
             task_name,
-            cfg.n_concurrent_trials,
-            concurrency,
+            model_kwargs.get("max_length"),
+            context,
         )
-        return {
-            "agentic_eval_config": replace(
-                cfg,
-                n_concurrent_trials=concurrency,
+        model_kwargs["max_length"] = context
+        return {"model_kwargs": model_kwargs}
+
+    def _harness_overrides(
+        self, template: Any, task_name: str, ae: AccuracyEval
+    ) -> Mapping[str, Any]:
+        """Re-point a borrowed harness config at the document's own deployment.
+
+        The template is borrowed from whichever catalog model happens to define
+        the task (see :meth:`_find_task_template`), so anything in it that
+        describes *that* model's deployment has to be replaced or the run
+        silently validates against someone else's setup. Two such things:
+
+        ``n_concurrent_trials`` describes the donor's deployment, and which
+        donor gets borrowed is decided by catalog iteration order, so
+        inheriting it would make the trial count arbitrary.
+        ``deployment.maxConcurrencyPerInstance`` is the document's own
+        statement of what the instance under test serves concurrently.
+        Deliberately unclamped: the document is authoritative, and a trial
+        count the host cannot afford is a property of the document rather than
+        something to silently correct.
+
+        The harness env keys in :data:`_HARNESS_MODEL_ENV_KEYS` name a model,
+        not a credential -- tau3 runs the model under test as its own simulated
+        user and NL-assertion judge. Every catalog entry therefore points them
+        at its own repo, so a borrowed config would send that traffic to the
+        donor, on an endpoint that is not serving it.
+
+        Sampling is the third. The agent's own sampling is written into
+        ``agent_kwargs`` (``temperature``, ``top_p``, and a ``top_k`` that has
+        to ride in an ``extra_body`` to survive LiteLLM's ``drop_params``), and
+        those values are the donor's -- ``top_p`` alone is 0.95 for some
+        catalog models and 1.0 for others. The document's ``genKwargs`` replace
+        them where the agent has the knob; see :func:`_repoint_sampling`.
+        """
+        cfg = getattr(template, "agentic_eval_config", None)
+        if cfg is None:
+            return {}
+        changes: Dict[str, Any] = {}
+        self._repoint_agent_sampling(cfg, task_name, ae, changes)
+
+        concurrency = self._doc.deployment.max_concurrency_per_instance
+        if concurrency and cfg.n_concurrent_trials != concurrency:
+            logger.info(
+                "Task %s: overriding borrowed n_concurrent_trials %s -> %s from "
+                "the requirements document's deployment.maxConcurrencyPerInstance.",
+                task_name,
+                cfg.n_concurrent_trials,
+                concurrency,
             )
+            changes["n_concurrent_trials"] = concurrency
+
+        for env_field in ("environment_env", "verifier_env"):
+            env = getattr(cfg, env_field, None) or {}
+            repointed = dict(env)
+            for key in _HARNESS_MODEL_ENV_KEYS:
+                donor = env.get(key)
+                if not donor:
+                    continue
+                # Keep the provider prefix the catalog wrote (LiteLLM selects
+                # its OpenAI provider on "openai/", see
+                # llm_module/drivers/agentic.py) and swap only the model. A
+                # value in some other shape is left alone and flagged, rather
+                # than guessed at.
+                if not donor.startswith(_LITELLM_OPENAI_PREFIX):
+                    logger.warning(
+                        "Task %s: borrowed %s[%s] is %r, which does not look "
+                        "like an %r model reference; leaving it alone. It may "
+                        "still name the model it was borrowed from.",
+                        task_name,
+                        env_field,
+                        key,
+                        donor,
+                        _LITELLM_OPENAI_PREFIX,
+                    )
+                    continue
+                ours = f"{_LITELLM_OPENAI_PREFIX}{self._doc.model.name}"
+                if donor == ours:
+                    continue
+                logger.info(
+                    "Task %s: re-pointing borrowed %s[%s] from %r to %r (the "
+                    "requirements document's model).",
+                    task_name,
+                    env_field,
+                    key,
+                    donor,
+                    ours,
+                )
+                repointed[key] = ours
+            if repointed != env:
+                changes[env_field] = repointed
+
+        if not changes:
+            return {}
+        return {"agentic_eval_config": replace(cfg, **changes)}
+
+    def _repoint_agent_sampling(
+        self, cfg: Any, task_name: str, ae: AccuracyEval, changes: Dict[str, Any]
+    ) -> None:
+        """Apply the document's sampling and token budget to a borrowed agent.
+
+        A parameter with no knob and no known place to build one is reported,
+        not guessed: the eval still runs and still produces a score, which
+        without the warning reads as measured under parameters that never
+        reached the server.
+        """
+        stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
+        if not stated:
+            return
+        sampling = {k: v for k, v in stated.items() if k in _AGENTIC_SAMPLING_KEYS}
+
+        params = dict(sampling)
+        params.update(self._agentic_budget(stated, task_name))
+
+        found: set = set()
+        original = cfg.agent_kwargs or {}
+        agent_kwargs = _repoint_sampling(original, params, found)
+        honoured = {_AGENTIC_KEY_SOURCE[k] for k in found}
+
+        agent = getattr(cfg, "agent", None)
+        missing = {k: v for k, v in stated.items() if k not in honoured}
+        # Landing one of these anywhere but an extra_body is not enough: the
+        # first-class argument is what drop_params discards.
+        for key in _LITELLM_EXTRA_BODY_KEYS:
+            if key in stated and not _in_extra_body(agent_kwargs, key):
+                missing[key] = stated[key]
+        if missing and agent == _JSON_ARGS_AGENT:
+            agent_kwargs = _build_json_args(agent_kwargs, missing, task_name)
+            honoured |= set(missing)
+        elif missing and agent in _AGENT_EXTRA_BODY_PATH:
+            buildable = {
+                k: v for k, v in missing.items() if k in _LITELLM_EXTRA_BODY_KEYS
+            }
+            if buildable:
+                agent_kwargs = _build_extra_body(
+                    agent_kwargs, _AGENT_EXTRA_BODY_PATH[agent], buildable, task_name
+                )
+                honoured |= set(buildable)
+
+        if agent_kwargs != original:
+            logger.info(
+                "Task %s: measuring under the document's genKwargs %r.",
+                task_name,
+                {k: stated[k] for k in sorted(honoured)},
+            )
+            changes["agent_kwargs"] = agent_kwargs
+
+        unhonoured = sorted(set(stated) - honoured)
+        if unhonoured:
+            logger.warning(
+                "Task %s: the document states %r, but this agent exposes no "
+                "knob for them. Its score is not measured under those.",
+                task_name,
+                {k: stated[k] for k in unhonoured},
+            )
+
+    def _agentic_budget(
+        self, stated: Mapping[str, Any], task_name: str
+    ) -> Dict[str, int]:
+        """The agent-side budget keys for the document's requested output tokens.
+
+        An agent splits the context window between what it sends and what it
+        asks back, and the two must sum below it, so the requested budget only
+        makes sense paired with an input cap derived from the same context.
+        """
+        requested = stated.get("max_gen_toks")
+        if requested is None:
+            return {}
+        context = self._doc.model.context_length
+        if not context:
+            logger.warning(
+                "Task %s: not applying the document's maxGenToks %s -- it has "
+                "no model.contextLength to size the input budget against, and "
+                "raising the output cap alone can push a request past the "
+                "server's context.",
+                task_name,
+                requested,
+            )
+            return {}
+        if requested >= context:
+            logger.warning(
+                "Task %s: not applying the document's maxGenToks %s -- it "
+                "leaves no room for a prompt inside model.contextLength %s.",
+                task_name,
+                requested,
+                context,
+            )
+            return {}
+        return {
+            "max_output_tokens": requested,
+            "max_tokens": requested,
+            "max_input_tokens": context - requested,
         }
 
-    def _find_task_template(self, task_name: str) -> Optional[Any]:
-        """Borrow a runnable EvalTask for ``task_name`` from the catalog.
+    def _find_task_template(
+        self, candidates: Sequence[str]
+    ) -> Tuple[Optional[Any], str]:
+        """A runnable EvalTask for the benchmark, and the task name it is.
 
-        Prefer the document model's own catalog entry (so any model-specific
-        harness tuning is preserved), then fall back to any model that defines
-        the task.
+        ``candidates`` are the task spellings that satisfy the document's eval,
+        most preferred first. The document model's *own* entry wins for any of
+        them, ahead of the preferred spelling borrowed from another model,
+        because an EvalTask carries that model's sampling configuration --
+        gen_kwargs, timeouts, the chat/completions class -- and those do not
+        transfer. Borrowing GPQA from a reasoning model, for instance, brings
+        its ``reasoning_effort`` along, which another server rejects, and its
+        two-hour request timeout, which turns the rejection into a stall.
+
+        The search runs over ALL_EVAL_CONFIGS, not EVAL_CONFIGS: a donor is read
+        only for its task definition and is re-gated against the document
+        immediately after, so whether the donor model happens to have a
+        ModelSpec is irrelevant. Searching the spec-gated map let the last model
+        to drop a harness-backed task take the template with it, which is a
+        catalog-wide break for an unrelated document.
+
+        Returns the preferred name with a ``None`` template when the catalog
+        defines none of them, so the caller can try synthesizing that task.
         """
-        from reference_config.evals.eval_config import EVAL_CONFIGS
+        from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 
-        preferred = EVAL_CONFIGS.get(self._doc.model.name)
+        preferred = ALL_EVAL_CONFIGS.get(self._doc.model.name)
         if preferred is not None:
-            for task in preferred.tasks:
-                if task.task_name == task_name:
-                    return task
-        for cfg in EVAL_CONFIGS.values():
-            for task in cfg.tasks:
-                if task.task_name == task_name:
-                    return task
-        return None
+            for name in candidates:
+                for task in preferred.tasks:
+                    if task.task_name == name:
+                        return task, name
+        for name in candidates:
+            for cfg in ALL_EVAL_CONFIGS.values():
+                for task in cfg.tasks:
+                    if task.task_name == name:
+                        if name != candidates[0]:
+                            logger.info(
+                                "No catalog model defines %r; borrowing %r for "
+                                "the same benchmark.",
+                                candidates[0],
+                                name,
+                            )
+                        return task, name
+        return None, candidates[0]
 
     def _synthesize_eval_task(self, ae: AccuracyEval, task_name: str) -> Any:
         """Build a neutral EvalTask for a known eval with no catalog template.
@@ -333,18 +620,22 @@ class RequirementsTargetPack(TargetPack):
         model_kwargs: dict = {"timeout": "3600"}
         if self._doc.model.context_length:
             model_kwargs["max_length"] = self._doc.model.context_length
+        stated = ae.gen_kwargs.stated() if ae.gen_kwargs else {}
         logger.warning(
             "No catalog template for task %r; synthesizing with neutral "
             "defaults (max_length=%s from model.contextLength, streaming on, "
-            "no sampling overrides).",
+            "sampling: %s).",
             task_name,
             model_kwargs.get("max_length"),
+            stated or "the server's own defaults",
         )
         return EvalTask(
             task_name=task_name,
             # Streaming on by default for synthesized tasks (long generations
-            # against an OpenAI-compatible server); no sampling overrides.
-            gen_kwargs={"stream": "True"},
+            # against an OpenAI-compatible server). There is no template to
+            # inherit sampling from, so the document's parameters are all there
+            # is: whatever it does not state stays the server's own default.
+            gen_kwargs={"stream": "True", **stated},
             score=EvalTaskScore(
                 published_score=(
                     ae.published_score
@@ -400,7 +691,7 @@ class RequirementsTargetPack(TargetPack):
                     scenario.kind,
                 )
                 continue
-            params.extend(self._scenario_params(scenario))
+            params.extend(self._scenario_params(scenario, device, model_spec))
 
         task = BenchmarkTask(
             param_map={device: params},
@@ -408,18 +699,49 @@ class RequirementsTargetPack(TargetPack):
         )
         return BenchmarkConfig(model_id=model_spec.model_id, tasks=[task])
 
-    def _scenario_params(self, scenario: Scenario) -> List[Any]:
+    def _scenario_params(
+        self, scenario: Scenario, device: Any, model_spec: Any
+    ) -> List[Any]:
+        from reference_config.benchmarking.benchmark_config import (
+            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE,
+            get_num_prompts,
+        )
         from workflows.utils_report import BenchmarkTaskParams, PerformanceTarget
+        from workflows.workflow_types import DeviceTypes
 
         if not scenario.sweep:
             return []
-        goodput_constraints = _goodput_constraints(scenario)
-        if goodput_constraints is None and _scenario_targets_goodput(scenario):
+
+        min_num_prompts = 0
+        if device == DeviceTypes.SUPER_CLUSTER:
+            model_max_concurrency = getattr(
+                getattr(model_spec, "device_model_spec", None),
+                "max_concurrency",
+                None,
+            )
+            if model_max_concurrency:
+                min_num_prompts = (
+                    SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
+                )
+        # With per-row overrides in play, "the scenario has no SLOs" is no
+        # longer the right predicate: a scenario can declare none itself and
+        # still have every row supply its own.
+        if _scenario_targets_goodput(scenario) and not any(
+            _point_goodput_slo(p, scenario.slo) for p in scenario.sweep
+        ):
             logger.warning(
-                "Scenario %r declares goodput expectations but no SLOs; "
-                "goodput is only measured when SLOs provide the --goodput "
-                "constraints, so those targets will grade as NA.",
+                "Scenario %r declares goodput expectations but no sweep point "
+                "declares its own SLOs, so goodput is not measured and those "
+                "targets grade as NA.%s Bars belong on the rows: one set "
+                "cannot hold across a sweep, since a bar that is satisfiable "
+                "at one (ISL, OSL) is unreachable at another.",
                 scenario.id,
+                (
+                    " The scenario-level slo is used as a capability gate on "
+                    "the sweep's best point, not as goodput bars."
+                    if scenario.slo is not None
+                    else ""
+                ),
             )
 
         # Scenario-level gates (SLOs, scalar targets) are *capability* gates:
@@ -463,14 +785,22 @@ class RequirementsTargetPack(TargetPack):
                     isl=point.isl,
                     osl=point.osl,
                     max_concurrency=point.concurrency,
-                    num_prompts=_num_prompts_for(point.concurrency),
+                    num_prompts=get_num_prompts(
+                        point.isl,
+                        point.osl,
+                        point.concurrency,
+                        min_num_prompts=(
+                            min_num_prompts if point.concurrency > 1 else 0
+                        ),
+                    ),
                     task_type="text",
                     targets=targets,
                     priority=_aggregate_priority(list(target_priorities.values())),
                     target_priorities=target_priorities or None,
-                    goodput=goodput_constraints,
+                    goodput=_point_goodput_slo(point, scenario.slo),
                 )
             )
+        _warn_on_duplicate_shapes(scenario)
         return params
 
     def smoke_test_benchmark_config(self, config: Any, device: Any) -> Any:
@@ -512,7 +842,7 @@ class RequirementsTargetPack(TargetPack):
         return replace_agentic_runs(
             base,
             self._agentic_concurrencies(),
-            goodput=self.agentic_traces_goodput() or "",
+            goodput=self._agentic_goodput_by_concurrency(),
             expected_sweep=self._agentic_expected_sweep(),
         )
 
@@ -545,17 +875,62 @@ class RequirementsTargetPack(TargetPack):
                     seen.setdefault(point.concurrency, None)
         return sorted(seen)
 
-    def agentic_traces_goodput(self) -> Optional[str]:
-        """AIPerf ``--goodput`` constraints from the agentic workloads' SLOs.
+    def _agentic_goodput_by_concurrency(self) -> Dict[int, str]:
+        """AIPerf ``--goodput`` constraints per operating point.
 
-        Without SLOs there is nothing defining a "good" request, so AIPerf can
-        report no goodput -- even when the document sets a goodputPct target.
+        Each row supplies its own bars only -- an agentic row with no ``slo``
+        does not inherit the workload's, since an agentic document targets
+        goodput at specific operating points rather than service-wide (see
+        ``test_agentic_rows_do_not_inherit_the_workload_slo``). A concurrency
+        with no row SLOs is omitted, leaving that run without bars rather than
+        a misleading number. First workload wins on a shared concurrency,
+        matching the dedupe in ``_agentic_concurrencies`` and
+        ``_agentic_expected_sweep``.
         """
         for workload in self._doc.agentic_workloads:
-            constraints = _aiperf_slo_constraints(workload.slo)
-            if constraints:
-                return constraints
-        return None
+            if workload.slo is not None and not any(
+                p.slo is not None for p in workload.sweep
+            ):
+                logger.warning(
+                    "Agentic workload %r declares workload-level SLOs (%r) but "
+                    "no sweep row declares its own; agentic goodput is graded "
+                    "per operating point, so these are ignored and goodput "
+                    "will not be measured. Move the SLOs onto the rows that "
+                    "carry a goodput target.",
+                    workload.id,
+                    workload.slo,
+                )
+        by_concurrency: Dict[int, str] = {}
+        owner: Dict[int, str] = {}
+        for workload in self._doc.agentic_workloads:
+            for point in workload.sweep:
+                if point.concurrency <= 0:
+                    continue
+                constraints = _aiperf_slo_constraints(
+                    point.effective_slo(workload.slo) if point.slo else None
+                )
+                if not constraints:
+                    continue
+                existing = by_concurrency.get(point.concurrency)
+                if existing is None:
+                    by_concurrency[point.concurrency] = constraints
+                    owner[point.concurrency] = workload.id
+                elif existing != constraints:
+                    # Not reconciled: an SLO set is a contract, not a lattice.
+                    # First wins; warn that the other's bars are dropped.
+                    logger.warning(
+                        "Agentic workloads %r and %r both define concurrency %d "
+                        "with different SLOs (%r vs %r); the sweep replays it "
+                        "once, so %r's bars are used and %r's are dropped.",
+                        owner[point.concurrency],
+                        workload.id,
+                        point.concurrency,
+                        existing,
+                        constraints,
+                        owner[point.concurrency],
+                        workload.id,
+                    )
+        return by_concurrency
 
     def resolve_agentic_run_specs(
         self,
@@ -581,6 +956,151 @@ class RequirementsTargetPack(TargetPack):
     # --- report metadata (delegated) ---
     def extra_spec_metadata_fields(self):
         return self._delegate.extra_spec_metadata_fields()
+
+
+def _repoint_sampling(node: Any, params: Mapping[str, Any], found: set) -> Any:
+    """``node`` with ``params`` replaced wherever the config already carries them.
+
+    Never adds a key: each agent nests these differently, and the borrowed
+    config already shows where its agent reads them from. Adding one also risks
+    the duplicate terminus-2 breaks on -- a ``reasoning_effort`` in both the
+    constructor args and ``llm_kwargs`` reaches LiteLLM twice and raises
+    TypeError. ``found`` collects what landed, so the caller can report the
+    rest.
+    """
+    if isinstance(node, Mapping):
+        out = dict(node)
+        for key, value in node.items():
+            if key in params and not isinstance(value, (Mapping, list)):
+                out[key] = params[key]
+                found.add(key)
+            elif (
+                isinstance(key, str)
+                and key.endswith(_JSON_STRING_ARG_SUFFIX)
+                and isinstance(value, str)
+            ):
+                out[key] = _repoint_sampling_json(value, params, found)
+            else:
+                out[key] = _repoint_sampling(value, params, found)
+        return out
+    if isinstance(node, list):
+        return [_repoint_sampling(item, params, found) for item in node]
+    return node
+
+
+def _in_extra_body(node: Any, key: str) -> bool:
+    """True if ``key`` sits inside an ``extra_body`` anywhere in ``node``."""
+    if isinstance(node, Mapping):
+        extra = node.get("extra_body")
+        if isinstance(extra, Mapping) and key in extra:
+            return True
+        for name, value in node.items():
+            if (
+                isinstance(name, str)
+                and name.endswith(_JSON_STRING_ARG_SUFFIX)
+                and isinstance(value, str)
+            ):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    continue
+            if _in_extra_body(value, key):
+                return True
+        return False
+    if isinstance(node, list):
+        return any(_in_extra_body(item, key) for item in node)
+    return False
+
+
+def _build_extra_body(
+    agent_kwargs: Mapping[str, Any],
+    path: Sequence[str],
+    params: Mapping[str, Any],
+    task_name: str,
+) -> Dict[str, Any]:
+    """Put ``params`` into the agent's extra_body, creating the path if needed."""
+    out = dict(agent_kwargs)
+    node = out
+    for key in path[:-1]:
+        child = node.get(key)
+        node[key] = dict(child) if isinstance(child, Mapping) else {}
+        node = node[key]
+    existing = node.get(path[-1])
+    node[path[-1]] = {
+        **(existing if isinstance(existing, Mapping) else {}),
+        **params,
+    }
+    logger.info(
+        "Task %s: carrying %r into %s, which is where this agent reads them.",
+        task_name,
+        dict(params),
+        ".".join(path),
+    )
+    return out
+
+
+def _build_json_args(
+    agent_kwargs: Mapping[str, Any], params: Mapping[str, Any], task_name: str
+) -> Dict[str, Any]:
+    """Put ``params`` into the agent's JSON-string LiteLLM arguments.
+
+    Constructed rather than only patched: whether a borrowed donor carries one
+    is arbitrary, so a document that states top_p would otherwise be honoured
+    or dropped depending on which model the task was borrowed from.
+    """
+    out = dict(agent_kwargs)
+    raw = out.get(_JSON_ARGS_KEY)
+    try:
+        args = json.loads(raw) if isinstance(raw, str) else {}
+    except ValueError:
+        logger.warning(
+            "Task %s: replacing %s, which is not valid JSON: %r",
+            task_name,
+            _JSON_ARGS_KEY,
+            raw,
+        )
+        args = {}
+    if not isinstance(args, dict):
+        args = {}
+
+    for key, value in params.items():
+        if key == "max_gen_toks":
+            args["max_tokens"] = value
+        elif key in _LITELLM_EXTRA_BODY_KEYS:
+            extra = args.get("extra_body")
+            args["extra_body"] = (
+                {**extra, key: value} if isinstance(extra, dict) else {key: value}
+            )
+        else:
+            args[key] = value
+
+    logger.info(
+        "Task %s: carrying %r into %s, which is where this agent reads them.",
+        task_name,
+        dict(params),
+        _JSON_ARGS_KEY,
+    )
+    out[_JSON_ARGS_KEY] = json.dumps(args)
+    return out
+
+
+def _repoint_sampling_json(raw: str, params: Mapping[str, Any], found: set) -> str:
+    """Re-point sampling inside a JSON-string agent argument, keeping it a string."""
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Not re-pointing agent argument %r: it is not valid JSON, so the "
+            "sampling it carries is left as the donor wrote it.",
+            raw,
+        )
+        return raw
+    if not isinstance(parsed, dict):
+        return raw
+    repointed = _repoint_sampling(parsed, params, found)
+    if repointed == parsed:
+        return raw
+    return json.dumps(repointed)
 
 
 def _aggregate_priority(priorities: List[str]) -> Optional[str]:
@@ -655,46 +1175,65 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
     return attach
 
 
-def _slo_constraints(slo: Optional[Slo], keys: Mapping[str, str]) -> Optional[str]:
-    """``--goodput`` constraint string for a set of SLOs, using ``keys``.
+def _point_goodput_slo(point: Any, default: Optional[Slo]) -> Optional[GoodputSlo]:
+    """Goodput bars in force at one sweep point -- none unless the row says so.
 
-    Returns None when there are no SLOs, in which case goodput cannot be
-    measured: nothing defines a "good" request.
+    A scenario-level ``slo`` is not broadcast across the sweep (a bar that
+    holds at ISL 128 can be unreachable at ISL 1024; see the capability-gate
+    comment in ``_scenario_params`` for the same field read as a target), and
+    a target (aggregate) is not a bar (per-request) either. A row declaring
+    only some fields still inherits the rest from the scenario.
+    """
+    if point.slo is None:
+        return None
+    return _goodput_slo(point.effective_slo(default))
+
+
+def _goodput_slo(slo: Optional[Slo]) -> Optional[GoodputSlo]:
+    """The document's SLOs as the tool-neutral bars the drivers carry.
+
+    Benchmark points are handed this value, not a rendered string: which CLI
+    vocabulary to use is the driver's business (``llm_module.goodput``), not
+    the document adapter's.
     """
     if slo is None:
         return None
-    values = {"ttft": slo.ttft_ms, "tpot": slo.tpot_ms, "e2el": slo.e2el_ms}
-    parts = [
-        f"{keys[metric]}:{values[metric]:g}"
-        for metric in ("ttft", "tpot", "e2el")
-        if values[metric] is not None
-    ]
-    return " ".join(parts) or None
-
-
-# vLLM names the per-request bars after the metrics themselves, so its keys are
-# the document's SLO metrics verbatim.
-_VLLM_GOODPUT_KEYS = {"ttft": "ttft", "tpot": "tpot", "e2el": "e2el"}
-
-# AIPerf spells the same three bars out in full, and has no per-output-token
-# tag: inter-token latency is the same measurement under another name, and a
-# request's end-to-end latency is its request latency. Both remain in ms, as
-# the document states them.
-_AIPERF_GOODPUT_KEYS = {
-    "ttft": "time_to_first_token",
-    "tpot": "inter_token_latency",
-    "e2el": "request_latency",
-}
-
-
-def _goodput_constraints(scenario: Scenario) -> Optional[str]:
-    """``vllm bench serve --goodput`` constraint string from a scenario's SLOs."""
-    return _slo_constraints(scenario.slo, _VLLM_GOODPUT_KEYS)
+    return GoodputSlo(ttft_ms=slo.ttft_ms, tpot_ms=slo.tpot_ms, e2el_ms=slo.e2el_ms)
 
 
 def _aiperf_slo_constraints(slo: Optional[Slo]) -> Optional[str]:
-    """AIPerf ``--goodput`` constraint string for a set of SLOs."""
-    return _slo_constraints(slo, _AIPERF_GOODPUT_KEYS)
+    """AIPerf ``--goodput`` string for a set of SLOs.
+
+    The agentic path renders here rather than carrying the typed bars, because
+    ``AgenticTracesRunSpec.goodput`` is a string the InferenceX client is
+    handed verbatim -- there is no driver in between to do the rendering.
+    """
+    return render_goodput(_goodput_slo(slo), AIPERF_GOODPUT_KEYS)
+
+
+def _warn_on_duplicate_shapes(scenario: Scenario) -> None:
+    """Warn when two sweep points share an (ISL, OSL, concurrency) shape.
+
+    Downstream the per-point values are keyed by that shape
+    (``llm_module/benchmark_configs.py``), so a duplicate is last-wins and one
+    point's targets and goodput bars are silently dropped. Cheap to detect
+    here, where the document is still in hand and the ids can be named.
+    """
+    seen: Dict[Any, int] = {}
+    for idx, point in enumerate(scenario.sweep):
+        shape = (point.isl, point.osl, point.concurrency)
+        if shape in seen:
+            logger.warning(
+                "Scenario %r declares sweep points %d and %d with the same "
+                "(isl=%d, osl=%d, concurrency=%d); downstream configs are keyed "
+                "by that shape, so only the last one's targets and goodput SLOs "
+                "are used.",
+                scenario.id,
+                seen[shape],
+                idx,
+                *shape,
+            )
+        seen[shape] = idx
 
 
 def _scenario_targets_goodput(scenario: Scenario) -> bool:

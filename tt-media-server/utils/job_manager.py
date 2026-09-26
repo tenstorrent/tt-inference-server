@@ -4,6 +4,7 @@
 
 import asyncio
 import os
+import shutil
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -13,7 +14,12 @@ from sqlite3 import IntegrityError
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
-from config.constants import JobTypes, job_database_path
+from config.constants import (
+    JobTypes,
+    adapters_root,
+    job_database_path,
+    merged_models_root,
+)
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
@@ -23,6 +29,12 @@ from utils.logger import TTLogger
 
 TASK_QUEUE_FULL_DETAIL = "Task queue is full. Please try again later."
 MAX_JOBS_REACHED_DETAIL = "Maximum job limit reached"
+AUTO_CLEANUP_EXEMPT_JOB_TYPES = frozenset(
+    {
+        JobTypes.TRAINING.value,
+        JobTypes.ADAPTER_MERGE.value,
+    }
+)
 
 
 class JobStatus(str, Enum):
@@ -46,7 +58,10 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
+    adapter_merge_job_ids: set[str] = field(default_factory=set)
+    local_progress_time: Optional[float] = None
     _task: Callable = None
+    _progress_tracker: Any = None
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
@@ -56,9 +71,26 @@ class Job:
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = int(time.time())
+        if self.local_progress_time is None:
+            self.local_progress_time = time.monotonic()
 
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
+        if self._progress_tracker is not None:
+            self.touch_progress()
+
+    def touch_progress(self) -> float:
+        """Record progress locally and in the shared worker heartbeat."""
+        self.local_progress_time = time.monotonic()
+        if self._progress_tracker is not None:
+            self._progress_tracker.value = self.local_progress_time
+        return self.local_progress_time
+
+    def progress_time(self) -> float:
+        """Return worker progress when shared, otherwise local job progress."""
+        if self._progress_tracker is not None:
+            return float(self._progress_tracker.value)
+        return self.local_progress_time
 
     def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())
@@ -102,6 +134,8 @@ class Job:
             "model": self.model,
             "request_parameters": self.request_parameters,
         }
+        if self.job_type == JobTypes.TRAINING.value:
+            data["adapter_merge_job_ids"] = sorted(self.adapter_merge_job_ids)
         if self.org_id:
             data["org_id"] = self.org_id
         if self.completed_at:
@@ -117,6 +151,7 @@ class JobManager:
         self._settings = get_settings()
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
+        self._deleting_job_ids: set[str] = set()
         self._jobs_lock = Lock()
 
         self.db = None
@@ -145,18 +180,33 @@ class JobManager:
         job_metrics: list = None,
         job_logs: list = None,
         job_checkpoints: list = None,
+        progress_tracker: Any = None,
         org_id: Optional[str] = None,
     ) -> dict:
         """Create job, start processing in background, and return initial job metadata."""
         with self._jobs_lock:
             self._enforceAdmissionLimits()
+            request_parameters = request.model_dump(mode="json")
+
             job = Job(
                 id=job_id,
                 job_type=job_type.value,
                 model=model,
-                request_parameters=request.model_dump(mode="json"),
+                request_parameters=request_parameters,
                 org_id=org_id,
+                _progress_tracker=progress_tracker,
             )
+
+            parent_job = None
+            if job_type == JobTypes.ADAPTER_MERGE:
+                source_job_id = request_parameters.get("source_job_id")
+                if not source_job_id:
+                    raise ValueError("Adapter merge jobs must provide source_job_id")
+                parent_job = self._get_job_if_authorized(source_job_id, org_id)
+                if parent_job is None or parent_job.job_type != JobTypes.TRAINING.value:
+                    raise ValueError(f"Training job '{source_job_id}' not found")
+                if parent_job.id in self._deleting_job_ids:
+                    raise ValueError(f"Training job '{source_job_id}' is being deleted")
 
             if result_path:
                 job.result_path = result_path
@@ -192,6 +242,8 @@ class JobManager:
 
             # we only add the job to the in-memory storage if the database insert was successful
             self._jobs[job_id] = job
+            if parent_job is not None:
+                parent_job.adapter_merge_job_ids.add(job.id)
             self._logger.info(f"Job {job_id} created.")
 
         job._task = asyncio.create_task(self._process_job(job, request, task_function))
@@ -311,6 +363,77 @@ class JobManager:
             self._logger.info(f"Job {job_id} cancellation initiated.")
             return job.to_public_dict()
 
+    def delete_job(
+        self,
+        job_id: str,
+        org_id: Optional[str] = None,
+    ) -> bool:
+        """Delete a terminal job, its child merge jobs, and their result artifacts."""
+        with self._jobs_lock:
+            job = self._get_job_if_authorized(job_id, org_id)
+            if job is None:
+                return False
+
+            jobs_to_delete = self._collect_jobs_for_manual_deletion(job)
+            self._deleting_job_ids.update(
+                job_to_delete.id for job_to_delete in jobs_to_delete
+            )
+
+        try:
+            # Delete children first so a partial failure never leaves a merge job
+            # whose parent training record has already been removed.
+            deletion_order = jobs_to_delete[1:] + jobs_to_delete[:1]
+            for job_to_delete in deletion_order:
+                self._delete_job_and_result(job_to_delete)
+                with self._jobs_lock:
+                    self._jobs.pop(job_to_delete.id, None)
+                    if job_to_delete.job_type == JobTypes.ADAPTER_MERGE.value:
+                        source_job_id = job_to_delete.request_parameters.get(
+                            "source_job_id"
+                        )
+                        parent_job = self._jobs.get(source_job_id)
+                        if parent_job is not None:
+                            parent_job.adapter_merge_job_ids.discard(job_to_delete.id)
+        finally:
+            with self._jobs_lock:
+                self._deleting_job_ids.difference_update(
+                    job_to_delete.id for job_to_delete in jobs_to_delete
+                )
+
+        self._logger.info(
+            f"Manually deleted {len(jobs_to_delete)} job(s): "
+            f"{', '.join(job.id for job in jobs_to_delete)}"
+        )
+        return True
+
+    def _collect_jobs_for_manual_deletion(self, job: Job) -> list[Job]:
+        """Collect the job and its merge children while ``_jobs_lock`` is held."""
+        jobs_to_delete = [job]
+        if job.job_type == JobTypes.TRAINING.value:
+            for child_job_id in sorted(job.adapter_merge_job_ids):
+                if child_job_id in self._deleting_job_ids:
+                    raise ValueError(
+                        f"Adapter merge job '{child_job_id}' is being deleted"
+                    )
+                child_job = self._jobs.get(child_job_id)
+                if child_job is not None:
+                    if child_job.org_id != job.org_id:
+                        raise ValueError(
+                            f"Adapter merge job '{child_job.id}' belongs to a "
+                            "different organization"
+                        )
+                    jobs_to_delete.append(child_job)
+
+        for job_to_delete in jobs_to_delete:
+            if job_to_delete.id in self._deleting_job_ids:
+                raise ValueError(f"Job '{job_to_delete.id}' is being deleted")
+            if not job_to_delete.is_terminal():
+                raise ValueError(
+                    f"Only terminal jobs can be deleted; job "
+                    f"'{job_to_delete.id}' is {job_to_delete.status.value}"
+                )
+        return jobs_to_delete
+
     async def shutdown(self):
         """Gracefully shutdown job manager and transition active jobs to terminal states."""
         self._logger.info("Shutting down job manager")
@@ -422,69 +545,122 @@ class JobManager:
 
     def _cleanup_old_jobs(self):
         """Remove old completed/failed/cancelled, stuck in-progress, and stale cancelling jobs."""
-        current_time = time.time()
-        cutoff_time = current_time - self._settings.job_retention_seconds
-        stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
+        retention_cutoff = time.time() - self._settings.job_retention_seconds
+        progress_cutoff = time.monotonic() - self._settings.job_max_stuck_time_seconds
 
         jobs_to_remove = []
+        stuck_jobs = []
 
         with self._jobs_lock:
-            for job_id, job in self._jobs.items():
+            for job in self._jobs.values():
                 is_old_terminal = (
                     job.is_terminal()
+                    and job.job_type not in AUTO_CLEANUP_EXEMPT_JOB_TYPES
                     and job.completed_at
-                    and job.completed_at < cutoff_time
+                    and job.completed_at < retention_cutoff
                 )
-                is_stuck = (
-                    job.is_in_progress() or job.is_cancelling()
-                ) and job.created_at < stuck_cutoff_time
-                if is_old_terminal or is_stuck:
+                if is_old_terminal:
                     jobs_to_remove.append(job)
+                elif self._is_job_stuck(job, progress_cutoff):
+                    stuck_jobs.append(job)
 
-        if not jobs_to_remove:
+        if not jobs_to_remove and not stuck_jobs:
             return
 
-        for job in jobs_to_remove:
-            if job.is_in_progress() or job.is_cancelling():
-                if job.is_in_progress():
-                    self._logger.warning(
-                        f"Force-cancelling stuck in-progress job {job.id}"
-                    )
-                else:
-                    self._logger.warning(
-                        f"Force-cancelling stale cancelling job {job.id}"
-                    )
-                self._cleanup_job(job, force=True)
+        for job in stuck_jobs:
+            # Progress and completion happen outside _jobs_lock. Claim the job as
+            # failed only after re-reading both immediately before cancellation.
+            with self._jobs_lock:
+                current_job = self._jobs.get(job.id)
+                if current_job is not job:
+                    continue
+                latest_progress_cutoff = (
+                    time.monotonic() - self._settings.job_max_stuck_time_seconds
+                )
+                if not self._is_job_stuck(job, latest_progress_cutoff):
+                    continue
+                was_in_progress = job.is_in_progress()
                 job.mark_failed(
                     error_code="stale_job",
-                    error_message="Job was stuck and force-cancelled by cleanup",
+                    error_message=(
+                        "Job made no progress and was force-cancelled by cleanup"
+                    ),
                 )
-                self._sync_status_to_db(job)
-            if job.result_path and isinstance(job.result_path, str):
-                try:
-                    if os.path.exists(job.result_path):
-                        os.remove(job.result_path)
-                        self._logger.debug(
-                            f"Deleted file for job {job.id}: {job.result_path}"
-                        )
-                except Exception as e:
-                    self._logger.debug(f"Failed to delete file for job {job.id}: {e}")
 
-        # Remove from storage under lock
+            if was_in_progress:
+                self._logger.warning(f"Force-cancelling stuck in-progress job {job.id}")
+            else:
+                self._logger.warning(f"Force-cancelling stale cancelling job {job.id}")
+            self._cleanup_job(job, force=True)
+            self._sync_status_to_db(job)
+
+        removed_jobs = []
         with self._jobs_lock:
             for job in jobs_to_remove:
+                current_job = self._jobs.get(job.id)
+                if current_job is not job:
+                    continue
                 self._jobs.pop(job.id, None)
-                if self.db:
-                    try:
-                        self.db.delete_job(job.id)
-                    except Exception as e:
-                        self._logger.error(
-                            f"Database deletion failed for job {job.id} during cleanup: {e}"
-                        )
+                removed_jobs.append(job)
 
+        deleted_jobs = []
+        for job in removed_jobs:
+            try:
+                self._delete_job_and_result(job)
+            except Exception as e:
+                self._logger.error(
+                    f"Deletion failed for job {job.id} during cleanup: {e}"
+                )
+                with self._jobs_lock:
+                    self._jobs.setdefault(job.id, job)
+                continue
+            deleted_jobs.append(job)
+
+        if deleted_jobs:
             self._logger.info(
-                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
+                f"Deleted {len(deleted_jobs)} old job(s): "
+                f"{', '.join(job.id for job in deleted_jobs)}"
             )
+
+    def _is_job_stuck(self, job: Job, progress_cutoff: float) -> bool:
+        if not (job.is_in_progress() or job.is_cancelling()):
+            return False
+        return job.progress_time() < progress_cutoff
+
+    def _validate_result_path_for_deletion(self, job: Job) -> Optional[str]:
+        if not job.result_path or not isinstance(job.result_path, str):
+            return None
+
+        result_roots = {
+            JobTypes.TRAINING.value: adapters_root,
+            JobTypes.ADAPTER_MERGE.value: merged_models_root,
+        }
+        root_factory = result_roots.get(job.job_type)
+        if root_factory is not None:
+            path = os.path.realpath(job.result_path)
+            root = os.path.realpath(root_factory())
+            if path == root or os.path.commonpath([root, path]) != root:
+                raise ValueError(f"Refusing to delete result outside {root}: {path}")
+            return job.result_path
+
+        if os.path.islink(job.result_path) or os.path.isfile(job.result_path):
+            return job.result_path
+        return None
+
+    @staticmethod
+    def _delete_result_path(result_path: Optional[str]) -> None:
+        if result_path is None:
+            return
+        if os.path.islink(result_path) or os.path.isfile(result_path):
+            os.remove(result_path)
+        elif os.path.isdir(result_path):
+            shutil.rmtree(result_path)
+
+    def _delete_job_and_result(self, job: Job) -> None:
+        result_path = self._validate_result_path_for_deletion(job)
+        self._delete_result_path(result_path)
+        if self.db:
+            self.db.delete_job(job.id)
 
     def _cleanup_job(self, job: Job, force: bool = False):
         running_task = None
@@ -681,6 +857,18 @@ class JobManager:
                     )
 
                 restored_jobs[job.id] = job
+
+            for job in restored_jobs.values():
+                if job.job_type != JobTypes.ADAPTER_MERGE.value:
+                    continue
+                source_job_id = job.request_parameters.get("source_job_id")
+                parent_job = restored_jobs.get(source_job_id)
+                if (
+                    parent_job is not None
+                    and parent_job.job_type == JobTypes.TRAINING.value
+                    and parent_job.org_id == job.org_id
+                ):
+                    parent_job.adapter_merge_job_ids.add(job.id)
 
             with self._jobs_lock:
                 self._jobs.update(restored_jobs)

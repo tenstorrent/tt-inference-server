@@ -902,9 +902,9 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=2,
+                    n_concurrent_trials=40,
                     n_attempts=1,
-                    n_tasks=40,
+                    n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
                     agent_timeout_sec=3600,
@@ -1291,7 +1291,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=6,
+                    n_concurrent_trials=64,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
@@ -5064,6 +5064,7 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
                     "timeout": "14400",
@@ -5072,7 +5073,7 @@ _eval_config_list = [
                     # lm-eval-harness' SSE consumer only parses
                     # /v1/completions chunks, not /v1/chat/completions; keep
                     # stream=false to avoid empty resps + KeyError: 'message'.
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -5102,12 +5103,13 @@ _eval_config_list = [
                     },
                 ),
                 use_chat_api=True,
+                capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
                     "timeout": "14400",
                 },
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "reasoning_effort": "high",
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -5308,140 +5310,51 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                task_name="terminal_bench_2",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
+                # scored by the task's own answer extractor. Unlike bare
+                # n-shot GPQA, the few-shot examples demonstrate reasoning
+                # before the final answer, so they do not suppress thinking.
+                task_name="mmlu_pro",
+                num_fewshot=5,
                 score=EvalTaskScore(
-                    published_score=36.0,
-                    published_score_ref="https://arxiv.org/abs/2607.02770",
-                    # Full terminal-bench-2 (89 tasks), terminus-2, single
-                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
-                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
-                    # top_k=20, 112K in / 80K out, 2026-06-17. 40/89 solved =
-                    # 44.94%. published_score is Gemma 4 Terminal Bench Hard
-                    # (36.0, tech report) — a different suite than this TB2
-                    # harness; gpu_reference is the measured H100 TB2 run.
-                    # 16 tasks hit timeouts (15 AgentTimeoutError at the 3h/task
-                    # limit + 1 VerifierTimeoutError) and scored 0, so 44.94 is
-                    # a floor; raising agent_timeout_sec could recover a few.
-                    gpu_reference_score=44.94,
-                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
+                    published_score=85.2,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": ["accuracy"],
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
                         "unit": "percent",
                     },
                 ),
-                agentic_eval_config=TerminalBenchEvalConfig(
-                    dataset="terminal-bench/terminal-bench-2",
-                    agent="terminus-2",
-                    n_concurrent_trials=1,  # TODO increase back to 5 when batch > 1 is supported
-                    n_attempts=1,
-                    n_tasks=None,  # full dataset
-                    # QB2 release runners expose only 16 CPUs; docker compose
-                    # rejects a higher --cpus reservation ("range of CPUs is
-                    # from 0.01 to 16.00"). The H100 reference run used 32.
-                    override_cpus=16,
-                    override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
-                    agent_kwargs={
-                        "parser_name": "json",
-                        "temperature": 1.0,
-                        "model_info": {
-                            # gemma-4-31B native ctx is 256K (model card), but a
-                            # single H100 NVL (94GB, bf16 KV) only holds a
-                            # 210,605-token KV cache, so a request can't exceed
-                            # ~205K. We serve at --max-model-len 204800 (200K).
-                            # The agent sends ~max_input + max_output per
-                            # request, so keep them under 204800: 112K + 80K =
-                            # 196K (~8K headroom for chat template + tool defs).
-                            # SWE/Terminal prompts rarely approach 200K, so the
-                            # 256K->200K cap should not affect scores.
-                            "max_input_tokens": 112 * 1024,
-                            "max_output_tokens": 80 * 1024,
-                        },
-                        "llm_kwargs": {
-                            "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
-                            "timeout": 60 * 60,
-                            "extra_body": {
-                                "top_k": 20,
-                            },
-                        },
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
-                            "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Match tt-agentic-bringup-qb2 run 33842850459 exactly: use the
+                # chat endpoint with server-side thinking and non-streaming
+                # responses for this 5-shot MMLU-Pro sweep.
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 49152,
+                    "timeout": "3600",
                 },
-            ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
-                    # Full SWE-bench Verified (500), mini-swe-agent, single
-                    # H100 NVL bring-your-own vLLM (gemma-4-31B-it, max-model-len
-                    # 204800, enable_thinking=true), temp=1.0/top_p=0.95/
-                    # top_k=20, 160K in / 32K out, 2026-06-18. 324/500 resolved
-                    # = 64.80%. Google does not publish official SWE-bench
-                    # Verified for Gemma 4 (published_score=None).
-                    gpu_reference_score=64.80,
-                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    n_attempts=1,
-                    n_tasks=None,  # full dataset
-                    agent_timeout_sec=2 * 60 * 60,
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        # gemma-4-31B native ctx is 256K (model card), but a
-                        # single H100 NVL (94GB, bf16 KV) only holds a
-                        # 210,605-token KV cache, so a request can't exceed
-                        # ~205K. We serve at --max-model-len 204800 (200K).
-                        # The GPU reference run below capped input at 160K, so
-                        # 160K + 32K = 192K stayed under it with ~8K headroom.
-                        # Only the output cap is expressible now; SWE prompts
-                        # rarely approach 200K, so this should not affect scores.
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            }
-                        },
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
-                        ],
-                    },
-                ),
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 8192,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # mmlu_pro is a GROUP of 14 subject subtasks and lm-eval
+                # applies the limit PER SUBTASK: an int here multiplies by 14.
+                # 3/subtask = ~42 questions per nightly run, 1/subtask = 14 on
+                # smoke. (A first attempt set 40, which became 560 scheduled
+                # samples and a ~99-hour ETA.)
                 limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
         ],
@@ -6206,3 +6119,9 @@ EVAL_CONFIGS = {
     for _, model_spec in MODEL_SPECS.items()
     if model_spec.hf_model_repo in _eval_config_map
 }
+# Every eval config, including models with no ModelSpec on this branch.
+# EVAL_CONFIGS is what a run dispatches from, so it stays spec-gated; callers
+# that only need a task *definition* to copy (see
+# RequirementsTargetPack._find_task_template) read this instead, so dropping a
+# task from one model's run set cannot make it unreachable catalog-wide.
+ALL_EVAL_CONFIGS = _eval_config_map

@@ -793,6 +793,14 @@ class TestJobManagement:
         mock_job_manager.cancel_job.assert_called_once_with("job_1", org_id=None)
         assert result is True
 
+    def test_delete_job(self, base_job_service, mock_job_manager):
+        mock_job_manager.delete_job.return_value = True
+
+        result = base_job_service.delete_job("job_1")
+
+        mock_job_manager.delete_job.assert_called_once_with("job_1", org_id=None)
+        assert result is True
+
 
 class TestSegmentProcessing:
     """Test segment-based request processing"""

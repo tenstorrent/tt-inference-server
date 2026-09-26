@@ -6,10 +6,11 @@
 
 Bridges ``test_module`` to ``llm_module``: builds an
 ``LLMPerformanceRunner`` from a (driver, server_controller) pair,
-executes the sweep defined by ``configs``, and forwards the resulting
-``list[Block]`` to ``workflow_module`` for downstream processing
-(report rendering, artifact upload, etc.). The driver carries its own
-parser, so command-build, execute, and parse stay selected as one unit.
+executes the sweep defined by ``configs``, and forwards each resulting
+``Block`` to ``workflow_module`` as it is produced -- each accept
+checkpoints the report (``WorkflowExecution``'s accumulator hook), so a
+sweep killed mid-flight still leaves a report for the points that finished. The driver carries its own parser, so
+command-build, execute, and parse stay selected as one unit.
 
 The caller is the only place in test_module that knows about
 llm_module's internals; everything else (drivers, runner
@@ -96,7 +97,20 @@ def run_llm_performance(
         driver=driver,
         server_controller=server_controller,
     )
-    result = runner.run(configs, server, context)
+
+    # Built before the sweep: `generated_at` is recorded once and synthesises
+    # the report_id that names the report files, so the checkpoints and the
+    # final report overwrite one another.
+    envelope = {
+        **report_model_fields(ctx.model_spec),
+        "device": device_label,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+    def _persist(block) -> None:
+        accept_blocks([block], envelope=envelope)
+
+    result = runner.run(configs, server, context, on_block=_persist)
 
     if result.return_codes and not result.ok:
         logger.warning(
@@ -109,14 +123,6 @@ def run_llm_performance(
             len(result.return_codes),
         )
 
-    accept_blocks(
-        result.blocks,
-        envelope={
-            **report_model_fields(ctx.model_spec),
-            "device": device_label,
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        },
-    )
     return result
 
 

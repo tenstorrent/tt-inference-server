@@ -154,6 +154,332 @@ templates:
 
 - weights:
     - google/gemma-4-31B-it
+  impl: gemma4_mtp
+  # TT-native MTP speculative serving (it-assistant KV-shared drafter, K=5).
+  # B=1 latency profile: speculation only pays bandwidth-bound (measured 4k:
+  # code 67.5 tok/s/u vs 28.8 plain; prose is checkpoint-bound ~parity). The
+  # plugin routes Gemma4 to Gemma4MTPForCausalLM via TT_MODEL_CLASS_OVERRIDES; each
+  # engine step emits a VARIABLE accepted-prefix+bonus row (<= K+1), padded on
+  # the wire and stripped by the runner (tt_spec_variable_output).
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 1  # spec sessions are B=1 (fused trace per request)
+      max_context: 262144  # 256K bounded (requires the tt-metal MTP bounded page-table install)
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
+        GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_MTP_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"  # B=1 x max_context pool
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
+      vllm_args:
+        max_num_seqs: 1
+        # Sync default: the async submit/accept split is in place and coherent,
+        # but block-output disables the steady-decode overlap (output_tokens set)
+        # and dFlash's step is serially dependent, so async gives no gain yet.
+        # NOTE: an earlier version of this comment cited "~135ms/iter vLLM host
+        # overhead" as the lever. That figure was wrong (a per-STEP number read
+        # as per-iteration). Measured on the 31B dFlash P150X8 server by fitting
+        # step_time = H + (B/acceptance)*D across block sizes 64/32/8: H = 39.4 ms
+        # per vLLM STEP, D = 59.9 ms per spec iteration -- so a whole iteration is
+        # ~60 ms and 135 ms/iter was impossible. Most of H is wall-clock waiting
+        # (plugin CPU work is ~4 ms by viztracer), not compute.
+        no-async-scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-12B-it
+  impl: gemma4_mtp
+  # 12B MTP speculative serving (google/gemma-4-12B-it-assistant KV-shared
+  # drafter, K=5). Same B=1 profile as 31B MTP. 12B has no z-lab dFlash
+  # checkpoint, so MTP is the only spec path for this size.
+  #
+  # RESOLVED 2026-09-21. The earlier note here said this entry emitted DEGENERATE
+  # text ("The capital of France is" -> "11") and scored 0 on r1_gpqa_diamond with
+  # every response empty. The degenerate text is gone; the empty responses were a
+  # thinking-budget artifact, not a broken text path:
+  #   * The served text is coherent and correct -- the 3 non-empty GPQA responses
+  #     in the 2026-09-20 run were 3/3 correct, with clean derivations and boxed
+  #     answers.
+  #   * The other 7 returned "" because the thought channel never closed within
+  #     max_gen_toks=32768 and lm-eval scores message.content only. The requests
+  #     ran the full budget (~380 s each), still mid-chain at 32k.
+  #   * Ruled out as causes: speculation (two concurrent requests take the batched
+  #     baseline path and loop identically), sampling (temperature 1.0 / 0.6 and
+  #     greedy all run to the cap), and the reasoning parser (it routes correctly
+  #     whenever the model does close the block).
+  #   * With enable_thinking=false (set in vllm_args below) the same 10 items each
+  #     finish in 505-1003 tokens and score 8/10 = 80.0 vs published 78.8.
+  # So the 12B text path is healthy on this stack. Note that a throughput
+  # benchmark counts tokens without reading them, and EXPERIMENTAL waives the eval
+  # block, so neither one would have caught this -- read the eval SCORE.
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32  # adaptive engine: solo=MTP spec, batch=baseline
+      max_context: 262144  # full 256K bounded, same as the 31B MTP entry. The earlier device hang on the FIRST bootstrap capture did NOT reproduce on 2026-09-14: sessions arm and a 35-point 256K sweep runs rc=0.
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
+        GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_SPEC_ASYNC: "1"  # enables the MTP supports_async_decode capability (default 0 = off)
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"  # pin bounded ON rather than relying on the >=131072 auto policy
+        GEMMA4_MTP_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"  # B=1 x max_context pool
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
+      vllm_args:
+        max_num_seqs: 32
+        # Async ON: MTP gates supports_async_decode on GEMMA4_SPEC_ASYNC (set
+        # below); both the env and this flag are required or the platform
+        # clears async_scheduling and warns.
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # The gemma4 template defaults enable_thinking=true. On the 12B that makes
+        # plain requests burn max_tokens inside the thought channel and return
+        # content=None: measured 2026-09-21, 7/10 r1_gpqa_diamond items never close
+        # the block within max_gen_toks=32768 (still mid-chain at 32k, ~380 s each),
+        # so lm-eval -- which scores message.content only -- saw empty strings and
+        # the task scored 30. Not a speculation bug: two concurrent requests take
+        # the batched baseline path and loop identically, and temperature 1.0 / 0.6
+        # / greedy all run to the cap. With thinking off the same 10 items finish in
+        # 505-1003 tokens each and score 8/10 = 80.0 (published 78.8). Same reason
+        # as the Qwen3 entry below. Request-level chat_template_kwargs still win, so
+        # callers that want thinking just ask for it.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+        reasoning-parser: gemma4
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+    # BH Galaxy (32x P150) native, DP=4: four physical-column (1,8) engines via
+    # the plugin's standard-DP discovery, mechanism identical to the 31B dFlash
+    # BLACKHOLE_GALAXY entry. Each engine runs exactly the P150X8 MTP profile
+    # above; the ONLY addition is data_parallel_size 4, so any divergence from
+    # the LB numbers is attributable to DP alone.
+    # NOTE: dp=4 galaxy boots need the discovery-join timeout fix on the plugin
+    # (TT_DP_DISCOVERY_JOIN_TIMEOUT_S; a 32-chip mesh needs 10-20 s to close).
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128  # 32 users x 4 DP engines (max_num_seqs pins per-engine)
+      max_context: 262144  # LB parity: full 256K bounded
+      env_vars:
+        GEMMA4_CCL_TOPOLOGY: "linear"  # baseline-galaxy value (main); not ours to change
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4MTPForCausalLM"
+        GEMMA4_SPEC_DRAFT_LEN: "5"
+        GEMMA4_SPEC_ASYNC: "1"  # enables the MTP supports_async_decode capability (default 0 = off)
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"  # pin bounded ON rather than relying on the >=131072 auto policy
+        GEMMA4_MTP_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
+      override_tt_config:
+        fabric_config: FABRIC_1D  # baseline-galaxy value (main)
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4  # four (1,8) column engines; max_concurrency above is whole-box
+        max_num_seqs: 32
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # The gemma4 template defaults enable_thinking=true. On the 12B that makes
+        # plain requests burn max_tokens inside the thought channel and return
+        # content=None: measured 2026-09-21, 7/10 r1_gpqa_diamond items never close
+        # the block within max_gen_toks=32768 (still mid-chain at 32k, ~380 s each),
+        # so lm-eval -- which scores message.content only -- saw empty strings and
+        # the task scored 30. Not a speculation bug: two concurrent requests take
+        # the batched baseline path and loop identically, and temperature 1.0 / 0.6
+        # / greedy all run to the cap. With thinking off the same 10 items finish in
+        # 505-1003 tokens each and score 8/10 = 80.0 (published 78.8). Same reason
+        # as the Qwen3 entry below. Request-level chat_template_kwargs still win, so
+        # callers that want thinking just ask for it.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_dflash
+  # REQUIRES a SECOND checkpoint the workflow does not download: the z-lab
+  # drafter, resolved from the HF cache by glob (models--z-lab--gemma-4-31B-it-
+  # DFlash) or from GEMMA4_DFLASH_DRAFTER. It is loaded lazily at the FIRST
+  # request, so a box missing it boots healthy and then kills the engine on
+  # request 1 (EngineDeadError, no useful traceback). Fetch it before serving:
+  #   hf download z-lab/gemma-4-31B-it-DFlash
+  # TT-native dFlash speculative serving (z-lab block-diffusion drafter,
+  # verify V=7). B=1 latency profile; strongest on code-like content (4k:
+  # 68.4 tok/s/u vs 28.8 plain; prose ~parity -- acceptance is content/
+  # checkpoint-bound). Prefill runs UNTRACED for this profile (the residual
+  # tap hook is python-side; traced prefill replays skip it) and each request
+  # pays a one-time fused-trace capture (~3 s) at first decode.
+  #
+  # OPERATING POINTS (one impl, two configs):
+  #   * LATENCY (this entry): block-output spec, max_num_seqs=1. B=1 spec
+  #     speedup -- server-measured 42 tok/s/u @128/128, 92 @128/1024 (up to
+  #     3.4x vs baseline). Aggregate does NOT scale with concurrency (B=1).
+  #   * THROUGHPUT: set env GEMMA4_DFLASH_SERVE_BLOCK=1 (turns block-output OFF)
+  #     and vllm_args max_num_seqs=32 (+ max_concurrency=32). The impl then
+  #     serves EVERY request via the plain baseline batched path -- "baseline
+  #     picks up for concurrency>1" -- measured 437 agg tok/s @128/128 conc-32.
+  #     A batched decode always falls back to baseline regardless of this env
+  #     (decode_forward gates on batch>1), so the spec path is never asked to
+  #     run B>1. (Speculation only pays bandwidth-bound / low batch anyway.)
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32  # adaptive engine: solo=spec, batch=baseline
+      max_context: 262144  # full 256K: spec <=131072, baseline >131072 (see GEMMA4_DFLASH_MAX_SPEC_ISL)
+      env_vars:
+        MESH_DEVICE: "P150x8"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        # replaces the removed model-specific TT_GEMMA4_SPEC env.
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"  # bypass TTSampling in-body (server sampler is not argmax-forced)
+        GEMMA4_DFLASH_SERVE_BLOCK: "64"  # spec block-output ON (adaptive: solo=spec, batch=baseline)
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"  # spec-capture DRAM frontier @ max_num_seqs=32; prompts above serve as plain baseline (the model declares this as tt_adaptive_block_max_prompt_tokens so the scheduler reserves width-1 for them)
+        GEMMA4_DFLASH_VERIFY: "5"  # V=5: in-tile packed verify (P_v=6) -- +75% high-ISL vs V=7, higher acceptance (V=7 drifts off greedy at large S_k), acc ~3.3 < 5 so no cap
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        # dFlash taps are captured by a PYTHON hook in the eager forward; a TRACED
+        # chunk replay skips it (empty taps -> request fails at ISL > one chunk).
+        # Force eager chunked prefill so every chunk fires the hook. Both this and
+        # the wrapper's enable_trace=False are needed (they gate different traces).
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"  # model-internal prefill chunking (memory-safe to 32k; eager, tap hook fires per chunk)
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
+      vllm_args:
+        max_num_seqs: 32
+        # Async overlaps host scheduling with the device decode for the BATCHED
+        # baseline fallback (conc>1) -- baseline-entry parity; sync cost it
+        # ~20-35% at conc-32. The solo spec block step returns committed host
+        # tokens (no read to overlap) and stays correct under the async
+        # schedule/commit lag because TTScheduler carries each step's block
+        # decision on its SchedulerOutput. Requires the model to declare
+        # supports_async_decode (Gemma4DFlash does).
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        # B=1 single-stream spec: full prefill in ONE forward so the dFlash
+        # residual-tap hook (and MTP setup) see the whole prompt. vLLM chunked
+        # prefill / prefix caching split or skip the prefill forward, which
+        # breaks the stateful drafter (empty taps -> request fails). The model
+        # chunks the prefill internally (GEMMA4_GEN_PREFILL_CHUNK) for memory.
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+    # BH Galaxy (32x P150) native, DP=4: four physical-column (1,8) engines via
+    # the plugin's standard-DP discovery (mechanism identical to the 31B
+    # tt_transformers BLACKHOLE_GALAXY entry -- TT_VISIBLE_DEVICES per rank, no
+    # descriptor override). Each engine runs the ADAPTIVE dFlash profile ported
+    # from the P150X8 entry above: solo decode = spec block-output, batch >1 =
+    # plain batched baseline; the plugin's DP gate admits adaptive block-output
+    # (each engine owns its own scheduler + solo-decode gate). Whole box: up to
+    # 4 concurrent conc-1 spec lanes, or 128 batched-baseline users.
+    # NOTE: dp=4 galaxy boots need the discovery-join timeout fix on the plugin
+    # (TT_DP_DISCOVERY_JOIN_TIMEOUT_S; a 32-chip mesh needs 10-20 s to close).
+    - device: BLACKHOLE_GALAXY
+      # Identical to the validated P150X8 dFlash entry above; the ONLY addition is
+      # data_parallel_size 4 (four physical-column (1,8) engines, each exactly a
+      # P150x8). Everything else -- context, token budget, CCL, fabric, vLLM args --
+      # is held at the LB values so any divergence is attributable to DP alone.
+      max_concurrency: 128  # 32 users x 4 DP engines (max_num_seqs pins per-engine)
+      max_context: 262144  # LB parity (spec <=131072, baseline above)
+      env_vars:
+        GEMMA4_CCL_TOPOLOGY: "linear"  # baseline-galaxy value (main); not ours to change
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4DFlashForCausalLM"
+        # Generic serving-class override (plugin TT_MODEL_CLASS_OVERRIDES);
+        GEMMA4_DFLASH_SHARD_ARGMAX: "1"
+        GEMMA4_DFLASH_SERVE_BLOCK: "64"
+        GEMMA4_DFLASH_MAX_SPEC_ISL: "131072"
+        GEMMA4_DFLASH_VERIFY: "5"
+        GEMMA4_DFLASH_SERVE_HORIZON: "2048"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
+      override_tt_config:
+        fabric_config: FABRIC_1D  # baseline-galaxy value (main)
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4  # four (1,8) column engines; max_concurrency above is whole-box
+        max_num_seqs: 32
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-31B-it
   impl: tt_transformers
   # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
   # them; only prod specs carry commits). The image is supplied at runtime via
@@ -168,7 +494,7 @@ templates:
       # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
-      default_impl: true
+      default_impl: false
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
@@ -429,6 +755,40 @@ templates:
       # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
       # by enable-auto-tool-choice in vllm_args above.
       tool_call_parser_name: gemma4
+
+# PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
+# models/demos/gemma4_31b_qb2. Keep max_concurrency=1 so the standard ten-point
+# Shield sweep is directly comparable with the existing autoport benchmark run.
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 536870912
+        l1_small_size: 16384
+      vllm_args:
+        block_size: '128'
+        hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
+        max-logprobs: '-1'
+        async-scheduling: true
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+        reasoning-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking":true}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
 - weights:
     - google/gemma-4-12B-it
