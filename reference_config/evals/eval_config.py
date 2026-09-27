@@ -2147,6 +2147,10 @@ _eval_config_list = [
                 # Fits the T3K 128k max_model_len as well as the P300X2 256k.
                 model_kwargs={
                     "max_length": 128 * 1024,
+                    # Per-request HTTP timeout (lm-eval default 1800s). A full
+                    # 64K-token reasoning trace takes ~93 min on T3K at 8
+                    # concurrent users (~11.5 tok/s/user).
+                    "timeout": 7200,
                 },
                 gen_kwargs={
                     "stream": "true",
