@@ -150,15 +150,22 @@ class JobManager:
         job_logs: list = None,
         job_checkpoints: list = None,
         org_id: Optional[str] = None,
+        request_parameters: Optional[dict] = None,
     ) -> dict:
-        """Create job, start processing in background, and return initial job metadata."""
+        """Create job, start processing in background, and return initial job metadata.
+
+        ``request_parameters`` overrides the stored and echoed request, e.g.
+        the client's URL form of a request whose media was since downloaded.
+        """
+        if request_parameters is None:
+            request_parameters = request.model_dump(mode="json")
         with self._jobs_lock:
             self._enforceAdmissionLimits()
             job = Job(
                 id=job_id,
                 job_type=job_type.value,
                 model=model,
-                request_parameters=request.model_dump(mode="json"),
+                request_parameters=request_parameters,
                 org_id=org_id,
             )
 

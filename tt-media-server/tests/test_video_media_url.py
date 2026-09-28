@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import PIL.Image
 import pytest
+from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     MAX_IMAGE_BYTES,
@@ -30,6 +31,7 @@ from open_ai_api.video import (
     MAX_INLINE_MEDIA_LEN,
     _enforce_inline_media_total,
     _resolve_image_prompt_urls,
+    _submit_video_request,
     submit_generate_video_i2v_request,
 )
 from utils.image_manager import ImageManager
@@ -221,3 +223,20 @@ class TestSubmitPathResolvesUrls:
             )
         assert response.status_code == 202
         mock_resolve.assert_awaited_once_with(request)
+
+    async def test_job_echoes_the_url_not_the_downloaded_base64(self, monkeypatch):
+        monkeypatch.setattr(settings, "use_async_video", True)
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(return_value={"id": "job_1"})
+        request = VideoI2VGenerateRequest(
+            prompt="p", image_prompts=[{"image": _URL, "frame_pos": 0}]
+        )
+        with patch(
+            "open_ai_api.video.download_media_url",
+            new=AsyncMock(return_value=_TINY_PNG_BYTES),
+        ):
+            await _submit_video_request(request, mock_service)
+
+        echoed = mock_service.create_job.await_args.kwargs["request_parameters"]
+        assert echoed["image_prompts"][0]["image"] == _URL
+        assert request.image_prompts[0].image == _TINY_PNG_BASE64

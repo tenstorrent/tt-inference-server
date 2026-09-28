@@ -140,11 +140,15 @@ class Settings(BaseSettings):
     # and hostname only, so query-string auth passes through untouched.
     media_url_download_enabled: bool = True
     # Comma-separated hostnames, exact ("bucket.s3.us-east-1.amazonaws.com")
-    # or label-anchored wildcards ("*.s3.us-east-1.amazonaws.com"). REQUIRED
-    # for URL downloads: while empty, every URL-valued media field is refused
-    # with 400 — the allowlist is the SSRF guard, and it is checked again on
-    # every redirect hop.
+    # or label-anchored wildcards ("*.s3.us-east-1.amazonaws.com"). Unless
+    # media_url_allow_public_hosts is set, this is REQUIRED for URL downloads:
+    # while empty, every URL-valued media field is refused with 400. It is
+    # checked again on every redirect hop.
     media_url_allowed_domains: str = ""
+    # Also accept any host outside the allowlist whose resolved addresses are
+    # all public; the connection is pinned to the checked address so DNS
+    # rebinding cannot reach internal networks.
+    media_url_allow_public_hosts: bool = False
     # Largest MiniMax per-file cap (50 MB reference video). The tighter
     # image and audio caps are the base64 limits in domain/, checked on
     # the downloaded bytes before the job is enqueued.

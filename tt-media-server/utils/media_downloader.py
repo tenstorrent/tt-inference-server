@@ -12,9 +12,16 @@ base64. Every remote fetch in the request path must go through
 Policy, following SGLang's ``download_remote_media`` with vLLM's error
 taxonomy on top:
 
-* http(s) only; the hostname allowlist is REQUIRED — with no
-  ``media_url_allowed_domains`` configured every URL-valued media field is
-  refused, so the SSRF surface only exists where an operator opened it.
+* http(s) only; a host must be on the ``media_url_allowed_domains``
+  allowlist, or, with ``media_url_allow_public_hosts``, resolve only to public
+  addresses. With neither configured every URL-valued media field is refused,
+  so the SSRF surface only exists where an operator opened it.
+* Public-host mode resolves the hostname, rejects it if any address is not
+  globally routable (loopback, private, link-local/metadata, reserved), and
+  connects to the checked address with the original ``Host`` header and TLS
+  SNI, so DNS rebinding cannot swap in an internal address after the check.
+  Environment proxies are disabled in this mode because a proxy would
+  connect by name and bypass the pin.
 * Allowlist entries are exact hostnames, normalized (IDNA, case, IP
   literals), or label-anchored wildcards: ``*.s3.amazonaws.com`` matches
   ``bucket.s3.amazonaws.com`` at any subdomain depth but never the bare
@@ -46,6 +53,7 @@ Error taxonomy (mapped to HTTP statuses at the endpoint):
 
 import asyncio
 import ipaddress
+import socket
 import time
 from typing import Optional
 
@@ -164,7 +172,8 @@ def check_media_url_policy(url: str) -> httpx.URL:
         )
 
     exact, suffixes = _allowed_domains()
-    if not exact and not suffixes:
+    allow_public = settings.media_url_allow_public_hosts
+    if not exact and not suffixes and not allow_public:
         raise MediaDownloadPolicyError(
             "Media URL download requires media_url_allowed_domains to be "
             "configured on this server; send the asset inline."
@@ -183,12 +192,51 @@ def check_media_url_policy(url: str) -> httpx.URL:
         )
 
     hostname = _normalize_hostname(parsed.host)
-    if not _hostname_is_allowed(hostname, exact, suffixes):
+    if not allow_public and not _hostname_is_allowed(hostname, exact, suffixes):
         # Do not echo the allowlist: it is deployment configuration.
         raise MediaDownloadPolicyError(
             f"Media URL domain {hostname!r} is not in the allowed domains list"
         )
     return parsed
+
+
+def _requires_public_ip(url: httpx.URL) -> bool:
+    """True when ``url`` passed policy only through public-host mode."""
+    if not settings.media_url_allow_public_hosts:
+        return False
+    exact, suffixes = _allowed_domains()
+    return not _hostname_is_allowed(_normalize_hostname(url.host), exact, suffixes)
+
+
+async def _resolve_public_ip(host: str, timeout: float) -> str:
+    """Resolve ``host`` and return an address, refusing any non-public result.
+
+    Every address must be public, not just one: the client may connect to
+    any of them, so a single internal record makes the host unsafe.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await asyncio.wait_for(
+            loop.getaddrinfo(host, None, type=socket.SOCK_STREAM), timeout
+        )
+    except asyncio.TimeoutError as exc:
+        raise MediaDownloadFetchError(f"Timed out resolving {host!r}") from exc
+    except OSError as exc:
+        raise MediaDownloadFetchError(f"Could not resolve {host!r}") from exc
+
+    addresses = []
+    for info in infos:
+        address = ipaddress.ip_address(info[4][0])
+        if address.version == 6 and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
+        if not address.is_global:
+            raise MediaDownloadPolicyError(
+                f"Media URL host {host!r} resolves to a non-public address"
+            )
+        addresses.append(address)
+    if not addresses:
+        raise MediaDownloadFetchError(f"Could not resolve {host!r}")
+    return str(addresses[0])
 
 
 def _get_shared_client() -> httpx.AsyncClient:
@@ -206,7 +254,9 @@ def _get_shared_client() -> httpx.AsyncClient:
         or _shared_client.is_closed
         or _shared_client_loop is not loop
     ):
-        _shared_client = httpx.AsyncClient()
+        _shared_client = httpx.AsyncClient(
+            trust_env=not settings.media_url_allow_public_hosts
+        )
         _shared_client_loop = loop
     _shared_client.cookies.clear()
     return _shared_client
@@ -247,6 +297,14 @@ async def download_media_url(
     safe_url = redact_url(url)
     try:
         for redirect_count in range(max_redirects + 1):
+            target_url, headers, extensions = current, None, None
+            if _requires_public_ip(current):
+                host = current.raw_host.decode("ascii")
+                ip = await _resolve_public_ip(host, deadline - time.monotonic())
+                target_url = current.copy_with(host=ip)
+                headers = {"Host": current.netloc.decode("ascii")}
+                extensions = {"sni_hostname": host}
+
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise MediaDownloadFetchError(
@@ -255,7 +313,9 @@ async def download_media_url(
 
             async with http_client.stream(
                 "GET",
-                current,
+                target_url,
+                headers=headers,
+                extensions=extensions,
                 timeout=remaining,
                 follow_redirects=False,
             ) as response:

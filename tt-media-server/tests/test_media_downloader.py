@@ -5,12 +5,14 @@
 """Policy matrix for utils/media_downloader.py (issue #4974).
 
 The downloader pulls client-supplied media (e.g. presigned S3 URLs) under a
-process-wide policy: http(s) only, a REQUIRED hostname allowlist (exact or
-label-anchored wildcard) checked on every redirect hop, a total deadline, and
-a streamed byte cap. Transports are faked so no test touches the network.
+process-wide policy: http(s) only, a hostname allowlist (exact or
+label-anchored wildcard) or opt-in public-host mode checked on every redirect
+hop, a total deadline, and a streamed byte cap. Transports and DNS are faked
+so no test touches the network.
 """
 
 import asyncio
+import socket
 
 import time
 
@@ -66,6 +68,9 @@ def media_url_defaults(monkeypatch):
         "media_url_allowed_domains",
         "host.example,bucket.s3.amazonaws.com,allowed.example",
         raising=False,
+    )
+    monkeypatch.setattr(
+        settings, "media_url_allow_public_hosts", False, raising=False
     )
     monkeypatch.setattr(settings, "media_url_max_bytes", 1024 * 1024, raising=False)
     monkeypatch.setattr(settings, "media_url_timeout_seconds", 5.0, raising=False)
@@ -320,3 +325,118 @@ class TestDownload:
         async with _client(handler) as client:
             with pytest.raises(MediaDownloadPolicyError):
                 await download_media_url("https://host.example/x", client=client)
+
+
+@pytest.fixture
+def public_hosts(media_url_defaults, monkeypatch):
+    """Enable public-host mode with an empty allowlist and a fake resolver.
+
+    Map hostnames in the returned dict to the addresses they should resolve
+    to; IP literals resolve to themselves.
+    """
+    monkeypatch.setattr(settings, "media_url_allow_public_hosts", True)
+    monkeypatch.setattr(settings, "media_url_allowed_domains", "")
+    dns = {}
+
+    async def fake_getaddrinfo(self, host, port, *args, **kwargs):
+        return [
+            (socket.AF_INET6 if ":" in addr else socket.AF_INET, 0, 0, "", (addr, 0))
+            for addr in dns.get(host, [host])
+        ]
+
+    monkeypatch.setattr(asyncio.BaseEventLoop, "getaddrinfo", fake_getaddrinfo)
+    return dns
+
+
+async def _never_called(request):  # pragma: no cover - must never run
+    raise AssertionError("blocked host must fail before any request")
+
+
+class TestPublicHosts:
+    def test_empty_allowlist_accepted_in_public_mode(self, public_hosts):
+        check_media_url_policy("https://anything.example/x")
+
+    async def test_public_host_is_pinned_to_checked_address(self, public_hosts):
+        public_hosts["cdn.example"] = ["93.184.216.34"]
+        seen = {}
+
+        async def handler(request):
+            seen["host"] = request.url.host
+            seen["host_header"] = request.headers["host"]
+            seen["sni"] = request.extensions.get("sni_hostname")
+            return httpx.Response(200, content=b"ok")
+
+        async with _client(handler) as client:
+            data = await download_media_url(
+                "https://cdn.example:8443/v.mp4", client=client
+            )
+        assert data == b"ok"
+        assert seen == {
+            "host": "93.184.216.34",
+            "host_header": "cdn.example:8443",
+            "sni": "cdn.example",
+        }
+
+    @pytest.mark.parametrize(
+        "address",
+        ["127.0.0.1", "10.1.2.3", "192.168.1.1", "169.254.169.254", "::1", "fe80::1"],
+    )
+    async def test_non_public_resolution_is_blocked(self, public_hosts, address):
+        public_hosts["internal.example"] = [address]
+        async with _client(_never_called) as client:
+            with pytest.raises(MediaDownloadPolicyError):
+                await download_media_url("https://internal.example/x", client=client)
+
+    async def test_mixed_public_and_private_resolution_is_blocked(self, public_hosts):
+        public_hosts["mixed.example"] = ["93.184.216.34", "10.0.0.5"]
+        async with _client(_never_called) as client:
+            with pytest.raises(MediaDownloadPolicyError):
+                await download_media_url("https://mixed.example/x", client=client)
+
+    async def test_ipv4_mapped_loopback_is_blocked(self, public_hosts):
+        public_hosts["mapped.example"] = ["::ffff:127.0.0.1"]
+        async with _client(_never_called) as client:
+            with pytest.raises(MediaDownloadPolicyError):
+                await download_media_url("https://mapped.example/x", client=client)
+
+    async def test_public_ip_literal_is_allowed(self, public_hosts):
+        async def handler(request):
+            return httpx.Response(200, content=b"ok")
+
+        async with _client(handler) as client:
+            data = await download_media_url("http://93.184.216.34/x", client=client)
+        assert data == b"ok"
+
+    async def test_private_ip_literal_is_blocked(self, public_hosts):
+        async with _client(_never_called) as client:
+            with pytest.raises(MediaDownloadPolicyError):
+                await download_media_url("http://127.0.0.1:8000/x", client=client)
+
+    async def test_redirect_to_private_host_is_blocked(self, public_hosts):
+        public_hosts["cdn.example"] = ["93.184.216.34"]
+        public_hosts["internal.example"] = ["10.0.0.5"]
+        requested = []
+
+        async def handler(request):
+            requested.append(request.url.host)
+            return httpx.Response(
+                302, headers={"location": "https://internal.example/steal"}
+            )
+
+        async with _client(handler) as client:
+            with pytest.raises(MediaDownloadPolicyError):
+                await download_media_url("https://cdn.example/x", client=client)
+        assert requested == ["93.184.216.34"]
+
+    async def test_allowlisted_host_skips_resolution(self, public_hosts, monkeypatch):
+        monkeypatch.setattr(settings, "media_url_allowed_domains", "internal.example")
+        public_hosts["internal.example"] = ["10.0.0.5"]
+        seen = {}
+
+        async def handler(request):
+            seen["host"] = request.url.host
+            return httpx.Response(200, content=b"ok")
+
+        async with _client(handler) as client:
+            await download_media_url("https://internal.example/x", client=client)
+        assert seen["host"] == "internal.example"

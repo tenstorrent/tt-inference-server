@@ -31,6 +31,7 @@ class BaseJobService(BaseService):
         job_type: JobTypes,
         request: BaseRequest,
         org_id: Optional[str] = None,
+        request_parameters: Optional[dict] = None,
     ) -> dict:
         startEvent = self._createStartEvent()
         request._start_event = startEvent
@@ -42,6 +43,7 @@ class BaseJobService(BaseService):
             task_function=self.process_request,
             start_event=startEvent,
             org_id=org_id,
+            request_parameters=request_parameters,
         )
 
     def get_all_jobs_metadata(
