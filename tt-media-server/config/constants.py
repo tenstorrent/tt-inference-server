@@ -1649,35 +1649,42 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
     },
+    # Training runners load by repo id from $HF_HOME/hub themselves; a startup
+    # snapshot_download would only add a second, unused copy (incl. original/).
     (ModelRunners.TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
 }
 

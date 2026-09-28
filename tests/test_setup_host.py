@@ -36,6 +36,7 @@ from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
     ModelSource,
+    ModelType,
 )
 
 # A tiny public HF model (~500KB, no auth required) for testing
@@ -974,6 +975,127 @@ class TestSetupWeightsHostVolumeResume:
             mock_run.return_value.returncode = 1
             with pytest.raises(AssertionError):
                 manager.setup_weights_huggingface()
+
+
+def _write_hf_snapshot(hub_dir: Path, repo: str) -> Path:
+    repo_dir = hub_dir / f"models--{repo.replace('/', '--')}"
+    snapshot = repo_dir / "snapshots" / "abc123"
+    snapshot.mkdir(parents=True)
+    for name in ("config.json", "tokenizer.json", "model.safetensors"):
+        (snapshot / name).write_text("{}")
+    (repo_dir / "refs").mkdir()
+    (repo_dir / "refs" / "main").write_text("abc123")
+    return snapshot
+
+
+class TestTrainingHostVolume:
+    """--host-volume + TRAINING stages weights into the container's HF cache
+    (cache_root/huggingface/hub) instead of weights/<model>."""
+
+    @pytest.fixture
+    def training_model_spec(self, tiny_impl, tiny_device_model_spec):
+        return ModelSpec(
+            device_type=DeviceTypes.N150,
+            impl=tiny_impl,
+            hf_model_repo=TINY_HF_REPO,
+            model_id=f"id_tt-transformers_{TINY_MODEL_NAME}_n150",
+            model_name=TINY_MODEL_NAME,
+            model_type=ModelType.TRAINING,
+            tt_metal_commit="v1.0.0",
+            vllm_commit="abc123",
+            inference_engine=InferenceEngine.MEDIA.value,
+            device_model_spec=tiny_device_model_spec,
+            docker_image="test-image:latest",
+            min_disk_gb=1,
+            min_ram_gb=1,
+        )
+
+    @pytest.fixture
+    def manager(self, training_model_spec, temp_dir):
+        mgr = HostSetupManager(
+            model_spec=training_model_spec,
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+            image_user="1000",
+        )
+        venv = MagicMock()
+        venv.venv_path = temp_dir / "fake_venv"
+        (venv.venv_path / "bin").mkdir(parents=True, exist_ok=True)
+        (venv.venv_path / "bin" / "hf").write_text("#!/bin/bash")
+        with patch("workflows.setup_host.VENV_CONFIGS") as mock_venv_configs:
+            mock_venv_configs.__getitem__ = MagicMock(return_value=venv)
+            yield mgr
+
+    def test_host_hf_home_is_container_hf_home(self, manager):
+        config = manager.setup_config
+        assert config.host_hf_home == config.host_model_volume_root / "huggingface"
+        assert config.host_model_weights_mount_dir is None
+
+    def test_non_training_has_no_host_hf_home(self, tiny_model_spec, temp_dir):
+        config = SetupConfig(
+            model_spec=tiny_model_spec,
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        assert config.host_hf_home is None
+
+    def test_check_setup_false_when_hub_empty(self, manager):
+        assert manager.check_setup() is False
+
+    def test_check_setup_ignores_legacy_non_hub_copy(self, manager):
+        """<hf_home>/models--* from the old startup download is not read by
+        transformers, so it must not count as a completed setup."""
+        _write_hf_snapshot(manager.setup_config.host_hf_home, TINY_HF_REPO)
+        assert manager.check_setup() is False
+
+    def test_check_setup_true_when_hub_populated(self, manager):
+        _write_hf_snapshot(manager.setup_config.host_hf_home / "hub", TINY_HF_REPO)
+        assert manager.check_setup() is True
+
+    def test_make_host_dirs_creates_hub(self, manager):
+        with patch("workflows.setup_host._try_fix_path_permissions_for_uid"):
+            manager.make_host_dirs()
+        assert (manager.setup_config.host_hf_home / "hub").is_dir()
+
+    def test_downloads_into_hf_cache_not_local_dir(self, manager):
+        hf_home = manager.setup_config.host_hf_home
+        with patch.dict(os.environ, {"HF_HOME": "/users/own/hf"}), patch(
+            "subprocess.run"
+        ) as mock_run, patch("workflows.setup_host._try_fix_path_permissions_for_uid"):
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+            assert os.environ["HF_HOME"] == "/users/own/hf"
+
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args.args[0]
+        env = mock_run.call_args.kwargs["env"]
+        assert "--local-dir" not in cmd
+        assert cmd[-2:] == ["--exclude", "original/**"]
+        assert env["HF_HOME"] == str(hf_home)
+        assert env["HF_HUB_CACHE"] == str(hf_home / "hub")
+        assert not (manager.setup_config.host_model_volume_root / "weights").exists()
+
+    def test_download_failure_raises(self, manager):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 1
+            with pytest.raises(AssertionError):
+                manager.setup_weights_huggingface()
+
+    def test_grant_image_user_access_write_bits(self, manager):
+        hf_home = manager.setup_config.host_hf_home
+        snapshot = _write_hf_snapshot(hf_home / "hub", TINY_HF_REPO)
+        with patch(
+            "workflows.setup_host._try_fix_path_permissions_for_uid"
+        ) as fix_mock:
+            manager._grant_image_user_access(hf_home)
+
+        need_write = {
+            Path(c.args[0]): c.kwargs["need_write"] for c in fix_mock.call_args_list
+        }
+        refs_main = snapshot.parent.parent / "refs" / "main"
+        assert need_write[hf_home] is True
+        assert need_write[snapshot] is True
+        assert need_write[refs_main] is True
+        assert need_write[snapshot / "model.safetensors"] is False
 
 
 CUSTOM_LABEL_HF = "myorg/llama-3.1-8b-finetune"
