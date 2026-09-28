@@ -40,7 +40,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
-EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
+EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -423,10 +423,10 @@ def setup_evals_meta(
             f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
         )
         setup_succeeded = run_command(clone_cmd, logger=logger) == 0 and setup_succeeded
-        # cookbook editable install needs modern setuptools
+        # evals-meta.txt supplies setuptools compatible with cookbook and IFEval.
         setup_succeeded = (
             run_command(
-                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
+                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip",
                 logger=logger,
             )
             == 0
@@ -446,6 +446,21 @@ def setup_evals_meta(
         setup_succeeded = (
             install_requirements(venv_config, "evals-meta.txt") and setup_succeeded
         )
+    # Fail before sending evaluation requests if sentence scoring cannot run.
+    # Use the venv's standard NLTK data path; do not relax NLTK proxy checks.
+    if (
+        not setup_succeeded
+        or run_command(
+            [
+                str(venv_config.venv_python),
+                str(get_repo_root_path() / "scripts" / "setup_nltk_data.py"),
+            ],
+            logger=logger,
+        )
+        != 0
+    ):
+        os.chdir(original_dir)
+        return False
     meta_eval_dir = (
         cookbook_dir
         / "end-to-end-use-cases"
@@ -712,6 +727,12 @@ _venv_config_list = [
         # gemma-4 tokenizer loads; keeps vllm (and the bench-serve client) at
         # 0.13.0 for every other model. See llm-vllm-overrides.txt.
         overrides_file="llm-vllm-overrides.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.LLM_VLLM_TOKEN_TIMING,
+        requirements_file="llm-vllm-token-timing.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),

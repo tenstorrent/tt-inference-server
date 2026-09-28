@@ -73,6 +73,20 @@ def run_llm_bench(
     ``goodput`` is the AIPerf ``--goodput`` SLO string; only the ``aiperf``
     driver consumes it, so a warning is logged if it is set for another tool.
     """
+    metadata = getattr(ctx.model_spec, "metadata", None) or {}
+    if metadata.get("benchmark_token_timing"):
+        if tools != "vllm":
+            raise ValueError("Fixed token-timing references require --tools vllm")
+        # Keep the frozen client dependencies separate from newer tokenizer
+        # requirements used by other models, including the release child path.
+        from workflow_module.engine_types import WorkflowVenvType
+        from workflow_module.venv_provisioner import get_venv_provisioner
+
+        provisioner = get_venv_provisioner()
+        venv_type = WorkflowVenvType.LLM_VLLM_TOKEN_TIMING
+        if not provisioner.provision(venv_type, ctx.model_spec):
+            raise RuntimeError("Failed to provision the fixed token-timing client")
+        venv_python = Path(provisioner.venv_python(venv_type))
     driver = _make_driver(tools, venv_python)
 
     if goodput and tools != "aiperf":
