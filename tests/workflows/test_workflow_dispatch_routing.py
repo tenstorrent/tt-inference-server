@@ -216,6 +216,22 @@ def test_evals_provisions_only_eval_venvs(monkeypatch):
     assert WorkflowVenvType.LLM_VLLM not in venvs
 
 
+def test_evals_agentic_transport_override_provisions_agentic_venv(monkeypatch):
+    from workflows.workflow_types import WorkflowVenvType
+
+    spec = _spec(ModelType.LLM)
+    spec.metadata = {"ci_workflow_overrides": {"evals": "agentic"}}
+    monkeypatch.setattr(
+        workflow_dispatch,
+        "_llm_eval_venv_types",
+        lambda ms, rc=None: [WorkflowVenvType.EVALS_COMMON],
+    )
+
+    venvs = workflow_dispatch._engine_dependency_venv_types(spec, WorkflowType.EVALS)
+
+    assert venvs == [WorkflowVenvType.EVALS_AGENTIC]
+
+
 def _ev_task(name, venv):
     return SimpleNamespace(task_name=name, workflow_venv_type=venv)
 

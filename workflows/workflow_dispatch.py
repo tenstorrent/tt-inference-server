@@ -825,9 +825,22 @@ def _llm_eval_venv_types(model_spec, runtime_config=None) -> List[WorkflowVenvTy
     return sorted(seen, key=lambda v: v.name)
 
 
+def _ci_workflow_override(model_spec, wf) -> str | None:
+    """Return a model's branch-local CI transport override, when configured."""
+    metadata = getattr(model_spec, "metadata", {}) or {}
+    overrides = metadata.get("ci_workflow_overrides", {})
+    return overrides.get(_ENGINE_WORKFLOW_NAMES.get(wf, str(wf)))
+
+
 def _engine_dependency_venv_types(
     model_spec, wf, runtime_config=None
 ) -> List[WorkflowVenvType]:
+    # Thin CI dispatchers may transport an agentic run through their historical
+    # `evals` enum. Match dependency provisioning to the effective workflow;
+    # otherwise execution reaches AgenticWorkflow without Harbor installed.
+    if wf == WorkflowType.EVALS and _ci_workflow_override(model_spec, wf) == "agentic":
+        return [WorkflowVenvType.EVALS_AGENTIC]
+
     venv_types: List[WorkflowVenvType] = []
     if wf in _ENGINE_EVAL_WORKFLOWS:
         eval_venv = _ENGINE_EVAL_VENV_BY_MODEL_TYPE.get(model_spec.model_type)

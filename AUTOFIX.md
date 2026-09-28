@@ -116,3 +116,12 @@ thin CI callers.
 Focused validation covers the metadata routing, model-catalog load, API-server
 contract, Docker readiness, benchmark configuration, formatting, compilation,
 and import/lint checks (`181 passed` across the executed subsets).
+
+The first hardware attempt reached the override only after the server was fully
+ready, then failed before issuing any model request: the outer `evals` transport
+had provisioned `EVALS_COMMON`, while `AgenticWorkflow` correctly looked for
+`EVALS_AGENTIC/bin/harbor`. Dependency selection now resolves the same metadata
+override before launching `run_workflows.py`, provisioning only
+`EVALS_AGENTIC` for an `evals -> agentic` transport. A routing regression test
+asserts this effective-workflow behavior; the workflow-dispatch suite passes
+(`120 passed`).

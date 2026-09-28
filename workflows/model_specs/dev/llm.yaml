@@ -2435,6 +2435,12 @@ templates:
         no-async-scheduling: true
   status: EXPERIMENTAL
   has_builtin_warmup: false
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      # QB2 main does not yet expose `agentic`; use its accepted `evals` value
+      # only as transport while preserving the engine's agentic workflow.
+      ci_workflow_overrides:
+        evals: agentic
 
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for
