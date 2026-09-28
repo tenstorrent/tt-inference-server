@@ -108,7 +108,10 @@ context, accumulator, and orchestration metadata. The agentic driver explicitly
 resolves the `EVALS_AGENTIC` Harbor venv, so this remains a host-side dispatch
 change and reuses the immutable serving image. The normal standard-eval run is
 pinned to the preceding revision; the shim run is dispatched separately and
-its exact revision is recorded in the remote evidence log.
+its exact revision is recorded in the remote evidence log. The metadata flag is
+removed again in the following commit so the branch head retains normal
+`evals` behavior; the generic, tested override mechanism remains available for
+thin CI callers.
 
 Focused validation covers the metadata routing, model-catalog load, API-server
 contract, Docker readiness, benchmark configuration, formatting, compilation,
