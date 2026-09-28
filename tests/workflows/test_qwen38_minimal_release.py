@@ -73,6 +73,8 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
     assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
     assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
     assert swe.llm_timeout_sec == 60 * 60
+    assert tasks[1].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0
+    assert tasks[2].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 1
 
 
 def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():
