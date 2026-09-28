@@ -361,7 +361,20 @@ vLLM-compatible server. The workflow is
 `benchmarks`; the spec-decode flag swaps the default media-task dispatch for
 the sweep defined in [`llm_module/spec_decode/runs.py`](../llm_module/spec_decode/runs.py):
 all 11 SPEED-Bench qualitative categories at concurrency 1 plus a 1k–32k ISL
-throughput sweep at concurrency 1/16/64.
+throughput sweep at concurrency 1/8/16/32/64.
+
+| Preset | Qualitative | Throughput ISLs | Throughput concurrencies |
+|---|---|---|---|
+| `full` (default) | all 11 | 1k, 2k, 8k, 16k, 32k | 1, 8, 16, 32, 64 |
+| `ci` | `coding` | 32k | 1, 16, 64 |
+| `throughput` | none | 1k, 2k, 8k, 16k, 32k | 1, 8, 16, 32, 64 |
+
+`--spec-decode-isls` (comma-separated, any of `1k,2k,8k,16k,32k`) and
+`--spec-decode-concurrencies` (comma-separated positive integers) replace the
+preset's throughput ISLs / concurrencies; qualitative runs are unaffected.
+Each throughput run sends `max(32, 4 × concurrency)` requests. For example,
+`--spec-decode-preset throughput --spec-decode-isls 1k,8k
+--spec-decode-concurrencies 8,32` runs four throughput points and nothing else.
 
 Server-side speculative config is out of scope — it belongs to whoever
 launched the server, before the benchmark starts. Each run scrapes the vLLM
@@ -413,7 +426,9 @@ python launchers/run_spec_decode.py \
     --device gpu \
     --service-port 8000 \
     --spec-decode \
-    --spec-decode-preset [ci | full]
+    --spec-decode-preset [ci | full | throughput] \
+    [--spec-decode-isls 1k,8k] \
+    [--spec-decode-concurrencies 8,32]
 ```
 
 Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
