@@ -1215,6 +1215,15 @@ target_include_directories(embedding_codec_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(embedding_pipe_test
+    tests/unit/services/embedding_pipe_test.cpp
+    src/services/embedding_pipe.cpp
+)
+target_link_libraries(embedding_pipe_test PRIVATE GTest::gtest_main)
+target_include_directories(embedding_pipe_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(media_payload_ipc_test tests/integration/sessions/media_payload_ipc_test.cpp)
 target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(media_payload_ipc_test PRIVATE
@@ -1618,6 +1627,7 @@ gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(embedding_codec_test)
+gtest_discover_tests(embedding_pipe_test)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)
