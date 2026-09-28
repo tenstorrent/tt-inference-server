@@ -1437,6 +1437,8 @@ templates:
         # the Blackhole qwen36 class; route it to the qwen38_27b_qb2 implementation instead.
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.qwen38_27b_qb2.tt.generator_vllm:Qwen38ForCausalLM"
       vllm_args:
+        # qwen38_27b_qb2 pages its KV cache in fixed 32-token pages.
+        block_size: "32"
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
