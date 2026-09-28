@@ -237,83 +237,87 @@ class Scheduler:
         self, worker_id: str, expected_process: Process | None = None
     ) -> bool:
         """Restart a failed worker, ignoring stale health-monitor observations."""
-        with self._worker_replacement_lock:
-            return self._replace_worker_locked(
-                worker_id,
-                count_as_failure=True,
-                expected_process=expected_process,
-            )
+        return self._perform_worker_replacement(
+            worker_id,
+            count_as_failure=True,
+            expected_process=expected_process,
+        )
 
     def replace_worker(self, worker_id: str, expected_pid: int | None = None) -> bool:
         """Intentionally replace the expected worker without recording a failure."""
-        with self._worker_replacement_lock:
-            return self._replace_worker_locked(
-                worker_id,
-                count_as_failure=False,
-                expected_pid=expected_pid,
-            )
+        return self._perform_worker_replacement(
+            worker_id,
+            count_as_failure=False,
+            expected_pid=expected_pid,
+        )
 
-    def _replace_worker_locked(
+    def _perform_worker_replacement(
         self,
         worker_id: str,
         count_as_failure: bool,
         expected_process: Process | None = None,
         expected_pid: int | None = None,
     ) -> bool:
-        """Terminate and replace a worker while the replacement lock is held."""
-        old_info = self.worker_info.get(worker_id, {})
+        """Serialize termination and replacement of a worker process."""
+        with self._worker_replacement_lock:
+            old_info = self.worker_info.get(worker_id, {})
 
-        if old_info == {}:
-            raise ValueError(f"Worker ID {worker_id} not found in worker info")
-        if expected_process is not None and old_info["process"] is not expected_process:
-            return False
-        if expected_pid is not None and old_info["process"].pid != expected_pid:
-            return False
+            if old_info == {}:
+                raise ValueError(f"Worker ID {worker_id} not found in worker info")
+            if (
+                expected_process is not None
+                and old_info["process"] is not expected_process
+            ):
+                return False
+            if expected_pid is not None and old_info["process"].pid != expected_pid:
+                return False
 
-        restart_count = old_info.get("restart_count", 0) + (
-            1 if count_as_failure else 0
-        )
-
-        if count_as_failure:
-            self.logger.warning(
-                f"Restarting worker {worker_id} (restart #{restart_count})"
+            restart_count = old_info.get("restart_count", 0) + (
+                1 if count_as_failure else 0
             )
-        else:
-            self.logger.warning(f"Replacing intentionally stopped worker {worker_id}")
 
-        # Clean up old process if it exists
-        old_pid = None
-        if worker_id in self.worker_info:
-            try:
-                old_process = self.worker_info[worker_id]["process"]
-                old_pid = old_process.pid
-                if old_process.is_alive():
-                    old_process.terminate()
-                    old_process.join(timeout=5.0)
-                if old_process.is_alive():
-                    self.logger.warning(
-                        f"Worker {worker_id} did not terminate; killing it"
-                    )
-                    old_process.kill()
-                    old_process.join(timeout=5.0)
-                if old_process.is_alive():
-                    raise RuntimeError(f"Worker {worker_id} could not be stopped")
-            except Exception as e:
-                self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
-                raise
+            if count_as_failure:
+                self.logger.warning(
+                    f"Restarting worker {worker_id} (restart #{restart_count})"
+                )
+            else:
+                self.logger.warning(
+                    f"Replacing intentionally stopped worker {worker_id}"
+                )
 
-        mark_worker_dead(old_pid)
+            # Clean up old process if it exists
+            old_pid = None
+            if worker_id in self.worker_info:
+                try:
+                    old_process = self.worker_info[worker_id]["process"]
+                    old_pid = old_process.pid
+                    if old_process.is_alive():
+                        old_process.terminate()
+                        old_process.join(timeout=5.0)
+                    if old_process.is_alive():
+                        self.logger.warning(
+                            f"Worker {worker_id} did not terminate; killing it"
+                        )
+                        old_process.kill()
+                        old_process.join(timeout=5.0)
+                    if old_process.is_alive():
+                        raise RuntimeError(f"Worker {worker_id} could not be stopped")
+                except Exception as e:
+                    self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
+                    raise
 
-        # Use same queue index so worker reuses its result queue
-        existing_queue_index = old_info.get("queue_index")
+            mark_worker_dead(old_pid)
 
-        # Start new worker
-        self._start_worker(worker_id, queue_index=existing_queue_index)
-        self.worker_info[worker_id]["restart_count"] = restart_count
-        self.worker_info[worker_id]["error_count"] = (
-            max(old_info.get("error_count", 1) - 1, 0) if count_as_failure else 0
-        )
-        return True
+            # Use same queue index so worker reuses its result queue
+            existing_queue_index = old_info.get("queue_index")
+
+            # Start new worker
+            self._start_worker(worker_id, queue_index=existing_queue_index)
+            self.worker_info[worker_id]["restart_count"] = restart_count
+            self.worker_info[worker_id]["error_count"] = (
+                max(old_info.get("error_count", 1) - 1, 0) if count_as_failure else 0
+            )
+            return True
 
     async def result_listener(self):
         """✅ Read from ALL worker queues in parallel using batch reads"""
