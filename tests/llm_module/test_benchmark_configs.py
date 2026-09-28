@@ -168,6 +168,40 @@ def test_token_granular_specs_keep_random_dataset():
         assert config.custom_dataset_path is None
 
 
+def test_gemma4_autoport_uses_fixed_4k_serving_profile_only():
+    """The autoport bringup measures 4K input at concurrency 1 and 32 only."""
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    autoport = next(
+        template
+        for template in templates
+        if template.weights == ["google/gemma-4-26B-A4B-it"]
+        and template.impl.impl_id == "gemma4_autoport"
+    ).expand_to_specs()[0]
+    canonical = next(
+        template
+        for template in templates
+        if template.weights == ["google/gemma-4-26B-A4B-it"]
+        and template.impl.impl_id == "tt_transformers"
+    ).expand_to_specs()[0]
+
+    assert [
+        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
+        for config in get_llm_configs(autoport, autoport.device_type)
+    ] == [
+        (4096, 128, 1, 4),
+        (4096, 128, 32, 128),
+    ]
+
+    canonical_configs = get_llm_configs(canonical, canonical.device_type)
+    assert len(canonical_configs) > 2
+    assert (128, 128, 1, 8) in {
+        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
+        for config in canonical_configs
+    }
+
+
 def _dataset_config(**overrides):
     values = dict(isl=128, osl=128, max_concurrency=1, num_prompts=8)
     values.update(overrides)
