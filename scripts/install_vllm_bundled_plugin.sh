@@ -2,13 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 # Faithful engine recipe from the manifest's verified standalone installer.
-# The selected monorepo supplies ONLY plugins/vllm-tt-plugin, not vLLM itself.
+# The selected source supplies ONLY the plugin project, not vLLM itself. It may
+# be a vLLM monorepo root or the exact TT-Metal-carried plugin snapshot.
 set -euo pipefail
-plugin_source_root=${1:?Expected checked-out monorepo root}
+plugin_source_root=${1:?Expected plugin project or checked-out monorepo root}
 plugin_source_root=$(cd -- "$plugin_source_root" && pwd)
 helper_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 manifest="$helper_dir/vllm_bundled_plugin_manifest.json"
-test -f "$plugin_source_root/plugins/vllm-tt-plugin/pyproject.toml"
+if [[ -f "$plugin_source_root/pyproject.toml" ]]; then
+    plugin_project_dir="$plugin_source_root"
+else
+    plugin_project_dir="$plugin_source_root/plugins/vllm-tt-plugin"
+fi
+test -f "$plugin_project_dir/pyproject.toml"
 probe_tmp=$(mktemp -d /tmp/vllm-bundled-plugin.XXXXXX)
 trap 'rm -f "$probe_tmp/installer.sh" "$probe_tmp/overrides.txt" "$probe_tmp/common.txt" "$probe_tmp/constraints.txt"; rmdir "$probe_tmp"' EXIT
 readarray -t provenance < <(python3 - "$manifest" <<'PY'
@@ -38,7 +44,7 @@ uv pip install --override "$probe_tmp/overrides.txt" --constraint "$probe_tmp/co
 uv pip install --no-deps --index-url https://download.pytorch.org/whl/cpu torchvision==0.26.0
 uv pip install --constraint "$probe_tmp/constraints.txt" tblib
 VLLM_TARGET_DEVICE=empty uv pip install --no-deps --no-binary vllm "${provenance[4]}"
-uv pip install --no-deps -e "$plugin_source_root/plugins/vllm-tt-plugin"
+uv pip install --no-deps -e "$plugin_project_dir"
 python3 - "$manifest" <<'PY'
 import importlib.metadata as metadata
 import importlib.util

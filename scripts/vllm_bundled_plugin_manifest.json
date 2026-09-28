@@ -1,5 +1,5 @@
 {
-  "scope": "Installed upstream empty-target engine plus plugin source from selected monorepo commit; never install monorepo engine",
+  "scope": "Installed upstream empty-target engine plus exact selected bundled plugin source; never install a bundled monorepo engine",
   "installer_repository": "tenstorrent/vllm-tt-plugin",
   "installer_revision": "c9cfebcf0490066ff85e1e3fba2c7d456ce5ce42",
   "installer_sha256": "9190fdd216ea96e95503b0caba88f40925c0c13819525fff67ef763c327731de",

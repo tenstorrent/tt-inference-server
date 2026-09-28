@@ -19,6 +19,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin
+ARG TT_VLLM_PLUGIN_SNAPSHOT_COMMIT=""
 ARG TT_QUETZAL_COMMIT_SHA=""
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=1000
@@ -105,8 +106,9 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && rm -rf ${TT_METAL_HOME}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
-# Standalone remains the default. Monorepo supplies only the bundled plugin;
-# the measured engine is the upstream 0.26.0 empty-target distribution.
+# Standalone remains the default. A selected monorepo or the exact Gemma 4
+# TT-Metal snapshot supplies only the plugin; the measured engine is the
+# upstream 0.26.0 empty-target distribution.
 COPY scripts/install_vllm_bundled_plugin.sh scripts/vllm_bundled_plugin_manifest.json /tmp/vllm-bundled-install/
 RUN /bin/bash -c "case '${TT_VLLM_REPOSITORY}' in tenstorrent/vllm-tt-plugin|tenstorrent/vllm) ;; *) exit 1 ;; esac \
     && if [ '${TT_VLLM_REPOSITORY}' = 'tenstorrent/vllm' ]; then [[ '${TT_VLLM_COMMIT_SHA_OR_TAG}' =~ ^[0-9a-f]{40}$ ]]; fi \
@@ -116,7 +118,12 @@ RUN /bin/bash -c "case '${TT_VLLM_REPOSITORY}' in tenstorrent/vllm-tt-plugin|ten
     && test \"\$(git rev-parse HEAD)\" = \"\$(git rev-parse '${TT_VLLM_COMMIT_SHA_OR_TAG}^{commit}')\" \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
-    && if [ '${TT_VLLM_REPOSITORY}' = 'tenstorrent/vllm' ]; then \
+    && snapshot_dir='${TT_METAL_HOME}/models/autoports/google_gemma_4_26b_a4b_it/vllm_plugin_snapshot' \
+    && if [ -n '${TT_VLLM_PLUGIN_SNAPSHOT_COMMIT}' ]; then \
+         test -f \"\${snapshot_dir}/SOURCE_MANIFEST.json\"; \
+         python3 -c \"import json; m=json.load(open('\${snapshot_dir}/SOURCE_MANIFEST.json')); assert m['source_commit'] == '${TT_VLLM_PLUGIN_SNAPSHOT_COMMIT}', m\"; \
+         bash /tmp/vllm-bundled-install/install_vllm_bundled_plugin.sh \"\${snapshot_dir}\"; \
+       elif [ '${TT_VLLM_REPOSITORY}' = 'tenstorrent/vllm' ]; then \
          bash /tmp/vllm-bundled-install/install_vllm_bundled_plugin.sh '${vllm_tt_plugin_dir}'; \
        else source docs/install-vllm-tt.sh; fi \
     && rm -rf ${vllm_tt_plugin_dir}/.git \
@@ -172,6 +179,7 @@ ARG TT_QUETZAL_COMMIT_SHA=""
 ARG TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_ENGINE_VERSION=installer-defined
+ARG TT_VLLM_PLUGIN_SNAPSHOT_COMMIT=""
 
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
     org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server \
@@ -181,7 +189,9 @@ LABEL com.tenstorrent.vllm.repository=${TT_VLLM_REPOSITORY} \
     com.tenstorrent.vllm.revision=${TT_VLLM_COMMIT_SHA_OR_TAG} \
     com.tenstorrent.vllm.plugin.repository=${TT_VLLM_REPOSITORY} \
     com.tenstorrent.vllm.plugin.revision=${TT_VLLM_COMMIT_SHA_OR_TAG} \
-    com.tenstorrent.vllm.engine.version=${TT_VLLM_ENGINE_VERSION}
+    com.tenstorrent.vllm.engine.version=${TT_VLLM_ENGINE_VERSION} \
+    com.tenstorrent.vllm.plugin.snapshot.repository=tenstorrent/tt-metal \
+    com.tenstorrent.vllm.plugin.snapshot.revision=${TT_VLLM_PLUGIN_SNAPSHOT_COMMIT}
 
 # IDENTICAL arguments and environment as builder stage
 ARG TT_METAL_COMMIT_SHA_OR_TAG
