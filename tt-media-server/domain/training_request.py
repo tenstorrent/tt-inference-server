@@ -69,6 +69,7 @@ class TrainingRequest(BaseRequest):
     _progress_tracker: object = PrivateAttr(default=None)
     _worker_assignment: object = PrivateAttr(default=None)
     _worker_replacement_required: object = PrivateAttr(default=None)
+    # Worker-local cache avoids repeated writes to the shared Manager.Value.
     _cached_worker_replacement_required: Optional[bool] = PrivateAttr(default=None)
     # Worker-local timestamp used to throttle writes to the shared tracker.
     _last_heartbeat_time: float = PrivateAttr(default=0.0)
