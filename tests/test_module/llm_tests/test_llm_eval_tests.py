@@ -9,6 +9,7 @@ orchestration, and the ``EvalsWorkflow`` LLM override.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -359,18 +360,136 @@ class TestResultLoading:
     def test_merge_strips_alias_and_dedupes(self, tmp_path):
         self._write(tmp_path / "results_1.json", "gpqa", 0.9)
         self._write(tmp_path / "results_2.json", "mmlu", 0.7)
-        results = mod.merge_eval_results(
+        results, counts = mod.load_eval_results(
             [str(tmp_path / "results_1.json"), str(tmp_path / "results_2.json")]
         )
         assert set(results) == {"gpqa", "mmlu"}
         assert results["gpqa"]["acc,none"] == 0.9
         assert "alias" not in results["gpqa"]
+        assert counts == {}
+
+    @pytest.mark.parametrize("new_count", [10, None])
+    def test_latest_metrics_and_count_come_from_the_same_file(
+        self, tmp_path, new_count
+    ):
+        old = tmp_path / "results_old.json"
+        new = tmp_path / "results_new.json"
+        for path, metric, count, modified in (
+            (old, 0.5, 100, 1),
+            (new, 0.9, new_count, 2),
+        ):
+            self._write(path, "gpqa", metric)
+            data = json.loads(path.read_text())
+            if count is not None:
+                data["n-samples"] = {"gpqa": {"effective": count}}
+            path.write_text(json.dumps(data))
+            os.utime(path, (modified, modified))
+
+        with patch.object(mod.json, "load", wraps=json.load) as read:
+            results, counts = mod.load_eval_results([str(old), str(new)])
+
+        assert read.call_count == 2
+        assert results == {"gpqa": {"acc,none": 0.9}}
+        assert counts == ({"gpqa": new_count} if new_count is not None else {})
 
 
 # --- orchestration -----------------------------------------------------------
 
 
 class TestRunLLMEval:
+    @pytest.mark.parametrize(
+        "bad_result",
+        [
+            "{",
+            "{}",
+            "[]",
+            '{"results": []}',
+            '{"results": {"gpqa": null}}',
+            json.dumps(
+                {
+                    "results": {"gpqa": {"acc,none": 0.9}},
+                    "configs": {"gpqa": {"task": "wrong-task", "dataset_path": "d"}},
+                }
+            ),
+            '{"results": {}, "n-samples": [1]}',
+        ],
+        ids=[
+            "truncated",
+            "empty",
+            "list",
+            "bad-results",
+            "bad-metrics",
+            "task-mismatch",
+            "bad-counts",
+        ],
+    )
+    def test_bad_result_does_not_reuse_old_scores_or_stop_later_tasks(
+        self, tmp_path, bad_result, caplog
+    ):
+        from workflow_module import BlockAccumulator
+
+        ctx = _ctx()
+        ctx.model_spec.model_id = "test-llm"
+        ctx.output_path = str(tmp_path)
+        tasks = [_task(name, _score(reference=90.0)) for name in ("gpqa", "mmlu")]
+        result_dir = tmp_path / "eval_test-llm" / "org__test-llm"
+        result_dir.mkdir(parents=True)
+        old_result = result_dir / "results_old.json"
+        old_result.write_text(
+            json.dumps(
+                {
+                    "results": {"gpqa": {"acc,none": 0.95}},
+                    "configs": {"gpqa": {"task": "gpqa", "dataset_path": "d"}},
+                }
+            )
+        )
+        accumulator = BlockAccumulator()
+        ran = []
+        attempt_dirs = []
+
+        def run_task(_ctx, task, _token, *, output_path):
+            ran.append(task.task_name)
+            attempt_dirs.append(output_path)
+            result_dir = output_path / "eval_test-llm" / "org__test-llm"
+            result_dir.mkdir(parents=True)
+            if task.task_name == "gpqa":
+                (result_dir / "results_gpqa.json").write_text(bad_result)
+                return 1
+            # The failed task must already be recorded before the next starts.
+            assert len(accumulator.blocks) == 1
+            assert accumulator.blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+            (result_dir / "results_mmlu.json").write_text(
+                json.dumps(
+                    {
+                        "results": {"mmlu": {"acc,none": 0.95}},
+                        "configs": {"mmlu": {"task": "mmlu", "dataset_path": "d"}},
+                        "n-samples": {"mmlu": {"effective": 10}},
+                    }
+                )
+            )
+            return 0
+
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=tasks), patch(
+            f"{_MOD}.HttpServerController", return_value=server
+        ), patch(f"{_MOD}._run_eval_task", side_effect=run_task), patch(
+            f"{_MOD}.accept_blocks", side_effect=accumulator.accept
+        ):
+            blocks = mod.run_llm_eval(ctx)
+
+        assert ran == ["gpqa", "mmlu"]
+        assert len(set(attempt_dirs)) == 2
+        assert old_result.exists()
+        assert blocks == accumulator.blocks
+        assert blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "no eval results parsed (rc=1)" in blocks[0].data["error"]
+        assert blocks[1].data["accuracy_check"] == ReportCheckTypes.PASS
+        assert blocks[1].data["score"] == 95.0
+        assert "mean_seconds_per_task" in blocks[1].data
+        assert "results_gpqa.json" in caplog.text
+
     def _run(self, tasks, *, healthy=True, blocks=None, run_rc=0, results=None):
         server = MagicMock()
         server.wait_for_healthy.return_value = healthy
@@ -379,11 +498,11 @@ class TestRunLLMEval:
             f"{_MOD}.HttpServerController", return_value=server
         ), patch(f"{_MOD}._run_eval_task", return_value=run_rc) as run_task, patch(
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
-        ), patch(f"{_MOD}.merge_eval_results", return_value=results or {}), patch(
+        ), patch(f"{_MOD}.load_eval_results", return_value=(results or {}, {})), patch(
             f"{_MOD}.blocks_for_task", return_value=blocks if blocks is not None else []
-        ) as score_task, patch(f"{_MOD}.collect_sample_counts", return_value={}), patch(
-            f"{_MOD}.accept_blocks"
-        ) as accept, patch(f"{_MOD}.block_id", return_value=""):
+        ) as score_task, patch(f"{_MOD}.accept_blocks") as accept, patch(
+            f"{_MOD}.block_id", return_value=""
+        ):
             out = mod.run_llm_eval(_ctx())
         return out, run_task, score_task, accept
 
@@ -429,6 +548,63 @@ class TestRunLLMEval:
         assert len(out) == 1
         assert out[0].data["status"] == TestStatus.SKIP.value
         assert "requires max_context >= 200000" in out[0].data["reason"]
+
+    def _run_killed_on_second_task(self, tasks, blocks_by_task):
+        """Run ``tasks``; the second ``_run_eval_task`` call is a GitHub cancel."""
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        run_calls = []
+
+        def run_eval_task(_ctx, task, _token, *, output_path):
+            run_calls.append(task.task_name)
+            if len(run_calls) == 2:
+                raise KeyboardInterrupt  # SIGINT from a GitHub cancel
+            return 0
+
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=tasks), patch(
+            f"{_MOD}.HttpServerController", return_value=server
+        ), patch(f"{_MOD}._run_eval_task", side_effect=run_eval_task), patch(
+            f"{_MOD}.discover_eval_results", return_value=["f.json"]
+        ), patch(f"{_MOD}.load_eval_results", return_value=({}, {})), patch(
+            f"{_MOD}.blocks_for_task",
+            side_effect=lambda _ctx, task, *_a, **_k: blocks_by_task[task.task_name],
+        ), patch(f"{_MOD}.accept_blocks") as accept, patch(
+            f"{_MOD}.block_id", return_value=""
+        ), pytest.raises(KeyboardInterrupt):
+            mod.run_llm_eval(_ctx())
+        return accept
+
+    def test_each_task_is_scored_and_accepted_before_the_next_one_runs(self):
+        """Accepting checkpoints the report, so a cancel during task N must find
+        tasks 1..N-1 already scored and accepted -- not waiting on a post-loop
+        parse that never happens."""
+        gpqa = MagicMock()
+        accept = self._run_killed_on_second_task(
+            [_task("gpqa"), _task("mmlu")], {"gpqa": [gpqa], "mmlu": [MagicMock()]}
+        )
+        accept.assert_called_once()
+        assert accept.call_args.args[0] == [gpqa]
+
+    def test_skipped_task_is_accepted_as_it_is_skipped(self):
+        accept = self._run_killed_on_second_task(
+            [
+                _task("longctx", min_context_required=200000),
+                _task("gpqa"),
+                _task("mmlu"),
+            ],
+            {"gpqa": [MagicMock()], "mmlu": [MagicMock()]},
+        )
+        accepted = [b for call in accept.call_args_list for b in call.args[0]]
+        assert accepted[0].data["status"] == TestStatus.SKIP.value
+
+    def test_skip_block_keeps_its_place_in_task_order(self):
+        # blocks_for_task is mocked to [], so ran tasks become FAIL blocks; the
+        # SKIP for "b" must sit between "a" and "c", in config order.
+        out, _run_task, _score_task, _accept = self._run(
+            [_task("a"), _task("b", min_context_required=200000), _task("c")]
+        )
+        assert [blk.data.get("status") for blk in out][1] == TestStatus.SKIP.value
 
 
 # --- EvalsWorkflow override --------------------------------------------------

@@ -10,6 +10,7 @@ import re
 import shutil
 import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -62,6 +63,7 @@ class WhisperEvalTest(BaseTest):
     def __init__(self, config=None, targets=None, **kwargs):
         """Initialize with lmms-eval executable from config or discovery."""
         super().__init__(config, targets)
+        self._attempt_id = uuid.uuid4().hex
 
         # Set mock_mode based on config if provided
         if config:
@@ -97,20 +99,7 @@ class WhisperEvalTest(BaseTest):
             logger.info("Found lmms-eval executable: %s", self.lmms_eval_exec)
 
     def _construct_output_directory(self):
-        """
-        Construct the output directory path that matches run_reports.py expectations.
-
-        Note: lmms-eval automatically creates a subdirectory structure like:
-        {output_path}/{hf_model_repo.replace('/', '__')}/results_{timestamp}.json
-
-        So we only need to provide the base path: {base_output_path}/eval_{model_id}/
-        lmms-eval will create the {hf_model_repo.replace('/', '__')} part.
-
-        Expected final structure: {base_output_path}/eval_{model_id}/{hf_model_repo.replace('/', '__')}/*_results.json
-
-        Returns:
-            str: Base output directory path for lmms-eval
-        """
+        """Return this attempt's directory; lmms-eval adds the HF repo folder."""
         # Use model_id from config if available, otherwise construct it
         if self.config and self.config.get("model_id"):
             model_id = self.config.get("model_id")
@@ -127,7 +116,11 @@ class WhisperEvalTest(BaseTest):
             logger.info(f"Constructed fallback model_id: {model_id}")
 
         # Create base directory structure - lmms-eval will create the repo subdirectory
-        output_dir = Path(self.base_output_path) / f"eval_{model_id}"
+        output_dir = (
+            Path(self.base_output_path)
+            / f"eval_{model_id}"
+            / f"attempt-{self._attempt_id}"
+        )
 
         # Create the expected final structure path for logging
         repo_dir_name = self.hf_model_repo.replace("/", "__")
@@ -136,9 +129,6 @@ class WhisperEvalTest(BaseTest):
         logger.info(f"Constructed base output directory for lmms-eval: {output_dir}")
         logger.info(
             f"lmms-eval will create files in: {expected_final_path}/*_results.json"
-        )
-        logger.info(
-            f"This matches run_reports.py pattern: eval_{model_id}/{repo_dir_name}/*_results.json"
         )
 
         return str(output_dir)
@@ -161,6 +151,8 @@ class WhisperEvalTest(BaseTest):
             Dictionary containing test results and metadata.
         """
         start_time = time.time()
+        # Retries on the same instance must not grade a previous attempt's JSON.
+        self._attempt_id = uuid.uuid4().hex
 
         if self.mock_mode:
             logger.info("Running Whisper evaluation in MOCK MODE (simulated)...")

@@ -31,15 +31,12 @@ using embedding_detail::pipeReadBinary;
 using embedding_detail::WorkerProcess;
 
 struct EmbeddingService::Impl {
-  /**
-   * One queued request plus its completion callback.
-   */
   struct PendingRequest {
     domain::EmbeddingRequest request;
 
     std::function<void(domain::EmbeddingResponse&&)> onComplete;
 
-    // Arrival time; anchors the batch-fill deadline in collectBatch.
+    // Anchors the batch-fill deadline in collectBatch.
     std::chrono::steady_clock::time_point enqueueTime;
 
     PendingRequest(domain::EmbeddingRequest req,
@@ -49,10 +46,6 @@ struct EmbeddingService::Impl {
           enqueueTime(std::chrono::steady_clock::now()) {}
   };
 
-  /**
-   * Complete one pending request with an error response (the onComplete
-   * exactly-once contract: this must be the request's only completion).
-   */
   static void completeWithError(PendingRequest& p, const std::string& error) {
     domain::EmbeddingResponse err(p.request.task_id);
     err.error = error;
@@ -71,8 +64,7 @@ struct EmbeddingService::Impl {
   std::atomic<bool> running{false};
   std::atomic<bool> isReady{false};
 
-  // Spawning and warmup run here so start() returns immediately and the HTTP
-  // server can answer health probes while the model loads
+  // Spawning/warmup run here so start() returns immediately.
   std::unique_ptr<std::thread> startupThread;
 
   size_t maxBatchSize = 1;
@@ -92,9 +84,6 @@ struct EmbeddingService::Impl {
 
   ~Impl() { stop(); }
 
-  /** Allocate the worker table and hand spawning/warmup to the startup
-   * thread, so start() returns immediately and health probes get answers
-   * while the model loads. */
   void start() {
     if (running.exchange(true)) return;
 
@@ -113,12 +102,8 @@ struct EmbeddingService::Impl {
     startupThread = std::make_unique<std::thread>(&Impl::runStartup, this);
   }
 
-  /**
-   * Bring up one worker alone and wait for its READY handshake before
-   * spawning the rest. The first warmup on a cold volume generates the shared
-   * tensor cache; once one worker has written it, the remaining workers warm
-   * up in parallel safely.
-   */
+  // The first worker warms up alone so it can populate the shared tensor
+  // cache without racing; the rest then warm up in parallel.
   void runStartup() {
     const unsigned warmupTimeoutMs = tt::config::embeddingWarmupTimeoutMs();
     const size_t next = warmupCacheLeader(warmupTimeoutMs);
@@ -126,12 +111,7 @@ struct EmbeddingService::Impl {
     logStartupSummary();
   }
 
-  /**
-   * Phase 1: warm up a single worker with exclusive cache access, so it can
-   * populate the shared tensor cache without racing. If it fails, try the
-   * next worker alone. Flips isReady on the first success. Returns the index
-   * of the first worker not yet spawned.
-   */
+  // Returns the index of the first worker not yet spawned.
   size_t warmupCacheLeader(unsigned timeoutMs) {
     size_t next = 0;
     bool haveReadyWorker = false;
@@ -152,8 +132,6 @@ struct EmbeddingService::Impl {
     return next;
   }
 
-  /** Phase 2: the tensor cache is warm; the remaining workers spawn at once
-   * and warm up concurrently. */
   void spawnAndAwaitRemaining(size_t firstIdx, unsigned timeoutMs) {
     for (size_t i = firstIdx; i < numWorkers && running.load(); ++i) {
       spawnWorkerAt(i);
@@ -174,11 +152,8 @@ struct EmbeddingService::Impl {
                 readyCount, numWorkers);
   }
 
-  /**
-   * Wait for the READY handshake of every listed worker concurrently, via a
-   * single poll() over all response pipes. Each worker becomes ready (and
-   * gets its dispatch thread) the moment its own sentinel arrives
-   */
+  // poll()s all response pipes until every listed worker resolves or the
+  // timeout expires.
   void awaitWorkersReady(std::vector<size_t> pending, unsigned timeoutMs) {
     const auto deadline =
         std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -196,7 +171,7 @@ struct EmbeddingService::Impl {
         pfds.push_back({workers[i]->readFd.get(), POLLIN, 0});
       }
 
-      // 100ms slices keep the shutdown check (`running`) responsive.
+      // 100ms slices keep the shutdown check responsive.
       const int rc = poll(pfds.data(), pfds.size(),
                           static_cast<int>(std::min<int64_t>(remaining, 100)));
       if (rc < 0) {
@@ -224,11 +199,7 @@ struct EmbeddingService::Impl {
     }
   }
 
-  /**
-   * Handle one poll() event for a warming-up worker. Returns true when the
-   * worker is resolved — it became ready (dispatch thread launched) or it
-   * died and was terminated; false while its handshake is still pending.
-   */
+  // Returns true once the worker is resolved: ready, or dead and terminated.
   bool resolveWarmupEvent(size_t workerIdx, short revents) {
     if (!(revents & (POLLIN | POLLHUP | POLLERR))) return false;
 
@@ -245,7 +216,6 @@ struct EmbeddingService::Impl {
           "during warmup",
           workerIdx);
     } else {
-      // POLLHUP/POLLERR without data: the child died before READY.
       TT_LOG_ERROR(
           "[EmbeddingService] Worker {} closed its pipe during warmup "
           "(process exited)",
@@ -276,8 +246,7 @@ struct EmbeddingService::Impl {
       tt::worker::WorkerInfo info;
       info.worker_id = std::to_string(w->workerId);
       info.pid = w->pid.load();
-      // kill(pid, 0) probes existence without reaping; waitpid stays owned
-      // by the dispatch thread (checkAlive) and terminate().
+      // kill(pid, 0) probes without reaping (checkAlive/terminate own waitpid)
       info.is_alive = info.pid > 0 && kill(info.pid, 0) == 0;
       info.is_ready = w->isReady.load();
       out.push_back(std::move(info));
@@ -289,8 +258,6 @@ struct EmbeddingService::Impl {
     if (!running.exchange(false)) return;
 
     TT_LOG_INFO("[EmbeddingService] Stopping...");
-    // The startup thread checks `running` at least every 100ms while waiting
-    // on warmups, so this join is quick.
     if (startupThread && startupThread->joinable()) startupThread->join();
     startupThread.reset();
     queueCv.notify_all();
@@ -303,8 +270,7 @@ struct EmbeddingService::Impl {
         w->dispatchThread->join();
       w->terminate();
     }
-    // All consumers are gone; anything still queued would leave its HTTP
-    // client hanging forever, so answer every request with an error now.
+    // No consumers remain; fail anything still queued.
     drainQueue("Server shutting down");
     {
       std::lock_guard lock(workersMutex);
@@ -314,9 +280,7 @@ struct EmbeddingService::Impl {
     TT_LOG_INFO("[EmbeddingService] Stopped");
   }
 
-  /** Fail every request still waiting in the queue. Callbacks are invoked
-   * outside the queue lock: they build HTTP responses and must not serialize
-   * against submitters. */
+  // Fails every queued request; callbacks run outside the queue lock.
   void drainQueue(const std::string& error) {
     std::queue<std::shared_ptr<PendingRequest>> drained;
     {
@@ -329,7 +293,7 @@ struct EmbeddingService::Impl {
     }
   }
 
-  /** Rolling dispatch-loop statistics; logs a summary every 10 batches. */
+  // Rolling dispatch-loop statistics; logs a summary every 10 batches.
   struct DispatchStats {
     uint64_t batches = 0;
     uint64_t requests = 0;
@@ -354,12 +318,8 @@ struct EmbeddingService::Impl {
     }
   };
 
-  /**
-   * Block until requests arrive or the worker must exit, then take up to
-   * maxBatchSize requests off the queue. When the queue is non-empty but a
-   * full batch has not formed, wait (mutex released) until batchTimeout past
-   * the OLDEST queued request's arrival
-   */
+  // Takes up to maxBatchSize requests; an incomplete batch lingers until
+  // batchTimeout past the oldest request's arrival.
   std::vector<std::shared_ptr<PendingRequest>> collectBatch(
       WorkerProcess& worker) {
     std::vector<std::shared_ptr<PendingRequest>> batch;
@@ -393,13 +353,8 @@ struct EmbeddingService::Impl {
     return batch;
   }
 
-  /**
-   * Dispatch-thread exit path: if this was the last ready worker, the queue
-   * has no consumer left and queued callbacks would never fire. During
-   * shutdown workers are still marked ready (stop() only clears `running`),
-   * so the drain is skipped here and stop()'s own drain handles the
-   * remainder.
-   */
+  // If no ready worker remains, queued callbacks would never fire — drain.
+  // During stop() workers stay marked ready, so stop()'s own drain handles it.
   void drainIfLastWorker() {
     bool anyReady = false;
     {
@@ -452,8 +407,6 @@ struct EmbeddingService::Impl {
     drainIfLastWorker();
   }
 
-  /** JSON-encode a batch as the array payload the worker's serve loop
-   * expects. */
   static std::string encodeBatchJson(
       const std::vector<std::shared_ptr<PendingRequest>>& batch) {
     Json::Value batchJson(Json::arrayValue);
@@ -462,8 +415,6 @@ struct EmbeddingService::Impl {
     return Json::writeString(builder, batchJson);
   }
 
-  /** Send one batch to the worker, wait for its response and complete every
-   * request in the batch — with its embedding, or with an error. */
   void dispatchBatchToWorker(
       WorkerProcess& worker,
       std::vector<std::shared_ptr<PendingRequest>>& batch) {

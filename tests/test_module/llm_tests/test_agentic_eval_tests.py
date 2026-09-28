@@ -351,22 +351,23 @@ class TestStandardEvalModeReference:
         assert abs(s - 70.0) < 1e-6
         assert ac_ci == ReportCheckTypes.PASS
 
-    def test_collect_sample_counts_reads_effective(self, tmp_path):
+    def test_load_eval_results_reads_effective_count(self, tmp_path):
         import json as _json
-        from test_module.llm_tests.llm_eval_tests import collect_sample_counts
+        from test_module.llm_tests.llm_eval_tests import load_eval_results
 
         f = tmp_path / "results_x.json"
         f.write_text(
             _json.dumps(
                 {
                     "results": {"r1_gpqa_diamond": {"exact_match,none": 0.7}},
+                    "configs": {"r1_gpqa_diamond": {"dataset_path": "gpqa"}},
                     "n-samples": {
                         "r1_gpqa_diamond": {"original": 198, "effective": 40}
                     },
                 }
             )
         )
-        counts = collect_sample_counts([str(f)])
+        _, counts = load_eval_results([str(f)])
         assert counts == {"r1_gpqa_diamond": 40}
 
 
@@ -1026,3 +1027,80 @@ class TestAgenticBridge:
         driver.run.assert_called_once()
         driver.parse.assert_called_once_with(HARBOR_RESULT_FIXTURE, device="N150")
         accept.assert_called_once()
+
+    def test_each_task_is_accepted_before_the_next_one_starts(self):
+        """A job cancelled during task N must still have tasks 1..N-1 accepted.
+
+        Accepting is what checkpoints the report (the WorkflowExecution hook),
+        so a bridge that accepts only after the loop loses every finished
+        multi-hour task when a later one is killed.
+        """
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_harbor_task(), _swebench_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("smoke-test")
+
+        first_block = AgenticEvalParser(
+            task_name="terminal_bench_2",
+            score=FakeScore(),
+        ).parse(HARBOR_RESULT_FIXTURE, device="N150")
+        finished = MagicMock()
+        finished.name = "terminal_bench"
+        finished.run.return_value.return_code = 0
+        finished.run.return_value.raw = HARBOR_RESULT_FIXTURE
+        finished.parse.return_value = first_block
+        killed = MagicMock()
+        killed.name = "swe_bench"
+        killed.run.side_effect = KeyboardInterrupt  # SIGINT from a GitHub cancel
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            side_effect=[finished, killed],
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.accept_blocks"
+        ) as accept, pytest.raises(KeyboardInterrupt):
+            run_llm_agentic_eval(ctx)
+
+        accept.assert_called_once()
+        assert accept.call_args.args[0] == [first_block]
+
+    def test_failed_task_block_is_accepted_as_it_happens(self):
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_harbor_task(), _swebench_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("smoke-test")
+
+        failure_block = MagicMock()
+        failed = MagicMock()
+        failed.name = "terminal_bench"
+        failed.run.return_value.return_code = 3
+        failed.failure_block.return_value = failure_block
+        killed = MagicMock()
+        killed.name = "swe_bench"
+        killed.run.side_effect = KeyboardInterrupt
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            side_effect=[failed, killed],
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.accept_blocks"
+        ) as accept, pytest.raises(KeyboardInterrupt):
+            run_llm_agentic_eval(ctx)
+
+        assert accept.call_args.args[0] == [failure_block]

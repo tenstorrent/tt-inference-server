@@ -22,22 +22,21 @@ BENCH_SCRIPT="$INFERENCE_SERVER_DIR/tt-media-server/cpp_server/benchmarks/run_be
 [ -x "$BENCH_SCRIPT" ] || { echo "ERROR: $BENCH_SCRIPT not found or not executable" >&2; exit 1; }
 
 export OPENAI_API_BASE="$TARGET"
+export RESULTS_DIR="$OUT"
 
 echo "==> Invoking $BENCH_SCRIPT"
 cd "$INFERENCE_SERVER_DIR/tt-media-server"
 "$BENCH_SCRIPT"
 
-# The upstream script writes into ./bench_results; move into $OUT and stamp
-# server_info onto each JSON.
-mkdir -p "$OUT"
+# Stamp server_info onto this attempt's results without reading shared outputs.
 shopt -s nullglob
-for f in bench_results/*.json; do
+for f in "$RESULTS_DIR"/*.json; do
   [ -f "$f" ] || continue
   jq empty "$f" 2>/dev/null || { echo "warning: skipping non-JSON $f"; continue; }
-  base="$(basename "$f")"
   jq --argjson server_info "$SERVER_INFO" \
     '. + {server_info: $server_info}' \
-    "$f" > "$OUT/$base"
+    "$f" > "${f}.tmp"
+  mv "${f}.tmp" "$f"
 done
 
 ls -la "$OUT"
