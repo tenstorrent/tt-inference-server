@@ -183,6 +183,19 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
+# MiniMax-H3 dispatch branches only (zni/h3-ci-t2va / -fl2va / -ref2va; not for main):
+# tt-vllm-plugin pins transformers==4.55.0, which predates the Qwen3-VL video processor the H3
+# pipeline loads for Ref2VA video references (AutoVideoProcessor on
+# text_encoder/video_preprocessor_config.json), so every request with a video reference failed
+# with "Unrecognized video processor". Restore the transformers pin of the tt-metal this image is
+# built on and check the class resolves. The vLLM runners in this image expect the older pin, so
+# this image is for MiniMax-H3 only.
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pin=\$(grep -E '^transformers[[:space:]]*==' ${TT_METAL_HOME}/tt_metal/python_env/requirements-dev.txt | tr -d ' ') \
+    && test -n \"\$pin\" \
+    && uv pip install --no-cache-dir \"\$pin\" \
+    && python -c 'import transformers; from transformers.models.qwen3_vl import Qwen3VLVideoProcessor; print(\"transformers\", transformers.__version__, Qwen3VLVideoProcessor.__name__)'"
+
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10
 ENV AUDIO_VENV_DIR=${TT_METAL_HOME}/audio_venv
