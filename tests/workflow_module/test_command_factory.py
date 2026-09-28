@@ -204,6 +204,8 @@ class TestSpecDecodeOptions:
         args = Namespace(
             spec_decode=True,
             spec_decode_preset="ci",
+            spec_decode_isls="1k,8k",
+            spec_decode_concurrencies="8,32",
             spec_decode_warmup_requests=2,
             spec_decode_metrics_url=["worker-a:9000", "worker-b:9000/metrics"],
             jwt_secret=None,
@@ -211,6 +213,8 @@ class TestSpecDecodeOptions:
         opts = cf._build_spec_decode_options(args)
         assert isinstance(opts, SpecDecodeOptions)
         assert opts.preset == "ci"
+        assert opts.isls == "1k,8k"
+        assert opts.concurrencies == "8,32"
         assert opts.warmup_requests == 2
         assert opts.auth_token == ""
         # Repeatable --spec-decode-metrics-url -> tuple, forwarded verbatim
@@ -231,6 +235,8 @@ class TestSpecDecodeOptions:
         opts = cf._build_spec_decode_options(args)
         assert opts is not None
         assert opts.metrics_urls == ()
+        assert opts.isls is None
+        assert opts.concurrencies is None
 
     def test_release_pins_tool_venv_python(self, monkeypatch):
         monkeypatch.delenv("JWT_SECRET", raising=False)
