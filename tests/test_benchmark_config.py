@@ -38,6 +38,7 @@ def _import_benchmark_config(monkeypatch):
     # NOTE: bool(os.getenv("ONLY_BENCHMARK_TARGETS")) treats any non-empty string
     # as True (including "0"), so we must *unset* the env var.
     monkeypatch.delenv("ONLY_BENCHMARK_TARGETS", raising=False)
+    monkeypatch.delenv("BENCHMARK_SWEEP_CONCURRENCIES", raising=False)
 
     module_name = "reference_config.benchmarking.benchmark_config"
     if module_name in sys.modules:
@@ -351,6 +352,81 @@ def test_super_cluster_sweep_enforces_min_num_prompts(monkeypatch):
     assert high_isl
     for p in high_isl:
         assert p.num_prompts >= floor
+
+
+def _text_sweep_by_pair(benchmark_config, spec, device):
+    config = benchmark_config.get_benchmark_config(spec)
+    by_pair = {}
+    for p in config.tasks[1].param_map[device]:
+        if getattr(p, "task_type", "text") != "text":
+            continue
+        by_pair.setdefault((int(p.isl), int(p.osl)), []).append(p)
+    assert by_pair
+    return by_pair
+
+
+def test_sweep_concurrencies_env_runs_every_pair_at_the_listed_values(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    monkeypatch.setenv(benchmark_config.BENCHMARK_SWEEP_CONCURRENCIES_ENV, "128, 1")
+
+    # The spec says 64; the listed 128 raises the ceiling and, on SUPER_CLUSTER,
+    # the token budget with it, so no pair is capped below it.
+    _, runtime_spec = _make_super_cluster_runtime_spec()
+    by_pair = _text_sweep_by_pair(benchmark_config, runtime_spec, DeviceTypes.SUPER_CLUSTER)
+
+    max_context = runtime_spec.device_model_spec.max_context
+    expected_pairs = sorted(
+        (isl, osl)
+        for isl, osl in benchmark_config.BENCHMARK_ISL_OSL_PAIRS
+        + benchmark_config.SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
+        if isl + osl <= max_context
+    )
+    assert sorted(by_pair) == expected_pairs
+    for pair, params in by_pair.items():
+        assert sorted(p.max_concurrency for p in params) == [1, 128], pair
+
+    # The multi-user prompt floor follows the raised ceiling; single-user points keep the length-based count.
+    floor = benchmark_config.SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * 128
+    for params in by_pair.values():
+        for p in params:
+            if p.max_concurrency == 1:
+                assert p.num_prompts == benchmark_config.get_num_prompts(p.isl, p.osl, 1)
+            else:
+                assert p.num_prompts >= floor
+
+
+def test_sweep_concurrencies_env_is_capped_by_a_device_token_budget(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    monkeypatch.setenv(benchmark_config.BENCHMARK_SWEEP_CONCURRENCIES_ENV, "1,128")
+
+    # A single device's budget is its context: long pairs cannot hold 128 users, so
+    # they run at the most the budget allows instead of being dropped.
+    model_id = _find_model_id(
+        model_name="Qwen3-8B", device=DeviceTypes.N150, impl_name="tt-transformers"
+    )
+    spec = MODEL_SPECS[model_id]
+    by_pair = _text_sweep_by_pair(benchmark_config, spec, DeviceTypes.N150)
+
+    max_context = spec.device_model_spec.max_context
+    for (isl, osl), params in by_pair.items():
+        allowed = _allowed_max_concurrency(
+            isl=isl, osl=osl, max_context=max_context, model_max_concurrency=128
+        )
+        assert sorted(p.max_concurrency for p in params) == sorted({1, allowed}), (isl, osl)
+
+
+def test_sweep_concurrencies_env_rejects_anything_but_positive_integers(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    env = benchmark_config.BENCHMARK_SWEEP_CONCURRENCIES_ENV
+    assert benchmark_config.sweep_concurrencies_from_env() is None
+    monkeypatch.setenv(env, "  ")
+    assert benchmark_config.sweep_concurrencies_from_env() is None
+    monkeypatch.setenv(env, "128,1,128")
+    assert benchmark_config.sweep_concurrencies_from_env() == [1, 128]
+    for bad in ("1,lots", "0", "-4", "1;128"):
+        monkeypatch.setenv(env, bad)
+        with pytest.raises(ValueError):
+            benchmark_config.sweep_concurrencies_from_env()
 
 
 def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):

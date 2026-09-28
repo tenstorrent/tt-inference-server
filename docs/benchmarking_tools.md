@@ -531,6 +531,15 @@ export ONLY_BENCHMARK_TARGETS=1
 python run.py --model google/gemma-3-4b-it --device n300 --workflow benchmarks
 ```
 
+### Sweep at Specific Concurrencies
+
+Run every ISL/OSL pair of the sweep at the listed concurrencies instead of the default `1` and the model spec's `max_concurrency`. A value above the spec's maximum raises the sweep's ceiling; on `super_cluster` the token budget scales with it, elsewhere a pair's device token budget still caps it:
+
+```bash
+export BENCHMARK_SWEEP_CONCURRENCIES=1,128
+python run.py --model Kimi-K2.7-Code --device super_cluster --workflow benchmarks --server-url http://... --skip-system-sw-validation
+```
+
 ### Override Benchmark Parameters
 
 Use custom benchmark configurations:
