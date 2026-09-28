@@ -118,6 +118,7 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
     ("osl_mismatch_diff_pct", "OSL Diff %"),
     ("measured_prefix_cache_hit_pct", "Cache Hit %"),
     ("theoretical_prefix_cache_hit_pct", "Theo. Cache Hit %"),
+    ("prefix_cache_hit_source", "Cache Hit Source"),
     ("credit_drop_count", "Credit Drops"),
     ("connection_reuse_rate", "Conn Reuse"),
     ("branch_children_spawned", "Branches"),
@@ -296,7 +297,9 @@ INFERENCEX_DEFINITIONS: List[str] = [
     "serving engine's own counters when `--agentic-traces-metrics-url` names a "
     "worker exporting them, else from the server's per-response usage "
     "accounting (`prompt_tokens_details.cached_tokens`), which is what a "
-    "prefix-unaware frontend can still report. **Theo. Cache Hit %** is the "
+    "prefix-unaware frontend can still report, else from a Dynamo frontend's "
+    "cached-token histogram. **Cache Hit Source** names which one was used. "
+    "**Theo. Cache Hit %** is the "
     "reuse inherent to the traces, i.e. the upper bound the engine was "
     "offered. A measured rate well below it means the cache was evicting reuse "
     "the workload had available; above it means reuse the traces do not "

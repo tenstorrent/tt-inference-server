@@ -824,6 +824,7 @@ class TestPrefixCacheMeasurement:
         )
         assert metrics["prefix_cache_hits_measured"] == 4544928.0
         assert metrics["prefix_cache_queries_measured"] == 4771106.0
+        assert metrics["prefix_cache_hit_source"] == "engine_hit_counters"
 
     def test_warmup_traffic_is_excluded(self, tmp_path):
         """``metrics`` is the profiling phase; ``warmup_metrics`` must not count."""
@@ -930,6 +931,78 @@ class TestPrefixCacheMeasurement:
         )
         metrics = parse_aiperf_output(_write_summary(tmp_path))
         assert "measured_prefix_cache_hit_pct" not in metrics
+
+
+def _by_source(**per_endpoint):
+    """``vllm:prompt_tokens_by_source``, one series per (endpoint, source)."""
+    return {
+        "vllm:prompt_tokens_by_source": {
+            "series": [
+                {
+                    "endpoint_url": endpoint,
+                    "labels": {"source": source},
+                    "stats": {"total": float(total)},
+                }
+                for endpoint, sources in per_endpoint.items()
+                for source, total in sources.items()
+            ]
+        }
+    }
+
+
+_USAGE = {
+    "total_usage_prompt_tokens": {"avg": 1000.0},
+    "total_usage_prompt_cache_read_tokens": {"avg": 940.0},
+}
+
+_DYNAMO_FRONTEND = {
+    "dynamo_frontend_cached_tokens": {"series": [{"stats": {"sum": 500.0}}]},
+    "dynamo_frontend_input_sequence_tokens": {"series": [{"stats": {"sum": 1000.0}}]},
+}
+
+
+class TestCacheHitSources:
+    def test_disaggregated_deployment_is_not_halved(self, tmp_path):
+        """The decoder re-reports the prompt as an external transfer."""
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                prefill={"local_cache_hit": 900, "local_compute": 100},
+                decode={"local_compute": 1, "external_kv_transfer": 1000},
+            ),
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(
+            89.91, abs=1e-2
+        )
+        assert metrics["prefix_cache_hit_source"] == "engine_token_sources"
+
+    def test_offload_tier_hits_on_the_prefiller_count(self, tmp_path):
+        _write_server_metrics(
+            tmp_path,
+            metrics=_by_source(
+                prefill={
+                    "local_cache_hit": 200,
+                    "external_kv_transfer": 700,
+                    "local_compute": 100,
+                },
+                decode={"external_kv_transfer": 1000},
+            ),
+        )
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(90.0)
+
+    def test_response_usage_when_the_engine_exports_no_counters(self, tmp_path):
+        _write_server_metrics(tmp_path, metrics=_DYNAMO_FRONTEND)
+        metrics = parse_aiperf_output(_write_summary(tmp_path, **_USAGE))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(94.0)
+        assert metrics["prefix_cache_hit_source"] == "response_usage"
+
+    def test_dynamo_frontend_when_nothing_else_reports(self, tmp_path):
+        _write_server_metrics(tmp_path, metrics=_DYNAMO_FRONTEND)
+        metrics = parse_aiperf_output(_write_summary(tmp_path))
+        assert metrics["measured_prefix_cache_hit_pct"] == pytest.approx(50.0)
+        assert metrics["prefix_cache_hit_source"] == "dynamo_frontend"
 
 
 class TestResultValidity:
