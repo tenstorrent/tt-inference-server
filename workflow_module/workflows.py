@@ -11,9 +11,9 @@ registry edit, not a structural change.
 
 from __future__ import annotations
 
-from dataclasses import replace
 import os
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import ClassVar, Dict, List, Optional, Sequence, Type
 
@@ -104,6 +104,24 @@ class EvalsWorkflow(WorkflowExecution):
     task_types = (MediaTaskType.EVALUATION,)
 
     def run_tasks(self) -> List[TaskOutcome]:
+        metadata = getattr(self.ctx.model_spec, "metadata", {}) or {}
+        workflow_overrides = metadata.get("ci_workflow_overrides", {})
+        if workflow_overrides.get(self.name) == AgenticWorkflow.name:
+            # Some thin CI callers expose only the historical workflow enum
+            # even though the inference-server engine supports standalone
+            # agentic evals. A model-branch metadata override lets that caller
+            # transport `evals` while preserving agentic execution here.
+            self.logger.warning(
+                "CI workflow override: routing %s to %s for model %s",
+                self.name,
+                AgenticWorkflow.name,
+                self.ctx.model_spec.model_name,
+            )
+            return AgenticWorkflow(
+                self.ctx,
+                accumulator=self.accumulator,
+                orchestrator_metadata=self.orchestrator_metadata,
+            ).run_tasks()
         if self.ctx.model_spec.model_type in _LLM_LIKE_TYPES:
             return [self._run_llm_eval_task()]
         return super().run_tasks()

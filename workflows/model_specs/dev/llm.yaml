@@ -2435,6 +2435,14 @@ templates:
         no-async-scheduling: true
   status: EXPERIMENTAL
   has_builtin_warmup: false
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      # The QB2 main-branch dispatcher currently omits `agentic` from its
+      # workflow enum. This branch-only transport shim lets a separate `evals`
+      # dispatch reach the engine's existing AgenticWorkflow without changing
+      # the reusable Docker image or the CI repository branch.
+      ci_workflow_overrides:
+        evals: agentic
 
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for

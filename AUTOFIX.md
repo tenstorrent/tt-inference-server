@@ -92,3 +92,24 @@ completion and that 4K performance recovers. Then dispatch the updated
 inference-server revision and confirm the full 23-row Qwen-style matrix. Run
 evals and agentic evals separately against the same immutable image and
 revisions.
+
+## QB2-main agentic dispatch compatibility
+
+The inference-server engine and Gemma eval config already support standalone
+`agentic` execution, but the QB2 `main` workflow and its downstream tt-shield
+dispatcher both constrain the `workflow` input to `release`, `benchmarks`,
+`evals`, or `spec_tests`. GitHub rejects `agentic` with HTTP 422 before a run is
+created. Using the older Qwen-specific QB2 branch was explicitly excluded.
+
+For one pinned compatibility revision, Gemma's model metadata declares
+`ci_workflow_overrides: {evals: agentic}`. `EvalsWorkflow` honors this generic
+metadata mapping by delegating to the existing `AgenticWorkflow` with the same
+context, accumulator, and orchestration metadata. The agentic driver explicitly
+resolves the `EVALS_AGENTIC` Harbor venv, so this remains a host-side dispatch
+change and reuses the immutable serving image. The normal standard-eval run is
+pinned to the preceding revision; the shim run is dispatched separately and
+its exact revision is recorded in the remote evidence log.
+
+Focused validation covers the metadata routing, model-catalog load, API-server
+contract, Docker readiness, benchmark configuration, formatting, compilation,
+and import/lint checks (`181 passed` across the executed subsets).

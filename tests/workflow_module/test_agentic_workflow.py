@@ -8,15 +8,15 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-
 from report_module.schema import Block
 from test_module import MediaTaskType
+from workflow_module.execution import OrchestratorMetadata
 from workflow_module.workflows import (
-    AgenticWorkflow,
     WORKFLOW_REGISTRY,
+    AgenticWorkflow,
+    EvalsWorkflow,
     get_workflow_class,
 )
-from workflow_module.execution import OrchestratorMetadata
 
 
 def _fake_block() -> Block:
@@ -140,3 +140,18 @@ class TestAgenticWorkflowRunTasks:
         assert blockers["task:evaluation"] == (
             "Task 'evaluation' failed (exit=1) after producing a report block."
         )
+
+
+def test_evals_metadata_override_routes_to_agentic_runner():
+    ctx = _make_ctx()
+    ctx.model_spec.metadata = {"ci_workflow_overrides": {"evals": "agentic"}}
+    workflow = EvalsWorkflow(ctx)
+    expected = [MagicMock(exit_code=0, block_kind="evals")]
+
+    with patch.object(
+        AgenticWorkflow, "run_tasks", return_value=expected
+    ) as run_agentic:
+        outcomes = workflow.run_tasks()
+
+    run_agentic.assert_called_once_with()
+    assert outcomes == expected
