@@ -65,7 +65,7 @@ class Job:
     _worker_assignment: Any = None
     _worker_replacement_required: Any = None
     _replace_worker: Optional[Callable[[str, int], bool]] = None
-    _worker_replacement_requested: bool = False
+    _worker_replacement_scheduled: bool = False
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
@@ -96,15 +96,15 @@ class Job:
             return float(self._progress_tracker.value)
         return self.local_progress_time
 
-    def assigned_worker_id(self) -> Optional[str]:
+    def assigned_worker_identity(self) -> Optional[tuple[str, int]]:
         if self._worker_assignment is None:
             return None
-        return self._worker_assignment.worker_id
 
-    def assigned_worker_pid(self) -> Optional[int]:
-        if self._worker_assignment is None:
+        worker_id = self._worker_assignment.worker_id
+        worker_pid = self._worker_assignment.worker_pid
+        if worker_id is None or worker_pid is None:
             return None
-        return self._worker_assignment.worker_pid
+        return worker_id, worker_pid
 
     def requires_worker_replacement_on_cancel(self) -> bool:
         if self._worker_replacement_required is None:
@@ -379,8 +379,7 @@ class JobManager:
             if job.cancel_event:
                 job.cancel_event.set()
             should_replace_worker = (
-                job.assigned_worker_id() is not None
-                and job.assigned_worker_pid() is not None
+                job.assigned_worker_identity() is not None
                 and job.requires_worker_replacement_on_cancel()
                 and job._replace_worker is not None
             )
@@ -723,16 +722,15 @@ class JobManager:
     def _schedule_worker_replacement(self, job: Job) -> None:
         """Replace the worker assigned to a force-cancelled job without blocking."""
         with self._jobs_lock:
-            worker_id = job.assigned_worker_id()
-            worker_pid = job.assigned_worker_pid()
+            worker_identity = job.assigned_worker_identity()
             if (
-                worker_id is None
-                or worker_pid is None
+                worker_identity is None
                 or job._replace_worker is None
-                or job._worker_replacement_requested
+                or job._worker_replacement_scheduled
             ):
                 return
-            job._worker_replacement_requested = True
+            worker_id, worker_pid = worker_identity
+            job._worker_replacement_scheduled = True
 
         async def replace_worker() -> None:
             try:

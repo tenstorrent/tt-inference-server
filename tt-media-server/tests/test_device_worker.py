@@ -141,7 +141,7 @@ def create_get_many_side_effect(return_values):
 
 
 @pytest.mark.asyncio
-async def test_continuous_fan_out_signals_top_up_request_start():
+async def test_continuous_fan_out_claims_top_up_request():
     initial_request = MockImageGenerateRequest("initial")
     top_up_request = MockImageGenerateRequest("top-up")
     task_queue = Mock()

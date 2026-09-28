@@ -75,10 +75,10 @@ async def _continuous_fan_out(
     inflight: dict[asyncio.Task, Any] = {}
     shutdown_seen = False
 
-    def schedule(req: Any, start_already_signaled: bool = False) -> None:
-        # The outer worker signals the initial batch before entering fan-out.
+    def schedule(req: Any, already_claimed: bool = False) -> None:
+        # The outer worker claims the initial batch before entering fan-out.
         # Requests pulled here as top-ups still need to be claimed.
-        if not start_already_signaled and not claim_job_for_worker(req, worker_id):
+        if not already_claimed and not claim_job_for_worker(req, worker_id):
             return
         task = asyncio.create_task(device_runner._run_async([req]))
         inflight[task] = req
@@ -89,7 +89,7 @@ async def _continuous_fan_out(
         if isinstance(req, CanaryProbeRequest):
             _run_canary_probe(device_runner, req, worker_id, result_queue, logger)
             continue
-        schedule(req, start_already_signaled=True)
+        schedule(req, already_claimed=True)
 
     while inflight:
         done, _pending = await asyncio.wait(

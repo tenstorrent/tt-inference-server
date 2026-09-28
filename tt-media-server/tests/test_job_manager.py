@@ -958,7 +958,7 @@ class TestJobManager:
         )
 
     @pytest.mark.asyncio
-    async def test_cancel_rechecks_assignment_after_signalling_worker(
+    async def test_cancel_observes_assignment_published_during_cancellation(
         self, job_manager, mock_request
     ):
         worker_assignment = SimpleNamespace(worker_id=None, worker_pid=None)
