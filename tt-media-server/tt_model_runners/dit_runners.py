@@ -1705,10 +1705,10 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         one place. Nothing here rounds: an unsupported ratio or duration is refused, because
         quietly serving a neighbouring shape returns a video the caller did not ask for.
         """
-        from models.tt_dit.pipelines.minimax_h3.packing import (
-            MINIMAX_H3_FPS,
-            align_num_frames,
-            resolve_canvas_size,
+        from tt_model_runners.minimax_h3_policy import minimax_h3_shape_helpers
+
+        MINIMAX_H3_FPS, align_num_frames, resolve_canvas_size = (
+            minimax_h3_shape_helpers()
         )
 
         ratio = (
