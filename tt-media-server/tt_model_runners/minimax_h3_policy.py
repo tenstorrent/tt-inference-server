@@ -43,6 +43,20 @@ _METAL_REEXPORTS = frozenset(
 )
 
 
+def minimax_h3_shape_helpers():
+    """``(MINIMAX_H3_FPS, align_num_frames, resolve_canvas_size)`` from tt-metal's minimax_h3.
+
+    ``align_num_frames`` lives in ``packing`` up to tt-metal main and moved to ``policy`` on the
+    robustness line (sadesoye/minimax_robustness); take it from wherever this tt-metal has it.
+    """
+    from models.tt_dit.pipelines.minimax_h3 import packing
+
+    align = getattr(packing, "align_num_frames", None)
+    if align is None:
+        from models.tt_dit.pipelines.minimax_h3.policy import align_num_frames as align
+    return packing.MINIMAX_H3_FPS, align, packing.resolve_canvas_size
+
+
 def __getattr__(name: str):
     if name in _METAL_REEXPORTS:
         from models.tt_dit.pipelines.minimax_h3 import policy as _metal_policy
