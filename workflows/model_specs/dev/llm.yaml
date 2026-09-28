@@ -782,7 +782,12 @@ templates:
         max-logprobs: '-1'
         async-scheduling: true
         no-enable-prefix-caching: true
-        no-enable-chunked-prefill: true
+        # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
+        # prefill and rejects budgets above 8192 batched tokens. Requests that
+        # omit top_k need a default inside the device sampler's 1..32 range.
+        enable-chunked-prefill: true
+        max_num_batched_tokens: '8192'
+        override_generation_config: '{"top_k": 20}'
         reasoning-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
