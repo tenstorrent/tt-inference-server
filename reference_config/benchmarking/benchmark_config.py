@@ -103,17 +103,6 @@ BENCHMARK_ISL_OSL_PAIRS = [
     (131072, 128),
 ]
 
-# Model-bringup profiles that intentionally exercise a smaller, fixed serving
-# contract than the repository-wide exploratory sweep. Keep the implementation
-# identity in the key: multiple implementations can serve the same weights on
-# the same device while requiring different benchmark coverage.
-IMPLEMENTATION_BENCHMARK_ISL_OSL_PAIRS = {
-    (
-        "google/gemma-4-26B-A4B-it",
-        "gemma4_autoport",
-        DeviceTypes.P300X2,
-    ): [(4096, 128)],
-}
 # Additional high-ISL sweep points appended only for remote SUPER_CLUSTER
 # endpoints, whose token budget is context*concurrency (see
 # DeviceModelSpec._infer_data) so concurrency does not collapse at high ISL.
@@ -589,17 +578,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     perf_reference = model_spec.device_model_spec.perf_reference
 
     # SUPER_CLUSTER remote endpoints extend the sweep toward ~250K ISL; other
-    # devices use the standard pairs unless the exact model implementation has
-    # a fixed bringup profile. Per-model ``isl + osl <= max_context`` filtering
-    # still applies below.
-    implementation_profile = IMPLEMENTATION_BENCHMARK_ISL_OSL_PAIRS.get(
-        (model_spec.hf_model_repo, model_spec.impl.impl_id, device)
-    )
-    text_isl_osl_pairs = list(
-        implementation_profile
-        if implementation_profile is not None
-        else BENCHMARK_ISL_OSL_PAIRS
-    )
+    # devices use the standard pairs. Per-model ``isl + osl <= max_context``
+    # filtering still applies below.
+    text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
     sweep_min_num_prompts = 0
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS

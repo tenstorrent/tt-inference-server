@@ -1,12 +1,11 @@
-# AutoFix: select the Gemma 4 autoport bringup benchmark profile
+# AutoFix: make Gemma 4 benchmark measurements valid and reproducible
 
 ## Contract
 
-The Gemma 4 autoport readiness run must report the repository-standard
-4K-input/128-output vLLM serving points at concurrency 1 and 32. It must not
-change the benchmark coverage of the canonical Gemma implementation or any
-other model, and it must remain compatible with the already-built serving
-image.
+The Gemma 4 autoport readiness run must cover the same repository-standard
+ISL/OSL matrix used by Qwen 3.8, including the 4K-input/128-output points at
+concurrency 1 and 32 used for the bring-up performance comparison. It must
+remain compatible with the already-built serving image.
 
 ## Diagnosis
 
@@ -16,27 +15,27 @@ sequential cases. The run was canceled while actively processing the
 8192-input/1024-output high-concurrency case; this was an operator error, not a
 device hang. `AUTODEBUG.md` contains the full causal trace and alternatives.
 
-The decisive local checks reproduced:
+The decisive local checks reproduced the original selection behavior:
 
 - ordinary mode: 23 autoport cases;
 - `ci-nightly` mode: the same 23 cases;
 - smoke mode: one unrelated 16-input/4-output case;
 - target-only mode without reference rows: zero cases;
-- the desired 4K profile: `(4096, 128, 1, 4)` and
+- the 4K diagnostic subset: `(4096, 128, 1, 4)` and
   `(4096, 128, 32, 128)`.
 
 ## Change
 
-`reference_config/benchmarking/benchmark_config.py` now contains an
-implementation-scoped profile map keyed by weights repository, implementation
-ID, and device. The only entry selects `(4096, 128)` for
-`google/gemma-4-26B-A4B-it`, `gemma4_autoport`, and `P300X2`. Existing sweep
-expansion supplies concurrency 1 and the allowed maximum of 32 with the normal
-prompt counts.
+A temporary implementation-scoped profile narrowed the first diagnostic rerun
+to the two 4K cases. After confirming the Qwen 3.8 contract, that narrowing was
+removed: Gemma now uses `BENCHMARK_ISL_OSL_PAIRS`, the same 12 ISL/OSL shapes
+as Qwen 3.8. Gemma's declared token capacity expands them to 23 cases, with
+concurrency capped at long contexts; Qwen's larger explicit all-user token
+budget expands the same shapes to 24 cases at C1/C16.
 
-This changes only host-side benchmark selection. It does not add a runtime
-model-spec field, alter serving limits, or change code inside the serving
-container, so the previously built image remains compatible and reusable.
+This remains a host-side benchmark-selection choice. It does not alter serving
+limits or code inside the serving container, so the previously built image is
+compatible and reusable.
 
 ## Validation
 
@@ -46,9 +45,8 @@ container, so the previously built image remains compatible and reusable.
 - `1 passed, 63 deselected`:
   the Gemma autoport serving-contract test in
   `tests/test_run_vllm_api_server.py`.
-- Direct construction produced exactly:
-  `[(4096, 128, 1, 4), (4096, 128, 32, 128)]`.
-- The sibling `tt_transformers` Gemma leaf retained 21 cases.
+- Direct construction produces 23 cases covering exactly the 12 standard
+  ISL/OSL pairs, including 4K/C1 and 4K/C32.
 - Both changed Python files compile and pass `ruff format --check`.
 - `git diff --check` passes.
 
@@ -88,7 +86,9 @@ Validation after this change:
 
 Dispatch the QB2 benchmark workflow from its existing `main` branch with the
 updated tt-inference-server commit, the existing tt-metal/vLLM commits, and the
-exact previously built image. Confirm that the report contains only the two 4K
-rows, begins only after the server log reports background trace completion, and
-recovers plausible latency/throughput results. Then run evals and agentic evals
-separately against the same immutable image and revisions.
+exact previously built image. First confirm with the pinned two-point diagnostic
+run that measurement begins only after the server log reports background trace
+completion and that 4K performance recovers. Then dispatch the updated
+inference-server revision and confirm the full 23-row Qwen-style matrix. Run
+evals and agentic evals separately against the same immutable image and
+revisions.

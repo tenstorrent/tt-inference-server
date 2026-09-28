@@ -11,9 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from llm_module.benchmark_configs import ensure_custom_dataset, get_llm_configs
 from llm_module.config import LLMRunConfig, ServerConnection
+from reference_config.benchmarking.benchmark_config import (
+    BENCHMARK_ISL_OSL_PAIRS,
+    get_benchmark_config,
+)
 from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import ModelType
@@ -168,8 +171,8 @@ def test_token_granular_specs_keep_random_dataset():
         assert config.custom_dataset_path is None
 
 
-def test_gemma4_autoport_uses_fixed_4k_serving_profile_only():
-    """The autoport bringup measures 4K input at concurrency 1 and 32 only."""
+def test_gemma4_autoport_uses_standard_qwen38_style_serving_shapes():
+    """The autoport covers the same standard ISL/OSL shapes as Qwen 3.8."""
     templates = load_templates_from_yaml(
         get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
     )
@@ -179,26 +182,18 @@ def test_gemma4_autoport_uses_fixed_4k_serving_profile_only():
         if template.weights == ["google/gemma-4-26B-A4B-it"]
         and template.impl.impl_id == "gemma4_autoport"
     ).expand_to_specs()[0]
-    canonical = next(
-        template
-        for template in templates
-        if template.weights == ["google/gemma-4-26B-A4B-it"]
-        and template.impl.impl_id == "tt_transformers"
-    ).expand_to_specs()[0]
-
-    assert [
+    configs = get_llm_configs(autoport, autoport.device_type)
+    assert len(configs) == 23
+    assert {(config.isl, config.osl) for config in configs} == set(
+        BENCHMARK_ISL_OSL_PAIRS
+    )
+    assert (4096, 128, 1, 4) in {
         (config.isl, config.osl, config.max_concurrency, config.num_prompts)
-        for config in get_llm_configs(autoport, autoport.device_type)
-    ] == [
-        (4096, 128, 1, 4),
-        (4096, 128, 32, 128),
-    ]
-
-    canonical_configs = get_llm_configs(canonical, canonical.device_type)
-    assert len(canonical_configs) > 2
-    assert (128, 128, 1, 8) in {
+        for config in configs
+    }
+    assert (4096, 128, 32, 128) in {
         (config.isl, config.osl, config.max_concurrency, config.num_prompts)
-        for config in canonical_configs
+        for config in configs
     }
 
 
