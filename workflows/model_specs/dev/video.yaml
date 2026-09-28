@@ -285,10 +285,11 @@ templates:
     USE_ASYNC_VIDEO: "true"
     # One request in flight + one waiting; a queued request must not wait for hours.
     MAX_QUEUE_SIZE: "2"
-    # ttnn cache keys do not include the tt-metal sha, and tt-metal 816841ddc93 (the first with
-    # the minimax_h3 policy module these runners import) rewrote the VAE: a fresh directory keeps
-    # entries cached by the older t2va image on the shared volume from being reused.
-    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_816841
+    # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
+    # line (sadesoye/minimax_robustness) changes cached tensors (padded context embedder /
+    # refiner): one fresh directory per metal line and task keeps the three variants, which run
+    # at once on the shared volume, from reusing or co-writing each other's entries.
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_robust_ref2va
     # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/MiniMax-H3
     # and nothing sets MODEL_WEIGHTS_DIR, so the runner passes the pipeline no directory and the
     # pipeline reads this path (tt-metal pipeline_minimax_h3.py). Under --host-weights-dir /
