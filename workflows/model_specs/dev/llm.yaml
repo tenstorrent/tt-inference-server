@@ -2400,6 +2400,42 @@ templates:
       tool_call_parser_name: hermes
 
 # =============================================================================
+# Gemma4 autoport: independently selected implementation, without replacing the
+# canonical Gemma4 defaults. Matches the full-context QB2 TTFT serving contract.
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: gemma4_autoport
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: "P300x2"
+        OMP_NUM_THREADS: "8"
+        GEMMA4_AUTOPORT_ALLOW_HOST_SAMPLING: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1000000000
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        enable_model_warmup: false
+      vllm_args:
+        revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        hf-overrides: '{"architectures":["TTAutoportGemma4ForCausalLM"]}'
+        block_size: 32
+        max_num_seqs: 32
+        max_model_len: 262144
+        max_num_batched_tokens: 262144
+        no-enable-chunked-prefill: true
+        no-enable-prefix-caching: true
+        # Selected latency-priority profile; async remains a throughput option.
+        no-async-scheduling: true
+  status: EXPERIMENTAL
+  has_builtin_warmup: false
+
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for
 # GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified. These are dev-only

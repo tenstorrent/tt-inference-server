@@ -18,6 +18,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin
 ARG TT_QUETZAL_COMMIT_SHA=""
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=1000
@@ -104,15 +105,20 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
     && rm -rf ${TT_METAL_HOME}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
-# Build vllm-tt-plugin - clone with minimal history and clean.
-# The plugin owns the vLLM version pin and its dependency overrides, so the
-# install is delegated to its own docs/install-vllm-tt.sh rather than restated here
-RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
+# Standalone remains the default. Monorepo supplies only the bundled plugin;
+# the measured engine is the upstream 0.26.0 empty-target distribution.
+COPY scripts/install_vllm_bundled_plugin.sh scripts/vllm_bundled_plugin_manifest.json /tmp/vllm-bundled-install/
+RUN /bin/bash -c "case '${TT_VLLM_REPOSITORY}' in tenstorrent/vllm-tt-plugin|tenstorrent/vllm) ;; *) exit 1 ;; esac \
+    && if [ '${TT_VLLM_REPOSITORY}' = 'tenstorrent/vllm' ]; then [[ '${TT_VLLM_COMMIT_SHA_OR_TAG}' =~ ^[0-9a-f]{40}$ ]]; fi \
+    && git clone https://github.com/${TT_VLLM_REPOSITORY}.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    && test \"\$(git rev-parse HEAD)\" = \"\$(git rev-parse '${TT_VLLM_COMMIT_SHA_OR_TAG}^{commit}')\" \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
-    && source docs/install-vllm-tt.sh \
+    && if [ '${TT_VLLM_REPOSITORY}' = 'tenstorrent/vllm' ]; then \
+         bash /tmp/vllm-bundled-install/install_vllm_bundled_plugin.sh '${vllm_tt_plugin_dir}'; \
+       else source docs/install-vllm-tt.sh; fi \
     && rm -rf ${vllm_tt_plugin_dir}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
@@ -163,10 +169,19 @@ RUN /bin/bash -c "git clone https://github.com/tenstorrent/tt-smi.git ${TT_SMI_D
 FROM ${TT_METAL_DOCKERFILE_URL} AS runtime
 
 ARG TT_QUETZAL_COMMIT_SHA=""
+ARG TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin
+ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_VLLM_ENGINE_VERSION=installer-defined
 
 LABEL maintainer="Tom Stesco <tstesco@tenstorrent.com>" \
     org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server \
     org.opencontainers.image.quetzal.revision=${TT_QUETZAL_COMMIT_SHA}
+
+LABEL com.tenstorrent.vllm.repository=${TT_VLLM_REPOSITORY} \
+    com.tenstorrent.vllm.revision=${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    com.tenstorrent.vllm.plugin.repository=${TT_VLLM_REPOSITORY} \
+    com.tenstorrent.vllm.plugin.revision=${TT_VLLM_COMMIT_SHA_OR_TAG} \
+    com.tenstorrent.vllm.engine.version=${TT_VLLM_ENGINE_VERSION}
 
 # IDENTICAL arguments and environment as builder stage
 ARG TT_METAL_COMMIT_SHA_OR_TAG
@@ -227,12 +242,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${TT_METAL_HOME} ${TT_METAL_HOME}
 
-# Copy the vllm-tt-plugin source tree. This is the editable-install target, so it
+# Copy the entire selected source tree. This is the editable-install target, so it
 # must land at the same absolute path as in the builder or the .pth link breaks.
-# vLLM itself needs no COPY of its own: it is a regular (non-editable) install
-# inside ${PYTHON_ENV_DIR}/site-packages, already copied with TT_METAL_HOME above.
+# vLLM itself is a regular install in PYTHON_ENV_DIR for both paths. Retaining
+# the source root preserves the standalone or nested editable plugin's exact
+# absolute path. The monorepo engine source is NOT installed or on PYTHONPATH.
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     ${vllm_tt_plugin_dir} ${vllm_tt_plugin_dir}
+
+# Recipe/provenance for the optional bundled-plugin compatibility path.
+COPY scripts/vllm_bundled_plugin_manifest.json /usr/local/share/tt-vllm-compat/manifest.json
 
 # Copy complete tt-smi installation  
 COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \

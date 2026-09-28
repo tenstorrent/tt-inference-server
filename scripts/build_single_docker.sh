@@ -74,6 +74,7 @@ UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
+TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin
 TT_QUETZAL_COMMIT_SHA=""
 TT_QUETZAL_SOURCE_DIR=""
 TAG_SUFFIX=""
@@ -113,6 +114,14 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             TT_VLLM_COMMIT_SHA_OR_TAG="$2"
+            shift
+            ;;
+        --vllm-repository)
+            if [ $# -lt 2 ]; then
+                echo "Error: --vllm-repository requires a value." >&2
+                exit 1
+            fi
+            TT_VLLM_REPOSITORY="$2"
             shift
             ;;
         --quetzal-commit)
@@ -175,6 +184,19 @@ repo_root=$(git rev-parse --show-toplevel)
 
 
 # validation
+case "$TT_VLLM_REPOSITORY" in
+    tenstorrent/vllm-tt-plugin|tenstorrent/vllm) ;;
+    *) echo "Unsupported vLLM repository: $TT_VLLM_REPOSITORY" >&2; exit 1 ;;
+esac
+if $build && [[ ! "$TT_VLLM_COMMIT_SHA_OR_TAG" =~ ^[0-9a-f]{40}$ ]]; then
+    TT_VLLM_COMMIT_SHA_OR_TAG=$(curl -fsSL \
+        "https://api.github.com/repos/${TT_VLLM_REPOSITORY}/commits/${TT_VLLM_COMMIT_SHA_OR_TAG}" \
+        | python3 -c 'import json, sys; print(json.load(sys.stdin)["sha"])') || exit 1
+    if [[ ! "$TT_VLLM_COMMIT_SHA_OR_TAG" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "Could not resolve vLLM ref to a full commit" >&2
+        exit 1
+    fi
+fi
 # Check if PWD ends with the expected suffix
 expected_suffix="tt-inference-server"
 if [[ "$repo_root" != *"$expected_suffix" ]]; then
@@ -230,6 +252,11 @@ UBUNTU_VERSION="${UBUNTU_VERSION}"
 OS_VERSION="ubuntu-${UBUNTU_VERSION}-amd64"
 TT_METAL_COMMIT_DOCKER_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 TT_VLLM_COMMIT_DOCKER_TAG=${TT_VLLM_COMMIT_SHA_OR_TAG}
+TT_VLLM_ENGINE_VERSION=installer-defined
+if [[ "$TT_VLLM_REPOSITORY" == "tenstorrent/vllm" ]]; then
+    TT_VLLM_COMMIT_DOCKER_TAG="monorepo-${TT_VLLM_COMMIT_DOCKER_TAG}"
+    TT_VLLM_ENGINE_VERSION=0.26.0+empty
+fi
 QUETZAL_IMAGE_SUFFIX=""
 if [[ -n "$TT_QUETZAL_COMMIT_SHA" ]]; then
     QUETZAL_IMAGE_SUFFIX="-qz-${TT_QUETZAL_COMMIT_SHA:0:12}"
@@ -346,6 +373,8 @@ generate_model_specs_json()
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
+        --build-arg TT_VLLM_REPOSITORY="${TT_VLLM_REPOSITORY}" \
+        --build-arg TT_VLLM_ENGINE_VERSION="${TT_VLLM_ENGINE_VERSION}" \
         "${QUETZAL_BUILD_ARGS[@]}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile

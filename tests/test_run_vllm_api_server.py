@@ -606,6 +606,59 @@ def test_set_vllm_sys_argv_logs_multiline_bash_command(
     )
 
 
+def test_gemma4_autoport_launch_preserves_ttft_contract(
+    monkeypatch, run_vllm_api_server_module
+):
+    template = next(
+        item
+        for item in load_templates_from_yaml(DEV_LLM_SPECS_PATH)
+        if item.impl.impl_id == "gemma4_autoport"
+    )
+    spec = template.expand_to_specs()[0]
+    device = spec.device_model_spec
+    assert spec.model_name == "gemma-4-26B-A4B-it"
+    assert spec.impl.impl_name == "gemma4-autoport"
+    assert not device.default_impl
+    assert device.max_context == 262144
+    assert device.max_concurrency == 32
+    monkeypatch.setattr(sys, "argv", ["run_vllm_api_server.py"])
+    run_vllm_api_server_module.set_vllm_sys_argv(
+        argparse.Namespace(service_port=8000), [], device.vllm_args
+    )
+    argv = [
+        token.replace("_", "-") if token.startswith("--") else token
+        for token in sys.argv[1:]
+    ]
+
+    def value(flag):
+        return argv[argv.index(flag) + 1]
+
+    assert value("--max-model-len") == "262144"
+    assert value("--max-num-seqs") == "32"
+    assert value("--block-size") == "32"
+    assert (
+        value("--revision")
+        == value("--tokenizer-revision")
+        == "4d7ae4984b7db7de8f8457170b3f1a419ee76d52"
+    )
+    assert json.loads(value("--hf-overrides")) == {
+        "architectures": ["TTAutoportGemma4ForCausalLM"]
+    }
+    assert "--no-enable-prefix-caching" in argv
+    assert "--no-enable-chunked-prefill" in argv
+    assert "--enable-prefix-caching" not in argv
+    assert "--enable-chunked-prefill" not in argv
+    assert "--no-async-scheduling" in argv
+    assert "--async-scheduling" not in argv
+    assert json.loads(value("--additional-config"))["tt"] == {
+        "fabric_config": "FABRIC_1D",
+        "trace_region_size": 1000000000,
+        "sample_on_device_mode": "all",
+        "trace_mode": "decode_only",
+        "enable_model_warmup": False,
+    }
+
+
 def test_diffusiongemma_launch_uses_standalone_plugin_vllm_024_contract(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -657,7 +710,8 @@ def test_diffusiongemma_launch_uses_standalone_plugin_vllm_024_contract(
 def test_vllm_dockerfile_checks_out_supplied_standalone_plugin_ref():
     dockerfile = VLLM_DOCKERFILE_PATH.read_text()
 
-    assert "git clone https://github.com/tenstorrent/vllm-tt-plugin.git" in dockerfile
+    assert "ARG TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin" in dockerfile
+    assert "git clone https://github.com/${TT_VLLM_REPOSITORY}.git" in dockerfile
     assert "git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG}" in dockerfile
     # The plugin block is a plain checkout; the ref-resolution fallback is gone.
     # (tt-metal's own block still legitimately uses git fetch.)

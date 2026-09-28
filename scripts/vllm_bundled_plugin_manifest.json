@@ -1,0 +1,18 @@
+{
+  "scope": "Installed upstream empty-target engine plus plugin source from selected monorepo commit; never install monorepo engine",
+  "installer_repository": "tenstorrent/vllm-tt-plugin",
+  "installer_revision": "c9cfebcf0490066ff85e1e3fba2c7d456ce5ce42",
+  "installer_sha256": "9190fdd216ea96e95503b0caba88f40925c0c13819525fff67ef763c327731de",
+  "overrides_sha256": "5eff7fa73e2c5ec1b3eb0a776f279ab0bf4486aaee567a7fbdb00874f5f4c60c",
+  "engine_requirement": "vllm==0.26.0",
+  "engine_version": "0.26.0+empty",
+  "runtime_versions": {
+    "vllm": "0.26.0+empty",
+    "transformers": "5.12.1",
+    "tokenizers": "0.22.2",
+    "torch": "2.11.0+cpu",
+    "numpy": "1.26.4",
+    "torchvision": "0.26.0+cpu",
+    "tblib": "3.2.2"
+  }
+}
