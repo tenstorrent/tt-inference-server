@@ -159,6 +159,10 @@ turn off benchmark sweeps with `ONLY_BENCHMARK_TARGETS`:
 ```
 export ONLY_BENCHMARK_TARGETS=1
 ```
+run the ISL/OSL sweep at specific concurrencies with `BENCHMARK_SWEEP_CONCURRENCIES` (comma-separated). Every pair that fits the model's context runs at each listed value instead of the default `1` and the spec's `max_concurrency`. A value above the spec's maximum raises the sweep's ceiling; on `super_cluster` the token budget scales with it, elsewhere a pair's device token budget still caps it:
+```
+export BENCHMARK_SWEEP_CONCURRENCIES=1,128
+```
 override the benchmark targets with `OVERRIDE_BENCHMARK_TARGETS`, and the benchmark params that are used via a JSON file like benchmarking/benchmark_targets/test_benchmarks_override.json:
 ```
 export OVERRIDE_BENCHMARK_TARGETS=/home/my_user/tt-inference-server/benchmarking/benchmark_targets/test_benchmarks_override.json

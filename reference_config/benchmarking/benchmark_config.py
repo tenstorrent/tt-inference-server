@@ -4,7 +4,7 @@
 
 import os
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
@@ -123,6 +123,30 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
+# Comma-separated concurrencies for the text ISL/OSL sweep, e.g. "1,128". Every
+# pair that fits the context then runs at each listed value instead of the
+# default [1, spec max_concurrency]. A value above the spec's max_concurrency
+# raises the sweep's ceiling, and on SUPER_CLUSTER the token budget with it
+# (context * concurrency, as DeviceModelSpec._infer_data derives it). On other
+# devices the device's own token budget still caps a pair, and a listed value
+# above that cap runs at the cap rather than being dropped.
+BENCHMARK_SWEEP_CONCURRENCIES_ENV = "BENCHMARK_SWEEP_CONCURRENCIES"
+
+
+def sweep_concurrencies_from_env() -> Optional[List[int]]:
+    raw = os.getenv(BENCHMARK_SWEEP_CONCURRENCIES_ENV, "").strip()
+    if not raw:
+        return None
+    values = set()
+    for item in raw.split(","):
+        item = item.strip()
+        if not item.isdigit() or int(item) < 1:
+            raise ValueError(
+                f"{BENCHMARK_SWEEP_CONCURRENCIES_ENV}={raw!r}: expected comma-separated "
+                "positive integers, e.g. 1,128"
+            )
+        values.add(int(item))
+    return sorted(values)
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -161,6 +185,7 @@ def _expand_text_sweep_params(
     max_tokens_all_users: int,
     model_max_concurrency: int,
     min_num_prompts: int = 0,
+    concurrencies: Optional[List[int]] = None,
 ) -> List[BenchmarkTaskParams]:
     if isl + osl > max_context:
         return []
@@ -168,9 +193,12 @@ def _expand_text_sweep_params(
     allowed_max_concurrency = get_benchmark_max_concurrency(
         isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
-    concurrencies = [1]
-    if allowed_max_concurrency > 1:
-        concurrencies.append(allowed_max_concurrency)
+    if concurrencies:
+        concurrencies = sorted({min(c, allowed_max_concurrency) for c in concurrencies})
+    else:
+        concurrencies = [1]
+        if allowed_max_concurrency > 1:
+            concurrencies.append(allowed_max_concurrency)
 
     return [
         BenchmarkTaskParams(
@@ -581,11 +609,18 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # devices use the standard pairs. Per-model ``isl + osl <= max_context``
     # filtering still applies below.
     text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
+    sweep_concurrencies = sweep_concurrencies_from_env()
+    sweep_max_concurrency = model_max_concurrency
+    sweep_max_tokens_all_users = max_tokens_all_users
+    if sweep_concurrencies and max(sweep_concurrencies) > model_max_concurrency:
+        sweep_max_concurrency = max(sweep_concurrencies)
+        if device == DeviceTypes.SUPER_CLUSTER:
+            sweep_max_tokens_all_users = max_context * sweep_max_concurrency
     sweep_min_num_prompts = 0
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
         sweep_min_num_prompts = (
-            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
+            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * sweep_max_concurrency
         )
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
@@ -660,9 +695,10 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             isl=isl,
                             osl=osl,
                             max_context=max_context,
-                            max_tokens_all_users=max_tokens_all_users,
-                            model_max_concurrency=model_max_concurrency,
+                            max_tokens_all_users=sweep_max_tokens_all_users,
+                            model_max_concurrency=sweep_max_concurrency,
                             min_num_prompts=sweep_min_num_prompts,
+                            concurrencies=sweep_concurrencies,
                         )
                     ]
                     + (
