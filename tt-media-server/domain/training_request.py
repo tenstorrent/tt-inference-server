@@ -55,7 +55,7 @@ class TrainingRequest(BaseRequest):
     device_type: str = DeviceTypes.P150.value
     optimizer: str = TrainingOptimizers.ADAMW.value
 
-    seed: int = Field(default=0, ge=0)
+    seed: int = Field(default=0, ge=0, lt=2**32)
 
     save_interval: int = Field(default=100, ge=0)
     max_steps: int = Field(default=500, ge=0)
