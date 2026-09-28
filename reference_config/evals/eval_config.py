@@ -5428,7 +5428,9 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
+                    # QB2 agentic runners expose 16 host CPUs; a larger Docker
+                    # resource request fails before the agent can start.
+                    override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={

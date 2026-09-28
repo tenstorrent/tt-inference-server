@@ -125,3 +125,18 @@ override before launching `run_workflows.py`, provisioning only
 `EVALS_AGENTIC` for an `evals -> agentic` transport. A routing regression test
 asserts this effective-workflow behavior; the workflow-dispatch suite passes
 (`120 passed`).
+
+The provisioning retry reached Harbor and launched both five-task CI subsets,
+but its nominal CI success was not a valid model result. All Terminal-Bench
+containers failed before agent startup because the Gemma task requested 32
+CPUs on a 16-CPU QB2 runner. All SWE-Bench containers used
+`127.0.0.1:8000` from inside their own Docker namespace, so none of their
+requests reached the host vLLM server. The server log confirms zero requests
+during the agent phase.
+
+The follow-up ports the already-proven Qwen 3.8 branch behavior: mini-swe-agent
+Docker environments receive a `host.docker.internal:host-gateway` compose
+overlay and translated OpenAI endpoint, while Harbor itself retains the host
+loopback endpoint. Gemma 4 26B's Terminal-Bench CPU override is capped to the
+runner's 16 CPUs. The Qwen-derived gateway regressions and related agentic
+suites pass (`87 passed`).
