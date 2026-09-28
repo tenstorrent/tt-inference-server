@@ -27,7 +27,6 @@ _METAL_REEXPORTS = frozenset(
         "MINIMAX_H3_DEFAULT_ASPECT_RATIO",
         "MINIMAX_H3_DEFAULT_DURATION_S",
         "MINIMAX_H3_DURATIONS_S",
-        "MINIMAX_H3_NUM_INFERENCE_STEPS",
         "minimax_h3_parse_aspect_ratio",
         "minimax_h3_frames_are_aligned",
     }
@@ -61,6 +60,10 @@ __all__ = [
     "probe_media_duration_seconds",
     "check_reference_clip_durations",
 ]
+
+# t2va / fl2va / ref2va AdaLN table is warmed at this count; not a request lever.
+# Copied here so admission-time echo does not import metal/ttnn.
+MINIMAX_H3_NUM_INFERENCE_STEPS = 50
 
 # Ref2VA omni-reference limits. Counts match packing_ref2va (per-type and total);
 # duration windows are the product card (the pipeline does not enforce them).

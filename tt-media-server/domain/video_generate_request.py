@@ -68,7 +68,8 @@ class VideoGenerateRequest(BaseRequest):
             raise ValueError(
                 f"unknown field(s) for MiniMax-H3: {', '.join(unknown)}. "
                 f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
-                "is `duration_seconds` -- and resolution is selected with `aspect_ratio`."
+                "is `duration_seconds` -- and resolution is selected with `aspect_ratio` or "
+                "`height`/`width`."
             )
         return data
 
@@ -103,6 +104,8 @@ class VideoGenerateRequest(BaseRequest):
         return value
 
     # Shape. None = use the served config; see _validate_shape.
+    # MiniMax-H3: an explicit height/width canvas overrides `aspect_ratio`. Left unset, the
+    # pipeline resolves it from `aspect_ratio`, or from the first keyframe for fl2va.
     height: Optional[int] = Field(default=None, gt=0)
     width: Optional[int] = Field(default=None, gt=0)
     fps: Optional[float] = Field(default=None, gt=0)
@@ -188,6 +191,17 @@ class VideoGenerateRequest(BaseRequest):
         self.duration = served_duration
         return self
 
+    @model_validator(mode="after")
+    def _fill_h3_served_inference_steps(self):
+        # Job metadata dumps Field defaults. Without this, H3 202s would echo
+        # Wan's 20 even though the mesh runs the warmed AdaLN count.
+        if not _is_minimax_h3_fifty_step():
+            return self
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+
+        self.num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
+        return self
+
 
 # TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
@@ -220,6 +234,36 @@ def _is_minimax_h3() -> bool:
             ModelNames.MINIMAX_H3_FL2VA,
             ModelNames.MINIMAX_H3_REF2VA,
             ModelNames.MINIMAX_H3_FASTH3,
+        }
+    except ValueError:
+        return False
+
+
+def _is_minimax_h3_fifty_step() -> bool:
+    """t2va / fl2va / ref2va (AdaLN at 50). FastH3 is 4 and is not this echo."""
+    from config.constants import ModelNames, ModelRunners
+
+    try:
+        runner = get_settings().model_runner
+    except Exception:  # noqa: BLE001 - settings unavailable (tests, tooling)
+        return False
+
+    if runner in {
+        ModelRunners.TT_MINIMAX_H3_T2VA.value,
+        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
+        ModelRunners.TT_MINIMAX_H3_REF2VA.value,
+    }:
+        return True
+    if runner != ModelRunners.SP_RUNNER.value:
+        return False
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        return ModelNames(model_env) in {
+            ModelNames.MINIMAX_H3,
+            ModelNames.MINIMAX_H3_FL2VA,
+            ModelNames.MINIMAX_H3_REF2VA,
         }
     except ValueError:
         return False

@@ -323,12 +323,15 @@ def video_request_to_generate_request(
     ``image_prompts`` or ``references``.
 
     Uses the intersection of field names so we never pass SHM-only fields (e.g.
-    height, width, image_path) unless they exist on the target request schema.
+    image_path, num_frames) unless they exist on the target request schema.
     """
     shm_names = {f.name for f in dc_fields(VideoRequest)}
     gen_names = set(VideoGenerateRequest.model_fields.keys())
     common = shm_names & gen_names
     base_kwargs = {name: getattr(req, name) for name in common}
+    # The SHM slots are unsigned ints, so 0 stands for an unset canvas.
+    base_kwargs["height"] = req.height or None
+    base_kwargs["width"] = req.width or None
     # SHM always carries these (e.g. num_frames, num_inference_steps); H3 does
     # not read them and refuses them as unknown fields.
     if _is_minimax_h3():

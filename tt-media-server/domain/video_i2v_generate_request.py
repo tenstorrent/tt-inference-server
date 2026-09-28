@@ -16,6 +16,7 @@ validators below) is the single source of truth in
 ``config.constants.WAN22_NUM_FRAMES``.
 """
 
+import math
 import os
 from typing import List
 
@@ -26,9 +27,9 @@ from pydantic import BaseModel, Field, field_validator
 from utils.image_manager import ImageManager
 from utils.media_downloader import is_media_url
 
-# The cap exists to bound HTTP body size, not to match
-# any pipeline constraint.
-MAX_BASE64_IMAGE_LEN = 10_000_000
+# MiniMax video_generation_input per-file cap, as a base64 length.
+MAX_IMAGE_BYTES = 30_000_000
+MAX_BASE64_IMAGE_LEN = 4 * math.ceil(MAX_IMAGE_BYTES / 3)
 
 
 class ImagePromptEntry(BaseModel):

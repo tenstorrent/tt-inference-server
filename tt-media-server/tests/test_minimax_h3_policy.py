@@ -71,7 +71,11 @@ class TestFramesAreAligned:
             "models.tt_dit.pipelines.minimax_h3.packing",
             exc_type=ImportError,
         )
-        frames = packing.align_num_frames(
+        policy = pytest.importorskip(
+            "models.tt_dit.pipelines.minimax_h3.policy",
+            exc_type=ImportError,
+        )
+        frames = policy.align_num_frames(
             round(MINIMAX_H3_DEFAULT_DURATION_S * packing.MINIMAX_H3_FPS)
         )
         assert frames == 124

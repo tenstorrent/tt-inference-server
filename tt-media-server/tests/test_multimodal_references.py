@@ -3,7 +3,10 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import pytest
+from domain.video_i2v_generate_request import MAX_BASE64_IMAGE_LEN
 from domain.video_ref2va_generate_request import (
+    MAX_BASE64_AUDIO_LEN,
+    MAX_BASE64_MEDIA_LEN,
     MediaSource,
     MultimodalReferences,
     VideoRef2VAGenerateRequest,
@@ -113,6 +116,31 @@ class TestMultimodalReferences:
             len(refs.images) + len(refs.videos) + len(refs.audios)
             == MINIMAX_H3_MAX_REFERENCES
         )
+
+    def test_caps_match_minimax_limits(self):
+        assert MAX_BASE64_IMAGE_LEN == 40_000_000
+        assert MAX_BASE64_MEDIA_LEN == 66_666_668
+        assert MAX_BASE64_AUDIO_LEN == 20_000_000
+
+    def test_oversized_inline_image_rejected(self):
+        with pytest.raises(ValidationError, match=r"images\[0\] base64 length"):
+            MultimodalReferences(
+                images=[MediaSource(b64="A" * (MAX_BASE64_IMAGE_LEN + 1))]
+            )
+
+    def test_oversized_inline_audio_rejected(self):
+        with pytest.raises(ValidationError, match=r"audios\[0\] base64 length"):
+            MultimodalReferences(
+                images=[MediaSource(b64=_TINY_PNG_BASE64)],
+                audios=[MediaSource(b64="A" * (MAX_BASE64_AUDIO_LEN + 1))],
+            )
+
+    def test_inline_audio_at_cap_accepted(self):
+        refs = MultimodalReferences(
+            images=[MediaSource(b64=_TINY_PNG_BASE64)],
+            audios=[MediaSource(b64="A" * MAX_BASE64_AUDIO_LEN)],
+        )
+        assert len(refs.audios) == 1
 
     def test_total_over_cap_rejected(self):
         with pytest.raises(ValidationError, match="in total"):

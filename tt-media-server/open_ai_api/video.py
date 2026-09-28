@@ -22,10 +22,12 @@ from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
 from domain.video_i2v_generate_request import (
     MAX_BASE64_IMAGE_LEN,
+    MAX_IMAGE_BYTES,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
 from domain.video_ref2va_generate_request import (
+    MAX_BASE64_AUDIO_LEN,
     MAX_BASE64_MEDIA_LEN,
     VideoRef2VAGenerateRequest,
 )
@@ -70,7 +72,7 @@ _OPENAPI_IMAGE_PLACEHOLDER = (
 )
 
 # Multipart safety knobs — same shape as Stability/Runway/OpenAI image edits.
-_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+_MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES
 _UPLOAD_READ_CHUNK = 64 * 1024
 _ALLOWED_IMAGE_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
 
@@ -441,18 +443,46 @@ async def _download_to_b64(url: str, deadline: float, *, max_b64_len: int) -> st
     return encoded
 
 
+# MiniMax request body cap. URL assets do not count: they are not in the body.
+MAX_INLINE_MEDIA_LEN = 64_000_000
+
+
+def _enforce_inline_media_total(request: VideoGenerateRequest) -> None:
+    lengths = [
+        len(entry.image)
+        for entry in getattr(request, "image_prompts", None) or []
+        if not is_media_url(entry.image)
+    ]
+    references = getattr(request, "references", None)
+    if references is not None:
+        lengths += [
+            len(source.b64)
+            for group in (references.images, references.videos, references.audios)
+            for source in group
+            if source.b64 is not None
+        ]
+    total = sum(lengths)
+    if total > MAX_INLINE_MEDIA_LEN:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Inline media totals {total} base64 chars, over the "
+                f"{MAX_INLINE_MEDIA_LEN}-char cap; send large assets by URL"
+            ),
+        )
+
+
 async def _resolve_media_source_urls(request: VideoGenerateRequest) -> None:
     """Download ``references`` URL sources to b64 before the job is enqueued."""
     references = getattr(request, "references", None)
     if references is None:
         return
     deadline = _time.monotonic() + settings.media_url_timeout_seconds
-    for group_name, group in (
-        ("images", references.images),
-        ("videos", references.videos),
-        ("audios", references.audios),
+    for group_name, group, cap in (
+        ("images", references.images, MAX_BASE64_IMAGE_LEN),
+        ("videos", references.videos, MAX_BASE64_MEDIA_LEN),
+        ("audios", references.audios, MAX_BASE64_AUDIO_LEN),
     ):
-        cap = MAX_BASE64_IMAGE_LEN if group_name == "images" else MAX_BASE64_MEDIA_LEN
         for source in group:
             if source.url is None:
                 continue
@@ -513,6 +543,7 @@ async def _submit_video_request(
             headers={"Retry-After": "30"},
         )
 
+    _enforce_inline_media_total(request)
     await _resolve_image_prompt_urls(request)
     await _resolve_media_source_urls(request)
     _enforce_ref2va_clip_durations(request)
