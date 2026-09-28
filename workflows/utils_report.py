@@ -156,10 +156,9 @@ class BenchmarkTaskParams:
     # downgrade individual metric failures instead of the whole block.
     target_priorities: dict = None
 
-    # ``vllm bench serve --goodput`` SLO constraint string for this sweep
-    # point ("ttft:2000 tpot:20 e2el:20000", milliseconds), derived from the
-    # requirements scenario's SLOs. None means goodput is not measured.
-    goodput: str = None
+    # Tool-neutral SLO bars (llm_module.goodput.GoodputSlo, milliseconds) from
+    # the scenario's SLOs; the driver renders it. None = not measured.
+    goodput: object = None
 
     def __post_init__(self):
         self._infer_data()

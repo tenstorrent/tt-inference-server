@@ -37,6 +37,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.quetzal_package import resolve_quetzal_package_mount  # noqa: E402
 from workflows.requirements_cli import (
     add_requirements_argument,
     apply_requirements,
@@ -1234,6 +1235,10 @@ def main():
             logger.info("Running inference server in Docker container ...")
         else:
             logger.info("Resolving local-server host storage ...")
+        # Validation above admits the immutable Quetzal package and all of its
+        # auxiliary roots.  Such a package supplies the runtime device weights,
+        # so host setup must not apply Hugging Face weight-download sizing to it.
+        package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
@@ -1246,6 +1251,7 @@ def main():
                 runtime_config.image_user if runtime_config.docker_server else None
             ),
             local_server=runtime_config.local_server,
+            package_provides_weights=package_mount is not None,
         )
 
     # step 4: optionally run inference server. Server bring-up runs as a

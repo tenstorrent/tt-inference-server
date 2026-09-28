@@ -16,6 +16,12 @@ name token       ``Qwen__Qwen3-32B``  filenames, directory names, GitHub
                                       artifact names, CI job names. Escaped.
 ===============  ===================  =====================================
 
+A CI *leaf* is one model on one device, engine and impl. When a CI entry names
+an explicit ``impl``, tt-shield's job name carries the **leaf token**
+``<name token>@<impl>@`` (``meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@``)
+so two impls of one model stay apart. ``@`` occurs in neither HF repo ids nor
+impl names, so the split is unambiguous.
+
 Since the model id became the full HF repo id, every name built from a model
 has to escape the org separator, and everything that reads such a name has to
 undo the escape. Those two sides live in *different repositories* -- tt-shield
@@ -59,6 +65,7 @@ from typing import Iterable, Optional, Tuple
 
 __all__ = [
     "MODEL_ID_SEP",
+    "IMPL_SEP",
     "ARTIFACT_FORBIDDEN_CHARS",
     "WORKFLOW_LOGS_PREFIX",
     "slugify_model_id",
@@ -68,13 +75,18 @@ __all__ = [
     "is_artifact_name_safe",
     "workflow_logs_artifact_prefix",
     "split_workflow_logs_artifact_name",
+    "leaf_token",
     "ci_job_name",
     "device_from_ci_job_name",
     "ci_job_matches_device",
+    "has_leaf_job_names",
 ]
 
 #: Escape sequence standing in for the HF org separator inside a name token.
 MODEL_ID_SEP = "__"
+
+#: Separates a non-default impl from the model in a leaf token.
+IMPL_SEP = "@"
 
 #: Characters ``actions/upload-artifact`` rejects in an artifact name.
 ARTIFACT_FORBIDDEN_CHARS = '/\\:<>|*?"\r\n'
@@ -229,20 +241,48 @@ def split_workflow_logs_artifact_name(
     return None
 
 
-def ci_job_name(
-    workflow: str, model_id: str, runner_label: str, runner_type: str
-) -> str:
-    """``run-<workflow>-<model>-<runner_label>-<runner_type>``.
+def leaf_token(model_id: str, impl: Optional[str] = None) -> str:
+    """Name token for one CI leaf: the model token plus ``@<impl>@`` for an
+    explicit impl (the CI config's ``impl``, i.e. the ``run.py --impl`` value).
 
-    The per-matrix-entry job name. ``runner_type`` is the device, which is why
-    this name is the only place the device of a (model, runner) pair can be
-    recovered from -- it is absent from the artifact name.
+    >>> leaf_token("meta-llama/Llama-3.1-8B-Instruct", "llama31-8b-qb2")
+    'meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@'
+    >>> leaf_token("Qwen/Qwen3-32B")
+    'Qwen__Qwen3-32B'
     """
-    return f"run-{workflow}-{slugify_model_id(model_id)}-{runner_label}-{runner_type}"
+    token = slugify_model_id(model_id)
+    return f"{token}{IMPL_SEP}{impl}{IMPL_SEP}" if impl else token
+
+
+def _leaf_variants(model_id: str, impl: Optional[str]) -> Tuple[str, ...]:
+    """:func:`model_name_variants`, each carrying ``@<impl>@`` when one is set."""
+    suffix = f"{IMPL_SEP}{impl}{IMPL_SEP}" if impl else ""
+    return tuple(f"{token}{suffix}" for token in model_name_variants(model_id))
+
+
+def ci_job_name(
+    workflow: str,
+    model_id: str,
+    runner_label: str,
+    runner_type: str,
+    impl: Optional[str] = None,
+) -> str:
+    """``run-<workflow>-<leaf>-<runner_label>-<runner_type>``.
+
+    The per-matrix-entry job name; ``<leaf>`` is :func:`leaf_token`.
+    ``runner_type`` is the device, which is why this name is the only place the
+    device of a (model, runner) pair can be recovered from -- it is absent from
+    the artifact name.
+    """
+    return f"run-{workflow}-{leaf_token(model_id, impl)}-{runner_label}-{runner_type}"
 
 
 def device_from_ci_job_name(
-    job_name: str, workflow: str, model_id: str, runner_label: str
+    job_name: str,
+    workflow: str,
+    model_id: str,
+    runner_label: str,
+    impl: Optional[str] = None,
 ) -> Optional[str]:
     """Recover the device from a job name built by :func:`ci_job_name`.
 
@@ -261,7 +301,7 @@ def device_from_ci_job_name(
     """
     if not job_name:
         return None
-    for token in model_name_variants(model_id):
+    for token in _leaf_variants(model_id, impl):
         marker = f"run-{workflow}-{token}-{runner_label}-"
         idx = job_name.find(marker)
         if idx == -1:
@@ -276,7 +316,11 @@ def device_from_ci_job_name(
 
 
 def _longest_matching_token(
-    job_name: str, workflow: str, model_id: str, device_suffix: str
+    job_name: str,
+    workflow: str,
+    model_id: str,
+    device_suffix: str,
+    impl: Optional[str] = None,
 ) -> Optional[int]:
     """Length of the longest model token that explains ``job_name``.
 
@@ -284,12 +328,14 @@ def _longest_matching_token(
     :func:`ci_job_matches_device` able to rank two models against one name.
     """
     best: Optional[int] = None
-    for token in model_name_variants(model_id):
+    for token in _leaf_variants(model_id, impl):
         marker = f"run-{workflow}-{token}-"
         idx = job_name.find(marker)
         if idx == -1:
             continue
         tail = job_name[idx + len(marker) :].strip().rstrip(",)")
+        if IMPL_SEP in tail:
+            continue
         if tail.lower().endswith(device_suffix) and (best is None or len(token) > best):
             best = len(token)
     return best
@@ -301,8 +347,12 @@ def ci_job_matches_device(
     model_id: str,
     device: str,
     other_model_ids: Iterable[str] = (),
+    impl: Optional[str] = None,
 ) -> bool:
-    """True if ``job_name`` is the job for this ``(model, device)`` pair.
+    """True if ``job_name`` is the job for this ``(model, device[, impl])`` leaf.
+
+    Without ``impl`` only the default-impl job matches: a non-default impl's job
+    carries ``@<impl>@`` right after the model, which no default marker accepts.
 
     :func:`device_from_ci_job_name` run backwards, for a caller that knows the
     device but not the runner label -- ``models-ci-config.json`` records the
@@ -316,7 +366,8 @@ def ci_job_matches_device(
     ``Qwen/Qwen3-32B`` and ``Qwen/Qwen3-32B-FP8`` both explain
     ``run-release-Qwen__Qwen3-32B-FP8-p150-P150``. Pass the other models in
     scope as ``other_model_ids`` and the longer explanation wins, so the
-    sibling's job is left to the sibling.
+    sibling's job is left to the sibling. Explicit impls have a closing
+    ``@`` boundary, so ``qb2`` cannot match ``qb2-fast``, even outside scope.
 
     >>> ci_job_matches_device(
     ...     "run-tests / run-release-meta-llama__Llama-3.3-70B-Instruct-bh-qb-ge-p300x2",
@@ -331,7 +382,7 @@ def ci_job_matches_device(
         return False
     # The leading "-" rejects a label-less name and "x2" vs "p300x2".
     suffix = f"-{device}".lower()
-    own = _longest_matching_token(job_name, workflow, model_id, suffix)
+    own = _longest_matching_token(job_name, workflow, model_id, suffix, impl)
     if own is None:
         return False
     for other in other_model_ids:
@@ -343,6 +394,17 @@ def ci_job_matches_device(
     return True
 
 
+def has_leaf_job_names(job_names: Iterable[str]) -> bool:
+    """True if a run's job names carry leaf tokens (``<model>@<impl>@``).
+
+    Runs from before tt-shield added ``@<impl>@`` named an impl's job with the
+    bare model token; a reader that must still link such a run falls back to
+    the bare-model job only when no job of the run has a leaf token -- and
+    only with other proof of the impl, since that job may be the default's.
+    """
+    return any(IMPL_SEP in (name or "") for name in job_names)
+
+
 # ---------------------------------------------------------------------------
 # CLI -- for producers that build names in shell (tt-shield's YAML steps)
 # ---------------------------------------------------------------------------
@@ -351,7 +413,8 @@ _USAGE = """usage: model_naming.py <command> [args]
   slugify <model_id>                            Qwen/Qwen3-32B -> Qwen__Qwen3-32B
   unslugify <slug>                              Qwen__Qwen3-32B -> Qwen/Qwen3-32B
   artifact-prefix <workflow> <model_id>         workflow_logs_<workflow>_<model>_
-  job-name <workflow> <model_id> <label> <type> run-<workflow>-<model>-<label>-<type>
+  job-name <workflow> <model_id> <label> <type> [impl]
+                                                run-<workflow>-<leaf>-<label>-<type>
 
 Writes the result to stdout, so a shell producer can do:
 
@@ -362,7 +425,7 @@ _COMMANDS = {
     "slugify": (1, lambda model: slugify_model_id(model)),
     "unslugify": (1, lambda slug: unslugify_model_id(slug)),
     "artifact-prefix": (2, workflow_logs_artifact_prefix),
-    "job-name": (4, ci_job_name),
+    "job-name": ((4, 5), ci_job_name),
 }
 
 
@@ -377,9 +440,11 @@ def main(argv: Optional[list] = None) -> int:
         sys.stderr.write(f"error: unknown command {command!r}\n\n{_USAGE}")
         return 2
     argc, fn = entry
-    if len(rest) != argc:
+    counts = argc if isinstance(argc, tuple) else (argc,)
+    if len(rest) not in counts:
         sys.stderr.write(
-            f"error: {command} takes {argc} argument(s), got {len(rest)}\n\n{_USAGE}"
+            f"error: {command} takes {' or '.join(map(str, counts))} argument(s), "
+            f"got {len(rest)}\n\n{_USAGE}"
         )
         return 2
     sys.stdout.write(f"{fn(*rest)}\n")

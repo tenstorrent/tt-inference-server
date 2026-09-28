@@ -568,6 +568,13 @@ def generate_docker_run_command(
             f"src={quetzal_package_mount.host_root},"
             f"dst={quetzal_package_mount.runtime_root},readonly",
         ])
+        for auxiliary in quetzal_package_mount.auxiliary:
+            docker_command.extend([
+                "--mount",
+                "type=bind,"
+                f"src={auxiliary.host_root},"
+                f"dst={auxiliary.runtime_root},readonly",
+            ])
 
     if runtime_config.interactive:
         docker_command.append("-itd")
@@ -723,11 +730,11 @@ def run_docker_command(
         docker_log_file_path: Path to the docker log file
 
     Returns:
-        Dict with container_name, container_id, docker_log_file_path, service_port
+        Dict with container identity, foreground process, log path, and service port.
     """
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
-    _ = subprocess.Popen(
+    docker_process = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
@@ -784,6 +791,7 @@ def run_docker_command(
     return {
         "container_name": container_name,
         "container_id": container_id,
+        "process": docker_process,
         "docker_log_file_path": str(docker_log_file_path),
         "service_port": runtime_config.service_port,
     }

@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from llm_module.agentic_traces.schema import TraceSource
 from workflows.utils import map_configs_by_attr
@@ -247,13 +247,10 @@ class AgenticTracesModeSettings:
 # Reference full-length run: the shape validated by hand before this workflow
 # existed (1h profiling, all 393 eligible traces).
 #
-# 14 requests/lane reproduces the warmup depth of that validated run, which
-# used the superseded 600s time-bounded warmup: it issued 109 warmup wire
-# requests across 8 lanes (13.6/lane) in 583.7s. Re-measure and re-pin this if
-# the trace corpus or the server's warmup latency changes materially.
+# 10 requests/lane matches InferenceX's reference warmup.
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
-    warmup_requests_per_lane=14,
+    warmup_requests_per_lane=10,
     warmup_grace_period=1800,
     num_dataset_entries=393,
 )
@@ -405,7 +402,18 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
-                public_dataset="semianalysis_cc_traces_weka_062126_256k",
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=80,
+            ),
+        ),
+    ),
+    AgenticTracesConfig(
+        model_id="id_tt-transformers_GLM-5.3_super_cluster",
+        inferencex_git_ref="ddeb02eb9c5c89f44e2e4950e741b499d0b8190a",
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
                 concurrency=80,
             ),
         ),
@@ -512,7 +520,7 @@ def get_agentic_traces_config_or_template(model_spec) -> Optional[AgenticTracesC
 def replace_agentic_runs(
     config: AgenticTracesConfig,
     concurrencies: Sequence[int],
-    goodput: str = "",
+    goodput: Union[str, Mapping[int, str]] = "",
     expected_sweep: Sequence[Mapping[str, Any]] = (),
 ) -> AgenticTracesConfig:
     """Replay ``config``'s runs at each of ``concurrencies``, grading ``goodput``.
@@ -523,19 +531,28 @@ def replace_agentic_runs(
     still sweeps both. An empty ``concurrencies`` leaves the config alone, so a
     document with no agentic sweep keeps the catalog's single operating point.
 
-    ``goodput`` applies to every run, since the SLOs are the workload's and do
-    not move with the operating point. Every run carries the whole
-    ``expected_sweep`` rather than only its own point, so the report can call
-    out the points a truncated sweep never measured.
+    ``goodput`` accepts a mapping of concurrency -> SLO string (per-row
+    overrides via ``requirements_schema.effective_slo``), or a plain string
+    broadcast to every run; an omitted concurrency keeps its run spec's own
+    ``goodput``.
+
+    Every run carries the whole ``expected_sweep``, so the report can call out
+    points a truncated sweep never measured.
     """
     if not concurrencies:
         return config
     expected = [dict(point) for point in expected_sweep]
+
+    def _goodput_for(concurrency: int) -> str:
+        if isinstance(goodput, Mapping):
+            return goodput.get(concurrency, "")
+        return goodput
+
     runs = tuple(
         replace(
             run,
             concurrency=concurrency,
-            goodput=goodput or run.goodput,
+            goodput=_goodput_for(concurrency) or run.goodput,
             expected_sweep=list(expected),
         )
         for run in config.runs

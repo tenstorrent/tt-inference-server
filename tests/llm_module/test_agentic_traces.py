@@ -194,7 +194,7 @@ class TestModeResolution:
         config = AGENTIC_TRACES_CONFIGS[KIMI_MODEL_ID]
         run = build_runs(config, _FakeModelSpec(), mode=AgenticTracesMode.FULL)[0]
         assert run.benchmark_duration == 3600
-        assert run.warmup_requests_per_lane == 14
+        assert run.warmup_requests_per_lane == 10
         assert run.num_dataset_entries == 393
         assert run.mode is AgenticTracesMode.FULL
 

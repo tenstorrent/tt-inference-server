@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -139,7 +140,39 @@ class TestLlamaTrainingServiceCreateJob:
             assert kwargs["cancel_event"] is not None
             assert kwargs["job_metrics"] is not None
             assert kwargs["job_logs"] is not None
+            assert kwargs["progress_tracker"] is not None
             assert kwargs["result_path"] == "./adapters/llama_task_456"
+
+
+class TestTrainingServiceProcessing:
+    @pytest.mark.asyncio
+    async def test_process_waits_without_fixed_timeout(self):
+        from model_services.training_service import TrainingService
+
+        service = object.__new__(TrainingService)
+        service.scheduler = MagicMock()
+        service.scheduler.result_queues = {}
+        service.logger = MagicMock()
+
+        request = MagicMock()
+        request._task_id = "long-running-training"
+
+        async def return_result():
+            await asyncio.sleep(0.02)
+            await service.scheduler.result_queues[request._task_id].put("result")
+
+        service.scheduler.process_request.side_effect = lambda _: asyncio.create_task(
+            return_result()
+        )
+
+        with patch(
+            "model_services.base_service.settings.request_processing_timeout_seconds",
+            0.001,
+        ):
+            result = await service.process(request)
+
+        assert result == "result"
+        service.scheduler.cancel_task.assert_called_once_with(request._task_id)
 
 
 class TestGemmaTrainingServiceGetJobMetrics:

@@ -118,6 +118,7 @@ class Settings(BaseSettings):
     job_cleanup_interval_seconds: int = 300
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
+    training_progress_heartbeat_interval_seconds: float = 10.0
     enable_job_persistence: bool = False
 
     vllm: VLLMSettings = VLLMSettings()

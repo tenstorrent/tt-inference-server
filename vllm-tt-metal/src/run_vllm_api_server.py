@@ -608,6 +608,67 @@ def find_default_impl(
     )
 
 
+def _ensure_quetzal_metadata(model_spec: dict) -> Path:
+    """Fetch only pinned HF metadata; generated package owns all model tensors."""
+    args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
+    revision = args.get("revision")
+    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RuntimeError("Quetzal metadata requires an immutable checkpoint revision")
+    if args.get("tokenizer_revision") != revision:
+        raise RuntimeError("Quetzal metadata requires matching tokenizer_revision")
+    hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    path = (
+        Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
+        / "hf_metadata"
+        / ("models--" + hf_repo.replace("/", "--"))
+        / revision
+    )
+    path.mkdir(parents=True, exist_ok=True)
+    allowed = [
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "tokenizer.model",
+        "spiece.model",
+        "special_tokens_map.json",
+        "added_tokens.json",
+        "vocab.json",
+        "vocab.txt",
+        "merges.txt",
+        "chat_template.jinja",
+        "chat_templates/*.jinja",
+    ]
+    try:
+        snapshot_download(
+            repo_id=hf_repo, revision=revision, local_dir=path, allow_patterns=allowed
+        )
+    except Exception as error:
+        logger.warning(
+            "Pinned Quetzal metadata fetch unavailable: %s; validating local metadata",
+            error,
+        )
+    try:
+        from transformers import AutoConfig, AutoTokenizer
+
+        AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+        AutoTokenizer.from_pretrained(
+            path, local_files_only=True, trust_remote_code=False
+        )
+    except Exception as error:
+        raise RuntimeError(
+            f"Quetzal metadata unavailable or incomplete for revision {revision} at {path}"
+        ) from error
+    files = [
+        (str(p.relative_to(path)), p.stat().st_size)
+        for p in sorted(path.rglob("*"))
+        if p.is_file() and ".cache" not in p.relative_to(path).parts
+    ]
+    logger.info("Quetzal HF metadata revision=%s files_and_bytes=%s", revision, files)
+    os.environ["MODEL_WEIGHTS_DIR"] = str(path)
+    return path
+
+
 def ensure_weights_available(model_spec: dict) -> Path:
     """Ensure model weights are available, downloading if necessary.
 
@@ -636,6 +697,9 @@ def ensure_weights_available(model_spec: dict) -> Path:
             )
         logger.info(f"Using pre-mounted weights from MODEL_WEIGHTS_DIR: {weights_path}")
         return weights_path
+
+    if model_spec.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID:
+        return _ensure_quetzal_metadata(model_spec)
 
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
