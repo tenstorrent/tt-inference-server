@@ -5292,7 +5292,10 @@ _eval_config_list = [
                         ],
                     },
                 ),
-                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0,
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
             ),
             EvalTask(
                 task_name="swe_bench_verified",
