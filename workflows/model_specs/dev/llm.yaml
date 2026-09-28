@@ -339,6 +339,7 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY
+      default_impl: false  # not the Galaxy default: hangs at 128-way concurrency, see tt-metal MTP warmup-capture work
       max_concurrency: 128  # 32 users x 4 DP engines (max_num_seqs pins per-engine)
       max_context: 262144  # LB parity: full 256K bounded
       env_vars:
@@ -380,7 +381,7 @@ templates:
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-  status: COMPLETE
+  status: EXPERIMENTAL
   has_builtin_warmup: true
 
 - weights:
@@ -572,9 +573,14 @@ templates:
         # decision on its SchedulerOutput. Requires the model to declare
         # supports_async_decode (Gemma4DFlash does).
         # Async decode IS supported on this rail (the contract gates it on
-        # supports_async_spec_decode) and works at DP=1: vLLM resolves the
-        # option once, before speculative_config is built, so its custom_class
-        # validation never sees both set.
+        # supports_async_spec_decode). Upstream would refuse the pairing on its
+        # own -- its async gate tests the speculative method against
+        # EagleModelTypes and this rail's method is custom_class -- so the
+        # plugin widens that one name for the launch
+        # (_install_tt_async_spec_method_patch, installed from
+        # pre_register_and_update before create_engine_config builds the
+        # config). That is why this works here and not at DP>1; see the Galaxy
+        # entry below.
         async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
@@ -620,6 +626,7 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY
+      default_impl: true  # release-flow default here: the adaptive dFlash contract rail
       # Identical to the validated P150X8 dFlash entry above; the ONLY addition is
       # data_parallel_size 4 (four physical-column (1,8) engines, each exactly a
       # P150x8). Everything else -- context, token budget, CCL, fabric, vLLM args --
@@ -653,14 +660,21 @@ templates:
       vllm_args:
         data_parallel_size: 4  # four (1,8) column engines; max_concurrency above is whole-box
         max_num_seqs: 32
-        # DP>1 only: vLLM re-runs vllm_config.__post_init__ inside the DP
-        # handshake, and by then BOTH async_scheduling and speculative_config
-        # are set, so its "async scheduling is only supported with
-        # EAGLE/MTP/Draft Model/NGram" check raises and every engine dies just
-        # after KV allocation. The negative flag is required because the arg
-        # builder drops False booleans (_append_vllm_arg emits nothing), which
-        # would leave vLLM to AUTO-ENABLE it and raise anyway.
-        # Async is wanted here -- see vllm-tt-plugin#131 for the DP gap.
+        # Async is wanted here and the rail supports it (see the P150X8 entry
+        # above), but it cannot be enabled at DP>1 yet. A DP engine-core child
+        # unpickles the parent's config -- already carrying
+        # async_scheduling=True -- and re-runs __post_init__ on the way out of
+        # its handshake (v1/engine/core.py, _perform_handshakes), which is
+        # BEFORE the super().__init__ that makes the child's first
+        # load_general_plugins() call. So the plugin's gate widening is not
+        # installed yet: the child tests custom_class against an unpatched
+        # EagleModelTypes, takes the explicit-enable branch, and every engine
+        # dies just after KV allocation. The plugin's other install site
+        # (check_and_update_config) runs after that gate, so it cannot help.
+        # Tracked on vllm-tt-plugin#131. Until it lands, this entry serves
+        # synchronously, which costs the batched baseline fallback ~20-35% at
+        # conc-32 and makes contract-vs-block benchmarks non-comparable unless
+        # async is disabled on both sides.
         no-async-scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
@@ -793,7 +807,7 @@ templates:
       # pins the per-engine ceiling (default inference would give 128/engine).
       max_concurrency: 128
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
-      default_impl: true
+      default_impl: false  # not the Galaxy default; the adaptive dFlash rail is
       env_vars:
         # Explicit linear CCL: topology settings do not transfer across device
         # configs (the P150x8 entry inherits gemma4's ring default on the LB
@@ -1053,7 +1067,7 @@ templates:
       # pins the per-engine ceiling (default inference would give 128/engine).
       max_concurrency: 128
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
-      default_impl: true
+      default_impl: true  # Galaxy default: MTP hangs at max_concurrency 128 (per-request in-decode trace capture)
       env_vars:
         G4_FORCE_BATCH_PREFILL: "1"
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
@@ -1281,7 +1295,7 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
       default_impl: true
-  status: EXPERIMENTAL
+  status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
