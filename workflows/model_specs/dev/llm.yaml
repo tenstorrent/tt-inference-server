@@ -1433,6 +1433,9 @@ templates:
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "T3K"
         QWEN36_MAX_TOKENS_ALL_USERS: "132096"
+        # The checkpoint declares Qwen3_5ForConditionalGeneration, which the plugin maps to
+        # the Blackhole qwen36 class; route it to the qwen38_27b_qb2 implementation instead.
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.qwen38_27b_qb2.tt.generator_vllm:Qwen38ForCausalLM"
       vllm_args:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
