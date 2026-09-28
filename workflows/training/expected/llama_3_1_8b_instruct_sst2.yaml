@@ -15,11 +15,8 @@
 # tt-forge pin changes.
 #
 # Regenerated from a single-chip P150 run on 2026-09-28 (blacksmith pin
-# 0a3c097, which appends an EOS token to SST-2 samples and shifts the whole
-# curve up vs. the previous 6fea106 goldens): values below are the observed
-# train_loss/val_loss from GET /v1/jobs/{id}/metrics. Because
-# the runner is non-deterministic (deterministic=False), treat these as a
-# reference trajectory, not exact goldens — re-regenerate if the
+# 0a3c097). Because the runner is non-deterministic (deterministic=False),
+# treat these as a reference trajectory, not exact goldens — re-regenerate if the
 # blacksmith/forge pins move.
 
 # Hyperparameters forwarded verbatim into the TrainingRequest POST body. Kept
