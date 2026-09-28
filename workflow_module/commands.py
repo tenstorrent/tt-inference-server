@@ -183,8 +183,48 @@ def _server_is_alive(spec: ServerLaunchSpec, payload: Any) -> Optional[bool]:
     return None
 
 
+def _waits_for_background_trace_capture(spec: ServerLaunchSpec) -> bool:
+    """Whether Docker readiness includes the launcher's trace-capture pass.
+
+    The vLLM process starts serving ``/health`` before the companion trace
+    process is done. Starting a benchmark at that point makes the benchmark
+    and warmup contend for the same device. The launcher already publishes
+    its real readiness contract as ``/tmp/ready`` inside the container, so use
+    that marker for local Docker VLLM launches that rely on background capture.
+    """
+    if spec.mode is not ServerMode.DOCKER:
+        return False
+    if getattr(spec.runtime_config, "disable_trace_capture", False):
+        return False
+    if getattr(spec.model_spec, "has_builtin_warmup", False):
+        return False
+    engine = getattr(spec.model_spec, "inference_engine", "")
+    return str(getattr(engine, "value", engine)).upper() == "VLLM"
+
+
+def _docker_trace_capture_ready(payload: Any) -> bool:
+    """Return whether the server launcher's in-container readiness file exists."""
+    import subprocess
+
+    container = _payload_get(payload, "container_name") or _payload_get(
+        payload, "container_id"
+    )
+    if not container:
+        return False
+    try:
+        result = subprocess.run(
+            ["docker", "exec", str(container), "test", "-f", "/tmp/ready"],
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
-    """Block until the server answers /health.
+    """Block until the server answers /health and launch warmup is complete.
 
     Returns None once ready, else a short reason string. The launchers return as soon
     as the process/container exists (a ~2s grace period), long before the model has
@@ -226,13 +266,29 @@ def _wait_until_ready(spec: ServerLaunchSpec, payload: Any) -> Optional[str]:
 
     deadline = time.time() + _readiness_timeout()
     logger.info("Waiting for inference server readiness at %s ...", url)
+    waiting_for_trace_capture = False
 
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
                 if 200 <= resp.status < 300:
-                    logger.info("Inference server is ready at %s", url)
-                    return None
+                    if _waits_for_background_trace_capture(spec):
+                        if _docker_trace_capture_ready(payload):
+                            logger.info(
+                                "Background trace capture is complete in the "
+                                "inference server container"
+                            )
+                            logger.info("Inference server is ready at %s", url)
+                            return None
+                        if not waiting_for_trace_capture:
+                            logger.info(
+                                "Inference server is healthy; waiting for "
+                                "background trace capture to create /tmp/ready"
+                            )
+                            waiting_for_trace_capture = True
+                    else:
+                        logger.info("Inference server is ready at %s", url)
+                        return None
         except (urllib.error.URLError, OSError, ValueError):
             pass
 

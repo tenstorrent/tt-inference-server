@@ -17,6 +17,7 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from workflow_module import commands
 from workflow_module import workflows as workflows_mod
 from workflow_module.commands import (
     CommandResult,
@@ -26,7 +27,10 @@ from workflow_module.commands import (
     SummaryCommand,
     VenvCommand,
     WorkflowCommand,
+    _docker_trace_capture_ready,
     _server_is_alive,
+    _wait_until_ready,
+    _waits_for_background_trace_capture,
 )
 from workflow_module.execution import OrchestratorMetadata, WorkflowResult
 
@@ -491,12 +495,107 @@ class TestServerCommandBootRetry:
 
         assert _server_is_alive(spec, {"process": process}) is expected
 
+    def test_docker_vllm_background_capture_extends_readiness(self):
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec=SimpleNamespace(
+                inference_engine="VLLM", has_builtin_warmup=False
+            ),
+            runtime_config=SimpleNamespace(disable_trace_capture=False),
+            setup_config=None,
+        )
+
+        assert _waits_for_background_trace_capture(spec) is True
+
+    @pytest.mark.parametrize(
+        ("disable_trace_capture", "has_builtin_warmup"),
+        [(True, False), (False, True)],
+    )
+    def test_docker_vllm_skips_marker_when_capture_is_not_background(
+        self, disable_trace_capture, has_builtin_warmup
+    ):
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec=SimpleNamespace(
+                inference_engine="VLLM", has_builtin_warmup=has_builtin_warmup
+            ),
+            runtime_config=SimpleNamespace(disable_trace_capture=disable_trace_capture),
+            setup_config=None,
+        )
+
+        assert _waits_for_background_trace_capture(spec) is False
+
+    def test_docker_trace_capture_ready_checks_container_marker(self, monkeypatch):
+        import subprocess
+
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append((argv, kwargs))
+            return SimpleNamespace(returncode=0)
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        assert _docker_trace_capture_ready({"container_name": "server-123"})
+        assert calls[0][0] == [
+            "docker",
+            "exec",
+            "server-123",
+            "test",
+            "-f",
+            "/tmp/ready",
+        ]
+
+    def test_docker_vllm_health_waits_for_background_capture_marker(
+        self, monkeypatch, tmp_path
+    ):
+        class HealthyResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        marker_checks = iter([False, True])
+        monkeypatch.setattr(
+            "urllib.request.urlopen", lambda *args, **kwargs: HealthyResponse()
+        )
+        monkeypatch.setattr(
+            commands,
+            "_docker_trace_capture_ready",
+            lambda payload: next(marker_checks),
+        )
+        sleeps = []
+        monkeypatch.setattr("time.sleep", sleeps.append)
+        log_path = tmp_path / "server.log"
+        log_path.write_text("healthy\n")
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec=SimpleNamespace(
+                inference_engine="VLLM", has_builtin_warmup=False
+            ),
+            runtime_config=SimpleNamespace(
+                disable_trace_capture=False, service_port=8000
+            ),
+            setup_config=None,
+        )
+        payload = {
+            "container_name": "server-123",
+            "process": SimpleNamespace(poll=lambda: None),
+            "service_port": 8000,
+            "docker_log_file_path": str(log_path),
+        }
+
+        assert _wait_until_ready(spec, payload) is None
+        assert sleeps == [5]
+
     def test_exited_docker_process_retries_without_waiting_for_timeout(
         self, monkeypatch, tmp_path
     ):
         import urllib.error
         import urllib.request
-        import workflow_module.commands as commands
 
         monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
         log_path = tmp_path / "server.log"
