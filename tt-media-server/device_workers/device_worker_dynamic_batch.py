@@ -6,7 +6,7 @@ import asyncio
 from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
-from device_workers.worker_utils import initialize_device_worker, signalJobStart
+from device_workers.worker_utils import claim_job_for_worker, initialize_device_worker
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_queue import TTQueue
 from tt_model_runners.base_device_runner import BaseDeviceRunner
@@ -180,12 +180,14 @@ def device_worker(
                     _track(request, asyncio.create_task(handle_canary(request)))
                 elif hasattr(request, "stream") and request.stream:
                     # Fire and forget streaming task - runs concurrently
-                    signalJobStart(request)
-                    _track(request, asyncio.create_task(handle_streaming(request)))
+                    if claim_job_for_worker(request, worker_id):
+                        _track(request, asyncio.create_task(handle_streaming(request)))
                 else:
                     # Fire and forget non-streaming task - runs concurrently in event loop
-                    signalJobStart(request)
-                    _track(request, asyncio.create_task(handle_non_streaming(request)))
+                    if claim_job_for_worker(request, worker_id):
+                        _track(
+                            request, asyncio.create_task(handle_non_streaming(request))
+                        )
 
     try:
         loop.run_until_complete(request_feeder())

@@ -231,10 +231,13 @@ class JobControlCallback(JobCallback):
         self.stop_reason = None
 
     def on_train_start(self, trainer, *args, **kwargs):
+        self._request.require_worker_replacement_on_cancel()
         self._touch_progress()
 
     def on_validation_start(self, trainer, *args, **kwargs):
         self._touch_progress()
+        self._request.require_worker_replacement_on_cancel()
+        self._stop_if_cancelled(trainer)
 
     def on_train_batch_start(self, trainer, batch, *args, **kwargs):
         self._stop_if_cancelled(trainer)
@@ -244,11 +247,16 @@ class JobControlCallback(JobCallback):
 
     def on_validation_batch_end(self, trainer, batch, loss, *args, **kwargs):
         self._touch_progress()
+        self._request.allow_cooperative_cancellation()
         self._stop_if_cancelled(trainer)
+
+    def on_validation_end(self, trainer, val_loss, *args, **kwargs):
+        self._request.allow_cooperative_cancellation()
 
     def on_train_batch_end(self, trainer, *args, **kwargs):
         self._touch_progress()
         request = self._request
+        request.allow_cooperative_cancellation()
         # Checked per micro-batch, so cancellation stays responsive even when
         # `global_step` only advances every `gradient_accumulation_steps` batches.
         self._stop_if_cancelled(trainer)

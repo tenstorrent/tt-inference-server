@@ -120,7 +120,7 @@ class BaseService(ABC):
         """Reset the device and all the scheduler workers and processes"""
         self.logger.info("Resetting device")
         # Create a task to run in the background
-        asyncio.create_task(asyncio.to_thread(self.scheduler.restart_worker, device_id))
+        asyncio.create_task(asyncio.to_thread(self.scheduler.replace_worker, device_id))
 
     @log_execution_time("Starting workers")
     def start_workers(self):

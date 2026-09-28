@@ -48,6 +48,7 @@ from model_services.scheduler import Scheduler
 def create_mock_queue():
     """Helper to create a mock queue with common methods"""
     queue = Mock(spec=Queue)
+    queue.name = "test-queue"
     queue.put = Mock()
     queue.get = Mock()
     queue.full = Mock(return_value=False)
@@ -312,6 +313,108 @@ class TestScheduler:
 
         assert scheduler.worker_info["0"]["queue_index"] == 1
         mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_kills_process_that_does_not_terminate(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        old_process = Mock(spec=Process)
+        old_process.pid = 123
+        old_process.is_alive = Mock(side_effect=[True, True, False])
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        scheduler.restart_worker("0")
+
+        old_process.terminate.assert_called_once()
+        old_process.kill.assert_called_once()
+        assert old_process.join.call_count == 2
+        mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_does_not_replace_process_that_cannot_be_stopped(
+        self, mock_process_cls, scheduler
+    ):
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        old_process = Mock(spec=Process)
+        old_process.pid = 123
+        old_process.is_alive = Mock(return_value=True)
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        with pytest.raises(RuntimeError, match="could not be stopped"):
+            scheduler.restart_worker("0")
+
+        mock_process_cls.assert_not_called()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_ignores_stale_process(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        current_process = Mock(spec=Process)
+        stale_process = Mock(spec=Process)
+        scheduler.worker_info["0"] = {
+            "process": current_process,
+            "restart_count": 1,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        restarted = scheduler.restart_worker("0", expected_process=stale_process)
+
+        assert restarted is False
+        current_process.terminate.assert_not_called()
+        mock_process_cls.assert_not_called()
+
+    @patch("model_services.scheduler.Process")
+    def test_intentional_worker_replacement_does_not_count_as_failure(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        old_process = Mock(spec=Process)
+        old_process.is_alive = Mock(return_value=False)
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 2,
+            "queue_index": 0,
+            "error_count": 2,
+        }
+
+        scheduler.replace_worker("0")
+
+        assert scheduler.worker_info["0"]["restart_count"] == 2
+        assert scheduler.worker_info["0"]["error_count"] == 0
+        mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_intentional_replacement_ignores_stale_worker_pid(
+        self, mock_process_cls, scheduler
+    ):
+        current_process = Mock(spec=Process)
+        current_process.pid = 456
+        scheduler.worker_info["0"] = {
+            "process": current_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        replaced = scheduler.replace_worker("0", expected_pid=123)
+
+        assert replaced is False
+        current_process.terminate.assert_not_called()
+        mock_process_cls.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(

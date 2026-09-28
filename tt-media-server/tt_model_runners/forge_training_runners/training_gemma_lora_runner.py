@@ -75,10 +75,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request._start_event:
-            request._start_event.set()
-            self.logger.debug(f"Device {self.device_id}: Start event set")
-
         self.train_dataset = get_dataset_loader(
             dataset_loader=request.dataset_loader,
             model_name=self.model_name,
@@ -200,6 +196,7 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                     global_step += 1
                     request.touch_progress()
+                    request.allow_cooperative_cancellation()
 
                     # Training metrics
                     if global_step % request.steps_freq == 0:
@@ -342,12 +339,17 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
     def run_validation(self, request: TrainingRequest):
         self.logger.info("\n=== Starting Validation ===")
+        cancel_event: Optional[Event] = request._cancel_event
+        if cancel_event and cancel_event.is_set():
+            self.logger.info("Validation cancelled before starting.")
+            return None
+        request.require_worker_replacement_on_cancel()
         self.compiled_model.eval()
         total_val_loss = 0.0
         num_val_batches = 0
-        cancel_event: Optional[Event] = request._cancel_event
 
         with torch.no_grad():
+            # Cancellation can race with publishing the compile-sensitive phase.
             if cancel_event and cancel_event.is_set():
                 self.logger.info("Validation cancelled before starting.")
                 return None
@@ -375,10 +377,12 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
 
                 num_val_batches += 1
                 request.touch_progress()
+                request.allow_cooperative_cancellation()
 
                 if cancel_event and cancel_event.is_set():
                     self.logger.info("Validation cancelled early.")
                     return None
 
+        request.allow_cooperative_cancellation()
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         return avg_val_loss

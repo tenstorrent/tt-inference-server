@@ -7,6 +7,7 @@ import os
 import time
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
+from threading import Lock
 
 from config.constants import CANARY_TASK_IDS, SHUTDOWN_SIGNAL, QueueType
 from config.settings import get_settings
@@ -26,6 +27,7 @@ class Scheduler:
     def __init__(self):
         self.settings = get_settings()
         self.logger = TTLogger()
+        self._worker_replacement_lock = Lock()
         self._setup_initial_variables()
         self._start_queues()
 
@@ -231,18 +233,53 @@ class Scheduler:
 
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
 
-    def restart_worker(self, worker_id: str):
-        """Restart a dead worker"""
+    def restart_worker(
+        self, worker_id: str, expected_process: Process | None = None
+    ) -> bool:
+        """Restart a failed worker, ignoring stale health-monitor observations."""
+        with self._worker_replacement_lock:
+            return self._replace_worker_locked(
+                worker_id,
+                count_as_failure=True,
+                expected_process=expected_process,
+            )
+
+    def replace_worker(self, worker_id: str, expected_pid: int | None = None) -> bool:
+        """Intentionally replace the expected worker without recording a failure."""
+        with self._worker_replacement_lock:
+            return self._replace_worker_locked(
+                worker_id,
+                count_as_failure=False,
+                expected_pid=expected_pid,
+            )
+
+    def _replace_worker_locked(
+        self,
+        worker_id: str,
+        count_as_failure: bool,
+        expected_process: Process | None = None,
+        expected_pid: int | None = None,
+    ) -> bool:
+        """Terminate and replace a worker while the replacement lock is held."""
         old_info = self.worker_info.get(worker_id, {})
 
         if old_info == {}:
             raise ValueError(f"Worker ID {worker_id} not found in worker info")
+        if expected_process is not None and old_info["process"] is not expected_process:
+            return False
+        if expected_pid is not None and old_info["process"].pid != expected_pid:
+            return False
 
-        restart_count = old_info.get("restart_count", 0) + 1
-
-        self.logger.warning(
-            f"Restarting dead worker {worker_id} (restart #{restart_count})"
+        restart_count = old_info.get("restart_count", 0) + (
+            1 if count_as_failure else 0
         )
+
+        if count_as_failure:
+            self.logger.warning(
+                f"Restarting worker {worker_id} (restart #{restart_count})"
+            )
+        else:
+            self.logger.warning(f"Replacing intentionally stopped worker {worker_id}")
 
         # Clean up old process if it exists
         old_pid = None
@@ -253,9 +290,17 @@ class Scheduler:
                 if old_process.is_alive():
                     old_process.terminate()
                     old_process.join(timeout=5.0)
+                if old_process.is_alive():
+                    self.logger.warning(
+                        f"Worker {worker_id} did not terminate; killing it"
+                    )
+                    old_process.kill()
+                    old_process.join(timeout=5.0)
+                if old_process.is_alive():
+                    raise RuntimeError(f"Worker {worker_id} could not be stopped")
             except Exception as e:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
-                self.logger.info(f"Old worker {worker_id} process does not exist")
+                raise
 
         mark_worker_dead(old_pid)
 
@@ -265,8 +310,10 @@ class Scheduler:
         # Start new worker
         self._start_worker(worker_id, queue_index=existing_queue_index)
         self.worker_info[worker_id]["restart_count"] = restart_count
-        # pass the error count from old worker -1 to give it a chance to recover
-        self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
+        self.worker_info[worker_id]["error_count"] = (
+            max(old_info.get("error_count", 1) - 1, 0) if count_as_failure else 0
+        )
+        return True
 
     async def result_listener(self):
         """✅ Read from ALL worker queues in parallel using batch reads"""
@@ -558,18 +605,18 @@ class Scheduler:
         """Monitor worker health and restart dead workers"""
         while self.monitor_running and self.is_ready:
             try:
-                dead_workers = []
+                workers_to_restart = {}
 
                 for worker_id, info in self.worker_info.items():
                     try:
                         process = info["process"]
                         if not process.is_alive():
-                            dead_workers.append(worker_id)
+                            workers_to_restart[worker_id] = process
                     except Exception as e:
                         self.logger.error(
                             f"Error checking worker {worker_id} health: {e}"
                         )
-                        dead_workers.append(worker_id)
+                        workers_to_restart[worker_id] = info["process"]
 
                 # check for any workers that have too many errors
                 for worker_id, info in self.worker_info.items():
@@ -577,22 +624,25 @@ class Scheduler:
                         info.get("error_count", 0)
                         > self.settings.max_worker_restart_count
                     ):
-                        dead_workers.append(worker_id)
+                        workers_to_restart.setdefault(worker_id, info["process"])
                         self.logger.error(
                             f"Worker {worker_id} has too many errors ({info['error_count']}), restarting"
                         )
 
                 self.logger.info(
-                    f"Worker health check: {len(dead_workers)} dead workers found"
+                    f"Worker health check: {len(workers_to_restart)} "
+                    "workers need restart"
                 )
 
                 # Restart dead workers (one failure must not block restarting others)
-                for worker_id in dead_workers:
+                for worker_id, expected_process in workers_to_restart.items():
                     restart_count = self.worker_info[worker_id].get("restart_count", 0)
 
                     if restart_count < self.settings.max_worker_restart_count:
                         try:
-                            self.restart_worker(worker_id)
+                            self.restart_worker(
+                                worker_id, expected_process=expected_process
+                            )
                         except Exception as e:
                             self.logger.error(
                                 f"Failed to restart worker {worker_id}: {e}"
