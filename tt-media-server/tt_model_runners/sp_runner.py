@@ -47,8 +47,6 @@ from utils.decorators import log_execution_time
 # SPRunner.warmup() is blocked on the pipeline's ack.
 _WARMUP_HEARTBEAT_SECONDS: float = 7.0
 
-DEFAULT_VIDEO_HEIGHT = 480
-DEFAULT_VIDEO_WIDTH = 832
 DEFAULT_VIDEO_NUM_FRAMES = 81
 DEFAULT_VIDEO_GUIDANCE_SCALE = 3.0
 DEFAULT_VIDEO_GUIDANCE_SCALE_2 = 4.0
@@ -734,8 +732,8 @@ class SPRunner(BaseDeviceRunner):
             negative_prompt=request.negative_prompt or "",
             num_inference_steps=request.num_inference_steps or 20,
             seed=int(request.seed or 0),
-            height=getattr(request, "height", DEFAULT_VIDEO_HEIGHT),
-            width=getattr(request, "width", DEFAULT_VIDEO_WIDTH),
+            height=getattr(request, "height", None) or 0,
+            width=getattr(request, "width", None) or 0,
             num_frames=getattr(request, "num_frames", DEFAULT_VIDEO_NUM_FRAMES),
             guidance_scale=getattr(
                 request, "guidance_scale", DEFAULT_VIDEO_GUIDANCE_SCALE

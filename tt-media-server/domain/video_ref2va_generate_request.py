@@ -9,15 +9,29 @@ an ordered bag of reference media, grouped by modality. Pack order is images,
 then videos, then audios.
 """
 
+import math
 from typing import List, Optional
 
 from domain.video_generate_request import VideoGenerateRequest
+from domain.video_i2v_generate_request import MAX_BASE64_IMAGE_LEN
 from pydantic import BaseModel, Field, field_validator, model_validator
 from utils.image_manager import ImageManager
 from utils.media_downloader import is_media_url
 
-# Larger than the I2V image cap: a reference clip will not fit in 10M chars.
-MAX_BASE64_MEDIA_LEN = 80_000_000
+# MiniMax video_generation_input per-file caps, as base64 lengths.
+MAX_VIDEO_BYTES = 50_000_000
+MAX_AUDIO_BYTES = 15_000_000
+MAX_BASE64_MEDIA_LEN = 4 * math.ceil(MAX_VIDEO_BYTES / 3)
+MAX_BASE64_AUDIO_LEN = 4 * math.ceil(MAX_AUDIO_BYTES / 3)
+
+
+def _check_b64_len(group: str, sources: List["MediaSource"], cap: int) -> None:
+    for index, source in enumerate(sources):
+        if source.b64 is not None and len(source.b64) > cap:
+            raise ValueError(
+                f"{group}[{index}] base64 length {len(source.b64)} exceeds "
+                f"the {cap}-char cap"
+            )
 
 
 class MediaSource(BaseModel):
@@ -60,6 +74,7 @@ class MultimodalReferences(BaseModel):
                 f"at most {MINIMAX_H3_MAX_REFERENCE_IMAGES} reference images, "
                 f"got {len(value)}"
             )
+        _check_b64_len("images", value, MAX_BASE64_IMAGE_LEN)
         for index, source in enumerate(value):
             if source.b64 is None:
                 continue
@@ -98,6 +113,7 @@ class MultimodalReferences(BaseModel):
                 f"at most {MINIMAX_H3_MAX_REFERENCE_AUDIOS} reference audios, "
                 f"got {len(value)}"
             )
+        _check_b64_len("audios", value, MAX_BASE64_AUDIO_LEN)
         return value
 
     @model_validator(mode="after")

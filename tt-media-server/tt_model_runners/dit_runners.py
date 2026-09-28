@@ -1454,19 +1454,17 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         self.logger.info(f"Device {self.device_id}: Model loaded")
         return True
 
-    def _resolve_shape(self, request: VideoGenerateRequest) -> tuple[int, int, int]:
-        """`(height, width, num_frames)` for this request, or raise with what is served.
+    def _resolve_shape(
+        self, request: VideoGenerateRequest
+    ) -> tuple[tuple[int, int], int]:
+        """`(aspect_ratio, num_frames)` for this request, or raise with what is served.
 
-        Both levers are validated against the published set and then handed to the model's own
-        `resolve_canvas_size` / `align_num_frames`, so the canvas and frame rules live in exactly
-        one place. Nothing here rounds: an unsupported ratio or duration is refused, because
-        quietly serving a neighbouring shape returns a video the caller did not ask for.
+        The canvas is left to the pipeline, which resolves it from `height`/`width` when given,
+        else from the first keyframe (fl2va) or `aspect_ratio`. Nothing here rounds: an
+        unsupported ratio or duration is refused, because quietly serving a neighbouring shape
+        returns a video the caller did not ask for.
         """
-        from models.tt_dit.pipelines.minimax_h3.packing import (
-            MINIMAX_H3_FPS,
-            align_num_frames,
-            resolve_canvas_size,
-        )
+        from models.tt_dit.pipelines.minimax_h3.policy import get_num_frames
 
         ratio = (
             minimax_h3_parse_aspect_ratio(request.aspect_ratio)
@@ -1483,15 +1481,14 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 f"{max(MINIMAX_H3_DURATIONS_S)}; got {seconds}"
             )
 
-        height, width = resolve_canvas_size(*ratio)
-        num_frames = align_num_frames(round(seconds * MINIMAX_H3_FPS))
+        num_frames = get_num_frames(seconds)
         if not minimax_h3_frames_are_aligned(num_frames):
             # Unreachable via the duration allow-list; kept so a future edit to it cannot smuggle
             # a frame count the VAE's 17-frame chunking would reject deep inside packing.
             raise ValueError(
                 f"num_frames must be 17n + 5; {seconds} s resolved to {num_frames}"
             )
-        return height, width, num_frames
+        return ratio, num_frames
 
     def _validate(self, request: VideoGenerateRequest) -> None:
         """Reject shapes outside the published aspect-ratio/duration set before the request runs."""
@@ -1507,16 +1504,17 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
         request = requests[0]
         self._validate(request)
-        height, width, num_frames = self._resolve_shape(request)
+        aspect_ratio, num_frames = self._resolve_shape(request)
         self.logger.debug(
-            f"Device {self.device_id}: Running inference at {width}x{height}, {num_frames} frames"
+            f"Device {self.device_id}: Running inference at {num_frames} frames"
         )
 
         output = self.pipeline(
             request.prompt,
             num_frames=num_frames,
-            height=height,
-            width=width,
+            aspect_ratio=aspect_ratio,
+            height=request.height,
+            width=request.width,
             num_inference_steps=self.num_inference_steps,
             seed=int(request.seed) if request.seed is not None else 0,
             **self._pipeline_extra_kwargs(request),
@@ -1563,7 +1561,14 @@ class TTMiniMaxFastH3Runner(TTMiniMaxH3Runner):
     num_inference_steps = MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
 
     def _create_pipeline_kwargs(self) -> dict:
-        return {"lora_path": os.environ.get("MINIMAX_H3_LORA_PATH")}
+        from models.tt_dit.models.transformers.minimax_h3.vsa_stages_minimax_h3 import (
+            MiniMaxH3VSAConfig,
+        )
+
+        return {
+            "lora_path": os.environ.get("MINIMAX_H3_LORA_PATH"),
+            "vsa_config": MiniMaxH3VSAConfig(sparsity=0.9),
+        }
 
 
 class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):

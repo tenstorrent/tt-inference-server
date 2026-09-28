@@ -815,13 +815,27 @@ class TestMiniMaxH3NumInferenceSteps:
             "tt-minimax-h3-t2va",
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
-            "tt-minimax-h3-fasth3",
         ],
     )
     @patch("domain.video_generate_request.get_settings")
-    def test_omitted_is_accepted(self, mock_settings, runner):
+    def test_omitted_echoes_served_step_count(self, mock_settings, runner):
         mock_settings.return_value.model_runner = runner
-        VideoGenerateRequest(prompt="a fox")
+        request = VideoGenerateRequest(prompt="a fox")
+        assert request.num_inference_steps == 50
+        assert request.model_dump(mode="json")["num_inference_steps"] == 50
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_fasth3_omitted_keeps_schema_default(self, mock_settings):
+        mock_settings.return_value.model_runner = "tt-minimax-h3-fasth3"
+        request = VideoGenerateRequest(prompt="a fox")
+        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_sp_runner_ref2va_echoes_served_step_count(self, mock_settings):
+        mock_settings.return_value.model_runner = "sp_runner"
+        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"}):
+            request = VideoGenerateRequest(prompt="a fox")
+        assert request.num_inference_steps == 50
 
     @pytest.mark.parametrize(
         "runner",

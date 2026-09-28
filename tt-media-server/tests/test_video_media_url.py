@@ -16,11 +16,19 @@ import PIL.Image
 import pytest
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
+    MAX_IMAGE_BYTES,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
+from domain.video_ref2va_generate_request import (
+    MediaSource,
+    MultimodalReferences,
+    VideoRef2VAGenerateRequest,
+)
 from fastapi import HTTPException
 from open_ai_api.video import (
+    MAX_INLINE_MEDIA_LEN,
+    _enforce_inline_media_total,
     _resolve_image_prompt_urls,
     submit_generate_video_i2v_request,
 )
@@ -56,6 +64,49 @@ class TestImagePromptEntryAcceptsUrls:
     def test_garbage_string_is_still_rejected(self):
         with pytest.raises(Exception):
             ImagePromptEntry(image="not-a-url-and-not-base64!!", frame_pos=0)
+
+
+def _ref2va_videos(*sources: MediaSource) -> VideoRef2VAGenerateRequest:
+    return VideoRef2VAGenerateRequest(
+        prompt="p", references=MultimodalReferences(videos=list(sources))
+    )
+
+
+class TestInlineMediaTotal:
+    _HALF = "A" * (MAX_INLINE_MEDIA_LEN // 2)
+
+    def test_total_at_cap_accepted(self):
+        _enforce_inline_media_total(
+            _ref2va_videos(MediaSource(b64=self._HALF), MediaSource(b64=self._HALF))
+        )
+
+    def test_total_over_cap_rejected_with_413(self):
+        request = _ref2va_videos(
+            MediaSource(b64=self._HALF),
+            MediaSource(b64=self._HALF),
+            MediaSource(b64="AAAA"),
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _enforce_inline_media_total(request)
+        assert exc_info.value.status_code == 413
+
+    def test_url_sources_not_counted(self):
+        _enforce_inline_media_total(
+            _ref2va_videos(
+                MediaSource(b64=self._HALF),
+                MediaSource(b64=self._HALF),
+                MediaSource(url="https://example.com/v.mp4"),
+            )
+        )
+
+    def test_i2v_inline_images_counted(self):
+        request = VideoI2VGenerateRequest(
+            prompt="p", image_prompts=[{"image": _TINY_PNG_BASE64, "frame_pos": 0}]
+        )
+        with patch("open_ai_api.video.MAX_INLINE_MEDIA_LEN", 10):
+            with pytest.raises(HTTPException) as exc_info:
+                _enforce_inline_media_total(request)
+        assert exc_info.value.status_code == 413
 
 
 class TestResolveImagePromptUrls:
@@ -110,15 +161,14 @@ class TestResolveImagePromptUrls:
         assert exc_info.value.status_code == status
 
     async def test_oversized_download_is_rejected_with_413(self):
-        # 8,000,000 bytes base64-encode past the 10,000,000-char field cap;
-        # without the endpoint check this would 202 and then fail validation
+        # Without the endpoint check this would 202 and then fail validation
         # inside an SP-runner worker mid-job.
         request = VideoI2VGenerateRequest(
             prompt="p", image_prompts=[{"image": _URL, "frame_pos": 0}]
         )
         with patch(
             "open_ai_api.video.download_media_url",
-            new=AsyncMock(return_value=b"x" * 8_000_000),
+            new=AsyncMock(return_value=b"x" * (MAX_IMAGE_BYTES + 1)),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await _resolve_image_prompt_urls(request)
