@@ -143,6 +143,65 @@ and the ttnn cache. The readiness window itself is 3600 s per boot attempt x 2 a
 covers weight load + cache build + the warm shape. If a download was interrupted, setup_host
 detects the `.incomplete` files and resumes it.
 
+## Per-task dispatch branches (T2VA, FL2VA, Ref2VA)
+
+t2va, fl2va and ref2va are separate deployments of the same weights (one `MODEL_RUNNER`
+each), while the dev catalog holds one `MiniMaxAI/MiniMax-H3` BLACKHOLE_GALAXY spec. Three
+dispatch-only branches, one per task, point that spec at their runner so tt-shield runs every
+case of `cases.json` without a shield change:
+
+| Branch | Cases | Suite |
+|---|---|---|
+| `zni/h3-ci-t2va` | 3 T2VA | one benchmark entry |
+| `zni/h3-ci-fl2va` | 6 FL2VA | one benchmark entry, `FL2VA-H` last |
+| `zni/h3-ci-ref2va` | 12 REF2VA / SIZE | five entries of <= 14400 s, rising risk, smoke only in the first |
+
+This is `zni/h3-ci-t2va`. Do not merge any of them as is: main's spec serves t2va with main's runner.
+All three share one tt-media-server tree (so one image serves all three) built from this CI
+branch plus:
+
+* `sadesoye/add_h3_fl2va_ref2va` merged in (FL2VA / Ref2VA runners, `/ref2va`, DELETE, the H3
+  policy read from tt-metal), with the three tasks' BLACKHOLE_GALAXY `(4, 8)` configs in
+  `tt-media-server/config/constants.py`. Its runner also serves t2va, and is the one that works
+  on tt-metal >= `816841ddc93` (which dropped the `last_padded_len` main's runner reads);
+* the media-limit commits from `zni/h3-media-limits` (image 30 MiB, video 50 MiB, audio 15 MiB,
+  body 64 MiB, no base64 echo), so the 27 MB keyframe cases are real runs;
+* `align_num_frames` taken from `minimax_h3.packing` or, on tt-metal's robustness line,
+  `minimax_h3.policy` (`minimax_h3_policy.minimax_h3_shape_helpers`);
+* an image step restoring tt-metal's `transformers` pin after tt-vllm-plugin's `4.55.0`, which
+  lacks the Qwen3-VL video processor Ref2VA video references need ("Unrecognized video
+  processor"). The vLLM runners of the image expect the old pin: H3-only images;
+* task-aware plumbing keyed on the spec's `MODEL_RUNNER`: `setup_host` downloads the task's
+  weight set (ref2va reads `transformer_ref/` instead of `transformer/`) and treats a volume
+  missing the task's folders or index shards as incomplete; the benchmark takes its task,
+  default plans, output directory and `skip_smoke` per entry; the contract, lifecycle,
+  quality-eval and generic-benchmark requests follow the deployment's task (fl2va gets the
+  text-only shape it serves, ref2va one reference image);
+* the task's media under `test_fixtures/datasets/minimax_h3/`, committed with `git add -f`
+  (FL2VA ~27 MB, Ref2VA ~97 MB, T2VA none; pinned by `sha256s-bundle.txt`);
+* one `TT_DIT_CACHE_DIR` per task and tt-metal line: cache keys carry neither, the volume
+  is shared across runners, and the three variants may run at once.
+
+tt-metal: `sadesoye/minimax_robustness` (`d128b725c78`, warmup for every task, the attention
+persistent-buffer reduction) or any tt-metal >= `816841ddc93`; not the t2va image's
+`d9c2c92d05c` and not stable `de546d3b`. Pin a sha, build fresh (`docker-image` empty, or the
+tag another variant's run built from the same tree), `run-full-evals=false` first:
+
+```bash
+gh workflow run on-dispatch.yml -R tenstorrent/tt-shield --ref main \
+  -f model=MiniMaxAI/MiniMax-H3 -f runner-label=bh-galaxy -f device-type=blackhole_galaxy \
+  -f workflow=release -f tt-metal-git-ref=<tt-metal sha> \
+  -f inference-server-git-ref=<40-hex sha of zni/h3-ci-t2va> -f impl-of-model=default \
+  -f run-full-evals=false -f create-issue-comment=false -f run-ai-summary=false
+```
+
+Measured on tt-metal `da8ec6bed81` (2026-09-25): FL2VA boot 19 min; FL2VA-L 58 s, -M 150 s,
+-H1 297 s, -L2 68 s; FL2VA-M2 and FL2VA-H ran out of device DRAM (98.5 % of each bank in use,
+the largest free block 21.5 MB short of a 21.7 MB buffer). Ref2VA boot 15 min; its video
+references failed on the transformers pin above. Expect Ref2VA ~5.5 h (CI) / ~11 h (full).
+An out-of-memory leaks device DRAM until the ranks restart, which is why the max-input cases
+run last.
+
 ## Known gaps and next steps
 
 * **FL2VA / Ref2VA are not on main yet** (runners, `POST /generations/ref2va`,
@@ -158,9 +217,11 @@ detects the `.incomplete` files and resumes it.
   `results.jsonl` (3x the slowest observed run; target = 1.25x the median).
 * **Cancel** is disabled in CI until verified on a single host.
 * **Seed determinism** is not asserted (the hosted deployments were not deterministic).
-* **Media goes as base64 only**: the vendored engine did not take the standalone tool's
-  URL transport, so `FL2VA-H`/`FL2VA-L2`/`FL2VA-M2` (27 MB keyframe > the 10,000,000-char
-  cap) can only `xfail` until URL media is ported.
+* **Media goes as base64 only**. On main the 27 MB keyframe of `FL2VA-H`/`FL2VA-L2`/
+  `FL2VA-M2` exceeds the 10,000,000-char image cap and those cases can only `xfail`; URL
+  media would not help (downloads are capped at 7.5 MB and re-checked against the same
+  cap). The per-task dispatch branches carry the media-limit commits (image 30 MiB, video
+  50 MiB, audio 15 MiB, body 64 MiB, no base64 echo), so there they are real runs.
 * **The shared volume is not everywhere**: `/mnt/MLPerf/tt-shield/persistent-volume` exists
   only on runners that have that mount; tt-shield falls back to `/localdev/persistent-volume`
   or a per-run directory, and the media pack has to be staged wherever the volume lands.
