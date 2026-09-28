@@ -544,6 +544,9 @@ async def _submit_video_request(
         )
 
     _enforce_inline_media_total(request)
+    # Echo the request as the client sent it: resolution below swaps URLs for
+    # their downloaded base64, which must not be returned on every job poll.
+    client_parameters = request.model_dump(mode="json")
     await _resolve_image_prompt_urls(request)
     await _resolve_media_source_urls(request)
     _enforce_ref2va_clip_durations(request)
@@ -586,7 +589,9 @@ async def _submit_video_request(
             )
 
         # Async mode: create job and return job metadata
-        job_data = await service.create_job(JobTypes.VIDEO, request)
+        job_data = await service.create_job(
+            JobTypes.VIDEO, request, request_parameters=client_parameters
+        )
         return JSONResponse(content=job_data, status_code=202)
     except HTTPException:
         raise

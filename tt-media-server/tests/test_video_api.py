@@ -166,7 +166,9 @@ class TestSubmitGenerateVideoRequest:
 
         assert response.status_code == 202
         assert response.body is not None
-        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+        mock_service.create_job.assert_called_once_with(
+            JobTypes.VIDEO, request, request_parameters=request.model_dump(mode="json")
+        )
 
     @pytest.mark.asyncio
     async def test_submit_generate_video_request_failure(self):
@@ -1269,7 +1271,9 @@ class TestSubmitGenerateVideoI2VRequest:
         )
 
         assert response.status_code == 202
-        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
+        mock_service.create_job.assert_called_once_with(
+            JobTypes.VIDEO, request, request_parameters=request.model_dump(mode="json")
+        )
 
     @pytest.mark.asyncio
     async def test_submit_i2v_request_queue_full_returns_429(self):
