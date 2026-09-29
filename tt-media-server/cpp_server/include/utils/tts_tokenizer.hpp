@@ -30,10 +30,34 @@ inline constexpr const char* VOICE_PROMPT_START_TOKEN =
     "<|voice_prompt_start|>";
 inline constexpr const char* VOICE_PROMPT_END_TOKEN = "<|voice_prompt_end|>";
 inline constexpr const char* BOT_TOKEN = "<|bot|>";
+// Readout tokens: the reference prompt compiler (tts-models/prompting.py)
+// places <|reserved_token_0|>..<|reserved_token_7|> between the bot text and
+// <|speech_start|> on every generated turn, matching training.
+inline constexpr const char* READOUT_TOKEN_PATTERN_PREFIX = "<|reserved_token_";
+inline constexpr uint32_t READOUT_TOKEN_COUNT = 8;
+// The vocabulary carries exactly this many speech tokens, <|s_0|>..<|s_65535|>.
+inline constexpr uint32_t SPEECH_TOKEN_COUNT = 65536;
 
 inline std::string speechTokenForId(uint32_t speechId) {
   return std::string(SPEECH_TOKEN_PATTERN_PREFIX) + std::to_string(speechId) +
          SPEECH_TOKEN_PATTERN_SUFFIX;
+}
+
+inline std::string readoutTokenForIndex(uint32_t index) {
+  return std::string(READOUT_TOKEN_PATTERN_PREFIX) + std::to_string(index) +
+         SPEECH_TOKEN_PATTERN_SUFFIX;
+}
+
+// All READOUT_TOKEN_COUNT readout tokens concatenated, in order.
+inline const std::string& readoutTokens() {
+  static const std::string tokens = [] {
+    std::string out;
+    for (uint32_t i = 0; i < READOUT_TOKEN_COUNT; ++i) {
+      out += readoutTokenForIndex(i);
+    }
+    return out;
+  }();
+  return tokens;
 }
 
 inline uint32_t tokenIdForVocab(const std::vector<std::string>& vocab,
@@ -53,6 +77,9 @@ inline void validateRequiredTokens(const tokenizers::Tokenizer& tokenizer) {
         SPEECH_TOKEN_NEXT, AUDIO_PROMPT_START_TOKEN, AUDIO_PROMPT_END_TOKEN,
         VOICE_PROMPT_START_TOKEN, VOICE_PROMPT_END_TOKEN, BOT_TOKEN}) {
     tokenIdForVocab(vocab, token);
+  }
+  for (uint32_t i = 0; i < READOUT_TOKEN_COUNT; ++i) {
+    tokenIdForVocab(vocab, readoutTokenForIndex(i));
   }
 }
 

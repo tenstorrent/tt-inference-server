@@ -497,6 +497,8 @@ The Text-to-Speech API converts text to speech audio using the SpeechT5 model. T
 | Parameter           | Required | Description |
 |--------------------|----------|-------------|
 | `text`             | Yes      | Input text to convert to speech. |
+| `description`      | No       | Natural-language voice description (TTS-2 voice prompt). |
+| `speech_ids`       | No       | Voice prompt as codec speech token IDs: the TTS-2 audio encoder's output for the reference audio (integers in `[0, 65535]`, 50 per second). Compiled into the prompt as `<|audio_prompt_start|><|s_N|>…<|audio_prompt_end|>` ahead of the text, as in the reference `prompting.py`. Mutually exclusive with a `voice_sample` upload. |
 | `response_format`  | No       | Output format: `wav` (default), `mp3`, `ogg`, `json`, or `verbose_json`. |
 
 ## Response formats

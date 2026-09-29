@@ -912,6 +912,15 @@
           "description": {
             "type": "string",
             "description": "Optional natural-language voice description."
+          },
+          "speech_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 65535
+            },
+            "description": "Optional voice prompt as codec speech token IDs (the TTS-2 audio encoder output for the reference audio, 50 tokens per second). Compiled into the prompt as <|audio_prompt_start|><|s_N|>...<|audio_prompt_end|> ahead of the text. Mutually exclusive with voice_sample. In multipart requests, a JSON array or comma-separated list in a text part."
           }
         }
       },

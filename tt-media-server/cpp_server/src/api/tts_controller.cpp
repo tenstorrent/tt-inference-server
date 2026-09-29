@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include "api/error_response.hpp"
 #include "api/response_writer/streaming_wav_response_writer.hpp"
@@ -36,6 +37,50 @@ std::optional<std::string> findParam(const ParamMap& params,
   return it->second;
 }
 
+// speech_ids arrives in a multipart text part either as a JSON array
+// ("[12, 34]") or as a comma-separated list ("12,34"). The leading bracket
+// decides: jsoncpp is lenient and would otherwise accept "12,34" as the number
+// 12.
+std::vector<uint32_t> parseSpeechIdsParam(const std::string& raw) {
+  constexpr const char* kSpace = " \t\r\n";
+  const size_t first = raw.find_first_not_of(kSpace);
+  if (first != std::string::npos && raw[first] == '[') {
+    Json::Value parsed;
+    Json::CharReaderBuilder builder;
+    builder["failIfExtra"] = true;
+    std::string errors;
+    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+    if (!reader->parse(raw.data(), raw.data() + raw.size(), &parsed, &errors)) {
+      throw std::invalid_argument("speech_ids is not a valid JSON array: " +
+                                  errors);
+    }
+    return TtsRequest::parseSpeechIds(parsed);
+  }
+
+  Json::Value parsed(Json::arrayValue);
+  std::string_view rest = raw;
+  while (true) {
+    const size_t comma = rest.find(',');
+    std::string item(rest.substr(0, comma));
+    const size_t begin = item.find_first_not_of(kSpace);
+    item = begin == std::string::npos
+               ? std::string{}
+               : item.substr(begin, item.find_last_not_of(kSpace) - begin + 1);
+    if (item.empty() ||
+        item.find_first_not_of("0123456789") != std::string::npos) {
+      throw std::invalid_argument(
+          "speech_ids must be a JSON array or comma-separated list of "
+          "non-negative integers");
+    }
+    parsed.append(Json::Value(static_cast<Json::UInt64>(std::stoull(item))));
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    rest = rest.substr(comma + 1);
+  }
+  return TtsRequest::parseSpeechIds(parsed);
+}
+
 TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
   if (auto json = req->getJsonObject()) {
     return TtsRequest::fromJson(*json, taskId);
@@ -55,6 +100,10 @@ TtsRequest parseTtsRequest(const drogon::HttpRequestPtr& req, uint32_t taskId) {
   TtsRequest request(taskId);
   request.text = *text;
   request.description = findParam(params, "description");
+
+  if (auto speechIds = findParam(params, "speech_ids")) {
+    request.promptSpeechIds = parseSpeechIdsParam(*speechIds);
+  }
 
   const auto& files = parser.getFiles();
   if (!files.empty()) {

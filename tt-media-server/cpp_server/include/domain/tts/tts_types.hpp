@@ -34,6 +34,30 @@ struct TtsRequest : tt::domain::BaseRequest {
   std::string text;
   std::optional<std::string> description;
   std::optional<VoiceSample> voiceSample;
+  /** Voice prompt as codec speech tokens (the audio encoder's output for the
+   * reference audio). Compiled into <|audio_prompt_start|><|s_N|>...
+   * <|audio_prompt_end|> ahead of the text, exactly as the reference
+   * prompt compiler does. Mutually exclusive with voiceSample.
+   */
+  std::vector<uint32_t> promptSpeechIds;
+
+  static std::vector<uint32_t> parseSpeechIds(const Json::Value& ids) {
+    json_field::checkArray(ids, "speech_ids");
+    if (ids.empty()) {
+      throw std::invalid_argument("speech_ids must not be empty when provided");
+    }
+    std::vector<uint32_t> out;
+    out.reserve(ids.size());
+    for (const auto& id : ids) {
+      if (!id.isIntegral() || id.asInt64() < 0 ||
+          id.asInt64() > static_cast<Json::Int64>(UINT32_MAX)) {
+        throw std::invalid_argument(
+            "speech_ids must contain non-negative integers");
+      }
+      out.push_back(static_cast<uint32_t>(id.asInt64()));
+    }
+    return out;
+  }
 
   static TtsRequest fromJson(const Json::Value& json, uint32_t taskId) {
     TtsRequest request(taskId);
@@ -44,6 +68,9 @@ struct TtsRequest : tt::domain::BaseRequest {
     if (json.isMember("description") && !json["description"].isNull()) {
       request.description =
           json_field::getString(json["description"], "description");
+    }
+    if (json.isMember("speech_ids") && !json["speech_ids"].isNull()) {
+      request.promptSpeechIds = parseSpeechIds(json["speech_ids"]);
     }
     return request;
   }

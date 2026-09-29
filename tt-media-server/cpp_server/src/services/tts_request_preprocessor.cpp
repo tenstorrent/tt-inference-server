@@ -90,17 +90,26 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
   task.text = request.text;
   task.description = request.description;
 
+  if (request.voiceSample.has_value() && !request.promptSpeechIds.empty()) {
+    throw std::invalid_argument(
+        "voice sample audio and speech_ids are mutually exclusive");
+  }
+
   if (request.voiceSample.has_value()) {
+    // Raw reference audio needs the runner-side voice encoder to produce the
+    // speech IDs; the prompt is compiled there once they arrive.
     tt::utils::tts_prompt_compiler::validatePromptInputs(request.text,
                                                          request.description);
     auto normalized = normalizeVoiceSample(*request.voiceSample);
     task.voiceWavPcm = std::move(normalized.wavPcm);
   } else {
+    // Text-only, or a voice prompt already given as codec speech IDs: the
+    // whole prompt can be compiled here, no encoder round trip needed.
     const auto& tokenizer =
         tt::utils::tts_tokenizer::tokenizerForPath(config.tokenizerPath);
     task.promptTokens = tt::utils::tts_prompt_compiler::compilePromptTokens(
-        tokenizer, request.text, request.description,
-        /*promptSpeechIds=*/{}, config.bosToken);
+        tokenizer, request.text, request.description, request.promptSpeechIds,
+        config.bosToken);
 
     // Dump the compiled prompt so it can be diffed against the reference
     // compiler without attaching a debugger or rebuilding: a missing BOS or a
@@ -109,8 +118,11 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
     for (size_t i = 0; i < task.promptTokens.size(); ++i) {
       ids << (i ? ", " : "") << task.promptTokens[i];
     }
-    TT_LOG_DEBUG("[TtsPreprocessor] promptTokens={} bos='{}' ids=[{}]",
-                 task.promptTokens.size(), config.bosToken, ids.str());
+    TT_LOG_DEBUG(
+        "[TtsPreprocessor] promptTokens={} promptSpeechIds={} bos='{}' "
+        "ids=[{}]",
+        task.promptTokens.size(), request.promptSpeechIds.size(),
+        config.bosToken, ids.str());
   }
 
   return task;
