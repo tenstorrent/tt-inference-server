@@ -14,6 +14,12 @@
 # Usage:
 #   1. source your environment (e.g. source python_env/bin/activate)
 #   2. run this script: $ bash scripts/install_mpi4py_ulfm.sh
+#
+# Version-agnostic by design (MINFRA-1646): this scans /opt/*/bin/ompi_info
+# for whichever ULFM-enabled OpenMPI is actually installed, rather than
+# hardcoding a version path. When the base image's OpenMPI is bumped (e.g.
+# v5.0.7-ulfm -> v5.0.10-ulfm), this script picks up the new prefix
+# automatically and needs no change.
 
 set -euo pipefail
 

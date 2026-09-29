@@ -23,6 +23,7 @@ from typing import List, Optional, Tuple
 from utils.url_helpers import uses_remote_base_url
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..goodput import VLLM_GOODPUT_KEYS, render_goodput
 from ..parsers.vllm import VLLMBenchParser
 from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
@@ -75,6 +76,13 @@ def build_vllm_bench_serve_argv(
         "--result-filename",
         str(result_filename),
     ]
+
+    goodput = render_goodput(config.goodput, VLLM_GOODPUT_KEYS)
+    if goodput:
+        # --goodput takes space-separated KEY:VALUE SLO pairs as separate
+        # argv tokens (nargs="+"; keys ttft/tpot/e2el, milliseconds). With
+        # it the result JSON gains request_goodput (good requests/sec).
+        cmd.extend(["--goodput", *goodput.split()])
 
     if config.custom_dataset_path is not None:
         cmd.extend(

@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from test_module.test_categorization_system.suite_loader import (
     load_server_tests_config,
     load_suite_files_by_category,
@@ -18,7 +20,7 @@ def test_diffusiongemma_llm_suite_uses_model_specific_conformance_test():
         suite for suite in suites if suite["id"] == "diffusiongemma-26b-a4b-it-p300x2"
     )
 
-    assert suite["weights"] == ["diffusiongemma-26B-A4B-it"]
+    assert suite["weights"] == ["google/diffusiongemma-26B-A4B-it"]
     assert suite["device"] == "p300x2"
     assert [case["template"] for case in suite["test_cases"]] == [
         "VLLMDiffusionGemmaParamConformanceTest"
@@ -28,6 +30,22 @@ def test_diffusiongemma_llm_suite_uses_model_specific_conformance_test():
     template = templates["VLLMDiffusionGemmaParamConformanceTest"]
     assert template["module"] == "test_module.llm_tests.vllm_param_conformance_test"
     assert {"param", "e2e", "slow", "heavy"} <= set(template["markers"])
+
+
+def test_llama_3_2_1b_p300x2_uses_vllm_param_conformance_suite():
+    suites = load_suite_files_by_category("llm")
+    matching = [
+        suite
+        for suite in suites
+        if suite["weights"] == ["meta-llama/Llama-3.2-1B-Instruct"]
+    ]
+
+    assert [(suite["id"], suite["device"]) for suite in matching] == [
+        ("llama-3.2-1b-p300x2", "p300x2")
+    ]
+    assert [case["template"] for case in matching[0]["test_cases"]] == [
+        "VLLMParamConformanceTest"
+    ]
 
 
 class TestImageMatrixExpansionSDXL:
@@ -166,6 +184,7 @@ class TestVideoMatrixExpansion:
         "mochi-p150x4",
         "mochi-p150x8",
         "mochi-p300x2",
+        "minimax-h3-blackhole_galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -274,6 +293,136 @@ class TestVideoMatrixExpansion:
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():
             assert suite["num_of_devices"] == 1
+
+    def test_minimax_h3_suite_contract_lifecycle_and_benchmark(self):
+        # One single-host BH Galaxy serves t2va; the suite drives the V1 contract, one
+        # judged lifecycle, then the h3-benchmark cases. Cancel stays disabled until a
+        # single-host cancel is verified not to take the deployment down.
+        suite = self._suite_map()["minimax-h3-blackhole_galaxy"]
+        enabled = [
+            tc["template"] for tc in suite["test_cases"] if tc.get("enabled", True)
+        ]
+        assert enabled == [
+            "MiniMaxH3CreateContractTest",
+            "MiniMaxH3LifecycleDownloadTest",
+            "MiniMaxH3BenchmarkTest",
+        ]
+        disabled = [
+            tc["template"] for tc in suite["test_cases"] if not tc.get("enabled", True)
+        ]
+        assert disabled == ["MiniMaxH3CancelLifecycleTest"]
+        bench = self._case_targets(
+            "minimax-h3-blackhole_galaxy", "MiniMaxH3BenchmarkTest"
+        )
+        assert bench["task"] == "t2va"
+        assert bench["timeout_table"] == "BH1X"
+        assert bench["plan_ci"] == [
+            {"cases": ["T2VA-L"], "runs": 3},
+            {"cases": ["T2VA-M", "T2VA-H"], "runs": 1},
+        ]
+        assert bench["plan_full"] == [
+            {"cases": ["T2VA-L", "T2VA-M", "T2VA-H"], "runs": 3}
+        ]
+        # The expanded case carries only template/targets; its budget is the
+        # template's test_config, which BaseTest reads as config["timeout"]
+        # ("test_timeout" is a dead key there).
+        templates = load_server_tests_config()["test_templates"]
+        bench_config = templates["MiniMaxH3BenchmarkTest"]["test_config"]
+        assert bench_config["timeout"] == 14400
+        assert "test_timeout" not in bench_config
+        for template in (
+            "MiniMaxH3CreateContractTest",
+            "MiniMaxH3LifecycleDownloadTest",
+            "MiniMaxH3CancelLifecycleTest",
+            "MiniMaxH3VideoQualityTest",
+        ):
+            assert "timeout" in templates[template]["test_config"], template
+            assert "test_timeout" not in templates[template]["test_config"], template
+
+    @staticmethod
+    def _minimax_h3_spec_runner():
+        """MODEL_RUNNER of the MiniMax-H3 BLACKHOLE_GALAXY dev spec, device env on top, as
+        the benchmark reads it from ctx.model_spec.env_vars at run time."""
+        import yaml
+
+        path = (
+            Path(__file__).resolve().parents[2] / "workflows/model_specs/dev/video.yaml"
+        )
+        (spec,) = [
+            t
+            for t in yaml.safe_load(path.read_text())["templates"]
+            if "MiniMaxAI/MiniMax-H3" in t["weights"]
+        ]
+        (device,) = [
+            d for d in spec["device_model_specs"] if d["device"] == "BLACKHOLE_GALAXY"
+        ]
+        env = {**spec.get("env_vars", {}), **device.get("env_vars", {})}
+        return env["MODEL_RUNNER"]
+
+    def test_minimax_h3_benchmark_entries_serve_the_spec_task(self, monkeypatch):
+        # The benchmark takes its task from the spec's MODEL_RUNNER and fails a suite entry
+        # whose targets.task contradicts it; every planned case must belong to that task. In
+        # both modes (--ci-mode and run-full-evals) the entries of one suite must run
+        # different cases into different directories, and each plan must fit its entry's
+        # deadline at the pace the budgets assume: the cases it never starts are skipped and
+        # fail the test on a healthy deployment.
+        from types import SimpleNamespace
+
+        from test_module._test_common import TestConfig
+        from test_module._test_common.minimax_h3_bench import models as M
+        from test_module.load_param_tests import minimax_h3_benchmark_test as T
+
+        runner = self._minimax_h3_spec_runner()
+        assert runner in T.RUNNER_TASKS, runner
+        by_id = {c["id"]: c for c in M.load_cases()["cases"]}
+        templates = load_server_tests_config()["test_templates"]
+        template_config = templates["MiniMaxH3BenchmarkTest"]["test_config"]
+        checked = 0
+        for suite_id, suite in self._suite_map().items():
+            entries = [
+                tc
+                for tc in suite["test_cases"]
+                if tc["template"] == "MiniMaxH3BenchmarkTest"
+                and tc.get("enabled", True)
+            ]
+            for ci in (True, False):
+                ctx = SimpleNamespace(
+                    model_spec=SimpleNamespace(env_vars={"MODEL_RUNNER": runner}),
+                    runtime_config=SimpleNamespace(ci_mode=ci, limit_samples_mode=None),
+                    output_path="/output",
+                    service_port=8000,
+                    base_url="http://127.0.0.1:8000",
+                )
+                monkeypatch.setattr(T, "_OUT_DIR_OWNERS", {})
+                plans, dirs = set(), set()
+                for tc in entries:
+                    targets = tc.get("targets") or {}
+                    config = {**template_config, **(tc.get("test_config") or {})}
+                    test = T.MiniMaxH3BenchmarkTest(
+                        TestConfig(config), targets, ctx=ctx
+                    )
+                    task = test._task()  # raises on a mismatch
+                    plan = test._plan(task)
+                    ids = tuple(cid for item in plan for cid in item["cases"])
+                    where = (suite_id, "ci" if ci else "full", ids)
+                    assert {by_id[cid]["task"] for cid in ids} == {task}, where
+                    assert ids not in plans, f"{where}: another entry runs these cases"
+                    plans.add(ids)
+                    out = test._out_dir(plan)  # raises on a shared out_subdir
+                    assert out not in dirs, (where, out)
+                    dirs.add(out)
+                    table = str(targets.get("timeout_table", M.DEFAULT_TIMEOUT_TABLE))
+                    skip = bool(targets.get("skip_smoke", False))
+                    need, deadline = (
+                        T.plan_estimate_s(task, plan, table, skip),
+                        test._deadline_s(),
+                    )
+                    assert need <= deadline, (
+                        f"{where}: ~{need}s of generation at the {table} pace, deadline "
+                        f"{deadline:.0f}s: raise the entry's test_config.timeout or split the plan"
+                    )
+                    checked += 1
+        assert checked, "no enabled MiniMaxH3BenchmarkTest entry"
 
     def test_wan_load_targets_merge_per_device(self):
         for suite_id, expected in self.WAN_LOAD_TARGETS.items():

@@ -9,6 +9,7 @@ wired only for ``qwen3_32b`` via ``VLLMQwen3StreamingParamConformanceTest``.
 """
 
 import json
+import os
 import time
 
 import pytest
@@ -104,7 +105,11 @@ _JSON_STREAMING_RUNS = 4
 # seconds after the previous run's start (gap-aware: the stream's own elapsed
 # time counts toward the gap, so a run that already took 40s only sleeps the
 # remaining ~80s). Tune here if the endpoint's limit differs.
-_JSON_STREAMING_MIN_GAP_S = 120
+#
+# A directly-hosted vLLM server has no such ingress in front of it, so the gap
+# is pure sleep there (24 runs x 120s = ~48min of idle accelerator time). Set
+# QWEN3_STREAMING_MIN_GAP_S=0 when pointing the suite straight at a server.
+_JSON_STREAMING_MIN_GAP_S = int(os.environ.get("QWEN3_STREAMING_MIN_GAP_S", "120"))
 
 # If a run is still rejected/truncated despite the gap, wait one more gap and
 # retry that same run this many times before giving up. Only cleanly-completed

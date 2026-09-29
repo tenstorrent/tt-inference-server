@@ -11,7 +11,7 @@ tt-media-server/tt_model_runners/forge_runners/ @vmilosevic @mcupacTT @mmilosevi
 tt-vllm-plugin/ @idjuricTT @ztorlakTT @fivanovicTT @ljovanovicTT @dmadicTT @bgoelTT @knovokmetTT @vpetrovicTT @ddjukicTT
 
 # vllm-tt-metal
-vllm-tt-metal/ @tstescoTT @bgoelTT @stisiTT
+vllm-tt-metal/ @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners
 
 # workflows
 run.py @tstescoTT @bgoelTT @stisiTT @tenstorrent/tt-inference-server-codeowners

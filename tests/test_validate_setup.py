@@ -169,6 +169,7 @@ class TestValidateBindMountPermissions:
             "host_volume": None,
             "host_hf_cache": None,
             "host_weights_dir": None,
+            "quetzal_package_root": None,
         }
         defaults.update(overrides)
         return Namespace(**defaults)
@@ -253,6 +254,21 @@ class TestValidateBindMountPermissions:
         d.mkdir()
         args = self._make_args(host_weights_dir=str(d))
         validate_bind_mount_permissions(args)
+
+    def test_quetzal_package_mount_requires_read_only_access(self, tmp_path):
+        package = tmp_path / "package"
+        package.mkdir()
+        args = self._make_args(quetzal_package_root=str(package))
+
+        with patch(
+            "workflows.validate_setup.check_path_permissions_for_uid",
+            return_value=(True, ""),
+        ) as check_permissions:
+            validate_bind_mount_permissions(args)
+
+        check_permissions.assert_called_once_with(
+            str(package), os.getuid(), need_write=False
+        )
 
     def test_host_weights_dir_not_readable_raises_when_fix_fails(self, tmp_path):
         d = tmp_path / "weights_noperm"
@@ -606,10 +622,18 @@ class TestAgenticTracesRegistration:
 
     UNREGISTERED_ID = "id_tt-transformers_Llama-3.1-8B-Instruct_n150"
 
-    def _spec(self, model_id, model_name="Llama-3.1-8B-Instruct"):
+    UNREGISTERED_REPO = "meta-llama/Llama-3.1-8B-Instruct"
+
+    def _spec(
+        self,
+        model_id,
+        model_name="Llama-3.1-8B-Instruct",
+        hf_model_repo=UNREGISTERED_REPO,
+    ):
         spec = MagicMock()
         spec.model_id = model_id
         spec.model_name = model_name
+        spec.hf_model_repo = hf_model_repo
         spec.inference_engine = "vLLM"
         return spec
 
@@ -674,7 +698,8 @@ class TestAgenticTracesRegistration:
         """Without the opt-in there is no agentic-traces child to protect."""
         spec = self._spec(self.UNREGISTERED_ID)
         monkeypatch.setattr(
-            "workflows.validate_setup.EVAL_CONFIGS", {spec.model_name: object()}
+            "reference_config.evals.eval_config.EVAL_CONFIGS",
+            {spec.hf_model_repo: object()},
         )
         monkeypatch.setattr(
             "workflows.validate_setup.can_dispatch_to_engine", lambda *a, **k: True

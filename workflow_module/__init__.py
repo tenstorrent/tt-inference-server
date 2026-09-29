@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
 from .blocks_sink import BlockAccumulator, accept_blocks, get_default_accumulator
+from .checkpoint import checkpoint_report
 
 _LAZY_FROM_EXECUTION = {
     "AgenticTracesOptions",
@@ -74,6 +75,7 @@ def __getattr__(name):
 __all__ = [
     "BlockAccumulator",
     "accept_blocks",
+    "checkpoint_report",
     "get_default_accumulator",
     *sorted(_LAZY_FROM_EXECUTION),
     *sorted(_LAZY_FROM_WORKFLOWS),

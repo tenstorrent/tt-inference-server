@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from report_module.schema import Block
+from test_module._test_common import report_model_fields
 
 logger = logging.getLogger(__name__)
 
@@ -285,10 +286,24 @@ def run_smoke_tests(ctx) -> List[SmokeTestResult]:
             "result_files": sorted(f.name for f in out_dir.iterdir() if f.is_file()),
         },
     )
+    # Prefer what the mock stack actually served for model_repo; bare name
+    # stays on model_name (same split as ModelSpec / other report envelopes).
+    report_repo = (
+        served_model
+        or getattr(ctx.model_spec, "hf_model_repo", "")
+        or getattr(ctx.model_spec, "model_name", "")
+        or ""
+    )
+    fields = report_model_fields(ctx.model_spec)
+    if report_repo:
+        fields = {
+            "model_repo": report_repo,
+            "model_name": report_repo.rsplit("/", 1)[-1],
+        }
     accept_blocks(
         [block],
         envelope={
-            "model_name": served_model or getattr(ctx.model_spec, "model_name", ""),
+            **fields,
             "device": ctx.device.name
             if hasattr(ctx.device, "name")
             else str(ctx.device),

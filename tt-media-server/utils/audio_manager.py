@@ -19,6 +19,7 @@ import numpy as np
 from config.constants import AudioInputFormat, SupportedModels
 from config.settings import settings
 from domain.audio_text_response import AudioTextResponse, AudioTextSegment
+from telemetry.audio_metrics import record_stt_chunk_sizes
 from telemetry.telemetry_client import (
     audio_chunking_duration,
     audio_chunks_per_request,
@@ -508,6 +509,9 @@ class AudioManager:
         audio_chunks_per_request.labels(
             model_type=settings.model_runner, mode=mode
         ).observe(len(whisper_chunks))
+        record_stt_chunk_sizes(
+            model_type=settings.model_runner, mode=mode, chunks=whisper_chunks
+        )
 
         if enable_diarization:
             self._logger.info(

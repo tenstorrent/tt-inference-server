@@ -234,7 +234,7 @@ def setup_multihost_config(
     # 6. DeepSeek model specific environment variables
     deepseek_hf_model = None
     deepseek_cache = None
-    if "deepseek" in model_spec.model_name.lower():
+    if "deepseek" in model_spec.hf_model_repo.lower():
         deepseek_hf_model = os.getenv(ENV_DEEPSEEK_V3_HF_MODEL)
         deepseek_cache = os.getenv(ENV_DEEPSEEK_V3_CACHE)
 

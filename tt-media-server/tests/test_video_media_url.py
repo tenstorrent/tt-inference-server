@@ -17,7 +17,6 @@ import pytest
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import (
-    MAX_IMAGE_BYTES,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
@@ -28,8 +27,6 @@ from domain.video_ref2va_generate_request import (
 )
 from fastapi import HTTPException
 from open_ai_api.video import (
-    MAX_INLINE_MEDIA_LEN,
-    _enforce_inline_media_total,
     _resolve_image_prompt_urls,
     _submit_video_request,
     submit_generate_video_i2v_request,
@@ -74,41 +71,31 @@ def _ref2va_videos(*sources: MediaSource) -> VideoRef2VAGenerateRequest:
     )
 
 
-class TestInlineMediaTotal:
-    _HALF = "A" * (MAX_INLINE_MEDIA_LEN // 2)
+class TestInlineTotalIsTheBodyCap:
+    """The inline total is bounded once: by the 64 MiB request-body cap
+    (``RequestBodyLimitMiddleware``, ``settings.max_request_body_bytes``), before
+    the body is parsed. The endpoint must not stack a tighter total on top: the
+    CI's SIZE-V* (64,273,668 base64 chars) and REF2VA-H* (~65.3M-char body) cases
+    sit between 64,000,000 and 64 MiB."""
 
-    def test_total_at_cap_accepted(self):
-        _enforce_inline_media_total(
-            _ref2va_videos(MediaSource(b64=self._HALF), MediaSource(b64=self._HALF))
-        )
+    def test_body_cap_admits_the_ci_bodies(self):
+        # settings.max_request_body_bytes defaults to this constant
+        # (test_minimax_h3_media_limits.py::test_settings_defaults_follow_the_card).
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MAX_REQUEST_BODY_BYTES
 
-    def test_total_over_cap_rejected_with_413(self):
-        request = _ref2va_videos(
-            MediaSource(b64=self._HALF),
-            MediaSource(b64=self._HALF),
-            MediaSource(b64="AAAA"),
-        )
-        with pytest.raises(HTTPException) as exc_info:
-            _enforce_inline_media_total(request)
-        assert exc_info.value.status_code == 413
+        assert MINIMAX_H3_MAX_REQUEST_BODY_BYTES == 64 * 1024 * 1024 > 65_300_000
 
-    def test_url_sources_not_counted(self):
-        _enforce_inline_media_total(
-            _ref2va_videos(
-                MediaSource(b64=self._HALF),
-                MediaSource(b64=self._HALF),
-                MediaSource(url="https://example.com/v.mp4"),
-            )
-        )
-
-    def test_i2v_inline_images_counted(self):
-        request = VideoI2VGenerateRequest(
-            prompt="p", image_prompts=[{"image": _TINY_PNG_BASE64, "frame_pos": 0}]
-        )
-        with patch("open_ai_api.video.MAX_INLINE_MEDIA_LEN", 10):
-            with pytest.raises(HTTPException) as exc_info:
-                _enforce_inline_media_total(request)
-        assert exc_info.value.status_code == 413
+    async def test_endpoint_adds_no_tighter_inline_total(self, monkeypatch):
+        monkeypatch.setattr(settings, "use_async_video", True)
+        half = "A" * 32_650_000  # 65.3M inline chars in total
+        request = _ref2va_videos(MediaSource(b64=half), MediaSource(b64=half))
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(return_value={"id": "job_1"})
+        # The clip probes are covered in test_minimax_h3_media_limits.py; "A"s are not a video.
+        with patch("open_ai_api.video._enforce_ref2va_media_limits"):
+            response = await _submit_video_request(request, mock_service)
+        assert response.status_code == 202
+        mock_service.create_job.assert_awaited_once()
 
 
 class TestResolveImagePromptUrls:
@@ -163,14 +150,17 @@ class TestResolveImagePromptUrls:
         assert exc_info.value.status_code == status
 
     async def test_oversized_download_is_rejected_with_413(self):
-        # Without the endpoint check this would 202 and then fail validation
-        # inside an SP-runner worker mid-job.
+        # One byte over the card's 30 MB image cap base64-encodes past the
+        # MAX_BASE64_IMAGE_LEN field cap; without the endpoint check this would
+        # 202 and then fail validation inside an SP-runner worker mid-job.
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_IMAGE_MAX_BYTES
+
         request = VideoI2VGenerateRequest(
             prompt="p", image_prompts=[{"image": _URL, "frame_pos": 0}]
         )
         with patch(
             "open_ai_api.video.download_media_url",
-            new=AsyncMock(return_value=b"x" * (MAX_IMAGE_BYTES + 1)),
+            new=AsyncMock(return_value=b"x" * (MINIMAX_H3_IMAGE_MAX_BYTES + 1)),
         ):
             with pytest.raises(HTTPException) as exc_info:
                 await _resolve_image_prompt_urls(request)

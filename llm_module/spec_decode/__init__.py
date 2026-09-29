@@ -14,8 +14,10 @@ orchestrator that ties them together is
 
 from .metrics import (
     fetch_prometheus_counters,
+    fetch_prometheus_counters_multi,
     parse_prometheus_text,
     scrape_spec_decode_metrics,
+    scrape_spec_decode_metrics_multi,
 )
 from .runs import (
     SPEC_DECODE_CI_SWEEP,
@@ -33,7 +35,9 @@ __all__ = [
     "SpecDecodeRun",
     "build_runs",
     "fetch_prometheus_counters",
+    "fetch_prometheus_counters_multi",
     "parse_prometheus_text",
     "scrape_spec_decode_metrics",
+    "scrape_spec_decode_metrics_multi",
     "summarize_runs",
 ]

@@ -827,10 +827,22 @@ class TestMiniMaxH3NumInferenceSteps:
         assert request.model_dump(mode="json")["num_inference_steps"] == 50
 
     @patch("domain.video_generate_request.get_settings")
-    def test_fasth3_omitted_keeps_schema_default(self, mock_settings):
+    def test_fasth3_omitted_echoes_its_fixed_step_count(self, mock_settings):
+        # FastH3 runs its distilled 4-step schedule, not the 50-step AdaLN count
+        # and not the shared schema default.
+        from config.constants import MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
+
         mock_settings.return_value.model_runner = "tt-minimax-h3-fasth3"
         request = VideoGenerateRequest(prompt="a fox")
-        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
+        assert request.num_inference_steps == MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
+        assert request.model_dump(mode="json")["num_inference_steps"] == 4
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_sp_runner_fasth3_echoes_its_fixed_step_count(self, mock_settings):
+        mock_settings.return_value.model_runner = "sp_runner"
+        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FastH3"}):
+            request = VideoGenerateRequest(prompt="a fox")
+        assert request.num_inference_steps == 4
 
     @patch("domain.video_generate_request.get_settings")
     def test_sp_runner_ref2va_echoes_served_step_count(self, mock_settings):

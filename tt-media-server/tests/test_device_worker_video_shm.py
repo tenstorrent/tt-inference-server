@@ -140,8 +140,11 @@ class TestSPRunnerRequestConversion:
         assert written_req.negative_prompt == "blurry"
         assert written_req.num_inference_steps == 20
         assert written_req.seed == 42
-        assert written_req.height == 480
-        assert written_req.width == 832
+        # No canvas on the request: the unsigned SHM slots carry 0 ("unset"), which
+        # video_request_to_generate_request maps back to None. Wan runners size from
+        # their own resolution; MiniMax-H3 resolves the canvas in the pipeline.
+        assert written_req.height == 0
+        assert written_req.width == 0
         assert written_req.num_frames == 81
 
     @patch("tt_model_runners.sp_runner.VideoShm")

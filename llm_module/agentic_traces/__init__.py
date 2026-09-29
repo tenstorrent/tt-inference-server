@@ -21,12 +21,14 @@ from .runs import (
     summarize_runs,
     total_planned_seconds,
 )
+from .schema import TraceSource
 
 __all__ = [
     "SUPPORTED_TRACE_SOURCES",
     "SWARMONE_CI_TIMEOUT_SECONDS",
     "SWARMONE_FULL_TIMEOUT_SECONDS",
     "AgenticTracesRun",
+    "TraceSource",
     "build_runs",
     "estimated_run_seconds",
     "summarize_runs",

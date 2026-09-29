@@ -6,6 +6,7 @@
             "models": [
                 "qwen3_32b",
                 "llama_3_1_8b",
+                "llama_3_2_1b",
                 "llama_70b_family",
                 "gpt_oss_20b"
             ],
@@ -14,6 +15,7 @@
                 "n300",
                 "t3k",
                 "galaxy",
+                "blackhole_galaxy",
                 "galaxy_t3k",
                 "gpu",
                 "p100",
@@ -54,6 +56,7 @@
             ],
             "devices": [
                 "galaxy",
+                "blackhole_galaxy",
                 "t3k",
                 "galaxy_t3k",
                 "p150x8",

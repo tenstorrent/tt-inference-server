@@ -32,6 +32,7 @@ def _parse_launcher_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--model", required=True)
     parser.add_argument("--workflow", required=True)
     parser.add_argument("--device", required=True)
+    parser.add_argument("--requirements-json", default=None)
     args, _ = parser.parse_known_args(argv)
     if args.workflow != "agentic":
         parser.error(
@@ -46,12 +47,25 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    from workflows.model_spec import get_runtime_model_spec
+    from workflow_module.model_catalog import get_model_spec_provider
     from workflows.workflow_types import WorkflowVenvType
 
     args = _parse_launcher_args(sys.argv[1:])
+    if args.requirements_json:
+        # This is a separate process from run.py, so the document has to be
+        # loaded again for the provider to synthesize an off-catalog spec.
+        from workflow_module.requirements_schema import load_requirements
+        from workflows.llm_gauntlet_repo import resolve_requirements_location
+        from workflows.requirements_cli import register_requirements_providers
+
+        # run.py resolves a "llm-gauntlet;<path>" value before forwarding, so
+        # this normally gets a plain path. Resolve anyway, so the launcher stays
+        # runnable by hand with the same spelling an operator copied out of a
+        # log; a second resolution just re-downloads the same specs.
+        args.requirements_json = resolve_requirements_location(args.requirements_json)
+        register_requirements_providers(load_requirements(args.requirements_json))
     # EVALS_AGENTIC setup depends on the model, so resolve the spec first.
-    model_spec, _, _ = get_runtime_model_spec(model=args.model, device=args.device)
+    model_spec = get_model_spec_provider().resolve(model=args.model, device=args.device)
     return setup_venv_and_exec(
         WorkflowVenvType.EVALS_AGENTIC,
         logger,

@@ -314,6 +314,110 @@ Three things to know when reading these:
   populated for in-process runners and the CPU postprocessing workers — including
   a small `resolution="64x64"` series from the postprocessing warmup task.
 
+### Stage timings: denoise and VAE decode
+
+The family above measures whole requests. These measure the two *stages* inside
+one, timed in the device worker from the `denoising` and `vae` sections the
+tt_dit pipelines emit on their `on_event` stream
+(`telemetry/video_stage_metrics.py`, wired at the `run()` sites in
+`tt_model_runners/dit_runners.py`). They answer a question the request-level
+metrics cannot: **the VAE can be the limiter even when the denoise loop is
+keeping the device busy.**
+
+| Metric | Labels | What it tells you |
+|--------|--------|-------------------|
+| `video_vae_frames_total` | `model_type`, `device_id`, `resolution` | frames converted from latents to pixels |
+| `video_vae_pixels_total` | same | pixels converted — makes 480p and 720p comparable |
+| `video_vae_decode_duration_seconds` | same | how long one video's decode took, as a histogram |
+| `video_denoise_duration_seconds` | same | how long the sampling loop that fed it took |
+
+**Divide the counter by the duration, not by wall-clock time.** The two useful
+queries:
+
+```promql
+# how fast the VAE is: frames (and megapixels) per second of VAE-busy time
+sum(rate(tt_media_server_video_vae_frames_total[$__rate_interval]))
+  / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[$__rate_interval])), 1e-9)
+
+sum(rate(tt_media_server_video_vae_pixels_total[$__rate_interval]))
+  / clamp_min(sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[$__rate_interval])), 1e-9) / 1e6
+
+# how much of the device time it is eating: VAE's share of measured stage time
+sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[5m]))
+  / clamp_min(
+      sum(rate(tt_media_server_video_denoise_duration_seconds_sum[5m]))
+        + sum(rate(tt_media_server_video_vae_decode_duration_seconds_sum[5m])),
+      1e-9)
+```
+
+A bare `rate(video_vae_frames_total[…])` is **not** VAE throughput. Each
+generation increments it once, after denoise *and* decode have finished, so
+over a window it is the fleet's frame output rate: slow denoising makes it read
+low even on an idle VAE, and an idle server makes it read zero on a fast one.
+`tt_media_server_video_frames_generated_total` already reports that number.
+Normalising by `_duration_seconds_sum` is what removes the load signal and
+leaves the decode rate.
+
+Use these rather than `video_step_duration_seconds` for the bottleneck
+question: that one is derived from the request-level duration, which
+deliberately includes queue wait, so it inflates under backlog. These are
+device-side spans and do not.
+
+Six things to know when reading these:
+
+* **Coverage is per pipeline, and uneven by construction.** Only pipelines that
+  emit a `vae` section can be measured:
+
+  | Runner | VAE metrics |
+  |--------|-------------|
+  | Wan2.2 T2V / I2V / AniSora / Distill / LoRA / Lightning | yes — the I2V variants inherit `WanPipeline.__call__` |
+  | Mochi-1 | yes |
+  | Wan2.2 Prodia T2V / I2V | no — external `pipelines.pipeline`, takes no `on_event` |
+  | LTX-2.3-distilled, MiniMax-H3 | no — no `on_event` parameter |
+
+  A run site must not pass `on_event` to a pipeline that does not accept it;
+  that is a `TypeError`, not a silently ignored kwarg.
+
+* **One observation is a whole video, not a frame.** A 81-frame decode is a
+  single `_count`. Per-frame cost is `_sum / video_vae_frames_total`, not
+  `_sum / _count`.
+
+* **Read the mean for stage time; treat the quantiles as tail-only.** At a fixed
+  shape these stages are close to deterministic, so every observation lands in
+  one histogram bucket and `histogram_quantile` returns that bucket's
+  interpolated midpoint — a value that does not move with the data and can sit
+  well above the truth. A perfectly flat p50 or p95 is reporting the bucket, not
+  the device. `rate(_sum) / rate(_count)` is not bucketed and stays exact, which
+  is what the decode-time panel plots. The buckets are sized so a real
+  regression crosses an edge rather than being swallowed, but no bucket set
+  makes a quantile exact on a narrow distribution.
+
+* **There is no per-step denoise latency for video.** Neither video pipeline
+  emits the `denoising_step_<i>` sections the image ones do, so the loop is a
+  single span. The two together cover the measured device time and nothing
+  else — text encoding and latent preparation are emitted but not recorded, so
+  the split panel is the split between these two, not of the whole request.
+
+* **The `vae` span is not the same work on Wan and Mochi.** Wan closes it after
+  the host readback, so D2H is inside the number. Mochi closes it before
+  `postprocess_video` but opens it around a `_reshape_vae()` device remesh, so
+  mesh reconfiguration is inside the number and the PIL conversion is not.
+  Frames per VAE-second compares fine across the two; raw decode latency does
+  not — that is why the latency panel says so in its description.
+
+* **Shape comes from probing the produced frames**, the same rule the
+  request-level metrics follow, with the runner's configured resolution as the
+  fallback label. If neither is readable the duration is still recorded under
+  `resolution="unknown"` and the frame and pixel counters are skipped rather
+  than credited a guessed zero.
+
+* **Warmup is excluded, and only spans that closed are exported.** The recorder
+  is not created while `_warming_up` is set. Every run site flushes in a
+  `finally`, so a generation that dies inside the decode still reports the
+  denoise loop that completed before it — while recording no decode latency and
+  crediting no frames, since that span never closed. Every frame counted has a
+  timed decode behind it, and the two series stay dividable.
+
 ## Directory layout
 
 ```

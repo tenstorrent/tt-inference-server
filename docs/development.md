@@ -143,8 +143,8 @@ pre-commit run --files path/to/file
 Use `--limit-samples-mode smoke-test` for fast end-to-end workflow validation while iterating on `benchmarks` or `evals`.
 
 ```bash
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
-python3 run.py --model Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow evals --limit-samples-mode smoke-test
 ```
 
 If you also want `run.py` to launch the inference server for the run, add `--docker-server`.

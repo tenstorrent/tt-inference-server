@@ -51,7 +51,7 @@ vllm serve Qwen/Qwen2.5-0.5B-Instruct --port 8000
 ```bash
 MODEL=Qwen/Qwen2.5-0.5B-Instruct \
 python run.py \
-  --model Llama-3.1-8B-Instruct --device gpu \
+  --model meta-llama/Llama-3.1-8B-Instruct --device gpu \
   --workflow serving_bench --serving-bench-suites agentic_bench \
   --server-url http://127.0.0.1 --service-port 8000 \
   --limit-samples-mode smoke-test

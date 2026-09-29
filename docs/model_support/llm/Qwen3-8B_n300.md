@@ -30,14 +30,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Qwen3-8B:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.0-e0e0500-409b1cd \
-  --model Qwen3-8B \
+  --model Qwen/Qwen3-8B \
   --tt-device n300
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model Qwen3-8B --device n300 --workflow server --docker-server
+python3 run.py --model Qwen/Qwen3-8B --device n300 --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

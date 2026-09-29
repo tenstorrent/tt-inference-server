@@ -118,8 +118,8 @@ class Settings(BaseSettings):
     job_cleanup_interval_seconds: int = 300
     job_retention_seconds: int = 86400
     job_max_stuck_time_seconds: int = 10800
+    training_progress_heartbeat_interval_seconds: float = 10.0
     enable_job_persistence: bool = False
-    job_database_path: str = "./jobs.db"
 
     vllm: VLLMSettings = VLLMSettings()
 
@@ -149,14 +149,20 @@ class Settings(BaseSettings):
     # all public; the connection is pinned to the checked address so DNS
     # rebinding cannot reach internal networks.
     media_url_allow_public_hosts: bool = False
-    # Largest MiniMax per-file cap (50 MB reference video). The tighter
-    # image and audio caps are the base64 limits in domain/, checked on
-    # the downloaded bytes before the job is enqueued.
-    media_url_max_bytes: int = 50_000_000
+    # Ceiling for one URL-sourced asset. The video endpoints pass the per-modality
+    # cap of the MiniMax input media card (image 30 MB, video 50 MB, audio 15 MB,
+    # tt_model_runners/minimax_h3_policy.py) per download; this setting can only
+    # tighten those, never widen them. Default = the largest of the three.
+    media_url_max_bytes: int = 50 * 1024 * 1024
     # One budget shared by every URL asset in a request, redirects and body
     # reads included. A full Ref2VA set at the caps is ~420 MB.
     media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
+    # Total request-body cap on the video generation routes (/v1/videos, /video),
+    # enforced by RequestBodyLimitMiddleware from Content-Length or the streamed
+    # byte count before any JSON is parsed: 64 MB, the MiniMax input media card.
+    # Media that does not fit belongs in URL sources, not inline base64. 0 disables.
+    max_request_body_bytes: int = 64 * 1024 * 1024
 
     # Telemetry settings
     enable_telemetry: bool = True

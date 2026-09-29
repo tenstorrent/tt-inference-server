@@ -12,9 +12,11 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Dict, Tuple
 
@@ -33,6 +35,107 @@ from workflows.workflow_types import ModelSource, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _dir_bytes(path: Path) -> int:
+    """Total bytes under path, including partial *.incomplete download staging."""
+    total = 0
+    for f in path.rglob("*"):
+        try:
+            if f.is_file():
+                total += f.stat().st_size
+        except OSError:
+            continue  # renamed or removed mid-walk by the downloader
+    return total
+
+
+# Extra `hf download --exclude` patterns per weights repo and task (the spec's MODEL_RUNNER),
+# on top of the shared `original/**`; a repo's None entry serves any other or unset runner.
+# MiniMaxAI/MiniMax-H3 is 498.5 GB in total. Every task downloads text_encoder, tokenizer,
+# vae, audio_vae, processor, scheduler, audio_scheduler, model_index.json and
+# modular_model_index.json, of which the pipeline reads text_encoder, tokenizer, vae and
+# audio_vae; t2va and fl2va (pipeline task t2va) read transformer/ and ref2va reads
+# transformer_ref/ instead (66.3 GB each), so each deployment pulls ~144 GB. The
+# FL2VA/Ref2VA task partitions (144.1 GB each) and the non-weight assets/docs/scripts are
+# read by no task.
+HF_DOWNLOAD_EXTRA_EXCLUDES = {
+    "MiniMaxAI/MiniMax-H3": {
+        None: [
+            "FL2VA/*",
+            "Ref2VA/*",
+            "transformer_ref/*",
+            "assets/*",
+            "docs/*",
+            "scripts/*",
+        ],
+        "tt-minimax-h3-ref2va": [
+            "FL2VA/*",
+            "Ref2VA/*",
+            "transformer/*",
+            "assets/*",
+            "docs/*",
+            "scripts/*",
+        ],
+    },
+}
+
+# Globs a snapshot must each match at least once before check_model_weights_dir calls it
+# complete, keyed like HF_DOWNLOAD_EXTRA_EXCLUDES; every shard that a *.safetensors.index.json
+# in their top-level folders names must be on disk too. The generic format check accepts any
+# **/*.safetensors + model_index.json, so without these a MiniMax-H3 volume warmed by t2va
+# (transformer/ only) would pass for ref2va and transformer_ref/ would never be downloaded.
+HF_SNAPSHOT_REQUIRED_GLOBS = {
+    "MiniMaxAI/MiniMax-H3": {
+        None: [
+            "transformer/config.json",
+            "transformer/*.safetensors",
+            "text_encoder/*",
+            "tokenizer/*",
+            "vae/*",
+            "audio_vae/*",
+        ],
+        "tt-minimax-h3-ref2va": [
+            "transformer_ref/config.json",
+            "transformer_ref/*.safetensors",
+            "text_encoder/*",
+            "tokenizer/*",
+            "vae/*",
+            "audio_vae/*",
+        ],
+    },
+}
+
+
+def _task_entry(table: dict, model_spec: ModelSpec) -> list:
+    """The spec's entry in a per-repo, per-MODEL_RUNNER table ([] for repos without one)."""
+    by_runner = table.get(model_spec.hf_weights_repo, {})
+    # ModelSpec.env_vars already has device_model_spec.env_vars merged over the template's.
+    model_runner = model_spec.env_vars.get("MODEL_RUNNER")
+    return by_runner.get(model_runner, by_runner.get(None, []))
+
+
+def _missing_index_shards(folder: Path) -> list:
+    """Shards named by the weight_map of a *.safetensors.index.json in folder that are not
+    on disk; an unreadable index counts as missing itself."""
+    missing = []
+    for index in sorted(folder.glob("*.safetensors.index.json")):
+        try:
+            shards = set(json.loads(index.read_text())["weight_map"].values())
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            missing.append(index)
+            continue
+        missing.extend(folder / s for s in sorted(shards) if not (folder / s).is_file())
+    return missing
+
+
+def _hf_download_exclude_args(model_spec: ModelSpec) -> list:
+    """`--exclude <pattern>` pairs for `hf download`: `original/**` for every repo plus the
+    spec's HF_DOWNLOAD_EXTRA_EXCLUDES entries."""
+    args = []
+    extra = _task_entry(HF_DOWNLOAD_EXTRA_EXCLUDES, model_spec)
+    for pattern in ["original/**", *extra]:
+        args.extend(["--exclude", pattern])
+    return args
 
 
 @dataclass
@@ -228,6 +331,7 @@ class HostSetupManager:
         host_weights_dir: str = None,
         image_user: str = None,
         local_server: bool = False,
+        package_provides_weights: bool = False,
     ):
         self.model_spec = model_spec
         self.automatic = automatic
@@ -237,6 +341,14 @@ class HostSetupManager:
             host_hf_cache=host_hf_cache,
             host_weights_dir=host_weights_dir,
             local_server=local_server,
+            # An admitted immutable package is the runtime weight source.  Do
+            # not apply the Hugging Face download/repack contract (including
+            # its host-RAM heuristic) to that path.
+            model_source=(
+                ModelSource.NOACTION.value
+                if package_provides_weights
+                else os.getenv("MODEL_SOURCE", ModelSource.HUGGINGFACE.value)
+            ),
         )
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
@@ -276,7 +388,67 @@ class HostSetupManager:
                 "params_format": "model_index.json",
                 "tokenizer_optional": True,
             },
+            {
+                # A snapshot with only modular_model_index.json (modular diffusers). The real
+                # MiniMax-H3 snapshot ships BOTH model_index.json and modular_model_index.json,
+                # so the `diffusers` entry above matches it first.
+                "format_name": "diffusers_modular",
+                "weights_format": "**/*.safetensors",
+                "tokenizer_format": "tokenizer.json",
+                "params_format": "modular_model_index.json",
+                "tokenizer_optional": True,
+            },
         ]
+
+        # `hf download --local-dir` stages in-flight files as
+        # .cache/huggingface/download/**/*.incomplete; while any remain the snapshot is
+        # partial however complete the format check below looks, and run_setup must run
+        # `hf download` again (it resumes). The staging tree mirrors the repo's dirs, so a
+        # file under one of this task's HF_DOWNLOAD_EXTRA_EXCLUDES (e.g. transformer_ref/
+        # left by an interrupted ref2va run on the volume t2va shares) is never resumed
+        # and does not count.
+        staging_dir = host_weights_dir / ".cache" / "huggingface" / "download"
+        excludes = _task_entry(HF_DOWNLOAD_EXTRA_EXCLUDES, self.model_spec)
+        incomplete = [
+            f
+            for f in staging_dir.glob("**/*.incomplete")
+            if not any(
+                fnmatchcase(f.relative_to(staging_dir).as_posix(), pattern)
+                for pattern in excludes
+            )
+        ]
+        if incomplete:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}: "
+                f"{len(incomplete)} partial download(s) under {staging_dir} "
+                f"(e.g. {incomplete[0].name}); `hf download` will resume them."
+            )
+            return False
+
+        required = _task_entry(HF_SNAPSHOT_REQUIRED_GLOBS, self.model_spec)
+        missing = [
+            pattern for pattern in required if not any(host_weights_dir.glob(pattern))
+        ]
+        if missing:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}: nothing in "
+                f"{host_weights_dir} matches {', '.join(missing)}."
+            )
+            return False
+        # A download stopped between two shards leaves no *.incomplete behind, and the
+        # pipeline loads every shard its index names, so a sharded folder needs them all.
+        missing_shards = [
+            shard
+            for folder in dict.fromkeys(pattern.split("/")[0] for pattern in required)
+            for shard in _missing_index_shards(host_weights_dir / folder)
+        ]
+        if missing_shards:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}: "
+                f"{len(missing_shards)} indexed shard(s) missing under {host_weights_dir} "
+                f"(e.g. {missing_shards[0].relative_to(host_weights_dir)})."
+            )
+            return False
 
         # Check each format
         for fmt in model_formats:
@@ -568,8 +740,7 @@ class HostSetupManager:
                 str(hf_exec),
                 "download",
                 hf_repo,
-                "--exclude",
-                "original/**",
+                *_hf_download_exclude_args(self.model_spec),
             ]
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
@@ -599,12 +770,34 @@ class HostSetupManager:
             hf_repo,
             "--local-dir",
             str(host_weights_dir),
-            "--exclude",
-            "original/**",
+            *_hf_download_exclude_args(self.model_spec),
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
-        result = subprocess.run(cmd)
+        # `hf download` draws progress with \r, which CI log collectors buffer, so a
+        # stalled transfer looks identical to a frozen process. Log the actual rate
+        # every 5 min instead; in-flight bytes land in
+        # .cache/huggingface/download/*.incomplete under host_weights_dir.
+        done = threading.Event()
+
+        def _log_throughput():
+            last_bytes = _dir_bytes(host_weights_dir)
+            while not done.wait(300):
+                now_bytes = _dir_bytes(host_weights_dir)
+                logger.info(
+                    f"hf download throughput: "
+                    f"{(now_bytes - last_bytes) / 300 / 1e6:.2f} MB/s "
+                    f"({now_bytes / 1e9:.1f} GB on disk)"
+                )
+                last_bytes = now_bytes
+
+        reporter = threading.Thread(target=_log_throughput, daemon=True)
+        reporter.start()
+        try:
+            result = subprocess.run(cmd)
+        finally:
+            done.set()
+            reporter.join(timeout=5)
         if result.returncode != 0 and weights_complete:
             logger.warning(
                 f"Could not reach Hugging Face to verify weights; "
@@ -694,6 +887,7 @@ def setup_host(
     host_weights_dir=None,
     image_user=None,
     local_server=False,
+    package_provides_weights=False,
 ):
     automatic = bool(automatic_setup)
 
@@ -707,6 +901,7 @@ def setup_host(
         host_weights_dir=host_weights_dir,
         image_user=image_user,
         local_server=local_server,
+        package_provides_weights=package_provides_weights,
     )
     manager.run_setup()
     return manager.setup_config

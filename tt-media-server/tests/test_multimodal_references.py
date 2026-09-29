@@ -2,6 +2,9 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import base64
+import io
+
 import pytest
 from domain.video_i2v_generate_request import MAX_BASE64_IMAGE_LEN
 from domain.video_ref2va_generate_request import (
@@ -11,19 +14,31 @@ from domain.video_ref2va_generate_request import (
     MultimodalReferences,
     VideoRef2VAGenerateRequest,
 )
+from PIL import Image
 from pydantic import ValidationError
 from tt_model_runners.minimax_h3_policy import (
     MINIMAX_H3_MAX_REFERENCE_AUDIOS,
     MINIMAX_H3_MAX_REFERENCE_IMAGES,
     MINIMAX_H3_MAX_REFERENCE_VIDEOS,
     MINIMAX_H3_MAX_REFERENCES,
+    MINIMAX_H3_MEDIA_MIN_SIDE_PX,
+    base64_len_for_bytes,
     check_reference_clip_durations,
 )
 
-_TINY_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
-    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-)
+
+def _png_b64(
+    width: int = MINIMAX_H3_MEDIA_MIN_SIDE_PX,
+    height: int = MINIMAX_H3_MEDIA_MIN_SIDE_PX,
+) -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (width, height), (90, 120, 150)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+# The smallest image the MiniMax input media card admits (256 px per side); a 1x1
+# placeholder is refused by check_h3_image now.
+_TINY_PNG_BASE64 = _png_b64()
 
 
 class TestMediaSource:
@@ -118,9 +133,17 @@ class TestMultimodalReferences:
         )
 
     def test_caps_match_minimax_limits(self):
-        assert MAX_BASE64_IMAGE_LEN == 40_000_000
-        assert MAX_BASE64_MEDIA_LEN == 66_666_668
-        assert MAX_BASE64_AUDIO_LEN == 20_000_000
+        # The card's 30 / 50 / 15 MiB as base64 text, plus room for a data-URL prefix.
+        assert MAX_BASE64_IMAGE_LEN == base64_len_for_bytes(30 * 1024 * 1024) + 128
+        assert MAX_BASE64_MEDIA_LEN == base64_len_for_bytes(50 * 1024 * 1024) + 128
+        assert MAX_BASE64_AUDIO_LEN == base64_len_for_bytes(15 * 1024 * 1024) + 128
+
+    def test_caps_admit_the_ci_max_input_cases(self):
+        # minimax_h3_bench cases.json: FL2VA-H/-L2/-M2 send a 26,765,541-byte keyframe
+        # (35,687,388 base64 chars); SIZE-V* send a 48,205,249-byte reference video
+        # (64,273,668 chars). Both must pass the field caps.
+        assert base64_len_for_bytes(26_765_541) == 35_687_388 <= MAX_BASE64_IMAGE_LEN
+        assert base64_len_for_bytes(48_205_249) == 64_273_668 <= MAX_BASE64_MEDIA_LEN
 
     def test_oversized_inline_image_rejected(self):
         with pytest.raises(ValidationError, match=r"images\[0\] base64 length"):

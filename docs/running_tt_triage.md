@@ -27,7 +27,7 @@ First, start your inference server using the standard workflow:
 
 ```bash
 # Example: Start server for Llama-3.1-8B on N300
-python run.py --model Llama-3.1-8B-Instruct --device n300 --workflow server --docker-server
+python run.py --model meta-llama/Llama-3.1-8B-Instruct --device n300 --workflow server --docker-server
 ```
 
 The server will start and bind to a service port (default: 8000).
@@ -38,7 +38,7 @@ Start sending requests to your inference server to trigger the workload:
 
 ```bash
 # Example: Run benchmarks or evals
-python run.py --model Llama-3.1-8B-Instruct --device n300 --workflow benchmarks --docker-server
+python run.py --model meta-llama/Llama-3.1-8B-Instruct --device n300 --workflow benchmarks --docker-server
 ```
 
 ### Step 3: Wait for Hang to Occur
@@ -57,7 +57,7 @@ While the container is still running in the hung state, execute the triage scrip
 ```bash
 python scripts/run_tt_triage.py \
     --service-port 8000 \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --device n300
 ```
 
@@ -85,19 +85,19 @@ python scripts/run_tt_triage.py \
 # For Llama-3.1-8B on N300
 python scripts/run_tt_triage.py \
     --service-port 8000 \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --device n300
 
 # For Qwen2.5-VL-3B on N300
 python scripts/run_tt_triage.py \
     --service-port 8000 \
-    --model Qwen2.5-VL-3B-Instruct \
+    --model Qwen/Qwen2.5-VL-3B-Instruct \
     --device n300
 
 # For Mistral-7B on N150
 python scripts/run_tt_triage.py \
     --service-port 8000 \
-    --model Mistral-7B-Instruct-v0.3 \
+    --model mistralai/Mistral-7B-Instruct-v0.3 \
     --device n150
 ```
 
@@ -109,13 +109,13 @@ If running multiple containers on different ports:
 # Container 1 on port 8000
 python scripts/run_tt_triage.py \
     --service-port 8000 \
-    --model Llama-3.1-8B-Instruct \
+    --model meta-llama/Llama-3.1-8B-Instruct \
     --device n300
 
 # Container 2 on port 8001
 python scripts/run_tt_triage.py \
     --service-port 8001 \
-    --model Mistral-7B-Instruct-v0.3 \
+    --model mistralai/Mistral-7B-Instruct-v0.3 \
     --device n300
 ```
 

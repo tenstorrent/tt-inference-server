@@ -328,7 +328,10 @@ def video_request_to_generate_request(
     # The SHM slots are unsigned ints, so 0 stands for an unset canvas.
     base_kwargs["height"] = req.height or None
     base_kwargs["width"] = req.width or None
-    # SHM always carries the field; H3 does not accept it as a request lever.
+    # MiniMax-H3 (every task, FastH3 included) refuses an explicit num_inference_steps at
+    # admission and pins the deployment's fixed schedule instead (domain/video_generate_request.py).
+    # The SHM record always carries the field, so drop it here or every rank-side rebuild would
+    # trip the admission rule.
     if _is_minimax_h3():
         base_kwargs.pop("num_inference_steps", None)
 

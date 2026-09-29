@@ -3,6 +3,8 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 import os
+import base64
+import io
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,12 +12,20 @@ from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
 )
+from PIL import Image
 from pydantic import ValidationError
+from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MEDIA_MIN_SIDE_PX
 
-_TINY_PNG_BASE64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
-    "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-)
+
+def _png_b64(side: int = MINIMAX_H3_MEDIA_MIN_SIDE_PX) -> str:
+    buf = io.BytesIO()
+    Image.new("RGB", (side, side), (90, 120, 150)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+# On an FL2VA deployment each keyframe is admitted against the MiniMax input media
+# card, whose floor is 256 px per side -- so the fixture is that, not a 1x1 pixel.
+_TINY_PNG_BASE64 = _png_b64()
 
 
 def _fl2va_settings():

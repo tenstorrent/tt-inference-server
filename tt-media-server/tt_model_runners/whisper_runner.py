@@ -29,6 +29,11 @@ from models.demos.audio.whisper.tt.whisper_generator import (
     WhisperGenerator,
 )
 from models.demos.utils.common_demo_utils import get_mesh_mappers
+from telemetry.audio_metrics import (
+    confidence_from_generator_output,
+    record_stt_confidence,
+    transcript_compression_ratio,
+)
 from telemetry.telemetry_client import (
     TelemetryEvent,
     audio_chunk_first_token_duration,
@@ -337,6 +342,12 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                             segments=[],
                         )
                     )
+                # The generator returns batch-level signal tensors, so this
+                # records their mean once, with the batch's joined text.
+                self._record_confidence_signals(
+                    result,
+                    text=" ".join(response.text for response in responses),
+                )
 
             return responses
 
@@ -510,6 +521,26 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 recorded = self._record_audio_stage_throughput(item, context)
             yield item
 
+    def _record_confidence_signals(self, item, text=None):
+        """Export Whisper's own quality signals for one generation.
+
+        WER proxies: true WER needs reference transcripts (offline evals in
+        test_module/eval_tests/ are the source of truth); these histograms
+        are the live drift detectors. ``item`` is a raw generator tuple —
+        avg_logprob at index 1, no_speech_prob at index 2 on both the
+        streaming final marker and the non-streaming return — and the
+        compression ratio is recomputed here from the transcript with the
+        generator's own formula, since the generator does not return it.
+        """
+        avg_logprob, no_speech_prob = confidence_from_generator_output(item)
+        record_stt_confidence(
+            model_type=self.settings.model_runner,
+            language=self.settings.audio_language or "unknown",
+            avg_logprob=avg_logprob,
+            no_speech_prob=no_speech_prob,
+            compression_ratio=transcript_compression_ratio(text),
+        )
+
     @staticmethod
     def _is_final_result(item):
         """Whether a streamed item is the final marker for its chunk.
@@ -613,6 +644,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
                 text_part, start, end = TextUtils.extract_text(partial_result)
                 if self._is_final_result(partial_result):
                     final_text = text_part
+                    self._record_confidence_signals(partial_result, text=text_part)
                     break
 
                 # Add speaker prefix to first token for streaming display
@@ -713,6 +745,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
             )
 
             cleaned_text, start, end = TextUtils.extract_text(segment_result)
+            self._record_confidence_signals(segment_result, text=cleaned_text)
 
             segment = AudioTextSegment(
                 id=i,
@@ -751,6 +784,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
             if self._is_final_result(chunk):
                 final_text = cleaned_text
+                self._record_confidence_signals(chunk, text=final_text)
                 break
 
             # Yield non-empty chunks
@@ -785,6 +819,7 @@ class TTWhisperRunner(BaseMetalDeviceRunner):
 
     def _format_non_streaming_result(self, result, duration):
         text, start, end = TextUtils.extract_text(result)
+        self._record_confidence_signals(result, text=text)
         final_result = AudioTextResponse(
             text=text,
             duration=duration,

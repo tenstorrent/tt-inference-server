@@ -3,10 +3,12 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 
+import time
 from multiprocessing import Event
 from typing import Optional
 
 from config.constants import DatasetLoaders, DeviceTypes, TrainingOptimizers
+from config.settings import settings
 from domain.base_request import BaseRequest
 from pydantic import Field, PrivateAttr, model_validator
 
@@ -62,3 +64,19 @@ class TrainingRequest(BaseRequest):
     _training_metrics: list = PrivateAttr(default=None)
     _training_logs: list = PrivateAttr(default=None)
     _training_checkpoints: list = PrivateAttr(default=None)
+    _progress_tracker: object = PrivateAttr(default=None)
+    # Worker-local timestamp used to throttle writes to the shared tracker.
+    _last_heartbeat_time: float = PrivateAttr(default=0.0)
+
+    def touch_progress(self) -> None:
+        """Publish a throttled runner heartbeat to the API process."""
+        if self._progress_tracker is None:
+            return
+        now = time.monotonic()
+        if (
+            now - self._last_heartbeat_time
+            < settings.training_progress_heartbeat_interval_seconds
+        ):
+            return
+        self._progress_tracker.value = now
+        self._last_heartbeat_time = now

@@ -55,6 +55,19 @@ class VideoGenerateRequest(BaseRequest):
     def _reject_unknown_fields(cls, data):
         if not isinstance(data, dict) or not _is_minimax_h3():
             return data
+        # The schedule is fixed (MINIMAX_H3_NUM_INFERENCE_STEPS for t2va / fl2va / ref2va,
+        # MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS for FastH3; the H3 runners pass that constant to the
+        # pipeline whatever the request says). A client that names a step count would otherwise get
+        # a 202 and a clip made with a different one. Refused on every H3 task -- t2va, fl2va and
+        # ref2va share this validator through subclassing -- with a message of its own rather than
+        # the generic unknown-field one, since the field does exist for Wan.
+        fixed_steps = _minimax_h3_fixed_steps()
+        if "num_inference_steps" in data:
+            schedule = f"fixed {fixed_steps}-step" if fixed_steps else "fixed"
+            raise ValueError(
+                "num_inference_steps is not accepted for MiniMax-H3: the deployment runs a "
+                f"{schedule} schedule. Omit the field."
+            )
         # On the shared schema for Wan; H3's AdaLN table is precomputed at a
         # fixed step count, so the field is not a request lever here.
         served = set(cls.model_fields) - {"num_inference_steps"}
@@ -67,7 +80,12 @@ class VideoGenerateRequest(BaseRequest):
                 "is `duration_seconds` -- and resolution is selected with `aspect_ratio` or "
                 "`height`/`width`."
             )
-        return data
+        if fixed_steps is None:
+            return data
+        # Pin the schedule the deployment runs. Without this the shared schema default (20) stays
+        # on the request, so the request echo, the worker log and the stage metrics report a step
+        # count the pipeline never ran.
+        return {**data, "num_inference_steps": fixed_steps}
 
     # TODO: Make generic for all video models, and remove model specific logic
     # Admission-time validation. The device worker validates too (it owns the shape it warmed),
@@ -98,17 +116,6 @@ class VideoGenerateRequest(BaseRequest):
                 f"{max(MINIMAX_H3_DURATIONS_S)}; got {value}"
             )
         return value
-
-    @model_validator(mode="after")
-    def _fill_h3_served_inference_steps(self):
-        # Job metadata dumps Field defaults. Without this, H3 202s would echo
-        # Wan's 20 even though the mesh runs the warmed AdaLN count.
-        if not _is_minimax_h3_fifty_step():
-            return self
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
-
-        self.num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
-        return self
 
 
 # TODO: Remove model specific logic
@@ -147,31 +154,26 @@ def _is_minimax_h3() -> bool:
         return False
 
 
-def _is_minimax_h3_fifty_step() -> bool:
-    """t2va / fl2va / ref2va (AdaLN at 50). FastH3 is 4 and is not this echo."""
-    from config.constants import ModelNames, ModelRunners
+def _minimax_h3_fixed_steps() -> Optional[int]:
+    """The denoise step count this H3 deployment runs, whatever the request says.
 
+    t2va / fl2va / ref2va run the policy's ``MINIMAX_H3_NUM_INFERENCE_STEPS`` (the AdaLN table is
+    warmed at that count); FastH3 runs ``MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS``, resolved from the
+    runner or, behind ``sp_runner``, from ``MODEL`` -- the same map the stage metrics use
+    (``config.constants.video_executed_inference_steps``). Both are plain constants, so no
+    tt-metal import happens at admission. None only if the policy constant is missing, in which
+    case the request keeps the shared default and the refusal message omits the number.
+    """
+    from config.constants import video_executed_inference_steps
+
+    try:
+        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+    except ImportError:
+        return None
     try:
         runner = get_settings().model_runner
     except Exception:  # noqa: BLE001 - settings unavailable (tests, tooling)
-        return False
-
-    if runner in {
-        ModelRunners.TT_MINIMAX_H3_T2VA.value,
-        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
-        ModelRunners.TT_MINIMAX_H3_REF2VA.value,
-    }:
-        return True
-    if runner != ModelRunners.SP_RUNNER.value:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in {
-            ModelNames.MINIMAX_H3,
-            ModelNames.MINIMAX_H3_FL2VA,
-            ModelNames.MINIMAX_H3_REF2VA,
-        }
-    except ValueError:
-        return False
+        runner = None
+    return video_executed_inference_steps(
+        int(MINIMAX_H3_NUM_INFERENCE_STEPS), runner, os.getenv("MODEL")
+    )

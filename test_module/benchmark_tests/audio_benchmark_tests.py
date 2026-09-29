@@ -19,7 +19,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from workflows.utils import (
+from workflow_module.context_helpers import (
     get_num_calls,
     is_preprocessing_enabled_for_whisper,
     is_streaming_enabled_for_whisper,

@@ -22,16 +22,11 @@ from config.constants import (
 from config.settings import settings
 from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
 from domain.video_i2v_generate_request import (
-    MAX_BASE64_IMAGE_LEN,
-    MAX_IMAGE_BYTES,
     ImagePromptEntry,
     VideoI2VGenerateRequest,
+    _is_minimax_h3_fl2va,
 )
-from domain.video_ref2va_generate_request import (
-    MAX_BASE64_AUDIO_LEN,
-    MAX_BASE64_MEDIA_LEN,
-    VideoRef2VAGenerateRequest,
-)
+from domain.video_ref2va_generate_request import VideoRef2VAGenerateRequest
 from fastapi import (
     APIRouter,
     Body,
@@ -50,6 +45,17 @@ from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
 from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
+from tt_model_runners.minimax_h3_policy import (
+    MINIMAX_H3_AUDIO_MAX_BYTES,
+    MINIMAX_H3_IMAGE_MAX_BYTES,
+    MINIMAX_H3_VIDEO_MAX_BYTES,
+    MediaTooLargeError,
+    check_h3_image,
+    check_h3_reference_audio,
+    check_h3_reference_video,
+    check_reference_clip_durations,
+    decode_base64_media,
+)
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 from utils.media_downloader import (
@@ -65,18 +71,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Smallest valid PNG (1x1 transparent) so OpenAPI "Try it out" actually
-# round-trips through ImagePromptEntry's base64 validator instead of failing
-# with 422 on a non-decodable placeholder string.
-_OPENAPI_IMAGE_PLACEHOLDER = (
+# Smallest valid PNG (1x1 transparent): the fallback placeholder when Pillow is
+# not importable at module load (unit tests mock it).
+_TINY_PNG_PLACEHOLDER = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
     "YPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 )
 
+
+def _openapi_image_placeholder() -> str:
+    """A 256x256 PNG so OpenAPI "Try it out" round-trips through the validators.
+
+    256 px is the smallest side the MiniMax input media card admits, so the
+    example must be at least that big to be accepted on an H3 deployment; a
+    flat grey PNG of that size is a few hundred bytes.
+    """
+    try:
+        from io import BytesIO
+
+        from PIL import Image
+
+        buf = BytesIO()
+        Image.new("RGB", (256, 256), (128, 128, 128)).save(buf, format="PNG")
+        encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+        if encoded:
+            return encoded
+    except Exception:  # noqa: BLE001 - docs nicety, never worth failing import
+        pass
+    return _TINY_PNG_PLACEHOLDER
+
+
+_OPENAPI_IMAGE_PLACEHOLDER = _openapi_image_placeholder()
+
 # Multipart safety knobs — same shape as Stability/Runway/OpenAI image edits.
-_MAX_UPLOAD_BYTES = MAX_IMAGE_BYTES
+# On an H3 FL2VA deployment the byte cap is the card's single-image size and the
+# check_h3_image rules then apply through ImagePromptEntry; Wan deployments keep
+# the caps they had, since their validator decodes every image in full.
+_MAX_UPLOAD_BYTES = MINIMAX_H3_IMAGE_MAX_BYTES
+_LEGACY_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+_LEGACY_IMAGE_URL_MAX_BYTES = 7_500_000
 _UPLOAD_READ_CHUNK = 64 * 1024
-_ALLOWED_IMAGE_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+_ALLOWED_IMAGE_CONTENT_TYPES = frozenset(
+    {"image/png", "image/jpeg", "image/webp", "image/heic", "image/heif"}
+)
 
 
 def _unlink_quietly(path: str) -> None:
@@ -104,6 +141,20 @@ def _validate_image_content_type(upload: UploadFile) -> None:
         )
 
 
+def _upload_max_bytes() -> int:
+    """Multipart image cap: the card's 30 MB on H3 FL2VA, the historical 10 MiB elsewhere."""
+    return _MAX_UPLOAD_BYTES if _is_minimax_h3_fl2va() else _LEGACY_UPLOAD_MAX_BYTES
+
+
+def _image_prompt_url_max_bytes() -> int:
+    """URL-sourced keyframe cap: the card's 30 MB on H3 FL2VA, the historical 7.5 MB elsewhere."""
+    return (
+        MINIMAX_H3_IMAGE_MAX_BYTES
+        if _is_minimax_h3_fl2va()
+        else _LEGACY_IMAGE_URL_MAX_BYTES
+    )
+
+
 async def _read_capped_upload(upload: UploadFile) -> bytes:
     """Stream-read upload bytes with a hard cap to prevent RAM exhaustion.
 
@@ -111,6 +162,7 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     in chunks lets us reject early with 413 before the whole payload lands
     in Python memory and is base64-expanded by ~33%.
     """
+    max_bytes = _upload_max_bytes()
     chunks: list[bytes] = []
     total = 0
     while True:
@@ -118,10 +170,10 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
         if not chunk:
             break
         total += len(chunk)
-        if total > _MAX_UPLOAD_BYTES:
+        if total > max_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"Image exceeds {_MAX_UPLOAD_BYTES}-byte upload cap",
+                detail=f"Image exceeds {max_bytes}-byte upload cap",
             )
         chunks.append(chunk)
     return b"".join(chunks)
@@ -373,142 +425,136 @@ async def _resolve_image_prompt_urls(request: VideoGenerateRequest) -> None:
     for entry in image_prompts:
         if not is_media_url(entry.image):
             continue
-        try:
-            media_bytes = await download_media_url(entry.image, deadline=deadline)
-        except MediaDownloadPolicyError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        except MediaDownloadTooLargeError as e:
-            raise HTTPException(status_code=413, detail=str(e))
-        except MediaDownloadFetchError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-
-        image_b64 = base64.b64encode(media_bytes).decode("ascii")
-        # Assignment below bypasses field validation, but SP-runner workers
-        # re-validate ImagePromptEntry mid-job — enforce the field cap here so
-        # an operator-raised media_url_max_bytes fails at submit, not in the
-        # worker.
-        if len(image_b64) > MAX_BASE64_IMAGE_LEN:
+        max_bytes = _image_prompt_url_max_bytes()
+        media_bytes = await _download_media(entry.image, deadline, max_bytes=max_bytes)
+        # The downloader enforces the cap while streaming; this is the belt to
+        # its braces (a mocked or misconfigured downloader), and it keeps the
+        # SP-runner worker's re-validation of ImagePromptEntry from ever seeing
+        # a field over MAX_BASE64_IMAGE_LEN.
+        if len(media_bytes) > max_bytes:
             raise HTTPException(
                 status_code=413,
                 detail=(
-                    f"Downloaded media base64-encodes to {len(image_b64)} "
-                    f"chars, over the {MAX_BASE64_IMAGE_LEN}-char image cap"
+                    f"Downloaded image is {len(media_bytes)} bytes, over the "
+                    f"{max_bytes}-byte cap"
                 ),
             )
-        try:
-            ImageManager().base64_to_pil_image(image_b64)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Downloaded media is not a decodable image "
-                    "(supported formats: PNG, JPEG, WebP, etc.)"
-                ),
-            ) from exc
+
+        image_b64 = base64.b64encode(media_bytes).decode("ascii")
+        if _is_minimax_h3_fl2va():
+            _admit_or_raise(check_h3_image, media_bytes, label="image_prompts image")
+        else:
+            try:
+                ImageManager().base64_to_pil_image(image_b64)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "Downloaded media is not a decodable image "
+                        "(supported formats: PNG, JPEG, WebP, etc.)"
+                    ),
+                ) from exc
         entry.image = image_b64
 
 
-async def _download_to_b64(url: str, deadline: float, *, max_b64_len: int) -> str:
+async def _download_media(url: str, deadline: float, *, max_bytes: int) -> bytes:
+    """Fetch one URL source under the download policy and the given byte cap."""
     try:
-        media_bytes = await download_media_url(url, deadline=deadline)
+        return await download_media_url(url, deadline=deadline, max_bytes=max_bytes)
     except MediaDownloadPolicyError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except MediaDownloadTooLargeError as e:
         raise HTTPException(status_code=413, detail=str(e))
     except MediaDownloadFetchError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    encoded = base64.b64encode(media_bytes).decode("ascii")
-    if len(encoded) > max_b64_len:
+
+
+def _admit_or_raise(check, raw: bytes, *, label: str):
+    """Run one media-card check, mapping its refusals to 413 (size) or 422."""
+    try:
+        return check(raw, label=label)
+    except MediaTooLargeError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _decode_or_422(b64: str, *, label: str) -> bytes:
+    """Inline base64 -> bytes; garbage is the client's 422, not a 500."""
+    try:
+        return decode_base64_media(b64)
+    except ValueError as exc:
         raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Downloaded media base64-encodes to {len(encoded)} "
-                f"chars, over the {max_b64_len}-char cap"
-            ),
-        )
-    return encoded
+            status_code=422, detail=f"{label} is not valid base64"
+        ) from exc
 
 
-# MiniMax request body cap. URL assets do not count: they are not in the body.
-MAX_INLINE_MEDIA_LEN = 64_000_000
-
-
-def _enforce_inline_media_total(request: VideoGenerateRequest) -> None:
-    lengths = [
-        len(entry.image)
-        for entry in getattr(request, "image_prompts", None) or []
-        if not is_media_url(entry.image)
-    ]
-    references = getattr(request, "references", None)
-    if references is not None:
-        lengths += [
-            len(source.b64)
-            for group in (references.images, references.videos, references.audios)
-            for source in group
-            if source.b64 is not None
-        ]
-    total = sum(lengths)
-    if total > MAX_INLINE_MEDIA_LEN:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"Inline media totals {total} base64 chars, over the "
-                f"{MAX_INLINE_MEDIA_LEN}-char cap; send large assets by URL"
-            ),
-        )
+# Per-modality byte caps of the MiniMax input media card for URL sources.
+_REFERENCE_MAX_BYTES = {
+    "images": MINIMAX_H3_IMAGE_MAX_BYTES,
+    "videos": MINIMAX_H3_VIDEO_MAX_BYTES,
+    "audios": MINIMAX_H3_AUDIO_MAX_BYTES,
+}
 
 
 async def _resolve_media_source_urls(request: VideoGenerateRequest) -> None:
-    """Download ``references`` URL sources to b64 before the job is enqueued."""
+    """Download ``references`` URL sources to b64 before the job is enqueued.
+
+    Images are admitted against the card right here (the inline path did that in
+    the schema); videos and audio are probed for every source, inline or
+    downloaded, by ``_enforce_ref2va_media_limits`` next.
+    """
     references = getattr(request, "references", None)
     if references is None:
         return
     deadline = _time.monotonic() + settings.media_url_timeout_seconds
-    for group_name, group, cap in (
-        ("images", references.images, MAX_BASE64_IMAGE_LEN),
-        ("videos", references.videos, MAX_BASE64_MEDIA_LEN),
-        ("audios", references.audios, MAX_BASE64_AUDIO_LEN),
+    for group_name, group in (
+        ("images", references.images),
+        ("videos", references.videos),
+        ("audios", references.audios),
     ):
-        for source in group:
+        for index, source in enumerate(group):
             if source.url is None:
                 continue
-            source.b64 = await _download_to_b64(source.url, deadline, max_b64_len=cap)
-            source.url = None
+            raw = await _download_media(
+                source.url, deadline, max_bytes=_REFERENCE_MAX_BYTES[group_name]
+            )
             if group_name == "images":
-                try:
-                    ImageManager().base64_to_pil_image(source.b64)
-                except Exception as exc:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="Downloaded reference image is not a decodable image",
-                    ) from exc
+                _admit_or_raise(
+                    check_h3_image, raw, label=f"references.images[{index}]"
+                )
+            source.b64 = base64.b64encode(raw).decode("ascii")
+            source.url = None
 
 
-def _enforce_ref2va_clip_durations(request: VideoGenerateRequest) -> None:
+def _enforce_ref2va_media_limits(request: VideoGenerateRequest) -> None:
+    """Reference clips against the card: container, codecs, geometry, frame rate,
+    then the 2-15 s per-clip and <= 15 s combined duration windows.
+
+    Runs after URL sources are downloaded, so every source is base64 here.
+    """
     references = getattr(request, "references", None)
     if references is None:
         return
-    from tt_model_runners.minimax_h3_policy import (
-        check_reference_clip_durations,
-        probe_media_duration_seconds,
-    )
-
-    def _durations(sources):
-        out = []
-        for source in sources:
-            try:
-                out.append(probe_media_duration_seconds(base64.b64decode(source.b64)))
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"could not probe duration of a reference clip ({exc})",
-                ) from exc
-        return out
-
+    video_durations = [
+        _admit_or_raise(
+            check_h3_reference_video,
+            _decode_or_422(source.b64, label=f"references.videos[{index}]"),
+            label=f"references.videos[{index}]",
+        )
+        for index, source in enumerate(references.videos)
+    ]
+    audio_durations = [
+        _admit_or_raise(
+            check_h3_reference_audio,
+            _decode_or_422(source.b64, label=f"references.audios[{index}]"),
+            label=f"references.audios[{index}]",
+        )
+        for index, source in enumerate(references.audios)
+    ]
     try:
         check_reference_clip_durations(
-            video_durations=_durations(references.videos),
-            audio_durations=_durations(references.audios),
+            video_durations=video_durations, audio_durations=audio_durations
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -524,13 +570,16 @@ async def _submit_video_request(
     except Exception:
         raise HTTPException(status_code=405, detail="Model is not ready")
 
-    _enforce_inline_media_total(request)
-    # Echo the request as the client sent it: resolution below swaps URLs for
-    # their downloaded base64, which must not be returned on every job poll.
+    # The total inline size is bounded by the 64 MiB request-body cap
+    # (RequestBodyLimitMiddleware, settings.max_request_body_bytes) before the
+    # body is parsed; each source is held to the media card below and in the
+    # schema. Echo the request as the client sent it: resolution below swaps
+    # URLs for their downloaded base64, which must not be returned on every job
+    # poll (JobManager also redacts inline base64 from the echo).
     client_parameters = request.model_dump(mode="json")
     await _resolve_image_prompt_urls(request)
     await _resolve_media_source_urls(request)
-    _enforce_ref2va_clip_durations(request)
+    _enforce_ref2va_media_limits(request)
 
     try:
         # Synchronous mode: process and return video directly
@@ -658,8 +707,10 @@ async def submit_generate_video_i2v_upload(
     the requested ``frame_pos``.
 
     Hard limits:
-      * content_type must be ``image/png``, ``image/jpeg``, or ``image/webp``
-      * upload body capped at 10 MB (rejected with 413 before RAM allocation)
+      * content_type must be ``image/png``, ``image/jpeg``, ``image/webp``,
+        ``image/heic`` or ``image/heif``
+      * upload body capped at 30 MB on MiniMax-H3 FL2VA (the input media card;
+        the keyframe is then checked like an inline one), 10 MiB elsewhere
     """
     _validate_image_content_type(image)
     image_bytes = await _read_capped_upload(image)

@@ -28,14 +28,14 @@ docker run \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_DeepSeek-R1-0528:/home/container_app_user/cache_root \
   ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.12.0-805f43d-a45c614 \
-  --model DeepSeek-R1-0528 \
+  --model deepseek-ai/DeepSeek-R1-0528 \
   --tt-device galaxy
 ```
 
 **via run.py command**
 
 ```bash
-python3 run.py --model DeepSeek-R1-0528 --device galaxy --workflow server --docker-server
+python3 run.py --model deepseek-ai/DeepSeek-R1-0528 --device galaxy --workflow server --docker-server
 ```
 For details on the run.py command, see the [run.py CLI Options](../../workflows_user_guide.md#runpy-cli-options) section of the User Guide.
 

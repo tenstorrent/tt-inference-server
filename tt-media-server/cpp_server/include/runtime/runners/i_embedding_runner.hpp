@@ -14,10 +14,8 @@ namespace tt::runners {
 
 /**
  * What an embedding worker needs from a runner, and nothing more.
- *
- * Deliberately not IRunner: that interface is for loop-driven IPC workers and
- * forces a no-arg run() this path never uses. EmbeddingService owns the loop
- * and drives the runner directly with these three calls.
+ * EmbeddingService owns the loop and drives the runner directly with these
+ * three calls.
  */
 class IEmbeddingRunner {
  public:
@@ -34,8 +32,7 @@ class IEmbeddingRunner {
   virtual void close() = 0;
 };
 
-/** Build the runner named by cfg.runner_type. EMBEDDING_MOCK yields a runner
- *  that needs neither Python nor a device. */
+/** Build the runner named by cfg.runner_type. */
 std::unique_ptr<IEmbeddingRunner> makeEmbeddingRunner(
     const config::EmbeddingConfig& cfg);
 

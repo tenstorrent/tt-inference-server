@@ -284,6 +284,9 @@ const StaticTokenizerInfo& deepseekR1Info() {
       /*assistantHeaderSequence=*/{128804},
       /*thinkStartTokenId=*/128798,
       /*thinkEndTokenId=*/128799,
+      // History renders as `content.split('</think>')[-1]`: no delimiters.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
@@ -306,6 +309,9 @@ const StaticTokenizerInfo& kimiK26Info() {
       /*assistantHeaderSequence=*/{163588},
       /*thinkStartTokenId=*/163606,  // <think>
       /*thinkEndTokenId=*/163607,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
+      /*thinkStartInHistory=*/true,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -322,6 +328,9 @@ const StaticTokenizerInfo& kimiK27CodeInfo() {
       /*assistantHeaderSequence=*/{163588},
       /*thinkStartTokenId=*/163606,  // <think>
       /*thinkEndTokenId=*/163607,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
+      /*thinkStartInHistory=*/true,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -352,13 +361,20 @@ const StaticTokenizerInfo& minimaxM27Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/200050,  // <think>
       /*thinkEndTokenId=*/200051,    // </think>
+      // History renders as the answer alone: no delimiters.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
 
-// IDs verified against the fetched MiniMax-M3 tokenizer. Same special-token
-// layout as M2.7 (eos 200020, <think>/</think> 200050/200051); the top-level
-// config.json carries no eos_token_id, so discovery.cpp publishes the
+// IDs verified against the fetched MiniMax-M3 tokenizer. Same eos layout as
+// M2.7 (200020), but M3 reasons in <mm:think>/</mm:think> (200059/200060), NOT
+// the <think>/</think> pair M2.7 uses — its chat template defines
+// think_begin_token = '<mm:think>' and the frontend runs the separate
+// "minimax_m3" reasoning parser. Both pairs exist in the vocab, so the M2.7 ids
+// parse fine and simply never match, silently disabling think filtering. The
+// top-level config.json carries no eos_token_id, so discovery.cpp publishes the
 // generation_config.json that contains it.
 const StaticTokenizerInfo& minimaxM3Info() {
   static const StaticTokenizerInfo kInfo{
@@ -366,8 +382,12 @@ const StaticTokenizerInfo& minimaxM3Info() {
       /*stopTokenIds=*/{},
       /*eosTokenId=*/200020,  // [e~[
       /*assistantHeaderSequence=*/{},
-      /*thinkStartTokenId=*/200050,  // <think>
-      /*thinkEndTokenId=*/200051,    // </think>
+      /*thinkStartTokenId=*/200059,  // <mm:think>
+      /*thinkEndTokenId=*/200060,    // </mm:think>
+      // History is prefixed with a bare `</mm:think>`; the opening tag only
+      // survives when the client echoes reasoning back.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -387,6 +407,9 @@ const StaticTokenizerInfo& glm51Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/154841,  // <think>
       /*thinkEndTokenId=*/154842,    // </think>
+      // History is prefixed with a bare `</think>`; opening tag dropped.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -405,6 +428,9 @@ const StaticTokenizerInfo& glm52Info() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/154841,  // <think>
       /*thinkEndTokenId=*/154842,    // </think>
+      // History keeps both delimiters (renders `<think></think>`).
+      /*thinkStartInHistory=*/true,
+      /*thinkEndInHistory=*/true,
   };
   return kInfo;
 }
@@ -421,6 +447,10 @@ const StaticTokenizerInfo& deepseekV4ProInfo() {
       /*assistantHeaderSequence=*/{128804},  // <｜Assistant｜>
       /*thinkStartTokenId=*/128821,          // <think>
       /*thinkEndTokenId=*/128822,            // </think>
+      // The HF repo ships no chat template (fetch_tokenizers.sh), so history
+      // is rendered by DeepseekTokenizer, which emits no delimiters.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
@@ -443,6 +473,10 @@ const StaticTokenizerInfo& gemma431bItInfo() {
       /*assistantHeaderSequence=*/{},
       /*thinkStartTokenId=*/100,  // <|channel>
       /*thinkEndTokenId=*/101,    // <channel|>
+      // strip_thinking() removes the whole `<|channel>…<channel|>` span from
+      // history, delimiters included, in both thinking modes.
+      /*thinkStartInHistory=*/false,
+      /*thinkEndInHistory=*/false,
   };
   return kInfo;
 }
@@ -490,6 +524,15 @@ std::pair<uint32_t, uint32_t> thinkTokenIdsFor(config::ModelType model) {
 
 std::pair<uint32_t, uint32_t> thinkTokenIds() {
   return thinkTokenIdsFor(config::modelType());
+}
+
+ThinkMarkersInHistory thinkMarkersInHistoryFor(config::ModelType model) {
+  const auto& info = staticInfoFor(model);
+  return {info.thinkStartInHistory, info.thinkEndInHistory};
+}
+
+ThinkMarkersInHistory thinkMarkersInHistory() {
+  return thinkMarkersInHistoryFor(config::modelType());
 }
 
 }  // namespace tt::utils::tokenizers

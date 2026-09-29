@@ -265,12 +265,16 @@ class WhisperEvalTest(BaseTest):
             if str(repo_root) not in sys.path:
                 sys.path.insert(0, str(repo_root))
 
-            from workflows.workflow_types import WorkflowVenvType
-            from workflows.workflow_venvs import VENV_CONFIGS
+            from workflow_module.engine_types import WorkflowVenvType
+            from workflow_module.venv_provisioner import get_venv_provisioner
 
-            if WorkflowVenvType.EVALS_AUDIO in VENV_CONFIGS:
-                venv_config = VENV_CONFIGS[WorkflowVenvType.EVALS_AUDIO]
-                lmms_path = venv_config.venv_path / "bin" / "lmms-eval"
+            provisioner = get_venv_provisioner()
+            if provisioner.has_venv(WorkflowVenvType.EVALS_AUDIO):
+                lmms_path = (
+                    provisioner.venv_path(WorkflowVenvType.EVALS_AUDIO)
+                    / "bin"
+                    / "lmms-eval"
+                )
                 logger.info(
                     "EVALS_AUDIO venv lmms-eval path: %s (exists=%s)",
                     lmms_path,

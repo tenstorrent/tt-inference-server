@@ -17,14 +17,17 @@ every knob is a concrete value.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple
 
-from reference_config.agentic_traces.agentic_traces_config import (
-    AgenticTracesConfig,
-    AgenticTracesRunSpec,
-    TraceSource,
-)
-from workflows.workflow_types import AgenticTracesMode
+from workflow_module.engine_types import AgenticTracesMode
+
+from .schema import TraceSource
+
+if TYPE_CHECKING:
+    from reference_config.agentic_traces.agentic_traces_config import (
+        AgenticTracesConfig,
+        AgenticTracesRunSpec,
+    )
 
 # Trace sources with a working client. Both the InferenceX AIPerf fork and the
 # SwarmOne ``swo-bench`` replay engine are wired; any source added to the config
@@ -69,6 +72,12 @@ class AgenticTracesRun:
     use_server_token_count: bool
     gpu_telemetry: bool
     mode: AgenticTracesMode
+    # AIPerf ``--goodput`` SLO string; empty means this run measures none.
+    goodput: str = ""
+    # The requirements document's expected ``agenticSweep`` (all points, so a
+    # report can call out the ones a truncated sweep never measured); empty
+    # when nothing grades this run.
+    expected_sweep: List[Dict[str, Any]] = field(default_factory=list)
     # SwarmOne swo-bench knobs. Unused by the InferenceX/AIPerf driver, so they
     # carry harmless defaults on ``inferencex_agentx`` runs.
     task: Optional[str] = None
@@ -185,6 +194,8 @@ def build_runs(
                 use_server_token_count=spec.use_server_token_count,
                 gpu_telemetry=spec.gpu_telemetry,
                 mode=mode,
+                goodput=spec.goodput,
+                expected_sweep=[dict(point) for point in spec.expected_sweep],
                 task=spec.task,
                 resident=spec.resident,
                 cache_mode=spec.cache_mode,

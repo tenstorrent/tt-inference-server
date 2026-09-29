@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
+from llm_module.goodput import GoodputSlo
+
 
 @dataclass(frozen=True)
 class LLMRunConfig:
@@ -40,6 +42,15 @@ class LLMRunConfig:
     # file instead of ``--dataset-name random``. Selection happens when the
     # sweep is built, not inside the driver.
     custom_dataset_path: Optional[Path] = None
+    # Acceptance severity ("must"/"should") for this sweep point, propagated
+    # from the benchmark params to the emitted block. None => default (must).
+    priority: Optional[str] = field(default=None, compare=False)
+    # Per-metric severity keyed by PerformanceTarget attribute; lets a block
+    # mixing must/should targets downgrade individual metric failures.
+    target_priorities: Optional[dict] = field(default=None, compare=False)
+    # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
+    # own vocabulary. None = not measured.
+    goodput: Optional[GoodputSlo] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)
@@ -67,6 +78,16 @@ class ServerConnection:
     # ``decode=``) so the prefix-cache driver reports each cache separately
     # instead of blending them. A tuple keeps this frozen dataclass hashable.
     prefix_cache_metrics_urls: Tuple[str, ...] = ()
+    # Worker Prometheus ``/metrics`` endpoints holding the
+    # ``vllm:spec_decode_*`` counters, scraped directly by the spec-decode
+    # driver (before/after each AIPerf run) instead of the load target.
+    # Same Dynamo motivation as ``prefix_cache_metrics_urls``: the frontend
+    # is spec-decode-unaware and does not aggregate the worker counters.
+    # Each entry is a URL, ``host:port``, or ``host:port/metrics``;
+    # repeatable for multi-worker (KV-routed) deployments, with before/after
+    # deltas summed across endpoints. Empty scrapes the load target in
+    # ``base_url`` (the pre-flag behavior).
+    spec_decode_metrics_urls: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.tokenizer:

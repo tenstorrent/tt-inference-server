@@ -7,28 +7,52 @@
 Unlike ``ImagePromptEntry``, these assets do not pin an output frame. They are
 an ordered bag of reference media, grouped by modality. Pack order is images,
 then videos, then audios.
+
+Admission follows the MiniMax input media card (``tt_model_runners.minimax_h3_policy``):
+counts 9 / 3 / 3 and 12 in total, inline images checked here (<= 30 MB,
+JPG/PNG/WEBP/HEIC/HEIF, [256, 5760] px, aspect 0.4-2.5), inline image and audio
+base64 lengths capped here; videos and audio are probed at the endpoint once URL
+sources are downloaded (``_enforce_ref2va_media_limits``).
 """
 
-import math
 from typing import List, Optional
 
 from domain.video_generate_request import VideoGenerateRequest
 from domain.video_i2v_generate_request import MAX_BASE64_IMAGE_LEN
 from pydantic import BaseModel, Field, field_validator, model_validator
-from utils.image_manager import ImageManager
+from tt_model_runners.minimax_h3_policy import (
+    MEDIA_B64_FIELD_HEADROOM,
+    MINIMAX_H3_AUDIO_MAX_BYTES,
+    MINIMAX_H3_MAX_REFERENCE_AUDIOS,
+    MINIMAX_H3_MAX_REFERENCE_IMAGES,
+    MINIMAX_H3_MAX_REFERENCE_VIDEOS,
+    MINIMAX_H3_MAX_REFERENCES_TOTAL,
+    MINIMAX_H3_VIDEO_MAX_BYTES,
+    MediaTooLargeError,
+    base64_len_for_bytes,
+    check_h3_image,
+    decode_base64_media,
+)
 from utils.media_downloader import is_media_url
 
-# MiniMax video_generation_input per-file caps, as base64 lengths.
-MAX_VIDEO_BYTES = 50_000_000
-MAX_AUDIO_BYTES = 15_000_000
-MAX_BASE64_MEDIA_LEN = 4 * math.ceil(MAX_VIDEO_BYTES / 3)
-MAX_BASE64_AUDIO_LEN = 4 * math.ceil(MAX_AUDIO_BYTES / 3)
+# One MediaSource field serves images, videos and audio, so its text cap is the
+# largest file the card admits -- a 50 MB reference video -- as base64. The
+# per-modality byte caps (30 / 50 / 15 MB) are enforced on the decoded bytes.
+MAX_BASE64_MEDIA_LEN = (
+    base64_len_for_bytes(MINIMAX_H3_VIDEO_MAX_BYTES) + MEDIA_B64_FIELD_HEADROOM
+)
+# Tighter per-modality text caps for inline images (MAX_BASE64_IMAGE_LEN, the
+# card's 30 MB) and audio (the card's 15 MB), checked on the string length before
+# anything is decoded; the byte caps are then enforced on the decoded bytes.
+MAX_BASE64_AUDIO_LEN = (
+    base64_len_for_bytes(MINIMAX_H3_AUDIO_MAX_BYTES) + MEDIA_B64_FIELD_HEADROOM
+)
 
 
 def _check_b64_len(group: str, sources: List["MediaSource"], cap: int) -> None:
     for index, source in enumerate(sources):
         if source.b64 is not None and len(source.b64) > cap:
-            raise ValueError(
+            raise MediaTooLargeError(
                 f"{group}[{index}] base64 length {len(source.b64)} exceeds "
                 f"the {cap}-char cap"
             )
@@ -66,9 +90,7 @@ class MultimodalReferences(BaseModel):
 
     @field_validator("images")
     @classmethod
-    def _images_are_decodable(cls, value: List[MediaSource]) -> List[MediaSource]:
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MAX_REFERENCE_IMAGES
-
+    def _images_are_admissible(cls, value: List[MediaSource]) -> List[MediaSource]:
         if len(value) > MINIMAX_H3_MAX_REFERENCE_IMAGES:
             raise ValueError(
                 f"at most {MINIMAX_H3_MAX_REFERENCE_IMAGES} reference images, "
@@ -77,25 +99,20 @@ class MultimodalReferences(BaseModel):
         _check_b64_len("images", value, MAX_BASE64_IMAGE_LEN)
         for index, source in enumerate(value):
             if source.b64 is None:
+                # URL source: downloaded and checked against the same card at the
+                # API layer before enqueue (open_ai_api/video.py).
                 continue
+            label = f"images[{index}]"
             try:
-                img = ImageManager().base64_to_pil_image(source.b64)
-            except Exception as exc:
-                raise ValueError(
-                    f"images[{index}] could not be decoded to a valid PIL image"
-                ) from exc
-            if img.size[0] < 1 or img.size[1] < 1:
-                raise ValueError(
-                    f"images[{index}] has invalid dimensions "
-                    "(width and height must be >= 1)"
-                )
+                raw = decode_base64_media(source.b64)
+            except ValueError as exc:
+                raise ValueError(f"{label} is not valid base64") from exc
+            check_h3_image(raw, label=label)
         return value
 
     @field_validator("videos")
     @classmethod
     def _video_count(cls, value: List[MediaSource]) -> List[MediaSource]:
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MAX_REFERENCE_VIDEOS
-
         if len(value) > MINIMAX_H3_MAX_REFERENCE_VIDEOS:
             raise ValueError(
                 f"at most {MINIMAX_H3_MAX_REFERENCE_VIDEOS} reference videos, "
@@ -106,8 +123,6 @@ class MultimodalReferences(BaseModel):
     @field_validator("audios")
     @classmethod
     def _audio_count(cls, value: List[MediaSource]) -> List[MediaSource]:
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MAX_REFERENCE_AUDIOS
-
         if len(value) > MINIMAX_H3_MAX_REFERENCE_AUDIOS:
             raise ValueError(
                 f"at most {MINIMAX_H3_MAX_REFERENCE_AUDIOS} reference audios, "
@@ -118,8 +133,6 @@ class MultimodalReferences(BaseModel):
 
     @model_validator(mode="after")
     def _not_empty_and_audio_not_alone(self):
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_MAX_REFERENCES
-
         if not self.images and not self.videos and not self.audios:
             raise ValueError(
                 "ref2va needs at least one reference image, video, or audio"
@@ -129,9 +142,12 @@ class MultimodalReferences(BaseModel):
                 "an audio reference must be paired with at least one image or video"
             )
         total = len(self.images) + len(self.videos) + len(self.audios)
-        if total > MINIMAX_H3_MAX_REFERENCES:
+        if total > MINIMAX_H3_MAX_REFERENCES_TOTAL:
+            # The pipeline refuses this too (packing_ref2va.check_references); saying
+            # it here spares the client a 202 for a job that could never run.
             raise ValueError(
-                f"at most {MINIMAX_H3_MAX_REFERENCES} references in total, got {total}"
+                f"H3 accepts at most {MINIMAX_H3_MAX_REFERENCES_TOTAL} references in "
+                f"total (images + videos + audios), got {total}"
             )
         return self
 

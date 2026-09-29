@@ -11,10 +11,12 @@ Directory of development docs for working on tt-inference-server.
 
 - [Development](development.md) - Git workflows, branching strategy, pre-commit setup, and release process
 - [Add Support for New Model](add_support_for_new_model.md) - Step-by-step guide for adding new model support, including evals and benchmark targets
+- [Model Id Naming Contract](model_id_naming.md) - How a model id becomes a filename, artifact name or job name, and how to read one back; shared with tt-shield
 
 ## Testing & Debugging
 
 - [Running vLLM Parameter Tests](run_vllm_param_tests.md) - How to run vLLM parameter-specific tests for development and debugging
+- [MiniMax-H3 in CI](minimax_h3_ci.md) - How the MiniMax-H3 video model is tested on a single Blackhole Galaxy: tiers, the generation benchmark and its clip contract, budgets, running it by hand
 - [Running TT-Triage](running_tt_triage.md) - Using the TT-Triage debugging tool to diagnose system hangs on Tenstorrent hardware
 
 ## Benchmarking & Performance

@@ -286,6 +286,16 @@ void LLMService::consumerLoopForWorker(size_t workerIdx) {
               response.choices[0].finish_reason.has_value()) {
             finalReason = response.choices[0].finish_reason.value();
           }
+          if (!finalReason.has_value()) {
+            // Parity with the text-decode path below: a final token without a
+            // finish reason is a bug upstream, and "error" here becomes a 500
+            // through the dynamo transport — make it visible.
+            TT_LOG_WARN(
+                "[Consumer-{}] Final token for task {} (skip_text_decode) "
+                "reached cleanup without a finish reason; defaulting to "
+                "\"error\"",
+                workerIdx, taskId);
+          }
           tt::metrics::ServerMetrics::instance().onRequestCompleted(
               taskId, finalReason.value_or("error"));
           streamDecoders.erase(taskId);

@@ -10,6 +10,16 @@ import torch
 from fastapi import HTTPException, Path, UploadFile
 from PIL import Image
 
+try:
+    # HEIC/HEIF (phone photos) decode through pillow-heif; registering the opener
+    # makes ``Image.open`` return ``format == "HEIF"`` for both extensions. Optional:
+    # without the wheel, check_h3_image refuses HEIC with a message naming the gap.
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+except Exception:  # noqa: BLE001 - optional dependency
+    pass
+
 
 class ImageManager:
     def __init__(self, storage_dir: str = ""):

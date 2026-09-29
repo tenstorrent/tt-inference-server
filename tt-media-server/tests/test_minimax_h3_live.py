@@ -25,8 +25,9 @@ reference mixes):
 
 A MiniMax-H3 deployment serves one task. Without deployment control the tests
 detect the served task (an empty body gets a "This deployment ..." 422 from the
-endpoints it refuses and a field-validation 422 from the one it serves) and
-skip the other class. With deployment control they switch tasks themselves.
+endpoints it refuses and a field-validation 422 from the ones it serves -- an
+FL2VA deployment also serves text-only ``/generations``) and skip the other
+class. With deployment control they switch tasks themselves.
 
 Environment::
 
@@ -116,6 +117,13 @@ ENDPOINT = {
     "fl2va": "/v1/videos/generations/i2v",
     "ref2va": "/v1/videos/generations/ref2va",
 }
+# Endpoints each deployment refuses with a "This deployment ..." 422 (open_ai_api/video.py).
+# FL2VA shares the t2va transformer and serves text-only /generations too (202).
+REFUSED = {
+    "t2va": ("fl2va", "ref2va"),
+    "fl2va": ("ref2va",),
+    "ref2va": ("t2va", "fl2va"),
+}
 PROMPT = "A calm seaside village at golden hour, gentle waves"
 # 1x1 transparent PNG: enough to get past body validation, never reaches a device
 PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
@@ -162,15 +170,21 @@ def http(
 
 
 def probe_served_task() -> str:
-    """The one video endpoint whose empty-body 422 is field validation, not a deployment refusal."""
-    served = []
+    """The task whose REFUSED endpoints answer an empty body with a deployment refusal (string
+    detail) while every other endpoint answers it with field validation (a list)."""
+    refused, validated = set(), set()
     for task, path in ENDPOINT.items():
         code, resp = http("POST", path, {}, timeout=60)
         detail = resp.get("detail") if isinstance(resp, dict) else None
-        if code == 422 and isinstance(detail, list):
-            served.append(task)
+        if code == 422 and isinstance(detail, str):
+            refused.add(task)
+        elif code == 422 and isinstance(detail, list):
+            validated.add(task)
+    served = [task for task, others in REFUSED.items()
+              if set(others) == refused and validated == set(ENDPOINT) - refused]
     if len(served) != 1:
-        pytest.fail(f"could not determine the served task from the 422 probes: {served}")
+        pytest.fail(f"could not determine the served task from the 422 probes: "
+                    f"refused {sorted(refused)}, validated {sorted(validated)}")
     return served[0]
 
 
@@ -630,15 +644,14 @@ def _cancel_then_delete(task: str, body: dict, deployment: Deployment) -> None:
 
 
 def _routing(task: str) -> None:
-    others = {
-        "t2va": ("/v1/videos/generations", {"prompt": "x"}),
-        "fl2va": ("/v1/videos/generations/i2v", {"prompt": "x", "image_prompts": [{"image": PX, "frame_pos": 0}]}),
-        "ref2va": ("/v1/videos/generations/ref2va", {"prompt": "x", "references": {"images": [{"b64": PX}]}}),
+    bodies = {
+        "t2va": {"prompt": "x"},
+        "fl2va": {"prompt": "x", "image_prompts": [{"image": PX, "frame_pos": 0}]},
+        "ref2va": {"prompt": "x", "references": {"images": [{"b64": PX}]}},
     }
-    for other, (path, body) in others.items():
-        if other == task:
-            continue
-        code, resp = http("POST", path, body, timeout=60)
+    # Only the refused endpoints: a served one would queue a real generation.
+    for other in REFUSED[task]:
+        code, resp = http("POST", ENDPOINT[other], bodies[other], timeout=60)
         detail = resp.get("detail") if isinstance(resp, dict) else resp
         assert code == 422 and isinstance(detail, str) and "deployment" in detail.lower(), (
             f"{other} body on a {task} deployment -> {code} {detail}")

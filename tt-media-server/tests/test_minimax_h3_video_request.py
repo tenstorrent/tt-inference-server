@@ -1,0 +1,158 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+from unittest.mock import patch
+
+import pytest
+from domain.video_generate_request import VideoGenerateRequest
+from pydantic import ValidationError
+
+
+# The serving envelope (aspect ratios, durations, step count) is re-exported lazily by
+# tt_model_runners.minimax_h3_policy from tt-metal's models.tt_dit.pipelines.minimax_h3.policy.
+# Where tt-metal is on the path the real module answers; otherwise these stand-ins carry the
+# published values, set on the re-exporting module the way test_video_api.py stubs durations.
+_PUBLISHED_ASPECT_RATIOS = ((21, 9), (16, 9), (4, 3), (1, 1), (3, 4), (9, 16))
+
+
+def _parse_published_aspect_ratio(value: str) -> tuple[int, int]:
+    parts = str(value).strip().replace("x", ":").replace("/", ":").split(":")
+    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+        raise ValueError(f"aspect_ratio must look like 'W:H' (got {value!r})")
+    pair = (int(parts[0]), int(parts[1]))
+    if pair not in _PUBLISHED_ASPECT_RATIOS:
+        raise ValueError(f"aspect_ratio {pair[0]}:{pair[1]} is not served")
+    return pair
+
+
+@pytest.fixture(autouse=True)
+def metal_policy():
+    try:
+        import models.tt_dit.pipelines.minimax_h3.policy  # noqa: F401
+    except ImportError:
+        pass
+    else:
+        yield
+        return
+    # Plain setattr/delattr, not monkeypatch: monkeypatch reads the old value first, and on this
+    # module that read goes through the lazy __getattr__ and raises ModuleNotFoundError.
+    import tt_model_runners.minimax_h3_policy as policy
+
+    # MINIMAX_H3_NUM_INFERENCE_STEPS is a plain constant of the module (no metal import), so it is
+    # not stubbed: popping it on teardown would delete the real one.
+    stubs = {
+        "MINIMAX_H3_DURATIONS_S": tuple(range(4, 16)),
+        "minimax_h3_parse_aspect_ratio": _parse_published_aspect_ratio,
+    }
+    for name, value in stubs.items():
+        setattr(policy, name, value)
+    try:
+        yield
+    finally:
+        for name in stubs:
+            vars(policy).pop(name, None)
+
+
+@pytest.fixture
+def minimax_request_validation():
+    with patch("domain.video_generate_request._is_minimax_h3", return_value=True):
+        yield
+
+
+@pytest.mark.usefixtures("minimax_request_validation")
+@pytest.mark.parametrize("duration_seconds", [4, 5, 10, 15])
+def test_minimax_accepts_documented_durations(duration_seconds):
+    request = VideoGenerateRequest(
+        prompt="A fox runs through wet grass.",
+        aspect_ratio="16:9",
+        duration_seconds=duration_seconds,
+    )
+    assert request.duration_seconds == duration_seconds
+
+
+@pytest.mark.usefixtures("minimax_request_validation")
+@pytest.mark.parametrize(
+    "aspect_ratio",
+    ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+)
+def test_minimax_accepts_served_aspect_ratios(aspect_ratio):
+    request = VideoGenerateRequest(
+        prompt="A fox runs through wet grass.",
+        aspect_ratio=aspect_ratio,
+        duration_seconds=5,
+    )
+    assert request.aspect_ratio == aspect_ratio
+
+
+@pytest.mark.usefixtures("minimax_request_validation")
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("aspect_ratio", "2:1"),
+        ("duration_seconds", 3),
+        ("duration_seconds", 16),
+        ("num_inference_steps", 50),
+        ("resolution", "768P"),
+    ],
+)
+def test_minimax_rejects_unsupported_request_fields(field, value):
+    payload = {
+        "prompt": "A fox runs through wet grass.",
+        "aspect_ratio": "16:9",
+        "duration_seconds": 5,
+        field: value,
+    }
+    with pytest.raises(ValidationError):
+        VideoGenerateRequest(**payload)
+
+
+def test_shared_video_schema_keeps_non_minimax_behavior():
+    with patch("domain.video_generate_request._is_minimax_h3", return_value=False):
+        request = VideoGenerateRequest(
+            prompt="A fox runs through wet grass.",
+            num_inference_steps=20,
+            resolution="ignored-by-shared-schema",
+        )
+    assert request.num_inference_steps == 20
+
+
+@pytest.mark.usefixtures("minimax_request_validation")
+def test_minimax_pins_the_fixed_schedule_when_steps_are_omitted():
+    from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+
+    request = VideoGenerateRequest(
+        prompt="A fox runs through wet grass.",
+        aspect_ratio="16:9",
+        duration_seconds=5,
+    )
+    assert request.num_inference_steps == MINIMAX_H3_NUM_INFERENCE_STEPS
+
+
+def test_shm_rebuild_drops_the_step_count_for_minimax():
+    """The multi-host rank workers rebuild the request from shared memory, where
+    num_inference_steps is always present; that path must not trip the admission rule."""
+    from ipc.video_shm import VideoRequest
+    from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
+    from tt_model_runners.video_runner import video_request_to_generate_request
+
+    req = VideoRequest(
+        task_id="t-1",
+        prompt="A fox runs through wet grass.",
+        negative_prompt="",
+        num_inference_steps=20,
+        seed=42,
+        height=768,
+        width=1344,
+        num_frames=124,
+        guidance_scale=1.0,
+        guidance_scale_2=1.0,
+    )
+    with patch("domain.video_generate_request._is_minimax_h3", return_value=True):
+        with patch("tt_model_runners.video_runner._is_minimax_h3", return_value=True):
+            gen = video_request_to_generate_request(req)
+    assert gen.prompt == req.prompt and gen.seed == 42
+    assert gen.num_inference_steps == MINIMAX_H3_NUM_INFERENCE_STEPS
+    with patch("domain.video_generate_request._is_minimax_h3", return_value=False):
+        with patch("tt_model_runners.video_runner._is_minimax_h3", return_value=False):
+            assert video_request_to_generate_request(req).num_inference_steps == 20

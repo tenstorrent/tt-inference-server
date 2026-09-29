@@ -86,6 +86,13 @@ RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-
 # download.pytorch.org intermittently returns 503 during dependency installs;
 # raise uv's HTTP retry count (default 3) for every uv invocation in create_venv.sh.
 ENV UV_HTTP_RETRIES=10
+# create_venv.sh installs a uv-managed Python interpreter. The build runs as
+# root, so uv's default install dir (~/.local/share/uv) is NOT copied into the
+# runtime stage (which only copies ${HOME_DIR}). Newer tt-metal handles this by
+# deep-copying the interpreter into the venv (--bundle-python); for older pins
+# that predate the flag, keep the interpreter under TT_METAL_HOME so the venv's
+# symlinks still resolve after the copy.
+ENV UV_PYTHON_INSTALL_DIR=${TT_METAL_HOME}/uv-python
 
 # build tt-metal
 #
@@ -101,7 +108,16 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && git checkout ${TT_METAL_COMMIT_SHA_OR_TAG} \
     && git submodule update --init --recursive --depth 1 \
     && ./install_dependencies.sh --docker \
-    && CXX=clang++-17 CC=clang-17 bash ./create_venv.sh --bundle-python \
+    # Older pinned tt-metal commits (e.g. BGE's 65718bb) predate create_venv.sh's
+    # --bundle-python flag and exit 1 on unknown arguments, so only pass it when
+    # the script supports it. The test -f guard makes a silent venv failure abort
+    # the build here instead of surfacing as a confusing error many layers later.
+    && if grep -q -- '--bundle-python' ./create_venv.sh; then \
+         CXX=clang++-17 CC=clang-17 bash ./create_venv.sh --bundle-python; \
+       else \
+         CXX=clang++-17 CC=clang-17 bash ./create_venv.sh; \
+       fi \
+    && test -f "${PYTHON_ENV_DIR}/bin/activate" \
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
@@ -118,7 +134,10 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && rm -rf ${TT_METAL_HOME}/dockerfile \
     && rm -rf ${TT_METAL_HOME}/infra/tests \
     && rm -rf ${TT_METAL_HOME}/tt-train \
-    && find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true
+    # Parenthesized so `|| true` only forgives the .git cleanup: unscoped, it
+    # would swallow a failure anywhere in this && chain and let the build
+    # continue without a venv or a tt-metal build.
+    && (find ${TT_METAL_HOME} -name ".git" -type d -exec rm -rf {} + 2>/dev/null || true)
 
 RUN mkdir -p ${HOME_DIR} \
     && mkdir -p /run/sshd \
@@ -134,7 +153,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && . ${HOME_DIR}/.cargo/env \
     && rustup update \
     && uv pip install git+https://github.com/tenstorrent/tt-smi \
-    && find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true"
+    && (find ${HOME_DIR} -name '.git' -type d -exec rm -rf {} + 2>/dev/null || true)"
 
 WORKDIR ${HOME_DIR}
 
@@ -163,6 +182,19 @@ COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
+
+# MiniMax-H3 dispatch branches only (zni/h3-ci-t2va / -fl2va / -ref2va; not for main):
+# tt-vllm-plugin pins transformers==4.55.0, which predates the Qwen3-VL video processor the H3
+# pipeline loads for Ref2VA video references (AutoVideoProcessor on
+# text_encoder/video_preprocessor_config.json), so every request with a video reference failed
+# with "Unrecognized video processor". Restore the transformers pin of the tt-metal this image is
+# built on and check the class resolves. The vLLM runners in this image expect the older pin, so
+# this image is for MiniMax-H3 only.
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pin=\$(grep -E '^transformers[[:space:]]*==' ${TT_METAL_HOME}/tt_metal/python_env/requirements-dev.txt | tr -d ' ') \
+    && test -n \"\$pin\" \
+    && uv pip install --no-cache-dir \"\$pin\" \
+    && python -c 'import transformers; from transformers.models.qwen3_vl import Qwen3VLVideoProcessor; print(\"transformers\", transformers.__version__, Qwen3VLVideoProcessor.__name__)'"
 
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10

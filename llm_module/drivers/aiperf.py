@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..goodput import AIPERF_GOODPUT_KEYS, render_goodput
 from ..parsers.aiperf import AIPerfParser
 from ._subprocess import find_first, load_json, run_command
 from .base import DriverResult, LLMDriver
@@ -80,10 +81,15 @@ class AIPerfDriver(LLMDriver):
             "--artifact-dir",
             str(artifact_dir),
         ]
+        # The explicit --goodput flag is an operator override and wins;
+        # without it, the sweep point's own SLOs supply the bars. They are
+        # carried tool-neutrally, so render them in AIPerf's vocabulary --
+        # vLLM's ttft/tpot/e2el keys are rejected here.
+        goodput = context.goodput or render_goodput(config.goodput, AIPERF_GOODPUT_KEYS)
         # AIPerf parses --goodput as a single token holding the full
         # space-separated KEY:VALUE SLO list, so pass it as one argument.
-        if context.goodput and context.goodput.strip():
-            cmd.extend(["--goodput", context.goodput.strip()])
+        if goodput and goodput.strip():
+            cmd.extend(["--goodput", goodput.strip()])
         env = dict(context.extra_env)
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token

@@ -20,6 +20,8 @@ from run import (
     handle_secrets,
     get_current_commit_sha,
     populate_model_spec_cli_args,
+    resolve_runtime,
+    should_mount_runtime_model_spec,
 )
 from workflows.validate_setup import (
     validate_runtime_args,
@@ -106,12 +108,55 @@ def mock_model_spec():
     mock_spec = MagicMock()
     mock_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
     mock_spec.model_name = "Mistral-7B-Instruct-v0.3"
+    mock_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
     mock_spec.tt_metal_commit = "test-commit"
     mock_spec.vllm_commit = "test-vllm-commit"
     mock_spec.inference_engine = "vLLM"
     mock_spec.to_json.return_value = "/tmp/test-model-spec.json"
 
     return mock_spec
+
+
+def test_quetzal_docker_always_mounts_resolved_runtime_spec(
+    mock_model_spec, mock_runtime_config
+):
+    mock_model_spec.impl.impl_id = "quetzal"
+    mock_runtime_config.dev_mode = False
+    mock_runtime_config.custom_weights = None
+    mock_runtime_config.runtime_model_spec_json = None
+
+    assert should_mount_runtime_model_spec(mock_model_spec, mock_runtime_config)
+
+
+def test_native_catalog_docker_can_use_baked_runtime_spec(
+    mock_model_spec, mock_runtime_config
+):
+    mock_model_spec.impl.impl_id = "tt_transformers"
+    mock_runtime_config.dev_mode = False
+    mock_runtime_config.custom_weights = None
+    mock_runtime_config.runtime_model_spec_json = None
+
+    assert not should_mount_runtime_model_spec(mock_model_spec, mock_runtime_config)
+
+
+def test_runtime_json_resolves_impl_and_engine_from_model_spec(
+    mock_args, mock_model_spec
+):
+    mock_args.runtime_model_spec_json = "/tmp/runtime-model-spec.json"
+    mock_args.impl = None
+    mock_args.engine = None
+    mock_model_spec.impl.impl_name = "quetzal"
+    mock_model_spec.inference_engine = "vLLM"
+    runtime_config = MagicMock()
+
+    with patch("run.ModelSpec.from_json", return_value=mock_model_spec), patch(
+        "run.RuntimeConfig.from_args", return_value=runtime_config
+    ) as from_args, patch("run.populate_model_spec_cli_args"):
+        resolved_runtime, resolved_spec = resolve_runtime(mock_args)
+
+    from_args.assert_called_once_with(mock_args, impl="quetzal", engine="vLLM")
+    assert resolved_runtime is runtime_config
+    assert resolved_spec is mock_model_spec
 
 
 @pytest.fixture
@@ -593,6 +638,17 @@ class TestModelSpecCliArgsCompatibility:
         assert args.host_hf_cache == "/home/user/.cache/huggingface"
         assert args.image_user == "15863"
 
+    def test_quetzal_package_root_parsing(self, base_args):
+        with patch(
+            "sys.argv",
+            ["run.py"]
+            + base_args
+            + ["--quetzal-package-root", "/mnt/models/sha256-package"],
+        ):
+            args = parse_arguments()
+
+        assert args.quetzal_package_root == "/mnt/models/sha256-package"
+
 
 class TestArgsInference:
     """Tests for argument inference and validation."""
@@ -602,6 +658,7 @@ class TestArgsInference:
         spec = MagicMock()
         spec.model_id = model_id
         spec.model_name = "Mistral-7B-Instruct-v0.3"
+        spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         spec.device_type = DeviceTypes.N150
         spec.inference_engine = "vLLM"
         spec.impl.impl_name = impl_name
@@ -852,6 +909,7 @@ class TestOverrideArgsIntegration:
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "id_tt-transformers_Mistral-7B-Instruct-v0.3_n150"
         mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.device_type = DeviceTypes.N150
         mock_model_spec.inference_engine = "vLLM"
         mock_model_spec.impl.impl_name = "tt-transformers"
@@ -876,6 +934,7 @@ class TestOverrideArgsIntegration:
         mock_model_spec = MagicMock()
         mock_model_spec.model_id = "test-model-id"
         mock_model_spec.model_name = "Mistral-7B-Instruct-v0.3"
+        mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.device_type = "n150"
         mock_model_spec.docker_image = "test:image"
         mock_model_spec.impl.impl_name = "tt-transformers"
@@ -1308,6 +1367,80 @@ class TestUtilityFunctions:
 
         mock_get_log_dir.assert_called_once()
         mock_ensure_dir.assert_called_once_with(mock_log_dir)
+
+
+@pytest.mark.parametrize("local_server", [False, True])
+@pytest.mark.parametrize("selection", ["selected", "absent", "native", "rejected"])
+def test_main_forwards_validated_package_weight_source(
+    monkeypatch, tmp_path, local_server, selection
+):
+    """Exercise main's real host-setup call; stop before launching a server."""
+    import run as entrypoint
+
+    args = argparse.Namespace(requirements_doc=None)
+    runtime = MagicMock(
+        docker_server=not local_server,
+        local_server=local_server,
+        host_volume=str(tmp_path / "storage"),
+        host_hf_cache=None,
+        host_weights_dir=None,
+        image_user="1000",
+        workflow="server",
+    )
+    model = MagicMock(model_id="test-model")
+    model.impl.impl_id = "tt_transformers" if selection == "native" else "quetzal"
+    monkeypatch.setattr(entrypoint, "parse_arguments", lambda: args)
+    monkeypatch.setattr(entrypoint, "resolve_runtime", lambda _: (runtime, model))
+    for name in (
+        "handle_maintenance_args",
+        "export_model_specs_json",
+        "bootstrap_uv",
+        "handle_secrets",
+        "setup_run_logger",
+        "ensure_readwriteable_dir",
+    ):
+        monkeypatch.setattr(entrypoint, name, MagicMock())
+    monkeypatch.setattr(entrypoint, "get_current_commit_sha", lambda: "a" * 40)
+    monkeypatch.setattr(
+        entrypoint, "get_default_workflow_root_log_dir", lambda: tmp_path
+    )
+    monkeypatch.setattr(entrypoint, "format_cli_args_summary", lambda _: "test")
+    validation = MagicMock()
+    monkeypatch.setattr(entrypoint, "validate_setup", validation)
+
+    selected_mount = object() if selection == "selected" else None
+
+    def resolve(spec, config):
+        validation.assert_called_once()
+        assert spec is model and config is runtime
+        if selection == "rejected":
+            raise ValueError("package selection rejected")
+        return selected_mount
+
+    resolver = MagicMock(side_effect=resolve)
+    monkeypatch.setattr(entrypoint, "resolve_quetzal_package_mount", resolver)
+
+    class SetupReached(Exception):
+        pass
+
+    setup = MagicMock(side_effect=SetupReached)
+    monkeypatch.setattr(entrypoint, "setup_host", setup)
+    if selection == "rejected":
+        with pytest.raises(ValueError, match="package selection rejected"):
+            entrypoint.main()
+        setup.assert_not_called()
+    else:
+        with pytest.raises(SetupReached):
+            entrypoint.main()
+        setup.assert_called_once()
+        kwargs = setup.call_args.kwargs
+        assert kwargs["package_provides_weights"] is (selection == "selected")
+        assert kwargs["model_spec"] is model
+        assert kwargs["host_volume"] == runtime.host_volume
+        assert kwargs["host_weights_dir"] is None
+        assert kwargs["local_server"] is local_server
+        assert kwargs["image_user"] == (None if local_server else "1000")
+    resolver.assert_called_once_with(model, runtime)
 
 
 if __name__ == "__main__":

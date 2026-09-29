@@ -12,6 +12,7 @@ error handling) is tested without running a real workflow.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
@@ -25,6 +26,7 @@ from workflow_module.commands import (
     SummaryCommand,
     VenvCommand,
     WorkflowCommand,
+    _server_is_alive,
 )
 from workflow_module.execution import OrchestratorMetadata, WorkflowResult
 
@@ -176,22 +178,28 @@ def _install_fake_venv_stack(
     run_rc=0,
     recorder=None,
 ):
-    """Stand in fake ``workflows.workflow_venvs`` / ``workflows.utils`` modules so
+    """Register a fake ``VenvProvisioner`` and stub ``proc.run_command`` so
     VenvCommand resolves a venv + runs a subprocess without touching the disk.
     """
 
-    class _FakeVenvConfig:
+    class _FakeProvisioner:
         def __init__(self):
-            self.venv_python = venv_python
             self.setup_calls = []
 
-        def setup(self, model_spec=None):
+        def has_venv(self, vt):
+            return vt == venv_type
+
+        def venv_path(self, vt):
+            return Path(venv_python).parent.parent
+
+        def venv_python(self, vt):
+            return venv_python
+
+        def provision(self, vt, model_spec=None):
             self.setup_calls.append(model_spec)
             return setup_ok
 
-    config = _FakeVenvConfig()
-    venvs_mod = ModuleType("workflows.workflow_venvs")
-    venvs_mod.VENV_CONFIGS = {venv_type: config}
+    provisioner = _FakeProvisioner()
 
     def _run_command(command, logger=None, env=None, **kwargs):
         if recorder is not None:
@@ -199,12 +207,9 @@ def _install_fake_venv_stack(
             recorder["env"] = env
         return run_rc
 
-    utils_mod = ModuleType("workflows.utils")
-    utils_mod.run_command = _run_command
-
-    monkeypatch.setitem(sys.modules, "workflows.workflow_venvs", venvs_mod)
-    monkeypatch.setitem(sys.modules, "workflows.utils", utils_mod)
-    return config
+    monkeypatch.setattr("workflow_module.venv_provisioner._provisioner", provisioner)
+    monkeypatch.setattr("workflow_module.proc.run_command", _run_command)
+    return provisioner
 
 
 class TestVenvCommand:
@@ -472,3 +477,60 @@ class TestServerCommandBootRetry:
         assert result.return_code == 1
         assert len(attempts) == 3
         assert "device hang during warmup" in result.error
+
+    @pytest.mark.parametrize("mode", [ServerMode.DOCKER, ServerMode.LOCAL])
+    @pytest.mark.parametrize(("return_code", "expected"), [(None, True), (17, False)])
+    def test_process_handle_reports_server_liveness(self, mode, return_code, expected):
+        process = SimpleNamespace(poll=lambda: return_code)
+        spec = ServerLaunchSpec(
+            mode=mode,
+            model_spec=None,
+            runtime_config=None,
+            setup_config=None,
+        )
+
+        assert _server_is_alive(spec, {"process": process}) is expected
+
+    def test_exited_docker_process_retries_without_waiting_for_timeout(
+        self, monkeypatch, tmp_path
+    ):
+        import urllib.error
+        import urllib.request
+        import workflow_module.commands as commands
+
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+        log_path = tmp_path / "server.log"
+        log_path.write_text("fatal startup error\n")
+        attempts = []
+
+        def exited_docker(*args, **kwargs):
+            attempts.append(1)
+            return {
+                "process": SimpleNamespace(poll=lambda: 1),
+                "service_port": "8000",
+                "docker_log_file_path": str(log_path),
+            }
+
+        def unavailable(*args, **kwargs):
+            raise urllib.error.URLError("not listening")
+
+        _install_fake_launchers(monkeypatch, docker=exited_docker)
+        monkeypatch.setattr(urllib.request, "urlopen", unavailable)
+        monkeypatch.setattr(commands, "_teardown_server", lambda *args: None)
+        monkeypatch.setattr(
+            "time.sleep",
+            lambda seconds: pytest.fail("dead process must not sleep until timeout"),
+        )
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec="ms",
+            runtime_config="rc",
+            setup_config="sc",
+            json_fpath="/j.json",
+        )
+
+        result = ServerCommand(spec).execute()
+
+        assert result.return_code == 1
+        assert len(attempts) == 2
+        assert result.error.endswith("server process exited during startup")

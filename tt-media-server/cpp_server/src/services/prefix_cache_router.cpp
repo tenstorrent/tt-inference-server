@@ -20,8 +20,9 @@ std::vector<utils::BlockHashInfo> PrefixCacheRouter::computeBlockInfos(
     return {};
   }
   auto [thinkStart, thinkEnd] = utils::tokenizers::thinkTokenIds();
-  return utils::getPrefixCacheHashesByBlocksWithThinking(promptTokenIds,
-                                                         thinkStart, thinkEnd);
+  return utils::getPrefixCacheHashesByBlocksWithThinking(
+      promptTokenIds, thinkStart, thinkEnd,
+      utils::tokenizers::thinkMarkersInHistory());
 }
 
 std::optional<PrefixCacheRouter::AcquireResult>

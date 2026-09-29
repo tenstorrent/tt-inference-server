@@ -109,7 +109,7 @@ persistent across restarts, or each restart pays that again.
 export TT_METAL_HOME=/path_to/tt-metal
 export MODEL="MiniMax-H3"
 export MODEL_RUNNER=tt-minimax-h3-t2va
-export DEVICE="galaxy"
+export DEVICE="blackhole_galaxy"
 export ARCH_NAME=blackhole
 export MESH_DEVICE="(4, 8)"
 
@@ -295,7 +295,7 @@ row drops to 0.0 s.
 | `duration_seconds` | Any integer `4`..`15` -- what the MiniMax API accepts. Anything else is a 422. Omitted gives `5`. The video VAE encodes in 17-frame chunks, so only `17n + 5` frame counts exist and a request rounds **up** to the next one: the clip is never shorter than asked, by at most 0.67 s (`13` -> 13.667 s). `8` is the only exact fit (192 frames). |
 | Unknown fields | Rejected, not ignored. `{"resolution": "1080P", "duration": 9}` is a 422 naming the fields this deployment reads -- silently dropping them would tell a caller it got something it did not. Note the field is `duration_seconds`, and resolution is chosen with `aspect_ratio`. |
 | Resolution | 768P throughout: short edge 768 from 16:9 to 9:16, area capped at ~1 MPix for wider (21:9 is 1536x672). Derived by the model's `resolve_canvas_size`, not settable directly. |
-| `num_inference_steps` | Not accepted. Omit it; this deployment always runs the metal policy count (50). Sending the field is a 422. |
+| `num_inference_steps` | Not a request lever, on any task (`t2va`, `fl2va`, `ref2va`). Sending the field is a 422: `num_inference_steps is not accepted for MiniMax-H3: the deployment runs a fixed 50-step schedule. Omit the field.` Omitted, the request runs that fixed schedule -- the metal policy count (`models.tt_dit.pipelines.minimax_h3.policy.MINIMAX_H3_NUM_INFERENCE_STEPS`, 50, re-exported by `tt_model_runners/minimax_h3_policy`) -- and the request echo carries the same count. |
 | Warmup | Nothing is warmed by default; the first request per shape compiles. See section 6. |
 | One request at a time | One device worker owns the mesh; further requests queue. |
 | Task | One of `t2va`, `fl2va`, `ref2va` per process. `MODEL_RUNNER` selects it; switching `ref2va` is a 62 GB reload (`transformer_ref/`). |

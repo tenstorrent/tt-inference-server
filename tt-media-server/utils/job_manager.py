@@ -13,7 +13,7 @@ from sqlite3 import IntegrityError
 from threading import Lock
 from typing import Any, Callable, Dict, Optional
 
-from config.constants import JobTypes
+from config.constants import JobTypes, job_database_path
 from config.settings import get_settings
 from domain.base_request import BaseRequest
 from fastapi import HTTPException
@@ -50,7 +50,9 @@ class Job:
     completed_at: Optional[int] = None
     result_path: Optional[str] = None
     error: Optional[dict] = None
+    local_progress_time: Optional[float] = None
     _task: Callable = None
+    _progress_tracker: Any = None
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
     job_metrics: list = field(default_factory=list)
@@ -60,9 +62,26 @@ class Job:
     def __post_init__(self):
         if self.created_at is None:
             self.created_at = int(time.time())
+        if self.local_progress_time is None:
+            self.local_progress_time = time.monotonic()
 
     def mark_in_progress(self):
         self.status = JobStatus.IN_PROGRESS
+        if self._progress_tracker is not None:
+            self.touch_progress()
+
+    def touch_progress(self) -> float:
+        """Record progress locally and in the shared worker heartbeat."""
+        self.local_progress_time = time.monotonic()
+        if self._progress_tracker is not None:
+            self._progress_tracker.value = self.local_progress_time
+        return self.local_progress_time
+
+    def progress_time(self) -> float:
+        """Return worker progress when shared, otherwise local job progress."""
+        if self._progress_tracker is not None:
+            return float(self._progress_tracker.value)
+        return self.local_progress_time
 
     def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())
@@ -115,6 +134,39 @@ class Job:
         return data
 
 
+# Inline media in a job's echoed ``request_parameters``. A Ref2VA request can carry tens of
+# megabytes of base64 across its references, and that dict is returned in the 202, in every
+# status poll and in ``/jobs`` for ``job_retention_seconds`` -- so the upload would be served
+# back once per poll and pinned in RAM for a day. The media reaches the worker on the request
+# object, not through this dict, so only the echo changes.
+_INLINE_MEDIA_KEYS = frozenset({"image", "b64"})
+_INLINE_MEDIA_KEEP_CHARS = 256
+
+
+def redact_inline_media(value):
+    """Copy of a request dump with long inline base64 media replaced by a size note.
+
+    Only ``image`` (``image_prompts[]``) and ``b64`` (``references.*[]``) string values longer
+    than ``_INLINE_MEDIA_KEEP_CHARS`` are touched; URLs, short values and every other field
+    come back unchanged.
+    """
+    if isinstance(value, dict):
+        return {
+            key: (
+                f"<inline media omitted: {len(item)} base64 chars>"
+                if key in _INLINE_MEDIA_KEYS
+                and isinstance(item, str)
+                and len(item) > _INLINE_MEDIA_KEEP_CHARS
+                and not item[:8].lower().startswith(("http://", "https://"))
+                else redact_inline_media(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_inline_media(item) for item in value]
+    return value
+
+
 class JobManager:
     def __init__(self):
         self._logger = TTLogger()
@@ -128,7 +180,7 @@ class JobManager:
         if self._settings.enable_job_persistence:
             from utils.job_database import JobDatabase
 
-            self.db = JobDatabase(db_path=Path(self._settings.job_database_path))
+            self.db = JobDatabase(db_path=Path(job_database_path()))
             self._logger.info("Job persistence enabled with database")
             self._restore_jobs_from_db()
 
@@ -149,6 +201,7 @@ class JobManager:
         job_metrics: list = None,
         job_logs: list = None,
         job_checkpoints: list = None,
+        progress_tracker: Any = None,
         org_id: Optional[str] = None,
         request_parameters: Optional[dict] = None,
     ) -> dict:
@@ -156,6 +209,7 @@ class JobManager:
 
         ``request_parameters`` overrides the stored and echoed request, e.g.
         the client's URL form of a request whose media was since downloaded.
+        Either way, long inline base64 media is redacted from the echo.
         """
         if request_parameters is None:
             request_parameters = request.model_dump(mode="json")
@@ -165,8 +219,9 @@ class JobManager:
                 id=job_id,
                 job_type=job_type.value,
                 model=model,
-                request_parameters=request_parameters,
+                request_parameters=redact_inline_media(request_parameters),
                 org_id=org_id,
+                _progress_tracker=progress_tracker,
             )
 
             if result_path:
@@ -485,44 +540,55 @@ class JobManager:
 
     def _cleanup_old_jobs(self):
         """Remove old completed/failed/cancelled, stuck in-progress, and stale cancelling jobs."""
-        current_time = time.time()
-        cutoff_time = current_time - self._settings.job_retention_seconds
-        stuck_cutoff_time = current_time - self._settings.job_max_stuck_time_seconds
+        retention_cutoff = time.time() - self._settings.job_retention_seconds
+        progress_cutoff = time.monotonic() - self._settings.job_max_stuck_time_seconds
 
         jobs_to_remove = []
+        stuck_jobs = []
 
         with self._jobs_lock:
-            for job_id, job in self._jobs.items():
+            for job in self._jobs.values():
                 is_old_terminal = (
                     job.is_terminal()
                     and job.completed_at
-                    and job.completed_at < cutoff_time
+                    and job.completed_at < retention_cutoff
                 )
-                is_stuck = (
-                    job.is_in_progress() or job.is_cancelling()
-                ) and job.created_at < stuck_cutoff_time
-                if is_old_terminal or is_stuck:
+                if is_old_terminal:
                     jobs_to_remove.append(job)
+                elif self._is_job_stuck(job, progress_cutoff):
+                    stuck_jobs.append(job)
 
-        if not jobs_to_remove:
+        if not jobs_to_remove and not stuck_jobs:
             return
 
-        for job in jobs_to_remove:
-            if job.is_in_progress() or job.is_cancelling():
-                if job.is_in_progress():
-                    self._logger.warning(
-                        f"Force-cancelling stuck in-progress job {job.id}"
-                    )
-                else:
-                    self._logger.warning(
-                        f"Force-cancelling stale cancelling job {job.id}"
-                    )
-                self._cleanup_job(job, force=True)
+        for job in stuck_jobs:
+            # Progress and completion happen outside _jobs_lock. Claim the job as
+            # failed only after re-reading both immediately before cancellation.
+            with self._jobs_lock:
+                current_job = self._jobs.get(job.id)
+                if current_job is not job:
+                    continue
+                latest_progress_cutoff = (
+                    time.monotonic() - self._settings.job_max_stuck_time_seconds
+                )
+                if not self._is_job_stuck(job, latest_progress_cutoff):
+                    continue
+                was_in_progress = job.is_in_progress()
                 job.mark_failed(
                     error_code="stale_job",
-                    error_message="Job was stuck and force-cancelled by cleanup",
+                    error_message=(
+                        "Job made no progress and was force-cancelled by cleanup"
+                    ),
                 )
-                self._sync_status_to_db(job)
+
+            if was_in_progress:
+                self._logger.warning(f"Force-cancelling stuck in-progress job {job.id}")
+            else:
+                self._logger.warning(f"Force-cancelling stale cancelling job {job.id}")
+            self._cleanup_job(job, force=True)
+            self._sync_status_to_db(job)
+
+        for job in jobs_to_remove:
             self._remove_result_file(job)
 
         # Remove from storage under lock
@@ -537,9 +603,16 @@ class JobManager:
                             f"Database deletion failed for job {job.id} during cleanup: {e}"
                         )
 
-            self._logger.info(
-                f"Cleaned up {len(jobs_to_remove)} old job(s): {', '.join(job.id for job in jobs_to_remove)}"
-            )
+            if jobs_to_remove:
+                self._logger.info(
+                    f"Cleaned up {len(jobs_to_remove)} old job(s): "
+                    f"{', '.join(job.id for job in jobs_to_remove)}"
+                )
+
+    def _is_job_stuck(self, job: Job, progress_cutoff: float) -> bool:
+        if not (job.is_in_progress() or job.is_cancelling()):
+            return False
+        return job.progress_time() < progress_cutoff
 
     def _remove_result_file(self, job: Job) -> None:
         """Best-effort removal of a job's result file.

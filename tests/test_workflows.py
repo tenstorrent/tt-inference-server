@@ -20,6 +20,7 @@ from workflows.model_spec import (
 from workflows.setup_host import HostSetupManager
 from workflows.utils import (
     ensure_readwriteable_dir,
+    server_log_file_name,
 )
 from workflows.workflow_config import WORKFLOW_CONFIGS
 from workflows.workflow_types import ModelSource, WorkflowType
@@ -85,6 +86,44 @@ class TestWorkflowUtils:
             # Should raise when raise_on_fail=True
             with pytest.raises(ValueError, match="exists but is not a directory"):
                 ensure_readwriteable_dir(test_file, raise_on_fail=True)
+
+
+class TestServerLogFileName:
+    """The server log file name must stay one path component deep.
+
+    ``runtime_config.model`` is the full HF repo id, so interpolating it raw
+    turned the org prefix into a parent directory that nothing creates, and the
+    server died on ``open()`` before it ever started.
+    """
+
+    def test_org_prefix_does_not_become_a_directory(self):
+        name = server_log_file_name(
+            "vllm",
+            "2026-07-30_15-48-04",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            "n150",
+            "release",
+        )
+        assert name == (
+            "vllm_2026-07-30_15-48-04_meta-llama__Llama-3.1-8B-Instruct"
+            "_n150_release.log"
+        )
+        assert len(Path(name).parts) == 1
+
+    def test_bare_model_id_is_unchanged(self):
+        assert (
+            server_log_file_name("media", "ts", "mobilenetv2", "n150", "release")
+            == "media_ts_mobilenetv2_n150_release.log"
+        )
+
+    @pytest.mark.parametrize(
+        "model", ["openai/whisper-large-v3", "microsoft/phi-1_5", "mobilenetv2"]
+    )
+    def test_log_file_opens_in_an_existing_dir(self, model, tmp_path):
+        path = tmp_path / server_log_file_name("vllm", "ts", model, "n150", "release")
+        assert path.parent == tmp_path
+        with open(path, "w") as f:  # what run_docker_command does
+            f.write("")
 
 
 class TestWorkflowConfigurationValidation:

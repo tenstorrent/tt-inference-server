@@ -29,19 +29,17 @@ def get_llm_configs(
     text-only, so any param without both ``isl`` and ``osl`` is dropped.
     ``limit_samples_mode`` honours v1's smoke-test selection when set.
     """
-    from reference_config.benchmarking.benchmark_config import (
-        get_benchmark_config,
-        select_smoke_test_benchmark_config,
-    )
-    from workflows.workflow_types import EvalLimitMode
+    from workflow_module.engine_types import EvalLimitMode
+    from workflow_module.target_pack import get_target_pack
 
-    benchmark_config = get_benchmark_config(model_spec)
+    pack = get_target_pack()
+    benchmark_config = pack.benchmark_config(model_spec)
 
     if (
         limit_samples_mode
         and EvalLimitMode.from_string(limit_samples_mode) == EvalLimitMode.SMOKE_TEST
     ):
-        benchmark_config = select_smoke_test_benchmark_config(benchmark_config, device)
+        benchmark_config = pack.smoke_test_benchmark_config(benchmark_config, device)
 
     configured_devices = {
         dev for task in benchmark_config.tasks for dev in task.param_map
@@ -67,6 +65,21 @@ def get_llm_configs(
         for params in text_params
         if params.targets
     }
+    priority_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.priority
+        for params in text_params
+        if getattr(params, "priority", None)
+    }
+    target_priorities_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.target_priorities
+        for params in text_params
+        if getattr(params, "target_priorities", None)
+    }
+    goodput_by_shape = {
+        (params.isl, params.osl, params.max_concurrency): params.goodput
+        for params in text_params
+        if getattr(params, "goodput", None)
+    }
 
     metadata = getattr(model_spec, "metadata", None) or {}
     output_block_size = int(metadata.get("output_block_size", 1) or 1)
@@ -77,6 +90,7 @@ def get_llm_configs(
         if key in seen:
             continue
         seen.add(key)
+        shape = (params.isl, params.osl, params.max_concurrency)
         configs.append(
             LLMRunConfig(
                 isl=params.isl,
@@ -96,6 +110,9 @@ def get_llm_configs(
                     if output_block_size > 1
                     else None
                 ),
+                priority=priority_by_shape.get(shape),
+                target_priorities=target_priorities_by_shape.get(shape),
+                goodput=goodput_by_shape.get(shape),
             )
         )
 

@@ -44,6 +44,7 @@ class VLLMBenchParser(LLMResultParser):
             "tps_output_throughput": _round(raw.get("output_throughput"), 4),
             "tps_total_throughput": _total_throughput(raw),
             "request_throughput": _round(raw.get("request_throughput"), 4),
+            "goodput_pct": _goodput_pct(raw),
             "error_request_count": _errors(raw.get("failed")),
         }
         output_block_size = _num_int(raw.get("tt_output_block_size")) or 1
@@ -193,6 +194,22 @@ def _blocks_per_request(
 def _errors(value: Any) -> Optional[int]:
     v = _num(value)
     return int(v) if v else None
+
+
+def _goodput_pct(raw: Mapping[str, Any]) -> Optional[float]:
+    """Share of completed requests that met the run's ``--goodput`` SLOs (%).
+
+    vLLM only reports ``request_goodput`` (good requests/sec) when the run
+    passed ``--goodput``. It shares its duration with ``request_throughput``
+    (completed requests/sec), so the ratio is the fraction of requests
+    meeting every SLO — the percentage requirements documents express as
+    ``goodputPct`` / ``request_goodput``.
+    """
+    goodput = _num(raw.get("request_goodput"))
+    throughput = _num(raw.get("request_throughput"))
+    if goodput is None or not throughput:
+        return None
+    return round(100.0 * goodput / throughput, 2)
 
 
 def _format_date(date_str: Any) -> str:
