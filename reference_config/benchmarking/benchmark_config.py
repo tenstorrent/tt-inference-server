@@ -590,8 +590,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
-    # Focused qualification at the requested serving concurrencies; this does
-    # not reduce the server's 32-slot or full-context capability.
+    # Gemma optimization qualification uses C1/C8/C16 only. Keep every standard
+    # context/output shape and skip concurrency points beyond the shared KV
+    # budget; this does not reduce the server's 32-slot/full-context capability.
     if model_spec.impl.impl_id == "gemma4_autoport":
         return BenchmarkConfig(
             model_id=model_spec.model_id,
@@ -601,16 +602,20 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                         device: [
                             BenchmarkTaskParams(
                                 isl=isl,
-                                osl=128,
+                                osl=osl,
                                 max_concurrency=concurrency,
-                                num_prompts=4 if concurrency == 1 else concurrency,
+                                num_prompts=get_num_prompts(isl, osl, concurrency),
                             )
-                            for isl, concurrency in (
-                                (4096, 1),
-                                (4096, 8),
-                                (4096, 16),
-                                (128, 8),
-                                (128, 16),
+                            for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                            for concurrency in (1, 8, 16)
+                            if isl + osl <= max_context
+                            and concurrency
+                            <= get_benchmark_max_concurrency(
+                                isl,
+                                osl,
+                                max_context,
+                                max_tokens_all_users,
+                                model_max_concurrency,
                             )
                         ]
                     },
