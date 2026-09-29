@@ -21,6 +21,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
@@ -36,6 +37,9 @@ logger = logging.getLogger(__name__)
 # the real protection, so err generous to avoid false kills.
 _DEFAULT_AGENT_TIMEOUT_SEC = 60 * 60
 _OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
+# mini-swe-agent runs inside the task container, where host loopback is not
+# the inference server.
+_DOCKER_HOST_NAME = "host.docker.internal"
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
@@ -163,9 +167,25 @@ def _get_agent_endpoint(config: HarborRunConfig) -> str:
     return values[0] if values else config.api_base
 
 
+def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
+    return (
+        config.agent == _MINI_SWE_AGENT
+        and config.agent_import_path is None
+        and config.environment_type == "docker"
+        and urlsplit(_get_agent_endpoint(config)).hostname
+        in {"127.0.0.1", "localhost", "::1"}
+    )
+
+
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
     env = dict(config.agent_env)
     endpoint = _get_agent_endpoint(config)
+    if _mini_swe_needs_host_gateway(config):
+        parsed = urlsplit(endpoint)
+        host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
+        endpoint = urlunsplit(
+            parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
+        )
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     return env
 
@@ -191,6 +211,22 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    if _mini_swe_needs_host_gateway(config):
+        overlay_path = (
+            config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
+        )
+        overlay_path.write_text(
+            json.dumps(
+                {
+                    "services": {
+                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
+                    }
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        environment_config["extra_docker_compose"] = [str(overlay_path)]
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -249,7 +285,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        config.agent_timeout_sec is not None
+        _mini_swe_needs_host_gateway(config)
+        or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
         or bool(config.agent_env)
@@ -349,9 +386,8 @@ def run(config: HarborRunConfig) -> int:
     per_task_budget = agent_timeout + config.per_task_overhead_sec
     # ``harbor_timeout_sec`` is an optional flat backstop kept from the unified
     # harness; the wave-aware stall/ceiling watchdog is the primary protection.
-    # Terminus calls LiteLLM in the Harbor process; installed agents call it
-    # inside the task container. Give both the same endpoint without changing
-    # the parent process environment.
+    # Host-executed agents use this endpoint directly. Container-executed
+    # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
