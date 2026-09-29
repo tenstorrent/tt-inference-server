@@ -48,3 +48,16 @@ def test_align_num_frames_moved_to_policy(minimax_h3_modules):
 def test_missing_everywhere_raises(minimax_h3_modules):
     with pytest.raises(ImportError):
         minimax_h3_policy.minimax_h3_shape_helpers()
+
+
+def test_num_frames_from_metal_policy(minimax_h3_modules):
+    packing, policy = minimax_h3_modules
+    policy.get_num_frames = lambda seconds: 1000 + seconds
+    assert minimax_h3_policy.minimax_h3_num_frames(5) == 1005
+
+
+def test_num_frames_falls_back_without_get_num_frames(minimax_h3_modules):
+    # tt-metal main: no policy.get_num_frames, align_num_frames still in packing.
+    packing, policy = minimax_h3_modules
+    packing.align_num_frames = lambda n: n + 1
+    assert minimax_h3_policy.minimax_h3_num_frames(5) == 5 * 24 + 1

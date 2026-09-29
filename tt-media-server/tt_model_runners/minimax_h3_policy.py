@@ -57,6 +57,21 @@ def minimax_h3_shape_helpers():
     return packing.MINIMAX_H3_FPS, align, packing.resolve_canvas_size
 
 
+def minimax_h3_num_frames(duration_s) -> int:
+    """Frames generated for ``duration_s`` seconds.
+
+    tt-metal's ``policy.get_num_frames`` where it exists (the robustness line); otherwise the same
+    rule, ``align_num_frames(round(duration_s * MINIMAX_H3_FPS))``, from ``minimax_h3_shape_helpers``
+    (tt-metal main, which carries the Wormhole presets but no ``get_num_frames``).
+    """
+    try:
+        from models.tt_dit.pipelines.minimax_h3.policy import get_num_frames
+    except ImportError:
+        fps, align, _ = minimax_h3_shape_helpers()
+        return align(round(duration_s * fps))
+    return get_num_frames(duration_s)
+
+
 def __getattr__(name: str):
     if name in _METAL_REEXPORTS:
         from models.tt_dit.pipelines.minimax_h3 import policy as _metal_policy

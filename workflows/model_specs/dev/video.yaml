@@ -259,11 +259,9 @@ templates:
 # worker, requests serialise). CI BRANCH zni/h3-ci-unified: one spec per task, all on the same
 # weights -- MiniMaxAI/MiniMax-H3 (t2va), MiniMaxAI/MiniMax-H3-FL2VA, MiniMaxAI/MiniMax-H3-Ref2VA
 # (hf_weights_repo MiniMaxAI/MiniMax-H3; the names are tt-media-server's ModelNames). Pick the
-# variant with tt-shield on-dispatch custom-model. This template: t2va, fl2va
-# and ref2va are separate deployments (MODEL_RUNNER per task) of the same weights; this branch
-# serves t2va with the sadesoye FL2VA/Ref2VA server merged in (its runner is the one that works
-# on tt-metal >= 816841ddc93), so tt-shield on-dispatch runs every T2VA case by this branch's
-# sha (docs/minimax_h3_ci.md, "Per-task dispatch branches").
+# variant with tt-shield on-dispatch custom-model (docs/minimax_h3_ci.md). This template: t2va,
+# served by the sadesoye FL2VA/Ref2VA server's runner (the one that works on tt-metal
+# >= 816841ddc93).
 # weights basename == tt-media-server ModelNames.MINIMAX_H3 == the MODEL env the container
 # receives; the full id keys models-ci-config.json, the eval config and the reference tables.
 - weights:
@@ -272,8 +270,9 @@ templates:
   # The HF repo is 498.5 GB in total (FL2VA 144.1, Ref2VA 144.1, text_encoder 66.7,
   # transformer 66.3, transformer_ref 66.3, vae 10.4, audio_vae 0.6 GB; public HF API,
   # 2026-09-23). setup_host excludes FL2VA/, Ref2VA/, transformer_ref/, assets/, docs/ and
-  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES), so ~144 GB lands on disk, plus the ~68 GB
-  # persistent ttnn cache built on first start.
+  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES by MODEL_RUNNER), so ~144 GB lands in this variant's
+  # own host volume (volume_id_<impl>-<model name>-v<version>), plus the ~68 GB persistent
+  # ttnn cache built on first start.
   min_disk_gb: 300
   # infer_param_count() reads no size from this name; check_ram() needs an explicit number.
   min_ram_gb: 64
@@ -289,10 +288,10 @@ templates:
     MAX_QUEUE_SIZE: "2"
     # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
     # line (sadesoye/minimax_robustness) changes cached tensors (padded context embedder /
-    # refiner): one fresh directory per metal line and task keeps the three variants, which run
-    # at once on the shared volume, from reusing or co-writing each other's entries.
+    # refiner): one fresh directory per metal line, task and arch, so no two variants or
+    # tt-metal lines ever reuse or co-write each other's entries.
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_robust_t2va
-    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/MiniMax-H3
+    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/<model name>
     # and nothing sets MODEL_WEIGHTS_DIR, so the runner passes the pipeline no directory and the
     # pipeline reads this path (tt-metal pipeline_minimax_h3.py). Under --host-weights-dir /
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
@@ -322,7 +321,7 @@ templates:
       env_vars:
         ARCH_NAME: wormhole_b0
         MESH_DEVICE: "(4, 8)"
-        # Wormhole caches differ from Blackhole ones and the volume may be shared.
+        # Wormhole caches differ from Blackhole ones.
         TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_wh_t2va
   status: FUNCTIONAL
 
@@ -334,8 +333,9 @@ templates:
   # The HF repo is 498.5 GB in total (FL2VA 144.1, Ref2VA 144.1, text_encoder 66.7,
   # transformer 66.3, transformer_ref 66.3, vae 10.4, audio_vae 0.6 GB; public HF API,
   # 2026-09-23). setup_host excludes FL2VA/, Ref2VA/, transformer_ref/, assets/, docs/ and
-  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES), so ~144 GB lands on disk, plus the ~68 GB
-  # persistent ttnn cache built on first start.
+  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES by MODEL_RUNNER), so ~144 GB lands in this variant's
+  # own host volume (volume_id_<impl>-<model name>-v<version>), plus the ~68 GB persistent
+  # ttnn cache built on first start.
   min_disk_gb: 300
   # infer_param_count() reads no size from this name; check_ram() needs an explicit number.
   min_ram_gb: 64
@@ -351,10 +351,10 @@ templates:
     MAX_QUEUE_SIZE: "2"
     # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
     # line (sadesoye/minimax_robustness) changes cached tensors (padded context embedder /
-    # refiner): one fresh directory per metal line and task keeps the three variants, which run
-    # at once on the shared volume, from reusing or co-writing each other's entries.
+    # refiner): one fresh directory per metal line, task and arch, so no two variants or
+    # tt-metal lines ever reuse or co-write each other's entries.
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_robust_fl2va
-    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/MiniMax-H3
+    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/<model name>
     # and nothing sets MODEL_WEIGHTS_DIR, so the runner passes the pipeline no directory and the
     # pipeline reads this path (tt-metal pipeline_minimax_h3.py). Under --host-weights-dir /
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
@@ -384,7 +384,7 @@ templates:
       env_vars:
         ARCH_NAME: wormhole_b0
         MESH_DEVICE: "(4, 8)"
-        # Wormhole caches differ from Blackhole ones and the volume may be shared.
+        # Wormhole caches differ from Blackhole ones.
         TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_wh_fl2va
   status: FUNCTIONAL
 
@@ -395,10 +395,10 @@ templates:
   impl: tt_transformers
   # The HF repo is 498.5 GB in total (FL2VA 144.1, Ref2VA 144.1, text_encoder 66.7,
   # transformer 66.3, transformer_ref 66.3, vae 10.4, audio_vae 0.6 GB; public HF API,
-  # 2026-09-23). setup_host excludes FL2VA/, Ref2VA/, transformer_ref/, assets/, docs/ and
-  # scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES), so ~144 GB lands on disk, plus the ~68 GB
-  # persistent ttnn cache built on first start.
-  min_disk_gb: 450  # a volume holding transformer/ also fetches transformer_ref/
+  # 2026-09-23). The Ref2VA runner reads transformer_ref/ instead of transformer/, so setup_host
+  # excludes FL2VA/, Ref2VA/, transformer/, assets/, docs/ and scripts/ (HF_DOWNLOAD_EXTRA_EXCLUDES
+  # by MODEL_RUNNER): ~144 GB in this variant's own host volume, plus the ttnn cache.
+  min_disk_gb: 300
   # infer_param_count() reads no size from this name; check_ram() needs an explicit number.
   min_ram_gb: 64
   model_type: VIDEO
@@ -413,10 +413,10 @@ templates:
     MAX_QUEUE_SIZE: "2"
     # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
     # line (sadesoye/minimax_robustness) changes cached tensors (padded context embedder /
-    # refiner): one fresh directory per metal line and task keeps the three variants, which run
-    # at once on the shared volume, from reusing or co-writing each other's entries.
+    # refiner): one fresh directory per metal line, task and arch, so no two variants or
+    # tt-metal lines ever reuse or co-write each other's entries.
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_robust_ref2va
-    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/MiniMax-H3
+    # Weights. Under --host-volume setup_host downloads the snapshot to <volume>/weights/<model name>
     # and nothing sets MODEL_WEIGHTS_DIR, so the runner passes the pipeline no directory and the
     # pipeline reads this path (tt-metal pipeline_minimax_h3.py). Under --host-weights-dir /
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
@@ -446,6 +446,6 @@ templates:
       env_vars:
         ARCH_NAME: wormhole_b0
         MESH_DEVICE: "(4, 8)"
-        # Wormhole caches differ from Blackhole ones and the volume may be shared.
+        # Wormhole caches differ from Blackhole ones.
         TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache_wh_ref2va
   status: FUNCTIONAL

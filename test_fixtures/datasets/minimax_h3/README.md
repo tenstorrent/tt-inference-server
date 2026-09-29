@@ -1,10 +1,12 @@
 # MiniMax-H3 benchmark input pack
 
 The inputs the `MiniMaxH3BenchmarkTest` cases (`test_module/_test_common/minimax_h3_bench/cases.json`)
-send to a deployment. In git: the three prompts (one scene at three lengths) and the two sha256
-manifests. Not in git: the media -- 14 small files (8 images, 2 videos, 4 audio clips; 7.7 MB) and
-5 large ones (121 MB). The media is staged, not regenerated from this repo; the t2va cases need only
-the prompts.
+send to a deployment. In git: the three prompts (one scene at three lengths), the two sha256
+manifests and, on the MiniMax-H3 CI branch (zni/h3-ci-unified), all 19 media files (committed with
+`git add -f`: `.gitignore` admits only md/txt/sh here). The benchmark sends the media by URL from the
+public HF dataset `zhenghaoniTT/minimax-h3-bench-assets` (pinned to the same sha256s) and falls back
+to these local copies inline; the t2va cases need only the prompts. Elsewhere, stage the media as
+below.
 
 ## Staging the media
 

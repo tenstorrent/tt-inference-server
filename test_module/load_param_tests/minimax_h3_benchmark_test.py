@@ -87,6 +87,8 @@ DEFAULT_PLAN_FULL = {
     "ref2va": [{"cases": REF2VA_CASES, "runs": 3}],
 }
 RUNNER_TASKS = {f"tt-minimax-h3-{task}": task for task in A.TASKS}
+# What a budget table's rows ran on (rows and log dirs are labelled with it).
+HW_BY_TIMEOUT_TABLE = {"BH1X": "Blackhole Galaxy 1x", "WH1X": "Wormhole Galaxy 1x"}
 TIMING_FAIL_RATIO = 1.25  # median above target x this fails when timing is enforced
 # Each TIMEOUT_TABLE_S budget is this many times the slowest observed run of its shape.
 BUDGET_FACTOR = 3
@@ -196,10 +198,10 @@ def run_benchmark(
         {task: base_url}, api_key=api_key, media=media, media_base_url=media_base_url
     )
     tracker = H.JobTracker(adapter)
-    combo = combo or f"BH1X-{H.short_name(base_url)}"
+    combo = combo or f"{timeout_table}-{H.short_name(base_url)}"
     cfg = {
         "engine": "minimax-h3 (tt-media-server)",
-        "hw": "Blackhole Galaxy 1x",
+        "hw": HW_BY_TIMEOUT_TABLE.get(timeout_table, timeout_table),
         "gpus": 1,
         "node": f"{task}={base_url}",
     }

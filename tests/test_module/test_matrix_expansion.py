@@ -188,6 +188,8 @@ class TestVideoMatrixExpansion:
         "minimax-h3-galaxy",
         "minimax-h3-fl2va-blackhole_galaxy",
         "minimax-h3-ref2va-blackhole_galaxy",
+        "minimax-h3-fl2va-galaxy",
+        "minimax-h3-ref2va-galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -452,16 +454,12 @@ class TestVideoMatrixExpansion:
             by_task.setdefault(c["task"], set()).add(c["id"])
         suite_map = self._suite_map()
         for suite_id, task, runner_weights in (
-            (
-                "minimax-h3-fl2va-blackhole_galaxy",
-                "fl2va",
-                "MiniMaxAI/MiniMax-H3-FL2VA",
-            ),
-            (
-                "minimax-h3-ref2va-blackhole_galaxy",
-                "ref2va",
-                "MiniMaxAI/MiniMax-H3-Ref2VA",
-            ),
+            (f"minimax-h3-{task}-{device}", task, weights)
+            for task, weights in (
+                ("fl2va", "MiniMaxAI/MiniMax-H3-FL2VA"),
+                ("ref2va", "MiniMaxAI/MiniMax-H3-Ref2VA"),
+            )
+            for device in ("blackhole_galaxy", "galaxy")
         ):
             suite = suite_map[suite_id]
             assert suite["weights"] == [runner_weights]
@@ -476,6 +474,13 @@ class TestVideoMatrixExpansion:
             for key in ("plan_ci", "plan_full"):
                 planned = {cid for b in benches for i in b[key] for cid in i["cases"]}
                 assert planned == by_task[task], (suite_id, key)
+            # Wormhole Galaxy: the WH1X budgets, no Blackhole target times.
+            wormhole = suite_id.endswith("-galaxy")
+            assert {b["timeout_table"] for b in benches} == {
+                "WH1X" if wormhole else "BH1X"
+            }, suite_id
+            if wormhole:
+                assert all(b["target_times_s"] == {} for b in benches), suite_id
 
     def test_wan_load_targets_merge_per_device(self):
         for suite_id, expected in self.WAN_LOAD_TARGETS.items():

@@ -231,7 +231,8 @@
                 "minimax_h3_fl2va"
             ],
             "devices": [
-                "blackhole_galaxy"
+                "blackhole_galaxy",
+                "galaxy"
             ],
             "num_of_devices": 1,
             "test_cases": [
@@ -304,6 +305,30 @@
                         ],
                         "enforce_timing": false,
                         "media": "auto"
+                    },
+                    "model_targets": {
+                        "minimax_h3_fl2va+galaxy": {
+                            "timeout_table": "WH1X",
+                            "plan_full": [
+                                {
+                                    "cases": [
+                                        "FL2VA-L"
+                                    ],
+                                    "runs": 3
+                                },
+                                {
+                                    "cases": [
+                                        "FL2VA-M",
+                                        "FL2VA-H1",
+                                        "FL2VA-L2",
+                                        "FL2VA-M2",
+                                        "FL2VA-H"
+                                    ],
+                                    "runs": 1
+                                }
+                            ],
+                            "target_times_s": {}
+                        }
                     }
                 }
             ]
@@ -313,7 +338,8 @@
                 "minimax_h3_ref2va"
             ],
             "devices": [
-                "blackhole_galaxy"
+                "blackhole_galaxy",
+                "galaxy"
             ],
             "num_of_devices": 1,
             "test_cases": [
@@ -377,6 +403,22 @@
                         ],
                         "enforce_timing": false,
                         "media": "auto"
+                    },
+                    "model_targets": {
+                        "minimax_h3_ref2va+galaxy": {
+                            "timeout_table": "WH1X",
+                            "plan_full": [
+                                {
+                                    "cases": [
+                                        "REF2VA-L",
+                                        "REF2VA-M5",
+                                        "SIZE-V"
+                                    ],
+                                    "runs": 1
+                                }
+                            ],
+                            "target_times_s": {}
+                        }
                     }
                 },
                 {
@@ -411,6 +453,22 @@
                         ],
                         "enforce_timing": false,
                         "media": "auto"
+                    },
+                    "model_targets": {
+                        "minimax_h3_ref2va+galaxy": {
+                            "timeout_table": "WH1X",
+                            "plan_full": [
+                                {
+                                    "cases": [
+                                        "REF2VA-L10",
+                                        "REF2VA-M",
+                                        "SIZE-V10"
+                                    ],
+                                    "runs": 1
+                                }
+                            ],
+                            "target_times_s": {}
+                        }
                     }
                 },
                 {
@@ -445,6 +503,22 @@
                         ],
                         "enforce_timing": false,
                         "media": "auto"
+                    },
+                    "model_targets": {
+                        "minimax_h3_ref2va+galaxy": {
+                            "timeout_table": "WH1X",
+                            "plan_full": [
+                                {
+                                    "cases": [
+                                        "REF2VA-L15",
+                                        "REF2VA-M15",
+                                        "SIZE-V15"
+                                    ],
+                                    "runs": 1
+                                }
+                            ],
+                            "target_times_s": {}
+                        }
                     }
                 },
                 {
@@ -477,6 +551,21 @@
                         ],
                         "enforce_timing": false,
                         "media": "auto"
+                    },
+                    "model_targets": {
+                        "minimax_h3_ref2va+galaxy": {
+                            "timeout_table": "WH1X",
+                            "plan_full": [
+                                {
+                                    "cases": [
+                                        "REF2VA-H5",
+                                        "REF2VA-H10"
+                                    ],
+                                    "runs": 1
+                                }
+                            ],
+                            "target_times_s": {}
+                        }
                     }
                 },
                 {
@@ -507,6 +596,20 @@
                         ],
                         "enforce_timing": false,
                         "media": "auto"
+                    },
+                    "model_targets": {
+                        "minimax_h3_ref2va+galaxy": {
+                            "timeout_table": "WH1X",
+                            "plan_full": [
+                                {
+                                    "cases": [
+                                        "REF2VA-H"
+                                    ],
+                                    "runs": 1
+                                }
+                            ],
+                            "target_times_s": {}
+                        }
                     }
                 }
             ]

@@ -183,7 +183,7 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
-# MiniMax-H3 dispatch branches only (zni/h3-ci-t2va / -fl2va / -ref2va; not for main):
+# MiniMax-H3 CI branch only (zni/h3-ci-unified; not for main):
 # tt-vllm-plugin pins transformers==4.55.0, which predates the Qwen3-VL video processor the H3
 # pipeline loads for Ref2VA video references (AutoVideoProcessor on
 # text_encoder/video_preprocessor_config.json), so every request with a video reference failed

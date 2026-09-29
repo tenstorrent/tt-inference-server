@@ -1634,8 +1634,8 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         `settings.model_weights_path` defaults to the **HuggingFace repo id**
         (`MiniMaxAI/MiniMax-H3`), not a path, so passing it through unconditionally would send the
         pipeline looking for `MiniMaxAI/MiniMax-H3/transformer/config.json`. Only an actual
-        directory is used; otherwise `MINIMAX_H3_DIFFUSERS_DIR` decides, which is what the model's
-        own tests and docs use. The weights are ~62 GB per transformer partition and are always
+        directory is used; otherwise the pipeline reads `MINIMAX_H3_MODEL_PATH`, which the model's
+        own tests and docs use (the CI specs set it). The weights are ~62 GB per transformer partition and are always
         mounted, never baked into the image.
         """
         configured = self.settings.model_weights_path
@@ -1644,7 +1644,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         if configured:
             self.logger.info(
                 f"Device {self.device_id}: model_weights_path={configured!r} is not a directory "
-                "(it is the HF repo id); falling back to MINIMAX_H3_DIFFUSERS_DIR"
+                "(it is the HF repo id); the pipeline falls back to MINIMAX_H3_MODEL_PATH"
             )
         return None
 
@@ -1716,7 +1716,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         unsupported ratio or duration is refused, because quietly serving a neighbouring shape
         returns a video the caller did not ask for.
         """
-        from models.tt_dit.pipelines.minimax_h3.policy import get_num_frames
+        from tt_model_runners.minimax_h3_policy import minimax_h3_num_frames
 
         ratio = (
             minimax_h3_parse_aspect_ratio(request.aspect_ratio)
@@ -1733,7 +1733,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
                 f"{max(MINIMAX_H3_DURATIONS_S)}; got {seconds}"
             )
 
-        num_frames = get_num_frames(seconds)
+        num_frames = minimax_h3_num_frames(seconds)
         if not minimax_h3_frames_are_aligned(num_frames):
             # Unreachable via the duration allow-list; kept so a future edit to it cannot smuggle
             # a frame count the VAE's 17-frame chunking would reject deep inside packing.
@@ -1934,7 +1934,10 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
 
         fd, path = tempfile.mkstemp(suffix=suffix)
         try:
-            os.write(fd, base64.b64decode(b64))
+            # The same decode admission validated with (data: prefix, stripped padding).
+            from tt_model_runners.minimax_h3_policy import decode_base64_media
+
+            os.write(fd, decode_base64_media(b64))
         finally:
             os.close(fd)
         return path

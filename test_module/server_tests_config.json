@@ -259,7 +259,8 @@
             ],
             "category": "VIDEO",
             "compatible_devices": [
-                "blackhole_galaxy"
+                "blackhole_galaxy",
+                "galaxy"
             ]
         },
         "minimax_h3_ref2va": {
@@ -269,7 +270,8 @@
             ],
             "category": "VIDEO",
             "compatible_devices": [
-                "blackhole_galaxy"
+                "blackhole_galaxy",
+                "galaxy"
             ]
         },
         "sdxl": {
