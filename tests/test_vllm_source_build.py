@@ -96,7 +96,11 @@ def test_bundled_plugin_preserves_measured_installed_engine_recipe():
 
 @pytest.mark.parametrize(
     "tt_metal_sha",
-    [TT_METAL_SNAPSHOT_SHA, "eb1d2af61c7630c7424e9593b646093ef7be45af"],
+    [
+        TT_METAL_SNAPSHOT_SHA,
+        "eb1d2af61c7630c7424e9593b646093ef7be45af",
+        "c9ec3469f1b875e7e5e505660c4421e5126e8dad",
+    ],
 )
 def test_exact_tt_metal_publication_selects_plugin_snapshot(tmp_path, tt_metal_sha):
     worktree = tmp_path / "tt-inference-server"
