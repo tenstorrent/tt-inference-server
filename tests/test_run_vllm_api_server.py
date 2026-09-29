@@ -1170,3 +1170,32 @@ def test_metal_timeout_override_precedence(
     assert os.environ.get("TT_METAL_OPERATION_TIMEOUT_SECONDS") == expected
     if disabled:
         assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ
+
+
+def test_pinned_download_and_model_path_env_are_implementation_independent(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "tt-cache"))
+    monkeypatch.setenv("CUSTOM_MODEL_PATH", "/stale")
+    monkeypatch.setenv("HF_MODEL", "/stale")
+    monkeypatch.setenv("VLLM_LOGGING_CONFIG_PATH", "/stale")
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "another_impl"},
+        metadata={"model_path_env": "CUSTOM_MODEL_PATH"},
+        device_model_spec={
+            "vllm_args": {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+        },
+    )
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    module.snapshot_download.return_value = str(snapshot)
+    module.set_vllm_logging_config.return_value = ("logging.json", "server.log")
+    module.create_model_symlink.return_value = str(snapshot)
+    assert module.ensure_weights_available(spec) == snapshot
+    module.model_setup(spec)
+    assert os.environ["CUSTOM_MODEL_PATH"] == os.environ["HF_MODEL"] == str(snapshot)
+    assert module.snapshot_download.call_args.kwargs["revision"] == "a" * 40

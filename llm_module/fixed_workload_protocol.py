@@ -5,55 +5,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
-import re
 import statistics
-from pathlib import Path
 
 from .config import LLMRunConfig
-
-
-def resolve_tokenizer(model_spec, output_dir: Path) -> str:
-    """Resolve the pinned tokenizer and save its verified identity with results."""
-    from huggingface_hub import snapshot_download
-
-    revision = model_spec.device_model_spec.vllm_args.get("tokenizer_revision", "")
-    hashes = model_spec.metadata.get("benchmark_tokenizer_sha256", {})
-    if not re.fullmatch(r"[0-9a-f]{40}", revision) or set(hashes) != {
-        "tokenizer.json",
-        "tokenizer_config.json",
-    }:
-        raise ValueError(
-            "Fixed-workload references require a pinned tokenizer and hashes"
-        )
-    path = Path(
-        snapshot_download(
-            repo_id=model_spec.hf_model_repo,
-            revision=revision,
-            allow_patterns=list(hashes),
-        )
-    )
-    actual = {
-        name: hashlib.sha256((path / name).read_bytes()).hexdigest() for name in hashes
-    }
-    if actual != hashes:
-        raise ValueError("Tokenizer files differ from the frozen reference")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "tokenizer_identity.json").write_text(
-        json.dumps(
-            {
-                "repo": model_spec.hf_model_repo,
-                "revision": revision,
-                "path": str(path),
-                "sha256": actual,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-    return str(path)
 
 
 def validate_fixed_workload(raw: dict, config: LLMRunConfig) -> None:

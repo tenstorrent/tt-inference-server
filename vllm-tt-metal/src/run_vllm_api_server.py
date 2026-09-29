@@ -17,6 +17,7 @@ from typing import Optional
 from huggingface_hub import snapshot_download
 
 from utils.cache_monitor import get_container_cache_dir
+from utils.pinned_artifacts import get_pinned_revision
 from utils.device_utils import get_mesh_device_name
 from utils.logging_utils import set_vllm_logging_config
 from utils.prompt_client import run_background_trace_capture
@@ -91,16 +92,10 @@ def configure_quetzal_provider(model_spec: dict) -> None:
     if not isinstance(model_id, str) or not model_id.strip():
         raise RuntimeError("impl=quetzal requires a canonical hf_model_repo")
     context_len = _quetzal_runtime_context(model_spec)
-    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
-    revision = vllm_args.get("revision")
-    tokenizer_revision = vllm_args.get("tokenizer_revision")
-    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise RuntimeError(
-            "impl=quetzal requires vLLM revision as an immutable lowercase "
-            "40-hex commit"
-        )
-    if tokenizer_revision != revision:
-        raise RuntimeError("impl=quetzal requires tokenizer_revision to match revision")
+    try:
+        revision = get_pinned_revision(model_spec, required=True)
+    except ValueError as exc:
+        raise RuntimeError(f"impl=quetzal: {exc}") from exc
     device_type = model_spec.get("device_type")
     if not isinstance(device_type, str) or not device_type:
         raise RuntimeError("impl=quetzal requires a canonical device_type")
@@ -610,12 +605,10 @@ def find_default_impl(
 
 def _ensure_quetzal_metadata(model_spec: dict) -> Path:
     """Fetch only pinned HF metadata; generated package owns all model tensors."""
-    args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
-    revision = args.get("revision")
-    if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
-        raise RuntimeError("Quetzal metadata requires an immutable checkpoint revision")
-    if args.get("tokenizer_revision") != revision:
-        raise RuntimeError("Quetzal metadata requires matching tokenizer_revision")
+    try:
+        revision = get_pinned_revision(model_spec, required=True)
+    except ValueError as exc:
+        raise RuntimeError(f"Quetzal metadata: {exc}") from exc
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
     path = (
         Path(os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root"))
@@ -701,6 +694,23 @@ def ensure_weights_available(model_spec: dict) -> Path:
     if model_spec.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID:
         return _ensure_quetzal_metadata(model_spec)
 
+    revision = get_pinned_revision(model_spec)
+    if revision:
+        # Keep pinned checkpoints separate from mutable downloads, regardless
+        # of implementation selection.
+        cache_root = Path(
+            os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
+        )
+        weights_path = Path(
+            snapshot_download(
+                repo_id=model_spec["hf_model_repo"],
+                revision=revision,
+                cache_dir=cache_root / "weights" / "hub",
+            )
+        )
+        os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
+        return weights_path
+
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
     # always invoke it: a partially-downloaded directory looks non-empty but would crash
@@ -761,11 +771,12 @@ def register_tt_models(impl_id=None):
 
     impl_id = impl_id or "tt_transformers"
 
-    # Llama path selection based on impl_id
-    if impl_id == "llama3_70b_galaxy":
-        os.environ["TT_LLAMA_TEXT_VER"] = "llama3_70b_galaxy"
-    else:  # default: tt_transformers
-        os.environ["TT_LLAMA_TEXT_VER"] = "tt_transformers"
+    llama_text_versions = {
+        "llama3_70b_galaxy": "llama3_70b_galaxy",
+    }
+    os.environ["TT_LLAMA_TEXT_VER"] = llama_text_versions.get(
+        impl_id, "tt_transformers"
+    )
 
     # Qwen3 env var setting based on impl_id
     if impl_id == "qwen3_32b_galaxy":
@@ -810,6 +821,13 @@ def model_setup(model_spec_json):
         "VLLM_LOGGING_CONFIG_PATH": str(config_path),
         "HF_MODEL": hf_dir,
     }
+    model_path_env = model_spec_json.get("metadata", {}).get("model_path_env")
+    if model_path_env:
+        if not isinstance(model_path_env, str) or not re.fullmatch(
+            r"[A-Z][A-Z0-9_]*", model_path_env
+        ):
+            raise ValueError("model_path_env must be an environment variable name")
+        dynamic_env_vars[model_path_env] = str(weights_dir)
 
     # Set dynamic environment variables
     logger.info("setting dynamic runtime environment variables:")

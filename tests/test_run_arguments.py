@@ -942,6 +942,8 @@ class TestOverrideArgsIntegration:
         mock_model_spec.hf_model_repo = "mistralai/Mistral-7B-Instruct-v0.3"
         mock_model_spec.subdevice_type = None
         mock_model_spec.inference_engine = "vLLM"
+        mock_model_spec.device_model_spec.vllm_args = {}
+        mock_model_spec.metadata = {}
         return mock_model_spec
 
     def _make_mock_runtime_config(self):

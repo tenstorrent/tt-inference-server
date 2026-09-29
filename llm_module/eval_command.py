@@ -180,6 +180,7 @@ def build_eval_command(
     service_port,
     runtime_config=None,
     deploy_url: str = "http://127.0.0.1",
+    tokenizer_path: Optional[str] = None,
 ) -> List[str]:
     """Build the lm_eval / lmms-eval command for one standard eval task."""
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC:
@@ -300,7 +301,26 @@ def build_eval_command(
             str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
         ]
 
-    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    model_kwargs = dict(task.model_kwargs)
+    if (
+        task.task_name.startswith("longbench_")
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        and "max_length" not in model_kwargs
+    ):
+        # The API harness default retains only 1535 prompt tokens with a
+        # 512-token output budget. Use supported context for every model,
+        # while respecting an explicit task limit and preserving shared tasks.
+        if (
+            not isinstance(device_max_context, int)
+            or isinstance(device_max_context, bool)
+            or device_max_context <= 0
+        ):
+            raise ValueError("LongBench requires a configured positive device context")
+        model_kwargs["max_length"] = device_max_context
+    if tokenizer_path is not None:
+        model_kwargs["tokenizer"] = tokenizer_path
+
+    model_kwargs_list = [f"{k}={v}" for k, v in model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 
