@@ -29,8 +29,10 @@ def normalize_server_url(value: str) -> str:
     """Normalize a user-supplied ``--server-url`` value.
 
     Strips surrounding whitespace and a trailing slash, prepends ``http://``
-    when no scheme is given, and validates that a hostname is present. Shared
-    by ``run.py`` and the workflow engine so both apply the same rule.
+    when no scheme is given, validates that a hostname is present, and makes
+    the port explicit for ``https`` URLs (443) so downstream consumers do not
+    fall back to ``service_port``. Shared by ``run.py`` and the workflow engine
+    so both apply the same rule.
 
     Raises ``ValueError`` (with a CLI-friendly message) when no hostname can be
     derived; callers should surface it via ``parser.error``.
@@ -44,6 +46,8 @@ def normalize_server_url(value: str) -> str:
         raise ValueError(
             "--server-url must include a hostname (e.g. 'http://127.0.0.1')."
         )
+    if parsed.scheme == "https" and parsed.port is None:
+        server_url = parsed._replace(netloc=f"{parsed.netloc}:443").geturl()
     return server_url
 
 
