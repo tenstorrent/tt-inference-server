@@ -1759,6 +1759,11 @@ templates:
       max_context: 131072  # 128 * 1024
       default_impl: true
       override_tt_config:
+        # source: measured, qualification_state: qualified, P300X2 @ tt-metal
+        # 9ee603a0. Exercised at batch 32 with exact token match; evidence
+        # batched-pcc.json sha256 55087947344ddbd19206c752f5ffd0a63ff360114c7c3d1fd7633d7cf5f5a2d9.
+        # Not an inherited default: the identical 90000000 on the Llama row is
+        # coincidence and is explicitly pending_measurement there.
         trace_region_size: 90000000
       vllm_args:
         limit-mm-per-prompt: '{"image": 1}'
