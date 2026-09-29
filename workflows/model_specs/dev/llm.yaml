@@ -463,8 +463,12 @@ templates:
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # PER-LANE pooled budget (each lane column owns an independent pool of
         # this size; lane block ids alias physically-distinct per-column
-        # storage): 4 x 917,504 = 3.67M tokens total on one weight copy.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "917504"
+        # storage): 4 x 786,432 = 3.15M tokens total on one weight copy —
+        # twelve full-256K sessions box-wide, same as the DP rail, at 128
+        # slots. 917,504/lane allocated but left only ~72 MB/bank at rest and
+        # the first 32K prefill's 176 MB buffer OOM'd (fragmented largest-free
+        # 7.5 MB); the trim buys ~315 MB/bank of runtime headroom.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
