@@ -302,7 +302,8 @@
                                 "runs": 3
                             }
                         ],
-                        "enforce_timing": false
+                        "enforce_timing": false,
+                        "media": "auto"
                     }
                 }
             ]
@@ -374,7 +375,8 @@
                                 "runs": 3
                             }
                         ],
-                        "enforce_timing": false
+                        "enforce_timing": false,
+                        "media": "auto"
                     }
                 },
                 {
@@ -407,7 +409,8 @@
                                 "runs": 3
                             }
                         ],
-                        "enforce_timing": false
+                        "enforce_timing": false,
+                        "media": "auto"
                     }
                 },
                 {
@@ -440,7 +443,8 @@
                                 "runs": 3
                             }
                         ],
-                        "enforce_timing": false
+                        "enforce_timing": false,
+                        "media": "auto"
                     }
                 },
                 {
@@ -471,7 +475,8 @@
                                 "runs": 3
                             }
                         ],
-                        "enforce_timing": false
+                        "enforce_timing": false,
+                        "media": "auto"
                     }
                 },
                 {
@@ -500,7 +505,8 @@
                                 "runs": 3
                             }
                         ],
-                        "enforce_timing": false
+                        "enforce_timing": false,
+                        "media": "auto"
                     }
                 }
             ]

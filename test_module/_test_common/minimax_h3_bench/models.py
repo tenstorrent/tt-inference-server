@@ -390,6 +390,15 @@ VALIDATION_PATTERNS = [
     r"\bminimum\b", r"\bmust not\b", r"\bmust have\b", r"\bmust be\b", r"\bnot accepted\b", r"\bunknown field",
 ]  # fmt: skip
 CLIENT_REJECT = "client-side capability limit: "
+
+# Media transport modes (adapters.TenstorrentH3) and the hosted copy of the pinned pack that
+# ``url`` / ``auto`` point the server at: the public HF dataset, pinned to the revision whose
+# LFS sha256s equal sha256s-bundle.txt (all 19 media files, checked 2026-09-29).
+MEDIA_MODES = ("b64", "url", "auto")
+DEFAULT_MEDIA_BASE_URL = (
+    "https://huggingface.co/datasets/zhenghaoniTT/minimax-h3-bench-assets/resolve/"
+    "b9876c490bdc196bf59aeafdd430e472ad2fdb02"
+)
 # Error text that means the mesh is in trouble rather than a request being refused.
 DEVICE_TROUBLE_RE = re.compile(
     r"\btt_throw\b|\bdevice timeout\b|\bunrecoverable\b|\btimeout:|\bhang\b|\bhung\b|"
@@ -552,14 +561,20 @@ PIN_MANIFESTS = (
 )
 
 
-def verify_assets(names) -> list:
+def verify_assets(names, local_media: bool = True) -> list:
     """Problems with the named assets against the repo manifest: missing files, hash
-    mismatches, and a missing manifest entry. [] means every named asset is pinned."""
+    mismatches, and a missing manifest entry. [] means every named asset is pinned.
+    ``local_media`` False (URL transport): a media file only needs its manifest entry --
+    the server fetches the hosted copy -- while prompts are still read locally."""
     problems = []
     manifest = pinned_hashes()
     if not manifest:
         problems.append(f"no asset manifest found ({', '.join(PIN_MANIFESTS)})")
     for name in sorted(set(names)):
+        if not local_media and not name.endswith(".txt"):
+            if name not in manifest:
+                problems.append(f"{name}: not in the asset manifest")
+            continue
         path = asset_path(name)
         if path is None:
             problems.append(f"missing asset {name} (searched {asset_dirs()})")

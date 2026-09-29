@@ -31,6 +31,7 @@ def _attempt_once(
     }  # fmt: skip
     t0 = time.time()
     (code, body), task = adapter.post(case)
+    rec["media"] = getattr(adapter, "last_transport", "b64")
     rec["submit_http"] = code
     job = body.get("id") if isinstance(body, dict) else None
     if not job:

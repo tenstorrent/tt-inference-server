@@ -16,7 +16,8 @@ model spec's ``MODEL_RUNNER`` and a different ``task`` fails the test before any
 sent), ``plan_ci`` and ``plan_full`` (lists of ``{"cases": [...], "runs": N}``; the CI plan
 is used under ``--ci-mode``; the defaults cover every case of the task), ``timeout_table``
 (BH1X), ``idle_wait_s``, ``target_times_s`` (per case, informational unless
-``enforce_timing``), ``assets_dir``, ``verify_manifest``, ``allow_resume`` (default false:
+``enforce_timing``), ``assets_dir``, ``verify_manifest``, ``media`` (b64 | url | auto, env
+``H3_MEDIA`` wins; see adapters.py) and ``media_base_url`` (env ``H3_MEDIA_BASE_URL``), ``allow_resume`` (default false:
 CI never resumes from a previous results.jsonl), ``api_key``, ``continue_after_timeout``,
 ``combo``, ``out_dir``, ``out_subdir`` (this entry's directory under it; see ``_out_dir``)
 and ``skip_smoke`` (default false: a later entry against the same deployment may skip it).
@@ -172,7 +173,11 @@ def run_benchmark(
     api_key: str | None = None,
     deadline_s: float | None = None,
     skip_smoke: bool = False,
+    media: str = "b64",
+    media_base_url: str | None = None,
 ) -> dict[str, Any]:
+    media = (os.environ.get("H3_MEDIA") or media).strip().lower()
+    media_base_url = os.environ.get("H3_MEDIA_BASE_URL") or media_base_url
     if task not in DEFAULT_PLAN_CI:
         raise ValueError(f"unknown task {task!r}; pick from {list(DEFAULT_PLAN_CI)}")
     plan = plan or DEFAULT_PLAN_CI[task]
@@ -187,7 +192,9 @@ def run_benchmark(
     M.ensure_dirs()
     cases_cfg = M.load_cases()
     by_id = {c["id"]: c for c in cases_cfg["cases"]}
-    adapter = A.TenstorrentH3({task: base_url}, api_key=api_key)
+    adapter = A.TenstorrentH3(
+        {task: base_url}, api_key=api_key, media=media, media_base_url=media_base_url
+    )
     tracker = H.JobTracker(adapter)
     combo = combo or f"BH1X-{H.short_name(base_url)}"
     cfg = {
@@ -201,7 +208,8 @@ def run_benchmark(
         "task_name": "minimax_h3_benchmark", "base_url": base_url, "task": task, "combo": combo,
         "timeout_table": timeout_table, "assets_dir": M.assets_dir(), "out_dir": out_dir,
         "plan": plan, "pregate": [], "probe": [], "smoke": None, "cases": [], "leftover_jobs": [],
-        "success": False, "deadline_hit": False,
+        "success": False, "deadline_hit": False, "media": media,
+        "media_base_url": adapter.media_base_url if media != "b64" else None,
     }  # fmt: skip
     M.log(
         f"=== minimax_h3_benchmark {combo}: task={task} plan={json.dumps(plan)} table={timeout_table}"
@@ -231,11 +239,28 @@ def run_benchmark(
     needed = set() if skip_smoke else set(M.case_assets(smoke))
     for case, _ in selected:
         needed.update(M.case_assets(case))
-    asset_problems = (
-        M.verify_assets(needed)
-        if verify_manifest
-        else [f"missing asset {n}" for n in sorted(needed) if M.asset_path(n) is None]
-    )
+    media_names = {n for n in needed if not n.endswith(".txt")}
+    if adapter.media != "b64" and media_names:
+        unreachable = adapter.url_problems(media_names)
+        if unreachable and adapter.media == "auto":
+            adapter.use_inline(
+                f"{len(unreachable)} media URL(s) unreachable: {unreachable[0]}"
+            )
+            result["media_fallback"] = unreachable
+        elif unreachable:
+            result["probe"] += unreachable
+    by_url = adapter.media != "b64"
+    if verify_manifest:
+        # URL transport needs only the pins (the server fetches the hosted copy). Inline
+        # needs the bytes too; in auto mode a missing local copy is a per-case reject (xfail)
+        # if the fallback is ever taken, not a reason to skip the run.
+        asset_problems = M.verify_assets(needed, local_media=not by_url)
+    else:
+        asset_problems = [
+            f"missing asset {n}"
+            for n in sorted(needed)
+            if (not by_url or n not in media_names) and M.asset_path(n) is None
+        ]
     result["probe"] += asset_problems
 
     # 2. discovery, pre-gate, probe
@@ -438,6 +463,8 @@ class MiniMaxH3BenchmarkTest(BaseTest):
             api_key=self.targets.get("api_key") or resolve_server_api_key(),
             deadline_s=self._deadline_s(),
             skip_smoke=bool(self.targets.get("skip_smoke", False)),
+            media=str(self.targets.get("media", "b64")),
+            media_base_url=self.targets.get("media_base_url"),
         )
 
     def _deadline_s(self) -> float | None:
@@ -487,6 +514,8 @@ def _parse_args(argv):
     parser.add_argument(
         "--no-manifest", action="store_true", help="do not verify asset hashes"
     )
+    parser.add_argument("--media", choices=M.MEDIA_MODES, default="b64")
+    parser.add_argument("--media-base-url")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--continue-after-timeout", action="store_true")
     return parser.parse_args(argv)
@@ -500,6 +529,7 @@ def main(argv=None) -> int:
         plan=[{"cases": [c.strip() for c in cases.split(",") if c.strip()], "runs": args.runs}],
         out_dir=args.out, assets_dir=args.assets, timeout_table=args.timeout_table,
         verify_manifest=not args.no_manifest, force=args.force, continue_after_timeout=args.continue_after_timeout,
+        media=args.media, media_base_url=args.media_base_url,
     )  # fmt: skip
     print(
         json.dumps(

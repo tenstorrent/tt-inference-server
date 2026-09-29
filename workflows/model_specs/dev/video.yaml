@@ -282,6 +282,9 @@ templates:
   env_vars:
     MODEL_RUNNER: tt-minimax-h3-t2va
     USE_ASYNC_VIDEO: "true"
+    # URL media: fetch from any public host (DNS-pinned, non-public addresses refused). The
+    # benchmark sends its FL2VA / REF2VA media as URLs to the hosted pack (media: auto).
+    MEDIA_URL_ALLOW_PUBLIC_HOSTS: "true"
     # One request in flight + one waiting; a queued request must not wait for hours.
     MAX_QUEUE_SIZE: "2"
     # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
@@ -341,6 +344,9 @@ templates:
   env_vars:
     MODEL_RUNNER: tt-minimax-h3-fl2va
     USE_ASYNC_VIDEO: "true"
+    # URL media: fetch from any public host (DNS-pinned, non-public addresses refused). The
+    # benchmark sends its FL2VA / REF2VA media as URLs to the hosted pack (media: auto).
+    MEDIA_URL_ALLOW_PUBLIC_HOSTS: "true"
     # One request in flight + one waiting; a queued request must not wait for hours.
     MAX_QUEUE_SIZE: "2"
     # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
@@ -400,6 +406,9 @@ templates:
   env_vars:
     MODEL_RUNNER: tt-minimax-h3-ref2va
     USE_ASYNC_VIDEO: "true"
+    # URL media: fetch from any public host (DNS-pinned, non-public addresses refused). The
+    # benchmark sends its FL2VA / REF2VA media as URLs to the hosted pack (media: auto).
+    MEDIA_URL_ALLOW_PUBLIC_HOSTS: "true"
     # One request in flight + one waiting; a queued request must not wait for hours.
     MAX_QUEUE_SIZE: "2"
     # ttnn cache keys include neither the tt-metal sha nor the task, and tt-metal's robustness
