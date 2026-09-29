@@ -5079,7 +5079,13 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    "timeout": "14400",
+                    # Raised 14400 -> 43200 at Shield's request as an interim measure: two tasks
+                    # at max_concurrent=32 could each consume 4h and still be killed by
+                    # on-dispatch.yml's 1080-minute job cap without producing a verdict.
+                    # This is a client read timeout, not an execution budget -- the real
+                    # bound is EvalTask.wall_clock_timeout_seconds, which kills the owned
+                    # process group and reports rc=124 as incomplete rather than a score.
+                    "timeout": "43200",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
@@ -5118,7 +5124,13 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    "timeout": "14400",
+                    # Raised 14400 -> 43200 at Shield's request as an interim measure: two tasks
+                    # at max_concurrent=32 could each consume 4h and still be killed by
+                    # on-dispatch.yml's 1080-minute job cap without producing a verdict.
+                    # This is a client read timeout, not an execution budget -- the real
+                    # bound is EvalTask.wall_clock_timeout_seconds, which kills the owned
+                    # process group and reports rc=124 as incomplete rather than a score.
+                    "timeout": "43200",
                 },
                 gen_kwargs={
                     "stream": "true",

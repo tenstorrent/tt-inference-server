@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 _DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
 
 
+# `timeout` convention: a process killed at its deadline exits 124.
+_DEADLINE_RC = 124
+
+
 def _limit_mode(ctx: MediaContext):
     """Resolve the run's EvalLimitMode (from --ci-mode / --limit-samples-mode).
 
@@ -392,7 +396,21 @@ def _run_eval_task(
             "task=%s will preserve reasoning_content in sample logs.", task.task_name
         )
     logger.info("Running eval task=%s", task.task_name)
-    return run_command(command=cmd, logger=logger, env=env)
+    # Bound the whole subprocess tree when the task declares a deadline.
+    # Without passing this through, wall_clock_timeout_seconds is validated and
+    # documented but never reaches proc.run_command, so the bounded path is
+    # unreachable and the field has no effect at all.
+    timeout_seconds = getattr(task, "wall_clock_timeout_seconds", None)
+    if timeout_seconds is None:
+        return run_command(command=cmd, logger=logger, env=env)
+    logger.info(
+        "task=%s bounded at %ss wall clock; exceeding it yields rc=%d and an "
+        "incomplete task, never a score.",
+        task.task_name, timeout_seconds, _DEADLINE_RC,
+    )
+    return run_command(
+        command=cmd, logger=logger, env=env, timeout_seconds=timeout_seconds
+    )
 
 
 def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
@@ -498,10 +516,6 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         blocks.extend(task_blocks)
 
     return blocks
-
-
-# `timeout` convention: a process killed at its deadline exits 124.
-_DEADLINE_RC = 124
 
 
 def _score_task(

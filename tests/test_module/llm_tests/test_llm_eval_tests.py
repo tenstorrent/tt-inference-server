@@ -25,6 +25,12 @@ from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 _MOD = "test_module.llm_tests.llm_eval_tests"
 
+def tmp_output_path():
+    import tempfile
+    from pathlib import Path
+    return Path(tempfile.mkdtemp())
+
+
 
 # --- fixtures ----------------------------------------------------------------
 
@@ -112,11 +118,20 @@ class TestEvalCommand:
             EvalTask(task_name="aime25", **{field: value})
 
     def test_task_attempt_budget_overrides_device_default(self):
+        # max_attempts is a TOTAL attempt count including the first, which is
+        # what docs/eval_execution_budgets.md promises. lm-eval's max_retries
+        # counts only the retries after the first attempt, so the total must be
+        # converted rather than passed through.
         task = EvalTask(task_name="aime25", max_attempts=1)
         command = _build_eval_test_command(task)
         model_args = command[command.index("--model_args") + 1]
-        assert "max_retries=1" in model_args
-        assert "max_retries=0" not in model_args
+        assert "max_retries=0" in model_args
+
+    def test_attempt_budget_is_a_total_not_a_retry_count(self):
+        task = EvalTask(task_name="aime25", max_attempts=3)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+        assert "max_retries=2" in model_args
 
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
@@ -682,3 +697,37 @@ class TestEvalsWorkflowLLMOverride:
         run.assert_not_called()
         dispatch.assert_called_once()
         assert outcomes == ["media-outcome"]
+
+class TestDeadlineReachesRunCommand:
+    """Regression guard: a declared deadline must reach proc.run_command.
+
+    wall_clock_timeout_seconds was previously declared, validated, documented
+    and unit-tested for validation only, yet never passed to run_command -- so
+    the bounded path in proc.py was unreachable and the field had no effect.
+    """
+
+    def _invoke(self, task):
+        seen = {}
+
+        def fake_run_command(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), \
+             patch(f"{_MOD}.run_command", side_effect=fake_run_command):
+            rc = mod._run_eval_task(_ctx(), task, "", output_path=tmp_output_path())
+        return rc, seen
+
+    def test_declared_deadline_is_passed_through(self):
+        rc, seen = self._invoke(
+            EvalTask(task_name="aime25", wall_clock_timeout_seconds=3600))
+        assert rc == 0
+        assert seen.get("timeout_seconds") == 3600
+
+    def test_absent_deadline_leaves_execution_unbounded(self):
+        rc, seen = self._invoke(EvalTask(task_name="aime25"))
+        assert rc == 0
+        # Passing timeout_seconds=None would still select the bounded POSIX
+        # path, so unbounded callers must omit the argument entirely.
+        assert "timeout_seconds" not in seen
+

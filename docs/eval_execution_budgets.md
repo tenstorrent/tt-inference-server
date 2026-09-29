@@ -4,7 +4,9 @@
 including startup, dataset loading, HTTP requests, retries and scoring. It is not
 an idle-token timer. `EvalTask.max_attempts` sets the total HTTP attempt count
 (including the first attempt) for EVALS_COMMON and takes precedence over the
-device's `eval_max_retries`. Both accept positive integers only.
+device's `eval_max_retries`. It is converted before emission: lm-eval's
+`max_retries` counts only the attempts after the first, so `max_attempts=N`
+emits `max_retries=N-1`. Both accept positive integers only.
 
 Example policy for a bounded diagnostic (not a new qualification default):
 
@@ -27,3 +29,14 @@ contract. Existing calls without a budget retain their previous execution path.
 This addresses unbounded harness execution, not the cause of long model answers.
 The motivating GPT Shield run's apparent retry exhaustion remains an inference
 until its client log is available. No running jobs are modified by this patch.
+
+## Relationship to the lm-eval client timeout
+
+`reference_config/evals/eval_config.py` also sets a per-task `model_kwargs`
+`timeout`, raised from 4h to 12h at Shield's request. That is a client **read**
+timeout and is not an execution budget: it does not bound startup, dataset
+loading or scoring, and it cannot stop a task from running until
+`on-dispatch.yml`'s 1080-minute job cap cancels the whole run with no verdict
+and no uploaded artifacts. `wall_clock_timeout_seconds` is the actual bound --
+it kills the task's owned POSIX process group and reports rc=124 as an
+incomplete task, which is never scored as a pass.

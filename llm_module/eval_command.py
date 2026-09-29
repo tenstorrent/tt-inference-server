@@ -250,7 +250,10 @@ def build_eval_command(
         getattr(model_spec, "device_model_spec", None), "eval_max_retries", None
     )
     if getattr(task, "max_attempts", None) is not None:
-        eval_max_retries = task.max_attempts
+        # max_attempts is a TOTAL attempt count including the first. lm-eval's
+        # max_retries counts only the retries after it, so passing the total
+        # straight through gives one attempt too many (max_attempts=1 -> 2).
+        eval_max_retries = task.max_attempts - 1
     if (
         eval_max_retries is not None
         and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
