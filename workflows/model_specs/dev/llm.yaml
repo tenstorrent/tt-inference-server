@@ -386,6 +386,7 @@ templates:
 - weights:
     - google/gemma-4-31B-it
   impl: gemma4_galaxy_one
+  inference_engine: VLLM
   # ONE-INSTANCE Galaxy (TP8xCP4): a single vLLM engine over the full (8,4)
   # mesh with ONE weight copy (GEMMA4_GALAXY_FRACTURE) and CP prefill
   # (GEMMA4_CP_PREFILL, generator chunk auto-24576). One pooled KV budget —
@@ -393,7 +394,7 @@ templates:
   # arg/gemma4_galaxy_one_instance (PR #58394). Metal reference (2026-09-29):
   # b1 29.7 tok/s @ 85 ms TTFT; b32 641.7 tok/s aggregate; 248K TTFT 99.2 s
   # @ 19.2 tok/s. Baseline text class (no speculation) on this rail.
-  devices:
+  device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32
       max_context: 262144
@@ -420,6 +421,7 @@ templates:
       vllm_args:
         data_parallel_size: 1
         max_num_seqs: 32
+        block_size: "64"  # match GEMMA4_PAGE_BLOCK_SIZE; vLLM's default 32 halves the sliding ring capacity check
         async_scheduling: false
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
