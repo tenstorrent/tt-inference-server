@@ -474,13 +474,34 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         started_at = time.perf_counter()
         rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
         elapsed_seconds = time.perf_counter() - started_at
-        task_blocks = _score_task(
-            ctx, task, output_path=output_path, rc=rc, elapsed_seconds=elapsed_seconds
-        )
+        if rc == _DEADLINE_RC:
+            # A task killed at its deadline is incomplete, not a score. Never
+            # let it reach the scorer: whatever partial result files landed on
+            # disk would otherwise be graded as if the run had finished.
+            failure = _fail_block(
+                ctx,
+                task,
+                f"execution deadline exceeded; incomplete (rc={rc}); "
+                "partial files preserved",
+            )
+            failure.data["subprocess_rc"] = rc
+            task_blocks = [failure]
+        else:
+            task_blocks = _score_task(
+                ctx,
+                task,
+                output_path=output_path,
+                rc=rc,
+                elapsed_seconds=elapsed_seconds,
+            )
         _accept(task_blocks, envelope)
         blocks.extend(task_blocks)
 
     return blocks
+
+
+# `timeout` convention: a process killed at its deadline exits 124.
+_DEADLINE_RC = 124
 
 
 def _score_task(
@@ -501,20 +522,6 @@ def _score_task(
         sample_counts,
         elapsed_seconds=elapsed_seconds,
     )
-    if rc:
-        # A deadline kill (rc 124 from the bounded runner) is a different
-        # failure from a crashed subprocess, and neither may be scored as a
-        # pass off whatever partial files happen to be on disk.
-        reason = (
-            "execution deadline exceeded; incomplete"
-            if rc == 124
-            else "evaluation subprocess failed"
-        )
-        failure = _fail_block(
-            ctx, task, f"{reason} (rc={rc}); partial files preserved"
-        )
-        failure.data["subprocess_rc"] = rc
-        return [failure]
     if task_blocks:
         return task_blocks
     # Ran but scored nothing (command failed or results unparseable) —

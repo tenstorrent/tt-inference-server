@@ -548,7 +548,10 @@ class TestRunLLMEval:
         )
         assert len(out) == 1
         assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
-        assert "evaluation subprocess failed" in out[0].data["error"]
+        # main settled on this wording for a non-deadline subprocess failure
+        # (see test_bad_result_does_not_reuse_old_scores_or_stop_later_tasks);
+        # this PR only adds the rc=124 deadline case on top of it.
+        assert "no eval results parsed (rc=1)" in out[0].data["error"]
         run_task.assert_called_once()
 
     def test_deadline_cannot_score_partial_results_as_pass(self):

@@ -76,6 +76,14 @@ def run_command(
 
     assert isinstance(command, list), "Command must be a list of cmd arguments."
 
+    # Log provenance before branching, so the bounded path records the same
+    # command and log destination as the unbounded one. Without this the
+    # deadline path silently loses it, which is what
+    # test_bounded_execution_keeps_command_and_log_provenance guards.
+    logger.info(f"Running command: {shlex.join(command)}")
+    if log_file_path:
+        logger.info(f"Logging output to: {log_file_path} ...")
+
     if timeout_seconds is not None:
         if (
             isinstance(timeout_seconds, bool)
@@ -91,8 +99,6 @@ def run_command(
         if check and return_code:
             raise RuntimeError(f"Bounded command failed with return code {return_code}")
         return return_code
-
-    logger.info(f"Running command: {shlex.join(command)}")
 
     if not log_file_path:
         subproc_type = "subprocess.Popen"
@@ -125,7 +131,6 @@ def run_command(
         return_code = process.returncode
     else:
         subproc_type = "subprocess.run"
-        logger.info(f"Logging output to: {log_file_path} ...")
         with open(log_file_path, "a", buffering=1) as log_file:
             result = subprocess.run(
                 command,
