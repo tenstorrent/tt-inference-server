@@ -800,7 +800,10 @@ templates:
         # descriptor; the native galaxy column ring is unmeasured — A/B later).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # 3 full-256K users per engine = 12 per Galaxy (DP=4). Ceiling measured
+        # 2026-09-28: 786432 fits (rung-1 PASS); 921600 OOMs at global buffer
+        # 19/20. Fallback config for the TP=8xCP=4 one-instance path.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
       override_tt_config:
