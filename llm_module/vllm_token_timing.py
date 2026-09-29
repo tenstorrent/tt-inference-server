@@ -8,6 +8,11 @@ The upstream chat client times empty role/finish events as tokens and includes
 the usage trailer in TPOT. Keep its payload and CLI, but measure first-to-last
 nonempty content for models whose performance references use that protocol.
 Adapted from vllm/benchmarks/lib/endpoint_request_func.py at v0.13.0.
+
+This adapter uses private vLLM helpers. A client upgrade requires revalidating
+payloads, streaming timing, token totals and detailed results against the frozen
+protocol tests. The separate client environment also pins Transformers 4.57.6;
+its tokenizer behavior is part of the reference, not an incidental dependency.
 """
 
 from __future__ import annotations

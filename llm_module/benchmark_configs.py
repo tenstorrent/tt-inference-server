@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .config import LLMRunConfig, ServerConnection
+from .benchmark_protocol import fixed_workload_repetitions, uses_fixed_workload
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +62,11 @@ def get_llm_configs(
     ]
 
     metadata = getattr(model_spec, "metadata", None) or {}
-    token_timing = bool(metadata.get("benchmark_token_timing", False))
+    token_timing = uses_fixed_workload(metadata)
+    repetitions = fixed_workload_repetitions(metadata) if token_timing else 1
+    require_complete_metrics = bool(
+        metadata.get("benchmark_require_complete_metrics", False)
+    )
 
     def target_key(params):
         shape = (params.isl, params.osl, params.max_concurrency)
@@ -95,20 +100,20 @@ def get_llm_configs(
             continue
         seen.add(key)
         shape = (params.isl, params.osl, params.max_concurrency)
+        targets = dict(targets_by_shape.get(target_key(params), {}))
+        has_targets = bool(targets)
         configs.append(
             LLMRunConfig(
                 isl=params.isl,
                 osl=params.osl,
                 max_concurrency=params.max_concurrency,
                 num_prompts=params.num_prompts,
-                targets=dict(targets_by_shape.get(target_key(params), {})),
+                targets=targets,
                 output_block_size=output_block_size,
                 token_timing=token_timing,
-                require_complete_metrics=bool(
-                    metadata.get("benchmark_require_complete_metrics", False)
-                ),
-                full_workload_warmup=token_timing and bool(targets_by_shape.get(key)),
-                repetitions=3 if token_timing and targets_by_shape.get(key) else 1,
+                require_complete_metrics=require_complete_metrics,
+                full_workload_warmup=token_timing and has_targets,
+                repetitions=repetitions if token_timing and has_targets else 1,
                 custom_dataset_path=(
                     Path(
                         f"speed_bench_prompts_isl-{params.isl}_n-{params.num_prompts}.jsonl"

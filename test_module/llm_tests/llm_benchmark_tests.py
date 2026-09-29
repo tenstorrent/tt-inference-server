@@ -74,7 +74,9 @@ def run_llm_bench(
     driver consumes it, so a warning is logged if it is set for another tool.
     """
     metadata = getattr(ctx.model_spec, "metadata", None) or {}
-    if metadata.get("benchmark_token_timing"):
+    from llm_module.benchmark_protocol import uses_fixed_workload
+
+    if uses_fixed_workload(metadata):
         if tools != "vllm":
             raise ValueError("Fixed token-timing references require --tools vllm")
         # Keep the frozen client dependencies separate from newer tokenizer
