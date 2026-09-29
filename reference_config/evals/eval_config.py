@@ -5079,13 +5079,14 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    # Raised 14400 -> 43200 at Shield's request as an interim measure: two tasks
-                    # at max_concurrent=32 could each consume 4h and still be killed by
-                    # on-dispatch.yml's 1080-minute job cap without producing a verdict.
-                    # This is a client read timeout, not an execution budget -- the real
-                    # bound is EvalTask.wall_clock_timeout_seconds, which kills the owned
-                    # process group and reports rc=124 as incomplete rather than a score.
-                    "timeout": "43200",
+                    # 7200s matches what the identical aime25 / gpqa pair already uses
+                    # elsewhere in this file. A LONGER client timeout is actively
+                    # harmful here: on-dispatch.yml caps the job at 1080 minutes, so
+                    # one stuck task at 14400s burns 4h of that budget and at 43200s
+                    # burns 12h, in both cases cancelling the run with no verdict and
+                    # no artifacts. Failing fast is what lets the remaining tasks
+                    # finish and the run produce a report at all.
+                    "timeout": "7200",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
@@ -5100,6 +5101,12 @@ _eval_config_list = [
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
                 },
+                # Bounded so the eval phase cannot consume the 1080-minute job cap.
+                # 2 tasks x 10800s = 6h worst case, leaving 12h for server bring-up,
+                # benchmarks and spec tests. On deadline the owned process group is
+                # killed and the task is reported rc=124 incomplete, so the run still
+                # produces a report instead of being cancelled with zero artifacts.
+                wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -5124,13 +5131,14 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    # Raised 14400 -> 43200 at Shield's request as an interim measure: two tasks
-                    # at max_concurrent=32 could each consume 4h and still be killed by
-                    # on-dispatch.yml's 1080-minute job cap without producing a verdict.
-                    # This is a client read timeout, not an execution budget -- the real
-                    # bound is EvalTask.wall_clock_timeout_seconds, which kills the owned
-                    # process group and reports rc=124 as incomplete rather than a score.
-                    "timeout": "43200",
+                    # 7200s matches what the identical aime25 / gpqa pair already uses
+                    # elsewhere in this file. A LONGER client timeout is actively
+                    # harmful here: on-dispatch.yml caps the job at 1080 minutes, so
+                    # one stuck task at 14400s burns 4h of that budget and at 43200s
+                    # burns 12h, in both cases cancelling the run with no verdict and
+                    # no artifacts. Failing fast is what lets the remaining tasks
+                    # finish and the run produce a report at all.
+                    "timeout": "7200",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -5139,6 +5147,12 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
                 },
+                # Bounded so the eval phase cannot consume the 1080-minute job cap.
+                # 2 tasks x 10800s = 6h worst case, leaving 12h for server bring-up,
+                # benchmarks and spec tests. On deadline the owned process group is
+                # killed and the task is reported rc=124 incomplete, so the run still
+                # produces a report instead of being cancelled with zero artifacts.
+                wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
