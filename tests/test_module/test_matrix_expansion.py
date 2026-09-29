@@ -185,6 +185,7 @@ class TestVideoMatrixExpansion:
         "mochi-p150x8",
         "mochi-p300x2",
         "minimax-h3-blackhole_galaxy",
+        "minimax-h3-galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -316,6 +317,13 @@ class TestVideoMatrixExpansion:
         )
         assert bench["task"] == "t2va"
         assert bench["timeout_table"] == "BH1X"
+        # Wormhole Galaxy: the same suite with the Wormhole budgets and no Blackhole targets.
+        wh = self._case_targets("minimax-h3-galaxy", "MiniMaxH3BenchmarkTest")
+        assert wh["timeout_table"] == "WH1X"
+        assert wh["target_times_s"] == {}
+        assert {k: v for k, v in wh.items() if k not in ("timeout_table", "target_times_s")} == {
+            k: v for k, v in bench.items() if k not in ("timeout_table", "target_times_s")
+        }
         assert bench["plan_ci"] == [
             {"cases": ["T2VA-L"], "runs": 3},
             {"cases": ["T2VA-M", "T2VA-H"], "runs": 1},

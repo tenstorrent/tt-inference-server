@@ -141,6 +141,9 @@ TRANSPORT_POLLS = max(1, round(300 / POLL_S))
 #            on top of generation; the warmup run of each case absorbs it, and the budget
 #            must hold it because the deployment exposes no progress (no 2x extension).
 #            Regenerate from results.jsonl after the first green weekly.
+#   WH1X     one single-host Wormhole Galaxy. PROVISIONAL, UNMEASURED: 2x BH1X. Wormhole runs
+#            the DiT with FSDP and evicts each stage between requests (12 GB of DRAM per chip),
+#            so the text encoder reloads on every request. Re-derive from the first WH run.
 TIMEOUT_TABLE_S = {
     "T1": {"SMOKE": 600, "T2VA-L": 900, "T2VA-M": 1800, "T2VA-H": 3600},
     "T2": {"SMOKE": 600, "T2VA-L": 900, "T2VA-M": 1800, "T2VA-H": 3600},
@@ -195,6 +198,32 @@ TIMEOUT_TABLE_S = {
         "SIZE-V": 1500,
         "SIZE-V10": 2500,
         "SIZE-V15": 3600,
+    },  # fmt: skip
+    "WH1X": {
+        "SMOKE": 1200,
+        "SMOKE-FL2VA": 1200,
+        "SMOKE-REF2VA": 4800,  # 2x BH1X, see WH1X above
+        "T2VA-L": 1200,
+        "T2VA-M": 3000,
+        "T2VA-H": 3600,
+        "FL2VA-L": 1200,
+        "FL2VA-M": 1800,
+        "FL2VA-H": 3000,
+        "FL2VA-L2": 1400,
+        "FL2VA-M2": 2000,
+        "FL2VA-H1": 2600,
+        "REF2VA-L": 2400,
+        "REF2VA-L10": 4000,
+        "REF2VA-L15": 5600,
+        "REF2VA-M5": 2800,
+        "REF2VA-M": 4800,
+        "REF2VA-M15": 6800,
+        "REF2VA-H5": 3600,
+        "REF2VA-H10": 6000,
+        "REF2VA-H": 8400,
+        "SIZE-V": 3000,
+        "SIZE-V10": 5000,
+        "SIZE-V15": 7200,
     },  # fmt: skip
 }
 DEFAULT_TIMEOUT_TABLE = "BH1X"

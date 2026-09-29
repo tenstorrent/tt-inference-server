@@ -144,7 +144,8 @@
                 "minimax_h3"
             ],
             "devices": [
-                "blackhole_galaxy"
+                "blackhole_galaxy",
+                "galaxy"
             ],
             "num_of_devices": 1,
             "test_cases": [
@@ -215,6 +216,12 @@
                             "T2VA-H": 225
                         },
                         "enforce_timing": false
+                    },
+                    "model_targets": {
+                        "minimax_h3+galaxy": {
+                            "timeout_table": "WH1X",
+                            "target_times_s": {}
+                        }
                     }
                 }
             ]
