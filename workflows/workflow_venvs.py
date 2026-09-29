@@ -40,6 +40,8 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
+EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
+
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     """Materialize *repo* at exactly *ref* in *dest*. Returns success.
@@ -499,6 +501,39 @@ def setup_evals_meta(
     return setup_succeeded
 
 
+def verify_evals_common_lm_eval(
+    venv_config: VenvConfig,
+    model_spec: ModelSpec,
+) -> bool:
+    """Fail closed unless EVALS_COMMON installed the reviewed harness commit.
+
+    PEP 610 requires direct-URL installs to retain their resolved VCS commit in
+    ``direct_url.json``. Printing that record puts the immutable dependency in
+    every setup log; comparing it here prevents a stale persistent venv or an
+    installer regression from silently running a different harness.
+    """
+    del model_spec
+    probe = f"""
+import importlib.metadata
+import json
+
+expected = {EVALS_COMMON_LM_EVAL_COMMIT!r}
+dist = importlib.metadata.distribution("lm-eval")
+record = json.loads(dist.read_text("direct_url.json"))
+actual = record.get("vcs_info", {{}}).get("commit_id")
+print(json.dumps({{"distribution": dist.metadata["Name"], "commit_id": actual}}, sort_keys=True))
+if actual != expected:
+    raise SystemExit(f"lm-eval commit mismatch: expected {{expected}}, installed {{actual}}")
+"""
+    return (
+        run_command(
+            [str(venv_config.venv_python), "-c", probe],
+            logger=logger,
+        )
+        == 0
+    )
+
+
 # Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
 # pin in its requirements file (structured-output scripts are fetched from
 # vllm-project/vllm@v<pin>/benchmarks at setup time):
@@ -627,6 +662,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
+        setup_function=verify_evals_common_lm_eval,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
