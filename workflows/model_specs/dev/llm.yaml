@@ -1428,22 +1428,22 @@ templates:
       # paged KV per page, 18.4 MiB of context-independent recurrent state, leaving 7.192
       # GiB after the 1 GiB trace reserve. Only 16 of the 64 layers hold a KV cache, so a
       # two-full-context pool costs 4.26 GiB rather than the 17 GiB a 64-layer estimate
-      # implies. See models/demos/qwen38_27b_qb2/doc/context_contract.json in tt-metal.
+      # implies. See models/demos/qwen38_27b_t3k/doc/context_contract.json in tt-metal.
       max_tokens_all_users_override: 525312
       default_impl: true
       env_vars:
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "T3K"
-        # qwen38_27b_qb2 reads its own pool variable; QWEN36_* is inert on this impl.
+        # qwen38_27b_t3k reads its own pool variable; QWEN36_* is inert on this impl.
         QWEN_VLLM_KV_POOL_TOKENS: "525312"
         # The checkpoint declares Qwen3_5ForConditionalGeneration, which the plugin maps to
-        # the Blackhole qwen36 class; route it to the qwen38_27b_qb2 implementation instead.
-        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.qwen38_27b_qb2.tt.generator_vllm:Qwen38ForCausalLM"
+        # the Blackhole qwen36 class; route it to the qwen38_27b_t3k implementation instead.
+        TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.qwen38_27b_t3k.tt.generator_vllm:Qwen38ForCausalLM"
         # GPQA sends sampling parameters the device sampler does not serve; without this the
         # generator refuses them and the engine never starts.
         QWEN_VLLM_HOST_COMPATIBILITY: "1"
       vllm_args:
-        # qwen38_27b_qb2 pages its KV cache in fixed 32-token pages.
+        # qwen38_27b_t3k pages its KV cache in fixed 32-token pages.
         block_size: "32"
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
@@ -1455,7 +1455,7 @@ templates:
         fabric_config: FABRIC_1D_RING
         trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
         l1_small_size: 24576
-        # qwen38_27b_qb2 samples on device for prefill too; host sampling is opt-in only.
+        # qwen38_27b_t3k samples on device for prefill too; host sampling is opt-in only.
         sample_on_device_mode: all
   status: EXPERIMENTAL
   has_builtin_warmup: true
