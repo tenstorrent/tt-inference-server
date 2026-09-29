@@ -14,9 +14,11 @@ import pytest
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
 from llm_module.benchmark_configs import ensure_custom_dataset, get_llm_configs
 from llm_module.config import LLMRunConfig, ServerConnection
+from llm_module.target_checks import apply_target_checks
+from report_module.schema import Block
 from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
 from workflows.utils import get_repo_root_path
-from workflows.workflow_types import ModelType
+from workflows.workflow_types import ModelType, ReportCheckTypes
 
 
 def _text_keys(params):
@@ -240,3 +242,108 @@ def test_speed_bench_prompt_failure_does_not_fall_back_to_random(monkeypatch, tm
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+def test_qb2_enables_token_timing_without_changing_other_implementations():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    )
+    found = False
+    for template in templates:
+        if "meta-llama/Llama-3.1-8B-Instruct" not in template.weights:
+            continue
+        for spec in template.expand_to_specs():
+            configs = get_llm_configs(spec, spec.device_type)
+            is_qb2 = spec.impl.impl_id == "llama31_8b_qb2"
+            if is_qb2:
+                found = True
+                assert configs
+            assert all(c.token_timing == is_qb2 for c in configs)
+            assert all(c.require_complete_metrics == is_qb2 for c in configs)
+            for config in configs:
+                if not config.targets:
+                    continue
+                # Exercise the catalogue -> sweep -> grading path, not just
+                # the flag. Missing metrics must fail QB2 qualification while
+                # existing implementations retain their NA behavior.
+                block = apply_target_checks(Block(kind="benchmarks", data={}), config)
+                expected = ReportCheckTypes.FAIL if is_qb2 else ReportCheckTypes.NA
+                assert block.data["target_check"] == expected
+    assert found
+
+
+def test_fixed_targets_require_the_reference_request_count():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    spec = next(
+        s
+        for t in templates
+        for s in t.expand_to_specs()
+        if s.impl.impl_id == "llama31_8b_qb2"
+    )
+    configs = get_llm_configs(spec, spec.device_type)
+    expected = {
+        (128, 128, 1, 8),
+        (2048, 128, 1, 8),
+        (8192, 128, 1, 8),
+        (2048, 128, 32, 32),
+    }
+    assert _cfg_keys([c for c in configs if c.targets]) == expected
+    for config in configs:
+        if config.targets:
+            assert config.full_workload_warmup
+            assert config.repetitions == 3
+        else:
+            assert not config.full_workload_warmup
+            assert config.repetitions == 1
+    # Same shape, different request count: cannot use the cohort reference.
+    assert any(
+        c.isl == 2048
+        and c.max_concurrency == 32
+        and c.num_prompts == 128
+        and not c.targets
+        for c in configs
+    )
+
+
+def _qb2_review_spec():
+    return next(
+        s
+        for t in load_templates_from_yaml(
+            get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+        )
+        for s in t.expand_to_specs()
+        if s.impl.impl_id == "llama31_8b_qb2"
+    )
+
+
+def test_named_fixed_workload_preserves_legacy_sweep():
+    from dataclasses import asdict
+
+    spec = _qb2_review_spec()
+    legacy = get_llm_configs(spec, spec.device_type)
+    spec.metadata.pop("benchmark_token_timing")
+    spec.metadata.update(benchmark_protocol="fixed_workload", benchmark_repetitions=3)
+    named = get_llm_configs(spec, spec.device_type)
+    assert [asdict(c) for c in named] == [asdict(c) for c in legacy]
+    spec.metadata["benchmark_repetitions"] = 5
+    assert all(
+        c.repetitions == (5 if c.targets else 1)
+        for c in get_llm_configs(spec, spec.device_type)
+    )
+
+
+@pytest.mark.parametrize("repetitions", [0, -1, True, 1.5])
+def test_fixed_workload_rejects_invalid_repetitions(repetitions):
+    spec = _qb2_review_spec()
+    spec.metadata["benchmark_repetitions"] = repetitions
+    with pytest.raises(ValueError, match="positive integer"):
+        get_llm_configs(spec, spec.device_type)
+
+
+def test_unknown_benchmark_protocol_fails_before_running():
+    spec = _qb2_review_spec()
+    spec.metadata["benchmark_protocol"] = "fixed_worklaod"
+    with pytest.raises(ValueError, match="Unknown benchmark protocol"):
+        get_llm_configs(spec, spec.device_type)
