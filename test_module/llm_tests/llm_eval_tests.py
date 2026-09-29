@@ -406,7 +406,9 @@ def _run_eval_task(
     logger.info(
         "task=%s bounded at %ss wall clock; exceeding it yields rc=%d and an "
         "incomplete task, never a score.",
-        task.task_name, timeout_seconds, _DEADLINE_RC,
+        task.task_name,
+        timeout_seconds,
+        _DEADLINE_RC,
     )
     return run_command(
         command=cmd, logger=logger, env=env, timeout_seconds=timeout_seconds

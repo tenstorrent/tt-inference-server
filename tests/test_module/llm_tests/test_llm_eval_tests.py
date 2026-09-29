@@ -25,11 +25,12 @@ from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 _MOD = "test_module.llm_tests.llm_eval_tests"
 
+
 def tmp_output_path():
     import tempfile
     from pathlib import Path
-    return Path(tempfile.mkdtemp())
 
+    return Path(tempfile.mkdtemp())
 
 
 # --- fixtures ----------------------------------------------------------------
@@ -698,6 +699,7 @@ class TestEvalsWorkflowLLMOverride:
         dispatch.assert_called_once()
         assert outcomes == ["media-outcome"]
 
+
 class TestDeadlineReachesRunCommand:
     """Regression guard: a declared deadline must reach proc.run_command.
 
@@ -713,14 +715,16 @@ class TestDeadlineReachesRunCommand:
             seen.update(kwargs)
             return 0
 
-        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), \
-             patch(f"{_MOD}.run_command", side_effect=fake_run_command):
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), patch(
+            f"{_MOD}.run_command", side_effect=fake_run_command
+        ):
             rc = mod._run_eval_task(_ctx(), task, "", output_path=tmp_output_path())
         return rc, seen
 
     def test_declared_deadline_is_passed_through(self):
         rc, seen = self._invoke(
-            EvalTask(task_name="aime25", wall_clock_timeout_seconds=3600))
+            EvalTask(task_name="aime25", wall_clock_timeout_seconds=3600)
+        )
         assert rc == 0
         assert seen.get("timeout_seconds") == 3600
 
@@ -730,4 +734,3 @@ class TestDeadlineReachesRunCommand:
         # Passing timeout_seconds=None would still select the bounded POSIX
         # path, so unbounded callers must omit the argument entirely.
         assert "timeout_seconds" not in seen
-
