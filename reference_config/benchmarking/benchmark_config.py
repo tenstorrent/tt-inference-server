@@ -600,11 +600,17 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                     param_map={
                         device: [
                             BenchmarkTaskParams(
-                                isl=isl, osl=128, max_concurrency=concurrency,
+                                isl=isl,
+                                osl=128,
+                                max_concurrency=concurrency,
                                 num_prompts=4 if concurrency == 1 else concurrency,
                             )
                             for isl, concurrency in (
-                                (4096, 1), (4096, 8), (4096, 16), (128, 8), (128, 16)
+                                (4096, 1),
+                                (4096, 8),
+                                (4096, 16),
+                                (128, 8),
+                                (128, 16),
                             )
                         ]
                     },

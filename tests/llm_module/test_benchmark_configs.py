@@ -14,7 +14,6 @@ import pytest
 from llm_module.benchmark_configs import ensure_custom_dataset, get_llm_configs
 from llm_module.config import LLMRunConfig, ServerConnection
 from reference_config.benchmarking.benchmark_config import (
-    BENCHMARK_ISL_OSL_PAIRS,
     get_benchmark_config,
 )
 from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
@@ -185,8 +184,11 @@ def test_gemma4_autoport_uses_requested_focused_concurrencies():
     configs = get_llm_configs(autoport, autoport.device_type)
     assert len(configs) == 5
     assert _cfg_keys(configs) == {
-        (4096, 128, 1, 4), (4096, 128, 8, 8), (4096, 128, 16, 16),
-        (128, 128, 8, 8), (128, 128, 16, 16),
+        (4096, 128, 1, 4),
+        (4096, 128, 8, 8),
+        (4096, 128, 16, 16),
+        (128, 128, 8, 8),
+        (128, 128, 16, 16),
     }
     assert autoport.device_model_spec.max_concurrency == 32
     assert autoport.device_model_spec.max_context == 262144
