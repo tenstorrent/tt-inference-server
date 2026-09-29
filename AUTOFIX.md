@@ -196,6 +196,6 @@ format, import, compile, and diff checks. Run
 https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/36530661132
 was dispatched with temporary inference revision
 `7babaac11b8a7c9bf17dabf287dac2f4a9264be5`; the immutable image was reused
-and all image builds were skipped. Branch head
+and all image builds were skipped. Revision
 `bfc2ee9bd5bda291f7b58f2f8d978e151b70b3a4` restores normal eval routing.
 The run is intentionally left running, and no further eval repair is planned.
