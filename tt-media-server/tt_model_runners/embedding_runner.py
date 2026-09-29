@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
 
+import asyncio
 import os
 
 import torch
@@ -27,6 +28,25 @@ def _model_location_generator(model_version: str) -> str:
 class EmbeddingRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        # One device, one forward at a time. Created here so every subclass has it.
+        self._device_lock = asyncio.Lock()
+
+    async def _run_async(self, requests: list[TextEmbeddingRequest]):
+        """Run one batch off the event loop.
+
+        device_worker schedules every request through this method and reads
+        result[0], so an embedding runner needs it just as a text runner does.
+
+        run() holds the device for the whole forward, which would otherwise block
+        the loop and stall the health endpoint. A thread keeps the loop free.
+
+        The lock is required. device_worker keeps max_batch_size requests in
+        flight, and every one of them refills the same traced input buffers on the
+        same device. Two threads inside run() overwrite each other and return
+        non-finite embeddings, which then fail JSON encoding.
+        """
+        async with self._device_lock:
+            return await asyncio.to_thread(self.run, requests)
 
     def _process_result(
         self,
@@ -127,6 +147,19 @@ class BGEM3Runner(EmbeddingRunner):
             "num_command_queues": 2,
             "trace_region_size": self.settings.trace_region_size,
         }
+
+    def _configure_fabric(self, updated_device_params):
+        """Turn fabric on for the 2-chip mesh.
+
+        The base runner returns None, which leaves fabric off. Opening a (2, 1) mesh
+        then fails with "Timed out waiting for ETH heartbeat", because the two chips
+        talk over ethernet. A single-chip mesh needs no fabric.
+        """
+        if tuple(self.settings.device_mesh_shape) == (1, 1):
+            return None
+        fabric_config = updated_device_params.pop("fabric_config", ttnn.FabricConfig.FABRIC_1D)
+        ttnn.set_fabric_config(fabric_config)
+        return fabric_config
 
     def run(self, requests: list[TextEmbeddingRequest]):
         self._validate_requests(requests)

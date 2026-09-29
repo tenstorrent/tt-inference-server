@@ -314,6 +314,7 @@ class SharedMemoryChunkQueue(TTQueueInterface):
         max_messages_to_get: int = 100,
         block: bool = True,
         timeout: float = None,
+        linger: float = 0.0,
     ) -> list:
         """
         Get multiple items at once - optimized batch version.
@@ -322,6 +323,11 @@ class SharedMemoryChunkQueue(TTQueueInterface):
             max_messages_to_get: Maximum number of items to retrieve
             block: If True, wait for at least one item
             timeout: Maximum time to wait (only used if block=True)
+            linger: After the first item arrives, keep waiting up to this many
+                seconds for the batch to reach max_messages_to_get. A device that
+                runs one fixed-shape forward per batch pays the same cost for 1
+                item as for max_messages_to_get, so a short wait here raises
+                throughput. 0.0 keeps the original behaviour.
 
         Returns:
             List of items (may be empty if block=False and queue is empty)
@@ -345,10 +351,30 @@ class SharedMemoryChunkQueue(TTQueueInterface):
             # We have at least one item, break out of the waiting loop
             break
 
+        # Give the batch time to fill. The producer writes one item per request,
+        # so without this the reader takes whatever landed in the same instant and
+        # a fixed-shape device runs mostly padding. Stop early once the batch is
+        # full, and never raise: the caller treats a timeout as fatal.
+        if linger > 0 and max_messages_to_get > 1:
+            linger_deadline = time.time() + linger
+            while time.time() < linger_deadline:
+                write_idx = self._get_write_idx()
+                pending = (
+                    write_idx - read_idx
+                    if write_idx >= read_idx
+                    else (self.capacity - read_idx) + write_idx
+                )
+                if pending >= max_messages_to_get:
+                    break
+                time.sleep(0.001)
+
         # Calculate how many items we can read in one batch
         if read_idx < 0 or read_idx >= self.capacity:
             self.logger.error(f"CORRUPTION: read_idx {read_idx} out of bounds!")
             return []
+
+        # Re-read: the linger above may have admitted more items.
+        write_idx = self._get_write_idx()
 
         # Calculate available items
         if write_idx >= read_idx:

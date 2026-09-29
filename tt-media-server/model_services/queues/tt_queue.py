@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
+import time
 from multiprocessing import get_context
 from multiprocessing.queues import Queue
 from queue import Empty
@@ -45,9 +46,15 @@ class TTQueue(Queue, TTQueueInterface):
         max_messages_to_get: int = 100,
         block: bool = True,
         timeout: Optional[float] = None,
+        linger: float = 0.0,
     ) -> List:
         """
         multiprocessing.Queue doesn't have batch get, get one item as fallback
+
+        ``linger`` keeps waiting after the first item for the batch to reach
+        ``max_messages_to_get``. A device that runs one fixed-shape forward per
+        batch pays the same cost for 1 item as for a full batch, so a short wait
+        raises throughput. 0.0 keeps the original behaviour.
         """
         batch = []
 
@@ -62,7 +69,8 @@ class TTQueue(Queue, TTQueueInterface):
             return []
 
         # Aggressively try to get more items
-        for _ in range(max_messages_to_get - 1):
+        deadline = (time.monotonic() + linger) if linger > 0 else None
+        while len(batch) < max_messages_to_get:
             try:
                 item = self.get_nowait()
                 if item is None:
@@ -70,8 +78,14 @@ class TTQueue(Queue, TTQueueInterface):
                     batch.append(None)
                     break
                 batch.append(item)
+                continue
             except Exception:
+                pass
+            # The queue is empty right now. Wait for a producer, unless the linger
+            # window has closed.
+            if deadline is None or time.monotonic() >= deadline:
                 break
+            time.sleep(0.001)
 
         return batch
 
