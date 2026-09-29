@@ -1320,7 +1320,10 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
         return _wan22_i2v_warmup_request()
 
 MINIMAX_H3_TRACE_REGION_BYTES = 1_175_000_000
-
+MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
+MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
+MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
+MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
 
 def _minimax_h3_env_bool(name: str) -> bool | None:
     raw = os.environ.get(name)
@@ -1334,7 +1337,7 @@ def _minimax_h3_env_bool(name: str) -> bool | None:
     raise ValueError(f"{name}={raw!r} must be 1/true or 0/false")
 
 
-def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) -> dict:
+def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = None) -> dict:
     """Device params for MiniMax-H3, keyed on the mesh shape.
 
     Everything here is derived from the pipeline's per-shape preset so the two can't disagree:
@@ -1347,8 +1350,10 @@ def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = 65536) 
     """
     preset = resolve_mesh_preset(mesh_shape)
     router_config = ttnn.FabricRouterConfig()
-    router_config.max_packet_payload_size_bytes = 8192
+    router_config.max_packet_payload_size_bytes = MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY if is_blackhole() else MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY
     ring = preset["topology"] == ttnn.Topology.Ring
+    if l1_small_size is None:
+        l1_small_size = MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY if is_blackhole() else MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY
     params = {
         "fabric_config": (
             ttnn.FabricConfig.FABRIC_1D_RING if ring else ttnn.FabricConfig.FABRIC_1D
@@ -1367,7 +1372,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     """MiniMax-H3 `t2va`: text in, a video **and its soundtrack** out."""
 
     pipeline_task = "t2va"
-    dit_fsdp = False
+    dit_fsdp = False if is_blackhole() else True
     num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
 
     def __init__(self, device_id: str):
