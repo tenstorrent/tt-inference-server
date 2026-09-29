@@ -154,3 +154,31 @@ Gemma 4's 26B GPQA config now follows the existing sibling long-thinking
 policy: `max_concurrent=1` and a 7200-second client timeout. This avoids C32
 queueing/KV contention and gives each potentially 32K-token response the full
 decode rate. A model-config regression pins both values.
+
+## Follow-up: make Gemma tool calls work in the reused image
+
+The first corrected agentic run produced a valid Terminal-Bench result (2/5,
+40%; 6,836,813 input and 90,518 output tokens), but SWE-Bench returned HTTP 400
+for every trial because `tool_choice=auto` requires automatic tool choice and
+a named parser. The Gemma autoport model spec now enables automatic tool choice
+and selects the `gemma4` parser; the API-launch regression test asserts both
+arguments.
+
+Activating the parser exposed a second compatibility issue in the immutable
+image: its Gemma parser accepted only `tokenizer`, while the installed vLLM
+factory passed `tokenizer, model_config`. All five trials again produced zero
+tokens. `run_vllm_api_server.py` now installs a narrowly scoped compatibility
+wrapper only when the selected parser is `gemma4` and the installed constructor
+cannot bind the newer two-argument call. The wrapper accepts the newer call and
+delegates to the legacy tokenizer-only implementation. This file is bind-mounted
+by dev-mode serving, so the exact existing image remains reusable. A regression
+test recreates the legacy signature and proves construction with both factory
+arguments.
+
+The final same-image retry completed the full serving and scoring path:
+SWE-Bench Verified resolved 1/5 tasks (20%). All five agents reached their
+two-hour timeout, so the result is recorded as valid but timeout-limited rather
+than a clean completion. One timed-out trial still produced a scorable patch
+with reward 1; the other four scored zero. The durable parser constructor fix
+also exists in the paired TT-Metal branch so a future rebuilt image will not
+need the runtime bridge.
