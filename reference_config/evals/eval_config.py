@@ -2778,6 +2778,297 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # DeepSeek-V4.1-Flash - GPU reference eval configs (bring-your-own vLLM).
+    #
+    # Instruct scores from the official model card, measured by DeepSeek with
+    # reasoning_effort=max (100), temperature=1.0, top_p=0.95:
+    #   https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash
+    # The reference server enables max-effort thinking server-side via
+    # --default-chat-template-kwargs '{"thinking": true, "reasoning_effort":
+    # "max"}' and --reasoning-parser deepseek_v41, so every task uses the chat
+    # endpoint (client-side apply_chat_template on /v1/completions would skip
+    # those kwargs). Native context is 1M tokens; the server's default
+    # generation budget is max_new_tokens=393216.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond (thinking mode);
+                # the task's own extractor scores exact_match,none.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=90.9,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                    # Full 198-sample run, max-effort thinking. 91.41% +/- 2.00;
+                    # an earlier full run on the same server scored 88.89% +/- 2.24.
+                    gpu_reference_score=91.41,
+                    gpu_reference_score_ref="run.py --workflow evals r1_gpqa_diamond full (198), 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-25",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 272 * 1024,
+                    # Max-effort reasoning gens of up to 256K tokens under
+                    # num_concurrent=32 far exceed lm-eval's 1800s default.
+                    "timeout": 14400,
+                },
+                # 256K output budget matches NVIDIA's published GPQA methodology
+                # for this checkpoint (max_new_tokens=262144); 16K headroom under
+                # max_length covers the prompt + chat template.
+                # stream=false is REQUIRED: lm-eval's local-chat-completions
+                # streaming parser raises KeyError 'message' on every response.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 256 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    # Model card only publishes MMLU-Pro (5-shot EM) for the
+                    # Base checkpoint; no instruct number is available.
+                    published_score=74.1,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (Base, 5-shot EM)",
+                    gpu_reference_score=87.23,
+                    gpu_reference_score_ref="run.py --workflow evals mmlu_pro full (12032, 0 inference errors), 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-25",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 40 * 1024,
+                    "timeout": 3600,
+                },
+                # Max-effort thinking runs well past gemma-4's 8K budget; an
+                # answer is lost whenever reasoning is cut off by max_gen_toks.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # mmlu_pro is a GROUP of 14 subtasks; the limit applies PER
+                # SUBTASK (3 -> ~42 questions, 1 -> 14).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # Long-context sweep for the 1M window: samples are selected from
+            # 256K ISL up to the top of the context budget.
+            EvalTask(
+                task_name="longbench2_generate",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                min_context_required=1048576,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    # The model card's LongBench-V2 (45.2) is Base-model, 1-shot,
+                    # on the full set; not comparable to this ISL-filtered subset.
+                    published_score=None,
+                    published_score_ref=None,
+                    # 63 samples in the 256K-900K ISL window; 71.43% +/- 5.74.
+                    gpu_reference_score=71.43,
+                    gpu_reference_score_ref="run.py --workflow evals longbench2_generate (63 samples, ISL 256K-900K), 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-25",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1048576,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 96 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # Select samples by input sequence length (ISL). ISL is measured
+                # by tokenizing each sample's context with `pretrained`; only
+                # samples with minimum_isl <= ISL <= maximum_isl are kept.
+                # ISL is measured on the raw context alone, so the ceiling also
+                # has to absorb the chat template, question and instruction
+                # wrapper on top of max_gen_toks (98304) before hitting the
+                # 1048576 window.
+                # Forwarded to the lm-eval fork loader via --metadata.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (< 1048576 - 96K gen)
+                    "pretrained": "deepseek-ai/DeepSeek-V4.1-Flash",
+                    "tokenizer_num_proc": 32,  # pre-process up to 32 samples in parallel
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # Model-card agentic recipe: N=3 attempts, Linux containers,
+            # temperature=1.0, top_p=0.95, 1M-token context, max_steps=500,
+            # no network access. Network isolation is not a run-level knob:
+            # Harbor applies network_mode: none only for tasks whose task.toml
+            # sets [environment] allow_internet = false.
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Measured with the DeepSeek Harness (Minimal mode), not
+                    # Terminus 2; the card's per-harness table has no Terminus
+                    # column, so treat this as a loose reference.
+                    published_score=90.6,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (DSH Minimal harness)",
+                    # 226/267 trials (N=3). Includes 6 qemu-startup /
+                    # qemu-alpine-ssh trials lost to "Failed to start tmux
+                    # session" (harness bug, tmux 3.1c rejects new-session -e)
+                    # and 5 agent timeouts at 4h.
+                    gpu_reference_score=84.64,
+                    gpu_reference_score_ref="run.py --workflow agentic terminal_bench_2_1 full (89 tasks x 3), terminus-2, 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-27",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 89 tasks x 3 attempts = 267 trials. Kept below the
+                    # device max_concurrency (32): the reference server's
+                    # EngineCore crashed under 32 concurrent mmlu_pro requests.
+                    n_concurrent_trials=16,
+                    n_attempts=3,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=4 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "max_turns": 500,
+                        "suppress_max_turns_warning": True,
+                        "temperature": 1.0,
+                        # input + output = the 1M native window; the card
+                        # recommends max_tokens >= 256K for max-effort thinking.
+                        "model_info": {
+                            "max_input_tokens": 768 * 1024,
+                            "max_output_tokens": 256 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 256 * 1024,
+                            "timeout": 2 * 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not published by DeepSeek; Artificial Analysis retired
+                    # tau3-Banking before this model was indexed.
+                    published_score=None,
+                    published_score_ref=None,
+                    # Best of two full runs: 39/97 at n_concurrent_trials=8
+                    # (2026-09-28; 17 trials still hit the 3600s
+                    # agent_timeout_sec). The 2026-09-27 run at 16 concurrent
+                    # scored 31.96 with 34 timeouts.
+                    gpu_reference_score=40.21,
+                    gpu_reference_score_ref="run.py --workflow agentic tau3_bench_banking full (97), n_concurrent_trials=8, 8-GPU TP=8 bring-your-own vLLM, thinking=true reasoning_effort=max, 2026-09-28",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # Literal values only: "${VAR:-default}" templates are not
+                    # resolved on this path (see the GLM-5.3 tau3 entry).
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/deepseek-ai/DeepSeek-V4.1-Flash",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/deepseek-ai/DeepSeek-V4.1-Flash",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-72B-Instruct",
         tasks=[
