@@ -135,7 +135,14 @@ if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
 
 
-def test_fixed_reference_client_is_isolated_from_default_venv(monkeypatch):
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"benchmark_token_timing": True},
+        {"benchmark_protocol": "fixed_workload"},
+    ],
+)
+def test_fixed_reference_client_is_isolated_from_default_venv(monkeypatch, metadata):
     from workflow_module.engine_types import WorkflowVenvType
     from workflow_module import venv_provisioner
 
@@ -153,7 +160,7 @@ def test_fixed_reference_client_is_isolated_from_default_venv(monkeypatch):
         lbt, "run_llm_performance", lambda ctx, **kw: seen.append(kw["driver"])
     )
     ctx = SimpleNamespace(
-        model_spec=SimpleNamespace(metadata={"benchmark_token_timing": True}),
+        model_spec=SimpleNamespace(metadata=metadata),
         device="P300X2",
         runtime_config=None,
     )
