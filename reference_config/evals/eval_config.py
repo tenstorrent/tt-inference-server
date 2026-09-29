@@ -5416,8 +5416,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="terminal_bench_2",
-                # Temporary selection for the pinned SWE-only QB2 retry.
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=14.0,
                     published_score_ref="https://arxiv.org/abs/2607.02770",
