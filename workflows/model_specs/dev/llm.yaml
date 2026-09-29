@@ -385,6 +385,54 @@ templates:
 
 - weights:
     - google/gemma-4-31B-it
+  impl: gemma4_galaxy_one
+  # ONE-INSTANCE Galaxy (TP8xCP4): a single vLLM engine over the full (8,4)
+  # mesh with ONE weight copy (GEMMA4_GALAXY_FRACTURE) and CP prefill
+  # (GEMMA4_CP_PREFILL, generator chunk auto-24576). One pooled KV budget —
+  # any user mix, a single session may take the whole pool. Requires tt-metal
+  # arg/gemma4_galaxy_one_instance (PR #58394). Metal reference (2026-09-29):
+  # b1 29.7 tok/s @ 85 ms TTFT; b32 641.7 tok/s aggregate; 248K TTFT 99.2 s
+  # @ 19.2 tok/s. Baseline text class (no speculation) on this rail.
+  devices:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32
+      max_context: 262144
+      env_vars:
+        MESH_DEVICE: "BH-Galaxy"  # single engine over the (8,4) grid
+        GEMMA4_GALAXY_FRACTURE: "1"
+        GEMMA4_CP_PREFILL: "1"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # Pooled budget: 3 full-256K sessions + margin. Per-chip ledger with
+        # ONE weight copy: 3.5 (weights) + 17.6 (global KV @ 14,368 blocks)
+        # + 3.4 (sliding) + ~3.4 (overhead) ~= 27.9 of 31.87 GiB. The DP
+        # fallback branch serves 12 sessions; this rail trades capacity for
+        # single-pool semantics + the one-instance perf until KV striping.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "917504"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 1
+        max_num_seqs: 32
+        async_scheduling: false
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-31B-it
   impl: gemma4_dflash
   # REQUIRES a SECOND checkpoint the workflow does not download: the z-lab
   # drafter, resolved from the HF cache by glob (models--z-lab--gemma-4-31B-it-
