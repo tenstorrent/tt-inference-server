@@ -166,6 +166,11 @@ class TestVideoMatrixExpansion:
         "mochi-p150x4",
         "mochi-p150x8",
         "mochi-p300x2",
+        "minimax-h3-blackhole_galaxy",
+        # FL2VA and Ref2VA need their own deployment -- the MODEL_RUNNER differs and a process
+        # serves one task -- so they are separate suites rather than cases in the t2va one.
+        "minimax-h3-fl2va-blackhole_galaxy",
+        "minimax-h3-ref2va-blackhole_galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -270,6 +275,73 @@ class TestVideoMatrixExpansion:
                 "VideoGenerationI2VTest",
                 "VideoGenerationI2VParamTest",
             ], f"{suite_id}: unexpected templates {templates}"
+
+    def test_minimax_suite_uses_v1_contract_and_media_checks(self):
+        suite = self._suite_map()["minimax-h3-blackhole_galaxy"]
+        templates = [tc["template"] for tc in suite["test_cases"]]
+        assert templates == [
+            "MiniMaxH3CreateContractTest",
+            "MiniMaxH3LifecycleDownloadTest",
+            "MiniMaxH3CancelLifecycleTest",
+            "MiniMaxH3VideoQualityTest",
+            "MiniMaxH3PromptContractTest",
+            "MiniMaxH3AdmissionTest",
+        ]
+
+    def test_fl2va_and_ref2va_suites_carry_their_own_contract(self):
+        """Each modality is graded on the deployment that serves it.
+
+        Dropped into the t2va suite these would run against whichever runner is booted, where a
+        keyframe at frame_pos=5 or a references object is simply an unknown field -- so nearly
+        every case would be graded against a server that was never asked to serve that modality.
+
+        The converse is why MiniMaxH3PromptContractTest is *not* listed here. Its payloads are
+        text-only, and `reject_text_to_video_on_i2v_deployment` refuses those at the route on an
+        FL2VA or Ref2VA deployment -- a route-level dependency, so it fires before the body is
+        bound, for every case. Graded there, its six rejection cases bank a PASS for a 422 that
+        never looked at the prompt, and its four acceptance cases can never pass however
+        completely #5039 is implemented. The t2va suite is the only deployment on which those
+        payloads are legal.
+        """
+        suite_map = self._suite_map()
+        assert [
+            tc["template"]
+            for tc in suite_map["minimax-h3-fl2va-blackhole_galaxy"]["test_cases"]
+        ] == [
+            "MiniMaxH3Fl2vaContractTest",
+        ]
+        assert [
+            tc["template"]
+            for tc in suite_map["minimax-h3-ref2va-blackhole_galaxy"]["test_cases"]
+        ] == [
+            "MiniMaxH3Ref2vaContractTest",
+        ]
+
+    def test_modality_suites_pin_the_targets_their_grading_depends_on(self):
+        """Assert the per-case `targets`, not just the template list.
+
+        The template list alone cannot tell a suite that grades its contract from one that skips
+        it: `profile` decides whether the FL2VA acceptance cases -- including the in-spec 10 MB
+        keyframe regression the file calls its headline case -- are sent at all, and a suite that
+        skips every one of them still reports PASS on the refusals it did run.
+        """
+        fl2va = self._case_targets(
+            "minimax-h3-fl2va-blackhole_galaxy", "MiniMaxH3Fl2vaContractTest"
+        )
+        assert fl2va["deployment"] == "fl2va"
+        assert fl2va["profile"] == "smoke", (
+            "under 'validation' every expected-202 case is skipped, so the block grades only "
+            "refusals and a server that rejects every keyframe scores green"
+        )
+        ref2va = self._case_targets(
+            "minimax-h3-ref2va-blackhole_galaxy", "MiniMaxH3Ref2vaContractTest"
+        )
+        assert ref2va["profile"] == "smoke", (
+            "the modality-combination cases -- image+video, video+audio, all "
+            "three at once, and the heaviest 5-reference split -- are the ones "
+            "that exercise omni-reference packing, and every one of them "
+            "expects 202, so under 'validation' they are all skipped"
+        )
 
     def test_all_video_suites_single_device(self):
         for suite in self._suite_map().values():
