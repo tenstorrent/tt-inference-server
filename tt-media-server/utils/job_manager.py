@@ -63,7 +63,7 @@ class Job:
     _task: Callable = None
     _progress_tracker: Any = None
     _worker_assignment: Any = None
-    _mark_worker_retiring: Optional[Callable[[str, int], bool]] = None
+    _mark_worker_retiring: Optional[Callable[[str, int, Any], bool]] = None
     _replace_worker: Optional[Callable[[str, int], bool]] = None
     _worker_replacement_scheduled: bool = False
     start_event: Optional[Event] = None
@@ -193,7 +193,7 @@ class JobManager:
         job_checkpoints: list = None,
         progress_tracker: Any = None,
         worker_assignment: Any = None,
-        mark_worker_retiring: Optional[Callable[[str, int], bool]] = None,
+        mark_worker_retiring: Optional[Callable[[str, int, Any], bool]] = None,
         replace_worker: Optional[Callable[[str, int], bool]] = None,
         org_id: Optional[str] = None,
     ) -> dict:
@@ -720,12 +720,17 @@ class JobManager:
         if job._mark_worker_retiring is not None:
             worker_id, worker_pid = worker_identity
             try:
-                job._mark_worker_retiring(worker_id, worker_pid)
+                marked = job._mark_worker_retiring(
+                    worker_id, worker_pid, job._worker_assignment
+                )
             except Exception as e:
                 self._logger.error(
                     f"Failed to mark worker {worker_id} as retiring while "
                     f"cancelling job {job.id}: {e}"
                 )
+                return None
+            if not marked:
+                return None
         return worker_identity
 
     def _schedule_worker_replacement(

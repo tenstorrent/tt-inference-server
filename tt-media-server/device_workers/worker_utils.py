@@ -51,11 +51,12 @@ def claim_requests_for_worker(
         ]
 
 
-def release_job_from_worker(request) -> None:
+def release_job_from_worker(request, claim_lock=None) -> None:
     """Clear a completed request's worker assignment."""
-    worker_assignment = getattr(request, "_worker_assignment", None)
-    if worker_assignment is not None:
-        worker_assignment.identity = None
+    with claim_lock if claim_lock is not None else nullcontext():
+        worker_assignment = getattr(request, "_worker_assignment", None)
+        if worker_assignment is not None:
+            worker_assignment.identity = None
 
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):

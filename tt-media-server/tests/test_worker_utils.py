@@ -360,10 +360,13 @@ class TestClaimRequestsForWorker:
 def test_release_job_from_worker_clears_assignment():
     request = Mock()
     request._worker_assignment.identity = ("worker-0", 123)
+    claim_lock = MagicMock()
 
-    release_job_from_worker(request)
+    release_job_from_worker(request, claim_lock)
 
     assert request._worker_assignment.identity is None
+    claim_lock.__enter__.assert_called_once()
+    claim_lock.__exit__.assert_called_once()
 
 
 class TestInitializeDeviceWorker:

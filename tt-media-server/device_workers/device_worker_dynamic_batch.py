@@ -158,7 +158,7 @@ def device_worker(
 
         def release_request(_task):
             in_flight.pop(request._task_id, None)
-            release_job_from_worker(request)
+            release_job_from_worker(request, claim_lock)
 
         task.add_done_callback(release_request)
 

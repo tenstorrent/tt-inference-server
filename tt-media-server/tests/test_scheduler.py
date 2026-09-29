@@ -4,7 +4,9 @@
 
 import asyncio
 import sys
+import threading
 from multiprocessing import Process, Queue
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -290,6 +292,38 @@ class TestScheduler:
         call_args = mock_process_cls.call_args
         assert call_args.kwargs["target"] == device_worker
 
+    @patch("model_services.scheduler.ProcessLock")
+    @patch("model_services.scheduler.ProcessEvent")
+    @patch("model_services.scheduler.Process")
+    def test_start_worker_creates_retirement_primitives_for_training_only(
+        self,
+        mock_process_cls,
+        mock_process_event,
+        mock_process_lock,
+        scheduler,
+        mock_process,
+    ):
+        mock_process_cls.return_value = mock_process
+        retirement_event = mock_process_event.return_value
+        claim_lock = mock_process_lock.return_value
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        scheduler.worker_info = {}
+        scheduler.settings.model_service = "training"
+
+        scheduler._start_worker(worker_id="0")
+
+        assert scheduler.worker_info["0"]["retirement_event"] is retirement_event
+        assert scheduler.worker_info["0"]["claim_lock"] is claim_lock
+
+        scheduler.worker_info = {}
+        scheduler.settings.model_service = "video"
+        scheduler._start_worker(worker_id="0")
+
+        assert scheduler.worker_info["0"]["retirement_event"] is None
+        assert scheduler.worker_info["0"]["claim_lock"] is None
+        mock_process_event.assert_called_once()
+        mock_process_lock.assert_called_once()
+
     @patch("model_services.scheduler.Process")
     def test_restart_worker_passes_existing_queue_index_to_start_worker(
         self, mock_process_cls, scheduler, mock_process
@@ -427,8 +461,12 @@ class TestScheduler:
             "retirement_event": retirement_event,
             "claim_lock": claim_lock,
         }
+        worker_assignment = Mock()
+        worker_assignment.identity = ("0", 123)
 
-        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
+        marked = scheduler.mark_worker_retiring(
+            "0", expected_pid=123, worker_assignment=worker_assignment
+        )
 
         assert marked is True
         retirement_event.set.assert_called_once()
@@ -445,10 +483,86 @@ class TestScheduler:
             "claim_lock": MagicMock(),
         }
 
-        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
+        marked = scheduler.mark_worker_retiring(
+            "0", expected_pid=123, worker_assignment=Mock()
+        )
 
         assert marked is False
         retirement_event.set.assert_not_called()
+
+    def test_mark_worker_retiring_ignores_stale_job_assignment(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = Mock()
+        claim_lock = MagicMock()
+        claim_lock.acquire.return_value = True
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+        worker_assignment = Mock()
+        worker_assignment.identity = None
+
+        marked = scheduler.mark_worker_retiring(
+            "0", expected_pid=123, worker_assignment=worker_assignment
+        )
+
+        assert marked is False
+        retirement_event.set.assert_called_once()
+        retirement_event.clear.assert_called_once()
+        claim_lock.release.assert_called_once()
+
+    def test_mark_worker_retiring_rechecks_assignment_after_active_claim(
+        self, scheduler
+    ):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = threading.Event()
+        claim_lock = threading.Lock()
+        claim_lock.acquire()
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+        worker_assignment = SimpleNamespace(identity=("0", 123))
+        result = []
+
+        retirement_thread = threading.Thread(
+            target=lambda: result.append(
+                scheduler.mark_worker_retiring("0", 123, worker_assignment)
+            )
+        )
+        retirement_thread.start()
+        assert retirement_event.wait(timeout=1)
+
+        worker_assignment.identity = None
+        claim_lock.release()
+        retirement_thread.join(timeout=1)
+
+        assert result == [False]
+        assert retirement_event.is_set() is False
+
+    def test_mark_worker_retiring_fails_when_claim_barrier_times_out(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = Mock()
+        claim_lock = MagicMock()
+        claim_lock.acquire.return_value = False
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+
+        marked = scheduler.mark_worker_retiring(
+            "0", expected_pid=123, worker_assignment=Mock()
+        )
+
+        assert marked is False
+        retirement_event.clear.assert_called_once()
+        claim_lock.release.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(

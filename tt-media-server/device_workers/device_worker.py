@@ -64,6 +64,7 @@ async def _continuous_fan_out(
     task_queue: Any,
     max_inflight: int,
     logger: Any,
+    claim_lock=None,
 ) -> bool:
     """Keep up to *max_inflight* requests in flight against *device_runner*.
 
@@ -104,7 +105,7 @@ async def _continuous_fan_out(
 
         for task in done:
             req = inflight.pop(task)
-            release_job_from_worker(req)
+            release_job_from_worker(req, claim_lock)
             task_id = req._task_id
             exc = task.exception()
             if exc is not None:
@@ -301,6 +302,7 @@ def device_worker(
                             task_queue=task_queue,
                             max_inflight=settings.max_batch_size,
                             logger=logger,
+                            claim_lock=claim_lock,
                         )
                     )
                     successful = True
@@ -344,7 +346,7 @@ def device_worker(
             continue
         finally:
             for request in requests:
-                release_job_from_worker(request)
+                release_job_from_worker(request, claim_lock)
 
         logger.debug(
             f"Worker {worker_id} finished processing tasks: {requests.__len__()}"

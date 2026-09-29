@@ -968,7 +968,8 @@ class TestJobManager:
         claim_lock = threading.Lock()
         replacement_order = []
 
-        def mark_worker_retiring(worker_id, worker_pid):
+        def mark_worker_retiring(worker_id, worker_pid, assignment):
+            assert assignment is worker_assignment
             retirement_event.set()
             with claim_lock:
                 pass
@@ -1041,7 +1042,8 @@ class TestJobManager:
         claim_lock = threading.Lock()
         replacement_order = []
 
-        def mark_worker_retiring(worker_id, worker_pid):
+        def mark_worker_retiring(worker_id, worker_pid, assignment):
+            assert assignment is worker_assignment
             worker_assignment.retirement_started.set()
             retirement_event.set()
             with claim_lock:
@@ -1105,6 +1107,35 @@ class TestJobManager:
         await asyncio.sleep(0.1)
 
         assert replacement_order == [("replacement", "worker-0", 123)]
+
+    @pytest.mark.asyncio
+    async def test_failed_retirement_validation_skips_worker_replacement(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        mark_worker_retiring = Mock(return_value=False)
+        replace_worker = Mock()
+
+        async def long_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="completed-before-retirement",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=long_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=mark_worker_retiring,
+            replace_worker=replace_worker,
+        )
+
+        job_manager.cancel_job("completed-before-retirement")
+        await asyncio.sleep(0.1)
+
+        mark_worker_retiring.assert_called_once_with("worker-0", 123, worker_assignment)
+        replace_worker.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_cancel_job_not_found(self, job_manager):
