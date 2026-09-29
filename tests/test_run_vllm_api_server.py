@@ -661,6 +661,33 @@ def test_gemma4_autoport_launch_preserves_ttft_contract(
     }
 
 
+def test_gemma4_tool_parser_compat_accepts_runtime_model_config(
+    monkeypatch, run_vllm_api_server_module
+):
+    calls = []
+
+    class LegacyGemma4ToolParser:
+        def __init__(self, tokenizer):
+            calls.append(tokenizer)
+
+    plugin = types.ModuleType("vllm_tt_plugin")
+    plugin.__path__ = []
+    parser = types.ModuleType("vllm_tt_plugin.gemma4_tool_parser")
+    parser.Gemma4ToolParser = LegacyGemma4ToolParser
+    monkeypatch.setitem(sys.modules, "vllm_tt_plugin", plugin)
+    monkeypatch.setitem(sys.modules, "vllm_tt_plugin.gemma4_tool_parser", parser)
+    model_spec = {
+        "device_model_spec": {"vllm_args": {"tool-call-parser": "gemma4"}}
+    }
+
+    assert run_vllm_api_server_module.configure_gemma4_tool_parser_compat(model_spec)
+    LegacyGemma4ToolParser("tokenizer", "model-config")
+    assert calls == ["tokenizer"]
+    assert not run_vllm_api_server_module.configure_gemma4_tool_parser_compat(
+        model_spec
+    )
+
+
 def test_diffusiongemma_launch_uses_standalone_plugin_vllm_024_contract(
     monkeypatch, run_vllm_api_server_module
 ):

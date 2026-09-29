@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import argparse
+import inspect
 import json
 import logging
 import multiprocessing
@@ -1151,6 +1152,45 @@ def set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args):
     logger.info(f"vLLM command:\n{format_vllm_serve_command(sys.argv)}")
 
 
+def configure_gemma4_tool_parser_compat(model_spec: dict) -> bool:
+    """Accept both vLLM Gemma4 tool-parser constructor contracts.
+
+    The reusable Gemma4 image contains a parser built against the older
+    ``(tokenizer)`` factory contract, while its vLLM frontend invokes parser
+    classes as ``(tokenizer, model_config)``. Dev-mode CI bind-mounts this
+    launcher into the image, so adapt only that exact parser until a rebuilt
+    image contains the forward-compatible plugin source.
+    """
+    vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
+    parser_name = vllm_args.get("tool-call-parser") or vllm_args.get(
+        "tool_call_parser"
+    )
+    if parser_name != "gemma4":
+        return False
+
+    from vllm_tt_plugin.gemma4_tool_parser import Gemma4ToolParser
+
+    original_init = Gemma4ToolParser.__init__
+    if getattr(original_init, "_tt_accepts_model_config", False):
+        return False
+
+    try:
+        inspect.signature(original_init).bind(object(), object(), object())
+    except TypeError:
+
+        def compatible_init(self, tokenizer, *args, **kwargs):
+            return original_init(self, tokenizer)
+
+        compatible_init._tt_accepts_model_config = True
+        Gemma4ToolParser.__init__ = compatible_init
+        logger.warning(
+            "Applied Gemma4 tool-parser constructor compatibility for the "
+            "reusable image"
+        )
+        return True
+    return False
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -1188,6 +1228,7 @@ def main():
     impl_id = model_spec.get("impl", {}).get("impl_id")
     if impl_id != QUETZAL_IMPL_ID:
         register_tt_models(impl_id)
+    configure_gemma4_tool_parser_compat(model_spec)
 
     # Step 4: Set runtime environment variables and vLLM server args
     set_runtime_env_vars(model_spec)
