@@ -992,7 +992,8 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="terminal_bench_2",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # Temporary selection for the pinned serialized SWE-only retry.
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=66.7,
                     published_score_ref="https://huggingface.co/moonshotai/Kimi-K2.6",
