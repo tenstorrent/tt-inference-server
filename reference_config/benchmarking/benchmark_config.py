@@ -590,6 +590,29 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
+    # Focused qualification at the requested serving concurrencies; this does
+    # not reduce the server's 32-slot or full-context capability.
+    if model_spec.impl.impl_id == "gemma4_autoport":
+        return BenchmarkConfig(
+            model_id=model_spec.model_id,
+            tasks=[
+                BenchmarkTask(
+                    param_map={
+                        device: [
+                            BenchmarkTaskParams(
+                                isl=isl, osl=128, max_concurrency=concurrency,
+                                num_prompts=4 if concurrency == 1 else concurrency,
+                            )
+                            for isl, concurrency in (
+                                (4096, 1), (4096, 8), (4096, 16), (128, 8), (128, 16)
+                            )
+                        ]
+                    },
+                    workflow_venv_type=vllm_benchmark_venv,
+                )
+            ],
+        )
+
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
     capped_perf_reference = [
         cap_benchmark_params(

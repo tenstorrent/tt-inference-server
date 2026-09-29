@@ -171,8 +171,8 @@ def test_token_granular_specs_keep_random_dataset():
         assert config.custom_dataset_path is None
 
 
-def test_gemma4_autoport_uses_standard_qwen38_style_serving_shapes():
-    """The autoport covers the same standard ISL/OSL shapes as Qwen 3.8."""
+def test_gemma4_autoport_uses_requested_focused_concurrencies():
+    """Qualification covers C1/C8/C16 without changing server capacity."""
     templates = load_templates_from_yaml(
         get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
     )
@@ -183,18 +183,13 @@ def test_gemma4_autoport_uses_standard_qwen38_style_serving_shapes():
         and template.impl.impl_id == "gemma4_autoport"
     ).expand_to_specs()[0]
     configs = get_llm_configs(autoport, autoport.device_type)
-    assert len(configs) == 23
-    assert {(config.isl, config.osl) for config in configs} == set(
-        BENCHMARK_ISL_OSL_PAIRS
-    )
-    assert (4096, 128, 1, 4) in {
-        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
-        for config in configs
+    assert len(configs) == 5
+    assert _cfg_keys(configs) == {
+        (4096, 128, 1, 4), (4096, 128, 8, 8), (4096, 128, 16, 16),
+        (128, 128, 8, 8), (128, 128, 16, 16),
     }
-    assert (4096, 128, 32, 128) in {
-        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
-        for config in configs
-    }
+    assert autoport.device_model_spec.max_concurrency == 32
+    assert autoport.device_model_spec.max_context == 262144
 
 
 def _dataset_config(**overrides):
