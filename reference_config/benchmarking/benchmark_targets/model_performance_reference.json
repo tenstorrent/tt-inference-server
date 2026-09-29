@@ -7066,5 +7066,450 @@
                 }
             }
         ]
+    },
+    "deepseek-ai/DeepSeek-V4.1-Flash": {
+        "gpu": [
+            {
+                "_comment": [
+                    "GPU reference measured on a bring-your-own vLLM server (8 GPUs, TP=8 +",
+                    "expert parallel, DSpark speculative decoding, thinking=true",
+                    "reasoning_effort=max) via run.py --workflow benchmarks --tt-device gpu,",
+                    "2026-09-28. Single sweep; every point completed with 0 failed requests.",
+                    "tput_user = 1000 / mean TPOT; tput = output tokens/s.",
+                    "Tolerance is 10% rather than the 5% default: the conc=1 points above",
+                    "8K ISL use only 1-2 prompts, so one run's mean is noisy."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 278.6,
+                        "tput_user": 124.4,
+                        "tput": 98.4,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 381.4,
+                        "tput_user": 50.3,
+                        "tput": 1360.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 271.3,
+                        "tput_user": 261.0,
+                        "tput": 244.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 401.0,
+                        "tput_user": 75.6,
+                        "tput": 2222.2,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 399.9,
+                        "tput_user": 174.2,
+                        "tput": 113.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 750.4,
+                        "tput_user": 35.5,
+                        "tput": 903.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 504.6,
+                        "tput_user": 190.3,
+                        "tput": 109.1,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 796.2,
+                        "tput_user": 37.2,
+                        "tput": 920.9,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 668.3,
+                        "tput_user": 188.9,
+                        "tput": 95.4,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1175.0,
+                        "tput_user": 27.3,
+                        "tput": 678.1,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 884.8,
+                        "tput_user": 157.7,
+                        "tput": 75.7,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3563.3,
+                        "tput_user": 22.7,
+                        "tput": 430.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 696.3,
+                        "tput_user": 167.2,
+                        "tput": 150.2,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1257.1,
+                        "tput_user": 62.8,
+                        "tput": 1551.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 963.1,
+                        "tput_user": 190.0,
+                        "tput": 161.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1962.8,
+                        "tput_user": 56.5,
+                        "tput": 1402.7,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 16384,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1163.9,
+                        "tput_user": 147.1,
+                        "tput": 63.1,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 16384,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 5295.2,
+                        "tput_user": 17.0,
+                        "tput": 312.0,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 2056.9,
+                        "tput_user": 176.6,
+                        "tput": 46.1,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 31,
+                "num_prompts": 31,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 15529.7,
+                        "tput_user": 10.1,
+                        "tput": 136.4,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3288.0,
+                        "tput_user": 176.8,
+                        "tput": 31.9,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 15,
+                "num_prompts": 15,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 15610.0,
+                        "tput_user": 10.6,
+                        "tput": 67.9,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 5780.0,
+                        "tput_user": 176.6,
+                        "tput": 19.7,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 7,
+                "num_prompts": 7,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 17456.2,
+                        "tput_user": 15.1,
+                        "tput": 34.2,
+                        "tolerance": 0.1
+                    }
+                }
+            }
+        ]
     }
 }
