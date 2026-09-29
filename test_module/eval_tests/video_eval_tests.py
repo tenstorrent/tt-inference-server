@@ -20,7 +20,16 @@ from ..context import HardwareRequirement, MediaContext, require_health
 
 logger = logging.getLogger(__name__)
 
-MINIMAX_H3_MODEL_NAMES = frozenset({"MiniMaxAI/MiniMax-H3", "MiniMax-H3"})
+MINIMAX_H3_MODEL_NAMES = frozenset(
+    {
+        "MiniMaxAI/MiniMax-H3",
+        "MiniMax-H3",
+        "MiniMaxAI/MiniMax-H3-FL2VA",
+        "MiniMax-H3-FL2VA",
+        "MiniMaxAI/MiniMax-H3-Ref2VA",
+        "MiniMax-H3-Ref2VA",
+    }
+)
 MINIMAX_H3_EVAL_TARGETS = {
     "samples_per_prompt": 1,
     "sample_count": 8,

@@ -186,6 +186,8 @@ class TestVideoMatrixExpansion:
         "mochi-p300x2",
         "minimax-h3-blackhole_galaxy",
         "minimax-h3-galaxy",
+        "minimax-h3-fl2va-blackhole_galaxy",
+        "minimax-h3-ref2va-blackhole_galaxy",
     }
 
     # Expected VideoGenerationLoadTest targets per expanded suite: the base
@@ -321,8 +323,12 @@ class TestVideoMatrixExpansion:
         wh = self._case_targets("minimax-h3-galaxy", "MiniMaxH3BenchmarkTest")
         assert wh["timeout_table"] == "WH1X"
         assert wh["target_times_s"] == {}
-        assert {k: v for k, v in wh.items() if k not in ("timeout_table", "target_times_s")} == {
-            k: v for k, v in bench.items() if k not in ("timeout_table", "target_times_s")
+        assert {
+            k: v for k, v in wh.items() if k not in ("timeout_table", "target_times_s")
+        } == {
+            k: v
+            for k, v in bench.items()
+            if k not in ("timeout_table", "target_times_s")
         }
         assert bench["plan_ci"] == [
             {"cases": ["T2VA-L"], "runs": 3},
@@ -348,9 +354,10 @@ class TestVideoMatrixExpansion:
             assert "test_timeout" not in templates[template]["test_config"], template
 
     @staticmethod
-    def _minimax_h3_spec_runner():
-        """MODEL_RUNNER of the MiniMax-H3 BLACKHOLE_GALAXY dev spec, device env on top, as
-        the benchmark reads it from ctx.model_spec.env_vars at run time."""
+    def _minimax_h3_spec_runner(weights="MiniMaxAI/MiniMax-H3"):
+        """MODEL_RUNNER of the MiniMax-H3 variant's BLACKHOLE_GALAXY dev spec (one spec per
+        task: MiniMax-H3, -FL2VA, -Ref2VA), device env on top, as the benchmark reads it from
+        ctx.model_spec.env_vars at run time."""
         import yaml
 
         path = (
@@ -359,7 +366,7 @@ class TestVideoMatrixExpansion:
         (spec,) = [
             t
             for t in yaml.safe_load(path.read_text())["templates"]
-            if "MiniMaxAI/MiniMax-H3" in t["weights"]
+            if weights in t["weights"]
         ]
         (device,) = [
             d for d in spec["device_model_specs"] if d["device"] == "BLACKHOLE_GALAXY"
@@ -380,13 +387,16 @@ class TestVideoMatrixExpansion:
         from test_module._test_common.minimax_h3_bench import models as M
         from test_module.load_param_tests import minimax_h3_benchmark_test as T
 
-        runner = self._minimax_h3_spec_runner()
-        assert runner in T.RUNNER_TASKS, runner
+        assert self._minimax_h3_spec_runner() in T.RUNNER_TASKS
         by_id = {c["id"]: c for c in M.load_cases()["cases"]}
         templates = load_server_tests_config()["test_templates"]
         template_config = templates["MiniMaxH3BenchmarkTest"]["test_config"]
         checked = 0
         for suite_id, suite in self._suite_map().items():
+            if not suite_id.startswith("minimax-h3"):
+                continue
+            runner = self._minimax_h3_spec_runner(suite["weights"][0])
+            assert runner in T.RUNNER_TASKS, (suite_id, runner)
             entries = [
                 tc
                 for tc in suite["test_cases"]
@@ -431,6 +441,41 @@ class TestVideoMatrixExpansion:
                     )
                     checked += 1
         assert checked, "no enabled MiniMaxH3BenchmarkTest entry"
+
+    def test_minimax_h3_variant_suites(self):
+        # One CI branch, one suite per task: the variant is picked by the spec (custom-model
+        # MiniMaxAI/MiniMax-H3 / -FL2VA / -Ref2VA); each suite plans only its task's cases.
+        from test_module._test_common.minimax_h3_bench import models as M
+
+        by_task = {}
+        for c in M.load_cases()["cases"]:
+            by_task.setdefault(c["task"], set()).add(c["id"])
+        suite_map = self._suite_map()
+        for suite_id, task, runner_weights in (
+            (
+                "minimax-h3-fl2va-blackhole_galaxy",
+                "fl2va",
+                "MiniMaxAI/MiniMax-H3-FL2VA",
+            ),
+            (
+                "minimax-h3-ref2va-blackhole_galaxy",
+                "ref2va",
+                "MiniMaxAI/MiniMax-H3-Ref2VA",
+            ),
+        ):
+            suite = suite_map[suite_id]
+            assert suite["weights"] == [runner_weights]
+            assert (
+                self._minimax_h3_spec_runner(runner_weights) == f"tt-minimax-h3-{task}"
+            )
+            benches = [
+                tc["targets"]
+                for tc in suite["test_cases"]
+                if tc["template"] == "MiniMaxH3BenchmarkTest"
+            ]
+            for key in ("plan_ci", "plan_full"):
+                planned = {cid for b in benches for i in b[key] for cid in i["cases"]}
+                assert planned == by_task[task], (suite_id, key)
 
     def test_wan_load_targets_merge_per_device(self):
         for suite_id, expected in self.WAN_LOAD_TARGETS.items():

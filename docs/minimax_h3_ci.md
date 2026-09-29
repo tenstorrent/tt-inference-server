@@ -143,6 +143,36 @@ and the ttnn cache. The readiness window itself is 3600 s per boot attempt x 2 a
 covers weight load + cache build + the warm shape. If a download was interrupted, setup_host
 detects the `.incomplete` files and resumes it.
 
+## One CI branch, variant per dispatch (zni/h3-ci-unified)
+
+`zni/h3-ci-unified` replaces the per-task dispatch branches (`zni/h3-ci-t2va`, `-fl2va`,
+`-ref2va`, `-wh-galaxy`) and tracks `sadesoye/add_h3_fl2va_ref2va` (incl. PR #5251, the Wormhole
+bring-up). One dev spec per task, all downloading `MiniMaxAI/MiniMax-H3` (`hf_weights_repo`),
+named after tt-media-server's `ModelNames`; the variant is picked with on-dispatch
+`custom-model`:
+
+| custom-model | runner | suite | devices |
+|---|---|---|---|
+| `MiniMaxAI/MiniMax-H3` | `tt-minimax-h3-t2va` | `minimax-h3-<device>` | blackhole_galaxy, galaxy (WH1X) |
+| `MiniMaxAI/MiniMax-H3-FL2VA` | `tt-minimax-h3-fl2va` | `minimax-h3-fl2va-<device>` | blackhole_galaxy |
+| `MiniMaxAI/MiniMax-H3-Ref2VA` | `tt-minimax-h3-ref2va` | `minimax-h3-ref2va-<device>` | blackhole_galaxy |
+
+```bash
+gh workflow run on-dispatch.yml -R tenstorrent/tt-shield --ref main \
+  -f custom-model=MiniMaxAI/MiniMax-H3-FL2VA -f model=MiniMaxAI/MiniMax-H3 \
+  -f runner-label=bh-galaxy -f device-type=blackhole_galaxy \
+  -f workflow=release -f tt-metal-git-ref=<tt-metal sha> \
+  -f inference-server-git-ref=<40-hex sha of zni/h3-ci-unified> -f impl-of-model=default \
+  -f run-full-evals=false -f create-issue-comment=false -f run-ai-summary=false
+```
+
+Wormhole Galaxy: `-f runner-label=6u -f device-type=galaxy` and a tt-metal with `_PRESETS_WH`
+(main). Each variant has its own host volume (the volume name is the model name), so its first
+run downloads the weight set once; `TT_DIT_CACHE_DIR` is per task and architecture. The media of
+every FL2VA / REF2VA case is committed under `test_fixtures/datasets/minimax_h3/`.
+
+The historical per-task notes follow.
+
 ## Per-task dispatch branches (T2VA, FL2VA, Ref2VA)
 
 t2va, fl2va and ref2va are separate deployments of the same weights (one `MODEL_RUNNER`

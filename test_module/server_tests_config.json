@@ -39,7 +39,9 @@
             "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
             "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
             "genmo/mochi-1-preview",
-            "MiniMaxAI/MiniMax-H3"
+            "MiniMaxAI/MiniMax-H3",
+            "MiniMaxAI/MiniMax-H3-FL2VA",
+            "MiniMaxAI/MiniMax-H3-Ref2VA"
         ],
         "LLM": [
             "Qwen/Qwen3-32B",
@@ -102,7 +104,9 @@
             "mochi": "Mochi video generation model tests",
             "mobilenetv2": "MobileNetV2 CNN model tests",
             "bge_m3": "BGE-M3 embedding model tests",
-            "minimax_h3": "MiniMax-H3 text-to-video-and-audio tests"
+            "minimax_h3": "MiniMax-H3 text-to-video-and-audio tests",
+            "minimax_h3_fl2va": "MiniMax-H3 first/last-frame-to-video-and-audio tests",
+            "minimax_h3_ref2va": "MiniMax-H3 reference-to-video-and-audio tests"
         }
     },
     "model_configs": {
@@ -241,6 +245,27 @@
             "id_name": "minimax-h3",
             "weights": [
                 "MiniMaxAI/MiniMax-H3"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "blackhole_galaxy",
+                "galaxy"
+            ]
+        },
+        "minimax_h3_fl2va": {
+            "id_name": "minimax-h3-fl2va",
+            "weights": [
+                "MiniMaxAI/MiniMax-H3-FL2VA"
+            ],
+            "category": "VIDEO",
+            "compatible_devices": [
+                "blackhole_galaxy"
+            ]
+        },
+        "minimax_h3_ref2va": {
+            "id_name": "minimax-h3-ref2va",
+            "weights": [
+                "MiniMaxAI/MiniMax-H3-Ref2VA"
             ],
             "category": "VIDEO",
             "compatible_devices": [
@@ -956,7 +981,9 @@
             "markers": [
                 "param",
                 "e2e",
-                "minimax_h3"
+                "minimax_h3",
+                "minimax_h3_fl2va",
+                "minimax_h3_ref2va"
             ],
             "test_config": {
                 "timeout": 300,
@@ -972,7 +999,9 @@
                 "e2e",
                 "slow",
                 "heavy",
-                "minimax_h3"
+                "minimax_h3",
+                "minimax_h3_fl2va",
+                "minimax_h3_ref2va"
             ],
             "test_config": {
                 "timeout": 2400,
@@ -987,7 +1016,9 @@
             "markers": [
                 "e2e",
                 "slow",
-                "minimax_h3"
+                "minimax_h3",
+                "minimax_h3_fl2va",
+                "minimax_h3_ref2va"
             ],
             "test_config": {
                 "timeout": 600,
@@ -1004,7 +1035,9 @@
                 "e2e",
                 "slow",
                 "heavy",
-                "minimax_h3"
+                "minimax_h3",
+                "minimax_h3_fl2va",
+                "minimax_h3_ref2va"
             ],
             "test_config": {
                 "timeout": 7200,
@@ -1021,7 +1054,9 @@
                 "e2e",
                 "slow",
                 "heavy",
-                "minimax_h3"
+                "minimax_h3",
+                "minimax_h3_fl2va",
+                "minimax_h3_ref2va"
             ],
             "test_config": {
                 "timeout": 14400,

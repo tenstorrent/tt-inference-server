@@ -50,8 +50,19 @@ VIDEO_INFERENCE_STEPS = {
     # MiniMax-H3 runs a fixed 50-step schedule and refuses an explicit step count (422);
     # the value here labels the rows and feeds inference_steps_per_second only.
     "MiniMaxAI/MiniMax-H3": 50,
+    "MiniMaxAI/MiniMax-H3-FL2VA": 50,
+    "MiniMaxAI/MiniMax-H3-Ref2VA": 50,
 }
-MINIMAX_H3_MODEL_NAMES = frozenset({"MiniMaxAI/MiniMax-H3", "MiniMax-H3"})
+MINIMAX_H3_MODEL_NAMES = frozenset(
+    {
+        "MiniMaxAI/MiniMax-H3",
+        "MiniMax-H3",
+        "MiniMaxAI/MiniMax-H3-FL2VA",
+        "MiniMax-H3-FL2VA",
+        "MiniMaxAI/MiniMax-H3-Ref2VA",
+        "MiniMax-H3-Ref2VA",
+    }
+)
 MINIMAX_H3_DURATION_SECONDS = 5
 MINIMAX_H3_ASPECT_RATIO = "16:9"
 # First request per shape compiles inside the request unless the spec warms it
