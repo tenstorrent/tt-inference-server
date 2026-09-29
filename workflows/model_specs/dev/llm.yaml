@@ -1436,6 +1436,9 @@ templates:
         # The checkpoint declares Qwen3_5ForConditionalGeneration, which the plugin maps to
         # the Blackhole qwen36 class; route it to the qwen38_27b_qb2 implementation instead.
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.qwen38_27b_qb2.tt.generator_vllm:Qwen38ForCausalLM"
+        # GPQA sends sampling parameters the device sampler does not serve; without this the
+        # generator refuses them and the engine never starts.
+        QWEN_VLLM_HOST_COMPATIBILITY: "1"
       vllm_args:
         # qwen38_27b_qb2 pages its KV cache in fixed 32-token pages.
         block_size: "32"
@@ -1443,7 +1446,10 @@ templates:
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
       override_tt_config:
-        fabric_config: FABRIC_1D
+        # The decoder issues Ring collectives, which need the wrap-around hop from the last
+        # device back to the first. A linear fabric does not route it, and every collective
+        # then hangs with all eight devices inside it.
+        fabric_config: FABRIC_1D_RING
         trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
         l1_small_size: 24576
         # qwen38_27b_qb2 samples on device for prefill too; host sampling is opt-in only.
