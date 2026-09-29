@@ -14,6 +14,7 @@ import pytest
 from llm_module.benchmark_configs import ensure_custom_dataset, get_llm_configs
 from llm_module.config import LLMRunConfig, ServerConnection
 from reference_config.benchmarking.benchmark_config import (
+    BENCHMARK_ISL_OSL_PAIRS,
     get_benchmark_config,
 )
 from workflows.model_spec import MODEL_SPECS, load_templates_from_yaml
@@ -170,8 +171,8 @@ def test_token_granular_specs_keep_random_dataset():
         assert config.custom_dataset_path is None
 
 
-def test_gemma4_autoport_uses_focused_batch_qualification_shapes():
-    """Qualify C1 and dense C32 on the exact image before the full sweep."""
+def test_gemma4_autoport_uses_standard_qwen38_style_serving_shapes():
+    """The autoport covers the same standard ISL/OSL shapes as Qwen 3.8."""
     templates = load_templates_from_yaml(
         get_repo_root_path() / "workflows" / "model_specs" / "dev" / "llm.yaml"
     )
@@ -182,8 +183,15 @@ def test_gemma4_autoport_uses_focused_batch_qualification_shapes():
         and template.impl.impl_id == "gemma4_autoport"
     ).expand_to_specs()[0]
     configs = get_llm_configs(autoport, autoport.device_type)
-    assert len(configs) == 2
-    assert {(4096, 128, 1, 4), (128, 128, 32, 32)} == {
+    assert len(configs) == 23
+    assert {(config.isl, config.osl) for config in configs} == set(
+        BENCHMARK_ISL_OSL_PAIRS
+    )
+    assert (4096, 128, 1, 4) in {
+        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
+        for config in configs
+    }
+    assert (4096, 128, 32, 128) in {
         (config.isl, config.osl, config.max_concurrency, config.num_prompts)
         for config in configs
     }
