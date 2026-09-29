@@ -1446,7 +1446,8 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
         l1_small_size: 24576
-        sample_on_device_mode: decode_only
+        # qwen38_27b_qb2 samples on device for prefill too; host sampling is opt-in only.
+        sample_on_device_mode: all
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
