@@ -436,6 +436,62 @@ templates:
 
 - weights:
     - google/gemma-4-31B-it
+  impl: gemma4_galaxy_lanes
+  inference_engine: VLLM
+  # ONE-INSTANCE LANES (TP8 x 4 lanes): the same single-engine (8,4) rail as
+  # gemma4-galaxy-one, but GEMMA4_GALAXY_LANES folds vLLM --data_parallel_size
+  # 4 into 4 IN-PROCESS lanes over ONE full-mesh model: 128 slots (32 per lane
+  # column), each lane column serving its own users' KV (owner-lane routing,
+  # block ids repeat across lanes so the pooled budget below applies PER LANE
+  # = 4x total KV), per-lane device sampling (sampling_dp = lanes). Metal
+  # reference (2026-09-29, PR #58394): decode 53.0 ms/step = 2,417 tok/s
+  # aggregate at 128 users (18.9 tok/s/user); lane-parallel prefill 3.44x for
+  # 4 same-tile users. CP prefill is INCOMPATIBLE with lanes (owner-lane page
+  # tables) and stays off: long-ISL TTFT runs plain chunked prefill, so the
+  # 248K point is slower than gemma4-galaxy-one's CP number — this profile
+  # trades that for 4x users and 4x KV on one weight copy.
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128
+      max_context: 262144
+      env_vars:
+        MESH_DEVICE: "BH-Galaxy"  # single engine over the (8,4) grid
+        GEMMA4_GALAXY_FRACTURE: "1"
+        GEMMA4_GALAXY_LANES: "1"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        # PER-LANE pooled budget (each lane column owns an independent pool of
+        # this size; lane block ids alias physically-distinct per-column
+        # storage): 4 x 917,504 = 3.67M tokens total on one weight copy.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "917504"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        # The plugin's lane fold (model marker _tt_folds_dp_into_lanes)
+        # converts DP=4 into 4 in-process lanes and scales max_num_seqs by the
+        # lane count: 32 per lane -> 128 global slots.
+        data_parallel_size: 4
+        max_num_seqs: 32
+        block_size: "64"  # match GEMMA4_PAGE_BLOCK_SIZE; vLLM's default 32 halves the sliding ring capacity check
+        async_scheduling: false
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: false
+        no-enable-prefix-caching: true
+        max_num_batched_tokens: 65536
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+
+- weights:
+    - google/gemma-4-31B-it
   impl: gemma4_dflash
   # REQUIRES a SECOND checkpoint the workflow does not download: the z-lab
   # drafter, resolved from the HF cache by glob (models--z-lab--gemma-4-31B-it-

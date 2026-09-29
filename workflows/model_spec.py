@@ -446,6 +446,19 @@ gemma4_galaxy_one_impl = ImplSpec(
     code_path="models/demos/gemma4",
 )
 
+# LANES profile of the one-instance rail (same code path, distinct impl id so
+# the two can be benchmarked side by side): GEMMA4_GALAXY_LANES folds vLLM
+# --data_parallel_size 4 into 4 in-process lanes over ONE (8,4)-mesh model —
+# 128 slots (32 per lane column), per-lane KV pools (4x the one-pool budget),
+# owner-lane KV routing, per-lane device sampling. CP prefill is incompatible
+# with lanes (owner-lane page tables) and stays off on this profile.
+gemma4_galaxy_lanes_impl = ImplSpec(
+    impl_id="gemma4_galaxy_lanes",
+    impl_name="gemma4-galaxy-lanes",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -453,6 +466,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_galaxy_one": gemma4_galaxy_one_impl,
+    "gemma4_galaxy_lanes": gemma4_galaxy_lanes_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
