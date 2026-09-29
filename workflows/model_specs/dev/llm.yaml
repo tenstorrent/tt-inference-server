@@ -1423,16 +1423,19 @@ templates:
       # Batch 32 at TP=8 returns wrong results (attention decode per-user PCC 0.019);
       # B=1/2/4/8/16 are ~0.9999. The tt-metal README recommends B=1 or B=8.
       max_concurrency: 8
-      # 128k is the longest context verified on Wormhole; 256k is unvalidated.
-      max_context: 131072
-      # Same max_context + 1024 slack pattern as the P300X2 row. Held at one full-context
-      # user (or 8 x 16k), not 2x like BH, because WH has 12 GB/chip.
-      max_tokens_all_users_override: 132096
+      max_context: 262144
+      # Measured per device at TP=8 on a 12 GiB part: 3.808 GiB of weights, 0.2656 MiB of
+      # paged KV per page, 18.4 MiB of context-independent recurrent state, leaving 7.192
+      # GiB after the 1 GiB trace reserve. Only 16 of the 64 layers hold a KV cache, so a
+      # two-full-context pool costs 4.26 GiB rather than the 17 GiB a 64-layer estimate
+      # implies. See models/demos/qwen38_27b_qb2/doc/context_contract.json in tt-metal.
+      max_tokens_all_users_override: 525312
       default_impl: true
       env_vars:
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "T3K"
-        QWEN36_MAX_TOKENS_ALL_USERS: "132096"
+        # qwen38_27b_qb2 reads its own pool variable; QWEN36_* is inert on this impl.
+        QWEN_VLLM_KV_POOL_TOKENS: "525312"
         # The checkpoint declares Qwen3_5ForConditionalGeneration, which the plugin maps to
         # the Blackhole qwen36 class; route it to the qwen38_27b_qb2 implementation instead.
         TT_MODEL_CLASS_OVERRIDES: "TTQwen3_5ForConditionalGeneration=models.demos.qwen38_27b_qb2.tt.generator_vllm:Qwen38ForCausalLM"
