@@ -182,3 +182,20 @@ than a clean completion. One timed-out trial still produced a scorable patch
 with reward 1; the other four scored zero. The durable parser constructor fix
 also exists in the paired TT-Metal branch so a future rebuilt image will not
 need the runtime bridge.
+
+## Final serialized SWE retry
+
+Review of run `36518073007` found that all five SWE trials reached their agent
+timeout. The final retry sets Gemma SWE concurrency to one, emits compact
+per-trial summaries under `workflow_logs/agentic_summaries`, and calculates
+mean task duration from child timestamps when they are available instead of
+dividing concurrent suite wall time by task count.
+
+Validation passed: 88 focused tests and 373 expanded relevant tests, plus
+format, import, compile, and diff checks. Run
+https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/36530661132
+was dispatched with temporary inference revision
+`7babaac11b8a7c9bf17dabf287dac2f4a9264be5`; the immutable image was reused
+and all image builds were skipped. Branch head
+`bfc2ee9bd5bda291f7b58f2f8d978e151b70b3a4` restores normal eval routing.
+The run is intentionally left running, and no further eval repair is planned.
