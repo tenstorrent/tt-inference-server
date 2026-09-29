@@ -21,6 +21,8 @@ from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
 
+WORKER_TERMINATION_GRACE_PERIOD_SECONDS = 5.0
+
 
 class Scheduler:
     @log_execution_time("Scheduler init")
@@ -293,13 +295,17 @@ class Scheduler:
                     old_pid = old_process.pid
                     if old_process.is_alive():
                         old_process.terminate()
-                        old_process.join(timeout=5.0)
+                        old_process.join(
+                            timeout=WORKER_TERMINATION_GRACE_PERIOD_SECONDS
+                        )
                     if old_process.is_alive():
                         self.logger.warning(
                             f"Worker {worker_id} did not terminate; killing it"
                         )
                         old_process.kill()
-                        old_process.join(timeout=5.0)
+                        old_process.join(
+                            timeout=WORKER_TERMINATION_GRACE_PERIOD_SECONDS
+                        )
                     if old_process.is_alive():
                         raise RuntimeError(f"Worker {worker_id} could not be stopped")
                 except Exception as e:

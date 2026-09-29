@@ -63,7 +63,6 @@ class Job:
     _task: Callable = None
     _progress_tracker: Any = None
     _worker_assignment: Any = None
-    _worker_replacement_required: Any = None
     _replace_worker: Optional[Callable[[str, int], bool]] = None
     _worker_replacement_scheduled: bool = False
     start_event: Optional[Event] = None
@@ -105,11 +104,6 @@ class Job:
         if worker_id is None or worker_pid is None:
             return None
         return worker_id, worker_pid
-
-    def requires_worker_replacement_on_cancel(self) -> bool:
-        if self._worker_replacement_required is None:
-            return True
-        return bool(self._worker_replacement_required.value)
 
     def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())
@@ -202,7 +196,6 @@ class JobManager:
         job_checkpoints: list = None,
         progress_tracker: Any = None,
         worker_assignment: Any = None,
-        worker_replacement_required: Any = None,
         replace_worker: Optional[Callable[[str, int], bool]] = None,
         org_id: Optional[str] = None,
     ) -> dict:
@@ -219,7 +212,6 @@ class JobManager:
                 org_id=org_id,
                 _progress_tracker=progress_tracker,
                 _worker_assignment=worker_assignment,
-                _worker_replacement_required=worker_replacement_required,
                 _replace_worker=replace_worker,
             )
 
@@ -380,7 +372,6 @@ class JobManager:
                 job.cancel_event.set()
             should_replace_worker = (
                 job.assigned_worker_identity() is not None
-                and job.requires_worker_replacement_on_cancel()
                 and job._replace_worker is not None
             )
 
