@@ -2433,8 +2433,8 @@ templates:
         max_num_batched_tokens: 262144
         no-enable-chunked-prefill: true
         no-enable-prefix-caching: true
-        # Selected latency-priority profile; async remains a throughput option.
-        no-async-scheduling: true
+        # Throughput profile; --no-async-scheduling remains the TTFT-priority option.
+        async-scheduling: true
   status: EXPERIMENTAL
   has_builtin_warmup: false
 

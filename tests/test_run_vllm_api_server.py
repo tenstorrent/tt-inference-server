@@ -606,7 +606,7 @@ def test_set_vllm_sys_argv_logs_multiline_bash_command(
     )
 
 
-def test_gemma4_autoport_launch_preserves_ttft_contract(
+def test_gemma4_autoport_launch_preserves_full_context_tsu_contract(
     monkeypatch, run_vllm_api_server_module
 ):
     template = next(
@@ -650,8 +650,8 @@ def test_gemma4_autoport_launch_preserves_ttft_contract(
     assert "--no-enable-chunked-prefill" in argv
     assert "--enable-prefix-caching" not in argv
     assert "--enable-chunked-prefill" not in argv
-    assert "--no-async-scheduling" in argv
-    assert "--async-scheduling" not in argv
+    assert "--async-scheduling" in argv
+    assert "--no-async-scheduling" not in argv
     assert json.loads(value("--additional-config"))["tt"] == {
         "fabric_config": "FABRIC_1D",
         "trace_region_size": 1000000000,

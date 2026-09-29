@@ -590,6 +590,25 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
+    # Exact-image TSU qualification checkpoint; the subsequent sweep commit
+    # restores the standard 23-row matrix after this focused run passes.
+    if model_spec.impl.impl_id == "gemma4_autoport":
+        return BenchmarkConfig(
+            model_id=model_spec.model_id,
+            tasks=[
+                BenchmarkTask(
+                    param_map={
+                        device: [
+                            BenchmarkTaskParams(
+                                isl=4096, osl=128, max_concurrency=1, num_prompts=4
+                            )
+                        ]
+                    },
+                    workflow_venv_type=vllm_benchmark_venv,
+                )
+            ],
+        )
+
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
     capped_perf_reference = [
         cap_benchmark_params(

@@ -94,7 +94,11 @@ def test_bundled_plugin_preserves_measured_installed_engine_recipe():
     assert "--constraint" in source
 
 
-def test_exact_tt_metal_publication_selects_plugin_snapshot(tmp_path):
+@pytest.mark.parametrize(
+    "tt_metal_sha",
+    [TT_METAL_SNAPSHOT_SHA, "eb1d2af61c7630c7424e9593b646093ef7be45af"],
+)
+def test_exact_tt_metal_publication_selects_plugin_snapshot(tmp_path, tt_metal_sha):
     worktree = tmp_path / "tt-inference-server"
     worktree.mkdir()
     subprocess.run(["git", "init", "-q", str(worktree)], check=True)
@@ -114,7 +118,7 @@ def test_exact_tt_metal_publication_selects_plugin_snapshot(tmp_path):
             str(SCRIPT),
             "--force-build",
             "--tt-metal-commit",
-            TT_METAL_SNAPSHOT_SHA,
+            tt_metal_sha,
             "--vllm-commit",
             "c9cfebcf0490066ff85e1e3fba2c7d456ce5ce42",
         ],
