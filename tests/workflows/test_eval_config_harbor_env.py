@@ -13,14 +13,14 @@ per-model edit. The defaults are resolved per instantiation via
 the variables before importing the config.
 """
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from reference_config.evals.eval_config import TerminalBenchEvalConfig
+from reference_config.evals.eval_config import ALL_EVAL_CONFIGS, TerminalBenchEvalConfig
 from workflows.workflow_venvs import HARBOR_REF, HARBOR_REPO
 
 
@@ -33,6 +33,13 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 def test_harbor_checkout_uses_runtime_branch():
     assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
     assert HARBOR_REF == "tt-inference-server"
+
+
+def test_gemma4_26b_swebench_runs_serially():
+    config = ALL_EVAL_CONFIGS["google/gemma-4-26B-A4B-it"]
+    task = next(task for task in config.tasks if task.task_name == "swe_bench_verified")
+
+    assert task.agentic_eval_config.n_concurrent_trials == 1
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):

@@ -8,22 +8,22 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-
-import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from llm_module import DriverContext, ServerConnection
+from llm_module.agentic import harbor
+from llm_module.agentic.harbor import run as run_harbor
 from llm_module.drivers.agentic import (
     HarborAgenticDriver,
     build_harbor_config,
     resolve_n_tasks,
     resolve_task_names,
 )
-from llm_module.agentic import harbor
-from llm_module.agentic.harbor import run as run_harbor
 from llm_module.parsers.agentic import (
     AgenticEvalParser,
     compute_accuracy_check,
@@ -218,6 +218,30 @@ class TestAgenticParser:
         # 89 seconds across the summary's 89 n_trials -> 1s/task.
         assert abs(metrics["mean_seconds_per_task"] - 1.0) < 1e-6
 
+    def test_mean_seconds_per_task_uses_actual_trial_windows(self):
+        raw = {
+            **HARBOR_RESULT_FIXTURE,
+            "started_at": "2026-06-30T07:00:00",
+            "finished_at": "2026-06-30T07:10:00",
+            "n_total_trials": 2,
+            "_trial_summaries": [
+                {
+                    "started_at": "2026-06-30T07:00:00Z",
+                    "finished_at": "2026-06-30T07:09:00Z",
+                },
+                {
+                    "started_at": "2026-06-30T07:00:00Z",
+                    "finished_at": "2026-06-30T07:10:00Z",
+                },
+            ],
+        }
+
+        metrics = extract_harbor_metrics(raw)
+
+        # Concurrent suite duration / 2 would be 300s; actual trial durations
+        # are 540s and 600s, for a truthful 570s mean.
+        assert abs(metrics["mean_seconds_per_task"] - 570.0) < 1e-6
+
     def test_mean_seconds_per_task_absent_without_timing(self):
         block = AgenticEvalParser(
             task_name="terminal_bench_2", score=FakeScore()
@@ -353,6 +377,7 @@ class TestStandardEvalModeReference:
 
     def test_load_eval_results_reads_effective_count(self, tmp_path):
         import json as _json
+
         from test_module.llm_tests.llm_eval_tests import load_eval_results
 
         f = tmp_path / "results_x.json"
@@ -1032,6 +1057,66 @@ class TestAgenticRunTimestamp:
         )
         assert cfg.task_name == "terminal_bench_2"
         assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
+
+    def test_load_result_writes_compact_review_summary(self, tmp_path):
+        job_dir = (
+            tmp_path
+            / "workflow_logs"
+            / "reports_output"
+            / "evals"
+            / "eval_model"
+            / "agentic"
+            / f"swe_bench_verified_{self.STAMP}"
+        )
+        result_path = job_dir / "result.json"
+        trial_dir = job_dir / "django__django-11299__trial"
+        trial_dir.mkdir(parents=True)
+        result_path.write_text(
+            json.dumps({"n_total_trials": 1, "stats": {"n_input_tokens": 12}}),
+            encoding="utf-8",
+        )
+        (trial_dir / "result.json").write_text(
+            json.dumps(
+                {
+                    "task_name": "django__django-11299",
+                    "trial_name": "django__django-11299__trial",
+                    "started_at": "2026-08-13T12:00:00Z",
+                    "finished_at": "2026-08-13T12:01:00Z",
+                    "exception_info": None,
+                    "verifier_result": {"rewards": {"reward": 1.0}},
+                    "agent_result": {
+                        "n_input_tokens": 10,
+                        "n_output_tokens": 2,
+                        "metadata": {"n_episodes": 1},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        outcome = HarborAgenticDriver(_swebench_task())._load_result(0, result_path)
+
+        assert outcome.raw["_trial_summaries"][0]["reward"] == 1.0
+        summary_path = (
+            tmp_path
+            / "workflow_logs"
+            / "agentic_summaries"
+            / f"swe_bench_verified_{self.STAMP}.json"
+        )
+        compact = json.loads(summary_path.read_text(encoding="utf-8"))
+        assert compact["result"]["stats"]["n_input_tokens"] == 12
+        assert compact["trials"][0] == {
+            "task_name": "django__django-11299",
+            "trial_name": "django__django-11299__trial",
+            "started_at": "2026-08-13T12:00:00Z",
+            "finished_at": "2026-08-13T12:01:00Z",
+            "reward": 1.0,
+            "exception_type": None,
+            "exception_message": None,
+            "n_input_tokens": 10,
+            "n_output_tokens": 2,
+            "n_episodes": 1,
+        }
 
 
 class TestAgenticBridge:

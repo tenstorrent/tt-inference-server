@@ -16,7 +16,8 @@ from typing import Any, List, Optional
 from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
 
-from ..agentic.harbor import HarborRunConfig, run as run_harbor
+from ..agentic.harbor import HarborRunConfig
+from ..agentic.harbor import run as run_harbor
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
 from .base import DriverResult, LLMDriver
@@ -92,6 +93,10 @@ class AgenticEvalDriver(LLMDriver):
             )
         with result_path.open("r", encoding="utf-8") as f:
             raw = json.load(f)
+        trial_summaries = _load_trial_summaries(result_path.parent)
+        if trial_summaries:
+            raw["_trial_summaries"] = trial_summaries
+            _write_compact_agentic_summary(result_path, raw, trial_summaries)
         self._parser = AgenticEvalParser(
             task_name=self.task.task_name,
             score=self.task.score,
@@ -99,6 +104,66 @@ class AgenticEvalDriver(LLMDriver):
             limit_mode=_get_limit_mode(self.runtime_config),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
+
+
+def _load_trial_summaries(job_dir: Path) -> list[dict[str, Any]]:
+    """Load small, reviewable fields from Harbor's per-trial results."""
+
+    summaries: list[dict[str, Any]] = []
+    for trial_result in sorted(job_dir.glob("*/result.json")):
+        try:
+            with trial_result.open("r", encoding="utf-8") as f:
+                trial = json.load(f)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Could not summarize Harbor trial %s: %s", trial_result, exc)
+            continue
+
+        exception = trial.get("exception_info") or {}
+        verifier = trial.get("verifier_result") or {}
+        agent = trial.get("agent_result") or {}
+        metadata = agent.get("metadata") or {}
+        summaries.append(
+            {
+                "task_name": trial.get("task_name"),
+                "trial_name": trial.get("trial_name"),
+                "started_at": trial.get("started_at"),
+                "finished_at": trial.get("finished_at"),
+                "reward": (verifier.get("rewards") or {}).get("reward"),
+                "exception_type": exception.get("exception_type"),
+                "exception_message": exception.get("exception_message"),
+                "n_input_tokens": agent.get("n_input_tokens"),
+                "n_output_tokens": agent.get("n_output_tokens"),
+                "n_episodes": metadata.get("n_episodes"),
+            }
+        )
+    return summaries
+
+
+def _write_compact_agentic_summary(
+    result_path: Path,
+    raw: dict[str, Any],
+    trial_summaries: list[dict[str, Any]],
+) -> None:
+    """Write a compact summary at workflow_logs root for CI artifact upload."""
+
+    workflow_logs = next(
+        (parent for parent in result_path.parents if parent.name == "workflow_logs"),
+        None,
+    )
+    if workflow_logs is None:
+        return
+    output_dir = workflow_logs / "agentic_summaries"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{result_path.parent.name}.json"
+    payload = {
+        "job_result_path": str(result_path),
+        "result": {
+            key: value for key, value in raw.items() if key != "_trial_summaries"
+        },
+        "trials": trial_summaries,
+    }
+    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    logger.info("Wrote compact agentic summary to %s", output_path)
 
 
 class HarborAgenticDriver(AgenticEvalDriver):

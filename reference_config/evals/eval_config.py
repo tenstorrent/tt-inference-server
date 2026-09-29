@@ -5486,7 +5486,12 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # This implementation reaches its best decode rate at C1.
+                    # Five concurrent tool-using agents all exhausted their
+                    # two-hour budget; serialize the fixed CI subset so each
+                    # trial gets the full serving rate and can terminate
+                    # normally.
+                    n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,

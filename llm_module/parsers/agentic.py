@@ -175,14 +175,28 @@ def _mean_seconds_per_task(
     raw: Mapping[str, Any],
     metrics: Mapping[str, Any],
 ) -> Optional[float]:
-    """Mean wall-clock seconds per trial from the run's start/finish window.
+    """Mean wall-clock seconds per trial.
 
-    Terminal-bench (Harbor) writes ``started_at``/``finished_at``/
-    ``n_total_trials`` at the top level of result.json. SWE-bench has no native
-    timing, so its harness normalization injects the same three fields from the
-    agent log. The denominator falls back to the summary ``n_trials`` when
-    ``n_total_trials`` is absent.
+    The driver adds compact per-trial timestamps when Harbor preserved the
+    child results. Older normalized results contain only a concurrent suite
+    window; retain the historical amortized fallback for those files.
     """
+    trial_durations = []
+    trial_summaries = raw.get("_trial_summaries")
+    if isinstance(trial_summaries, list):
+        for trial in trial_summaries:
+            if not isinstance(trial, Mapping):
+                continue
+            trial_started = _parse_timestamp(trial.get("started_at"))
+            trial_finished = _parse_timestamp(trial.get("finished_at"))
+            if trial_started is None or trial_finished is None:
+                continue
+            trial_duration = (trial_finished - trial_started).total_seconds()
+            if trial_duration >= 0:
+                trial_durations.append(trial_duration)
+    if trial_durations:
+        return sum(trial_durations) / len(trial_durations)
+
     started = _parse_timestamp(raw.get("started_at"))
     finished = _parse_timestamp(raw.get("finished_at"))
     if started is None or finished is None:
