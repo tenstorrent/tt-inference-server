@@ -5,11 +5,12 @@ import hashlib
 import json
 from types import SimpleNamespace
 
+from utils.pinned_artifacts import resolve_tokenizer
+
 import pytest
 
 from llm_module.config import LLMRunConfig
 from llm_module.fixed_workload_protocol import (
-    resolve_tokenizer,
     validate_fixed_workload,
 )
 
@@ -82,7 +83,9 @@ def test_tokenizer_revision_and_hashes_are_enforced(monkeypatch, tmp_path):
     revision = "a" * 40
     spec = SimpleNamespace(
         hf_model_repo="org/model",
-        device_model_spec=SimpleNamespace(vllm_args={"tokenizer_revision": revision}),
+        device_model_spec=SimpleNamespace(
+            vllm_args={"revision": revision, "tokenizer_revision": revision}
+        ),
         metadata={"benchmark_tokenizer_sha256": hashes},
     )
     evidence = tmp_path / "results"

@@ -35,7 +35,7 @@ from llm_module import (
     ServerController,
 )
 from llm_module.runner import RunnerResult
-from llm_module.fixed_workload_protocol import resolve_tokenizer
+from utils.pinned_artifacts import resolve_tokenizer
 from workflow_module import accept_blocks
 
 from .._test_common import report_model_fields
@@ -74,7 +74,7 @@ def run_llm_performance(
     if any(getattr(config, "token_timing", False) for config in configs):
         if driver.name != "vllm":
             raise ValueError("Fixed token-timing references require the vLLM client")
-        tokenizer = resolve_tokenizer(ctx.model_spec, output_dir)
+        tokenizer = resolve_tokenizer(ctx.model_spec, output_dir, require_hashes=True)
 
     server = ServerConnection(
         base_url=server_base_url,
