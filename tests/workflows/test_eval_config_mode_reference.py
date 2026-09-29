@@ -127,6 +127,14 @@ def test_diffusiongemma_gpqa_requires_more_than_67_percent_in_all_modes():
     assert accept_eval_score(nightly, 70.0, n_total=10) is True
 
 
+def test_gemma4_26b_gpqa_serializes_long_thinking_requests():
+    tasks = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks
+    task = next(task for task in tasks if task.task_name == "r1_gpqa_diamond")
+
+    assert task.max_concurrent == 1
+    assert task.model_kwargs["timeout"] == 7200
+
+
 def test_gpqa_subset_passes_sample_aware_but_fails_full():
     score = _make_score(
         mode_reference_scores={

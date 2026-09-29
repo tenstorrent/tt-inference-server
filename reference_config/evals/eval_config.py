@@ -5387,8 +5387,14 @@ _eval_config_list = [
                 # would render with the default enable_thinking=false and
                 # suppress native reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
+                # A subset of long-thinking GPQA responses can use the full
+                # 32K output allowance. At C32 they wait behind one another and
+                # hit lm-eval's 30-minute default timeout. Serialize them so
+                # each request gets the model's full decode throughput.
+                max_concurrent=1,
                 model_kwargs={
                     "max_length": 131072,
+                    "timeout": 7200,
                 },
                 # Thinking-mode sampling (Gemma 4 model card / HF README):
                 # temperature=1.0, top_p=0.95, top_k=20.

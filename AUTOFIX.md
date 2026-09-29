@@ -140,3 +140,17 @@ overlay and translated OpenAI endpoint, while Harbor itself retains the host
 loopback endpoint. Gemma 4 26B's Terminal-Bench CPU override is capped to the
 runner's 16 CPUs. The Qwen-derived gateway regressions and related agentic
 suites pass (`87 passed`).
+
+## Follow-up: complete the GPQA subset without timeout sentinels
+
+The first standard-eval job was nominally green because EXPERIMENTAL-model
+accuracy misses are informational, but lm-eval returned nonzero: 6 of 40
+GPQA-Diamond prompts exceeded its 30-minute default request timeout. The saved
+samples contain six `__INFERENCE_ERROR__` sentinels. The aggregate was 23/40
+(57.5%); among the 34 completed prompts it was 23/34 (67.65%), so the incomplete
+aggregate is not accepted as the final score.
+
+Gemma 4's 26B GPQA config now follows the existing sibling long-thinking
+policy: `max_concurrent=1` and a 7200-second client timeout. This avoids C32
+queueing/KV contention and gives each potentially 32K-token response the full
+decode rate. A model-config regression pins both values.
