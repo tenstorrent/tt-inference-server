@@ -4,7 +4,7 @@
 
 import os
 import sys
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
@@ -54,7 +54,12 @@ if "tt_model_runners.runner_fabric" not in sys.modules:
     sys.modules["tt_model_runners.runner_fabric"] = Mock()
 
 # Now import the modules under test
-from device_workers.worker_utils import claim_job_for_worker, initialize_device_worker
+from device_workers.worker_utils import (
+    claim_job_for_worker,
+    claim_requests_for_worker,
+    initialize_device_worker,
+    release_job_from_worker,
+)
 from utils.runner_utils import (
     _setup_blackhole_mesh_config,
     _setup_galaxy_mesh_config,
@@ -295,8 +300,7 @@ class TestClaimJobForWorker:
 
         assert claim_job_for_worker(request, "worker-0") is True
 
-        assert request._worker_assignment.worker_id == "worker-0"
-        assert request._worker_assignment.worker_pid == 123
+        assert request._worker_assignment.identity == ("worker-0", 123)
         request._start_event.set.assert_called_once()
 
     def test_noops_when_event_missing(self):
@@ -313,14 +317,53 @@ class TestClaimJobForWorker:
     def test_skips_request_cancelled_while_queued(self):
         request = Mock()
         request._cancel_event.is_set.side_effect = [False, True]
-        request._worker_assignment.worker_id = None
-        request._worker_assignment.worker_pid = None
+        request._worker_assignment.identity = None
 
         assert claim_job_for_worker(request, "worker-0") is False
 
-        assert request._worker_assignment.worker_id is None
-        assert request._worker_assignment.worker_pid is None
+        assert request._worker_assignment.identity is None
         request._start_event.set.assert_not_called()
+
+
+class TestClaimRequestsForWorker:
+    def test_claims_batch_while_holding_worker_claim_lock(self):
+        request = Mock()
+        request._cancel_event = None
+        request._worker_assignment = None
+        request._start_event = Mock()
+        retirement_event = Mock()
+        retirement_event.is_set.return_value = False
+        claim_lock = MagicMock()
+
+        claimed = claim_requests_for_worker(
+            [request], "worker-0", retirement_event, claim_lock
+        )
+
+        assert claimed == [request]
+        request._start_event.set.assert_called_once()
+        claim_lock.__enter__.assert_called_once()
+        claim_lock.__exit__.assert_called_once()
+
+    def test_rejects_batch_when_worker_is_retiring(self):
+        request = Mock()
+        retirement_event = Mock()
+        retirement_event.is_set.return_value = True
+
+        claimed = claim_requests_for_worker(
+            [request], "worker-0", retirement_event, MagicMock()
+        )
+
+        assert claimed is None
+        request._start_event.set.assert_not_called()
+
+
+def test_release_job_from_worker_clears_assignment():
+    request = Mock()
+    request._worker_assignment.identity = ("worker-0", 123)
+
+    release_job_from_worker(request)
+
+    assert request._worker_assignment.identity is None
 
 
 class TestInitializeDeviceWorker:

@@ -63,6 +63,7 @@ class Job:
     _task: Callable = None
     _progress_tracker: Any = None
     _worker_assignment: Any = None
+    _mark_worker_retiring: Optional[Callable[[str, int], bool]] = None
     _replace_worker: Optional[Callable[[str, int], bool]] = None
     _worker_replacement_scheduled: bool = False
     start_event: Optional[Event] = None
@@ -99,11 +100,7 @@ class Job:
         if self._worker_assignment is None:
             return None
 
-        worker_id = self._worker_assignment.worker_id
-        worker_pid = self._worker_assignment.worker_pid
-        if worker_id is None or worker_pid is None:
-            return None
-        return worker_id, worker_pid
+        return self._worker_assignment.identity
 
     def mark_completed(self, result_path: str):
         self.completed_at = int(time.time())
@@ -196,6 +193,7 @@ class JobManager:
         job_checkpoints: list = None,
         progress_tracker: Any = None,
         worker_assignment: Any = None,
+        mark_worker_retiring: Optional[Callable[[str, int], bool]] = None,
         replace_worker: Optional[Callable[[str, int], bool]] = None,
         org_id: Optional[str] = None,
     ) -> dict:
@@ -212,6 +210,7 @@ class JobManager:
                 org_id=org_id,
                 _progress_tracker=progress_tracker,
                 _worker_assignment=worker_assignment,
+                _mark_worker_retiring=mark_worker_retiring,
                 _replace_worker=replace_worker,
             )
 
@@ -365,15 +364,15 @@ class JobManager:
                 )
                 return None
 
-            # Publish cancellation before reading the assignment. The worker
-            # either observes it and drops the request, or has already
-            # published a complete worker identity that can be replaced.
+            worker_identity = self._prepare_worker_replacement(job)
+
+            # Assigned workers are marked as retiring before cancellation is
+            # published, so they cannot claim another request while their
+            # replacement is being scheduled. An unassigned worker observes
+            # the event during its claim handshake and drops this request.
             if job.cancel_event:
                 job.cancel_event.set()
-            should_replace_worker = (
-                job.assigned_worker_identity() is not None
-                and job._replace_worker is not None
-            )
+            should_replace_worker = worker_identity is not None
 
             # if the job is queued, we can cancel it immediately
             if job.status == JobStatus.QUEUED:
@@ -390,8 +389,8 @@ class JobManager:
 
             status = job.to_public_dict()
 
-        if should_replace_worker:
-            self._schedule_worker_replacement(job)
+        if worker_identity is not None:
+            self._schedule_worker_replacement(job, worker_identity)
         return status
 
     def delete_job(
@@ -626,8 +625,10 @@ class JobManager:
                 self._logger.warning(f"Force-cancelling stuck in-progress job {job.id}")
             else:
                 self._logger.warning(f"Force-cancelling stale cancelling job {job.id}")
+            worker_identity = self._prepare_worker_replacement(job)
             self._cleanup_job(job, force=True)
-            self._schedule_worker_replacement(job)
+            if worker_identity is not None:
+                self._schedule_worker_replacement(job, worker_identity)
             self._sync_status_to_db(job)
 
         removed_jobs = []
@@ -710,15 +711,29 @@ class JobManager:
 
         return running_task
 
-    def _schedule_worker_replacement(self, job: Job) -> None:
+    def _prepare_worker_replacement(self, job: Job) -> Optional[tuple[str, int]]:
+        """Mark an assigned worker as retiring and return its stable identity."""
+        worker_identity = job.assigned_worker_identity()
+        if worker_identity is None or job._replace_worker is None:
+            return None
+
+        if job._mark_worker_retiring is not None:
+            worker_id, worker_pid = worker_identity
+            try:
+                job._mark_worker_retiring(worker_id, worker_pid)
+            except Exception as e:
+                self._logger.error(
+                    f"Failed to mark worker {worker_id} as retiring while "
+                    f"cancelling job {job.id}: {e}"
+                )
+        return worker_identity
+
+    def _schedule_worker_replacement(
+        self, job: Job, worker_identity: tuple[str, int]
+    ) -> None:
         """Replace the worker assigned to a force-cancelled job without blocking."""
         with self._jobs_lock:
-            worker_identity = job.assigned_worker_identity()
-            if (
-                worker_identity is None
-                or job._replace_worker is None
-                or job._worker_replacement_scheduled
-            ):
+            if job._replace_worker is None or job._worker_replacement_scheduled:
                 return
             worker_id, worker_pid = worker_identity
             job._worker_replacement_scheduled = True

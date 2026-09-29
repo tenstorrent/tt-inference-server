@@ -4,6 +4,8 @@
 
 import asyncio
 import os
+from contextlib import nullcontext
+from typing import Any, Optional
 
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
@@ -21,19 +23,39 @@ def claim_job_for_worker(request, worker_id: str) -> bool:
 
     worker_assignment = getattr(request, "_worker_assignment", None)
     if worker_assignment is not None:
-        worker_assignment.worker_id = worker_id
-        worker_assignment.worker_pid = os.getpid()
+        worker_assignment.identity = (worker_id, os.getpid())
 
     if cancel_event is not None and cancel_event.is_set():
         if worker_assignment is not None:
-            worker_assignment.worker_id = None
-            worker_assignment.worker_pid = None
+            worker_assignment.identity = None
         return False
 
     start_event = getattr(request, "_start_event", None)
     if start_event is not None:
         start_event.set()
     return True
+
+
+def claim_requests_for_worker(
+    requests: list[Any],
+    worker_id: str,
+    retirement_event=None,
+    claim_lock=None,
+) -> Optional[list[Any]]:
+    """Claim a batch atomically, or return ``None`` when the worker is retiring."""
+    with claim_lock if claim_lock is not None else nullcontext():
+        if retirement_event is not None and retirement_event.is_set():
+            return None
+        return [
+            request for request in requests if claim_job_for_worker(request, worker_id)
+        ]
+
+
+def release_job_from_worker(request) -> None:
+    """Clear a completed request's worker assignment."""
+    worker_assignment = getattr(request, "_worker_assignment", None)
+    if worker_assignment is not None:
+        worker_assignment.identity = None
 
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):

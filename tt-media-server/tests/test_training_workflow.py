@@ -142,8 +142,10 @@ class TestLlamaTrainingServiceCreateJob:
             assert kwargs["job_logs"] is not None
             assert kwargs["progress_tracker"] is not None
             assert kwargs["worker_assignment"] is not None
-            assert kwargs["worker_assignment"].worker_id is None
-            assert kwargs["worker_assignment"].worker_pid is None
+            assert kwargs["worker_assignment"].identity is None
+            assert (
+                kwargs["mark_worker_retiring"] == service.scheduler.mark_worker_retiring
+            )
             assert kwargs["replace_worker"] == service.scheduler.replace_worker
             assert kwargs["result_path"] == "./adapters/llama_task_456"
 

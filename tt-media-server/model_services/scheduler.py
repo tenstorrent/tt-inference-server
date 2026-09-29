@@ -5,6 +5,8 @@
 import asyncio
 import os
 import time
+from multiprocessing import Event as ProcessEvent
+from multiprocessing import Lock as ProcessLock
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
 from threading import Lock
@@ -21,6 +23,7 @@ from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
 
+WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS = 1.0
 WORKER_TERMINATION_GRACE_PERIOD_SECONDS = 5.0
 
 
@@ -204,6 +207,8 @@ class Scheduler:
         else:
             result_queue = self.result_queues_by_worker[0]
 
+        retirement_event = ProcessEvent()
+        claim_lock = ProcessLock()
         p = Process(
             target=device_worker_dynamic_batch
             if self.settings.use_dynamic_batcher
@@ -219,6 +224,8 @@ class Scheduler:
                 == QueueType.MemoryQueue.value
                 else None,
                 self.cancel_queue,
+                retirement_event,
+                claim_lock,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -231,6 +238,8 @@ class Scheduler:
             "is_ready": False,
             "error_count": 0,
             "queue_index": worker_index,  # ✅ Track which queue this worker uses
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
         }
 
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
@@ -252,6 +261,31 @@ class Scheduler:
             count_as_failure=False,
             expected_pid=expected_pid,
         )
+
+    def mark_worker_retiring(
+        self, worker_id: str, expected_pid: int | None = None
+    ) -> bool:
+        """Prevent the expected worker generation from claiming more work."""
+        with self._worker_replacement_lock:
+            worker_info = self.worker_info.get(worker_id)
+            if worker_info is None:
+                return False
+            if expected_pid is not None and worker_info["process"].pid != expected_pid:
+                return False
+
+            worker_info["retirement_event"].set()
+            # Wait for any claim already in progress to finish. Publishing the
+            # event first prevents the worker from claiming another batch while
+            # this caller waits for the claim lock.
+            claim_lock = worker_info["claim_lock"]
+            acquired = claim_lock.acquire(timeout=WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS)
+            if acquired:
+                claim_lock.release()
+            else:
+                self.logger.warning(
+                    f"Timed out waiting for worker {worker_id} claim to finish"
+                )
+            return True
 
     def _perform_worker_replacement(
         self,

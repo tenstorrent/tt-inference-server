@@ -9,7 +9,12 @@ from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
-from device_workers.worker_utils import claim_job_for_worker, initialize_device_worker
+from device_workers.worker_utils import (
+    claim_job_for_worker,
+    claim_requests_for_worker,
+    initialize_device_worker,
+    release_job_from_worker,
+)
 from utils.logger import TTLogger
 
 
@@ -99,6 +104,7 @@ async def _continuous_fan_out(
 
         for task in done:
             req = inflight.pop(task)
+            release_job_from_worker(req)
             task_id = req._task_id
             exc = task.exception()
             if exc is not None:
@@ -157,6 +163,8 @@ def device_worker(
     error_queue: Queue,
     result_queue_name: None | str = None,
     cancel_queue: Queue = None,  # accepted for signature parity with dynamic-batch worker; unused here (legacy batched-sync path has no async tasks to cancel mid-flight).
+    retirement_event=None,
+    claim_lock=None,
 ):
     logger = TTLogger()
 
@@ -192,6 +200,18 @@ def device_worker(
         if requests is None or len(requests) == 0:
             continue
 
+        claimed_requests = claim_requests_for_worker(
+            requests, worker_id, retirement_event, claim_lock
+        )
+        if claimed_requests is None:
+            task_queue.put_many(requests)
+            logger.info(f"Worker {worker_id} retiring before claiming more work")
+            loop.close()
+            break
+        requests = claimed_requests
+        if not requests:
+            continue
+
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
@@ -204,12 +224,6 @@ def device_worker(
             _run_canary_probe(
                 device_runner, requests[0], worker_id, result_queue, logger
             )
-            continue
-
-        requests = [
-            request for request in requests if claim_job_for_worker(request, worker_id)
-        ]
-        if not requests:
             continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
@@ -328,6 +342,9 @@ def device_worker(
             for request in requests:
                 error_queue.put((worker_id, request._task_id, error_msg))
             continue
+        finally:
+            for request in requests:
+                release_job_from_worker(request)
 
         logger.debug(
             f"Worker {worker_id} finished processing tasks: {requests.__len__()}"

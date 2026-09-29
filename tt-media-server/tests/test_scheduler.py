@@ -416,6 +416,40 @@ class TestScheduler:
         current_process.terminate.assert_not_called()
         mock_process_cls.assert_not_called()
 
+    def test_mark_worker_retiring_blocks_new_claims(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = Mock()
+        claim_lock = MagicMock()
+        claim_lock.acquire.return_value = True
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+
+        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
+
+        assert marked is True
+        retirement_event.set.assert_called_once()
+        claim_lock.acquire.assert_called_once()
+        claim_lock.release.assert_called_once()
+
+    def test_mark_worker_retiring_ignores_stale_worker_pid(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 456
+        retirement_event = Mock()
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": MagicMock(),
+        }
+
+        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
+
+        assert marked is False
+        retirement_event.set.assert_not_called()
+
     @pytest.mark.asyncio
     async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(
         self, scheduler
