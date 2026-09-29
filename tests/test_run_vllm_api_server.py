@@ -644,6 +644,8 @@ def test_gemma4_autoport_launch_preserves_ttft_contract(
     assert json.loads(value("--hf-overrides")) == {
         "architectures": ["TTAutoportGemma4ForCausalLM"]
     }
+    assert "--enable-auto-tool-choice" in argv
+    assert value("--tool-call-parser") == "gemma4"
     assert "--no-enable-prefix-caching" in argv
     assert "--no-enable-chunked-prefill" in argv
     assert "--enable-prefix-caching" not in argv

@@ -2425,6 +2425,8 @@ templates:
         revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
         tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
         hf-overrides: '{"architectures":["TTAutoportGemma4ForCausalLM"]}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         block_size: 32
         max_num_seqs: 32
         max_model_len: 262144
