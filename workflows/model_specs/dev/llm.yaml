@@ -1480,6 +1480,53 @@ templates:
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:b15f5f4658a681c4794f6a0d48c353f6fb688c530d9e61738cfdf596f923b791
 
+
+# Quetzal-generated Qwen3.8-27B, B32/C262144, from the reviewed overlay
+# serving/catalog/onboarding/Qwen__Qwen3.8-27B-api-repair.yaml.
+#   package manifest sha256 : 7b764baa4dacc11549bff5d19e491e2eafa5756dfa5a1fdf5248ef1b3b139bd9
+#   effective qualification : investigating (resolution: agreement)
+#   blocker                 : official TTIS Model CI and Shield have not
+#                             completed for this package and runtime.
+# Banked numerics for this exact package: full-batch PCC 0.9994649887084961,
+# high-RoPE 0.9985944628715515, full-history paged SDPA 0.9977312684059143.
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P150x4
+        QUETZAL_VLLM: "1"
+        QUETZAL_BUNDLE_MANIFEST_SHA256: 7b764baa4dacc11549bff5d19e491e2eafa5756dfa5a1fdf5248ef1b3b139bd9
+        QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+        VLLM_PLUGINS: quetzal_model_registry,tt
+      vllm_args:
+        # From the artifact's own checkpoint_revision; no Hugging Face lookup.
+        revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_coder
+        reasoning_parser: qwen3
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        sample_on_device_mode: all
+        l1_small_size: 16384      # Quetzal-generated runtime device contract
+        # Measured against this package on P300X2 at tt-metal fbfae672 and
+        # recorded as qualified in the overlay; not an inherited default.
+        trace_region_size: 134217728
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3-32B
   impl: qwen3_32b_galaxy
