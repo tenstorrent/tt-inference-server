@@ -5079,14 +5079,18 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    # 7200s matches what the identical aime25 / gpqa pair already uses
-                    # elsewhere in this file. A LONGER client timeout is actively
-                    # harmful here: on-dispatch.yml caps the job at 1080 minutes, so
-                    # one stuck task at 14400s burns 4h of that budget and at 43200s
-                    # burns 12h, in both cases cancelling the run with no verdict and
-                    # no artifacts. Failing fast is what lets the remaining tasks
-                    # finish and the run produce a report at all.
-                    "timeout": "7200",
+                    # These requests stream, so this is a socket READ timeout that resets on
+                    # every chunk -- an idle bound, not a response-duration bound. It
+                    # therefore cannot truncate a healthy generation, which emits a token
+                    # every few hundred ms; it only fires when the server has stopped
+                    # producing entirely. At 7200 a dead server was not detected for two
+                    # hours, which is how a run reaches on-dispatch.yml's 1080-minute cap
+                    # and gets cancelled with no verdict and no artifacts (35299987641,
+                    # 35656042558, 36374616815). 600s detects the same failure in ten
+                    # minutes and leaves the budget for the tasks that are actually
+                    # working. Non-streaming tasks must NOT copy this value: for them
+                    # the timeout bounds the whole response.
+                    "timeout": "600",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
@@ -5101,11 +5105,11 @@ _eval_config_list = [
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
                 },
-                # Bounded so the eval phase cannot consume the 1080-minute job cap.
-                # 2 tasks x 10800s = 6h worst case, leaving 12h for server bring-up,
-                # benchmarks and spec tests. On deadline the owned process group is
-                # killed and the task is reported rc=124 incomplete, so the run still
-                # produces a report instead of being cancelled with zero artifacts.
+                # Backstop only. The 600s streaming idle timeout above is what detects a
+                # dead server; this bounds the pathological case where tokens trickle
+                # just fast enough to keep resetting it. On deadline the owned process
+                # group is killed and the task reports rc=124 incomplete, so the run
+                # still produces a report instead of being cancelled with no artifacts.
                 wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
@@ -5131,14 +5135,18 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    # 7200s matches what the identical aime25 / gpqa pair already uses
-                    # elsewhere in this file. A LONGER client timeout is actively
-                    # harmful here: on-dispatch.yml caps the job at 1080 minutes, so
-                    # one stuck task at 14400s burns 4h of that budget and at 43200s
-                    # burns 12h, in both cases cancelling the run with no verdict and
-                    # no artifacts. Failing fast is what lets the remaining tasks
-                    # finish and the run produce a report at all.
-                    "timeout": "7200",
+                    # These requests stream, so this is a socket READ timeout that resets on
+                    # every chunk -- an idle bound, not a response-duration bound. It
+                    # therefore cannot truncate a healthy generation, which emits a token
+                    # every few hundred ms; it only fires when the server has stopped
+                    # producing entirely. At 7200 a dead server was not detected for two
+                    # hours, which is how a run reaches on-dispatch.yml's 1080-minute cap
+                    # and gets cancelled with no verdict and no artifacts (35299987641,
+                    # 35656042558, 36374616815). 600s detects the same failure in ten
+                    # minutes and leaves the budget for the tasks that are actually
+                    # working. Non-streaming tasks must NOT copy this value: for them
+                    # the timeout bounds the whole response.
+                    "timeout": "600",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -5147,11 +5155,11 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
                 },
-                # Bounded so the eval phase cannot consume the 1080-minute job cap.
-                # 2 tasks x 10800s = 6h worst case, leaving 12h for server bring-up,
-                # benchmarks and spec tests. On deadline the owned process group is
-                # killed and the task is reported rc=124 incomplete, so the run still
-                # produces a report instead of being cancelled with zero artifacts.
+                # Backstop only. The 600s streaming idle timeout above is what detects a
+                # dead server; this bounds the pathological case where tokens trickle
+                # just fast enough to keep resetting it. On deadline the owned process
+                # group is killed and the task reports rc=124 incomplete, so the run
+                # still produces a report instead of being cancelled with no artifacts.
                 wall_clock_timeout_seconds=10800,
             ),
             EvalTask(

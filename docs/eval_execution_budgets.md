@@ -30,26 +30,30 @@ This addresses unbounded harness execution, not the cause of long model answers.
 The motivating GPT Shield run's apparent retry exhaustion remains an inference
 until its client log is available. No running jobs are modified by this patch.
 
-## Relationship to the lm-eval client timeout, and why longer is worse
+## Detecting a dead server, versus bounding a live one
 
-`reference_config/evals/eval_config.py` also sets a per-task `model_kwargs`
-`timeout`. That is a client **read** timeout, not an execution budget: it does
-not bound startup, dataset loading or scoring.
+Two different mechanisms, and they are easy to confuse.
 
-**Raising it is counter-productive.** `on-dispatch.yml` caps the whole job at
-1080 minutes, so a stuck task at a 4h client timeout burns 4h of that budget
-before it even errors, and at 12h it burns 12h -- in both cases the run is
-cancelled with no verdict, and the report uploads are skipped because they sit
-behind `!cancelled()`. Three Quetzal gpt-oss-120b runs have been lost exactly
-this way (35299987641, 35656042558, 36374616815; the last ran 18h01m and
-uploaded zero artifacts). Failing fast is what lets the remaining tasks finish
-and the run produce a report at all.
+`model_kwargs["timeout"]` is a socket **read** timeout. For a task with
+`"stream": "true"` it resets on every chunk, so it is an **idle** bound: it
+cannot truncate a healthy generation, which emits a token every few hundred
+milliseconds, and it fires only when the server has stopped producing.
 
-The graded aime25 / gpqa pair therefore uses 7200s, matching the identical
-tasks elsewhere in the file, and carries an explicit
-`wall_clock_timeout_seconds=10800`. Two tasks at 3h is 6h worst case, leaving
-12h of the cap for server bring-up, benchmarks and spec tests.
+That makes a large value actively harmful. At 7200 a dead server goes
+undetected for two hours; at 14400, four. `on-dispatch.yml` caps the job at
+1080 minutes, so a couple of stalls consume the budget and the run is cancelled
+with no verdict -- and the report uploads are skipped because they sit behind
+`!cancelled()`. Three Quetzal gpt-oss-120b runs were lost this way
+(35299987641, 35656042558, 36374616815; the last ran 18h01m and uploaded zero
+artifacts). The graded `aime25` / `gpqa` pair therefore uses **600s**: a stall
+is caught in ten minutes and the remaining tasks keep their budget.
 
-`wall_clock_timeout_seconds` is the real bound: it kills the task's owned POSIX
-process group and reports rc=124 as an incomplete task, which is never scored
-as a pass, and the run continues to the next task.
+**A non-streaming task must not copy that value.** With `"stream": "false"`
+(the `EvalTask` default) the same field bounds the entire response, so a short
+value truncates legitimate long generations rather than detecting failure.
+Check `gen_kwargs["stream"]` before changing any `timeout`.
+
+`wall_clock_timeout_seconds` is the backstop for the case the idle bound cannot
+see: tokens trickling just fast enough to keep resetting the read timeout. It
+kills the task's owned POSIX process group and reports rc=124 as an incomplete
+task, which is never scored as a pass, and the run continues to the next task.
