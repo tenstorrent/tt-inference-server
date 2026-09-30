@@ -471,6 +471,10 @@ templates:
         GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+        # Metal 64K-rung chunk U-curve bottoms at 4096 under lanes (28.0 s
+        # round vs 30.5 @8192, -7.4% last-user TTFT; the lane MLP gather
+        # scales with chunk width). 2026-09-30 A/B, needles 4/4.
+        GEMMA4_GEN_PREFILL_CHUNK: "4096"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
