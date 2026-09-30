@@ -475,6 +475,12 @@ templates:
         # round vs 30.5 @8192, -7.4% last-user TTFT; the lane MLP gather
         # scales with chunk width). 2026-09-30 A/B, needles 4/4.
         GEMMA4_GEN_PREFILL_CHUNK: "4096"
+        # Ledger headroom: the steady build idles at ~59 MB/bank free and an
+        # ~88 MB transient at 96-128-batch completions OOMs the engine.
+        # Prefill traces' persistent inputs buy that headroom back; lanes
+        # multi-chunk prefill is eager regardless (short-ISL first token pays
+        # the eager capture cost — acceptable on the capacity rail).
+        GEMMA4_DISABLE_PREFILL_TRACE: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
