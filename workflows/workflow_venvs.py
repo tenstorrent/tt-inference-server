@@ -278,10 +278,12 @@ def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
     # Without ``phase_kind="warmup"`` AIPerf tags the auto-warmup's server
     # metric baselines as profiling, so warmup counter growth (including the
     # prompt-token sources the prefix-cache hit rate is computed from) leaks
-    # into the profiling totals. Remove this patch, and
-    # _AGENTIC_WARMUP_PATCH_REFS, once
-    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
-    # pin moves to an InferenceX revision that vendors it.
+    # into the profiling totals.
+    # TODO(#5253): remove this function, _AGENTIC_WARMUP_PATCH_REFS, their call
+    # sites in setup_agentic_traces and tests/workflows/test_agentic_warmup_patch.py
+    # once https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
+    # InferenceX pin moves to a revision that vendors it.
+    # https://github.com/tenstorrent/tt-inference-server/issues/5253
     if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
         return True
     config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
