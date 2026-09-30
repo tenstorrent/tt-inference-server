@@ -26,6 +26,6 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | Weights | [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🛠️ Experimental |
 | Max Batch Size | 1 |
-| Implementation Code | [trainer-training-lora](https://github.com/tenstorrent/tt-inference-server/tree/a3a9fb4/tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py) |
-| tt-metal Commit | `a3a9fb4` |
-| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server-forge:0.22.0-a3a9fb4` |
+| Implementation Code | [trainer-training-lora](https://github.com/tenstorrent/tt-inference-server/tree/2fd9445/tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py) |
+| tt-metal Commit | `2fd9445` |
+| Docker Image | `ghcr.io/tenstorrent/tt-media-inference-server-forge:0.23.0-2fd9445` |
