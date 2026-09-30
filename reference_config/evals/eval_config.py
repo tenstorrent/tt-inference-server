@@ -1907,7 +1907,10 @@ _eval_config_list = [
                         # Must stay a JSON *string*: agent_kwargs are written verbatim into the harbor
                         # config file, and the adapter shlex.quotes this value onto the container
                         # command line, which fails with TypeError on a dict.
-                        "llm_args_json": '{"chat_template_kwargs": {"thinking_mode": "enabled"}}',
+                        #
+                        # top_p=0.95 is MiniMax's recommended setting (model card), matching the M3
+                        # GPQA and terminal-bench entries above; without it the server default is 1.0.
+                        "llm_args_json": '{"top_p": 0.95, "chat_template_kwargs": {"thinking_mode": "enabled"}}',
                     },
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3",
