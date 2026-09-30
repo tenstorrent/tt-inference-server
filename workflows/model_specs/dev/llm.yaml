@@ -923,15 +923,22 @@ templates:
         # descriptor; the native galaxy column ring is unmeasured — A/B later).
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # 3 full-256K users per engine = 12 per Galaxy (DP=4). Ceiling measured
-        # 2026-09-28: 786432 fits (rung-1 PASS); 921600 OOMs at global buffer
-        # 19/20. Fallback config for the TP=8xCP=4 one-instance path.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
+        # 6 full-256K users per engine = 24 per Galaxy (DP=4), enabled by
+        # bfloat8_b KV halving pool bytes (bf16 ceiling measured 786,432 fits
+        # / 921,600 OOMs, 2026-09-28 -> bfp8 ceiling >= 1,572,864). Validated
+        # 2026-09-30 end to end at 248K: 12/16/20/24 users all served, steady
+        # per-user decode FLAT at 7.3 tok/s/u (KV reads are a negligible step
+        # slice at bfp8), TTFT the pure N/4-round staircase (561/747/931/1116s
+        # med), 254K chat coherent pre+post, gates 32/32. b1: 205s / 18.9
+        # tok/s/u. 12 (3/engine) remains the floor config; the pool serves
+        # any smaller mix.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        GEMMA4_KV_BFP8: "1"  # needle-gated 2026-09-30 (64Kx48, 32Kx96 both 4/4)
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 512000000
+        trace_region_size: 640000000  # decode-trace size grows with context x bucket; 512 MB held 3x256K/engine, +2 residents needs margin (bfp8 freed >1.4 GB/device)
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
         # On-device decode sampling required on TP so token ids >= 65536 are
         # reachable (host sampling only sees device 0's vocab shard).
