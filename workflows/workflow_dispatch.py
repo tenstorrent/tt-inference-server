@@ -149,6 +149,19 @@ def _is_llm_eval_run(wf, model_spec) -> bool:
     )
 
 
+def _llm_evals_are_agentic_only(model_spec, runtime_config) -> bool:
+    """Whether an LLM ``evals`` request selects only agentic tasks."""
+    if model_spec.model_type not in _LLM_LIKE_TYPES:
+        return False
+    cfg = _eval_config_for(model_spec)
+    if cfg is None:
+        return False
+    tasks = _selected_eval_tasks(cfg.tasks, runtime_config)
+    return bool(tasks) and all(
+        task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC for task in tasks
+    )
+
+
 def _is_llm_spec_test_run(wf, model_spec) -> bool:
     """LLM/VLM ``--workflow spec_tests`` routes to parameter-conformance
     suite (``test_module/llm_tests/vllm_param_conformance_test.py``), registered
@@ -222,7 +235,12 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
       dependency venvs, provisioned by the command).
     """
     wf = WorkflowType.from_string(runtime_config.workflow)
-    engine_workflow = _ENGINE_WORKFLOW_NAMES.get(wf)
+    agentic_eval_compat = wf == WorkflowType.EVALS and _llm_evals_are_agentic_only(
+        model_spec, runtime_config
+    )
+    engine_workflow = (
+        "agentic" if agentic_eval_compat else _ENGINE_WORKFLOW_NAMES.get(wf)
+    )
     if engine_workflow is None:
         raise ValueError(
             f"workflow dispatch does not handle workflow {wf.name!r}. "
@@ -246,7 +264,7 @@ def build_engine_commands(model_spec, runtime_config, json_fpath) -> list:
                 label=engine_workflow,
             )
         ]
-    if wf == WorkflowType.AGENTIC:
+    if wf == WorkflowType.AGENTIC or agentic_eval_compat:
         return [
             VenvCommand(
                 None,
