@@ -55,13 +55,46 @@ requirements at once:
 - detect a dead server within minutes, and
 - not truncate a legitimate long generation.
 
-With `max_gen_toks: 120 * 1024` and a ~405 ms/token TPOT, a full generation is
-roughly 13.8 hours. Every value proposed for these tasks -- 14400, 7200, 600,
-and the harness default of 1800 (~4,450 tokens) -- is below that, so these
-tasks have been exposed to truncation at all of them. `timeout` is therefore
-left at its existing value here; moving it is a guess in either direction until
-`max_gen_toks` is clamped to what the device context actually supports, which is
-what would make a per-request budget computable. That clamp is a separate change.
+How bad that is depends on decode speed, so state it as a **break-even
+threshold** rather than a duration. Both graded tasks set
+`max_gen_toks: 120 * 1024` = **122,880 tokens**, so a full-length generation
+fits inside a budget `T` only if decode sustains `122880 / T`:
+
+| `timeout` | required rate | required per-token |
+|---|---|---|
+| 600 s | 204.8 tok/s | 4.9 ms |
+| 1800 s (harness default) | 68.3 tok/s | 14.6 ms |
+| 7200 s | 17.1 tok/s | 58.6 ms |
+| 14400 s (current) | **8.53 tok/s** | **117.2 ms** |
+
+The nearest traced, measured rate for `openai/gpt-oss-120b` -- the model these
+tasks target -- is **6.0 tok/s steady (~167 ms/token)**, with 2.1 tok/s
+end-to-end on short requests, from the 2026-09-05 device run recorded in
+tt-quetzalcoatlus `docs/GPT_OSS_120B_DECODE_PERF.md` (p300x2, batch=1, trace
+on). At 6.0 tok/s a full generation takes ~5.7 h; at 2.1 tok/s, ~16.3 h. The
+break-even for 14400 s therefore sits about 42% above the fastest rate measured
+on this model, and every value proposed for this field is on the truncating side
+of it.
+
+Two caveats, stated because the alternative is a number nobody can source:
+
+- **No TPOT has been measured under the actual eval condition** --
+  `max_concurrent=32` with 122k-token generations on the device the graded runs
+  use. The 6.0 tok/s sample is batch=1 on two chips with 128-token requests. A
+  sustained >= 8.53 tok/s on the real path would falsify the concern above, and
+  that is a measurable question rather than a matter of argument.
+- An earlier revision of this document claimed ~405 ms/token and ~13.8 h. That
+  figure came from a serve with `QUETZAL_NO_TRACE=1` force-set (eager, roughly
+  7x slower than traced) and is withdrawn. For contrast, a traced 96.1 ms/token
+  (10.4 tok/s) has been measured -- but on Qwen3.6-27B on tt-quietbox
+  (`serving/verified_runs/20260817/collectives_sweep/`), a different model on a
+  different box, so it is a reference point and not evidence about these tasks.
+  At that rate the same 122,880 tokens take 3.28 h and would fit.
+
+`timeout` is therefore left at its existing value; moving it is a guess in
+either direction until `max_gen_toks` is clamped to what the device context
+actually supports, which is what would make a per-request budget computable.
+That clamp is a separate change.
 
 ## What does bound a hung run
 

@@ -5091,12 +5091,28 @@ _eval_config_list = [
                     # generation. That job belongs to wall_clock_timeout_seconds below,
                     # which bounds the TASK rather than the request.
                     #
-                    # Left at main's value. With max_gen_toks=120*1024 and ~405ms/token a
-                    # full generation is ~13.8h, so 14400 is itself a truncation risk --
-                    # but so is every value proposed so far, including the harness default
-                    # of 1800. Making a per-request budget computable requires clamping
-                    # max_gen_toks to what the device context actually supports, which is
-                    # a separate change from this PR.
+                    # Left at main's value. Worst case here is a break-even question,
+                    # not a measured duration. At max_gen_toks=120*1024 (122,880 tokens)
+                    # a full generation fits inside 14400s only if decode sustains
+                    # 122880/14400 = 8.53 tok/s (117 ms/token); the same arithmetic makes
+                    # 7200 need 17.1 tok/s, the harness default 1800 need 68.3, and 600
+                    # need 204.8. The nearest traced, measured rate for gpt-oss-120b
+                    # itself is 6.0 tok/s steady (~167 ms/token), from the 2026-09-05
+                    # device run in tt-quetzalcoatlus docs/GPT_OSS_120B_DECODE_PERF.md --
+                    # about 5.7h for a full generation. So the break-even for 14400 sits
+                    # ~42% above the fastest rate measured on this model, and every value
+                    # proposed for this field is on the truncating side of it.
+                    #
+                    # Stated as a threshold on purpose: no TPOT has been measured under
+                    # the real eval condition (max_concurrent=32, 122k-token generations),
+                    # and a sustained >=8.53 tok/s there would falsify this. An earlier
+                    # revision of this comment claimed ~405ms/token and ~13.8h; that came
+                    # from a serve with QUETZAL_NO_TRACE=1 forced on (eager, ~7x slower
+                    # than traced) and has been withdrawn.
+                    #
+                    # Making a per-request budget genuinely computable requires clamping
+                    # max_gen_toks to what the device context supports, which is a
+                    # separate change from this PR.
                     "timeout": "14400",
                 },
                 gen_kwargs={
@@ -5156,12 +5172,28 @@ _eval_config_list = [
                     # generation. That job belongs to wall_clock_timeout_seconds below,
                     # which bounds the TASK rather than the request.
                     #
-                    # Left at main's value. With max_gen_toks=120*1024 and ~405ms/token a
-                    # full generation is ~13.8h, so 14400 is itself a truncation risk --
-                    # but so is every value proposed so far, including the harness default
-                    # of 1800. Making a per-request budget computable requires clamping
-                    # max_gen_toks to what the device context actually supports, which is
-                    # a separate change from this PR.
+                    # Left at main's value. Worst case here is a break-even question,
+                    # not a measured duration. At max_gen_toks=120*1024 (122,880 tokens)
+                    # a full generation fits inside 14400s only if decode sustains
+                    # 122880/14400 = 8.53 tok/s (117 ms/token); the same arithmetic makes
+                    # 7200 need 17.1 tok/s, the harness default 1800 need 68.3, and 600
+                    # need 204.8. The nearest traced, measured rate for gpt-oss-120b
+                    # itself is 6.0 tok/s steady (~167 ms/token), from the 2026-09-05
+                    # device run in tt-quetzalcoatlus docs/GPT_OSS_120B_DECODE_PERF.md --
+                    # about 5.7h for a full generation. So the break-even for 14400 sits
+                    # ~42% above the fastest rate measured on this model, and every value
+                    # proposed for this field is on the truncating side of it.
+                    #
+                    # Stated as a threshold on purpose: no TPOT has been measured under
+                    # the real eval condition (max_concurrent=32, 122k-token generations),
+                    # and a sustained >=8.53 tok/s there would falsify this. An earlier
+                    # revision of this comment claimed ~405ms/token and ~13.8h; that came
+                    # from a serve with QUETZAL_NO_TRACE=1 forced on (eager, ~7x slower
+                    # than traced) and has been withdrawn.
+                    #
+                    # Making a per-request budget genuinely computable requires clamping
+                    # max_gen_toks to what the device context supports, which is a
+                    # separate change from this PR.
                     "timeout": "14400",
                 },
                 gen_kwargs={
