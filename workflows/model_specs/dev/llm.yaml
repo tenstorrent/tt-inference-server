@@ -2644,7 +2644,9 @@ templates:
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 40
+      # The P/D deployment (pdg-glm-a9) runs 20 decode slots; eval and benchmark
+      # clients clamp their concurrency to this value.
+      max_concurrency: 20
       max_context: 1048576  # 1024 * 1024;
       default_impl: true
   status: EXPERIMENTAL

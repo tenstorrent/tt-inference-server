@@ -431,3 +431,20 @@ def test_ladder_levels_above_the_allowed_max_are_dropped():
         concurrencies=(1, 8, 64),
     )
     assert [p.max_concurrency for p in params] == [1]
+
+
+def test_glm53_super_cluster_spec_matches_the_20_slot_pd_deployment():
+    """The eval and benchmark clients clamp to this value, so it must not exceed
+    the 20 decode slots of the GLM-5.3 P/D deployment (pdg-glm-a9)."""
+    import pathlib
+
+    import yaml
+
+    catalog = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "workflows/model_specs/dev/llm.yaml"
+    )
+    templates = yaml.safe_load(catalog.read_text())["templates"]
+    (glm53,) = [t for t in templates if "zai-org/GLM-5.3" in t.get("weights", [])]
+    (spec,) = [d for d in glm53["device_model_specs"] if d["device"] == "SUPER_CLUSTER"]
+    assert spec["max_concurrency"] == 20
