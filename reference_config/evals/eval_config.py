@@ -5509,6 +5509,99 @@ _eval_config_list = [
             ),
         ],
     ),
+    # =========================================================================
+    # IFM/K2-Horizon-7B (TP4 autoport, P300X2). Reasoning model: the model card
+    # asks for reasoning_effort=high (the chat template default), temperature
+    # 1.0, top_p 0.95 and >= 32768 output tokens ("truncated reasoning is a
+    # failed response"). The card publishes neither GPQA Diamond nor MMLU-Pro,
+    # so no published/GPU reference scores exist yet.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-7B",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond; the task's own
+                # extractor scores exact_match,none on the final answer. Chat
+                # API so the server renders the native template and the
+                # k2_horizon reasoning parser separates thinking from content.
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 7200,
+                },
+                # Model-card sampling. No top_k: served by the model's exact
+                # host sampler (K2_VLLM_ALLOW_HOST_SAMPLING=1 in the spec).
+                # stream=false is required by lm-eval's chat-completions parser.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # CI subset: doc_ids 0-39 (served at up to 32 concurrent users).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
+                # scored by the task's own answer extractor.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # mmlu_pro is a group of 14 subtasks and lm-eval applies an int
+                # limit PER SUBTASK: 3 -> 42 questions nightly, 1 -> 14 smoke.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[

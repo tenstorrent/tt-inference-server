@@ -428,6 +428,15 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
+# IFM/K2-Horizon-7B TP4 autoport produced by the tt-model-bringup pipeline. Like
+# other autoports, the code_path lives under models/autoports/ and exists only on a
+# tt-metal branch (vkovacevic/k2-horizon-7b-ci), not on main.
+k2_horizon_7b_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_7b_qb2",
+    impl_name="k2-horizon-7b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/ifm_k2_horizon_7b",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -436,6 +445,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
