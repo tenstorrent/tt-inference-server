@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1.0",
-  "release_version": "0.22.0",
+  "release_version": "0.23.0",
   "model_specs": {
     "openai/gpt-oss-20b": {
       "T3K": {
@@ -12526,13 +12526,10 @@
               "MODEL_RUNNER": "trainer-training-lora",
               "TRAINING_MODEL": "Llama-3.1-8B-Instruct",
               "ENABLE_JOB_PERSISTENCE": true,
-              "JOB_CLEANUP_INTERVAL_SECONDS": 10000,
-              "JOB_MAX_STUCK_TIME_SECONDS": 100000,
-              "REQUEST_PROCESSING_TIMEOUT_SECONDS": 100000,
               "MESH_DEVICE": "P150",
               "ARCH_NAME": "blackhole"
             },
-            "tt_metal_commit": "a3a9fb4",
+            "tt_metal_commit": "2fd9445",
             "vllm_commit": null,
             "hf_weights_repo": "meta-llama/Llama-3.1-8B-Instruct",
             "param_count": 8,
@@ -12540,10 +12537,10 @@
             "min_ram_gb": 20.0,
             "model_type": "TRAINING",
             "repacked": 0,
-            "version": "0.22.0",
-            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.22.0-a3a9fb4",
+            "version": "0.23.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-media-inference-server-forge:0.23.0-2fd9445",
             "status": "EXPERIMENTAL",
-            "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/a3a9fb4/tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
+            "code_link": "https://github.com/tenstorrent/tt-inference-server/tree/2fd9445/tt-media-server/tt_model_runners/forge_training_runners/trainer_training_lora_runner.py",
             "override_tt_config": {},
             "supported_modalities": [
               "text"
@@ -13536,8 +13533,65 @@
               "max_context": 49152,
               "max_tokens_all_users_override": null,
               "perf_targets_map": {},
-              "default_impl": true,
-              "perf_reference": [],
+              "default_impl": false,
+              "perf_reference": [
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": null,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 460.0,
+                      "tput_user": 3.7,
+                      "tput": 3.7,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 92.0,
+                      "tput_user": 18.5,
+                      "tput": 18.5,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 46.0,
+                      "tput_user": 37.0,
+                      "tput": 37.0,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null,
+                  "priority": null,
+                  "target_priorities": null,
+                  "goodput": null
+                }
+              ],
               "vllm_args": {
                 "model": "google/gemma-4-31B-it",
                 "block_size": "64",
@@ -13608,6 +13662,156 @@
               "reasoning_parser_name": "gemma4",
               "tool_call_parser_name": "gemma4"
             },
+            "cli_args": {}
+          },
+          "gemma4_31b_qb2": {
+            "model_id": "id_gemma4-31b-qb2_gemma-4-31B-it_p300x2",
+            "impl": {
+              "impl_id": "gemma4_31b_qb2",
+              "impl_name": "gemma4-31b-qb2",
+              "repo_url": "https://github.com/tenstorrent/tt-metal",
+              "code_path": "models/demos/gemma4_31b_qb2"
+            },
+            "hf_model_repo": "google/gemma-4-31B-it",
+            "model_name": "gemma-4-31B-it",
+            "inference_engine": "vLLM",
+            "device_type": "P300X2",
+            "device_model_spec": {
+              "device": "P300X2",
+              "max_concurrency": 1,
+              "max_context": 262144,
+              "max_tokens_all_users_override": null,
+              "perf_targets_map": {},
+              "default_impl": true,
+              "perf_reference": [
+                {
+                  "isl": 128,
+                  "osl": 128,
+                  "max_concurrency": 1,
+                  "num_prompts": 8,
+                  "image_height": null,
+                  "image_width": null,
+                  "images_per_prompt": null,
+                  "task_type": "text",
+                  "data_parallel": null,
+                  "theoretical_ttft_ms": null,
+                  "theoretical_tput_user": null,
+                  "targets": {
+                    "functional": {
+                      "ttft_ms": 460.0,
+                      "tput_user": 3.7,
+                      "tput": 3.7,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    },
+                    "complete": {
+                      "ttft_ms": 92.0,
+                      "tput_user": 18.5,
+                      "tput": 18.5,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    },
+                    "target": {
+                      "ttft_ms": 46.0,
+                      "tput_user": 37.0,
+                      "tput": 37.0,
+                      "tpot_ms": null,
+                      "e2el_ms": null,
+                      "tput_total": null,
+                      "goodput": null,
+                      "tolerance": 0.0
+                    }
+                  },
+                  "target_peak_perf": {
+                    "customer_functional": 0.1,
+                    "customer_complete": 0.5,
+                    "customer_sellable": 0.8
+                  },
+                  "num_inference_steps": null,
+                  "structured_dataset": null,
+                  "structured_output_ratio": null,
+                  "priority": null,
+                  "target_priorities": null,
+                  "goodput": null
+                }
+              ],
+              "vllm_args": {
+                "model": "google/gemma-4-31B-it",
+                "block_size": "128",
+                "max_model_len": "262144",
+                "max_num_seqs": "1",
+                "max_num_batched_tokens": "8192",
+                "max-log-len": "32",
+                "seed": "9472",
+                "additional_config": "{\"tt\": {\"sample_on_device_mode\": \"all\", \"trace_region_size\": 536870912, \"l1_small_size\": 16384}}",
+                "hf-overrides": "{\"architectures\":[\"TTGemma4QB2ForCausalLM\"]}",
+                "max-logprobs": "-1",
+                "async-scheduling": true,
+                "no-enable-prefix-caching": true,
+                "enable-chunked-prefill": true,
+                "override_generation_config": "{\"top_k\": 20}",
+                "reasoning-parser": "gemma4",
+                "default-chat-template-kwargs": "{\"enable_thinking\":true}"
+              },
+              "override_tt_config": {
+                "sample_on_device_mode": "all",
+                "trace_region_size": 536870912,
+                "l1_small_size": 16384
+              },
+              "env_vars": {
+                "MESH_DEVICE": "P300x2",
+                "ARCH_NAME": "blackhole",
+                "EXTRA_MODELS_DIR": "../../tt-metal/models/demos",
+                "TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES": "0"
+              },
+              "tensor_cache_timeout": 3600.0,
+              "system_requirements": null,
+              "known_issues": [],
+              "eval_max_retries": null,
+              "image_benchmark_num_batches": 3
+            },
+            "system_requirements": null,
+            "env_vars": {
+              "VLLM_CONFIGURE_LOGGING": "1",
+              "VLLM_RPC_TIMEOUT": "900000",
+              "VLLM_TARGET_DEVICE": "tt",
+              "TORCHDYNAMO_DISABLE": "1",
+              "VLLM_ALLOW_LONG_MAX_MODEL_LEN": 1,
+              "MESH_DEVICE": "P300x2",
+              "ARCH_NAME": "blackhole",
+              "EXTRA_MODELS_DIR": "../../tt-metal/models/demos",
+              "TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES": "0"
+            },
+            "tt_metal_commit": "2fd9445",
+            "vllm_commit": "7250ddf",
+            "hf_weights_repo": "google/gemma-4-31B-it",
+            "param_count": 31,
+            "min_disk_gb": 82,
+            "min_ram_gb": 77.5,
+            "model_type": "LLM",
+            "repacked": 0,
+            "version": "0.23.0",
+            "docker_image": "ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.23.0-2fd9445-7250ddf",
+            "status": "COMPLETE",
+            "code_link": "https://github.com/tenstorrent/tt-metal/tree/2fd9445/models/demos/gemma4_31b_qb2",
+            "override_tt_config": {
+              "sample_on_device_mode": "all",
+              "trace_region_size": 536870912,
+              "l1_small_size": 16384
+            },
+            "supported_modalities": [
+              "text"
+            ],
+            "subdevice_type": null,
+            "uses_tensor_model_cache": true,
+            "has_builtin_warmup": true,
+            "metadata": {},
             "cli_args": {}
           }
         }

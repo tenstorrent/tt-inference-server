@@ -14,11 +14,8 @@ templates:
     MODEL_RUNNER: "trainer-training-lora"
     TRAINING_MODEL: "Llama-3.1-8B-Instruct"
     ENABLE_JOB_PERSISTENCE: true
-    JOB_CLEANUP_INTERVAL_SECONDS: 10000
-    JOB_MAX_STUCK_TIME_SECONDS: 100000
-    REQUEST_PROCESSING_TIMEOUT_SECONDS: 100000
-  version: "0.22.0"
-  tt_metal_commit: "a3a9fb4"
+  version: "0.23.0"
+  tt_metal_commit: "2fd9445"
   device_model_specs:
     - device: P150
       max_concurrency: 1
