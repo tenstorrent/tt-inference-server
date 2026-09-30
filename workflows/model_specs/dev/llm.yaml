@@ -3259,6 +3259,8 @@ templates:
         HF_MODEL: Qwen/Qwen3.5-9B
         MESH_DEVICE: "P150"
         QWEN36_MAX_TOKENS_ALL_USERS: "262144"
+        # Needed when the single device is one chip of a P300 board (CUSTOM cluster); same as tt-metal's default for a P150.
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_mesh_graph_descriptor.textproto"
       vllm_args:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
