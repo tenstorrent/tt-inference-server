@@ -327,7 +327,7 @@
             }
         ]
     },
-    "DeepSeek-V4-Flash-0731": {
+    "DeepSeek-V4.1-Flash": {
         "blackhole_galaxy": [
             {
                 "isl": 1024,
@@ -340,9 +340,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 266.167,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 282.2887,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -358,9 +358,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 332.3339,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 364.5773,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -376,9 +376,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 464.6679,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 529.1546,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -394,9 +394,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 729.3357,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 858.3092,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -412,9 +412,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1258.6715,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 1516.6185,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -430,9 +430,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2317.343,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 2833.2369,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -448,9 +448,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4434.686,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 5466.4738,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -466,9 +466,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8669.3719,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 10732.9476,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -484,9 +484,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17138.7439,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 21265.8952,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -502,9 +502,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 34077.4877,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 42331.7904,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -520,9 +520,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 67946.7046,
-                        "tput_user": 25.0,
-                        "tput": 25.0
+                        "ttft_ms": 84453.2948,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
@@ -530,7 +530,7 @@
             {
                 "isl": 1024,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -538,9 +538,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4434.686,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 2833.2369,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -548,7 +548,7 @@
             {
                 "isl": 2048,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -556,9 +556,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8669.3719,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 5466.4738,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -566,7 +566,7 @@
             {
                 "isl": 4096,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -574,9 +574,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17138.7439,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 10732.9476,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -584,7 +584,7 @@
             {
                 "isl": 8192,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -592,9 +592,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 34077.4877,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 21265.8952,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -602,7 +602,7 @@
             {
                 "isl": 16384,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -610,9 +610,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 67954.9754,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 42331.7904,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -620,7 +620,7 @@
             {
                 "isl": 32768,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -628,9 +628,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 135709.9509,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 84463.5808,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -638,7 +638,7 @@
             {
                 "isl": 65536,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -646,9 +646,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 271219.9018,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 168727.1617,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -656,7 +656,7 @@
             {
                 "isl": 131072,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -664,9 +664,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 542239.8036,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 337254.3234,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -674,7 +674,7 @@
             {
                 "isl": 262144,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -682,9 +682,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1084279.6071,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 674308.6467,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -692,7 +692,7 @@
             {
                 "isl": 524288,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -700,9 +700,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2168359.2143,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 1348417.2935,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1
@@ -710,7 +710,7 @@
             {
                 "isl": 1048448,
                 "osl": 128,
-                "max_concurrency": 64,
+                "max_concurrency": 32,
                 "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
@@ -718,9 +718,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4335989.0928,
-                        "tput_user": 25.0,
-                        "tput": 1600.0
+                        "ttft_ms": 2696305.4323,
+                        "tput_user": 29.0,
+                        "tput": 928.0
                     }
                 },
                 "tolerance": 0.1

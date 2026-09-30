@@ -326,15 +326,18 @@ deepseek_r1_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/deepseek_v3",
 )
-# Milestone-0 stub impl for deepseek-ai/DeepSeek-V4-Flash-0731. No serving path
-# exists yet (readiness §6.2): tt-metal has dimensions-only constants under
-# models/demos/deepseek_v3_d_p but no V4-Flash adapter/demo, and there is no
-# tenstorrent/vllm registration. code_path is intentionally left as a fill-in
-# placeholder for the Partner to point at the real implementation they contribute
-# per RFP F.2.3.
-deepseek_v4_flash_impl = ImplSpec(
-    impl_id="deepseek_v4_flash",
-    impl_name="deepseek-v4-flash",
+# Milestone-0 stub impl for deepseek-ai/DeepSeek-V4.1-Flash. No serving path
+# exists yet: the architecture is DeepseekV41ForCausalLM / model_type
+# deepseek_v41, which appears nowhere in tt-metal, the vLLM plugin or here, so
+# this is first-of-kind bring-up. code_path is intentionally a fill-in for the
+# Partner to point at the implementation they contribute per RFP F.2.3.
+#
+# The HF repo ships its own reference implementation under inference/ (model.py,
+# kernel.py, engram.py, vision.py) and a custom encoder under encoding/. That is
+# the starting point for a port, not a served path.
+deepseek_v41_flash_impl = ImplSpec(
+    impl_id="deepseek_v41_flash",
+    impl_name="deepseek-v41-flash",
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="<FILL IN>",  # [TBD — Partner] path to the contributed tt-metal impl
 )
@@ -396,7 +399,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
-    "deepseek_v4_flash": deepseek_v4_flash_impl,
+    "deepseek_v41_flash": deepseek_v41_flash_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,

@@ -304,20 +304,35 @@ templates:
       tool_call_parser_name: gemma4
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Milestone-0 stub: deepseek-ai/DeepSeek-V4-Flash-0731
-# GREENFIELD — no serving path exists in tt-metal, tenstorrent/vllm, or here
-# (readiness §6.2): tt-metal carries dimensions-only constants but no V4-Flash
-# adapter/demo, and there is no vLLM registration. This template is a scaffold
-# for the Partner to complete per RFP F.2.3(a). Fill in every [TBD — Partner]
-# before use; the entry is intentionally minimal so it loads without asserting a
+# Milestone-0 model: deepseek-ai/DeepSeek-V4.1-Flash
+#
+# GREENFIELD — first-of-kind bring-up. The architecture is
+# DeepseekV41ForCausalLM (model_type deepseek_v41) and it appears nowhere in
+# tt-metal, the vLLM plugin or this repo. This template is a scaffold for the
+# Partner to complete per RFP F.2.3(a); fill in every [TBD — Partner] before
+# use. The entry is intentionally minimal so it loads without asserting a
 # configuration that does not exist yet.
+#
+# The HF repo carries its own reference implementation under inference/ and a
+# custom encoder under encoding/encoding.py. Those are the starting point for a
+# port.
+#
+# TEXT-ONLY for Milestone-0. The checkpoint is vision-language
+# (image-text-to-text, with a vision_config and an image_token_id), but the
+# graded sweep is task_type "text" at every point and vision is out of scope for
+# this milestone. Do not add image points here.
+#
+# The checkpoint is fp8 (quantization_config.quant_method = "fp8"). 510 GB of
+# weights on a 32-chip Galaxy, so KV headroom is tighter than the 167 GB model
+# this replaces.
 # ─────────────────────────────────────────────────────────────────────────────
 - weights:
-    # [TBD — Partner] confirm the exact HF repo id + pin the revision hash.
-    - deepseek-ai/DeepSeek-V4-Flash-0731
-  # [TBD — Partner] the tt-metal implementation you contribute. `deepseek_v4_flash`
-  # is a stub impl (models/demos/deepseek_v3_d_p is dimensions-only today).
-  impl: deepseek_v4_flash
+    # Revision pinned in RFP Appendix A.4:
+    # dba1be0a40aa45a94ad051997016db3960a90277
+    - deepseek-ai/DeepSeek-V4.1-Flash
+  # [TBD — Partner] the tt-metal implementation you contribute. `deepseek_v41_flash`
+  # is a stub impl whose code_path is a fill-in.
+  impl: deepseek_v41_flash
   inference_engine: VLLM
   device_model_specs:
     - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
@@ -335,35 +350,28 @@ templates:
       # docs/rfp/m0-target-convention.md.
       perf_targets_map:
         functional: 1.0
-      # Per-system max concurrent requests (sweep upper corner). 64 = the Appendix B
-      # target sheet's "max-num-seqs @ max context" for this model on a 32-chip
-      # Galaxy; the graded targets (model_performance_reference.json) are authored at
-      # this concurrency. [TBD — Partner: re-confirm against the contributed impl.]
-      max_concurrency: 64
-      # Full native context. DeepSeek-V4 is a million-token-context model
-      # ("DeepSeek-V4: Towards Highly Efficient Million-Token Context
-      # Intelligence"; the card recommends a 384K max output length). Milestone-0
-      # runs at full native context. [Verify — Partner: confirm
-      # max_position_embeddings in the HF config.json.]
+      # Per-system max concurrent requests (the sweep's loaded corner). The
+      # graded targets in model_performance_reference.json are authored at this
+      # concurrency: decode tput is 29.0 x 32 = 928.0.
+      max_concurrency: 32
+      # Full native context. max_position_embeddings in the HF config.json
+      # text_config is 1048576.
       max_context: 1048576  # 1024 * 1024 (1M)
-      # Device KV-token pool for the concurrency sweep: 64 concurrent requests at
-      # the full 1M context. This is what lets the loaded corner reach concurrency
-      # 64 at EVERY graded input length, including the 1M-context point —
-      # 67,108,864 / (1,048,448 + 128) = 64 exactly.
+      # Device KV-token pool for the concurrency sweep: 32 concurrent requests at
+      # the full 1M context. This is what lets the loaded corner reach
+      # concurrency 32 at EVERY graded input length, including the 1M point —
+      # 33,554,432 / (1,048,448 + 128) = 32 exactly.
       #
-      # It was previously 1,056,768 (= 64 * 16,512), sized only so the then-graded
-      # ISLs {4096, 8192, 16384} reached 64, while this same inline comment already
-      # read `64 * 1024 * 1024`. Under that value every input length above 16K
-      # demoted (32K->32, 64K->16, ... 512K->2), which both breaks the
-      # scaling-quality three-point rule (>=3 input lengths per graded level; RFP
-      # Appendix F.1, readiness §5.7, enforced by get_llm_configs) and leaves more
-      # than the two concurrency corners the Appendix B.5 per-point weights are
-      # defined over.
+      # Sizing it to one context window instead would demote every input length
+      # above ~32K, which breaks the scaling-quality three-point rule (>=3 input
+      # lengths per graded level; RFP Appendix F.1, enforced by get_llm_configs)
+      # and leaves more than the two concurrency corners the Appendix B.5
+      # per-point weights are defined over.
       #
-      # [TBD — Performance: replace with the measured 32-chip pool once available.
-      # If the real pool is smaller, the top graded input lengths must come down
-      # with it — see docs/rfp/m0-target-convention.md.]
-      max_tokens_all_users_override: 67108864  # 64 * 1024 * 1024
+      # [TBD — Performance: replace with the measured 32-chip pool once
+      # available. If the real pool is smaller, the top graded input lengths must
+      # come down with it — see docs/rfp/m0-target-convention.md.]
+      max_tokens_all_users_override: 33554432  # 32 * 1024 * 1024
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
@@ -374,8 +382,10 @@ templates:
         # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
         # 6U-Galaxy default).
         fabric_config: FABRIC_1D_RING
-      # [TBD — Partner] vllm_args (reasoning/tool-call parsers, chat-template kwargs)
-      # and a metadata block with reasoning_parser_name / tool_call_parser_name.
+      # [TBD — Partner] vllm_args (reasoning/tool-call parsers, chat-template
+      # kwargs) and a metadata block with reasoning_parser_name /
+      # tool_call_parser_name. Evals must run with thinking enabled at
+      # reasoning_effort=max to match the GPU reference configuration (RFP H.3).
   # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
   # EXPERIMENTAL, and evals_enforced reuses the same signal, so an EXPERIMENTAL
   # model can fail every performance target AND every accuracy eval and still be

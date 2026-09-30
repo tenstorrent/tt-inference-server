@@ -35,15 +35,15 @@ M0_TIER = "functional"
 M0_STATUS = ModelStatusTypes.FUNCTIONAL
 M0_TOLERANCE = 0.10
 
-# The DeepSeek-V4-Flash-0731 reference point used throughout: ISL 8192 at the
+# The DeepSeek-V4.1-Flash reference point used throughout: ISL 8192 at the
 # LOADED corner. Input lengths are swept at both concurrency corners, so a point
 # is identified by (isl, concurrency) — isl alone is ambiguous.
-REF_ISL, REF_CONC = 8192, 64
+REF_ISL, REF_CONC = 8192, 32
 # Authored values at this point, to the 4 dp the reference file stores.
 # RFP Appendix B.2 publishes both terms of the target formula:
 #     ttft = FIXED_OVERHEAD_MS + isl * concurrency / prefill_rate * 1000
-# so here: 200 + 8192 * 64 / 15476 * 1000 = 34077.4877 ms, and 25 t/s/u x 64.
-TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 34077.4877, 25.0, 1600.0
+# so here: 200 + 8192 * 32 / 12444 * 1000 = 21265.8952 ms, and 29 t/s/u x 32.
+TTFT_TARGET, TPUT_USER_TARGET, TPUT_TARGET = 21265.8952, 29.0, 928.0
 
 #: The fixed, input-length-independent part of every B.2 target. A forward pass
 #: must read the weights and dispatch across all 32 accelerators whatever the
@@ -201,7 +201,7 @@ def test_verdict_still_prefers_target_when_the_full_ladder_is_present():
 
 
 def test_a_single_tier_map_yields_one_tier_holding_the_value_verbatim():
-    ref = get_perf_reference_map("DeepSeek-V4-Flash-0731", {M0_TIER: 1.0})
+    ref = get_perf_reference_map("DeepSeek-V4.1-Flash", {M0_TIER: 1.0})
     points = ref[DeviceTypes.BLACKHOLE_GALAXY]
     assert points, "no blackhole_galaxy points resolved"
     for point in points:
@@ -217,7 +217,7 @@ def test_a_single_tier_map_yields_one_tier_holding_the_value_verbatim():
 
 
 def test_tolerance_is_read_from_the_reference_entry():
-    ref = get_perf_reference_map("DeepSeek-V4-Flash-0731", {M0_TIER: 1.0})
+    ref = get_perf_reference_map("DeepSeek-V4.1-Flash", {M0_TIER: 1.0})
     for point in ref[DeviceTypes.BLACKHOLE_GALAXY]:
         assert point.targets[M0_TIER].tolerance == pytest.approx(M0_TOLERANCE)
 
@@ -251,7 +251,7 @@ def test_the_device_override_beats_the_model_wide_ladder():
     BLACKHOLE_GALAXY row grades on a single tier while its other devices keep the
     ordinary ladder."""
     ref = get_perf_reference_map(
-        "DeepSeek-V4-Flash-0731",
+        "DeepSeek-V4.1-Flash",
         {"functional": 0.10, "complete": 0.50, "target": 1.0},
         {DeviceTypes.BLACKHOLE_GALAXY: {M0_TIER: 1.0}},
     )
@@ -272,7 +272,7 @@ def test_the_device_override_beats_the_model_wide_ladder():
 #: returning concurrency 1 rather than rejecting the point.
 OSL = 128
 M0_SWEEPS = {
-    "DeepSeek-V4-Flash-0731": (1048576, 64, 10),
+    "DeepSeek-V4.1-Flash": (1048576, 32, 10),
     "gemma-4-31B-it": (262144, 32, 8),
 }
 
@@ -378,9 +378,16 @@ def test_gemma_targets_are_filed_under_the_key_its_spec_derives():
 #: grading configuration, which the last test in this section asserts.
 M0_WEIGHTS = (
     "google/gemma-4-31B-it",
+    "deepseek-ai/DeepSeek-V4.1-Flash",
+)
+#: Models that were in the RFP and are not any more. Their scaffolds stay in the
+#: dev catalog for non-Milestone-0 use — gemma-4-31B-it keeps P300X2, GPU and
+#: Forge rows, and DeepSeek-V4-Flash-0731 keeps a GPU reference spec — so the
+#: guard below asserts what makes a model *graded* is absent, not the model.
+DROPPED_WEIGHTS = (
+    "mistralai/Mistral-Small-4-119B-2603",
     "deepseek-ai/DeepSeek-V4-Flash-0731",
 )
-DROPPED_WEIGHTS = ("mistralai/Mistral-Small-4-119B-2603",)
 
 
 def _m0_templates():
@@ -406,7 +413,7 @@ def _m0_templates():
     ]
 
 
-def test_all_three_m0_models_have_a_blackhole_galaxy_spec():
+def test_every_m0_model_has_a_blackhole_galaxy_spec():
     assert {t["weights"][0] for t in _m0_templates()} == set(M0_WEIGHTS)
 
 
@@ -514,7 +521,7 @@ def test_a_model_dropped_from_the_rfp_carries_no_grading_configuration(weights):
 
 def test_without_an_override_the_default_ladder_still_derives_three_tiers():
     ref = get_perf_reference_map(
-        "DeepSeek-V4-Flash-0731", {"functional": 0.10, "complete": 0.50, "target": 1.0}
+        "DeepSeek-V4.1-Flash", {"functional": 0.10, "complete": 0.50, "target": 1.0}
     )
     mid = _reference_point(ref[DeviceTypes.BLACKHOLE_GALAXY])
     assert set(mid.targets) == {"functional", "complete", "target"}
