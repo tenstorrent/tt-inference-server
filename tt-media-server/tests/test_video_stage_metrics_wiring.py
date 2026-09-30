@@ -37,6 +37,8 @@ _TT_METAL_MODULES = (
     "models.tt_dit.pipelines.flux1",
     "models.tt_dit.pipelines.flux1.pipeline_flux1",
     "models.tt_dit.pipelines.flux1.pipeline_flux1_kontext",
+    "models.tt_dit.pipelines.flux2",
+    "models.tt_dit.pipelines.flux2.pipeline_flux2",
     "models.tt_dit.pipelines.minimax_h3",
     "models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3",
     "models.tt_dit.pipelines.mochi",

@@ -17,6 +17,7 @@ class SupportedModels(Enum):
     FLUX_1_DEV = "black-forest-labs/FLUX.1-dev"
     FLUX_1_SCHNELL = "black-forest-labs/FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "black-forest-labs/FLUX.1-Kontext-dev"
+    FLUX_2_DEV = "black-forest-labs/FLUX.2-dev"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
@@ -69,6 +70,7 @@ class ModelNames(Enum):
     FLUX_1_DEV = "FLUX.1-dev"
     FLUX_1_SCHNELL = "FLUX.1-schnell"
     FLUX_1_KONTEXT_DEV = "FLUX.1-Kontext-dev"
+    FLUX_2_DEV = "FLUX.2-dev"
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
@@ -123,6 +125,7 @@ class ModelRunners(Enum):
     TT_FLUX_1_DEV = "tt-flux.1-dev"
     TT_FLUX_1_SCHNELL = "tt-flux.1-schnell"
     TT_FLUX_1_KONTEXT_DEV = "tt-flux.1-kontext-dev"
+    TT_FLUX_2_DEV = "tt-flux.2-dev"
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
@@ -191,6 +194,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_FLUX_1_DEV,
         ModelRunners.TT_FLUX_1_SCHNELL,
         ModelRunners.TT_FLUX_1_KONTEXT_DEV,
+        ModelRunners.TT_FLUX_2_DEV,
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
@@ -339,6 +343,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_FLUX_1_DEV: {ModelNames.FLUX_1_DEV},
     ModelRunners.TT_FLUX_1_SCHNELL: {ModelNames.FLUX_1_SCHNELL},
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: {ModelNames.FLUX_1_KONTEXT_DEV},
+    ModelRunners.TT_FLUX_2_DEV: {ModelNames.FLUX_2_DEV},
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
@@ -869,6 +874,30 @@ ModelConfigs = {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
+    },
+    # FLUX.2-dev: meshes mirror the Blackhole rows of tt-metal's
+    # models/tt_dit/tests/models/flux2/test_performance_flux2.py (bh_qb, bh_lb,
+    # bh_glx_ring_sp0tp1_nofsdp). TTFlux2Runner picks the parallelism per mesh shape.
+    (ModelRunners.TT_FLUX_2_DEV, DeviceTypes.P150X4): {
+        "device_mesh_shape": (2, 2),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
+    },
+    (ModelRunners.TT_FLUX_2_DEV, DeviceTypes.P150X8): {
+        "device_mesh_shape": (2, 4),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_8_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 3000,
+    },
+    (ModelRunners.TT_FLUX_2_DEV, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 3000,
     },

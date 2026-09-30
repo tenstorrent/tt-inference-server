@@ -43,6 +43,7 @@ except ImportError:
     # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
     # precise error if the Kontext runner is actually requested.
     Flux1KontextPipeline = None
+from models.tt_dit.pipelines.flux2.pipeline_flux2 import Flux2Pipeline
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
@@ -96,6 +97,7 @@ dit_runner_log_map = {
     ModelRunners.TT_FLUX_1_DEV.value: "FLUX.1-dev",
     ModelRunners.TT_FLUX_1_SCHNELL.value: "FLUX.1-schnell",
     ModelRunners.TT_FLUX_1_KONTEXT_DEV.value: "FLUX.1-Kontext-dev",
+    ModelRunners.TT_FLUX_2_DEV.value: "FLUX.2-dev",
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW.value: "Motif-Image-6B-Preview",
     ModelRunners.TT_MOCHI_1.value: "Mochi1",
     ModelRunners.TT_WAN_2_2.value: "Wan22",
@@ -343,6 +345,136 @@ class TTFlux1Runner(TTDiTRunner):
             "l1_small_size": 32768,
             "trace_region_size": self.settings.trace_region_size,
         }
+
+
+# FLUX.2-dev on Blackhole. Per-mesh parallelism mirrors the Blackhole rows of
+# tt-metal's models/tt_dit/tests/models/flux2/test_performance_flux2.py:
+#   (2, 2) bh_qb                      -- Linear, FSDP + dynamic_load (the encoder
+#                                        and transformer do not fit together in DRAM)
+#   (2, 4) bh_lb                      -- Linear
+#   (4, 8) bh_glx_ring_sp0tp1_nofsdp  -- Ring, VAE TP on the 4-axis
+_FLUX2_MESH_CONFIGS = {
+    (2, 2): {
+        "topology": ttnn.Topology.Linear,
+        "vae_tp_axis": 1,
+        "is_fsdp": True,
+        "dynamic_load": True,
+        "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+        "router_payload_bytes": None,
+    },
+    (2, 4): {
+        "topology": ttnn.Topology.Linear,
+        "vae_tp_axis": 1,
+        "is_fsdp": False,
+        "dynamic_load": False,
+        "fabric_config": ttnn.FabricConfig.FABRIC_1D,
+        "router_payload_bytes": None,
+    },
+    (4, 8): {
+        "topology": ttnn.Topology.Ring,
+        "vae_tp_axis": 0,
+        "is_fsdp": False,
+        "dynamic_load": False,
+        "fabric_config": ttnn.FabricConfig.FABRIC_1D_RING,
+        "router_payload_bytes": 8192,
+    },
+}
+FLUX2_IMAGE_SIZE = 1024
+FLUX2_L1_SMALL_SIZE = 65536  # the VAE conv2d needs L1_SMALL
+# The media-server Dockerfile sets TT_MM_THROTTLE_PERF=5 image-wide (an SDXL-era
+# setting), which caps matmul throughput at 33% on Blackhole and makes FLUX.2
+# 40-58% slower per image. tt-metal itself defaults to no throttle and its CI runs
+# Blackhole unthrottled, so FLUX.2 overrides the image default for its own worker.
+# FLUX2_MM_THROTTLE_PERF keeps an explicit escape hatch (e.g. "5" on a board that
+# needs power limiting).
+FLUX2_MM_THROTTLE_PERF = os.environ.get("FLUX2_MM_THROTTLE_PERF", "0")
+
+
+class TTFlux2Runner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        # ttnn reads TT_MM_THROTTLE_PERF each time it builds a matmul program, so
+        # this must be set before the pipeline compiles anything.
+        previous = os.environ.get("TT_MM_THROTTLE_PERF")
+        os.environ["TT_MM_THROTTLE_PERF"] = FLUX2_MM_THROTTLE_PERF
+        if previous != FLUX2_MM_THROTTLE_PERF:
+            self.logger.info(
+                f"Device {device_id}: TT_MM_THROTTLE_PERF {previous!r} -> "
+                f"{FLUX2_MM_THROTTLE_PERF!r} for FLUX.2"
+            )
+
+    def _mesh_config(self):
+        mesh_shape = tuple(self.settings.device_mesh_shape)
+        config = _FLUX2_MESH_CONFIGS.get(mesh_shape)
+        if config is None:
+            raise ValueError(
+                f"FLUX.2-dev has no configuration for mesh {mesh_shape}; "
+                f"supported: {sorted(_FLUX2_MESH_CONFIGS)}"
+            )
+        return config
+
+    def create_pipeline(self):
+        config = self._mesh_config()
+        try:
+            return Flux2Pipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+                sp_axis=0,
+                tp_axis=1,
+                encoder_tp_axis=1,
+                vae_tp_axis=config["vae_tp_axis"],
+                vae_h_axis=1 - config["vae_tp_axis"],
+                vae_w_axis=None,
+                num_links=2,
+                topology=config["topology"],
+                width=FLUX2_IMAGE_SIZE,
+                height=FLUX2_IMAGE_SIZE,
+                is_fsdp=config["is_fsdp"],
+                dynamic_load=config["dynamic_load"],
+                trace_warmup=True,
+                shard_prompt=True,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Flux2 pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        config = self._mesh_config()
+        # No trace_region_size: the tt-metal perf test leaves it at the ttnn
+        # default, and this runner mirrors that test.
+        params = {
+            "l1_small_size": FLUX2_L1_SMALL_SIZE,
+            "fabric_config": config["fabric_config"],
+        }
+        if config["router_payload_bytes"] is not None:
+            router_config = ttnn.FabricRouterConfig()
+            router_config.max_packet_payload_size_bytes = config["router_payload_bytes"]
+            params["fabric_router_config"] = router_config
+        return params
+
+    @log_execution_time(
+        f"{dit_runner_log_map[get_settings().model_runner]} inference",
+        TelemetryEvent.MODEL_INFERENCE,
+        os.environ.get("TT_VISIBLE_DEVICES"),
+    )
+    def run(self, requests: list[ImageGenerateRequest]):
+        # Flux2Pipeline takes neither negative prompts nor an on_event callback,
+        # so it cannot go through run_single_prompt like the other DiT runners.
+        request = requests[0]
+        self.logger.debug(f"Device {self.device_id}: Running inference")
+        images = self.pipeline(
+            prompts=[request.prompt],
+            num_inference_steps=request.num_inference_steps,
+            seed=int(request.seed or 0),
+            traced=True,
+        )
+        self.logger.debug(f"Device {self.device_id}: Inference completed")
+        return images
 
 
 # FLUX.1-Kontext-dev: instruction-based image editing (reference image + prompt).

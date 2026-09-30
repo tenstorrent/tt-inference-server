@@ -31,6 +31,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_FLUX_1_KONTEXT_DEV: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTFluxKontextRunner"]
     ).TTFluxKontextRunner(wid),
+    ModelRunners.TT_FLUX_2_DEV: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTFlux2Runner"]
+    ).TTFlux2Runner(wid),
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMotifImage6BPreviewRunner"]
     ).TTMotifImage6BPreviewRunner(wid),
