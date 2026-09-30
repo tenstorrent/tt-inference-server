@@ -77,8 +77,6 @@ templates:
     # Blackhole Galaxy (32x P150), DP=4 over a (4,8) mesh. Copied from the GALAXY
     # entry above. A bring-up config, not a validated one.
     #
-    # Last run: tt-shield 36550291874 (tt-metal c05df925, from the branch of
-    # tt-metal PR #58222). The server boots and the release workflow completes, but:
     #   - MMLU: ~24% of requests failed (mostly HTTP 500 from
     #     openai_harmony.HarmonyError) and ~10% more returned garbled text.
     #     aime25 (13/15) and gpqa (7/7) ran on only 15 and 7 questions.
@@ -87,20 +85,11 @@ templates:
     #     the numbers are not reliable.
     #   - Context was exercised up to a 64K prompt, not the full 128K.
     #
-    # Needs tt-metal with PR #58222 (BH Galaxy decode path, fixes
-    # tenstorrent/tt-metal#58044). Without it the MoE decode kernel fails to build
-    # on the default 2D torus fabric (tt-shield 36164782025). Keep the default
-    # fabric: FABRIC_1D_RING avoids that error but hangs the first decode step
-    # (tt-shield 36232539588).
     #
     # MESH_DEVICE "(4, 8)": with the default "BH-Galaxy" name, gpt-oss-20b crashed
     # during prefill warmup (paged_fill_cache kv_heads mismatch, tt-shield
     # 35106897592). The cause was not root-caused.
     #
-    # sample_on_device_mode "all" is copied from GALAXY and is the suspected cause
-    # of the MMLU failures. tenstorrent/tt-metal#44746 reports that "all" corrupts
-    # per-user state on a DP=4 Galaxy while "decode_only" is clean. Not yet
-    # tested on Blackhole Galaxy.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # currently limiting client-side max_concurrency=32 to allow workflows to
       # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
