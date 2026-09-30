@@ -2707,7 +2707,7 @@ templates:
           # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
           # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
       max_context: 49152      # 48 * 1024
-      default_impl: true
+      default_impl: false
       env_vars:
             # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
             # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
