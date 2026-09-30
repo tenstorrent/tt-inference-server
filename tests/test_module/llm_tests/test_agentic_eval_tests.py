@@ -49,6 +49,7 @@ class FakeScore:
 class FakeHarborConfig:
     dataset: str = "terminal-bench/terminal-bench-2"
     agent: str = "terminus-2"
+    dataset_path: Optional[str] = None
     model: Optional[str] = None
     n_concurrent_trials: int = 5
     n_attempts: int = 1
@@ -541,6 +542,26 @@ class TestHarborHarness:
             run_cmd.return_value = 17
 
             assert run_harbor(cfg) == 17
+
+    def test_local_dataset_path_replaces_registry_dataset(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.dataset_path = str(tmp_path / "tasks")
+        task.agentic_eval_config.task_names = ["terminal-bench/qemu-startup"]
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=17):
+            assert run_harbor(cfg) == 17
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        dataset = json.loads(config_path.read_text())["datasets"][0]
+        assert dataset["path"] == str(tmp_path / "tasks")
+        assert "name" not in dataset
+        assert dataset["task_names"] == ["qemu-startup"]
 
     def test_harbor_config_includes_adapter_and_env_overrides(self, tmp_path):
         task = _harbor_task()

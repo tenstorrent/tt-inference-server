@@ -185,6 +185,15 @@ def build_harbor_config(
     run_stamp: Optional[str] = None,
 ) -> HarborRunConfig:
     cfg = task.agentic_eval_config
+    dataset_path = Path(cfg.dataset_path) if cfg.dataset_path else None
+    if dataset_path is not None and not dataset_path.is_absolute():
+        dataset_path = Path(__file__).resolve().parents[2] / dataset_path
+    task_names = resolve_task_names(task, runtime_config)
+    if dataset_path is not None:
+        # Registry task filters are package-qualified (for example,
+        # ``terminal-bench/qemu-startup``), while a local dataset identifies
+        # the same task by its directory basename.
+        task_names = [Path(name).name for name in task_names]
     task_output_dir = _agentic_output_dir(
         context.output_dir,
         server.model,
@@ -209,7 +218,8 @@ def build_harbor_config(
         timeout_multiplier=cfg.timeout_multiplier,
         agent_timeout_sec=cfg.agent_timeout_sec,
         agent_setup_timeout_multiplier=cfg.agent_setup_timeout_multiplier,
-        task_names=resolve_task_names(task, runtime_config),
+        dataset_path=dataset_path,
+        task_names=task_names,
         exclude_task_names=cfg.exclude_task_names,
         quiet=cfg.quiet,
         yes=cfg.yes,

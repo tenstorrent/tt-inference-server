@@ -264,6 +264,9 @@ class HarborEvalConfig:
 
     dataset: str
     agent: str
+    # Optional repository-local dataset directory. When set, Harbor reads tasks
+    # from this path instead of resolving ``dataset`` through the registry.
+    dataset_path: Optional[str] = None
     model: Optional[str] = None
     n_concurrent_trials: int = 1
     n_attempts: int = 1
@@ -5223,6 +5226,10 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
+                    dataset_path=(
+                        "reference_config/evals/task_overrides/"
+                        "qemu-startup-verifier-fix"
+                    ),
                     n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=89,

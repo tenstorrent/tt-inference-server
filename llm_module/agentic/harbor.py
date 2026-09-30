@@ -65,6 +65,7 @@ class HarborRunConfig:
     timeout_multiplier: Optional[float]
     agent_timeout_sec: Optional[float]
     agent_setup_timeout_multiplier: Optional[float] = None
+    dataset_path: Optional[Path] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
     # Rich Live progress: quiet=True shows only the loading bar; quiet=False
@@ -202,7 +203,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    dataset_config: dict[str, Any]
+    if config.dataset_path is not None:
+        dataset_config = {"path": str(config.dataset_path)}
+    else:
+        dataset_config = {"name": config.dataset}
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:
@@ -286,6 +291,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _mini_swe_needs_host_gateway(config)
+        or config.dataset_path is not None
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
