@@ -24,19 +24,19 @@ using tt::runners::MockEmbeddingRunner;
 
 namespace {
 
-constexpr char kModel[] = "BAAI/bge-large-en-v1.5";
-constexpr size_t kDim = 1024;  // the mock's fixed output dimension
+constexpr char MODEL[] = "BAAI/bge-large-en-v1.5";
+constexpr size_t DIM = 1024;  // the mock's fixed output dimension
 
 EmbeddingConfig makeConfig(size_t maxBatchSize = 8) {
   EmbeddingConfig cfg;
-  cfg.hf_model_id = kModel;
+  cfg.hf_model_id = MODEL;
   cfg.max_batch_size = maxBatchSize;
   return cfg;
 }
 
 EmbeddingRequest makeRequest(uint32_t taskId, const std::string& input) {
   EmbeddingRequest req(taskId);
-  req.model = kModel;
+  req.model = MODEL;
   req.input = input;
   return req;
 }
@@ -80,7 +80,7 @@ TEST(MockEmbeddingRunnerTest, KnownInputMatchesPinnedValues) {
 
   ASSERT_EQ(responses.size(), 1u);
   const auto& v = responses[0].embedding;
-  ASSERT_EQ(v.size(), kDim);
+  ASSERT_EQ(v.size(), DIM);
   EXPECT_FLOAT_EQ(v[0], -0.0166425277f);
   EXPECT_FLOAT_EQ(v[1], -0.0156397987f);
   EXPECT_FLOAT_EQ(v[511], -0.0195555873f);
@@ -92,8 +92,8 @@ TEST(MockEmbeddingRunnerTest, KnownInputMatchesPinnedValues) {
 TEST(MockEmbeddingRunnerTest, DistinctInputsYieldDistinctVectors) {
   MockEmbeddingRunner runner(makeConfig());
 
-  const auto responses = runner.run(
-      {makeRequest(1, "first text"), makeRequest(2, "second text")});
+  const auto responses =
+      runner.run({makeRequest(1, "first text"), makeRequest(2, "second text")});
 
   ASSERT_EQ(responses.size(), 2u);
   EXPECT_FALSE(bitIdentical(responses[0].embedding, responses[1].embedding));
@@ -121,7 +121,7 @@ TEST(MockEmbeddingRunnerTest, EchoesTaskIdAndModelPositionally) {
   ASSERT_EQ(responses.size(), 2u);
   EXPECT_EQ(responses[0].task_id, 10u);
   EXPECT_EQ(responses[1].task_id, 11u);
-  EXPECT_EQ(responses[0].model, kModel);
+  EXPECT_EQ(responses[0].model, MODEL);
   EXPECT_TRUE(responses[0].error.empty());
 }
 
@@ -153,7 +153,7 @@ TEST(MockEmbeddingRunnerTest, WrongModelFailsOnlyThatRequest) {
   ASSERT_EQ(responses.size(), 2u);
   EXPECT_TRUE(responses[0].error.empty());
   EXPECT_EQ(responses[1].error,
-            std::string("Only ") + kModel + " embeddings are supported");
+            std::string("Only ") + MODEL + " embeddings are supported");
   EXPECT_TRUE(responses[1].embedding.empty());
 }
 

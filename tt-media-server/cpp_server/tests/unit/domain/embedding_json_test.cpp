@@ -150,9 +150,9 @@ TEST(EmbeddingResponseJsonTest, ToOpenaiJsonWithEmptyEmbedding) {
 
 // fromJson parses all fields including the error.
 TEST(EmbeddingResponseJsonTest, FromJsonParsesAllFields) {
-  const auto json = parseJson(
-      R"({"task_id":11,"embedding":[1.0,2.0],"total_tokens":5,)"
-      R"("model":"m","error":"boom"})");
+  const auto json =
+      parseJson(R"({"task_id":11,"embedding":[1.0,2.0],"total_tokens":5,)"
+                R"("model":"m","error":"boom"})");
 
   const auto resp = EmbeddingResponse::fromJson(json);
 

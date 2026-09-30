@@ -74,7 +74,8 @@ TEST(EmbeddingPipeTest, BinaryRoundTrip) {
   TestPipe p;
   const auto payload = makePayload(256);
 
-  ASSERT_TRUE(pipe_detail::pipeWrite(p.writeFd, payload.data(), payload.size()));
+  ASSERT_TRUE(
+      pipe_detail::pipeWrite(p.writeFd, payload.data(), payload.size()));
 
   EXPECT_EQ(pipe_detail::pipeReadBinary(p.readFd), payload);
 }
@@ -128,7 +129,7 @@ TEST(EmbeddingPipeTest, ReadBinaryRejectsOversizedLengthPrefix) {
   TestPipe p;
   const uint32_t oversized =
       static_cast<uint32_t>(tt::config::defaults::EMBEDDING_MAX_PIPE_BYTES) + 1;
-  ASSERT_EQ(write(p.writeFd, &oversized, sizeof(oversized)), 
+  ASSERT_EQ(write(p.writeFd, &oversized, sizeof(oversized)),
             static_cast<ssize_t>(sizeof(oversized)));
 
   EXPECT_TRUE(pipe_detail::pipeReadBinary(p.readFd).empty());
@@ -216,7 +217,8 @@ TEST(EmbeddingPipeTest, WriteFailsWhenReadEndClosed) {
   p.closeRead();
   const auto payload = makePayload(16);
 
-  EXPECT_FALSE(pipe_detail::pipeWrite(p.writeFd, payload.data(), payload.size()));
+  EXPECT_FALSE(
+      pipe_detail::pipeWrite(p.writeFd, payload.data(), payload.size()));
 }
 
 // Only the exact READY payload is accepted as the warmup handshake.
@@ -233,8 +235,10 @@ TEST(EmbeddingPipeTest, ReadySentinelMatchesExactPayloadOnly) {
 // after warmup (embedding_worker_main.cpp).
 TEST(EmbeddingPipeTest, ReadySentinelSurvivesPipeRoundTrip) {
   TestPipe p;
-  ASSERT_TRUE(pipe_detail::pipeWrite(p.writeFd, pipe_detail::WORKER_READY_SENTINEL,
-                                     sizeof(pipe_detail::WORKER_READY_SENTINEL) - 1));
+  ASSERT_TRUE(
+      pipe_detail::pipeWrite(p.writeFd, pipe_detail::WORKER_READY_SENTINEL,
+                             sizeof(pipe_detail::WORKER_READY_SENTINEL) - 1));
 
-  EXPECT_TRUE(pipe_detail::isReadySentinel(pipe_detail::pipeReadBinary(p.readFd)));
+  EXPECT_TRUE(
+      pipe_detail::isReadySentinel(pipe_detail::pipeReadBinary(p.readFd)));
 }
