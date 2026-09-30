@@ -297,6 +297,8 @@ templates:
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
     # runner uses that instead. Do not set MODEL_WEIGHTS_DIR here: spec env overrides the mount value.
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3
+    TT_METAL_LOG_KERNEL_COMPILE: "0"
+    TT_METAL_TDP_LIMIT_WATTS: "190"
     # Warmup is create_pipeline(warmup=True) inside run.py's readiness wait
     # (TT_SERVER_READY_TIMEOUT_SECONDS=3600 per boot attempt x TT_SERVER_BOOT_ATTEMPTS=2). The
     # 10 s / 15 s shapes compile inside their first request, which the benchmark's BH1X budgets
@@ -360,6 +362,8 @@ templates:
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
     # runner uses that instead. Do not set MODEL_WEIGHTS_DIR here: spec env overrides the mount value.
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-FL2VA
+    TT_METAL_LOG_KERNEL_COMPILE: "0"
+    TT_METAL_TDP_LIMIT_WATTS: "190"
     # Warmup is create_pipeline(warmup=True) inside run.py's readiness wait
     # (TT_SERVER_READY_TIMEOUT_SECONDS=3600 per boot attempt x TT_SERVER_BOOT_ATTEMPTS=2). The
     # 10 s / 15 s shapes compile inside their first request, which the benchmark's BH1X budgets
@@ -422,6 +426,8 @@ templates:
     # --host-hf-cache run_docker_server sets MODEL_WEIGHTS_DIR to the read-only mount and the
     # runner uses that instead. Do not set MODEL_WEIGHTS_DIR here: spec env overrides the mount value.
     MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA
+    TT_METAL_LOG_KERNEL_COMPILE: "0"
+    TT_METAL_TDP_LIMIT_WATTS: "190"
     # Warmup is create_pipeline(warmup=True) inside run.py's readiness wait
     # (TT_SERVER_READY_TIMEOUT_SECONDS=3600 per boot attempt x TT_SERVER_BOOT_ATTEMPTS=2). The
     # 10 s / 15 s shapes compile inside their first request, which the benchmark's BH1X budgets
