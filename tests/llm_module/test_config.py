@@ -55,6 +55,10 @@ class TestServerConnection:
         )
         assert conn.url_with_port == "http://host:9000"
 
+    def test_url_with_port_https_uses_service_port(self):
+        conn = ServerConnection(base_url="https://host", service_port=8443, model="m")
+        assert conn.url_with_port == "https://host:8443"
+
     def test_remote_url_preserves_full_url(self):
         conn = ServerConnection(
             base_url="https://console.tenstorrent.com/openai",

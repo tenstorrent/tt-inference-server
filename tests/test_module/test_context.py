@@ -21,6 +21,7 @@ from test_module.context import (
     get_health,
     require_health,
 )
+from utils.url_helpers import normalize_server_url
 
 
 def _ctx(
@@ -64,6 +65,11 @@ class TestMediaContextUrls:
         c = _ctx(server_url="http://1.2.3.4", service_port=8001)
         assert c.base_url == "http://1.2.3.4:8001"
         assert c.server_port == 8001
+
+    def test_normalized_https_server_url_resolves_to_443(self):
+        c = _ctx(server_url=normalize_server_url("https://myhost"), service_port=8000)
+        assert c.base_url == "https://myhost:443"
+        assert c.server_port == 443
 
     def test_test_payloads_path(self):
         assert _ctx().test_payloads_path == "utils/test_payloads"

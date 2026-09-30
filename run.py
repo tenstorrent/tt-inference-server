@@ -208,7 +208,8 @@ def parse_arguments():
         type=str,
         default=None,
         help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
-        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server; "
+        "https URLs default to port 443.",
     )
     parser.add_argument(
         "--bind-host",
