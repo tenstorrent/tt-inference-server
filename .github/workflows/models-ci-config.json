@@ -592,6 +592,7 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
+                        "BH_GALAXY",
                         "P300X2",
                         "T3K"
                     ]

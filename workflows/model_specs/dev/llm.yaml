@@ -74,6 +74,44 @@ templates:
         - workflow_type: EVALS
           task_name: gpqa_diamond_cot_zeroshot
           reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+    # Blackhole Galaxy (32x P150), DP=4 over a (4,8) mesh. Copied from the GALAXY
+    # entry above. A bring-up config, not a validated one.
+    #
+    #   - MMLU: ~24% of requests failed (mostly HTTP 500 from
+    #     openai_harmony.HarmonyError) and ~10% more returned garbled text.
+    #     aime25 (13/15) and gpqa (7/7) ran on only 15 and 7 questions.
+    #   - Benchmarks have no perf targets. The server logged 158 HarmonyError
+    #     stream failures during them, yet every benchmark reports failed=0, so
+    #     the numbers are not reliable.
+    #   - Context was exercised up to a 64K prompt, not the full 128K.
+    #
+    #
+    # MESH_DEVICE "(4, 8)": with the default "BH-Galaxy" name, gpt-oss-20b crashed
+    # during prefill warmup (paged_fill_cache kv_heads mismatch, tt-shield
+    # 35106897592). The cause was not root-caused.
+    #
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 32  # currently limiting client-side max_concurrency=32 to allow workflows to
+      # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      tensor_cache_timeout: 5400.0
+      env_vars:
+        MESH_DEVICE: "(4, 8)"  # Override default BH-Galaxy name to use (4,8) mesh grid; see note above
+        TT_MM_THROTTLE_PERF: 2
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32  # override the default inferred by max_concurrency
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
+      known_issues:
+        - workflow_type: EVALS
+          task_name: aime25
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
+        - workflow_type: EVALS
+          task_name: gpqa_diamond_cot_zeroshot
+          reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
