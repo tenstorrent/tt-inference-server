@@ -253,7 +253,9 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf /usr/local/rustup \
     && rm -rf /usr/include \
     && echo "=== builder home size breakdown (informs the runtime-stage layer split) ===" \
-    && du -xsh ${HOME_DIR}/.[!.]* ${HOME_DIR}/* ${HOME_DIR}/tt-metal/* 2>/dev/null | sort -h | tail -25
+    && du -xsh ${HOME_DIR}/.[!.]* ${HOME_DIR}/* 2>/dev/null | sort -h \
+    && du -xsh ${HOME_DIR}/tt-metal/.[!.]* ${HOME_DIR}/tt-metal/* 2>/dev/null | sort -h | tail -15 \
+    && du -xsh ${PYTHON_ENV_DIR}/lib/python*/site-packages/* 2>/dev/null | sort -h | tail -12
 
 
 # ==============================================================================
