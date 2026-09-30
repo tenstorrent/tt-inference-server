@@ -1441,6 +1441,10 @@ templates:
         # GPQA sends sampling parameters the device sampler does not serve; without this the
         # generator refuses them and the engine never starts.
         QWEN_VLLM_HOST_COMPATIBILITY: "1"
+        # Log decode_forward's own p50/p10/p90 every 20 steps. A served step costs far more
+        # than that entry point does -- 168.6 ms against 63.7 ms measured at batch 1 -- and
+        # this is what attributes the difference to the work around the call.
+        QWEN_DECODE_STEP_TIMING: "20"
       vllm_args:
         # qwen38_27b_t3k pages its KV cache in fixed 32-token pages.
         block_size: "32"
