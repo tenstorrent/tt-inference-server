@@ -486,6 +486,13 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+# Custom lm-eval task definitions for IFM/K2-Horizon-7B model-card evals that the
+# pinned lm-eval fork does not ship. Absolute, so it resolves independently of the
+# venv that include_path is normally joined with.
+_K2_HORIZON_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
+)
+
 _eval_config_list = [
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.2",
@@ -6497,6 +6504,85 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 3,
                     EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                # HMMT February 2026 (MathArena), the model card's "Math" row (73.3).
+                # Custom task (the pinned lm-eval fork has none): 33 problems graded by
+                # the fork's r1_evals math equivalence checker, as for r1_aime24.
+                task_name="k2_hmmt_feb_2026",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=73.3,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # All 33 problems nightly (served at up to 32 concurrent users).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 33,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # Humanity's Last Exam, the model card's "Scientific Reasoning" row
+                # (18.6, LLM-judged on the full set). Custom task: text-only
+                # multiple-choice subset, scored deterministically from HLE's
+                # "Answer: <letter>" format, so the score is NOT directly comparable
+                # to the card. cais/hle is gated: the CI HF token needs access.
+                task_name="k2_hle_text_mc",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 40,
+                    EvalLimitMode.SMOKE_TEST: 2,
                 },
             ),
             EvalTask(

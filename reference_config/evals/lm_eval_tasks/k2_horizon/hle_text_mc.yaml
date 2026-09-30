@@ -1,0 +1,25 @@
+# Humanity's Last Exam, the "Scientific Reasoning" row of the IFM/K2-Horizon-7B model card.
+# Text-only multiple-choice subset, scored deterministically from the "Answer: <letter>"
+# line of HLE's own response format. The card's number uses HLE's LLM-judge protocol on
+# the full set, so this subset score is not directly comparable to it.
+task: k2_hle_text_mc
+dataset_path: cais/hle
+test_split: test
+process_docs: !function utils.process_hle_text_mc
+output_type: generate_until
+doc_to_text: !function utils.hle_doc_to_text
+doc_to_target: answer
+process_results: !function utils.process_results_hle_mc
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

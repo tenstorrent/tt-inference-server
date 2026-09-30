@@ -1,0 +1,24 @@
+# HMMT February 2026 (MathArena), the "Math" row of the IFM/K2-Horizon-7B model card.
+# 33 competition problems with LaTeX answers; graded by the lm-eval fork's r1_evals
+# math equivalence checker (same scorer as r1_aime24 / r1_math500).
+task: k2_hmmt_feb_2026
+dataset_path: MathArena/hmmt_feb_2026
+test_split: train
+output_type: generate_until
+# MathArena's instruction for answer-extracted math problems.
+doc_to_text: "{{problem}}\n\nPlease reason step by step, and put your final answer within \\boxed{}."
+doc_to_target: "{{answer}}"
+process_results: !function utils.process_results_math
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0
