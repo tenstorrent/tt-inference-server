@@ -270,6 +270,14 @@ _INFERENCEX_REF_STAMP = ".inferencex_ref"
 # Patches carried here until they land upstream. Each subdirectory names the
 # path inside the InferenceX checkout the patches apply to (``aiperf`` ->
 # ``utils/aiperf``); files apply in sorted order.
+# TODO(#5254): remove patches/inferencex/aiperf/0001-wait-for-all-service-replicas.patch
+# once upstream AgentX / InferenceX rebases its vendored aiperf onto a revision
+# that includes https://github.com/ai-dynamo/aiperf/pull/1348 and the
+# InferenceX pin moves to it. If no patches are left after that, also remove
+# _INFERENCEX_PATCH_DIR, _INFERENCEX_PATCH_TARGETS, _inferencex_patches,
+# _inferencex_stamp, _patch_check, _apply_inferencex_patches, their call sites
+# in setup_agentic_traces and tests/test_workflow_venvs_patches.py.
+# https://github.com/tenstorrent/tt-inference-server/issues/5254
 _INFERENCEX_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "inferencex"
 _INFERENCEX_PATCH_TARGETS = {"aiperf": Path("utils") / "aiperf"}
 
@@ -336,6 +344,7 @@ def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
             return False
         logger.info("Applied %s to %s", patch.name, target)
     return True
+
 
 # InferenceX pins whose vendored aiperf builds the agentic auto-warmup phase
 # without ``phase_kind``. 8f12037728d6 vendors aiperf 754356e9 (agentx-v1.0.5),
