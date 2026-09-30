@@ -5079,18 +5079,25 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    # These requests stream, so this is a socket READ timeout that resets on
-                    # every chunk -- an idle bound, not a response-duration bound. It
-                    # therefore cannot truncate a healthy generation, which emits a token
-                    # every few hundred ms; it only fires when the server has stopped
-                    # producing entirely. At 7200 a dead server was not detected for two
-                    # hours, which is how a run reaches on-dispatch.yml's 1080-minute cap
-                    # and gets cancelled with no verdict and no artifacts (35299987641,
-                    # 35656042558, 36374616815). 600s detects the same failure in ten
-                    # minutes and leaves the budget for the tasks that are actually
-                    # working. Non-streaming tasks must NOT copy this value: for them
-                    # the timeout bounds the whole response.
-                    "timeout": "600",
+                    # Whole-request budget, NOT an idle timer. The pinned harness builds
+                    # its session as ClientTimeout(total=self.timeout)
+                    # (lm_eval/models/api_models.py:808 -- the only ClientTimeout in the
+                    # package; there is no sock_read/sock_connect knob), so this bounds
+                    # the entire request including reading the full streamed body.
+                    # "stream": "true" does NOT make it reset per chunk.
+                    #
+                    # So this field cannot be repurposed for stall detection: any value
+                    # short enough to notice a dead server also truncates a healthy long
+                    # generation. That job belongs to wall_clock_timeout_seconds below,
+                    # which bounds the TASK rather than the request.
+                    #
+                    # Left at main's value. With max_gen_toks=120*1024 and ~405ms/token a
+                    # full generation is ~13.8h, so 14400 is itself a truncation risk --
+                    # but so is every value proposed so far, including the harness default
+                    # of 1800. Making a per-request budget computable requires clamping
+                    # max_gen_toks to what the device context actually supports, which is
+                    # a separate change from this PR.
+                    "timeout": "14400",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
@@ -5105,11 +5112,13 @@ _eval_config_list = [
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
                 },
-                # Backstop only. The 600s streaming idle timeout above is what detects a
-                # dead server; this bounds the pathological case where tokens trickle
-                # just fast enough to keep resetting it. On deadline the owned process
-                # group is killed and the task reports rc=124 incomplete, so the run
-                # still produces a report instead of being cancelled with no artifacts.
+                # The actual bound, and the only one here that can detect a hung run
+                # without truncating a generation: it bounds the TASK, not the request.
+                # On deadline the owned POSIX process group is killed and the task
+                # reports rc=124 as incomplete -- never scored as a pass -- so the run
+                # continues to the next task and still produces a report, instead of
+                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
+                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
                 wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
@@ -5135,18 +5144,25 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
-                    # These requests stream, so this is a socket READ timeout that resets on
-                    # every chunk -- an idle bound, not a response-duration bound. It
-                    # therefore cannot truncate a healthy generation, which emits a token
-                    # every few hundred ms; it only fires when the server has stopped
-                    # producing entirely. At 7200 a dead server was not detected for two
-                    # hours, which is how a run reaches on-dispatch.yml's 1080-minute cap
-                    # and gets cancelled with no verdict and no artifacts (35299987641,
-                    # 35656042558, 36374616815). 600s detects the same failure in ten
-                    # minutes and leaves the budget for the tasks that are actually
-                    # working. Non-streaming tasks must NOT copy this value: for them
-                    # the timeout bounds the whole response.
-                    "timeout": "600",
+                    # Whole-request budget, NOT an idle timer. The pinned harness builds
+                    # its session as ClientTimeout(total=self.timeout)
+                    # (lm_eval/models/api_models.py:808 -- the only ClientTimeout in the
+                    # package; there is no sock_read/sock_connect knob), so this bounds
+                    # the entire request including reading the full streamed body.
+                    # "stream": "true" does NOT make it reset per chunk.
+                    #
+                    # So this field cannot be repurposed for stall detection: any value
+                    # short enough to notice a dead server also truncates a healthy long
+                    # generation. That job belongs to wall_clock_timeout_seconds below,
+                    # which bounds the TASK rather than the request.
+                    #
+                    # Left at main's value. With max_gen_toks=120*1024 and ~405ms/token a
+                    # full generation is ~13.8h, so 14400 is itself a truncation risk --
+                    # but so is every value proposed so far, including the harness default
+                    # of 1800. Making a per-request budget computable requires clamping
+                    # max_gen_toks to what the device context actually supports, which is
+                    # a separate change from this PR.
+                    "timeout": "14400",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -5155,11 +5171,13 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
                 },
-                # Backstop only. The 600s streaming idle timeout above is what detects a
-                # dead server; this bounds the pathological case where tokens trickle
-                # just fast enough to keep resetting it. On deadline the owned process
-                # group is killed and the task reports rc=124 incomplete, so the run
-                # still produces a report instead of being cancelled with no artifacts.
+                # The actual bound, and the only one here that can detect a hung run
+                # without truncating a generation: it bounds the TASK, not the request.
+                # On deadline the owned POSIX process group is killed and the task
+                # reports rc=124 as incomplete -- never scored as a pass -- so the run
+                # continues to the next task and still produces a report, instead of
+                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
+                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
                 wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
