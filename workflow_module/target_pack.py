@@ -112,6 +112,10 @@ class TargetPack(Protocol):
         """
         ...
 
+    def extra_report_metadata(self) -> Mapping[str, Any]:
+        """Report metadata the pack supplies itself, e.g. the requirements document."""
+        ...
+
 
 _target_pack: Optional[TargetPack] = None
 

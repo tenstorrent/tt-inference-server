@@ -122,3 +122,6 @@ class TenstorrentTargetPack(TargetPack):
             ("tt_metal_commit", "tt_metal_commit"),
             ("vllm_commit", "vllm_commit"),
         )
+
+    def extra_report_metadata(self):
+        return {}
