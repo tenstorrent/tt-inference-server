@@ -1891,6 +1891,23 @@ _eval_config_list = [
                         # load can exceed that and trip an MCP request timeout.
                         "tool_timeout_sec": 900,
                         "read_timeout_sec": 120,
+                        # M3's chat template infers thinking_mode from the resent history rather than
+                        # a fixed on/off default: past a short length threshold on the prior assistant
+                        # turn's *content*, the served model stops emitting reasoning_content on every
+                        # subsequent turn (confirmed live against bh-glx-120-b09u02, independent of
+                        # streaming, tool presence, or history-content wording -- it's purely a length
+                        # effect on the resent turn). The tau3 adapter only resends `content`, never
+                        # `reasoning_content`, so real multi-turn trials hit this after turn 1: 0/13-14
+                        # assistant turns carried reasoning_content in the reasoning-in-history-OFF eval
+                        # runs (reports 109342832921, 109371429172), vs 27/29 when the harness resent
+                        # full reasoning_content (report 109246050316). Explicitly forcing thinking_mode
+                        # overrides the length heuristic regardless of resent content, confirmed with
+                        # both short and full-length real turn content. See tt-d-gen#1197.
+                        #
+                        # Must stay a JSON *string*: agent_kwargs are written verbatim into the harbor
+                        # config file, and the adapter shlex.quotes this value onto the container
+                        # command line, which fails with TypeError on a dict.
+                        "llm_args_json": '{"chat_template_kwargs": {"thinking_mode": "enabled"}}',
                     },
                     environment_env={
                         "TAU2_USER_MODEL": "openai/MiniMaxAI/MiniMax-M3",
