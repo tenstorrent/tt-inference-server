@@ -1771,6 +1771,7 @@ _eval_config_list = [
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
+                capture_reasoning=True,
                 score=EvalTaskScore(
                     published_score=92.9,
                     published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
