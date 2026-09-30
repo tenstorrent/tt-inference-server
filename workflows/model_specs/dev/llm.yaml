@@ -4173,7 +4173,7 @@ templates:
       pinned_checkpoint: true
       checkpoint_index: model.safetensors.index.json
       model_path_env: LLAMA_MODEL_PATH
-      benchmark_token_timing: true
+      benchmark_protocol: fixed_workload
       benchmark_require_complete_metrics: true
       benchmark_tokenizer_sha256:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
