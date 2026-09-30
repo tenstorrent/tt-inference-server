@@ -214,12 +214,64 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
       default_impl: true
-    # BLACKHOLE_GALAXY — Milestone-0 target system: 32x P150 in a 4x8 2D torus
-    # (RFP D.1/D.2). gemma-4 already runs via tt_transformers, so this is a real
-    # starting config rather than a comment-only stub. Promote to prod/llm.yaml
-    # (with pinned commits) via scripts/release/promote_dev_spec_to_prod.py once
-    # AIPerf targets are established (readiness §5.2/§5.3).
-    - device: BLACKHOLE_GALAXY
+  # Milestone-0 configuration removed on the model pivot: gemma-4-31B-it was
+  # replaced by Qwen/Qwen3.8-Flash-Next. Back to EXPERIMENTAL, and the
+  # BLACKHOLE_GALAXY row with its perf_targets_map is gone, so nothing here
+  # looks graded. The P300X2 and GPU rows above stay: they feed the generated
+  # helm chart, models-ci-config.json, release_model_spec.json and
+  # docs/model_support, none of which are Milestone-0. Asserted by the
+  # dropped-model guard in tests/test_m0_target_convention.py.
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+      # by enable-auto-tool-choice in vllm_args above.
+      tool_call_parser_name: gemma4
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Milestone-0 model: Qwen/Qwen3.8-Flash-Next
+#
+# GREENFIELD — first-of-kind bring-up. The architecture is
+# Qwen4ExpForConditionalGeneration (model_type qwen4_exp) and it appears nowhere
+# in tt-metal, the vLLM plugin or this repo. This template is a scaffold for the
+# Partner to complete per RFP F.2.3(a); fill in every [TBD — Partner] before use.
+#
+# TEXT-ONLY for Milestone-0. The checkpoint is vision-language
+# (image-text-to-text, with a vision_config plus image_token_id and
+# video_token_id), but the graded sweep is task_type "text" at every point and
+# vision is out of scope for this milestone. Do not add image points here.
+#
+# 1M CONTEXT IS REQUIRED, AND ONLY EXISTS VIA YaRN. max_position_embeddings in
+# text_config is 262144. Milestone-0 grades input lengths up to 1,048,448, which
+# needs RoPE scaling: factor 4.0 over original_max_position_embeddings 262144 is
+# exactly 1,048,576, matching Model B's native window. The rope_parameters
+# override below is from the model card and is NOT optional — without it the
+# server rejects or truncates every input above 262,144 and the top four graded
+# input lengths cannot be run.
+#
+# Note what that costs. Every open-source framework implements STATIC YaRN: the
+# scaling factor is constant regardless of input length, which the card warns
+# "potentially impact[s] performance on shorter texts". Milestone-0 mandates
+# factor 4.0 uniformly anyway, fixed across Partners, because one configuration
+# is what makes results comparable. The accuracy consequence is the one that
+# matters: GPU reference eval scores MUST be collected with YaRN enabled at the
+# same factor, or the acceptance bar sits above what a conforming server can
+# reach. See llm-gauntlet#186 and RFP H.3.
+# ─────────────────────────────────────────────────────────────────────────────
+- weights:
+    # Revision pinned in RFP Appendix A.4:
+    # de4b8e4d43b917e7706784d8bb445c9af86a3540
+    - Qwen/Qwen3.8-Flash-Next
+  # [TBD — Partner] the tt-metal implementation you contribute. `qwen4_exp` is a
+  # stub impl whose code_path is a fill-in.
+  impl: qwen4_exp
+  inference_engine: VLLM
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY  # M0 target: 32x P150, 4x8 2D torus (RFP D.1/D.2)
       # Milestone-0 graded bar. ONE tier holding the published absolute target
       # verbatim (perf_targets_map value 1.0), not the default
       # functional 0.10 / complete 0.50 / target 1.0 ladder — the RFP states one
@@ -234,57 +286,42 @@ templates:
       # docs/rfp/m0-target-convention.md.
       perf_targets_map:
         functional: 1.0
-      # Per-system max concurrent requests; sets the sweep's upper concurrency
-      # corner (RFP Appendix B.0/B.1). Enforced per system regardless of the
-      # operator's data-parallel choice — see get_perf_reference. Partner-tunable.
-      #
-      # 32, not the earlier placeholder 128: this is the expected max-num-seqs at
-      # full context for this model on a 32-chip Galaxy, and the graded targets in
-      # model_performance_reference.json are authored at it.
+      # Per-system max concurrent requests (the sweep's loaded corner). The
+      # graded targets in model_performance_reference.json are authored at this
+      # concurrency: decode tput is 43.4 x 32 = 1388.8.
       max_concurrency: 32
-      # Full native context (256K). Unlike the QB2/P300X2 entry above there is no
-      # hybrid-off ~49K pool cap here: a 32-chip Galaxy has the DRAM to hold the
-      # full-length KV pool, so Milestone-0 runs at full context (readiness §5.4).
-      # [Verify — Performance: confirm the hybrid-off KV pool fits Galaxy DRAM at
-      # 262144 with prefill scratch headroom.]
-      max_context: 262144  # 256 * 1024
+      # YaRN-extended, not native. See the banner above.
+      max_context: 1048576  # 4.0 * 262144
       # Device KV-token pool for the concurrency sweep: 32 concurrent requests at
-      # the full 256K context. This is what lets the loaded corner reach
-      # concurrency 32 at EVERY graded input length, including the
-      # context-saturating one — 8,388,608 / (262,016 + 128) = 32 exactly.
+      # the full 1M context, so the loaded corner reaches concurrency 32 at EVERY
+      # graded input length including the 1M point —
+      # 33,554,432 / (1,048,448 + 128) = 32 exactly. Four times what the native
+      # 262,144 window would have needed.
       #
-      # Written as an integer. It previously read `32 * 256 * 1024`, which YAML
-      # does not evaluate: the value loaded as the *string* '32 * 256 * 1024' and
-      # get_benchmark_max_concurrency raised TypeError on `str // int`. Nothing
-      # caught it because this model had no blackhole_galaxy targets, so the sweep
-      # never reached that code path.
-      #
-      # [TBD — Performance: replace with the measured 32-chip pool once available.
-      # If the real pool is smaller, the top graded input lengths must come down
-      # with it — see docs/rfp/m0-target-convention.md.]
-      max_tokens_all_users_override: 8388608  # 32 * 256 * 1024
+      # [TBD — Performance: replace with the measured 32-chip pool once
+      # available. If the real pool is smaller, the top graded input lengths must
+      # come down with it — see docs/rfp/m0-target-convention.md.]
+      max_tokens_all_users_override: 33554432  # 32 * 1024 * 1024
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/single_bh_galaxy_torus_xy_graph_descriptor.textproto"
-        # The logical mesh (MESH_DEVICE) is deliberately left to the operator
-        # (RFP D.3); omit here to default to BH-Galaxy, or override per submission.
-        GEMMA4_PAGE_BLOCK_SIZE: "64"
-        # Size the hybrid-off all-user KV pool to the full context on Galaxy DRAM.
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # Required: max_model_len (1048576) exceeds the checkpoint's advertised
+        # max_position_embeddings (262144), so vLLM refuses to start without it.
+        VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
       override_tt_config:
-        # Pinned for Milestone-0: 1D ring fabric on the Galaxy. Matches the vLLM
-        # plugin's 6U-cluster default (tt_worker.get_fabric_config).
+        # Pinned for Milestone-0: 1D ring fabric (matches the vLLM plugin's
+        # 6U-Galaxy default).
         fabric_config: FABRIC_1D_RING
-        trace_region_size: 200000000
-        # On-device decode sampling so token ids >= 65536 are reachable (host
-        # sampling only sees device 0's vocab shard on a TP mesh).
-        sample_on_device_mode: decode_only
       vllm_args:
-        enable-auto-tool-choice: true
-        tool-call-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking": true}'
-        reasoning-parser: gemma4
+        # The YaRN override, verbatim from the Qwen3.8-Flash-Next model card.
+        # Mandatory — see the banner above.
+        hf-overrides: '{"text_config": {"rope_parameters": {"mrope_interleaved": true, "mrope_section": [11, 11, 10], "rope_type": "yarn", "rope_theta": 10000000, "partial_rotary_factor": 0.25, "factor": 4.0, "original_max_position_embeddings": 262144}}}'
+        # 1,048,576 rather than the card's rounded 1000000, so the longest graded
+        # input is exactly max_context - osl = 1,048,448.
+        max_model_len: 1048576
+      # [TBD — Partner] reasoning/tool-call parsers and a metadata block with
+      # reasoning_parser_name / tool_call_parser_name.
   # Milestone-0: FUNCTIONAL, not EXPERIMENTAL. required_target_tiers is EMPTY at
   # EXPERIMENTAL, and evals_enforced reuses the same signal, so an EXPERIMENTAL
   # model can fail every performance target AND every accuracy eval and still be
@@ -293,15 +330,7 @@ templates:
   # near-peak optimisation, which Milestone-0 does not claim about a
   # first-of-kind bring-up. See docs/rfp/m0-target-convention.md.
   status: FUNCTIONAL
-  has_builtin_warmup: true
-  env_vars:
-    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
-  metadata:
-    google/gemma-4-31B-it:
-      reasoning_parser_name: gemma4
-      # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
-      # by enable-auto-tool-choice in vllm_args above.
-      tool_call_parser_name: gemma4
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Milestone-0 model: deepseek-ai/DeepSeek-V4.1-Flash

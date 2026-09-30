@@ -273,7 +273,9 @@ def test_the_device_override_beats_the_model_wide_ladder():
 OSL = 128
 M0_SWEEPS = {
     "DeepSeek-V4.1-Flash": (1048576, 32, 10),
-    "gemma-4-31B-it": (262144, 32, 8),
+    # Qwen3.8-Flash-Next is natively 262144; the 1M window exists only via YaRN
+    # at factor 4.0 (RFP B.0), which is why its sweep matches Model B's.
+    "Qwen3.8-Flash-Next": (1048576, 32, 10),
 }
 
 
@@ -358,15 +360,22 @@ def test_aggregate_decode_target_is_per_user_times_concurrency(key):
         assert t.tput == pytest.approx(t.tput_user * p.max_concurrency)
 
 
-def test_gemma_targets_are_filed_under_the_key_its_spec_derives():
-    """The tt_transformers Milestone-0 spec derives `gemma-4-31B-it` (upper B); the
-    Forge spec derives `gemma-4-31b-it` and owns the p300x2 entry. Targets under
-    the wrong spelling resolve to nothing (tenstorrent#4884), so both keys exist
-    and neither is renamed."""
+def test_no_target_key_is_written_as_a_full_repo_path():
+    """The whole file uses bare names. One slash-shaped key is a silent dead
+    entry, so this is asserted across the file rather than per model."""
     from workflows.model_spec import model_performance_reference
 
-    assert "blackhole_galaxy" in model_performance_reference["gemma-4-31B-it"]
+    assert [k for k in model_performance_reference if "/" in k] == []
+
+
+def test_the_gemma_key_case_split_is_preserved():
+    """gemma-4-31B-it is retired from Milestone-0 but not from the catalog: the
+    Forge spec still derives `gemma-4-31b-it` (lower b) and owns the p300x2
+    entry. The two spellings are different models to the lookup."""
+    from workflows.model_spec import model_performance_reference
+
     assert sorted(model_performance_reference["gemma-4-31b-it"]) == ["p300x2"]
+    assert "gemma-4-31B-it" not in model_performance_reference
 
 
 # --------------------------------------------------------------------------
@@ -377,7 +386,7 @@ def test_gemma_targets_are_filed_under_the_key_its_spec_derives():
 #: 2026-08-17; its scaffold remains in the dev catalog but carries no Milestone-0
 #: grading configuration, which the last test in this section asserts.
 M0_WEIGHTS = (
-    "google/gemma-4-31B-it",
+    "Qwen/Qwen3.8-Flash-Next",
     "deepseek-ai/DeepSeek-V4.1-Flash",
 )
 #: Models that were in the RFP and are not any more. Their scaffolds stay in the
@@ -387,6 +396,7 @@ M0_WEIGHTS = (
 DROPPED_WEIGHTS = (
     "mistralai/Mistral-Small-4-119B-2603",
     "deepseek-ai/DeepSeek-V4-Flash-0731",
+    "google/gemma-4-31B-it",
 )
 
 
@@ -411,6 +421,27 @@ def _m0_templates():
         )
         and t["weights"][0] in M0_WEIGHTS
     ]
+
+
+@pytest.mark.parametrize("weights", M0_WEIGHTS)
+def test_targets_are_filed_under_the_key_the_spec_derives(weights):
+    """Targets are looked up by ``model_weights_to_model_name(weights[0])``, which
+    is ``Path(...).name``. A key under any other spelling — a different case, or
+    the full ``org/name`` path — resolves to nothing, and a miss only logs a
+    warning, so every point silently grades as ungradable
+    (tenstorrent/tt-inference-server#4884).
+
+    This bit for real: the Model B GPU reference block was first filed under
+    ``deepseek-ai/DeepSeek-V4.1-Flash`` and would never have loaded."""
+    from workflows.model_spec import (
+        model_performance_reference,
+        model_weights_to_model_name,
+    )
+
+    key = model_weights_to_model_name(weights)
+    assert key in model_performance_reference, f"{weights} derives {key!r}"
+    assert "blackhole_galaxy" in model_performance_reference[key]
+    assert "/" not in key
 
 
 def test_every_m0_model_has_a_blackhole_galaxy_spec():

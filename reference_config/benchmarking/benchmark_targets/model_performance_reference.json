@@ -1,5 +1,5 @@
 {
-    "gemma-4-31B-it": {
+    "Qwen3.8-Flash-Next": {
         "blackhole_galaxy": [
             {
                 "isl": 1024,
@@ -12,9 +12,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 266.645,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 258.7763,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -30,9 +30,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 333.2899,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 317.5525,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -48,9 +48,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 466.5799,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 435.105,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -66,9 +66,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 733.1598,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 670.2101,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -84,9 +84,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 1266.3196,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 1140.4202,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -102,9 +102,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2332.6391,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 2080.8403,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -120,9 +120,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4465.2782,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 3961.6806,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -138,15 +138,15 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8730.5565,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 7723.3613,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
             },
             {
-                "isl": 262016,
+                "isl": 262144,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 32,
@@ -156,9 +156,45 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17252.7823,
-                        "tput_user": 35.0,
-                        "tput": 35.0
+                        "ttft_ms": 15246.7225,
+                        "tput_user": 43.4,
+                        "tput": 43.4
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 524288,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 30293.4451,
+                        "tput_user": 43.4,
+                        "tput": 43.4
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 1048448,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 60379.5431,
+                        "tput_user": 43.4,
+                        "tput": 43.4
                     }
                 },
                 "tolerance": 0.1
@@ -174,9 +210,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 2332.6391,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 2080.8403,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -192,9 +228,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 4465.2782,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 3961.6806,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -210,9 +246,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 8730.5565,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 7723.3613,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -228,9 +264,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 17261.1129,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 15246.7225,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -246,9 +282,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 34322.2258,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 30293.4451,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -264,9 +300,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 68444.4517,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 60386.8901,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -282,9 +318,9 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 136688.9034,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 120573.7803,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
@@ -300,15 +336,15 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 273177.8067,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 240947.5606,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1
             },
             {
-                "isl": 262016,
+                "isl": 262144,
                 "osl": 128,
                 "max_concurrency": 32,
                 "num_prompts": 128,
@@ -318,9 +354,45 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 545889.0335,
-                        "tput_user": 35.0,
-                        "tput": 1120.0
+                        "ttft_ms": 481695.1211,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 524288,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 963190.2422,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 1048448,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 128,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1925945.3794,
+                        "tput_user": 43.4,
+                        "tput": 1388.8
                     }
                 },
                 "tolerance": 0.1

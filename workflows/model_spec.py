@@ -326,6 +326,17 @@ deepseek_r1_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/deepseek_v3",
 )
+# Milestone-0 stub impl for Qwen/Qwen3.8-Flash-Next. No serving path exists yet:
+# the architecture is Qwen4ExpForConditionalGeneration / model_type qwen4_exp,
+# which appears nowhere in tt-metal, the vLLM plugin or here, so this is
+# first-of-kind bring-up. code_path is a fill-in for the Partner to point at the
+# implementation they contribute per RFP F.2.3.
+qwen4_exp_impl = ImplSpec(
+    impl_id="qwen4_exp",
+    impl_name="qwen4-exp",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="<FILL IN>",  # [TBD — Partner] path to the contributed tt-metal impl
+)
 # Milestone-0 stub impl for deepseek-ai/DeepSeek-V4.1-Flash. No serving path
 # exists yet: the architecture is DeepseekV41ForCausalLM / model_type
 # deepseek_v41, which appears nowhere in tt-metal, the vLLM plugin or here, so
@@ -399,6 +410,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
+    "qwen4_exp": qwen4_exp_impl,
     "deepseek_v41_flash": deepseek_v41_flash_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
