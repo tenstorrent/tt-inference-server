@@ -485,7 +485,7 @@ templates:
         GEMMA4_KV_BFP8: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 640000000  # bfp8 KV freed GBs; the 96x32K rung-tail decode capture needs 483 MB (450 MB TT_FATAL 2026-09-30)
+        trace_region_size: 960000000  # decode-trace size grows with context x bucket (483 MB @96x32K, 668 MB @8x248K TT_FATALed 640); robust fix = cap live decode buckets with LRU release
         l1_small_size: 24576
         sample_on_device_mode: decode_only
       vllm_args:
