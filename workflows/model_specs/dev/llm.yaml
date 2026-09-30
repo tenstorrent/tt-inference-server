@@ -485,7 +485,7 @@ templates:
         GEMMA4_KV_BFP8: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 450000000  # +7.7 MB/bank runtime headroom; the 88 MB burst transient missed the largest free block by 20 KB (this rail warms only the single B=128 decode trace)
+        trace_region_size: 640000000  # bfp8 KV freed GBs; the 96x32K rung-tail decode capture needs 483 MB (450 MB TT_FATAL 2026-09-30)
         l1_small_size: 24576
         sample_on_device_mode: decode_only
       vllm_args:
