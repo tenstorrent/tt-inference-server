@@ -1452,9 +1452,11 @@ templates:
         # device back to the first. A linear fabric does not route it, and every collective
         # then hangs with all eight devices inside it.
         fabric_config: FABRIC_1D_RING
-        # Without this the fabric takes ttnn's 4352 B default, which carries two of the
-        # prefill collective's 2048 B bfloat16 pages per packet where the Wormhole link
-        # allows three. See fabric_payload_bytes() in the tt-metal tree.
+        # The Wormhole link carries three of the prefill collective's 2048 B bfloat16 pages
+        # per packet; the 4352 B default carries two. Kept for when the plugin plumbs it,
+        # but INERT today: worker.py builds set_fabric_config's argument with config and
+        # reliability_mode only, no router config, so run 36682118819 set this and still
+        # logged "Fabric packet size 4352 B is suboptimal".
         fabric_max_packet_payload_size_bytes: 6144
         trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
         l1_small_size: 24576
