@@ -1840,6 +1840,14 @@ _eval_config_list = [
                             "top_p": 0.95,
                             "max_tokens": 64 * 1024,
                             "timeout": 60 * 60,
+                            # Force M3 to think on every turn, as for tau3 below: with no
+                            # thinking_mode the template is adaptive, and multi-turn
+                            # agents that don't resend reasoning stop thinking after a
+                            # few turns. Sent via extra_body because harbor's LiteLLM
+                            # wrapper calls litellm with drop_params=True.
+                            "extra_body": {
+                                "chat_template_kwargs": {"thinking_mode": "enabled"},
+                            },
                         },
                     },
                     task_names_map={
