@@ -481,6 +481,7 @@ templates:
         # multi-chunk prefill is eager regardless (short-ISL first token pays
         # the eager capture cost — acceptable on the capacity rail).
         GEMMA4_DISABLE_PREFILL_TRACE: "1"
+        GEMMA4_LANE_PREFILL_ROUTER: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 450000000  # +7.7 MB/bank runtime headroom; the 88 MB burst transient missed the largest free block by 20 KB (this rail warms only the single B=128 decode trace)
