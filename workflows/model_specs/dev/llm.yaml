@@ -502,7 +502,7 @@ templates:
         reasoning-parser: gemma4
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
-        max_num_batched_tokens: 65536
+        max_num_batched_tokens: 253952  # per lane; the fold multiplies by 4 lanes -> 1015808 global, so a 4 x 248K wave merges into ONE step and the lane router groups it (65536 grouped only <=64K rungs)
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
