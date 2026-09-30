@@ -97,10 +97,10 @@ templates:
     # during prefill warmup (paged_fill_cache kv_heads mismatch, tt-shield
     # 35106897592). The cause was not root-caused.
     #
-    # sample_on_device_mode "all" is copied from GALAXY and is the suspected cause
-    # of the MMLU failures. tenstorrent/tt-metal#44746 reports that "all" corrupts
-    # per-user state on a DP=4 Galaxy while "decode_only" is clean. Not yet
-    # tested on Blackhole Galaxy.
+    # sample_on_device_mode is "decode_only" here for an A/B test against "all"
+    # (the GALAXY value). "all" is the suspected cause of the MMLU failures:
+    # tenstorrent/tt-metal#44746 reports that "all" corrupts per-user state on a
+    # DP=4 Galaxy while "decode_only" is clean.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # currently limiting client-side max_concurrency=32 to allow workflows to
       # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
@@ -114,7 +114,7 @@ templates:
         data_parallel_size: 4
         max_num_seqs: 32  # override the default inferred by max_concurrency
       override_tt_config:
-        sample_on_device_mode: all
+        sample_on_device_mode: decode_only
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
       known_issues:
         - workflow_type: EVALS
