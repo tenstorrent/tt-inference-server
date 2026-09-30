@@ -1414,11 +1414,10 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only
     # WH T3K (4x n300 = 8 chips, 12 GB/chip), TP=8 on a (1, 8) mesh. Device params match
-    # models/demos/wormhole/qwen38/demo/text_demo.py. Do NOT set TT_MESH_GRAPH_DESC_PATH:
-    # ttnn picks the T3K descriptor itself, and a mismatched one can silently hang the
-    # first collective. Measured batch-1 on T3K (tt-metal models/model_targets.yaml
-    # qwen3.8-27b/wh_llmbox_perf): 128 TTFT 0.57 s / 16.8 t/s/u, 4k 1.47 s / 16.8,
-    # 32k 13.76 s / 16.0, 128k 56.45 s / 14.2.
+    # models/demos/qwen38_27b_t3k in tt-metal. Do NOT set TT_MESH_GRAPH_DESC_PATH: ttnn picks
+    # the T3K descriptor itself, and a mismatched one can silently hang the first collective.
+    # Measured batch-1 at prompt 128 (models/demos/qwen38_27b_t3k/doc/multichip_evidence.md):
+    # TTFT 244.9 ms, 16.57 t/s/u. No long-context run has been executed on this mesh.
     - device: T3K
       # Batch 32 at TP=8 returns wrong results (attention decode per-user PCC 0.019);
       # B=1/2/4/8/16 are ~0.9999. The tt-metal README recommends B=1 or B=8.
@@ -1453,6 +1452,10 @@ templates:
         # device back to the first. A linear fabric does not route it, and every collective
         # then hangs with all eight devices inside it.
         fabric_config: FABRIC_1D_RING
+        # Without this the fabric takes ttnn's 4352 B default, which carries two of the
+        # prefill collective's 2048 B bfloat16 pages per packet where the Wormhole link
+        # allows three. See fabric_payload_bytes() in the tt-metal tree.
+        fabric_max_packet_payload_size_bytes: 6144
         trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
         l1_small_size: 24576
         # qwen38_27b_t3k samples on device for prefill too; host sampling is opt-in only.
