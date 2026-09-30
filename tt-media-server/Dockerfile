@@ -264,7 +264,9 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
     && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
+    && rm -rf /usr/include \
+    && echo "=== builder home size breakdown (informs the runtime-stage layer split) ===" \
+    && du -xsh ${HOME_DIR}/.[!.]* ${HOME_DIR}/* ${HOME_DIR}/tt-metal/* 2>/dev/null | sort -h | tail -25
 
 
 # ==============================================================================
@@ -316,12 +318,37 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# Copy everything from builder
-COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    /home/container_app_user ${HOME_DIR}
+# Copy the builder's home into the runtime image as four layers, split along the
+# subtrees a reader will recognise: the main venv, the audio venv, the tt-metal
+# build output, and everything else (tt-metal sources, server/, .bashrc, ...).
+#
+# Why not one `COPY --from=builder /home/container_app_user`: that made a single
+# ~30GB layer, and BuildKit compresses each layer on one core at export time, so
+# "exporting layers" alone took ~17 min in CI. Layers compress in parallel, so
+# the export now takes about as long as the largest of the four.
+#
+# Each RUN bind-mounts the builder read-only at /mnt/builder and copies one subtree.
+# Ownership is set in the same RUN that writes the files on purpose: a later
+# `chown -R` / `chmod -R` would copy every touched file into a new layer.
+ARG APP_OWNER=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME}
 
-# Fix venv permissions (COPY --chown can break symlink permissions)
-RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+RUN --mount=type=bind,from=builder,source=/home/container_app_user/tt-metal/python_env,target=/mnt/builder \
+    mkdir -p ${PYTHON_ENV_DIR} && cp -a /mnt/builder/. ${PYTHON_ENV_DIR}/ \
+    && chown -R ${APP_OWNER} ${PYTHON_ENV_DIR} && chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+RUN --mount=type=bind,from=builder,source=/home/container_app_user/tt-metal/audio_venv,target=/mnt/builder \
+    mkdir -p ${TT_METAL_HOME}/audio_venv && cp -a /mnt/builder/. ${TT_METAL_HOME}/audio_venv/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/audio_venv
+
+RUN --mount=type=bind,from=builder,source=/home/container_app_user/tt-metal/build_Release,target=/mnt/builder \
+    mkdir -p ${TT_METAL_HOME}/build_Release && cp -a /mnt/builder/. ${TT_METAL_HOME}/build_Release/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/build_Release
+
+# The rest of the home directory, minus the three subtrees already copied.
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    tar -C /mnt/builder --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
+        --exclude=./tt-metal/python_env --exclude=./tt-metal/audio_venv --exclude=./tt-metal/build_Release \
+        -cf - . | tar -C ${HOME_DIR} -xf -
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
