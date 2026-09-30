@@ -74,18 +74,33 @@ templates:
         - workflow_type: EVALS
           task_name: gpqa_diamond_cot_zeroshot
           reason: "Model implementation is producing non-deterministic outputs causing this eval task to pass/fail flakily. Masking this part of the acceptance criteria due to other evals passing consistently."
-    # Mirrors the GALAXY entry above (same DP=4 whole-box topology, 32x chips).
-    # MESH_DEVICE override required: without it, the bare inferred "BH-Galaxy"
-    # string isn't recognized as a splittable multi-device shape by
-    # tt/platform.py, which silently falls back to single-process "lane-DP"
-    # (TT_VISIBLE_DEVICES=None) instead of the real 4-column DP split. That
-    # fallback halves the effective TP degree and produces a paged KV-cache
-    # geometry mismatch (kv_heads=1 allocated vs kv_heads=2 computed) that
-    # crashes engine-core init -- confirmed on gpt-oss-20b via a real
-    # bh-galaxy dispatch (tt-shield run 35106897592); same fallback applies
-    # here since it's the same gpt_oss impl. Blackhole Galaxy still has no
-    # bring-up validation beyond that (tracked as a gap in the models-ci
-    # dashboard), so this remains a starting point, not a measured config.
+    # Blackhole Galaxy (32x P150), DP=4 over a (4,8) mesh. Copied from the GALAXY
+    # entry above. A bring-up config, not a validated one.
+    #
+    # Last run: tt-shield 36550291874 (tt-metal c05df925, from the branch of
+    # tt-metal PR #58222). The server boots and the release workflow completes, but:
+    #   - MMLU: ~24% of requests failed (mostly HTTP 500 from
+    #     openai_harmony.HarmonyError) and ~10% more returned garbled text.
+    #     aime25 (13/15) and gpqa (7/7) ran on only 15 and 7 questions.
+    #   - Benchmarks have no perf targets. The server logged 158 HarmonyError
+    #     stream failures during them, yet every benchmark reports failed=0, so
+    #     the numbers are not reliable.
+    #   - Context was exercised up to a 64K prompt, not the full 128K.
+    #
+    # Needs tt-metal with PR #58222 (BH Galaxy decode path, fixes
+    # tenstorrent/tt-metal#58044). Without it the MoE decode kernel fails to build
+    # on the default 2D torus fabric (tt-shield 36164782025). Keep the default
+    # fabric: FABRIC_1D_RING avoids that error but hangs the first decode step
+    # (tt-shield 36232539588).
+    #
+    # MESH_DEVICE "(4, 8)": with the default "BH-Galaxy" name, gpt-oss-20b crashed
+    # during prefill warmup (paged_fill_cache kv_heads mismatch, tt-shield
+    # 35106897592). The cause was not root-caused.
+    #
+    # sample_on_device_mode "all" is copied from GALAXY and is the suspected cause
+    # of the MMLU failures. tenstorrent/tt-metal#44746 reports that "all" corrupts
+    # per-user state on a DP=4 Galaxy while "decode_only" is clean. Not yet
+    # tested on Blackhole Galaxy.
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # currently limiting client-side max_concurrency=32 to allow workflows to
       # complete else they will timeout due to hitting the vLLM RPC recv 30min timeout
