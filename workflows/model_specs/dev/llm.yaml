@@ -1734,6 +1734,29 @@ templates:
       tool_call_parser_name: deepseek_v41
       tokenizer_trust_remote_code: true
 
+# GPU (8x GPU, TP=8 + expert parallel) bring-your-own vLLM server (see
+# docs/gpu_workflows.md); used to collect GPU reference eval scores. The
+# server must be launched with --served-model-name Qwen/Qwen3.8-Flash-Next,
+# --max-model-len 1000000 with the YaRN factor-4 rope --hf-overrides, and
+# --default-chat-template-kwargs '{"enable_thinking": true,
+# "preserve_thinking": true, "reasoning_effort": "xhigh"}'.
+- weights:
+    - Qwen/Qwen3.8-Flash-Next
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GPU
+      max_concurrency: 32
+      max_context: 1000000  # served --max-model-len (native 262144, YaRN-extended)
+      default_impl: true
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Qwen/Qwen3.8-Flash-Next:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 # Remote-served model: evaluated against an external OpenAI-compatible
 # endpoint via `--server-url` (e.g. Tenstorrent console). The device entry
 # is a placeholder so the model resolves through MODEL_SPECS / EVAL_CONFIGS;
