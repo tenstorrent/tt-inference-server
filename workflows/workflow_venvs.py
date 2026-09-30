@@ -34,11 +34,10 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # environment (generic RKE2/EKS/... support abstracted out of what gke.py did),
 # used to schedule agentic-eval trial pods on our clusters. Temporary: revert to
 # harbor-framework/harbor at a release tag once the environment lands upstream.
-# Track the runtime branch during development. It will be protected and require
-# review before merging changes. Switch to a specific commit once development
-# is stable.
+# This experiment pins the exact Harbor revision used by the 2026-09-30 nightly
+# so the control and verifier-fix runs cannot drift while they are queued.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
+HARBOR_REF = "1da0bfd8c71cadbff17413fac984b8e391d2afc2"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
 
