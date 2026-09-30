@@ -381,40 +381,42 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
 
 
-def test_glm_keeps_every_pair_but_only_two_concurrency_levels():
-    """GLM sweeps the standard ISL/OSL pairs at concurrency 1 and 40 only.
+@pytest.mark.parametrize("model_name", ["GLM-5.2", "GLM-5.3"])
+def test_glm_sweeps_concurrency_20_only_up_to_55k_isl(monkeypatch, model_name):
+    """GLM runs every standard ISL/OSL pair up to 55K ISL, at concurrency 20 only."""
+    benchmark_config = _import_benchmark_config(monkeypatch)
 
-    1 is the isolated-request baseline, 40 is the deployment's slot count; the
-    ladder already showed everything between is linear and everything above is
-    queueing.
-    """
-    from reference_config.benchmarking.benchmark_config import (
-        BENCHMARK_ISL_OSL_PAIRS,
-        MODEL_SWEEP_OVERRIDES,
-        SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS,
-        _expand_text_sweep_params,
-    )
-
-    override = MODEL_SWEEP_OVERRIDES["GLM-5."]
-    assert list(override["concurrencies"]) == [1, 40]
-    # No pair pin: the standard sweep is what runs.
-    assert "pairs" not in override
-
-    pairs = list(BENCHMARK_ISL_OSL_PAIRS) + list(SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS)
-    params = []
-    for isl, osl in pairs:
-        params += _expand_text_sweep_params(
-            isl=isl,
-            osl=osl,
+    # GLM lives in the dev specs only, so build its SUPER_CLUSTER shape from a prod one:
+    # 1M context, 40 slots, no perf-reference targets.
+    _, base_spec = _make_super_cluster_runtime_spec()
+    glm_spec = replace(
+        base_spec,
+        model_name=model_name,
+        device_model_spec=replace(
+            base_spec.device_model_spec,
             max_context=1048576,
-            max_tokens_all_users=1048576 * 40,
-            model_max_concurrency=40,
-            concurrencies=override["concurrencies"],
-        )
-    assert {p.max_concurrency for p in params} == {1, 40}
-    assert len(params) == 2 * len(pairs)
-    # The 1M point survives: isl + osl lands exactly on max_context.
-    assert (1048576 - 128, 128) in {(p.isl, p.osl) for p in params}
+            max_concurrency=40,
+            perf_reference=[],
+        ),
+    )
+    config = benchmark_config.get_benchmark_config(glm_spec)
+
+    params = [
+        p for task in config.tasks for p in task.param_map[DeviceTypes.SUPER_CLUSTER]
+    ]
+    assert params
+    assert {p.max_concurrency for p in params} == {20}
+    # Structured-output runs drive their own concurrency, so they stay out.
+    assert {getattr(p, "task_type", "text") for p in params} == {"text"}
+
+    expected_pairs = {
+        (isl, osl)
+        for isl, osl in benchmark_config.BENCHMARK_ISL_OSL_PAIRS
+        + benchmark_config.SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
+        if isl <= 55000
+    }
+    assert {(p.isl, p.osl) for p in params} == expected_pairs
+    assert (32768, 128) in expected_pairs and (65536, 128) not in expected_pairs
 
 
 def test_ladder_levels_above_the_allowed_max_are_dropped():

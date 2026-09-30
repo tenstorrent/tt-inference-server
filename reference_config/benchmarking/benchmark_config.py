@@ -135,6 +135,7 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 #                  isl + osl <= max_context. Omit it to keep the standard sweep.
 #   concurrencies  the exact concurrency levels, instead of [1, allowed_max]; levels above
 #                  the model's allowed max are dropped
+#   max_isl        optional; drops every pair whose ISL is above it
 #
 # An override also skips the structured-output runs, which drive a concurrency of their
 # own -- drop `and override is None` at structured_output_eligible to get them back --
@@ -148,10 +149,11 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 # into a second decode regime — median TPOT steps 9.55 -> 18.8 ms and throughput falls to
 # 663 tok/s at 80. The deployment now runs 40 slots to match, so every level between 1 and
 # 40 would only re-measure the linear region, and anything above 40 measures queueing.
-# One request alone, and the engine full, at every ISL/OSL pair.
+# The current sweep pins 20 concurrent users and stops at 55K ISL.
 MODEL_SWEEP_OVERRIDES = {
     "GLM-5.": {
-        "concurrencies": (1, 40),
+        "concurrencies": (20,),
+        "max_isl": 55000,
     },
 }
 
@@ -637,6 +639,12 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     if override is not None:
         if override.get("pairs"):
             text_isl_osl_pairs = list(override["pairs"])
+        if override.get("max_isl") is not None:
+            text_isl_osl_pairs = [
+                (isl, osl)
+                for isl, osl in text_isl_osl_pairs
+                if isl <= override["max_isl"]
+            ]
         sweep_concurrencies = tuple(override["concurrencies"])
         sweep_min_num_prompts = 0
 
