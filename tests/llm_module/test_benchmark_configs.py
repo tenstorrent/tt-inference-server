@@ -322,6 +322,8 @@ def test_named_fixed_workload_preserves_legacy_sweep():
     from dataclasses import asdict
 
     spec = _qb2_review_spec()
+    spec.metadata.pop("benchmark_protocol", None)
+    spec.metadata["benchmark_token_timing"] = True
     legacy = get_llm_configs(spec, spec.device_type)
     spec.metadata.pop("benchmark_token_timing")
     spec.metadata.update(benchmark_protocol="fixed_workload", benchmark_repetitions=3)
