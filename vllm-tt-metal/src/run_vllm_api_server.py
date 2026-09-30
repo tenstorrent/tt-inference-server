@@ -992,6 +992,14 @@ def set_runtime_env_vars(model_spec_json):
             )
             value = str(value)
 
+        # Spec paths are written relative to the Docker cwd (~/app/src ->
+        # ~/tt-metal); anchoring on TT_METAL_HOME keeps Docker identical and
+        # makes --local-server work.
+        tt_metal_home = os.environ.get("TT_METAL_HOME")
+        if tt_metal_home and value.startswith("../../tt-metal/"):
+            value = str(Path(tt_metal_home) / value[len("../../tt-metal/") :])
+            logger.info(f"Resolved relative tt-metal path for {key}: {value}")
+
         original_value = os.getenv(key)
         if original_value is not None:
             logger.warning(

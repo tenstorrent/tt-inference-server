@@ -777,6 +777,54 @@ def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ
 
 
+MESH_GRAPH_DESC_REL_PATH = (
+    "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+    "p300_x2_mesh_graph_descriptor.textproto"
+)
+
+
+def test_runtime_env_resolves_relative_tt_metal_paths_against_tt_metal_home(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.setenv("TT_METAL_HOME", "/opt/tt-metal")
+    # Registered with monkeypatch so values written by set_runtime_env_vars
+    # are removed again at teardown.
+    monkeypatch.setenv("TT_MESH_GRAPH_DESC_PATH", "stale")
+    monkeypatch.setenv("TEST_UNRELATED_RELATIVE_PATH", "stale")
+    model_spec = {
+        "device_model_spec": {
+            "env_vars": {
+                "TT_MESH_GRAPH_DESC_PATH": MESH_GRAPH_DESC_REL_PATH,
+                "TEST_UNRELATED_RELATIVE_PATH": "../foo",
+            }
+        }
+    }
+
+    run_vllm_api_server_module.set_runtime_env_vars(model_spec)
+
+    assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == (
+        "/opt/tt-metal/tt_metal/fabric/mesh_graph_descriptors/"
+        "p300_x2_mesh_graph_descriptor.textproto"
+    )
+    assert os.environ["TEST_UNRELATED_RELATIVE_PATH"] == "../foo"
+
+
+def test_runtime_env_keeps_relative_tt_metal_paths_without_tt_metal_home(
+    monkeypatch, run_vllm_api_server_module
+):
+    monkeypatch.delenv("TT_METAL_HOME", raising=False)
+    monkeypatch.setenv("TT_MESH_GRAPH_DESC_PATH", "stale")
+    model_spec = {
+        "device_model_spec": {
+            "env_vars": {"TT_MESH_GRAPH_DESC_PATH": MESH_GRAPH_DESC_REL_PATH}
+        }
+    }
+
+    run_vllm_api_server_module.set_runtime_env_vars(model_spec)
+
+    assert os.environ["TT_MESH_GRAPH_DESC_PATH"] == MESH_GRAPH_DESC_REL_PATH
+
+
 @pytest.mark.parametrize(
     "selected_root",
     [
