@@ -277,6 +277,10 @@ def build_aiperf_cmd(
         str(artifact_dir),
         "--public-dataset",
         run.public_dataset,
+        # Fixed count: processors auto-scaled after the dataset is configured
+        # never receive DatasetConfiguredNotification and abort mid-run.
+        "--record-processor-service-count",
+        "8",
     ]
     # Consumes multiple values after one flag, matching AIPerf's
     # ``consume_multiple`` parameter style.
@@ -293,7 +297,6 @@ def build_aiperf_cmd(
         cmd.extend(["--goodput", goodput.strip()])
     if run.streaming:
         cmd.append("--streaming")
-        cmd.extend(["--prefill-concurrency", str(run.concurrency)])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:

@@ -21,6 +21,7 @@ config, and in ``tests/reference_config/test_agentic_traces_config.py``.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
@@ -266,7 +267,7 @@ class AgenticTracesModeSettings:
 FULL_MODE_SETTINGS = AgenticTracesModeSettings(
     benchmark_duration=3600,
     warmup_requests_per_lane=10,
-    warmup_grace_period=1800,
+    warmup_grace_period=int(os.environ.get("AGENTX_WARMUP_GRACE", "1800")),
     num_dataset_entries=393,
 )
 
@@ -366,6 +367,12 @@ def for_model_ids(model_ids: List[str], **kwargs) -> List[AgenticTracesConfig]:
 # this commit.
 INFERENCEX_AGENTX_GIT_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
 
+
+def _agentx_concurrency(default: int) -> int:
+    """An agentx run's concurrency, overridable with ``AGENTX_CONCURRENCY``."""
+    return int(os.environ.get("AGENTX_CONCURRENCY", str(default)))
+
+
 _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # Kimi K2.7-Code on SUPER_CLUSTER (dev catalog). 256k dataset variant to
     # match the spec's 262144 max_context
@@ -389,7 +396,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=64,
+                concurrency=_agentx_concurrency(64),
             ),
             # SwarmOne swo-bench replay of the recorded Kimi Claude-Code
             # SWE-bench sessions. FULL replays all three tasks (sympy-bugfix,
@@ -425,7 +432,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126",
-                concurrency=80,
+                concurrency=_agentx_concurrency(80),
             ),
         ),
     ),
@@ -436,7 +443,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126",
-                concurrency=80,
+                concurrency=_agentx_concurrency(80),
             ),
         ),
     ),
@@ -450,7 +457,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
-                concurrency=8,
+                concurrency=_agentx_concurrency(8),
             ),
         ),
     ),
