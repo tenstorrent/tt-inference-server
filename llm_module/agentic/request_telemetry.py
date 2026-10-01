@@ -196,7 +196,11 @@ class RequestTelemetryProxy(AbstractContextManager):
                         "message_count": len(payload.get("messages", [])),
                         "body_sha256": hashlib.sha256(body).hexdigest(),
                         "max_tokens": payload.get("max_tokens"),
-                        "request_seed": payload.get("seed") if isinstance(payload.get("seed"), int) else None,
+                        "request_seed": (
+                            payload.get("seed")
+                            if isinstance(payload.get("seed"), int)
+                            else None
+                        ),
                         "tools_since_previous_assistant": recent_tool_summary(
                             payload.get("messages", [])
                         ),
