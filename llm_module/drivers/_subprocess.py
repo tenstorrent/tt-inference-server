@@ -15,8 +15,9 @@ import json
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from utils.model_naming import slugify_model_id
 
@@ -29,33 +30,75 @@ def run_command(
     env: Optional[Mapping[str, str]] = None,
     cwd: Optional[Path] = None,
     timeout_s: Optional[float] = None,
+    heartbeat_s: Optional[float] = None,
+    heartbeat_label: str = "",
+    heartbeat_status: Optional[Callable[[], str]] = None,
 ) -> int:
     """Run ``cmd`` streaming output to logger; return exit code.
 
     If ``timeout_s`` is set and elapses before the process exits, the
     child is killed and 124 is returned (matching ``/usr/bin/timeout``)
     so callers can treat it as a normal nonzero exit and move on.
+
+    If ``heartbeat_s`` is set, an INFO line is logged every ``heartbeat_s``
+    seconds while the child runs, so long benchmark runs are visible in CI
+    logs. ``heartbeat_status`` may return extra progress text for that line.
     """
     logger.info("Executing: %s", " ".join(str(c) for c in cmd))
     full_env = dict(os.environ)
     if env:
         full_env.update(env)
-    try:
-        proc = subprocess.run(
-            list(cmd),
-            env=full_env,
-            cwd=str(cwd) if cwd else None,
-            check=False,
-            timeout=timeout_s,
-        )
-    except subprocess.TimeoutExpired:
-        logger.error(
-            "Command exceeded timeout of %.0fs and was killed: %s",
-            timeout_s,
-            " ".join(str(c) for c in cmd),
-        )
-        return 124
-    return proc.returncode
+    if not heartbeat_s:
+        try:
+            proc = subprocess.run(
+                list(cmd),
+                env=full_env,
+                cwd=str(cwd) if cwd else None,
+                check=False,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            logger.error(
+                "Command exceeded timeout of %.0fs and was killed: %s",
+                timeout_s,
+                " ".join(str(c) for c in cmd),
+            )
+            return 124
+        return proc.returncode
+
+    start = time.monotonic()
+    proc = subprocess.Popen(list(cmd), env=full_env, cwd=str(cwd) if cwd else None)
+    while True:
+        elapsed = time.monotonic() - start
+        wait_s = heartbeat_s
+        if timeout_s is not None:
+            wait_s = min(wait_s, max(timeout_s - elapsed, 0.0))
+        try:
+            return proc.wait(timeout=wait_s)
+        except subprocess.TimeoutExpired:
+            elapsed = time.monotonic() - start
+            if timeout_s is not None and elapsed >= timeout_s:
+                proc.kill()
+                proc.wait()
+                logger.error(
+                    "Command exceeded timeout of %.0fs and was killed: %s",
+                    timeout_s,
+                    " ".join(str(c) for c in cmd),
+                )
+                return 124
+            status = ""
+            if heartbeat_status is not None:
+                try:
+                    status = heartbeat_status()
+                except Exception as exc:  # noqa: BLE001 - progress text is best effort
+                    status = f"(status unavailable: {exc})"
+            logger.info(
+                "%sstill running: %.0fs elapsed%s%s",
+                f"[{heartbeat_label}] " if heartbeat_label else "",
+                elapsed,
+                f" of {timeout_s:.0f}s timeout" if timeout_s is not None else "",
+                f"; {status}" if status else "",
+            )
 
 
 def load_json(path: Path) -> Optional[Dict[str, Any]]:

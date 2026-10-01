@@ -63,7 +63,7 @@ def _driver(tmp_path: Path) -> AIPerfSpecDecodeDriver:
 def _patch_aiperf(monkeypatch, captured: dict):
     """Stub out the AIPerf subprocess + summary parse with a passing run."""
 
-    def _fake_run_command(cmd, *, env, timeout_s):
+    def _fake_run_command(cmd, *, env, timeout_s, **_progress_kwargs):
         captured["cmd"] = cmd
         return 0
 

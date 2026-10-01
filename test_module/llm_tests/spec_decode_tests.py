@@ -161,21 +161,51 @@ def run_spec_decode(
 
     parser = AIPerfSpecDecodeParser()
     blocks: List[Block] = []
+    sweep_start = time.monotonic()
+    failed: List[str] = []
     for i, run in enumerate(runs, 1):
-        logger.info("[spec-decode] Running %d/%d: %s", i, len(runs), run.slug)
+        elapsed = time.monotonic() - sweep_start
+        eta = ""
+        if i > 1:
+            eta = f", ~{elapsed / (i - 1) * (len(runs) - i + 1) / 60:.0f} min left at the current pace"
+        logger.info(
+            "[spec-decode] Running %d/%d: %s (sweep elapsed %.0f min%s; %d ok, %d failed so far)",
+            i,
+            len(runs),
+            run.slug,
+            elapsed / 60,
+            eta,
+            len(blocks),
+            len(failed),
+        )
         if i > 1 and inter_run_sleep_s:
             time.sleep(inter_run_sleep_s)
 
+        run_start = time.monotonic()
         outcome: SpecDecodeDriverResult = driver.run(run, server, context)
+        run_secs = time.monotonic() - run_start
         if outcome.return_code != 0 or outcome.payload is None:
+            failed.append(run.slug)
             logger.error(
-                "[spec-decode] %s failed (rc=%d); continuing.",
+                "[spec-decode] %d/%d %s failed (rc=%d) after %.0fs; continuing.",
+                i,
+                len(runs),
                 run.slug,
                 outcome.return_code,
+                run_secs,
             )
             continue
 
+        logger.info("[spec-decode] %d/%d %s done in %.0fs", i, len(runs), run.slug, run_secs)
         blocks.append(parser.parse(outcome.payload, device=device_label))
+
+    logger.info(
+        "[spec-decode] Sweep finished in %.0f min: %d ok, %d failed%s",
+        (time.monotonic() - sweep_start) / 60,
+        len(blocks),
+        len(failed),
+        f" ({', '.join(failed)})" if failed else "",
+    )
 
     if not blocks:
         logger.error("[spec-decode] No blocks produced -- sweep had zero successes.")
@@ -203,21 +233,64 @@ def _wait_for_url_healthy(
     auth_token: str = "",
     timeout: float = 600.0,
     interval: float = 5.0,
+    log_every: float = 30.0,
 ) -> bool:
-    """Poll ``{base_url}/health`` until it returns 200 or the deadline expires."""
+    """Poll the endpoint until it is healthy or the deadline expires.
+
+    Healthy means ``{base_url}/health`` or ``{base_url}/v1/models`` returns
+    200. Gateways in front of the server (e.g. tt-console) may not expose
+    ``/health`` at all, while ``/v1/models`` is part of the OpenAI API the
+    benchmark needs anyway. Progress is logged at INFO every ``log_every``
+    seconds, so a slow or failing probe is visible in CI logs.
+    """
     import requests
 
     headers = {"Authorization": f"Bearer {auth_token}"} if auth_token else {}
-    health_url = base_url.rstrip("/") + "/health"
-    deadline = time.time() + timeout
+    root = base_url.rstrip("/")
+    probe_urls = (root + "/health", root + "/v1/models")
+    logger.info(
+        "[spec-decode] waiting up to %.0fs for %s to become healthy (probing %s)",
+        timeout,
+        root,
+        ", ".join(probe_urls),
+    )
+    start = time.time()
+    deadline = start + timeout
+    last_log = start
+    attempts = 0
+    last_seen = {}
     while time.time() < deadline:
-        try:
-            response = requests.get(health_url, headers=headers, timeout=10)
-            if response.status_code == 200:
-                return True
-        except requests.exceptions.RequestException as exc:
-            logger.debug("health probe to %s failed: %s", health_url, exc)
+        attempts += 1
+        for probe_url in probe_urls:
+            try:
+                response = requests.get(probe_url, headers=headers, timeout=10)
+                last_seen[probe_url] = f"HTTP {response.status_code}"
+                if response.status_code == 200:
+                    logger.info(
+                        "[spec-decode] endpoint healthy: %s returned 200 after %.0fs (%d attempt(s))",
+                        probe_url,
+                        time.time() - start,
+                        attempts,
+                    )
+                    return True
+            except requests.exceptions.RequestException as exc:
+                last_seen[probe_url] = f"{type(exc).__name__}: {exc}"
+        if time.time() - last_log >= log_every:
+            last_log = time.time()
+            logger.info(
+                "[spec-decode] still waiting for endpoint (%.0fs/%.0fs, %d attempt(s)); last results: %s",
+                time.time() - start,
+                timeout,
+                attempts,
+                "; ".join(f"{u} -> {r}" for u, r in last_seen.items()),
+            )
         time.sleep(interval)
+    logger.error(
+        "[spec-decode] endpoint not healthy after %.0fs (%d attempt(s)); last results: %s",
+        timeout,
+        attempts,
+        "; ".join(f"{u} -> {r}" for u, r in last_seen.items()),
+    )
     return False
 
 

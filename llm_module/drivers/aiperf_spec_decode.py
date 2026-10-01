@@ -43,8 +43,10 @@ from __future__ import annotations
 import glob
 import json
 import logging
+import os
 import shutil
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -204,13 +206,29 @@ class AIPerfSpecDecodeDriver:
         env = dict(context.extra_env)
         if server.auth_token:
             env["OPENAI_API_KEY"] = server.auth_token
-        rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
+        run_start = time.monotonic()
+        rc = run_command(
+            cmd,
+            env=env,
+            timeout_s=context.per_run_timeout_s,
+            heartbeat_s=_heartbeat_interval_s(),
+            heartbeat_label=f"spec-decode {spec_run.slug}",
+            heartbeat_status=lambda: _progress_text(artifact_dir, spec_run.num_prompts),
+        )
+        logger.info(
+            "[spec-decode] %s: aiperf exited rc=%d after %.0fs (%s)",
+            spec_run.slug,
+            rc,
+            time.monotonic() - run_start,
+            _progress_text(artifact_dir, spec_run.num_prompts),
+        )
         if rc != 0:
             logger.error(
                 "[spec-decode] aiperf failed for %s with rc=%d",
                 spec_run.slug,
                 rc,
             )
+            _log_aiperf_tail(artifact_dir)
             return SpecDecodeDriverResult(return_code=rc, payload=None, raw_path=None)
 
         metrics = _parse_aiperf_output(artifact_dir)
@@ -237,6 +255,7 @@ class AIPerfSpecDecodeDriver:
                 mean_ttft_ms,
                 artifact_dir,
             )
+            _log_aiperf_tail(artifact_dir)
             return SpecDecodeDriverResult(return_code=1, payload=None, raw_path=None)
 
         spec_decode_metrics = _scrape_acceptance_metrics(
@@ -259,6 +278,58 @@ class AIPerfSpecDecodeDriver:
         _log_run_summary(spec_run, metrics, spec_decode_metrics)
 
         return SpecDecodeDriverResult(return_code=0, payload=payload, raw_path=raw_path)
+
+
+# ---------------------------------------------------------------------
+# Progress logging
+# ---------------------------------------------------------------------
+
+DEFAULT_HEARTBEAT_S = 60.0
+
+
+def _heartbeat_interval_s() -> float:
+    """Seconds between "still running" lines (TT_SPEC_DECODE_HEARTBEAT_S, 0 disables)."""
+    raw = os.environ.get("TT_SPEC_DECODE_HEARTBEAT_S", "").strip()
+    if not raw:
+        return DEFAULT_HEARTBEAT_S
+    try:
+        return max(float(raw), 0.0)
+    except ValueError:
+        logger.warning("Ignoring invalid TT_SPEC_DECODE_HEARTBEAT_S=%r", raw)
+        return DEFAULT_HEARTBEAT_S
+
+
+def _progress_text(artifact_dir: Path, num_prompts: Optional[int]) -> str:
+    """Requests recorded so far, from AIPerf's per-record export.
+
+    AIPerf appends one line per finished request to ``profile_export*.jsonl``
+    in batches while it runs, so this count lags slightly behind the server.
+    """
+    done = errors = 0
+    for path in Path(artifact_dir).rglob("profile_export*.jsonl"):
+        try:
+            with path.open("r", errors="replace") as fh:
+                for line in fh:
+                    if not line.strip():
+                        continue
+                    done += 1
+                    if '"error":' in line and '"error": null' not in line and '"error":null' not in line:
+                        errors += 1
+        except OSError:
+            continue
+    total = f"/{num_prompts}" if num_prompts else ""
+    return f"{done}{total} requests recorded, {errors} with errors"
+
+
+def _log_aiperf_tail(artifact_dir: Path, lines: int = 30) -> None:
+    """Copy the end of AIPerf's own log into ours, so CI shows why a run failed."""
+    for path in sorted(Path(artifact_dir).rglob("aiperf.log")):
+        try:
+            tail = path.read_text(errors="replace").splitlines()[-lines:]
+        except OSError as exc:
+            logger.warning("Could not read %s: %s", path, exc)
+            continue
+        logger.error("[spec-decode] last %d lines of %s:\n%s", len(tail), path, "\n".join(tail))
 
 
 # ---------------------------------------------------------------------
@@ -341,6 +412,12 @@ def _build_aiperf_cmd(
         "--artifact-dir",
         artifact_dir,
     ]
+    # AIPerf disables its UI when stdout is not a TTY (CI), so a run prints
+    # nothing until it ends. TT_SPEC_DECODE_AIPERF_UI=simple opts into its
+    # TQDM progress bars; the driver heartbeat covers progress either way.
+    ui_type = os.environ.get("TT_SPEC_DECODE_AIPERF_UI", "").strip()
+    if ui_type:
+        cmd += ["--ui-type", ui_type]
     if auth_token:
         cmd += ["--api-key", auth_token]
     return cmd
