@@ -125,5 +125,6 @@ def test_qwen38_terminal_perf_cohort_budget_and_qemu_pin():
         "top_k": 20,
         "chat_template_kwargs": {"reasoning_effort": "medium"},
     }
+    assert terminal_config.agent_kwargs["max_turns"] == 100
     assert terminal_config.agent_kwargs["temperature"] == 1.0
     assert terminal_config.n_concurrent_trials == 5
