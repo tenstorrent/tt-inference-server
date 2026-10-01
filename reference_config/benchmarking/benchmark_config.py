@@ -135,6 +135,7 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 #                  isl + osl <= max_context. Omit it to keep the standard sweep.
 #   concurrencies  the exact concurrency levels, instead of [1, allowed_max]; levels above
 #                  the model's allowed max are dropped
+#   extra_pairs    optional; pairs appended to the sweep (before max_isl applies)
 #   max_isl        optional; drops every pair whose ISL is above it
 #
 # An override also skips the structured-output runs, which drive a concurrency of their
@@ -149,11 +150,13 @@ SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 # into a second decode regime — median TPOT steps 9.55 -> 18.8 ms and throughput falls to
 # 663 tok/s at 80. The deployment now runs 40 slots to match, so every level between 1 and
 # 40 would only re-measure the linear region, and anything above 40 measures queueing.
-# The current sweep pins 20 concurrent users and stops at 55K ISL.
+# The current sweep targets the 32-slot P/D deployment (pdg-glm-d7, prefill accepts up
+# to 527,360 tokens): one request alone and the engine full, from 128 up to 500K ISL.
 MODEL_SWEEP_OVERRIDES = {
     "GLM-5.": {
-        "concurrencies": (20,),
-        "max_isl": 55000,
+        "concurrencies": (1, 32),
+        "extra_pairs": ((500000 - 128, 128),),  # 500K
+        "max_isl": 500000,
     },
 }
 
@@ -639,6 +642,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     if override is not None:
         if override.get("pairs"):
             text_isl_osl_pairs = list(override["pairs"])
+        text_isl_osl_pairs += list(override.get("extra_pairs", ()))
         if override.get("max_isl") is not None:
             text_isl_osl_pairs = [
                 (isl, osl)

@@ -382,12 +382,13 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
 
 
 @pytest.mark.parametrize("model_name", ["GLM-5.2", "GLM-5.3"])
-def test_glm_sweeps_concurrency_20_only_up_to_55k_isl(monkeypatch, model_name):
-    """GLM runs every standard ISL/OSL pair up to 55K ISL, at concurrency 20 only."""
+def test_glm_sweeps_concurrency_1_and_32_up_to_500k_isl(monkeypatch, model_name):
+    """GLM runs every standard ISL/OSL pair up to 500K ISL plus a ~500K point, at
+    concurrency 1 and 32 only."""
     benchmark_config = _import_benchmark_config(monkeypatch)
 
     # GLM lives in the dev specs only, so build its SUPER_CLUSTER shape from a prod one:
-    # 1M context, 40 slots, no perf-reference targets.
+    # 1M context, 32 slots, no perf-reference targets.
     _, base_spec = _make_super_cluster_runtime_spec()
     glm_spec = replace(
         base_spec,
@@ -395,7 +396,7 @@ def test_glm_sweeps_concurrency_20_only_up_to_55k_isl(monkeypatch, model_name):
         device_model_spec=replace(
             base_spec.device_model_spec,
             max_context=1048576,
-            max_concurrency=40,
+            max_concurrency=32,
             perf_reference=[],
         ),
     )
@@ -405,7 +406,6 @@ def test_glm_sweeps_concurrency_20_only_up_to_55k_isl(monkeypatch, model_name):
         p for task in config.tasks for p in task.param_map[DeviceTypes.SUPER_CLUSTER]
     ]
     assert params
-    assert {p.max_concurrency for p in params} == {20}
     # Structured-output runs drive their own concurrency, so they stay out.
     assert {getattr(p, "task_type", "text") for p in params} == {"text"}
 
@@ -413,10 +413,14 @@ def test_glm_sweeps_concurrency_20_only_up_to_55k_isl(monkeypatch, model_name):
         (isl, osl)
         for isl, osl in benchmark_config.BENCHMARK_ISL_OSL_PAIRS
         + benchmark_config.SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
-        if isl <= 55000
-    }
+        if isl <= 500000
+    } | {(500000 - 128, 128)}
+    assert (255872, 128) in expected_pairs and (1048448, 128) not in expected_pairs
     assert {(p.isl, p.osl) for p in params} == expected_pairs
-    assert (32768, 128) in expected_pairs and (65536, 128) not in expected_pairs
+    # Every pair at both levels, and nothing else.
+    assert sorted((p.isl, p.osl, p.max_concurrency) for p in params) == sorted(
+        (isl, osl, c) for isl, osl in expected_pairs for c in (1, 32)
+    )
 
 
 def test_ladder_levels_above_the_allowed_max_are_dropped():
@@ -433,9 +437,9 @@ def test_ladder_levels_above_the_allowed_max_are_dropped():
     assert [p.max_concurrency for p in params] == [1]
 
 
-def test_glm53_super_cluster_spec_matches_the_20_slot_pd_deployment():
-    """The eval and benchmark clients clamp to this value, so it must not exceed
-    the 20 decode slots of the GLM-5.3 P/D deployment (pdg-glm-a9)."""
+def test_glm53_super_cluster_spec_matches_the_32_slot_pd_deployment():
+    """The eval and benchmark clients clamp to this value, so it must match the
+    32 decode slots of the GLM-5.3 P/D deployment (pdg-glm-d7)."""
     import pathlib
 
     import yaml
@@ -447,4 +451,4 @@ def test_glm53_super_cluster_spec_matches_the_20_slot_pd_deployment():
     templates = yaml.safe_load(catalog.read_text())["templates"]
     (glm53,) = [t for t in templates if "zai-org/GLM-5.3" in t.get("weights", [])]
     (spec,) = [d for d in glm53["device_model_specs"] if d["device"] == "SUPER_CLUSTER"]
-    assert spec["max_concurrency"] == 20
+    assert spec["max_concurrency"] == 32
