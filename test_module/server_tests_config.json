@@ -49,7 +49,8 @@
             "openai/gpt-oss-20b",
             "google/diffusiongemma-26B-A4B-it",
             "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-            "Falcon3-3B-Base"
+            "Falcon3-3B-Base",
+            "Falcon3-7B-Base"
         ]
     },
     "available_markers": {
@@ -106,6 +107,12 @@
         }
     },
     "model_configs": {
+        "tiiuae/Falcon3-7B-Base": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "tiiuae--Falcon3-7B-Base",
+            "weights": ["Falcon3-7B-Base"]
+        },
         "tiiuae/Falcon3-3B-Base": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
