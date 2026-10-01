@@ -5268,6 +5268,16 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                            # Established cross-model nightly tasks spanning
+                            # ML build, forensics, native optimization, service
+                            # setup, and OCR/data processing. Harbor dynamically
+                            # backfills the five slots as the initial heavy
+                            # cohort finishes, avoiding fixed-wave tail idle.
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
                         ],
                     },
                     task_overrides={
