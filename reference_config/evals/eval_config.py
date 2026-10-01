@@ -6,6 +6,7 @@ import json
 import logging
 import math
 import os
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -6147,6 +6148,12 @@ _eval_config_map = map_configs_by_attr(
 # the five-task release recipe. The final validation restores the full subset.
 _gemma_probe = _eval_config_map["google/gemma-4-26B-A4B-it"]
 _gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_verified")
+_gemma_guard_kwargs = deepcopy(_gemma_swe.agentic_eval_config.agent_kwargs)
+_gemma_guard_kwargs["config"]["model"]["model_kwargs"]["extra_body"]["repetition_detection"] = {
+    "min_pattern_size": 16,
+    "max_pattern_size": 128,
+    "min_count": 8,
+}
 _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
     _gemma_probe,
     tasks=[
@@ -6156,6 +6163,7 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
                 _gemma_swe.agentic_eval_config,
                 agent_timeout_sec=15 * 60,
                 repetition_feedback_after=0,
+                agent_kwargs=_gemma_guard_kwargs,
                 task_names_map={
                     EvalLimitMode.CI_NIGHTLY: ["matplotlib__matplotlib-25332"],
                 },
