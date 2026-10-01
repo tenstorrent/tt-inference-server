@@ -6151,7 +6151,7 @@ _gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_ver
 _gemma_guard_kwargs = deepcopy(_gemma_swe.agentic_eval_config.agent_kwargs)
 _gemma_guard_kwargs["config"]["model"]["model_kwargs"]["extra_body"]["repetition_detection"] = {
     "min_pattern_size": 16,
-    "max_pattern_size": 128,
+    "max_pattern_size": 1024,
     "min_count": 8,
 }
 _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
