@@ -18,7 +18,7 @@ import json
 import logging
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -106,6 +106,7 @@ class HarborRunConfig:
     # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
     harbor_timeout_sec: Optional[float] = None
+    request_telemetry: bool = False
 
 
 def _apply_mini_swe_agent_defaults(
@@ -314,6 +315,29 @@ def _annotate_result_file(result_file: Path) -> None:
 
 
 def run(config: HarborRunConfig) -> int:
+    if config.request_telemetry:
+        from llm_module.agentic.request_telemetry import RequestTelemetryProxy
+
+        if config.agent != _MINI_SWE_AGENT or config.environment_type != "docker":
+            raise ValueError(
+                "Request telemetry currently supports local Docker mini-swe trials"
+            )
+        endpoint = _get_agent_endpoint(config)
+        with RequestTelemetryProxy(
+            endpoint,
+            config.jobs_dir / f"{config.task_name}_requests.jsonl",
+            config.llm_timeout_sec or config.agent_timeout_sec or 7200,
+        ) as proxy:
+            env = {
+                k: v
+                for k, v in config.agent_env.items()
+                if k not in _OPENAI_ENDPOINT_ENV
+            }
+            return _run(replace(config, api_base=proxy, agent_env=env))
+    return _run(config)
+
+
+def _run(config: HarborRunConfig) -> int:
     interpreter = config.venv_python or Path(sys.executable)
     harbor_exec = Path(interpreter).parent / "harbor"
 

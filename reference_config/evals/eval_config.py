@@ -294,6 +294,7 @@ class HarborEvalConfig:
     # litellm path otherwise defaults to an infinite read timeout. ``None`` opts
     # out. Ignored by every non-mini agent (they carry their own timeout knob).
     llm_timeout_sec: Optional[int] = 10 * 60
+    request_telemetry: bool = False
     # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
     # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
@@ -5500,6 +5501,7 @@ _eval_config_list = [
                     # 32K output at the measured ~43 tokens/s already exceeds
                     # 600s before prefill. Keep the independent 2h trial limit.
                     llm_timeout_sec=30 * 60,
+                    request_telemetry=True,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         # Output cap left at the value the pre-Harbor runs used,
