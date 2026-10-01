@@ -140,6 +140,13 @@
             "test_cases": [
                 {"enabled": true, "template": "VLLMParamConformanceTest"}
             ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["TinyLlama/TinyLlama_v1.1"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
         }
     ]
 }
