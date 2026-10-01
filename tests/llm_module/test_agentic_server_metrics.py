@@ -14,6 +14,8 @@ def test_select_vllm_metrics_keeps_histograms_and_occupancy():
 vllm:num_requests_running{model_name="qwen"} 5
 vllm:time_to_first_token_seconds_bucket{le="1.0",model_name="qwen"} 3
 vllm:time_to_first_token_seconds_sum{model_name="qwen"} 1.25
+vllm:request_generation_tokens_sum{model_name="qwen"} 16384
+vllm:prefix_cache_hits{model_name="qwen"} 0
 python_gc_objects_collected_total{generation="0"} 99
 malformed
 """
@@ -22,6 +24,8 @@ malformed
 
     assert selected == {
         'vllm:num_requests_running{model_name="qwen"}': 5.0,
+        'vllm:prefix_cache_hits{model_name="qwen"}': 0.0,
+        'vllm:request_generation_tokens_sum{model_name="qwen"}': 16384.0,
         'vllm:time_to_first_token_seconds_bucket{le="1.0",model_name="qwen"}': 3.0,
         'vllm:time_to_first_token_seconds_sum{model_name="qwen"}': 1.25,
     }
