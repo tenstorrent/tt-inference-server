@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 #!/usr/bin/env bash
 # Blocks until the 1G hugepages that device DMA buffers pin into are allocated.
 # After=tenstorrent-hugepages.service is not enough: that unit is Type=simple, so it
