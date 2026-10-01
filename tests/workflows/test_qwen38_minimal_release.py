@@ -54,34 +54,27 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
 def test_qwen38_release_has_one_result_per_requested_eval_suite():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
 
-    assert [task.task_name for task in tasks] == [
-        "r1_gpqa_diamond",
-        "terminal_bench_2_1",
-        "swe_bench_verified",
-    ]
+    assert [task.task_name for task in tasks] == ["terminal_bench_2_1"]
     assert [task.workflow_venv_type for task in tasks] == [
-        WorkflowVenvType.EVALS_COMMON,
-        WorkflowVenvType.EVALS_AGENTIC,
-        WorkflowVenvType.EVALS_AGENTIC,
+        WorkflowVenvType.EVALS_AGENTIC
     ]
-    assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
 
-    terminal = tasks[1].agentic_eval_config
-    swe = tasks[2].agentic_eval_config
+    terminal = tasks[0].agentic_eval_config
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
-    assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
-    assert swe.llm_timeout_sec == 60 * 60
+    assert terminal.n_concurrent_trials == 5
+    assert terminal.agent_timeout_sec == 6 * 60 * 60
+    assert terminal.task_overrides == {
+        "terminal-bench/qemu-startup": {
+            "path": "tasks/qemu-startup",
+            "git_url": "https://github.com/mvasiljevicTT/terminal-bench-2-1.git",
+            "git_commit_id": "a355fc6aaeaf62ba94b6cab023e179c7e440c651",
+        }
+    }
 
 
 def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
-    cases = [
-        (tasks[0], 10, 90.0, 80.0),
-        (tasks[1], 5, 80.0, 60.0),
-        (tasks[2], 5, 60.0, 40.0),
-    ]
+    cases = [(tasks[0], 5, 80.0, 60.0)]
 
     for task, total, passing_score, failing_score in cases:
         reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)

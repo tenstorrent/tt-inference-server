@@ -55,6 +55,7 @@ class FakeHarborConfig:
     n_tasks: Optional[int] = 89
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
+    task_overrides: Dict[str, Dict[str, str]] = field(default_factory=dict)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = "docker"
     override_cpus: Optional[int] = 16
@@ -388,8 +389,23 @@ class TestAgenticDriverConfigMapping:
 
         assert cfg.n_tasks == 5
         assert cfg.task_names == ["terminal-bench/caffe-cifar-10"]
+        assert cfg.task_overrides == {}
         assert cfg.jobs_dir == Path("/tmp/out/eval_Qwen__Qwen3.6-27B/agentic")
         assert cfg.model_name == "openai/Qwen/Qwen3.6-27B"
+
+    def test_harbor_config_forwards_task_overrides(self):
+        task = _harbor_task()
+        task.agentic_eval_config.task_overrides = {
+            "terminal-bench/qemu-startup": {
+                "path": "tasks/qemu-startup",
+                "git_url": "https://example.com/tasks.git",
+                "git_commit_id": "abc123",
+            }
+        }
+
+        cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.task_overrides == task.agentic_eval_config.task_overrides
 
     def test_harbor_config_preserves_prefixed_server_model_id(self):
         server = ServerConnection(

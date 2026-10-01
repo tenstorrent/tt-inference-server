@@ -67,6 +67,7 @@ class HarborRunConfig:
     agent_setup_timeout_multiplier: Optional[float] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
+    task_overrides: dict[str, dict[str, str]] = field(default_factory=dict)
     # Rich Live progress: quiet=True shows only the loading bar; quiet=False
     # adds per-trial stage spinners (env start, agent start, verification).
     # In CI (non-TTY) Rich degrades Live to static line-by-line output, which
@@ -202,13 +203,25 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
+    selected_overrides = {
+        name: task_config
+        for name, task_config in config.task_overrides.items()
+        if not config.task_names or name in config.task_names
+    }
+    registry_task_names = [
+        name for name in config.task_names if name not in selected_overrides
+    ]
+
     dataset_config: dict[str, Any] = {"name": config.dataset}
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
-    if config.task_names:
-        dataset_config["task_names"] = config.task_names
-    if config.exclude_task_names:
-        dataset_config["exclude_task_names"] = config.exclude_task_names
+    if registry_task_names:
+        dataset_config["task_names"] = registry_task_names
+    dataset_excludes = list(config.exclude_task_names)
+    if not config.task_names:
+        dataset_excludes.extend(selected_overrides)
+    if dataset_excludes:
+        dataset_config["exclude_task_names"] = list(dict.fromkeys(dataset_excludes))
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
     if _mini_swe_needs_host_gateway(config):
@@ -264,6 +277,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         "agents": [agent_config],
         "datasets": [dataset_config],
     }
+    if selected_overrides:
+        harbor_config["tasks"] = list(selected_overrides.values())
     if verifier_config:
         harbor_config["verifier"] = verifier_config
     if config.agent_setup_timeout_multiplier is not None:
@@ -287,6 +302,7 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _mini_swe_needs_host_gateway(config)
         or config.agent_timeout_sec is not None
+        or bool(config.task_overrides)
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
         or bool(config.agent_env)

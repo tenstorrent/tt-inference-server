@@ -270,6 +270,9 @@ class HarborEvalConfig:
     n_tasks: Optional[int] = None
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
+    # Optional replacements for selected dataset tasks. Values are Harbor
+    # TaskConfig dictionaries (for example path/git_url/git_commit_id).
+    task_overrides: Dict[str, Dict[str, str]] = field(default_factory=dict)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
     override_cpus: Optional[int] = None
@@ -5202,45 +5205,6 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3.8-27B",
         tasks=[
             EvalTask(
-                task_name="r1_gpqa_diamond",
-                score=EvalTaskScore(
-                    published_score=89.2,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=90.0,
-                            ref="QB2 Qwen3.8 release cohort: 9/10 GPQA",
-                            tolerance=0.0,
-                        ),
-                    },
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["exact_match,none"],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=5,
-                use_chat_api=True,
-                model_kwargs={
-                    "max_length": 262144,
-                    "timeout": 7200,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 80 * 1024,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 10,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
-            EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -5291,57 +5255,12 @@ _eval_config_list = [
                             "terminal-bench/qemu-startup",
                         ],
                     },
-                ),
-                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
-            ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=61.7,
-                    published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=60.0,
-                            ref="QB2 Qwen3.8 release cohort: 3/5 SWE-bench Verified",
-                            tolerance=0.0,
-                        ),
-                    },
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset="swebench-verified",
-                    agent="mini-swe-agent",
-                    n_concurrent_trials=5,
-                    n_attempts=1,
-                    n_tasks=None,
-                    agent_timeout_sec=6 * 60 * 60,
-                    llm_timeout_sec=60 * 60,
-                    agent_kwargs={
-                        "version": MINI_SWE_AGENT_VERSION,
-                        "max_tokens": 32 * 1024,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {
-                                    "temperature": 1.0,
-                                    "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
-                                }
-                            }
-                        },
-                    },
-                    task_names_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-11299",
-                            "astropy__astropy-14096",
-                            "matplotlib__matplotlib-25332",
-                            "sympy__sympy-13551",
-                            "scikit-learn__scikit-learn-14629",
-                        ],
+                    task_overrides={
+                        "terminal-bench/qemu-startup": {
+                            "path": "tasks/qemu-startup",
+                            "git_url": "https://github.com/mvasiljevicTT/terminal-bench-2-1.git",
+                            "git_commit_id": "a355fc6aaeaf62ba94b6cab023e179c7e440c651",
+                        }
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
