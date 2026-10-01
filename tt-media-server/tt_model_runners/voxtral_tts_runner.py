@@ -35,6 +35,7 @@ from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import TextToSpeechResponse
 from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
+import torch
 from utils.decorators import log_execution_time
 
 SAMPLE_RATE = 24000
@@ -42,6 +43,7 @@ DEFAULT_VOICE = os.environ.get("VOXTRAL_DEFAULT_VOICE", "neutral_male")
 # Characters per synthesized chunk. Voxtral's own cap is the KV window (prompt + frames); a
 # sentence-bounded chunk of this size stays well inside it at any voice.
 CHUNK_CHARS = int(os.environ.get("VOXTRAL_CHUNK_CHARS", "400"))
+TORCH_THREADS = int(os.environ.get("VOXTRAL_TORCH_THREADS", "4"))  # host-side torch threads per worker
 
 
 _SENTENCE_END = re.compile(r"(?<=[.!?\u3002\uff01\uff1f\u0964\u061f])\s+")
@@ -102,6 +104,12 @@ def wav_bytes_from_waveform(wav, sample_rate: int = SAMPLE_RATE) -> bytes:
 class TTVoxtralTTSRunner(BaseMetalDeviceRunner):
     def __init__(self, device_id: str):
         super().__init__(device_id)
+        if device_id != "-1":
+            # Per-frame host work (sampling for B users) runs in torch; the base default of one
+            # thread costs ~2 ms per 80 ms frame. (The matmul throttle is disabled for this runner
+            # in settings: it costs 30% per frame.)
+            # Intra-op only: the base class already fixed the interop pool, which torch allows once.
+            torch.set_num_threads(TORCH_THREADS)
         self.pipeline = None
         self.voices: List[str] = []
         self.model_dir: Optional[str] = None

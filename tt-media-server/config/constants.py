@@ -1224,25 +1224,25 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
-        "max_batch_size": 1,
+        "max_batch_size": 16,  # users per decode step; 16 = 1.4x real time each, 32 = max throughput
     },
     (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2.value,
-        "max_batch_size": 1,
+        "max_batch_size": 16,  # users per decode step; 16 = 1.4x real time each, 32 = max throughput
     },
     (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
-        "max_batch_size": 1,
+        "max_batch_size": 16,  # users per decode step; 16 = 1.4x real time each, 32 = max throughput
     },
     (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32.value,
-        "max_batch_size": 1,
+        "max_batch_size": 16,  # users per decode step; 16 = 1.4x real time each, 32 = max throughput
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {
         "device_mesh_shape": (1, 1),

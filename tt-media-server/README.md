@@ -600,7 +600,7 @@ export MODEL=voxtral-4b-tts            # ModelNames.VOXTRAL_4B_TTS
 export MODEL_RUNNER=tt-voxtral-tts     # ModelRunners.TT_VOXTRAL_TTS
 export DEVICE=p300x2                   # p300x2 (QuietBox 2, the target) | p300 | bh-galaxy | p150; one chip per worker
 # optional
-export MAX_BATCH_SIZE=8                # >1 serves B users per decode step (8 or 16 recommended)
+export MAX_BATCH_SIZE=16               # default 16: users per decode step (8 = lowest latency, 32 = max throughput)
 export VOXTRAL_DEFAULT_VOICE=neutral_male
 export VOXTRAL_MAX_SEQ_LEN=2048        # KV window per user; 1024 halves cache memory
 ```
@@ -616,8 +616,20 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
   -d '{"text": "Hello from Tenstorrent.", "voice": "neutral_male", "seed": 0}' -o speech.wav
 ```
 
-Target hardware: Blackhole p300 / QuietBox 2 (p300x2), the cards the tt-metal port was brought up on. Measured on one Blackhole chip of a BH Galaxy (2026-10-01; same silicon class, p300x2 numbers to be confirmed in the image): 1 user 26 to 29 ms per 80 ms frame (about 3x real time);
-8 users 38.6 ms per frame for all (2.1x real time each); 16 users 48.5 ms (1.65x); 32 users 73.2 ms (1.09x).
+Target hardware: Blackhole p300 / QuietBox 2 (p300x2), the cards the tt-metal port was brought up on. Measured on one
+Blackhole chip of a BH Galaxy (2026-10-01; same silicon class, p300x2 numbers to be confirmed in the image), one
+`synthesize` call per row including prefill and codec, trace captured once at warmup:
+
+| users per step | decode ms per 80 ms frame | real time per user (decode) | wall RTF per user (incl. prefill) | frames/s per chip |
+|---|---|---|---|---|
+| 1 (single-user path) | ~26 | 3.1x | 2.9x | 36 |
+| 8 | 34.1 | 2.3x | 1.8x | 180 |
+| 16 (default) | 38.0 | 2.1x | 1.4x | 274 |
+| 32 | 51.9 | 1.5x | 0.9x | 371 (617 decode-only) |
+
+Intelligibility gate: every voice x 2 sentences through the batched path, Whisper-large-v3 WER per language under the
+single-user suite ceilings at 8 and 32 users (mean WER 0.008 / 0.009). Each worker owns one chip; `DEVICE=p300x2` starts
+four workers, so aggregate capacity is four times the per-chip row.
 
 # Image search test call
 

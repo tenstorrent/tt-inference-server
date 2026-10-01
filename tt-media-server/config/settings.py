@@ -362,6 +362,8 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
             ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
             ModelRunners.TT_MINIMAX_H3_T2VA.value,
+            # Voxtral TTS: TT_MM_THROTTLE_PERF=5 costs 30% per decode frame (38 -> 50 ms at 16 users)
+            ModelRunners.TT_VOXTRAL_TTS.value,
         ]:
             self.default_throttle_level = None
 
