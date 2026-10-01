@@ -18,6 +18,480 @@
                     }
                 }
             }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 392.5,
+                        "tput_user": 27.08,
+                        "tput": 25.4,
+                        "tolerance": 0.1
+                    }
+                },
+                "_comment": [
+                    "BLACKHOLE_GALAXY at data_parallel_size=4 (four (1,8) column engines,",
+                    "tt-transformers impl, bfloat8_b KV, decode buckets 1/4/8/32, pool",
+                    "1,523,712 tok/engine). Declaring data_parallel makes get_perf_reference()",
+                    "use these entries verbatim. 'measured' gates acceptance (the 'target'",
+                    "tier); values are the WORST of two full 24-point sweeps on 2026-10-01",
+                    "(standalone benchmarks workflow 02:26, and the release workflow's",
+                    "benchmark phase 19:01, both on bh-glx-exp-b03u14). Short-ISL TTFTs were",
+                    "bimodal between the runs (fresh-boot prefills ~2x faster than the",
+                    "long-lived server; e.g. 1024/128 c128: 7.1 s vs 15.7 s) -- worst-of",
+                    "absorbs that, so tolerance stays 0.10. No 'theoretical' block yet: the",
+                    "only defensible prefill ceiling is the gemma4_d_p kernel stack (256K in",
+                    "7.1 s on these 32 chips), and deriving functional tiers from it would",
+                    "fail long-ISL TTFT by design; add ceilings when those kernels land in",
+                    "this serving path."
+                ]
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 9517.4,
+                        "tput_user": 14.78,
+                        "tput": 912.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 393.3,
+                        "tput_user": 26.8,
+                        "tput": 26.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 1024,
+                "max_concurrency": 128,
+                "num_prompts": 512,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 9859.5,
+                        "tput_user": 18.27,
+                        "tput": 1979.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 565.8,
+                        "tput_user": 26.44,
+                        "tput": 25.1,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 1024,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 512,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 15652.5,
+                        "tput_user": 15.33,
+                        "tput": 733.5,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1059.2,
+                        "tput_user": 26.4,
+                        "tput": 21.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 512,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 31704.5,
+                        "tput_user": 14.29,
+                        "tput": 426.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 1582.3,
+                        "tput_user": 26.32,
+                        "tput": 19.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 512,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 32253.6,
+                        "tput_user": 6.13,
+                        "tput": 311.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3385.6,
+                        "tput_user": 26.22,
+                        "tput": 16.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 126,
+                "num_prompts": 252,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 61265.9,
+                        "tput_user": 4.0,
+                        "tput": 176.6,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 2692.0,
+                        "tput_user": 26.19,
+                        "tput": 24.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 8192,
+                "osl": 1024,
+                "max_concurrency": 113,
+                "num_prompts": 226,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 52713.8,
+                        "tput_user": 12.71,
+                        "tput": 898.4,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3121.4,
+                        "tput_user": 26.11,
+                        "tput": 24.3,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 10000,
+                "osl": 1024,
+                "max_concurrency": 95,
+                "num_prompts": 190,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 40375.5,
+                        "tput_user": 12.07,
+                        "tput": 742.9,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 16384,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 5989.1,
+                        "tput_user": 25.98,
+                        "tput": 12.2,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 16384,
+                "osl": 128,
+                "max_concurrency": 63,
+                "num_prompts": 126,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 32789.1,
+                        "tput_user": 3.81,
+                        "tput": 91.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 12532.4,
+                        "tput_user": 23.64,
+                        "tput": 7.5,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 31,
+                "num_prompts": 31,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 82389.9,
+                        "tput_user": 11.81,
+                        "tput": 43.8,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 27542.1,
+                        "tput_user": 22.73,
+                        "tput": 4.0,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 65536,
+                "osl": 128,
+                "max_concurrency": 15,
+                "num_prompts": 15,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 99570.5,
+                        "tput_user": 15.78,
+                        "tput": 17.9,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 70230.7,
+                        "tput_user": 21.2,
+                        "tput": 1.7,
+                        "tolerance": 0.1
+                    }
+                }
+            },
+            {
+                "isl": 131072,
+                "osl": 128,
+                "max_concurrency": 7,
+                "num_prompts": 7,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 129271.6,
+                        "tput_user": 18.37,
+                        "tput": 6.3,
+                        "tolerance": 0.1
+                    }
+                }
+            }
         ]
     },
     "Qwen/Qwen3-VL-32B-Instruct": {
