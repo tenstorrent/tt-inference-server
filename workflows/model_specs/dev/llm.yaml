@@ -2438,6 +2438,11 @@ templates:
   status: EXPERIMENTAL
   has_builtin_warmup: false
 
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      ci_workflow_overrides:
+        evals: agentic
+
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for
 # GPQA-Diamond, Terminal-Bench 2.0, and SWE-Bench Verified. These are dev-only

@@ -206,9 +206,11 @@ def resolve_eval_reference(score_obj, limit_mode):
         return {
             "reference_score": mode_ref.score,
             "reference_ref": f"{label} {suffix}".strip(),
-            "tolerance": mode_ref.tolerance
-            if mode_ref.tolerance is not None
-            else score_obj.tolerance,
+            "tolerance": (
+                mode_ref.tolerance
+                if mode_ref.tolerance is not None
+                else score_obj.tolerance
+            ),
             "is_subset_reference": True,
         }
 
@@ -5521,7 +5523,7 @@ _eval_config_list = [
                                     "top_p": 0.95,
                                     "extra_body": {"top_k": 20},
                                 }
-                            }
+                            },
                         },
                     },
                     task_names_map={
@@ -6137,6 +6139,25 @@ _eval_config_list = [
 
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
+)
+# Focused experiment only: this commit is a 15-minute diagnostic probe, not
+# the five-task release recipe. The final validation restores the full subset.
+_gemma_probe = _eval_config_map["google/gemma-4-26B-A4B-it"]
+_gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_verified")
+_eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
+    _gemma_probe,
+    tasks=[
+        replace(
+            _gemma_swe,
+            agentic_eval_config=replace(
+                _gemma_swe.agentic_eval_config,
+                agent_timeout_sec=15 * 60,
+                task_names_map={
+                    EvalLimitMode.CI_NIGHTLY: ["matplotlib__matplotlib-25332"],
+                },
+            ),
+        )
+    ],
 )
 # Keyed by the full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct") so
 # lookups are unambiguous even when two repos share a basename.
