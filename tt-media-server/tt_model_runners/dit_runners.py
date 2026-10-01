@@ -1335,10 +1335,8 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 # LTX-2.3 distilled text->audio-video
 # ---------------------------------------------------------------------------
 
-# The served shape (153f @ 1088x1920, 25 fps) now lives in config.constants
-# alongside LTX_ACCEPTED_SHAPES / ltx_served_shape(), so the request layer can
-# validate against it without importing this module (and with it the whole
-# tt-metal LTX pipeline). The rationale for each number is documented there.
+# The served shape (LTX_NUM_FRAMES etc.) lives in config.constants so the request
+# layer can validate against it without importing tt-metal.
 
 # (4, 8) BH Galaxy ring defaults (mirrors LTXPipeline.create_pipeline's own 4x8
 # device_configs entry): dynamic_load off, Ring topology, 2 links.
@@ -1445,10 +1443,8 @@ class TTLTX23DistilledRunner(TTDiTRunner):
         LTX_VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(LTX_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
         # generate() writes the AV MP4 to output_path and returns that path.
-        # VideoGenerateRequest._validate_shape has already pinned these to the
-        # served shape, so the request is the source of truth here. The fallback
-        # covers the one path that skips validation: warmup builds its request
-        # with model_construct(), which runs no validators.
+        # _validate_shape has pinned these; the fallback covers warmup's
+        # model_construct() request, which skips validation.
         result_path = self.pipeline.generate(
             request.prompt,
             output_path=output_path,
