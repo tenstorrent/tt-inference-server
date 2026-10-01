@@ -1016,6 +1016,7 @@ templates:
         QWEN_PREFILL_BATCHED_HEAD: "1"
         QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
         QWEN_PREFILL_STARTUP_WARMUP: "1"
+        QWEN_PREFILL_DIAGNOSTICS: "1"
         EXTRA_MODELS_DIR: "../../tt-metal/models/autoports/vllm_bundles"
         HF_MODEL: Qwen/Qwen3.8-27B
         MESH_DEVICE: "(1, 4)"

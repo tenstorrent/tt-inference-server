@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -17,6 +18,7 @@ from llm_module.agentic.progress import (
     make_terminal_bench_probe,
     run_with_progress,
 )
+from llm_module.agentic.server_metrics import ServerMetricsSampler
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,8 @@ class TerminalBenchRunConfig:
     # When False the progress watchdog logs deadlines but never kills the harbor
     # subprocess, letting it run to completion.
     enforce_agent_deadline: bool = False
+    collect_server_metrics: bool = False
+    server_metrics_interval_sec: float = 15.0
     # Interpreter whose bin/ holds the ``harbor`` CLI. When ``None`` the current
     # interpreter is used (standalone ``run_agentic.py`` already re-execs into
     # the EVALS_AGENTIC venv). Set on the release path, where the harness runs
@@ -244,20 +248,28 @@ def run(config: TerminalBenchRunConfig) -> int:
         else _DEFAULT_AGENT_TIMEOUT_SEC
     )
     per_task_budget = agent_timeout
-    rc = run_with_progress(
-        cmd,
-        cwd=None,
-        env=os.environ.copy(),
-        probe=make_terminal_bench_probe(job_dir),
-        label=config.task_name,
-        per_task_budget_s=per_task_budget,
-        concurrency=config.n_concurrent_trials,
-        startup_grace_s=config.startup_grace_sec,
-        stall_grace_s=config.stall_grace_sec,
-        log_interval_s=config.progress_log_interval_sec,
-        enforce_deadlines=config.enforce_agent_deadline,
-        log=logger,
-    )
+    metrics_context = nullcontext()
+    if config.collect_server_metrics:
+        metrics_context = ServerMetricsSampler(
+            config.api_base,
+            config.jobs_dir / f"{config.task_name}_server_metrics.jsonl",
+            interval_sec=config.server_metrics_interval_sec,
+        )
+    with metrics_context:
+        rc = run_with_progress(
+            cmd,
+            cwd=None,
+            env=os.environ.copy(),
+            probe=make_terminal_bench_probe(job_dir),
+            label=config.task_name,
+            per_task_budget_s=per_task_budget,
+            concurrency=config.n_concurrent_trials,
+            startup_grace_s=config.startup_grace_sec,
+            stall_grace_s=config.stall_grace_sec,
+            log_interval_s=config.progress_log_interval_sec,
+            enforce_deadlines=config.enforce_agent_deadline,
+            log=logger,
+        )
     # A watchdog timeout (124) still leaves harbor's per-trial results (each
     # already graded inline) in result.json worth annotating; only a genuine
     # harness error aborts before annotation.

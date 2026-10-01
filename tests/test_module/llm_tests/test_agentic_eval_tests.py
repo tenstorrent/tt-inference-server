@@ -79,6 +79,8 @@ class FakeTerminalBenchConfig:
     stall_grace_sec: int = 5 * 60
     progress_log_interval_sec: int = 5 * 60
     enforce_agent_deadline: bool = False
+    collect_server_metrics: bool = False
+    server_metrics_interval_sec: float = 15.0
 
 
 @dataclass

@@ -173,6 +173,11 @@ class TerminalBenchEvalConfig:
     # When False the watchdog logs deadlines but never kills the harbor
     # subprocess, letting it run to completion.
     enforce_agent_deadline: bool = False
+    # Poll vLLM Prometheus counters/histograms during the run. This captures
+    # queueing, TTFT, TPOT, prefill/decode time, occupancy and token volume
+    # without changing the agent's non-streaming request protocol.
+    collect_server_metrics: bool = False
+    server_metrics_interval_sec: float = 15.0
 
 
 @dataclass(frozen=True)
@@ -2072,6 +2077,7 @@ _eval_config_list = [
                     # Six hours keeps one concurrent wave inside the release job's
                     # wall-clock budget without reverting to serial execution.
                     agent_timeout_sec=6 * 60 * 60,
+                    collect_server_metrics=True,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
