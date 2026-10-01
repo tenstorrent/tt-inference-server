@@ -54,7 +54,8 @@
             "Qwen3-4B",
             "Qwen3-14B",
             "Qwen3-8B",
-            "Qwen2.5-Coder-7B"
+            "Qwen2.5-Coder-7B",
+            "Qwen2.5-Coder-7B-Instruct"
         ]
     },
     "available_markers": {
@@ -111,6 +112,12 @@
         }
     },
     "model_configs": {
+        "Qwen/Qwen2.5-Coder-7B-Instruct": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "Qwen--Qwen2.5-Coder-7B-Instruct",
+            "weights": ["Qwen2.5-Coder-7B-Instruct"]
+        },
         "Qwen/Qwen2.5-Coder-7B": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
