@@ -2099,6 +2099,14 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
+                                # Qwen3.8's template defaults to xhigh, which
+                                # explicitly asks for exhaustive alternatives on
+                                # every terminal action.  Keep thinking enabled
+                                # but remove that verbosity instruction; sampling
+                                # remains at the model-card temperature/top-p/k.
+                                "chat_template_kwargs": {
+                                    "reasoning_effort": "medium",
+                                },
                             },
                         },
                     },

@@ -121,5 +121,9 @@ def test_qwen38_terminal_perf_cohort_budget_and_qemu_pin():
     assert terminal_config.agent_timeout_sec == 6 * 60 * 60
     assert terminal_config.agent_kwargs["model_info"]["max_output_tokens"] == 16 * 1024
     assert terminal_config.agent_kwargs["llm_kwargs"]["max_tokens"] == 16 * 1024
+    assert terminal_config.agent_kwargs["llm_kwargs"]["extra_body"] == {
+        "top_k": 20,
+        "chat_template_kwargs": {"reasoning_effort": "medium"},
+    }
     assert terminal_config.agent_kwargs["temperature"] == 1.0
     assert terminal_config.n_concurrent_trials == 5
