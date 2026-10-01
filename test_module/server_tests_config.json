@@ -57,7 +57,8 @@
             "Qwen2.5-Coder-7B",
             "Qwen2.5-Coder-7B-Instruct",
             "TinyLlama_v1.1",
-            "TinyLlama-1.1B-Chat-v1.0"
+            "TinyLlama-1.1B-Chat-v1.0",
+            "stablelm-2-1_6b"
         ]
     },
     "available_markers": {
@@ -114,6 +115,12 @@
         }
     },
     "model_configs": {
+        "stabilityai/stablelm-2-1_6b": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "stabilityai--stablelm-2-1_6b",
+            "weights": ["stablelm-2-1_6b"]
+        },
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
