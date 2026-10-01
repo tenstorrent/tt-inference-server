@@ -2117,6 +2117,16 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                            # Add the established cross-model nightly cohort for
+                            # the ten-task scale check.  These span ML build,
+                            # forensics, native optimization, service setup and
+                            # OCR/data processing, and all are present unchanged
+                            # in the pinned Terminal-Bench 2.1 registry.
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
                         ],
                     },
                     task_overrides={

@@ -112,6 +112,11 @@ def test_qwen38_terminal_perf_cohort_budget_and_qemu_pin():
         "terminal-bench/compile-compcert",
         "terminal-bench/feal-differential-cryptanalysis",
         "terminal-bench/qemu-startup",
+        "terminal-bench/caffe-cifar-10",
+        "terminal-bench/password-recovery",
+        "terminal-bench/portfolio-optimization",
+        "terminal-bench/hf-model-inference",
+        "terminal-bench/financial-document-processor",
     ]
     assert terminal_config.task_overrides["terminal-bench/qemu-startup"] == {
         "path": "tasks/qemu-startup",
