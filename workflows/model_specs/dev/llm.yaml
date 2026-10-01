@@ -2427,6 +2427,9 @@ templates:
         hf-overrides: '{"architectures":["TTAutoportGemma4ForCausalLM"]}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
+        # Explicit eval-policy experiment; compare quality separately from serving speed.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
         block_size: 32
         max_num_seqs: 32
         max_model_len: 262144
@@ -2442,6 +2445,8 @@ templates:
     google/gemma-4-26B-A4B-it:
       ci_workflow_overrides:
         evals: agentic
+      # Bounded diagnostic startup; final comparison records/restores its warmup policy.
+      background_trace_context_lens: [[4096, 4]]
 
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for

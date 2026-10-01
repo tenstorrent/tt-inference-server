@@ -6155,9 +6155,9 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
             agentic_eval_config=replace(
                 _gemma_swe.agentic_eval_config,
                 agent_timeout_sec=15 * 60,
-                repetition_feedback_after=3,
+                repetition_feedback_after=0,
                 task_names_map={
-                    EvalLimitMode.CI_NIGHTLY: ["django__django-11299"],
+                    EvalLimitMode.CI_NIGHTLY: ["matplotlib__matplotlib-25332"],
                 },
             ),
         )

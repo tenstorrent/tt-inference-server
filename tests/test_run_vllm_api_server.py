@@ -52,6 +52,33 @@ def _build_catalog():
     }
 
 
+def test_explicit_background_trace_contexts(run_vllm_api_server_module, monkeypatch):
+    module = run_vllm_api_server_module
+    process = MagicMock()
+    monkeypatch.setattr(module.multiprocessing, "Process", process)
+    spec = {
+        "hf_model_repo": "test/model",
+        "device_model_spec": {"max_context": 262144},
+        "metadata": {"background_trace_context_lens": [[4096, 4]]},
+    }
+    module.start_trace_capture(spec, 8000)
+    assert process.call_args.kwargs["kwargs"] == {"context_lens": [[4096, 4]]}
+    process.return_value.start.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "contexts", [[], [[0, 4]], [[4096, -1]], [[262144, 4]], [[True, 4]], "4096"]
+)
+def test_invalid_background_trace_contexts(run_vllm_api_server_module, contexts):
+    spec = {
+        "hf_model_repo": "test/model",
+        "device_model_spec": {"max_context": 262144},
+        "metadata": {"background_trace_context_lens": contexts},
+    }
+    with pytest.raises(ValueError, match="[Bb]ackground"):
+        run_vllm_api_server_module.start_trace_capture(spec, 8000)
+
+
 @pytest.fixture
 def run_vllm_api_server_module(monkeypatch):
     monkeypatch.delenv("QZ_TRACE_REGION_BYTES", raising=False)
@@ -676,9 +703,7 @@ def test_gemma4_tool_parser_compat_accepts_runtime_model_config(
     parser.Gemma4ToolParser = LegacyGemma4ToolParser
     monkeypatch.setitem(sys.modules, "vllm_tt_plugin", plugin)
     monkeypatch.setitem(sys.modules, "vllm_tt_plugin.gemma4_tool_parser", parser)
-    model_spec = {
-        "device_model_spec": {"vllm_args": {"tool-call-parser": "gemma4"}}
-    }
+    model_spec = {"device_model_spec": {"vllm_args": {"tool-call-parser": "gemma4"}}}
 
     assert run_vllm_api_server_module.configure_gemma4_tool_parser_compat(model_spec)
     LegacyGemma4ToolParser("tokenizer", "model-config")

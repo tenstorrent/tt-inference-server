@@ -1019,6 +1019,27 @@ def start_trace_capture(
             max_context = int(max_model_len_str)
 
     logger.info("Starting background trace capture process...")
+    context_lens = model_spec_json.get("metadata", {}).get(
+        "background_trace_context_lens"
+    )
+    trace_kwargs = {}
+    if context_lens is not None:
+        if not isinstance(context_lens, list) or not context_lens:
+            raise ValueError(
+                "background_trace_context_lens must be a nonempty list of input/output pairs"
+            )
+        for pair in context_lens:
+            if (
+                not isinstance(pair, (list, tuple))
+                or len(pair) != 2
+                or any(type(value) is not int or value <= 0 for value in pair)
+                or (max_context is not None and sum(pair) > max_context)
+            ):
+                raise ValueError(
+                    "Background trace input/output lengths must be positive and fit max_context"
+                )
+        trace_kwargs["context_lens"] = context_lens
+        logger.info(f"Using explicit background trace contexts: {context_lens}")
     trace_process = multiprocessing.Process(
         target=run_background_trace_capture,
         args=(
@@ -1027,6 +1048,7 @@ def start_trace_capture(
             supported_modalities,
             max_context,
         ),
+        kwargs=trace_kwargs,
         daemon=True,
         name="trace_capture",
     )
@@ -1162,9 +1184,7 @@ def configure_gemma4_tool_parser_compat(model_spec: dict) -> bool:
     image contains the forward-compatible plugin source.
     """
     vllm_args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
-    parser_name = vllm_args.get("tool-call-parser") or vllm_args.get(
-        "tool_call_parser"
-    )
+    parser_name = vllm_args.get("tool-call-parser") or vllm_args.get("tool_call_parser")
     if parser_name != "gemma4":
         return False
 
