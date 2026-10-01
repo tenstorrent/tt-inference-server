@@ -2081,6 +2081,11 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
+                        # Successful five-task controls finish within 76 turns.
+                        # Bound pathological terminal-recovery loops (one QEMU
+                        # sample reached 184 turns and 11.6M replayed prompt
+                        # tokens) without constraining any observed completion.
+                        "max_turns": 100,
                         "model_info": {
                             # Terminal agents should finish one action per turn.  The
                             # prior 80K limit allowed failed trials to spend hours in
