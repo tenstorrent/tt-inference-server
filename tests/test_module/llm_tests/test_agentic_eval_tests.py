@@ -78,6 +78,8 @@ class FakeHarborConfig:
     stall_grace_sec: int = 5 * 60
     progress_log_interval_sec: int = 60
     enforce_agent_deadline: bool = False
+    collect_server_metrics: bool = False
+    server_metrics_interval_sec: float = 15.0
 
 
 def _runtime(limit_samples_mode: Optional[str] = None):
@@ -178,6 +180,36 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_combines_registry_and_adhoc_harbor_groups(self):
+        raw = {
+            "stats": {
+                "evals": {
+                    "terminus__adhoc": {
+                        "metrics": [{"mean": 1.0}],
+                        "n_trials": 1,
+                        "pass_at_k": {"2": 1.0},
+                        "reward_stats": {"reward": {"1.0": ["qemu"]}},
+                    },
+                    "terminus__registry": {
+                        "metrics": [{"mean": 0.5}],
+                        "n_trials": 4,
+                        "pass_at_k": {"2": 0.5},
+                        "reward_stats": {
+                            "reward": {"1.0": ["a", "b"], "0.0": ["c", "d"]}
+                        },
+                    },
+                }
+            }
+        }
+
+        metrics = extract_harbor_metrics(raw)
+
+        assert metrics["accuracy"] == pytest.approx(0.6)
+        assert metrics["pass_at_1"] == pytest.approx(0.6)
+        assert metrics["pass_at_2"] == pytest.approx(0.6)
+        assert metrics["n_trials"] == 5
+        assert metrics["n_resolved"] == 3
 
     def test_zero_trial_harbor_result_stays_na(self):
         # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure

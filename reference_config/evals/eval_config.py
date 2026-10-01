@@ -307,6 +307,8 @@ class HarborEvalConfig:
     # When False, heuristic wave/stall deadlines are log-only. An explicit
     # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
     enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
+    collect_server_metrics: bool = False
+    server_metrics_interval_sec: float = 15.0
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
@@ -5232,18 +5234,31 @@ _eval_config_list = [
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=6 * 60 * 60,
+                    collect_server_metrics=True,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
+                        # Successful controls finish within 76 turns. Bound
+                        # terminal-recovery loops without constraining any
+                        # observed successful trajectory.
+                        "max_turns": 100,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
-                            "extra_body": {"top_k": 20},
+                            "extra_body": {
+                                "top_k": 20,
+                                # Preserve thinking and high-temperature
+                                # sampling, but avoid the default xhigh prompt
+                                # asking for exhaustive alternatives every turn.
+                                "chat_template_kwargs": {
+                                    "reasoning_effort": "medium"
+                                },
+                            },
                         },
                     },
                     task_names_map={

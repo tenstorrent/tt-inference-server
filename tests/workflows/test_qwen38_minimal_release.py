@@ -63,6 +63,15 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
     assert terminal.n_concurrent_trials == 5
     assert terminal.agent_timeout_sec == 6 * 60 * 60
+    assert terminal.collect_server_metrics is True
+    assert terminal.agent_kwargs["temperature"] == 1.0
+    assert terminal.agent_kwargs["max_turns"] == 100
+    assert terminal.agent_kwargs["model_info"]["max_output_tokens"] == 16 * 1024
+    assert terminal.agent_kwargs["llm_kwargs"]["max_tokens"] == 16 * 1024
+    assert terminal.agent_kwargs["llm_kwargs"]["extra_body"] == {
+        "top_k": 20,
+        "chat_template_kwargs": {"reasoning_effort": "medium"},
+    }
     assert terminal.task_overrides == {
         "terminal-bench/qemu-startup": {
             "path": "tasks/qemu-startup",

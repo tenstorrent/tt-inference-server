@@ -228,6 +228,8 @@ def build_harbor_config(
         stall_grace_sec=cfg.stall_grace_sec,
         progress_log_interval_sec=cfg.progress_log_interval_sec,
         enforce_agent_deadline=cfg.enforce_agent_deadline,
+        collect_server_metrics=cfg.collect_server_metrics,
+        server_metrics_interval_sec=cfg.server_metrics_interval_sec,
         venv_python=venv_python,
     )
 

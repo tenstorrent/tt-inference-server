@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -28,6 +29,7 @@ from llm_module.agentic.progress import (
     make_terminal_bench_probe,
     run_with_progress,
 )
+from llm_module.agentic.server_metrics import ServerMetricsSampler
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +109,11 @@ class HarborRunConfig:
     # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
     harbor_timeout_sec: Optional[float] = None
+    # Poll vLLM counters/histograms while Harbor is active. This captures
+    # queueing, TTFT, TPOT, prefill/decode time, occupancy, and token volume
+    # without changing the agent request protocol.
+    collect_server_metrics: bool = False
+    server_metrics_interval_sec: float = 15.0
 
 
 def _apply_mini_swe_agent_defaults(
@@ -407,21 +414,31 @@ def run(config: HarborRunConfig) -> int:
     process_env = os.environ.copy()
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
-    rc = run_with_progress(
-        cmd,
-        cwd=None,
-        env=process_env,
-        probe=make_terminal_bench_probe(job_dir),
-        label=config.task_name,
-        per_task_budget_s=per_task_budget,
-        concurrency=config.n_concurrent_trials,
-        startup_grace_s=config.startup_grace_sec,
-        stall_grace_s=config.stall_grace_sec,
-        log_interval_s=config.progress_log_interval_sec,
-        hard_timeout_s=config.harbor_timeout_sec,
-        enforce_deadlines=config.enforce_agent_deadline,
-        log=logger,
+    metrics_context = (
+        ServerMetricsSampler(
+            config.api_base,
+            job_dir / "server_metrics.jsonl",
+            interval_sec=config.server_metrics_interval_sec,
+        )
+        if config.collect_server_metrics
+        else nullcontext()
     )
+    with metrics_context:
+        rc = run_with_progress(
+            cmd,
+            cwd=None,
+            env=process_env,
+            probe=make_terminal_bench_probe(job_dir),
+            label=config.task_name,
+            per_task_budget_s=per_task_budget,
+            concurrency=config.n_concurrent_trials,
+            startup_grace_s=config.startup_grace_sec,
+            stall_grace_s=config.stall_grace_sec,
+            log_interval_s=config.progress_log_interval_sec,
+            hard_timeout_s=config.harbor_timeout_sec,
+            enforce_deadlines=config.enforce_agent_deadline,
+            log=logger,
+        )
     # A watchdog timeout can still leave useful per-trial diagnostics in
     # result.json. Annotate that file, but preserve rc=124: Harbor computes
     # accuracy over completed trials, so treating a partial file as success can
