@@ -30,6 +30,7 @@ from utils.logger import TTLogger
 
 TASK_QUEUE_FULL_DETAIL = "Task queue is full. Please try again later."
 MAX_JOBS_REACHED_DETAIL = "Maximum job limit reached"
+WORKER_REPLACEMENT_RETRY_DELAY_SECONDS = 0.1
 AUTO_CLEANUP_EXEMPT_JOB_TYPES = frozenset(
     {
         JobTypes.TRAINING.value,
@@ -65,9 +66,9 @@ class Job:
     _progress_tracker: Any = None
     _worker_assignment: Any = None
     _mark_worker_retiring: Optional[Callable[[str, int], bool]] = None
-    _replace_worker: Optional[
-        Callable[[str, int, Any], WorkerReplacementOutcome]
-    ] = None
+    _replace_worker: Optional[Callable[[str, int, Any], WorkerReplacementOutcome]] = (
+        None
+    )
     _worker_replacement_scheduled: bool = False
     start_event: Optional[Event] = None
     cancel_event: Optional[Event] = None
@@ -634,12 +635,15 @@ class JobManager:
             worker_identity = self._prepare_worker_cancellation(job)
             if worker_identity is not None:
                 self._schedule_worker_replacement(job, worker_identity)
-            elif was_in_progress or job.assigned_worker_identity() is None:
+            if was_in_progress:
+                # The stale job is already terminal. Its API-side task does not
+                # need to wait for process replacement to finish.
                 self._cleanup_job(job, force=True)
-                if not was_in_progress:
-                    with self._jobs_lock:
-                        if job.is_cancelling():
-                            job.mark_cancelled()
+            elif worker_identity is None and job.assigned_worker_identity() is None:
+                self._cleanup_job(job, force=True)
+                with self._jobs_lock:
+                    if job.is_cancelling():
+                        job.mark_cancelled()
             self._sync_status_to_db(job)
 
         removed_jobs = []
@@ -722,9 +726,7 @@ class JobManager:
 
         return running_task
 
-    def _prepare_worker_cancellation(
-        self, job: Job
-    ) -> Optional[tuple[str, int]]:
+    def _prepare_worker_cancellation(self, job: Job) -> Optional[tuple[str, int]]:
         """Publish cancellation and capture any worker that already claimed the job."""
         if job._mark_worker_retiring is None or job._replace_worker is None:
             if job.cancel_event:
@@ -755,9 +757,7 @@ class JobManager:
 
         return worker_identity
 
-    def _mark_worker_retiring(
-        self, job: Job, worker_identity: tuple[str, int]
-    ) -> bool:
+    def _mark_worker_retiring(self, job: Job, worker_identity: tuple[str, int]) -> bool:
         worker_id, worker_pid = worker_identity
         try:
             return job._mark_worker_retiring(worker_id, worker_pid)
@@ -780,26 +780,45 @@ class JobManager:
 
         async def replace_worker() -> None:
             try:
-                outcome = await asyncio.to_thread(
-                    job._replace_worker,
-                    worker_id,
-                    worker_pid,
-                    job._worker_assignment,
-                )
-
-                with self._jobs_lock:
-                    if outcome.completes_cancellation():
-                        self._cleanup_job(job, force=True)
-                        if job.is_cancelling():
-                            job.mark_cancelled()
-                            self._sync_status_to_db(job)
-                    else:
-                        job._worker_replacement_scheduled = False
+                while True:
+                    with self._jobs_lock:
+                        if self._jobs.get(job.id) is not job:
+                            job._worker_replacement_scheduled = False
+                            return
                         if job.assigned_worker_identity() is None:
                             self._cleanup_job(job, force=True)
                             if job.is_cancelling():
                                 job.mark_cancelled()
                                 self._sync_status_to_db(job)
+                            return
+
+                    outcome = await asyncio.to_thread(
+                        job._replace_worker,
+                        worker_id,
+                        worker_pid,
+                        job._worker_assignment,
+                    )
+
+                    with self._jobs_lock:
+                        if outcome.completes_cancellation():
+                            self._cleanup_job(job, force=True)
+                            if job.is_cancelling():
+                                job.mark_cancelled()
+                                self._sync_status_to_db(job)
+                            return
+
+                        if job.assigned_worker_identity() is None:
+                            self._cleanup_job(job, force=True)
+                            if job.is_cancelling():
+                                job.mark_cancelled()
+                                self._sync_status_to_db(job)
+                            return
+
+                        if self._jobs.get(job.id) is not job:
+                            job._worker_replacement_scheduled = False
+                            return
+
+                    await asyncio.sleep(WORKER_REPLACEMENT_RETRY_DELAY_SECONDS)
             except Exception as e:
                 self._logger.error(
                     f"Failed to replace worker {worker_id} while cancelling "

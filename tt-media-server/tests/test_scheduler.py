@@ -541,9 +541,7 @@ class TestScheduler:
         retirement_event.clear.assert_called_once()
         claim_lock.release.assert_called_once()
 
-    def test_replace_worker_rechecks_assignment_after_active_claim(
-        self, scheduler
-    ):
+    def test_replace_worker_rechecks_assignment_after_active_claim(self, scheduler):
         process = Mock(spec=Process)
         process.pid = 123
         retirement_event = threading.Event()

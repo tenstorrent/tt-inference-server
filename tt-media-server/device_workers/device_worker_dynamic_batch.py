@@ -168,9 +168,7 @@ def device_worker(
             # Run blocking queue.get() in thread pool to not block event loop
             requests = await loop.run_in_executor(
                 None,
-                lambda: task_queue.get_many(
-                    max_messages_to_get=batch_size, block=True
-                ),
+                lambda: task_queue.get_many(max_messages_to_get=batch_size, block=True),
             )
 
             for request in requests:
