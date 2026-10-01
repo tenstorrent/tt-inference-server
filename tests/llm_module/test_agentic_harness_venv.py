@@ -14,6 +14,7 @@ the task container, so there are no other binaries to resolve.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,3 +77,43 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
         harbor.run(config)
 
     assert captured["cmd"][0] == str(Path("/cur/bin/python").parent / "harbor")
+
+
+def test_harbor_config_mixes_registry_tasks_with_git_override(tmp_path):
+    config = _harbor_config(tmp_path, _VENV_PY)
+    object.__setattr__(
+        config,
+        "task_names",
+        [
+            "terminal-bench/compile-compcert",
+            "terminal-bench/qemu-startup",
+        ],
+    )
+    object.__setattr__(
+        config,
+        "task_overrides",
+        {
+            "terminal-bench/qemu-startup": {
+                "path": "tasks/qemu-startup",
+                "git_url": "https://example.com/terminal-bench-2-1.git",
+                "git_commit_id": "abc123",
+            }
+        },
+    )
+
+    path = harbor._write_harbor_config(config)
+    payload = json.loads(path.read_text())
+
+    assert payload["datasets"] == [
+        {
+            "name": "terminal-bench",
+            "task_names": ["terminal-bench/compile-compcert"],
+        }
+    ]
+    assert payload["tasks"] == [
+        {
+            "path": "tasks/qemu-startup",
+            "git_url": "https://example.com/terminal-bench-2-1.git",
+            "git_commit_id": "abc123",
+        }
+    ]

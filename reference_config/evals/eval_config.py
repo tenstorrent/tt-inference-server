@@ -270,6 +270,9 @@ class HarborEvalConfig:
     n_tasks: Optional[int] = None
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
+    # Optional replacements for selected dataset tasks. Values are Harbor
+    # TaskConfig dictionaries (for example path/git_url/git_commit_id).
+    task_overrides: Dict[str, Dict[str, str]] = field(default_factory=dict)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
     override_cpus: Optional[int] = None
@@ -2010,6 +2013,13 @@ _eval_config_list = [
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
                         ],
+                    },
+                    task_overrides={
+                        "terminal-bench/qemu-startup": {
+                            "path": "tasks/qemu-startup",
+                            "git_url": "https://github.com/mvasiljevicTT/terminal-bench-2-1.git",
+                            "git_commit_id": "a355fc6aaeaf62ba94b6cab023e179c7e440c651",
+                        }
                     },
                 ),
                 limit_samples_map={
