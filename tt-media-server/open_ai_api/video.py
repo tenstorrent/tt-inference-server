@@ -111,9 +111,8 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
-# "basic" deliberately omits num_inference_steps and every shape field: the
-# defaults resolve per-model, so the example stays valid on any deployment. A
-# fixed step count would 422 on LTX, which runs a fixed distilled schedule.
+# "basic" omits steps and shape fields so it is valid on every model
+# (LTX rejects a step count).
 _T2V_EXAMPLES = {
     "basic": {
         "summary": "Text-to-video (server defaults)",
@@ -283,9 +282,7 @@ async def _submit_video_request(
     try:
         service.scheduler.check_is_model_ready()
     except Exception:
-        # 503, not 405: the model is warming or wedged, which is temporary. A 405
-        # says the *method* is wrong, so load balancers and clients treat it as a
-        # permanent client error and never retry.
+        # 503, not 405: not-ready is temporary, and a 405 is never retried.
         raise HTTPException(
             status_code=503,
             detail="Model is not ready",
@@ -478,9 +475,8 @@ def get_jobs_metadata(
     return JSONResponse(content=job_data)
 
 
-# Order matters: router.get() registers whatever function it receives and returns
-# it unchanged, so a decorator applied *above* it wraps a copy the router never
-# sees. log_execution_time must sit below to be part of the served handler.
+# log_execution_time must sit below router.get(), or the router serves the
+# unwrapped function.
 @router.get("/generations/{job_id}/download")
 @log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 def download_video_content(
@@ -507,9 +503,7 @@ def download_video_content(
     ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    # Remux to a faststart copy so the MP4 streams before it is fully fetched.
-    # The copy is per-request and disposable: it must be deleted once the response
-    # is sent, or every download leaks a full-size file into the temp dir.
+    # Per-request faststart copy; deleted once the response is sent.
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         faststart_path = tmp.name
     try:
@@ -517,8 +511,7 @@ def download_video_content(
         serve_path = faststart_path
         cleanup = BackgroundTask(_unlink_quietly, faststart_path)
     except Exception:
-        # Remux failed -- serve the original and drop the stub we just created,
-        # which would otherwise be an orphaned empty file.
+        # Remux failed: serve the original and drop the empty stub.
         _unlink_quietly(faststart_path)
         serve_path = file_path
         cleanup = None

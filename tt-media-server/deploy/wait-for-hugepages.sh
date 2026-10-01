@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
-# Blocks until the 1G hugepages that device DMA buffers pin into are actually allocated.
-#
-# Ordering After=tenstorrent-hugepages.service is not enough on its own: that unit is
-# Type=simple, so systemd considers it started the moment hugepages-setup.sh is forked,
-# not when the pages exist. UMD does not degrade gracefully on a short allocation -- it
-# fails device init with "Failed to pin pages for hugepage at virtual address 0x0".
+# Blocks until the 1G hugepages that device DMA buffers pin into are allocated.
+# After=tenstorrent-hugepages.service is not enough: that unit is Type=simple, so it
+# counts as started before the pages exist.
 set -uo pipefail
 
 HP=/sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages

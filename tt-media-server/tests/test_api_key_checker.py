@@ -19,12 +19,7 @@ _AUTH_VARS = ("API_KEY", "API_KEYS", "NO_AUTH")
 
 @pytest.fixture(autouse=True)
 def _restore_api_key_checker():
-    """Reload the module under the original env after each test.
-
-    These tests reload a module whose config is read at import time, which
-    mutates global state. Without this, whichever auth config ran last would
-    leak into every other test file in the session.
-    """
+    """Reload the module under the original env so auth config does not leak."""
     saved = {var: os.environ.get(var) for var in _AUTH_VARS}
     yield
     for var, value in saved.items():

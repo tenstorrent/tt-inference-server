@@ -4,21 +4,11 @@
 
 """Text-to-video request schema.
 
-Shape parameters (``height``/``width``/``fps`` and the frame count, expressed
-either as ``duration`` seconds or ``num_frames``) are accepted but *not*
-honoured as free variables: for LTX the shape is baked into the captured traces
-at ``create_pipeline()`` time, so a request may only ask for the shape the
-running process already serves. ``_validate_shape`` below rejects anything else
-rather than letting a mismatch reach the pipeline, where nothing would catch it
--- tt-metal guards ``fps`` (``LTXPipeline._resolve_fps``) but not the frame
-count or resolution.
-
-All shape fields default to ``None``, meaning "use the served config", so a
-prompt-only request behaves exactly as it did before they existed.
-
-MiniMax-H3 selects its shape differently (``aspect_ratio`` +
-``duration_seconds``, resolved against its published working points). Each
-model refuses the other's shape fields rather than silently ignoring them.
+LTX shape fields (``height``/``width``/``fps``, and the frame count as
+``duration`` or ``num_frames``) are validated against the shape baked into the
+running pipeline's traces, not honoured as free variables; ``None`` means "use
+the served config". MiniMax-H3 selects its shape with ``aspect_ratio`` +
+``duration_seconds``. Each model refuses the other's shape fields.
 """
 
 from typing import Optional
@@ -36,9 +26,7 @@ from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import Field, field_validator, model_validator
 
-# Shape fields only the LTX validator reads. MiniMax-H3 treats them as unknown
-# (see _reject_unknown_fields), so `duration` there is still a 422 naming
-# `duration_seconds` rather than a silently ignored field.
+# Shape fields only LTX reads; MiniMax-H3 treats them as unknown.
 _LTX_SHAPE_FIELDS = frozenset({"height", "width", "fps", "duration", "num_frames"})
 
 
@@ -48,9 +36,7 @@ class VideoGenerateRequest(BaseRequest):
 
     # Optional fields
     negative_prompt: Optional[str] = None
-    # None means "use the model's default": DEFAULT_VIDEO_INFERENCE_STEPS for
-    # most video models, LTX_NUM_INFERENCE_STEPS (fixed) for LTX; see
-    # _validate_shape.
+    # None = the model's default; resolved in _validate_shape.
     num_inference_steps: Optional[int] = Field(
         default=None,
         ge=MIN_VIDEO_INFERENCE_STEPS,
@@ -133,25 +119,16 @@ class VideoGenerateRequest(BaseRequest):
     def _validate_shape(self):
         """Resolve and validate shape + step count against the served config.
 
-        ``mode="after"`` because the checks are cross-field: ``duration``,
-        ``fps`` and ``num_frames`` are three views of the same two numbers.
-
-        Resolved values are written back onto the model so that (a) downstream
-        ``getattr(request, "height", DEFAULT)`` sees real ints and (b) the job
-        record echoes what was actually generated rather than what was asked
-        for.
+        Resolved values are written back so the job record echoes what was
+        actually generated.
         """
         if get_settings().model_runner != ModelRunners.TT_LTX_2_3_DISTILLED.value:
-            # Every other video model resolves its shape from settings/mesh
-            # (see wan22_target_resolution) or, for MiniMax-H3, from
-            # aspect_ratio/duration_seconds, so leave the shape fields alone and
-            # only fill in the default step count. The range is the field bound.
+            # Other models resolve their shape elsewhere; only default the steps.
             if self.num_inference_steps is None:
                 self.num_inference_steps = DEFAULT_VIDEO_INFERENCE_STEPS
             return self
 
-        # MiniMax-H3's shape selectors mean nothing here; refuse rather than
-        # drop them, so the caller is not told 202 for a shape it did not get.
+        # Refuse MiniMax-H3's shape selectors rather than silently dropping them.
         for field, hint in (
             ("aspect_ratio", "height/width"),
             ("duration_seconds", "duration or num_frames"),

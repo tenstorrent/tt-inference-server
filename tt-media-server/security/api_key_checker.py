@@ -10,23 +10,13 @@ from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
 from starlette.status import HTTP_401_UNAUTHORIZED
 
-# API_KEYS (comma-separated) supersedes API_KEY. Distinct keys are what make
-# per-tenant isolation possible: each resolves to its own org_id, and JobManager
-# already refuses cross-org reads. A single-key deployment behaves exactly as
-# before -- every caller shares one org, so nothing is isolated until a second
-# key is issued.
+# API_KEYS (comma-separated "label:key", or one bare "key") supersedes API_KEY.
+# The label is the tenant id JobManager scopes jobs by, so nothing derived from
+# the credential reaches job records.
 #
-# Entries are "label:key" or a bare "key". The label is the tenant id, so job
-# records carry a readable name and nothing derived from the credential. An
-# earlier revision derived the id by hashing the key; that put a fast, unsalted
-# hash of a possibly low-entropy secret into every job response via
-# Job.to_public_dict, which is brute-forceable and was flagged by CodeQL. A label
-# is both safer and simpler -- there is nothing to reverse.
-#
-# NOTE: video jobs deliberately do not use security/org_id_checker.get_org_id,
-# which reads a caller-supplied X-TT-Organization header. That header is only
-# trustworthy behind a gateway that sets it; presented directly, any caller could
-# claim another tenant's id and read their jobs. Do not unify the two.
+# NOTE: video jobs deliberately do not use org_id_checker.get_org_id: its
+# caller-supplied X-TT-Organization header is only trustworthy behind a gateway
+# that sets it. Do not unify the two.
 _DEFAULT_ORG = "default"
 # Conservative label charset so a bare key is not mistaken for "label:key". A key
 # that itself contains ':' must therefore be given an explicit label.
@@ -36,11 +26,8 @@ _LABEL_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 def _parse_key_specs(raw: str) -> tuple[tuple[str, ...], dict[str, str]]:
     """Parse API_KEYS into (keys, {key: org_id}).
 
-    A bare key is only allowed when it is the only key. With several keys and no
-    labels there is no non-arbitrary way to name the tenants, and naming them by
-    position would silently reassign every tenant's jobs the first time the list
-    is reordered or a key is rotated -- so that is rejected at startup rather than
-    guessed at.
+    A bare key is only allowed when it is the only key; naming tenants by
+    position would reassign their jobs whenever the list changes.
     """
     entries = [e.strip() for e in raw.split(",") if e.strip()]
     keys: list[str] = []
@@ -88,11 +75,7 @@ api_key_header = APIKeyHeader(name="Authorization", auto_error=not NO_AUTH)
 
 
 def _match_key(presented: str | None) -> str | None:
-    """Return the configured key the caller presented, or None if none match.
-
-    Uses compare_digest rather than ``==`` so the comparison does not short-circuit
-    on the first differing byte.
-    """
+    """Return the configured key the caller presented (constant-time), or None."""
     if not presented:
         return None
     for key in API_KEYS:
@@ -119,13 +102,8 @@ def get_api_key(api_key: str | None = Security(api_key_header)):
 def get_org_id(api_key: str | None = Security(api_key_header)) -> str | None:
     """Tenant id for the presenting credential.
 
-    Jobs are scoped by this, so callers holding keys labelled for different
-    tenants cannot read, download, or cancel each other's work.
-
-    Returns None only when auth is disabled, which JobManager treats as
-    unscoped -- the pre-existing single-tenant behaviour. Raises rather than
-    returning None for a bad key, so a failure here cannot fail open into
-    unscoped access.
+    None only when auth is disabled (unscoped). Raises on a bad key rather than
+    returning None, so this cannot fail open.
     """
     if NO_AUTH:
         return None

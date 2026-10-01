@@ -321,11 +321,7 @@ class TestDownloadVideoContent:
             os.unlink(tmp_path)
 
     def test_download_deletes_faststart_temp_file(self):
-        """The per-request faststart copy must not survive the response.
-
-        Regression test: this endpoint used to create the temp copy with
-        delete=False and never remove it, leaking a full-size MP4 per download.
-        """
+        """The per-request faststart copy must not survive the response."""
         import asyncio
 
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
@@ -596,14 +592,7 @@ class TestVideoGenerateRequestValidation:
 
 
 class TestLTXShapeValidation:
-    """VideoGenerateRequest shape validation against the served LTX config.
-
-    The LTX pipeline bakes num_frames/height/width/fps into its captured traces
-    at create_pipeline() time, so a request may only ask for the shape the
-    running process already serves. tt-metal guards fps (_resolve_fps) but not
-    the frame count or resolution, so a mismatch that gets past this validator
-    would replay a trace built for another shape rather than raise.
-    """
+    """VideoGenerateRequest shape validation against the served LTX config."""
 
     @staticmethod
     def _ltx():
@@ -695,8 +684,7 @@ class TestLTXShapeValidation:
         assert f"{served.height}x{served.width}" in msg
 
     def test_fixed_step_count_reported_not_echoed(self):
-        """The bug this replaces: the job record used to echo a step count the
-        distilled pipeline never used."""
+        """The job record reports the fixed schedule, not a client step count."""
         with self._ltx():
             r = VideoGenerateRequest(prompt="p")
         assert r.num_inference_steps == LTX_NUM_INFERENCE_STEPS
