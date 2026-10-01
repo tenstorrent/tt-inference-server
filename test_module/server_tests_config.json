@@ -56,7 +56,8 @@
             "Qwen3-8B",
             "Qwen2.5-Coder-7B",
             "Qwen2.5-Coder-7B-Instruct",
-            "TinyLlama_v1.1"
+            "TinyLlama_v1.1",
+            "TinyLlama-1.1B-Chat-v1.0"
         ]
     },
     "available_markers": {
@@ -113,6 +114,12 @@
         }
     },
     "model_configs": {
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "TinyLlama--TinyLlama-1.1B-Chat-v1.0",
+            "weights": ["TinyLlama-1.1B-Chat-v1.0"]
+        },
         "TinyLlama/TinyLlama_v1.1": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
