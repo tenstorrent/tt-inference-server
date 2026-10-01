@@ -13,15 +13,32 @@ from unittest.mock import Mock, patch
 
 import pytest
 from config.constants import JobTypes
-from device_workers.worker_utils import claim_requests_for_worker
+from device_workers.worker_utils import dequeue_and_claim_requests
 from domain.adapter_merge_request import AdapterMergeRequest
 from domain.base_request import BaseRequest
+from domain.worker_replacement import WorkerReplacementOutcome
 from utils.job_manager import (
     Job,
     JobManager,
     JobStatus,
     get_job_manager,
 )
+
+
+def claim_requests_for_worker(
+    requests, worker_id, retirement_event, claim_lock
+):
+    task_queue = Mock()
+    task_queue.get_many.return_value = requests
+    return dequeue_and_claim_requests(
+        task_queue,
+        worker_id,
+        len(requests),
+        block=True,
+        timeout=0.2,
+        retirement_event=retirement_event,
+        claim_lock=claim_lock,
+    )
 
 
 class TestJob:
@@ -930,7 +947,7 @@ class TestJobManager:
     ):
         start_event = Event()
         worker_assignment = SimpleNamespace(identity=("worker-0", 123))
-        replace_worker = Mock()
+        replace_worker = Mock(return_value=WorkerReplacementOutcome.REPLACED)
 
         async def long_training(req):
             await asyncio.sleep(10)
@@ -944,6 +961,7 @@ class TestJobManager:
             start_event=start_event,
             cancel_event=Event(),
             worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
             replace_worker=replace_worker,
         )
         start_event.set()
@@ -952,9 +970,200 @@ class TestJobManager:
         job_manager.cancel_job("training-job")
         await asyncio.sleep(0.1)
 
-        replace_worker.assert_called_once_with("worker-0", 123)
+        replace_worker.assert_called_once_with("worker-0", 123, worker_assignment)
         assert (
             job_manager.get_job_metadata("training-job")["status"]
+            == JobStatus.CANCELLED
+        )
+
+    @pytest.mark.asyncio
+    @patch("device_workers.worker_utils.os.getpid", return_value=123)
+    async def test_cancel_rechecks_assignment_published_during_cancellation(
+        self, _mock_getpid, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=None)
+        retirement_event = threading.Event()
+        claim_lock = threading.Lock()
+        replace_worker = Mock(return_value=WorkerReplacementOutcome.REPLACED)
+        worker_request = SimpleNamespace(
+            _cancel_event=None,
+            _worker_assignment=worker_assignment,
+            _start_event=Mock(),
+        )
+
+        class ClaimBeforePublishingCancellation:
+            def __init__(self):
+                self.cancelled = False
+
+            def is_set(self):
+                return self.cancelled
+
+            def set(self):
+                if self.cancelled:
+                    return
+                assert (
+                    claim_requests_for_worker(
+                        [worker_request],
+                        "worker-0",
+                        retirement_event,
+                        claim_lock,
+                    )
+                    == [worker_request]
+                )
+                self.cancelled = True
+
+        cancel_event = ClaimBeforePublishingCancellation()
+        worker_request._cancel_event = cancel_event
+
+        def mark_worker_retiring(worker_id, worker_pid):
+            retirement_event.set()
+            with claim_lock:
+                return worker_assignment.identity == (worker_id, worker_pid)
+
+        async def long_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="training-pickup-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=long_training,
+            cancel_event=cancel_event,
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=mark_worker_retiring,
+            replace_worker=replace_worker,
+        )
+
+        result = job_manager.cancel_job("training-pickup-race")
+
+        assert result["status"] == JobStatus.CANCELLING
+        await asyncio.sleep(0.1)
+        replace_worker.assert_called_once_with("worker-0", 123, worker_assignment)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_status_waits_for_worker_replacement(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        replacement_started = threading.Event()
+        allow_replacement = threading.Event()
+
+        def replace_worker(_worker_id, _worker_pid, _worker_assignment):
+            replacement_started.set()
+            allow_replacement.wait(timeout=1)
+            return WorkerReplacementOutcome.REPLACED
+
+        async def long_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="training-replacement-status",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=long_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            replace_worker=replace_worker,
+        )
+
+        job_manager.cancel_job("training-replacement-status")
+        assert await asyncio.to_thread(replacement_started.wait, 1)
+
+        assert (
+            job_manager.get_job_metadata("training-replacement-status")["status"]
+            == JobStatus.CANCELLING
+        )
+
+        allow_replacement.set()
+        await asyncio.sleep(0.1)
+
+        assert (
+            job_manager.get_job_metadata("training-replacement-status")["status"]
+            == JobStatus.CANCELLED
+        )
+
+    @pytest.mark.asyncio
+    async def test_cooperative_completion_during_validation_finishes_cancelled(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        task_finished = asyncio.Event()
+        replacement_started = threading.Event()
+        finish_validation = threading.Event()
+
+        def replace_worker(_worker_id, _worker_pid, _worker_assignment):
+            replacement_started.set()
+            finish_validation.wait(timeout=1)
+            return WorkerReplacementOutcome.ASSIGNMENT_RELEASED
+
+        async def cooperative_training(req):
+            await task_finished.wait()
+            return None
+
+        await job_manager.create_job(
+            job_id="training-cooperative-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=cooperative_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            replace_worker=replace_worker,
+        )
+
+        job_manager.cancel_job("training-cooperative-race")
+        assert await asyncio.to_thread(replacement_started.wait, 1)
+
+        worker_assignment.identity = None
+        task_finished.set()
+        await asyncio.sleep(0.05)
+        assert (
+            job_manager.get_job_metadata("training-cooperative-race")["status"]
+            == JobStatus.CANCELLING
+        )
+
+        finish_validation.set()
+        await asyncio.sleep(0.1)
+
+        assert (
+            job_manager.get_job_metadata("training-cooperative-race")["status"]
+            == JobStatus.CANCELLED
+        )
+
+    @pytest.mark.asyncio
+    async def test_retry_outcome_finishes_cancelled_after_assignment_is_released(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+
+        def replace_worker(_worker_id, _worker_pid, assignment):
+            assignment.identity = None
+            return WorkerReplacementOutcome.RETRY_REQUIRED
+
+        async def long_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="training-retry-released",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=long_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            replace_worker=replace_worker,
+        )
+
+        job_manager.cancel_job("training-retry-released")
+        await asyncio.sleep(0.1)
+
+        assert (
+            job_manager.get_job_metadata("training-retry-released")["status"]
             == JobStatus.CANCELLED
         )
 
@@ -968,16 +1177,15 @@ class TestJobManager:
         claim_lock = threading.Lock()
         replacement_order = []
 
-        def mark_worker_retiring(worker_id, worker_pid, assignment):
-            assert assignment is worker_assignment
+        def mark_worker_retiring(worker_id, worker_pid):
             retirement_event.set()
             with claim_lock:
                 pass
             return True
 
-        def replace_worker(worker_id, worker_pid):
+        def replace_worker(worker_id, worker_pid, _worker_assignment):
             replacement_order.append(("replacement", worker_id, worker_pid))
-            return True
+            return WorkerReplacementOutcome.REPLACED
 
         async def long_training(req):
             await asyncio.sleep(10)
@@ -1042,17 +1250,16 @@ class TestJobManager:
         claim_lock = threading.Lock()
         replacement_order = []
 
-        def mark_worker_retiring(worker_id, worker_pid, assignment):
-            assert assignment is worker_assignment
+        def mark_worker_retiring(worker_id, worker_pid):
             worker_assignment.retirement_started.set()
             retirement_event.set()
             with claim_lock:
                 pass
             return True
 
-        def replace_worker(worker_id, worker_pid):
+        def replace_worker(worker_id, worker_pid, _worker_assignment):
             replacement_order.append(("replacement", worker_id, worker_pid))
-            return True
+            return WorkerReplacementOutcome.REPLACED
 
         async def long_training(req):
             await asyncio.sleep(10)
@@ -1109,12 +1316,14 @@ class TestJobManager:
         assert replacement_order == [("replacement", "worker-0", 123)]
 
     @pytest.mark.asyncio
-    async def test_failed_retirement_validation_skips_worker_replacement(
+    async def test_failed_retirement_mark_still_revalidates_worker(
         self, job_manager, mock_request
     ):
         worker_assignment = SimpleNamespace(identity=("worker-0", 123))
         mark_worker_retiring = Mock(return_value=False)
-        replace_worker = Mock()
+        replace_worker = Mock(
+            return_value=WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+        )
 
         async def long_training(req):
             await asyncio.sleep(10)
@@ -1134,8 +1343,12 @@ class TestJobManager:
         job_manager.cancel_job("completed-before-retirement")
         await asyncio.sleep(0.1)
 
-        mark_worker_retiring.assert_called_once_with("worker-0", 123, worker_assignment)
-        replace_worker.assert_not_called()
+        mark_worker_retiring.assert_called_once_with("worker-0", 123)
+        replace_worker.assert_called_once_with("worker-0", 123, worker_assignment)
+        assert (
+            job_manager.get_job_metadata("completed-before-retirement")["status"]
+            == JobStatus.CANCELLED
+        )
 
     @pytest.mark.asyncio
     async def test_cancel_job_not_found(self, job_manager):
@@ -1755,6 +1968,44 @@ class TestJobManager:
         if job_manager.db:
             db_job = job_manager.db.get_job_by_id("job-123")
             assert db_job["status"] == "failed"
+
+    @pytest.mark.asyncio
+    async def test_cleanup_finishes_stale_cancellation_as_cancelled(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+
+        class ReleaseAssignmentOnCancel:
+            def is_set(self):
+                return False
+
+            def set(self):
+                worker_assignment.identity = None
+
+        async def task_func(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="stale-cancelling-job",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            cancel_event=ReleaseAssignmentOnCancel(),
+            worker_assignment=worker_assignment,
+        )
+        await asyncio.sleep(0.1)
+
+        with job_manager._jobs_lock:
+            job = job_manager._jobs["stale-cancelling-job"]
+            job.mark_cancelling()
+            job.local_progress_time = time.monotonic() - 10
+
+        job_manager._cleanup_old_jobs()
+
+        metadata = job_manager.get_job_metadata("stale-cancelling-job")
+        assert metadata["status"] == JobStatus.CANCELLED
+        assert "error" not in metadata
 
     @pytest.mark.asyncio
     async def test_cleanup_keeps_old_job_with_recent_progress(

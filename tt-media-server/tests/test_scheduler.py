@@ -44,6 +44,7 @@ sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 
 # Import module under test after mocking dependencies
+from domain.worker_replacement import WorkerReplacementOutcome
 from model_services.scheduler import Scheduler
 
 
@@ -309,6 +310,8 @@ class TestScheduler:
         scheduler.result_queues_by_worker = {0: create_mock_queue()}
         scheduler.worker_info = {}
         scheduler.settings.model_service = "training"
+        scheduler.settings.use_dynamic_batcher = False
+        scheduler.settings.max_batch_size = 1
 
         scheduler._start_worker(worker_id="0")
 
@@ -323,6 +326,26 @@ class TestScheduler:
         assert scheduler.worker_info["0"]["claim_lock"] is None
         mock_process_event.assert_called_once()
         mock_process_lock.assert_called_once()
+        scheduler.settings.use_dynamic_batcher = True
+
+    @pytest.mark.parametrize(
+        ("use_dynamic_batcher", "max_batch_size"),
+        [(True, 1), (False, 2)],
+    )
+    def test_training_workers_reject_concurrent_configuration(
+        self, scheduler, use_dynamic_batcher, max_batch_size
+    ):
+        scheduler.settings.model_service = "training"
+        scheduler.settings.use_dynamic_batcher = use_dynamic_batcher
+        scheduler.settings.max_batch_size = max_batch_size
+
+        try:
+            with pytest.raises(ValueError, match="Training workers require"):
+                scheduler._validate_training_worker_configuration()
+        finally:
+            scheduler.settings.model_service = "video"
+            scheduler.settings.use_dynamic_batcher = True
+            scheduler.settings.max_batch_size = 1
 
     @patch("model_services.scheduler.Process")
     def test_restart_worker_passes_existing_queue_index_to_start_worker(
@@ -446,9 +469,20 @@ class TestScheduler:
 
         replaced = scheduler.replace_worker("0", expected_pid=123)
 
-        assert replaced is False
+        assert replaced == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
         current_process.terminate.assert_not_called()
         mock_process_cls.assert_not_called()
+
+    def test_stale_worker_pid_clears_cancelled_job_assignment(self, scheduler):
+        current_process = Mock(spec=Process)
+        current_process.pid = 456
+        scheduler.worker_info["0"] = {"process": current_process}
+        worker_assignment = SimpleNamespace(identity=("0", 123))
+
+        outcome = scheduler.replace_worker("0", 123, worker_assignment)
+
+        assert outcome == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+        assert worker_assignment.identity is None
 
     def test_mark_worker_retiring_blocks_new_claims(self, scheduler):
         process = Mock(spec=Process)
@@ -464,14 +498,11 @@ class TestScheduler:
         worker_assignment = Mock()
         worker_assignment.identity = ("0", 123)
 
-        marked = scheduler.mark_worker_retiring(
-            "0", expected_pid=123, worker_assignment=worker_assignment
-        )
+        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
 
         assert marked is True
         retirement_event.set.assert_called_once()
-        claim_lock.acquire.assert_called_once()
-        claim_lock.release.assert_called_once()
+        claim_lock.acquire.assert_not_called()
 
     def test_mark_worker_retiring_ignores_stale_worker_pid(self, scheduler):
         process = Mock(spec=Process)
@@ -483,14 +514,12 @@ class TestScheduler:
             "claim_lock": MagicMock(),
         }
 
-        marked = scheduler.mark_worker_retiring(
-            "0", expected_pid=123, worker_assignment=Mock()
-        )
+        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
 
         assert marked is False
         retirement_event.set.assert_not_called()
 
-    def test_mark_worker_retiring_ignores_stale_job_assignment(self, scheduler):
+    def test_replace_worker_ignores_stale_job_assignment(self, scheduler):
         process = Mock(spec=Process)
         process.pid = 123
         retirement_event = Mock()
@@ -504,16 +533,15 @@ class TestScheduler:
         worker_assignment = Mock()
         worker_assignment.identity = None
 
-        marked = scheduler.mark_worker_retiring(
-            "0", expected_pid=123, worker_assignment=worker_assignment
-        )
+        scheduler.mark_worker_retiring("0", 123)
+        replaced = scheduler.replace_worker("0", 123, worker_assignment)
 
-        assert marked is False
+        assert replaced == WorkerReplacementOutcome.ASSIGNMENT_RELEASED
         retirement_event.set.assert_called_once()
         retirement_event.clear.assert_called_once()
         claim_lock.release.assert_called_once()
 
-    def test_mark_worker_retiring_rechecks_assignment_after_active_claim(
+    def test_replace_worker_rechecks_assignment_after_active_claim(
         self, scheduler
     ):
         process = Mock(spec=Process)
@@ -527,24 +555,24 @@ class TestScheduler:
             "claim_lock": claim_lock,
         }
         worker_assignment = SimpleNamespace(identity=("0", 123))
+        scheduler.mark_worker_retiring("0", 123)
         result = []
 
         retirement_thread = threading.Thread(
             target=lambda: result.append(
-                scheduler.mark_worker_retiring("0", 123, worker_assignment)
+                scheduler.replace_worker("0", 123, worker_assignment)
             )
         )
         retirement_thread.start()
-        assert retirement_event.wait(timeout=1)
 
         worker_assignment.identity = None
         claim_lock.release()
         retirement_thread.join(timeout=1)
 
-        assert result == [False]
+        assert result == [WorkerReplacementOutcome.ASSIGNMENT_RELEASED]
         assert retirement_event.is_set() is False
 
-    def test_mark_worker_retiring_fails_when_claim_barrier_times_out(self, scheduler):
+    def test_replace_worker_fails_when_claim_barrier_times_out(self, scheduler):
         process = Mock(spec=Process)
         process.pid = 123
         retirement_event = Mock()
@@ -555,13 +583,13 @@ class TestScheduler:
             "retirement_event": retirement_event,
             "claim_lock": claim_lock,
         }
+        worker_assignment = Mock()
+        scheduler.mark_worker_retiring("0", 123)
 
-        marked = scheduler.mark_worker_retiring(
-            "0", expected_pid=123, worker_assignment=Mock()
-        )
+        replaced = scheduler.replace_worker("0", 123, worker_assignment)
 
-        assert marked is False
-        retirement_event.clear.assert_called_once()
+        assert replaced == WorkerReplacementOutcome.RETRY_REQUIRED
+        retirement_event.clear.assert_not_called()
         claim_lock.release.assert_not_called()
 
     @pytest.mark.asyncio

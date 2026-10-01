@@ -36,16 +36,35 @@ def claim_job_for_worker(request, worker_id: str) -> bool:
     return True
 
 
-def claim_requests_for_worker(
-    requests: list[Any],
+def dequeue_and_claim_requests(
+    task_queue,
     worker_id: str,
+    max_messages_to_get: int,
+    *,
+    block: bool,
+    timeout: float,
     retirement_event=None,
     claim_lock=None,
 ) -> Optional[list[Any]]:
-    """Claim a batch atomically, or return ``None`` when the worker is retiring."""
+    """Dequeue and claim work behind the worker's retirement barrier.
+
+    Retirement is enabled only for single-job training workers. An actively
+    assigned training worker cannot be waiting here, so a retirement published
+    during ``get_many`` belongs to a job that already released this worker.
+    The assignment validation then prevents terminating newly claimed work.
+    """
     with claim_lock if claim_lock is not None else nullcontext():
         if retirement_event is not None and retirement_event.is_set():
             return None
+
+        requests = task_queue.get_many(
+            max_messages_to_get=max_messages_to_get,
+            block=block,
+            timeout=timeout,
+        )
+        if not requests:
+            return []
+
         return [
             request for request in requests if claim_job_for_worker(request, worker_id)
         ]

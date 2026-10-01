@@ -11,7 +11,7 @@ from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
 from device_workers.worker_utils import (
     claim_job_for_worker,
-    claim_requests_for_worker,
+    dequeue_and_claim_requests,
     initialize_device_worker,
     release_job_from_worker,
 )
@@ -64,7 +64,6 @@ async def _continuous_fan_out(
     task_queue: Any,
     max_inflight: int,
     logger: Any,
-    claim_lock=None,
 ) -> bool:
     """Keep up to *max_inflight* requests in flight against *device_runner*.
 
@@ -105,7 +104,6 @@ async def _continuous_fan_out(
 
         for task in done:
             req = inflight.pop(task)
-            release_job_from_worker(req, claim_lock)
             task_id = req._task_id
             exc = task.exception()
             if exc is not None:
@@ -193,23 +191,19 @@ def device_worker(
 
     # Main processing loop
     while True:
-        requests: list[object] = task_queue.get_many(
-            max_messages_to_get=settings.max_batch_size,
+        requests = dequeue_and_claim_requests(
+            task_queue,
+            worker_id,
+            settings.max_batch_size,
             block=True,
             timeout=0.2,  # 200ms timeout - the batch queue will handle optimal batching
+            retirement_event=retirement_event,
+            claim_lock=claim_lock,
         )
-        if requests is None or len(requests) == 0:
-            continue
-
-        claimed_requests = claim_requests_for_worker(
-            requests, worker_id, retirement_event, claim_lock
-        )
-        if claimed_requests is None:
-            task_queue.put_many(requests)
-            logger.info(f"Worker {worker_id} retiring before claiming more work")
+        if requests is None:
+            logger.info(f"Worker {worker_id} retiring before dequeuing more work")
             loop.close()
             break
-        requests = claimed_requests
         if not requests:
             continue
 
@@ -302,7 +296,6 @@ def device_worker(
                             task_queue=task_queue,
                             max_inflight=settings.max_batch_size,
                             logger=logger,
-                            claim_lock=claim_lock,
                         )
                     )
                     successful = True

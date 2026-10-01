@@ -290,7 +290,7 @@ class TestWorkerManagement:
         await asyncio.sleep(0.01)
 
         base_service._mock_logger.info.assert_called()
-        mock_scheduler.replace_worker.assert_called_once_with("0")
+        mock_scheduler.restart_worker.assert_called_once_with("0")
 
     @pytest.mark.asyncio
     async def test_start_workers_async_success(self, base_service, mock_scheduler):

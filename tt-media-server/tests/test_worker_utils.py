@@ -4,6 +4,7 @@
 
 import os
 import sys
+import threading
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -56,7 +57,7 @@ if "tt_model_runners.runner_fabric" not in sys.modules:
 # Now import the modules under test
 from device_workers.worker_utils import (
     claim_job_for_worker,
-    claim_requests_for_worker,
+    dequeue_and_claim_requests,
     initialize_device_worker,
     release_job_from_worker,
 )
@@ -325,8 +326,8 @@ class TestClaimJobForWorker:
         request._start_event.set.assert_not_called()
 
 
-class TestClaimRequestsForWorker:
-    def test_claims_batch_while_holding_worker_claim_lock(self):
+class TestDequeueAndClaimRequests:
+    def test_holds_claim_lock_while_dequeuing_and_claiming(self):
         request = Mock()
         request._cancel_event = None
         request._worker_assignment = None
@@ -334,27 +335,72 @@ class TestClaimRequestsForWorker:
         retirement_event = Mock()
         retirement_event.is_set.return_value = False
         claim_lock = MagicMock()
+        task_queue = Mock()
 
-        claimed = claim_requests_for_worker(
-            [request], "worker-0", retirement_event, claim_lock
+        def get_many(**_kwargs):
+            claim_lock.__enter__.assert_called_once()
+            return [request]
+
+        task_queue.get_many.side_effect = get_many
+
+        claimed = dequeue_and_claim_requests(
+            task_queue,
+            "worker-0",
+            1,
+            block=True,
+            timeout=0.2,
+            retirement_event=retirement_event,
+            claim_lock=claim_lock,
         )
 
         assert claimed == [request]
         request._start_event.set.assert_called_once()
-        claim_lock.__enter__.assert_called_once()
-        claim_lock.__exit__.assert_called_once()
 
-    def test_rejects_batch_when_worker_is_retiring(self):
-        request = Mock()
+    def test_retiring_worker_does_not_touch_task_queue(self):
         retirement_event = Mock()
         retirement_event.is_set.return_value = True
+        task_queue = Mock()
 
-        claimed = claim_requests_for_worker(
-            [request], "worker-0", retirement_event, MagicMock()
+        claimed = dequeue_and_claim_requests(
+            task_queue,
+            "worker-0",
+            1,
+            block=True,
+            timeout=0.2,
+            retirement_event=retirement_event,
+            claim_lock=MagicMock(),
         )
 
         assert claimed is None
-        request._start_event.set.assert_not_called()
+        task_queue.get_many.assert_not_called()
+
+    def test_does_not_requeue_batch_when_retirement_is_published_during_dequeue(self):
+        request = Mock()
+        request._cancel_event = None
+        request._worker_assignment = None
+        request._start_event = Mock()
+        retirement_event = threading.Event()
+        task_queue = Mock()
+
+        def get_many(**_kwargs):
+            retirement_event.set()
+            return [request]
+
+        task_queue.get_many.side_effect = get_many
+
+        claimed = dequeue_and_claim_requests(
+            task_queue,
+            "worker-0",
+            1,
+            block=True,
+            timeout=0.2,
+            retirement_event=retirement_event,
+            claim_lock=MagicMock(),
+        )
+
+        assert claimed == [request]
+        task_queue.put_many.assert_not_called()
+        request._start_event.set.assert_called_once()
 
 
 def test_release_job_from_worker_clears_assignment():

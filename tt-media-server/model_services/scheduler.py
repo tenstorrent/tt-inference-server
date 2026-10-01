@@ -18,6 +18,7 @@ from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from domain.worker_replacement import WorkerReplacementOutcome
 from fastapi import HTTPException
 from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
@@ -33,6 +34,7 @@ class Scheduler:
     def __init__(self):
         self.settings = get_settings()
         self.logger = TTLogger()
+        self._worker_retirement_lock = Lock()
         self._worker_replacement_lock = Lock()
         self._setup_initial_variables()
         self._start_queues()
@@ -186,6 +188,8 @@ class Scheduler:
         When restarting, pass queue_index from the worker's existing info so the
         correct result queue is used (worker_info is not reduced on restart).
         """
+        self._validate_training_worker_configuration()
+
         if worker_id is None:
             worker_id = (
                 self.workers_to_open.pop(0)
@@ -248,6 +252,15 @@ class Scheduler:
 
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
 
+    def _validate_training_worker_configuration(self) -> None:
+        if self.settings.model_service != ModelServices.TRAINING.value:
+            return
+        if self.settings.use_dynamic_batcher or self.settings.max_batch_size != 1:
+            raise ValueError(
+                "Training workers require use_dynamic_batcher=False and "
+                "max_batch_size=1 so cancelling one job cannot terminate other jobs"
+            )
+
     def restart_worker(
         self, worker_id: str, expected_process: Process | None = None
     ) -> bool:
@@ -258,22 +271,40 @@ class Scheduler:
             expected_process=expected_process,
         )
 
-    def replace_worker(self, worker_id: str, expected_pid: int | None = None) -> bool:
+    def replace_worker(
+        self,
+        worker_id: str,
+        expected_pid: int | None = None,
+        worker_assignment: Any = None,
+    ) -> WorkerReplacementOutcome:
         """Intentionally replace the expected worker without recording a failure."""
-        return self._perform_worker_replacement(
+        if worker_assignment is not None:
+            validation_outcome = self._validate_worker_retirement(
+                worker_id, expected_pid, worker_assignment
+            )
+            if validation_outcome is not None:
+                return validation_outcome
+
+        replaced = self._perform_worker_replacement(
             worker_id,
             count_as_failure=False,
             expected_pid=expected_pid,
         )
+        if replaced:
+            return WorkerReplacementOutcome.REPLACED
+
+        self._clear_expected_worker_assignment(
+            worker_assignment, (worker_id, expected_pid)
+        )
+        return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
 
     def mark_worker_retiring(
         self,
         worker_id: str,
         expected_pid: int,
-        worker_assignment: Any,
     ) -> bool:
-        """Retire the worker only if it still owns the expected job assignment."""
-        with self._worker_replacement_lock:
+        """Stop an expected worker from dequeuing more work."""
+        with self._worker_retirement_lock:
             worker_info = self.worker_info.get(worker_id)
             if worker_info is None:
                 return False
@@ -281,33 +312,71 @@ class Scheduler:
                 return False
 
             retirement_event = worker_info.get("retirement_event")
-            claim_lock = worker_info.get("claim_lock")
-            if retirement_event is None or claim_lock is None:
+            if retirement_event is None:
                 return False
 
             retirement_event.set()
-            # Wait for any claim already in progress to finish. Publishing the
-            # event first prevents the worker from claiming another batch while
-            # this caller waits for the claim lock.
-            acquired = claim_lock.acquire(timeout=WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS)
-            if not acquired:
-                retirement_event.clear()
-                self.logger.warning(
-                    f"Timed out waiting for worker {worker_id} claim to finish"
-                )
-                return False
+            return True
 
-            try:
-                expected_identity = (worker_id, expected_pid)
+    def _validate_worker_retirement(
+        self,
+        worker_id: str,
+        expected_pid: int,
+        worker_assignment: Any,
+    ) -> WorkerReplacementOutcome | None:
+        """Confirm under the claim barrier that the cancelled job still owns the worker."""
+        expected_identity = (worker_id, expected_pid)
+        with self._worker_retirement_lock:
+            worker_info = self.worker_info.get(worker_id)
+            if worker_info is None or worker_info["process"].pid != expected_pid:
+                self._clear_expected_worker_assignment(
+                    worker_assignment, expected_identity
+                )
+                return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+            if (
+                worker_info.get("retirement_event") is None
+                or worker_info.get("claim_lock") is None
+            ):
+                return WorkerReplacementOutcome.RETRY_REQUIRED
+            retirement_event = worker_info["retirement_event"]
+            claim_lock = worker_info["claim_lock"]
+
+        acquired = claim_lock.acquire(timeout=WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS)
+        if not acquired:
+            self.logger.warning(
+                f"Timed out waiting for worker {worker_id} claim to finish; "
+                "leaving it retired so cancellation cleanup can retry"
+            )
+            return WorkerReplacementOutcome.RETRY_REQUIRED
+
+        try:
+            with self._worker_retirement_lock:
+                current_info = self.worker_info.get(worker_id)
+                if current_info is not worker_info:
+                    self._clear_expected_worker_assignment(
+                        worker_assignment, expected_identity
+                    )
+                    return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
                 if worker_assignment.identity != expected_identity:
                     retirement_event.clear()
-                    return False
-                return True
-            except Exception:
-                retirement_event.clear()
-                raise
-            finally:
-                claim_lock.release()
+                    return WorkerReplacementOutcome.ASSIGNMENT_RELEASED
+                return None
+        except Exception:
+            retirement_event.clear()
+            raise
+        finally:
+            claim_lock.release()
+
+    @staticmethod
+    def _clear_expected_worker_assignment(
+        worker_assignment: Any,
+        expected_identity: tuple[str, int | None],
+    ) -> None:
+        if (
+            worker_assignment is not None
+            and worker_assignment.identity == expected_identity
+        ):
+            worker_assignment.identity = None
 
     def _perform_worker_replacement(
         self,

@@ -7,9 +7,8 @@ from multiprocessing import Queue
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from device_workers.worker_utils import (
-    claim_requests_for_worker,
+    claim_job_for_worker,
     initialize_device_worker,
-    release_job_from_worker,
 )
 from model_services.queues.memory_queue import SharedMemoryChunkQueue
 from model_services.queues.tt_queue import TTQueue
@@ -155,12 +154,7 @@ def device_worker(
         cancellation surfaces as CancelledError on its first run-step.
         """
         in_flight[request._task_id] = task
-
-        def release_request(_task):
-            in_flight.pop(request._task_id, None)
-            release_job_from_worker(request, claim_lock)
-
-        task.add_done_callback(release_request)
+        task.add_done_callback(lambda _t: in_flight.pop(request._task_id, None))
 
     # Async task that pulls from queue and feeds requests to handlers
     async def request_feeder():
@@ -174,20 +168,12 @@ def device_worker(
             # Run blocking queue.get() in thread pool to not block event loop
             requests = await loop.run_in_executor(
                 None,
-                lambda: task_queue.get_many(max_messages_to_get=batch_size, block=True),
+                lambda: task_queue.get_many(
+                    max_messages_to_get=batch_size, block=True
+                ),
             )
 
-            claimed_requests = claim_requests_for_worker(
-                requests, worker_id, retirement_event, claim_lock
-            )
-            if claimed_requests is None:
-                task_queue.put_many(requests)
-                logger.info(f"Worker {worker_id} retiring before claiming more work")
-                if not cancel_task.done():
-                    cancel_task.cancel()
-                return
-
-            for request in claimed_requests:
+            for request in requests:
                 if request == SHUTDOWN_SIGNAL:
                     logger.info(f"Worker {worker_id} received shutdown signal")
                     if not cancel_task.done():
@@ -201,10 +187,14 @@ def device_worker(
                     _track(request, asyncio.create_task(handle_canary(request)))
                 elif hasattr(request, "stream") and request.stream:
                     # Fire and forget streaming task - runs concurrently
-                    _track(request, asyncio.create_task(handle_streaming(request)))
+                    if claim_job_for_worker(request, worker_id):
+                        _track(request, asyncio.create_task(handle_streaming(request)))
                 else:
                     # Fire and forget non-streaming task - runs concurrently in event loop
-                    _track(request, asyncio.create_task(handle_non_streaming(request)))
+                    if claim_job_for_worker(request, worker_id):
+                        _track(
+                            request, asyncio.create_task(handle_non_streaming(request))
+                        )
 
     try:
         loop.run_until_complete(request_feeder())

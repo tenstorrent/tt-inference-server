@@ -260,10 +260,8 @@ class TestDeviceWorker:
             ("worker_0", -1, "Device initialization failed")
         )
 
-    def test_retiring_worker_requeues_requests_without_claiming_them(self, mock_queues):
+    def test_retiring_worker_exits_before_dequeuing_more_work(self, mock_queues):
         task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
-        request = MockImageGenerateRequest("next-job")
-        task_queue.get_many.return_value = [request]
         retirement_event = Mock()
         retirement_event.is_set.return_value = True
         claim_lock = MagicMock()
@@ -288,8 +286,8 @@ class TestDeviceWorker:
                 claim_lock=claim_lock,
             )
 
-        task_queue.put_many.assert_called_once_with([request])
-        request._start_event.set.assert_not_called()
+        task_queue.get_many.assert_not_called()
+        task_queue.put_many.assert_not_called()
         device_runner.run.assert_not_called()
 
     @patch("device_workers.device_worker.threading.Timer")
