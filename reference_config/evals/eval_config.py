@@ -2082,18 +2082,20 @@ _eval_config_list = [
                         "parser_name": "json",
                         "temperature": 1.0,
                         "model_info": {
-                            # P300X2 spec max_context is 262144 and the agent sends
-                            # ~max_input + max_output per request, so 160K + 80K =
-                            # 240K leaves ~22K headroom. (The Qwen3.6-27B entry above
-                            # sets 256K + 80K, which exceeds its own 262144 context --
-                            # do not copy that.) 80K out is the output budget Qwen's
-                            # docs use for this family.
+                            # Terminal agents should finish one action per turn.  The
+                            # prior 80K limit allowed failed trials to spend hours in
+                            # one runaway response: in the controlled five-task run,
+                            # all passing trials stayed below 11.5K while only the
+                            # failed FEAL trial crossed 16K.  Keep a 16K ceiling per
+                            # action while preserving the recommended high-temperature
+                            # sampling settings below.  160K input + 16K output also
+                            # remains safely inside the 262144-token model context.
                             "max_input_tokens": 160 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,

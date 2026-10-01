@@ -119,6 +119,7 @@ def test_qwen38_terminal_perf_cohort_budget_and_qemu_pin():
         "git_commit_id": "a355fc6aaeaf62ba94b6cab023e179c7e440c651",
     }
     assert terminal_config.agent_timeout_sec == 6 * 60 * 60
-    assert terminal_config.agent_kwargs["model_info"]["max_output_tokens"] == 80 * 1024
+    assert terminal_config.agent_kwargs["model_info"]["max_output_tokens"] == 16 * 1024
+    assert terminal_config.agent_kwargs["llm_kwargs"]["max_tokens"] == 16 * 1024
     assert terminal_config.agent_kwargs["temperature"] == 1.0
     assert terminal_config.n_concurrent_trials == 5
