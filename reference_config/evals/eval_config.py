@@ -6145,7 +6145,7 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
-# Focused experiment only: this commit is a 15-minute diagnostic probe, not
+# Focused experiment only: this config is a 20-minute diagnostic probe, not
 # the five-task release recipe. The final validation restores the full subset.
 _gemma_probe = _eval_config_map["google/gemma-4-26B-A4B-it"]
 _gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_verified")
@@ -6164,8 +6164,9 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
             _gemma_swe,
             agentic_eval_config=replace(
                 _gemma_swe.agentic_eval_config,
-                agent_timeout_sec=15 * 60,
+                agent_timeout_sec=20 * 60,
                 repetition_feedback_after=0,
+                normalize_submission_marker=True,
                 agent_kwargs=_gemma_guard_kwargs,
                 task_names_map={
                     EvalLimitMode.CI_NIGHTLY: ["django__django-11299"],
