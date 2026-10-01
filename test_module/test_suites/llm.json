@@ -154,6 +154,13 @@
             "test_cases": [
                 {"enabled": true, "template": "VLLMParamConformanceTest"}
             ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["stabilityai/stablelm-2-1_6b"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
         }
     ]
 }
