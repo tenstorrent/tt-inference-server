@@ -14,12 +14,60 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+REPETITION_FEEDBACK = (
+    "Loop check: the same command has been repeated with the same unsuccessful "
+    "result. Repeating it again without new evidence or a relevant change will "
+    "not add evidence. Choose a different inspection or test, update your "
+    "hypothesis using the observations already present, and continue solving "
+    "the original issue. Do not submit until you have made and checked the "
+    "required fix."
+)
+
+
+def repeated_failure_count(messages):
+    """Count consecutive identical single-tool failures; never suppress a tool."""
+    signatures = []
+    pending = None
+    for message in messages:
+        if message.get("role") == "assistant":
+            calls = message.get("tool_calls") or []
+            pending = calls[0].get("function") if len(calls) == 1 else None
+            if pending is None:
+                signatures.append(None)
+        elif message.get("role") == "tool" and pending:
+            try:
+                result = json.loads(message.get("content", ""))
+            except (TypeError, ValueError):
+                result = {}
+            if isinstance(result, dict) and result.get("returncode", 0) != 0:
+                signatures.append(json.dumps([pending, result], sort_keys=True))
+            else:
+                signatures.append(None)
+            pending = None
+        elif message.get("role") == "user":
+            signatures.append(None)
+    if not signatures or signatures[-1] is None:
+        return 0
+    count = 0
+    for signature in reversed(signatures):
+        if signature != signatures[-1]:
+            break
+        count += 1
+    return count
+
 
 class RequestTelemetryProxy(AbstractContextManager):
-    def __init__(self, upstream: str, output: Path, timeout: float):
+    def __init__(
+        self,
+        upstream: str,
+        output: Path,
+        timeout: float,
+        repetition_feedback_after: int = 0,
+    ):
         self.upstream = upstream.rstrip("/")
         self.output = output
         self.timeout = timeout
+        self.repetition_feedback_after = repetition_feedback_after
         self.lock = threading.Lock()
         self.server = None
 
@@ -63,6 +111,25 @@ class RequestTelemetryProxy(AbstractContextManager):
                         "max_tokens": payload.get("max_tokens"),
                     }
                 )
+                repetitions = repeated_failure_count(payload.get("messages", []))
+                if (
+                    owner.repetition_feedback_after
+                    and repetitions >= owner.repetition_feedback_after
+                ):
+                    payload["messages"].append(
+                        {"role": "user", "content": REPETITION_FEEDBACK}
+                    )
+                    body = json.dumps(payload).encode()
+                    owner.record(
+                        {
+                            **common,
+                            "event": "repetition_feedback",
+                            "unix_s": time.time(),
+                            "consecutive_failures": repetitions,
+                            "feedback": REPETITION_FEEDBACK,
+                            "forwarded_body_sha256": hashlib.sha256(body).hexdigest(),
+                        }
+                    )
                 headers = {"Content-Type": "application/json"}
                 for key in ("Authorization", "X-Session-ID"):
                     if self.headers.get(key):

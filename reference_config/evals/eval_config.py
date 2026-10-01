@@ -295,6 +295,7 @@ class HarborEvalConfig:
     # out. Ignored by every non-mini agent (they carry their own timeout knob).
     llm_timeout_sec: Optional[int] = 10 * 60
     request_telemetry: bool = False
+    repetition_feedback_after: int = 0
     # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
     # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
@@ -6154,8 +6155,9 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
             agentic_eval_config=replace(
                 _gemma_swe.agentic_eval_config,
                 agent_timeout_sec=15 * 60,
+                repetition_feedback_after=3,
                 task_names_map={
-                    EvalLimitMode.CI_NIGHTLY: ["matplotlib__matplotlib-25332"],
+                    EvalLimitMode.CI_NIGHTLY: ["django__django-11299"],
                 },
             ),
         )

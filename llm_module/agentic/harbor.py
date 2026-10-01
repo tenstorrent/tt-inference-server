@@ -107,6 +107,7 @@ class HarborRunConfig:
     venv_python: Optional[Path] = None
     harbor_timeout_sec: Optional[float] = None
     request_telemetry: bool = False
+    repetition_feedback_after: int = 0
 
 
 def _apply_mini_swe_agent_defaults(
@@ -327,6 +328,7 @@ def run(config: HarborRunConfig) -> int:
             endpoint,
             config.jobs_dir / f"{config.task_name}_requests.jsonl",
             config.llm_timeout_sec or config.agent_timeout_sec or 7200,
+            config.repetition_feedback_after,
         ) as proxy:
             env = {
                 k: v
