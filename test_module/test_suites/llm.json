@@ -105,6 +105,13 @@
             "test_cases": [
                 {"enabled": true, "template": "VLLMParamConformanceTest"}
             ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen3-4B"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
         }
     ]
 }
