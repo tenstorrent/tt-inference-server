@@ -115,6 +115,20 @@ def test_submission_normalization_requires_one_choice_and_available_bash():
         normalize_submission_marker(response, {**payload, "tool_choice": "none"})
         is None
     )
+    assert (
+        normalize_submission_marker(response, {**payload, "tool_choice": "required"})
+        is None
+    )
+    assert (
+        normalize_submission_marker(
+            response,
+            {
+                **payload,
+                "tool_choice": {"type": "function", "function": {"name": "other"}},
+            },
+        )
+        is None
+    )
     response["choices"] *= 2
     assert normalize_submission_marker(response, payload) is None
 

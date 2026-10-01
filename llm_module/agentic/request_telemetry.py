@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Transparent, payload-free timing for local non-streaming agent requests."""
+"""Payload-free timing and opt-in, audited mini-swe protocol interventions."""
 
 import copy
 import hashlib
@@ -31,7 +31,7 @@ SUBMISSION_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
 def normalize_submission_marker(response, payload):
     """Opt-in mini-swe protocol adapter; never interpret arbitrary shell text."""
     choices = response.get("choices") or []
-    if len(choices) != 1 or payload.get("tool_choice") == "none":
+    if len(choices) != 1 or payload.get("tool_choice") not in (None, "auto"):
         return None
     bash_available = any(
         tool.get("type") == "function"
