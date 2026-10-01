@@ -108,6 +108,12 @@ def build_vllm_bench_serve_argv(
                 str(config.isl),
                 "--random-output-len",
                 str(config.osl),
+                # A per-point seed. With the default seed 0 the first prompt of
+                # every sweep point starts with the same tokens, so a server with
+                # prefix caching serves each longer point's prefix from the
+                # previous point and under-reports TTFT.
+                "--seed",
+                str(config.isl),
             ]
         )
 
