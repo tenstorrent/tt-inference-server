@@ -5066,7 +5066,10 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=32,
                 model_kwargs={
-                    "timeout": "14400",
+                    # Seconds allowed between two streamed chunks (idle timeout), not a
+                    # whole-request budget: a stalled prompt fails in 15 min and is not
+                    # retried, while a healthy multi-hour generation is never cut.
+                    "idle_timeout": "900",
                 },
                 gen_kwargs={
                     # lm-eval-harness' SSE consumer only parses
@@ -5104,7 +5107,10 @@ _eval_config_list = [
                 use_chat_api=True,
                 max_concurrent=32,
                 model_kwargs={
-                    "timeout": "14400",
+                    # Seconds allowed between two streamed chunks (idle timeout), not a
+                    # whole-request budget: a stalled prompt fails in 15 min and is not
+                    # retried, while a healthy multi-hour generation is never cut.
+                    "idle_timeout": "900",
                 },
                 gen_kwargs={
                     "stream": "false",
