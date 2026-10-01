@@ -353,11 +353,6 @@
                     "devices": [
                         "P300X2"
                     ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
-                    ]
                 }
             }
         },
@@ -597,6 +592,7 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
+                        "BH_GALAXY",
                         "P300X2",
                         "T3K"
                     ]
