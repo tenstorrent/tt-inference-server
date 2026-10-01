@@ -58,7 +58,8 @@
             "Qwen2.5-Coder-7B-Instruct",
             "TinyLlama_v1.1",
             "TinyLlama-1.1B-Chat-v1.0",
-            "stablelm-2-1_6b"
+            "stablelm-2-1_6b",
+            "Falcon3-1B-Base"
         ]
     },
     "available_markers": {
@@ -115,6 +116,12 @@
         }
     },
     "model_configs": {
+        "tiiuae/Falcon3-1B-Base": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "tiiuae--Falcon3-1B-Base",
+            "weights": ["Falcon3-1B-Base"]
+        },
         "stabilityai/stablelm-2-1_6b": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
