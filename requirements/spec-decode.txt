@@ -15,14 +15,14 @@
 # pillow==11.1 pin in constraints.txt. pyjwt is pinned explicitly to
 # keep cross-venv alignment for the JWT auth path.
 
---extra-index-url https://download.pytorch.org/whl/cpu
-
-# Our CPU-only torch is pinned to 2.4 so transformers is capped at <5 to
-# avoid `ModuleNotFoundError: torch.distributed.tensor.device_mesh` on
-# import of `AutoTokenizer`.
-torch==2.4.0+cpu
 aiperf==0.8.0
-transformers<5
+# gemma-4's tokenizer_config.json stores `extra_special_tokens` as a list that
+# only transformers 5.x parses; under 4.x AIPerf's tokenizer load fails with
+#   AttributeError: 'list' object has no attribute 'keys'
+# before any request is sent (same issue as llm-vllm-overrides.txt). AIPerf only
+# tokenizes and does not need torch, so the old torch==2.4.0+cpu pin, which
+# capped transformers at <5, is dropped.
+transformers>=5.5.0,<6
 pyjwt==2.7.0
 requests
 datasets
