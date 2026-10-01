@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import uuid
+from collections import Counter
 from contextlib import AbstractContextManager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,6 +24,34 @@ REPETITION_FEEDBACK = (
     "the original issue. Do not submit until you have made and checked the "
     "required fix."
 )
+
+
+def response_text_stats(message):
+    """Measure repeated text without retaining any generated content."""
+    pieces = [
+        message.get(key) or "" for key in ("content", "reasoning", "reasoning_content")
+    ]
+    for call in message.get("tool_calls") or []:
+        arguments = call.get("function", {}).get("arguments", "")
+        try:
+            parsed = json.loads(arguments)
+        except (ValueError, TypeError):
+            parsed = None
+        pieces.append(
+            parsed.get("command", "") if isinstance(parsed, dict) else arguments
+        )
+    text = "\n".join(piece for piece in pieces if isinstance(piece, str))
+    counts = Counter(
+        line.strip() for line in text.splitlines() if len(line.strip()) >= 20
+    )
+    repeated_chars = sum((count - 1) * len(line) for line, count in counts.items())
+    return {
+        "chars": len(text),
+        "long_line_count": sum(counts.values()),
+        "unique_long_lines": len(counts),
+        "max_identical_line_count": max(counts.values(), default=0),
+        "repeated_line_char_fraction": repeated_chars / len(text) if text else 0.0,
+    }
 
 
 def recent_tool_summary(messages):
@@ -234,6 +263,10 @@ class RequestTelemetryProxy(AbstractContextManager):
                             "finish_reasons": [c.get("finish_reason") for c in choices],
                             "tool_counts": [
                                 len(c.get("message", {}).get("tool_calls") or [])
+                                for c in choices
+                            ],
+                            "text_stats": [
+                                response_text_stats(c.get("message", {}))
                                 for c in choices
                             ],
                             "response_sha256": hashlib.sha256(result).hexdigest(),

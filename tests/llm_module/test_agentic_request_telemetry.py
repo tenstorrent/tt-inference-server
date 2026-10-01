@@ -14,7 +14,16 @@ from llm_module.agentic.request_telemetry import (
     RequestTelemetryProxy,
     recent_tool_summary,
     repeated_failure_count,
+    response_text_stats,
 )
+
+
+def test_response_repetition_stats_do_not_record_text():
+    stats = response_text_stats({"content": "secret repeated long output line\n" * 12})
+    assert stats["max_identical_line_count"] == 12
+    assert stats["repeated_line_char_fraction"] > 0.8
+    assert "secret" not in json.dumps(stats)
+    assert response_text_stats({})["max_identical_line_count"] == 0
 
 
 def test_tool_summary_records_categories_without_payloads():
