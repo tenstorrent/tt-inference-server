@@ -133,6 +133,13 @@
             "test_cases": [
                 {"enabled": true, "template": "VLLMParamConformanceTest"}
             ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen2.5-Coder-7B-Instruct"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
         }
     ]
 }
