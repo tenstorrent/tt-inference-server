@@ -586,6 +586,39 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 {"text": "Hello world", "response_format": "verbose_json"}
 ```
 
+# Voxtral TTS (Blackhole)
+
+`mistralai/Voxtral-4B-TTS-2603`: text plus one of 20 voice presets in, 24 kHz speech out. Model code in
+tt-metal `models/experimental/voxtral_tts` (and `tt/ttnn_voxtral_batched.py` for B users per step).
+
+> **License:** the Voxtral-4B-TTS weights and voice presets are released under **CC BY-NC 4.0 (non-commercial)**.
+> The container downloads them from Hugging Face on first start; whoever runs it accepts that license.
+> The runner and model code are Apache-2.0.
+
+```bash
+export MODEL=voxtral-4b-tts            # ModelNames.VOXTRAL_4B_TTS
+export MODEL_RUNNER=tt-voxtral-tts     # ModelRunners.TT_VOXTRAL_TTS
+export DEVICE=p300x2                   # p300x2 (QuietBox 2, the target) | p300 | bh-galaxy | p150; one chip per worker
+# optional
+export MAX_BATCH_SIZE=8                # >1 serves B users per decode step (8 or 16 recommended)
+export VOXTRAL_DEFAULT_VOICE=neutral_male
+export VOXTRAL_MAX_SEQ_LEN=2048        # KV window per user; 1024 halves cache memory
+```
+
+Request fields on `POST /v1/audio/speech`: `text`, `voice` (preset name; `speaker_id` is accepted as an alias),
+`seed` (repeatable sampling), `response_format` (wav default, mp3, ogg, json). Voices: `neutral_male`,
+`neutral_female`, `casual_male`, `casual_female`, `cheerful_female`, and `<lang>_male` / `<lang>_female` for
+`ar`, `de`, `es`, `fr`, `hi`, `it`, `nl`, `pt`. Long texts are split at sentence boundaries and concatenated.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' -H 'Content-Type: application/json' \
+  -d '{"text": "Hello from Tenstorrent.", "voice": "neutral_male", "seed": 0}' -o speech.wav
+```
+
+Target hardware: Blackhole p300 / QuietBox 2 (p300x2), the cards the tt-metal port was brought up on. Measured on one Blackhole chip of a BH Galaxy (2026-10-01; same silicon class, p300x2 numbers to be confirmed in the image): 1 user 26 to 29 ms per 80 ms frame (about 3x real time);
+8 users 38.6 ms per frame for all (2.1x real time each); 16 users 48.5 ms (1.65x); 32 users 73.2 ms (1.09x).
+
 # Image search test call
 
 The image search API uses a CNN model to search for similar images. It supports multiple input methods.

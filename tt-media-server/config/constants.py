@@ -48,6 +48,7 @@ class SupportedModels(Enum):
     QWEN_3_8B = "Qwen/Qwen3-8B"
     QWEN_3_32B = "Qwen/Qwen3-32B"
     SPEECHT5_TTS = "microsoft/speecht5_tts"
+    VOXTRAL_4B_TTS = "mistralai/Voxtral-4B-TTS-2603"
     GEMMA_1_1_2B_IT = "google/gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "google/gemma-4-31B-it"
     MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = (
@@ -107,6 +108,7 @@ class ModelNames(Enum):
     QWEN_3_8B = "Qwen3-8B"
     QWEN_3_32B = "Qwen3-32B"
     SPEECHT5_TTS = "speecht5_tts"
+    VOXTRAL_4B_TTS = "voxtral-4b-tts"
     GEMMA_1_1_2B_IT = "gemma-1.1-2b-it"
     GEMMA_4_31B_IT = "gemma-4-31b-it"
     MISTRAL_SMALL_3_1_24B_INSTRUCT_2503 = "Mistral-Small-3.1-24B-Instruct-2503"
@@ -169,6 +171,7 @@ class ModelRunners(Enum):
     TT_SPEECHT5_TTS = "tt-speecht5-tts"
     TT_XLA_SDXL = "tt-xla-sdxl"
     TT_Z_IMAGE_TURBO = "tt-z-image-turbo"
+    TT_VOXTRAL_TTS = "tt-voxtral-tts"
 
 
 class ModelServices(Enum):
@@ -250,6 +253,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.TEXT_TO_SPEECH: {
         ModelRunners.TT_SPEECHT5_TTS,
+        ModelRunners.TT_VOXTRAL_TTS,
     },
 }
 
@@ -396,6 +400,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
         ModelNames.FALCON3_7B_INSTRUCT,
     },
     ModelRunners.TT_SPEECHT5_TTS: {ModelNames.SPEECHT5_TTS},
+    ModelRunners.TT_VOXTRAL_TTS: {ModelNames.VOXTRAL_4B_TTS},
     ModelRunners.TT_XLA_SDXL: {
         ModelNames.STABLE_DIFFUSION_XL_BASE,
         ModelNames.STABLE_DIFFUSION_XL_512,
@@ -1210,6 +1215,33 @@ ModelConfigs = {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    # Voxtral-4B-TTS (Blackhole only): one chip per worker, data-parallel across chips. The
+    # runner serves one request per call at max_batch_size 1 (TtVoxtralPipeline) and B users per
+    # decode step at max_batch_size > 1 (TtVoxtralBatchedPipeline, 8 or 16 recommended).
+    (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.P150): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_1.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.P300): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_2.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.P300X2): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_4.value,
+        "max_batch_size": 1,
+    },
+    (ModelRunners.TT_VOXTRAL_TTS, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (1, 1),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32.value,
         "max_batch_size": 1,
     },
     (ModelRunners.TT_WHISPER, DeviceTypes.N300): {

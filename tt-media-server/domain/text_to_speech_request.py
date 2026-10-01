@@ -39,6 +39,26 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
+    # Voice-preset models (Voxtral): the preset name, e.g. "neutral_male"; falls back to
+    # speaker_id, then the runner's default. language is accepted for API parity (Voxtral's
+    # presets imply their language). seed makes the stochastic sampler repeatable.
+    voice: Optional[str] = None
+    language: Optional[str] = None
+    seed: Optional[int] = None
+
+    @field_validator("seed", mode="before")
+    @classmethod
+    def validate_seed(cls, v):
+        if v is None or v == "":
+            return None
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("seed must be an integer")
+        if v < 0:
+            raise ValueError("seed must be >= 0")
+        return v
+
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 
