@@ -61,6 +61,7 @@ class FakeTerminalBenchConfig:
     n_tasks: Optional[int] = 89
     task_names: List[str] = field(default_factory=list)
     exclude_task_names: List[str] = field(default_factory=list)
+    task_overrides: Dict[str, Dict[str, str]] = field(default_factory=dict)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = "docker"
     override_cpus: Optional[int] = 16
@@ -207,6 +208,36 @@ class TestAgenticParser:
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert "success" not in block.data
         assert "accuracy" not in block.data
+
+    def test_combines_registry_and_adhoc_harbor_groups(self):
+        raw = {
+            "stats": {
+                "evals": {
+                    "terminus__adhoc": {
+                        "metrics": [{"mean": 1.0}],
+                        "n_trials": 1,
+                        "pass_at_k": {"2": 1.0},
+                        "reward_stats": {"reward": {"1.0": ["qemu"]}},
+                    },
+                    "terminus__registry": {
+                        "metrics": [{"mean": 0.5}],
+                        "n_trials": 4,
+                        "pass_at_k": {"2": 0.5},
+                        "reward_stats": {
+                            "reward": {"1.0": ["a", "b"], "0.0": ["c", "d"]}
+                        },
+                    },
+                }
+            }
+        }
+
+        metrics = extract_harbor_metrics(raw)
+
+        assert metrics["accuracy"] == pytest.approx(0.6)
+        assert metrics["pass_at_1"] == pytest.approx(0.6)
+        assert metrics["pass_at_2"] == pytest.approx(0.6)
+        assert metrics["n_trials"] == 5
+        assert metrics["n_resolved"] == 3
 
     def test_zero_trial_harbor_result_stays_na(self):
         # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
@@ -478,6 +509,47 @@ class TestTerminalBenchHarness:
             run_cmd.return_value = 17
 
             assert run_terminal_bench(cfg) == 17
+
+    def test_harbor_config_mixes_registry_tasks_with_git_override(self, tmp_path):
+        task = _terminal_task()
+        task.agentic_eval_config.task_names = [
+            "terminal-bench/compile-compcert",
+            "terminal-bench/qemu-startup",
+        ]
+        task.agentic_eval_config.n_tasks = None
+        task.agentic_eval_config.task_overrides = {
+            "terminal-bench/qemu-startup": {
+                "path": "tasks/qemu-startup",
+                "git_url": "https://example.com/terminal-bench-2-1.git",
+                "git_commit_id": "abc123",
+            }
+        }
+        cfg = build_terminal_bench_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=None,
+        )
+
+        with patch("llm_module.agentic.terminal_bench.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+            assert run_terminal_bench(cfg) == 17
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        payload = json.loads(config_path.read_text())
+        assert payload["datasets"] == [
+            {
+                "name": "terminal-bench/terminal-bench-2",
+                "task_names": ["terminal-bench/compile-compcert"],
+            }
+        ]
+        assert payload["tasks"] == [
+            {
+                "path": "tasks/qemu-startup",
+                "git_url": "https://example.com/terminal-bench-2-1.git",
+                "git_commit_id": "abc123",
+            }
+        ]
 
     def test_timeout_still_annotates_partial_results(self, tmp_path):
         # A watchdog timeout (124) must still annotate harbor's partial,

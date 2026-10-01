@@ -263,6 +263,7 @@ def build_terminal_bench_config(
         agent_timeout_sec=cfg.agent_timeout_sec,
         task_names=resolve_task_names(task, runtime_config),
         exclude_task_names=cfg.exclude_task_names,
+        task_overrides=cfg.task_overrides,
         quiet=cfg.quiet,
         yes=cfg.yes,
         agent_import_path=cfg.agent_import_path,

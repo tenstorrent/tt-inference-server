@@ -254,30 +254,48 @@ def _extract_harbor_summary_metrics(raw: Mapping[str, Any]) -> Dict[str, Any]:
     if not evals:
         return {}
 
-    eval_stats = next(iter(evals.values()))
-    if not isinstance(eval_stats, Mapping):
-        return {}
-
-    metrics_list = eval_stats.get("metrics", [])
-    mean_metric = next(
-        (
-            metric.get("mean")
-            for metric in metrics_list
-            if isinstance(metric, Mapping)
-            and isinstance(metric.get("mean"), (int, float))
-        ),
-        None,
-    )
-    n_trials = eval_stats.get("n_trials")
-    n_resolved = _count_harbor_resolved_trials(eval_stats)
+    # Harbor groups registry-backed and explicit git/path tasks under separate
+    # eval keys. Treating only the first group as the whole run can turn a raw
+    # 3/5 result into a reported 1/1. Aggregate group means by their trial
+    # counts so the report reflects every task Harbor actually graded.
+    weighted_score = 0.0
+    n_trials = 0
+    has_trial_counts = False
+    n_resolved = 0
+    has_resolved_counts = False
+    for eval_stats in evals.values():
+        if not isinstance(eval_stats, Mapping):
+            continue
+        group_trials = eval_stats.get("n_trials")
+        if not isinstance(group_trials, int) or isinstance(group_trials, bool):
+            continue
+        has_trial_counts = True
+        metrics_list = eval_stats.get("metrics", [])
+        group_mean = next(
+            (
+                metric.get("mean")
+                for metric in metrics_list
+                if isinstance(metric, Mapping)
+                and isinstance(metric.get("mean"), (int, float))
+            ),
+            None,
+        )
+        if group_mean is not None:
+            weighted_score += float(group_mean) * group_trials
+        n_trials += group_trials
+        group_resolved = _count_harbor_resolved_trials(eval_stats)
+        if group_resolved is not None:
+            n_resolved += group_resolved
+            has_resolved_counts = True
 
     metrics: Dict[str, Any] = {}
-    if mean_metric is not None:
+    if n_trials:
+        mean_metric = weighted_score / n_trials
         metrics["accuracy"] = mean_metric
         metrics["pass_at_1"] = mean_metric
-    if isinstance(n_trials, int):
+    if has_trial_counts:
         metrics["n_trials"] = n_trials
-    if n_resolved is not None:
+    if has_resolved_counts:
         metrics["n_resolved"] = n_resolved
     return metrics
 
@@ -288,14 +306,33 @@ def _add_harbor_pass_at_metrics(
 ) -> None:
     stats = raw.get("stats", {})
     evals = stats.get("evals", {}) if isinstance(stats, Mapping) else {}
+    weighted: Dict[str, float] = {}
+    weights: Dict[str, int] = {}
+    zero_trial_values: Dict[str, float] = {}
     for eval_stats in evals.values():
         if not isinstance(eval_stats, Mapping):
+            continue
+        n_trials = eval_stats.get("n_trials")
+        if not isinstance(n_trials, int) or isinstance(n_trials, bool):
             continue
         pass_at_k = eval_stats.get("pass_at_k", {})
         if not isinstance(pass_at_k, Mapping):
             continue
         for key, value in pass_at_k.items():
-            metrics[f"pass_at_{key}"] = value
+            if not isinstance(value, (int, float)):
+                continue
+            metric_key = f"pass_at_{key}"
+            if n_trials == 0:
+                zero_trial_values[metric_key] = float(value)
+                continue
+            weighted[metric_key] = (
+                weighted.get(metric_key, 0.0) + float(value) * n_trials
+            )
+            weights[metric_key] = weights.get(metric_key, 0) + n_trials
+    for key, total in weighted.items():
+        metrics[key] = total / weights[key]
+    for key, value in zero_trial_values.items():
+        metrics.setdefault(key, value)
 
 
 def _count_harbor_resolved_trials(eval_stats: Mapping[str, Any]) -> Optional[int]:
