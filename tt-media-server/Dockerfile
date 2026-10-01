@@ -320,20 +320,20 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && chmod 755 /run/sshd
 
 # Copy the builder's home into the runtime image as four layers of roughly equal
-# size, instead of one ~16GB layer.
+# size, instead of one ~11GB layer.
 #
-# BuildKit compresses each layer on one core at export time, so the single-layer
+# BuildKit compresses each layer on one core at export time, so a single-layer
 # copy made "exporting layers" take ~17 min in CI. Layers compress in parallel, so
 # the export takes about as long as the largest layer. Sizes measured on the
-# 2026-09 image (builder home 16GB): python_env 9.9GB, of which torch 1.6GB,
-# nvidia (torch's CUDA runtime) 2.7GB and vllm 1.2GB; build_Release 2.6GB;
-# audio_venv 1.6GB; everything else 1.3GB. Grouped along those folders:
+# 2026-10 image with CPU-only torch (builder home ~11GB): python_env 5.4GB, of
+# which vllm 1.2GB and torch 0.7GB; build_Release 2.6GB; audio_venv 1.6GB;
+# everything else 1.3GB. Grouped along those folders:
 #
-#   1. python_env: torch + nvidia                                 ~4.3GB
-#   2. python_env: everything else (bin/, the other packages)      ~4.4GB
-#   3. build_Release + audio_venv                                  ~4.2GB
-#   4. python_env: vllm + the rest of the home dir
-#      (tt-metal sources, runtime/, server/, models/, .bashrc)     ~2.5GB
+#   1. python_env, except vllm (bin/, torch, the other packages)     ~4.2GB
+#   2. build_Release                                                 ~2.6GB
+#   3. audio_venv + python_env's vllm                                ~2.8GB
+#   4. the rest of the home dir
+#      (tt-metal sources, runtime/, server/, models/, .bashrc)       ~1.3GB
 #
 # Each RUN bind-mounts the builder's home read-only at /mnt/builder and copies its
 # share. Ownership is set in the same RUN that writes the files on purpose: a later
@@ -342,32 +342,30 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
 ARG APP_OWNER=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME}
 ENV SITE_PACKAGES_REL=lib/python3.10/site-packages
 
-# 1. torch and its CUDA runtime libraries
+# 1. the main venv, except vllm
 RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
-    SP=/mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL} && test -d "$SP/torch" \
-    && mkdir -p ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL} \
-    && cp -a "$SP/torch" "$SP/nvidia" ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/ \
-    && chown -R ${APP_OWNER} ${PYTHON_ENV_DIR}
-
-# 2. the rest of the main venv
-RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
-    tar -C /mnt/builder/tt-metal/python_env --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
-        --exclude=./${SITE_PACKAGES_REL}/torch --exclude=./${SITE_PACKAGES_REL}/nvidia --exclude=./${SITE_PACKAGES_REL}/vllm \
-        -cf - . | tar -C ${PYTHON_ENV_DIR} -xf - \
+    test -d /mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL}/vllm \
+    && mkdir -p ${PYTHON_ENV_DIR} \
+    && tar -C /mnt/builder/tt-metal/python_env --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
+        --exclude=./${SITE_PACKAGES_REL}/vllm -cf - . | tar -C ${PYTHON_ENV_DIR} -xf - \
     && chmod -R +x ${PYTHON_ENV_DIR}/bin
 
-# 3. tt-metal build output and the audio venv
+# 2. tt-metal build output
 RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
-    cp -a /mnt/builder/tt-metal/build_Release /mnt/builder/tt-metal/audio_venv ${TT_METAL_HOME}/ \
-    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/build_Release ${TT_METAL_HOME}/audio_venv
+    cp -a /mnt/builder/tt-metal/build_Release ${TT_METAL_HOME}/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/build_Release
 
-# 4. vllm plus everything else in the home dir
+# 3. the audio venv and vllm
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    cp -a /mnt/builder/tt-metal/audio_venv ${TT_METAL_HOME}/ \
+    && cp -a /mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL}/vllm ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/audio_venv ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/vllm
+
+# 4. everything else in the home dir
 RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
     tar -C /mnt/builder --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
         --exclude=./tt-metal/python_env --exclude=./tt-metal/audio_venv --exclude=./tt-metal/build_Release \
         -cf - . | tar -C ${HOME_DIR} -xf - \
-    && cp -a /mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL}/vllm ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/ \
-    && chown -R ${APP_OWNER} ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/vllm \
     && test -L ${TT_METAL_HOME}/build && test -x ${PYTHON_ENV_DIR}/bin/python
 
 USER ${CONTAINER_APP_USERNAME}
