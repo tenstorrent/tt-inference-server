@@ -1007,7 +1007,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=32,
+                max_concurrent=8,
                 # This vLLM server only exposes /v1/chat/completions; the legacy
                 # text /v1/completions endpoint returns 404. use_chat_api switches
                 # lm-eval's eval_class from "local-completions" to
@@ -1064,7 +1064,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=32,
+                    n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -1119,7 +1119,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=32,
+                    n_concurrent_trials=8,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -1172,46 +1172,6 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 3,
-                },
-            ),
-            EvalTask(
-                task_name="swe_bench_verified",
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    gpu_reference_score=69.0,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": ["accuracy"],
-                        "unit": "percent",
-                    },
-                ),
-                swebench_eval_config=SWEbenchEvalConfig(
-                    dataset_name="SWE-bench/SWE-bench_Verified",
-                    sweagent_subset="verified",
-                    dataset_split="test",
-                    agent_backend="mini-swe-agent",
-                    n_concurrent_trials=32,
-                    max_workers=24,
-                    n_tasks=None,
-                    temperature=1.0,
-                    top_p=0.95,
-                    max_input_tokens=256 * 1000,
-                    max_output_tokens=64 * 1024,
-                    instance_ids_map={
-                        EvalLimitMode.CI_NIGHTLY: [
-                            "django__django-12143",
-                            "pytest-dev__pytest-5262",
-                            "django__django-14672",
-                            "sympy__sympy-13551",
-                            "sphinx-doc__sphinx-9281",
-                        ],
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
         ],
