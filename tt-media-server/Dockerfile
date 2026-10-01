@@ -307,37 +307,56 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# Copy the builder's home into the runtime image as four layers, split along the
-# subtrees a reader will recognise: the main venv, the audio venv, the tt-metal
-# build output, and everything else (tt-metal sources, server/, .bashrc, ...).
+# Copy the builder's home into the runtime image as four layers of roughly equal
+# size, instead of one ~16GB layer.
 #
-# Why not one `COPY --from=builder /home/container_app_user`: that made a single
-# ~30GB layer, and BuildKit compresses each layer on one core at export time, so
-# "exporting layers" alone took ~17 min in CI. Layers compress in parallel, so
-# the export now takes about as long as the largest of the four.
+# BuildKit compresses each layer on one core at export time, so the single-layer
+# copy made "exporting layers" take ~17 min in CI. Layers compress in parallel, so
+# the export takes about as long as the largest layer. Sizes measured on the
+# 2026-09 image (builder home 16GB): python_env 9.9GB, of which torch 1.6GB,
+# nvidia (torch's CUDA runtime) 2.7GB and vllm 1.2GB; build_Release 2.6GB;
+# audio_venv 1.6GB; everything else 1.3GB. Grouped along those folders:
 #
-# Each RUN bind-mounts the builder read-only at /mnt/builder and copies one subtree.
-# Ownership is set in the same RUN that writes the files on purpose: a later
-# `chown -R` / `chmod -R` would copy every touched file into a new layer.
+#   1. python_env: torch + nvidia                                 ~4.3GB
+#   2. python_env: everything else (bin/, the other packages)      ~4.4GB
+#   3. build_Release + audio_venv                                  ~4.2GB
+#   4. python_env: vllm + the rest of the home dir
+#      (tt-metal sources, runtime/, server/, models/, .bashrc)     ~2.5GB
+#
+# Each RUN bind-mounts the builder's home read-only at /mnt/builder and copies its
+# share. Ownership is set in the same RUN that writes the files on purpose: a later
+# `chown -R` / `chmod -R` would copy every touched file into yet another layer.
+# The final filesystem is identical to the single COPY.
 ARG APP_OWNER=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME}
+ENV SITE_PACKAGES_REL=lib/python3.10/site-packages
 
-RUN --mount=type=bind,from=builder,source=/home/container_app_user/tt-metal/python_env,target=/mnt/builder \
-    mkdir -p ${PYTHON_ENV_DIR} && cp -a /mnt/builder/. ${PYTHON_ENV_DIR}/ \
-    && chown -R ${APP_OWNER} ${PYTHON_ENV_DIR} && chmod -R +x ${PYTHON_ENV_DIR}/bin
+# 1. torch and its CUDA runtime libraries
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    SP=/mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL} && test -d "$SP/torch" \
+    && mkdir -p ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL} \
+    && cp -a "$SP/torch" "$SP/nvidia" ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/ \
+    && chown -R ${APP_OWNER} ${PYTHON_ENV_DIR}
 
-RUN --mount=type=bind,from=builder,source=/home/container_app_user/tt-metal/audio_venv,target=/mnt/builder \
-    mkdir -p ${TT_METAL_HOME}/audio_venv && cp -a /mnt/builder/. ${TT_METAL_HOME}/audio_venv/ \
-    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/audio_venv
+# 2. the rest of the main venv
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    tar -C /mnt/builder/tt-metal/python_env --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
+        --exclude=./${SITE_PACKAGES_REL}/torch --exclude=./${SITE_PACKAGES_REL}/nvidia --exclude=./${SITE_PACKAGES_REL}/vllm \
+        -cf - . | tar -C ${PYTHON_ENV_DIR} -xf - \
+    && chmod -R +x ${PYTHON_ENV_DIR}/bin
 
-RUN --mount=type=bind,from=builder,source=/home/container_app_user/tt-metal/build_Release,target=/mnt/builder \
-    mkdir -p ${TT_METAL_HOME}/build_Release && cp -a /mnt/builder/. ${TT_METAL_HOME}/build_Release/ \
-    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/build_Release
+# 3. tt-metal build output and the audio venv
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    cp -a /mnt/builder/tt-metal/build_Release /mnt/builder/tt-metal/audio_venv ${TT_METAL_HOME}/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/build_Release ${TT_METAL_HOME}/audio_venv
 
-# The rest of the home directory, minus the three subtrees already copied.
+# 4. vllm plus everything else in the home dir
 RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
     tar -C /mnt/builder --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
         --exclude=./tt-metal/python_env --exclude=./tt-metal/audio_venv --exclude=./tt-metal/build_Release \
-        -cf - . | tar -C ${HOME_DIR} -xf -
+        -cf - . | tar -C ${HOME_DIR} -xf - \
+    && cp -a /mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL}/vllm ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/ \
+    && chown -R ${APP_OWNER} ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/vllm \
+    && test -L ${TT_METAL_HOME}/build && test -x ${PYTHON_ENV_DIR}/bin/python
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
