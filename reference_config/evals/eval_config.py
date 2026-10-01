@@ -1764,45 +1764,55 @@ _eval_config_list = [
         hf_model_repo="MiniMaxAI/MiniMax-M3",
         tasks=[
             # NOTE: we had issues with outputs parsing on GPU with M3!!
+            # Generate-then-answer LongBench v2 (chat API). Stock longbench2 is
+            # multiple_choice/loglikelihood and cannot run on chat-only servers.
+            # No published or GPU reference yet, so the task runs ungraded.
+            #
+            # Experiment branch: r1_gpqa_diamond is left out of this list so
+            # `inference-workflow-evals` runs LongBench alone (--eval-samples
+            # cannot select a task without also restricting its samples).
             EvalTask(
-                task_name="r1_gpqa_diamond",
+                task_name="longbench2_generate",
+                max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=62,
-                # The remote Tenstorrent console only exposes /v1/chat/completions
-                # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
-                capture_reasoning=True,
                 score=EvalTaskScore(
-                    published_score=92.9,
-                    published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
-                    gpu_reference_score=93.9,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-4901015676",
+                    published_score=None,
+                    published_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
+                        "result_keys": ["exact_match,none"],
                         "unit": "percent",
                     },
                 ),
                 model_kwargs={
-                    "max_length": 200 * 1024,
-                    # Per-request HTTP timeout (lm-eval default 1800s). Long
-                    # reasoning generations on the shared console can exceed
-                    # 30min under load, so allow up to 2h before giving up.
+                    "max_length": 550000,
                     "timeout": 7200,
                 },
                 gen_kwargs={
-                    "max_gen_toks": 200 * 1024,
+                    "max_gen_toks": 64 * 1024,
                     # https://huggingface.co/MiniMaxAI/MiniMax-M3/blob/main/special_tokens_map.json
-                    "until": "[e~[",
+                    "until": ["[e~["],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_p": 0.95,
                     "stream": "true",
                 },
+                # Select samples by input sequence length (ISL), measured by
+                # tokenizing each sample's context with `pretrained`; only
+                # samples with minimum_isl <= ISL <= maximum_isl are kept.
+                # The deployment served 550K-token prompts in the 2026-10-01
+                # concurrency-1 sweep (tt-shield run 36845617704), so the ceiling
+                # leaves room for the chat template, question and max_gen_toks
+                # (64K) under 550K.
+                # Forwarded to the lm-eval fork loader via --metadata.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 470 * 1000,  # 470K (+64K gen + template < 550K)
+                    "pretrained": "MiniMaxAI/MiniMax-M3",
+                    "tokenizer_num_proc": 32,
+                },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
