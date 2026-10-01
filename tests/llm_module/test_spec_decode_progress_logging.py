@@ -138,3 +138,38 @@ def test_health_wait_logs_last_results_on_failure(monkeypatch, caplog):
     messages = [r.getMessage() for r in caplog.records]
     assert any("still waiting for endpoint" in m and "HTTP 503" in m for m in messages)
     assert any("endpoint not healthy after" in m and "HTTP 503" in m for m in messages)
+
+
+def test_throughput_concurrency_override(monkeypatch):
+    from llm_module.spec_decode import runs as runs_mod
+
+    monkeypatch.delenv("TT_SPEC_DECODE_THROUGHPUT_CONCURRENCY", raising=False)
+    default = runs_mod.build_runs("full")
+    assert len(default) == 26
+    assert sorted({r.max_concurrency for r in default if "throughput" in r.public_dataset}) == [1, 16, 64]
+
+    monkeypatch.setenv("TT_SPEC_DECODE_THROUGHPUT_CONCURRENCY", "1,8")
+    full = runs_mod.build_runs("full")
+    tput = [r for r in full if "throughput" in r.public_dataset]
+    assert len(full) == 11 + 10
+    assert [(r.public_dataset, r.max_concurrency, r.num_prompts) for r in tput[:2]] == [
+        ("speed_bench_throughput_1k", 1, 32),
+        ("speed_bench_throughput_1k", 8, 32),
+    ]
+    ci = runs_mod.build_runs("ci")
+    assert [(r.public_dataset, r.max_concurrency) for r in ci] == [
+        ("speed_bench_coding", 1),
+        ("speed_bench_throughput_32k", 1),
+        ("speed_bench_throughput_32k", 8),
+    ]
+    # The module-level presets stay untouched.
+    assert len(runs_mod.SPEC_DECODE_SWEEP) == 26
+
+
+@pytest.mark.parametrize("bad", ["0,8", "a,b", ",", "-1"])
+def test_throughput_concurrency_override_rejects_bad_values(monkeypatch, bad):
+    from llm_module.spec_decode import runs as runs_mod
+
+    monkeypatch.setenv("TT_SPEC_DECODE_THROUGHPUT_CONCURRENCY", bad)
+    with pytest.raises(ValueError):
+        runs_mod.build_runs("full")

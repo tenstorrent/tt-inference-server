@@ -13,6 +13,7 @@ orchestrator that ties them together is
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -34,6 +35,9 @@ SPEED_BENCH_QUALITATIVE_CATEGORIES: Tuple[str, ...] = (
 SPEED_BENCH_THROUGHPUT_ISLS: Tuple[str, ...] = ("1k", "2k", "8k", "16k", "32k")
 
 THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 16, 64)
+# Comma-separated override for the throughput concurrency sweep, e.g. "1,8" for a
+# server with 8 user slots (requests beyond its slots are rejected, not queued).
+THROUGHPUT_CONCURRENCY_ENV = "TT_SPEC_DECODE_THROUGHPUT_CONCURRENCY"
 
 # The 'ci' preset trims the sweep so a regression run stays short: the
 # 'coding' qualitative category plus a single throughput ISL across the full
@@ -105,7 +109,10 @@ def _qualitative_runs(categories: Tuple[str, ...]) -> List[SpecDecodeRun]:
     ]
 
 
-def _throughput_runs(isls: Tuple[str, ...]) -> List[SpecDecodeRun]:
+def _throughput_runs(
+    isls: Tuple[str, ...],
+    concurrencies: Tuple[int, ...] = THROUGHPUT_CONCURRENCY_SWEEP,
+) -> List[SpecDecodeRun]:
     return [
         SpecDecodeRun(
             public_dataset=f"speed_bench_throughput_{isl}",
@@ -114,7 +121,7 @@ def _throughput_runs(isls: Tuple[str, ...]) -> List[SpecDecodeRun]:
             max_completion_tokens=SPEC_DECODE_MAX_COMPLETION_TOKENS,
         )
         for isl in isls
-        for concurrency in THROUGHPUT_CONCURRENCY_SWEEP
+        for concurrency in concurrencies
     ]
 
 
@@ -132,20 +139,45 @@ SPEC_DECODE_PRESETS = {
 }
 
 
+def throughput_concurrencies() -> Tuple[int, ...]:
+    """Throughput concurrency sweep: ``$TT_SPEC_DECODE_THROUGHPUT_CONCURRENCY``
+    (comma-separated positive ints) if set, else ``THROUGHPUT_CONCURRENCY_SWEEP``."""
+    raw = os.environ.get(THROUGHPUT_CONCURRENCY_ENV, "").strip()
+    if not raw:
+        return THROUGHPUT_CONCURRENCY_SWEEP
+    try:
+        values = tuple(int(v) for v in raw.split(",") if v.strip())
+    except ValueError:
+        values = ()
+    if not values or any(v < 1 for v in values):
+        raise ValueError(
+            f"{THROUGHPUT_CONCURRENCY_ENV}={raw!r}: expected comma-separated positive integers, e.g. 1,8"
+        )
+    return tuple(dict.fromkeys(values))  # keep order, drop duplicates
+
+
 def build_runs(preset: str = "full") -> List[SpecDecodeRun]:
     """Return the spec-decode sweep for ``preset``.
 
     ``full`` (default) runs every qualitative category plus the whole
     throughput ISL x concurrency grid. ``ci`` runs only the 'coding'
     qualitative category plus the 32k throughput ISL across the
-    concurrency sweep (32k_maxcon-{1,16,64}).
+    concurrency sweep (32k_maxcon-{1,16,64}). The throughput concurrencies
+    can be overridden with ``$TT_SPEC_DECODE_THROUGHPUT_CONCURRENCY``.
     """
     if preset not in SPEC_DECODE_PRESETS:
         raise ValueError(
             f"Unknown spec-decode preset: {preset}. "
             f"Available: {sorted(SPEC_DECODE_PRESETS)}"
         )
-    return list(SPEC_DECODE_PRESETS[preset])
+    concurrencies = throughput_concurrencies()
+    if concurrencies == THROUGHPUT_CONCURRENCY_SWEEP:
+        return list(SPEC_DECODE_PRESETS[preset])
+    if preset == "full":
+        categories, isls = SPEED_BENCH_QUALITATIVE_CATEGORIES, SPEED_BENCH_THROUGHPUT_ISLS
+    else:
+        categories, isls = CI_QUALITATIVE_CATEGORIES, CI_THROUGHPUT_ISLS
+    return _qualitative_runs(categories) + _throughput_runs(isls, concurrencies)
 
 
 def summarize_runs(runs: List[SpecDecodeRun]) -> str:
