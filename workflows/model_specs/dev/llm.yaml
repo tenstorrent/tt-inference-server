@@ -2447,6 +2447,8 @@ templates:
         evals: agentic
       # Bounded diagnostic startup; final comparison records/restores its warmup policy.
       background_trace_context_lens: [[4096, 4]]
+      # Experimental policy overlay; immutable inference image is reused.
+      autoport_precision_config: reference_config/precision/gemma4_eval_bfp8.json
 
 # Gemma 4 family - GPU reference specs (bring-your-own vLLM server; see
 # docs/gpu_workflows.md). Used to collect GPU reference eval scores for
