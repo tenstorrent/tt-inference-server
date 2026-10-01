@@ -12,8 +12,34 @@ import pytest
 from llm_module.agentic.request_telemetry import (
     REPETITION_FEEDBACK,
     RequestTelemetryProxy,
+    recent_tool_summary,
     repeated_failure_count,
 )
+
+
+def test_tool_summary_records_categories_without_payloads():
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "a",
+                    "function": {"arguments": '{"command":"pytest private_file.py"}'},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "a",
+            "content": '{"returncode":1,"output":"private failure"}',
+        },
+    ]
+    rows = recent_tool_summary(messages)
+    assert rows[0]["categories_heuristic"] == ["test"]
+    assert rows[0]["returncode"] == 1
+    assert rows[0]["output_chars"] == 15
+    assert "private" not in json.dumps(rows)
+    assert recent_tool_summary([]) == []
 
 
 def test_repetition_detector_requires_identical_failed_results():

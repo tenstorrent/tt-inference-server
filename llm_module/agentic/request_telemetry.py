@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+import re
 import threading
 import time
 import uuid
@@ -22,6 +23,60 @@ REPETITION_FEEDBACK = (
     "the original issue. Do not submit until you have made and checked the "
     "required fix."
 )
+
+
+def recent_tool_summary(messages):
+    """Describe the latest tool phase without logging command/output contents."""
+    assistant = next(
+        (
+            i
+            for i in range(len(messages) - 1, -1, -1)
+            if messages[i].get("role") == "assistant"
+        ),
+        None,
+    )
+    if assistant is None:
+        return []
+    calls = {
+        call.get("id"): call.get("function", {})
+        for call in messages[assistant].get("tool_calls") or []
+    }
+    rows = []
+    for message in messages[assistant + 1 :]:
+        if message.get("role") != "tool":
+            continue
+        function = calls.get(message.get("tool_call_id"), {})
+        try:
+            arguments = json.loads(function.get("arguments", "{}"))
+            result = json.loads(message.get("content", "{}"))
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(arguments, dict) or not isinstance(result, dict):
+            continue
+        command = arguments.get("command", "")
+        if not isinstance(command, str):
+            continue
+        categories = [
+            name
+            for name, pattern in (
+                ("test", r"\b(pytest|unittest|tox|runtests)\b"),
+                ("install", r"\b(pip|conda|apt|apt-get|uv)\b.*\binstall\b"),
+                ("build", r"\b(make|cmake|ninja|setup\.py)\b"),
+                ("inspect", r"\b(grep|rg|head|tail|find|ls|sed)\b"),
+                ("edit", r"\b(apply_patch|patch)\b|>\s*\S+"),
+            )
+            if re.search(pattern, command)
+        ]
+        rows.append(
+            {
+                "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
+                "command_chars": len(command),
+                "categories_heuristic": categories or ["other"],
+                "returncode": result.get("returncode"),
+                "output_chars": len(str(result.get("output", ""))),
+            }
+        )
+    return rows
 
 
 def repeated_failure_count(messages):
@@ -69,6 +124,7 @@ class RequestTelemetryProxy(AbstractContextManager):
         self.timeout = timeout
         self.repetition_feedback_after = repetition_feedback_after
         self.lock = threading.Lock()
+        self.previous_response_times = {}
         self.server = None
 
     def record(self, event):
@@ -100,6 +156,8 @@ class RequestTelemetryProxy(AbstractContextManager):
                     "request_id": request_id,
                     "session": self.headers.get("X-Session-ID"),
                 }
+                with owner.lock:
+                    previous = owner.previous_response_times.get(common["session"])
                 owner.record(
                     {
                         **common,
@@ -109,6 +167,15 @@ class RequestTelemetryProxy(AbstractContextManager):
                         "message_count": len(payload.get("messages", [])),
                         "body_sha256": hashlib.sha256(body).hexdigest(),
                         "max_tokens": payload.get("max_tokens"),
+                        "tools_since_previous_assistant": recent_tool_summary(
+                            payload.get("messages", [])
+                        ),
+                        # Includes tool execution plus agent/harness work; not
+                        # an exact subprocess-only timer. Session boundaries
+                        # must be considered when no X-Session-ID is supplied.
+                        "since_previous_response_s": (
+                            None if previous is None else started - previous
+                        ),
                     }
                 )
                 repetitions = repeated_failure_count(payload.get("messages", []))
@@ -152,6 +219,10 @@ class RequestTelemetryProxy(AbstractContextManager):
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         parsed = {}
                     choices = parsed.get("choices", [])
+                    with owner.lock:
+                        owner.previous_response_times[common["session"]] = (
+                            time.monotonic()
+                        )
                     owner.record(
                         {
                             **common,
