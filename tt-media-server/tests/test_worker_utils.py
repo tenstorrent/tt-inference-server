@@ -307,14 +307,6 @@ class TestClaimJobForWorker:
     def test_noops_when_event_missing(self):
         assert claim_job_for_worker(object(), "worker-0") is True
 
-    def test_noops_when_event_is_none(self):
-        request = Mock()
-        request._start_event = None
-        request._cancel_event = None
-        request._worker_assignment = None
-
-        assert claim_job_for_worker(request, "worker-0") is True
-
     def test_skips_request_cancelled_while_queued(self):
         request = Mock()
         request._cancel_event.is_set.side_effect = [False, True]

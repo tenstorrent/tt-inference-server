@@ -771,7 +771,24 @@ class Scheduler:
 
                 # Restart dead workers (one failure must not block restarting others)
                 for worker_id, expected_process in workers_to_restart.items():
-                    restart_count = self.worker_info[worker_id].get("restart_count", 0)
+                    worker_info = self.worker_info[worker_id]
+                    restart_count = worker_info.get("restart_count", 0)
+                    retirement_event = worker_info.get("retirement_event")
+                    is_retiring = (
+                        retirement_event is not None and retirement_event.is_set()
+                    )
+
+                    if is_retiring:
+                        try:
+                            self.replace_worker(
+                                worker_id, expected_pid=expected_process.pid
+                            )
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to replace retired worker {worker_id}: {e}"
+                            )
+                            worker_info["is_ready"] = False
+                        continue
 
                     if restart_count < self.settings.max_worker_restart_count:
                         try:

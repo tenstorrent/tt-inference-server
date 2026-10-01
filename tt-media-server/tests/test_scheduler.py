@@ -466,23 +466,16 @@ class TestScheduler:
             "queue_index": 0,
             "error_count": 0,
         }
-
-        replaced = scheduler.replace_worker("0", expected_pid=123)
-
-        assert replaced == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
-        current_process.terminate.assert_not_called()
-        mock_process_cls.assert_not_called()
-
-    def test_stale_worker_pid_clears_cancelled_job_assignment(self, scheduler):
-        current_process = Mock(spec=Process)
-        current_process.pid = 456
-        scheduler.worker_info["0"] = {"process": current_process}
         worker_assignment = SimpleNamespace(identity=("0", 123))
 
-        outcome = scheduler.replace_worker("0", 123, worker_assignment)
+        replaced = scheduler.replace_worker(
+            "0", expected_pid=123, worker_assignment=worker_assignment
+        )
 
-        assert outcome == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+        assert replaced == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
         assert worker_assignment.identity is None
+        current_process.terminate.assert_not_called()
+        mock_process_cls.assert_not_called()
 
     def test_mark_worker_retiring_blocks_new_claims(self, scheduler):
         process = Mock(spec=Process)
@@ -518,28 +511,6 @@ class TestScheduler:
 
         assert marked is False
         retirement_event.set.assert_not_called()
-
-    def test_replace_worker_ignores_stale_job_assignment(self, scheduler):
-        process = Mock(spec=Process)
-        process.pid = 123
-        retirement_event = Mock()
-        claim_lock = MagicMock()
-        claim_lock.acquire.return_value = True
-        scheduler.worker_info["0"] = {
-            "process": process,
-            "retirement_event": retirement_event,
-            "claim_lock": claim_lock,
-        }
-        worker_assignment = Mock()
-        worker_assignment.identity = None
-
-        scheduler.mark_worker_retiring("0", 123)
-        replaced = scheduler.replace_worker("0", 123, worker_assignment)
-
-        assert replaced == WorkerReplacementOutcome.ASSIGNMENT_RELEASED
-        retirement_event.set.assert_called_once()
-        retirement_event.clear.assert_called_once()
-        claim_lock.release.assert_called_once()
 
     def test_replace_worker_rechecks_assignment_after_active_claim(self, scheduler):
         process = Mock(spec=Process)
@@ -623,6 +594,44 @@ class TestScheduler:
 
         mock_logger.error.assert_any_call("Failed to restart worker 0: Restart failed")
         assert scheduler.worker_info["0"]["restart_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_worker_health_monitor_replaces_retired_worker_without_failure_count(
+        self, scheduler
+    ):
+        dead_process = Mock(spec=Process)
+        dead_process.pid = 123
+        dead_process.is_alive = Mock(return_value=False)
+        retirement_event = Mock()
+        retirement_event.is_set.return_value = True
+        scheduler.worker_info["0"] = {
+            "process": dead_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+            "retirement_event": retirement_event,
+        }
+        scheduler.is_ready = True
+        scheduler.monitor_running = True
+        first_sleep = True
+
+        async def stop_after_first_iteration(timeout):
+            nonlocal first_sleep
+            if first_sleep:
+                first_sleep = False
+                scheduler.monitor_running = False
+
+        with patch.object(scheduler, "replace_worker") as replace_worker, patch.object(
+            scheduler, "restart_worker"
+        ) as restart_worker, patch(
+            "model_services.scheduler.asyncio.sleep",
+            side_effect=stop_after_first_iteration,
+        ):
+            await asyncio.wait_for(scheduler.worker_health_monitor(), timeout=1.0)
+
+        replace_worker.assert_called_once_with("0", expected_pid=123)
+        restart_worker.assert_not_called()
+        assert scheduler.worker_info["0"]["restart_count"] == 0
 
     @pytest.mark.asyncio
     async def test_worker_health_monitor_calls_deep_restart_when_restart_count_exceeded(

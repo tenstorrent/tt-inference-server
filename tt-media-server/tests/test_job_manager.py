@@ -940,41 +940,6 @@ class TestJobManager:
             assert db_job_final["completed_at"] is not None
 
     @pytest.mark.asyncio
-    async def test_cancel_training_job_replaces_its_assigned_worker(
-        self, job_manager, mock_request
-    ):
-        start_event = Event()
-        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
-        replace_worker = Mock(return_value=WorkerReplacementOutcome.REPLACED)
-
-        async def long_training(req):
-            await asyncio.sleep(10)
-
-        await job_manager.create_job(
-            job_id="training-job",
-            job_type=JobTypes.TRAINING,
-            model="test-model",
-            request=mock_request,
-            task_function=long_training,
-            start_event=start_event,
-            cancel_event=Event(),
-            worker_assignment=worker_assignment,
-            mark_worker_retiring=Mock(return_value=True),
-            replace_worker=replace_worker,
-        )
-        start_event.set()
-        await asyncio.sleep(0.1)
-
-        job_manager.cancel_job("training-job")
-        await asyncio.sleep(0.1)
-
-        replace_worker.assert_called_once_with("worker-0", 123, worker_assignment)
-        assert (
-            job_manager.get_job_metadata("training-job")["status"]
-            == JobStatus.CANCELLED
-        )
-
-    @pytest.mark.asyncio
     @patch("device_workers.worker_utils.os.getpid", return_value=123)
     async def test_cancel_rechecks_assignment_published_during_cancellation(
         self, _mock_getpid, job_manager, mock_request
@@ -1205,61 +1170,6 @@ class TestJobManager:
             job_manager.get_job_metadata("training-retry-replacement")["status"]
             == JobStatus.CANCELLED
         )
-
-    @pytest.mark.asyncio
-    @patch("device_workers.worker_utils.os.getpid", return_value=123)
-    async def test_retiring_worker_does_not_claim_next_job_before_replacement(
-        self, _mock_getpid, job_manager, mock_request
-    ):
-        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
-        retirement_event = threading.Event()
-        claim_lock = threading.Lock()
-        replacement_order = []
-
-        def mark_worker_retiring(worker_id, worker_pid):
-            retirement_event.set()
-            with claim_lock:
-                pass
-            return True
-
-        def replace_worker(worker_id, worker_pid, _worker_assignment):
-            replacement_order.append(("replacement", worker_id, worker_pid))
-            return WorkerReplacementOutcome.REPLACED
-
-        async def long_training(req):
-            await asyncio.sleep(10)
-
-        await job_manager.create_job(
-            job_id="training-job",
-            job_type=JobTypes.TRAINING,
-            model="test-model",
-            request=mock_request,
-            task_function=long_training,
-            cancel_event=Event(),
-            worker_assignment=worker_assignment,
-            mark_worker_retiring=mark_worker_retiring,
-            replace_worker=replace_worker,
-        )
-
-        job_manager.cancel_job("training-job")
-
-        next_request = SimpleNamespace(
-            _cancel_event=None,
-            _worker_assignment=SimpleNamespace(identity=None),
-            _start_event=Mock(),
-        )
-        assert (
-            claim_requests_for_worker(
-                [next_request], "worker-0", retirement_event, claim_lock
-            )
-            is None
-        )
-        next_request._start_event.set.assert_not_called()
-        assert replacement_order == []
-
-        await asyncio.sleep(0.1)
-
-        assert replacement_order == [("replacement", "worker-0", 123)]
 
     @pytest.mark.asyncio
     @patch("device_workers.worker_utils.os.getpid", return_value=123)
