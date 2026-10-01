@@ -618,14 +618,15 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 
 Target hardware: Blackhole p300 / QuietBox 2 (p300x2), the cards the tt-metal port was brought up on. Measured on one
 Blackhole chip of a BH Galaxy (2026-10-01; same silicon class, p300x2 numbers to be confirmed in the image), one
-`synthesize` call per row including prefill and codec, trace captured once at warmup:
+`synthesize` call per row including prefill and codec, trace captured once at warmup, the per-frame loop entirely on
+device (sampling, stop logic, positions, noise and the next input embedding; the host only enqueues trace replays):
 
 | users per step | decode ms per 80 ms frame | real time per user (decode) | wall RTF per user (incl. prefill) | frames/s per chip |
 |---|---|---|---|---|
 | 1 (single-user path) | ~26 | 3.1x | 2.9x | 36 |
-| 8 | 34.1 | 2.3x | 1.8x | 180 |
-| 16 (default) | 38.0 | 2.1x | 1.4x | 274 |
-| 32 | 51.9 | 1.5x | 0.9x | 371 (617 decode-only) |
+| 8 | 30.6 | 2.6x | 1.9x | 189 |
+| 16 (default) | 33.9 | 2.4x | 1.5x | 302 |
+| 32 | 46.4 | 1.7x | 0.9x | 373 (690 decode-only) |
 
 Intelligibility gate: every voice x 2 sentences through the batched path, Whisper-large-v3 WER per language under the
 single-user suite ceilings at 8 and 32 users (mean WER 0.008 / 0.009). Each worker owns one chip; `DEVICE=p300x2` starts
