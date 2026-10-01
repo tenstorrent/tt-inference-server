@@ -72,6 +72,9 @@ class FakeHarborConfig:
     environment_kwargs: Dict[str, Any] = field(default_factory=dict)
     harbor_timeout_sec: Optional[float] = None
     llm_timeout_sec: Optional[int] = 10 * 60
+    request_telemetry: bool = False
+    repetition_feedback_after: int = 0
+    normalize_submission_marker: bool = False
     per_task_overhead_sec: int = 20 * 60
     startup_grace_sec: int = 10 * 60
     stall_grace_sec: int = 5 * 60
