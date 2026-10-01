@@ -114,7 +114,7 @@ def test_nonstream_response_bytes_and_errors_are_preserved(tmp_path, status, bod
     thread.start()
     path = tmp_path / "requests.jsonl"
     payload = (
-        b'{"messages":[{"role":"user","content":"private prompt"}],"max_tokens":32768}'
+        b'{"messages":[{"role":"user","content":"private prompt"}],"max_tokens":32768,"seed":9472}'
     )
     try:
         with RequestTelemetryProxy(
@@ -135,6 +135,7 @@ def test_nonstream_response_bytes_and_errors_are_preserved(tmp_path, status, bod
         records = [json.loads(line) for line in path.read_text().splitlines()]
         assert [r["event"] for r in records] == ["request_start", "response"]
         assert records[0]["session"] == "trial"
+        assert records[0]["request_seed"] == 9472
         assert records[1]["elapsed_s"] >= 0
         assert "private" not in path.read_text()
         assert "secret" not in path.read_text()
