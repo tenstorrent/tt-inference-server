@@ -53,7 +53,8 @@
             "Falcon3-7B-Base",
             "Qwen3-4B",
             "Qwen3-14B",
-            "Qwen3-8B"
+            "Qwen3-8B",
+            "Qwen2.5-Coder-7B"
         ]
     },
     "available_markers": {
@@ -110,6 +111,12 @@
         }
     },
     "model_configs": {
+        "Qwen/Qwen2.5-Coder-7B": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "Qwen--Qwen2.5-Coder-7B",
+            "weights": ["Qwen2.5-Coder-7B"]
+        },
         "Qwen/Qwen3-8B": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
