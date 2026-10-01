@@ -42,6 +42,18 @@ def test_gemma4_26b_swebench_runs_serially():
     assert task.agentic_eval_config.n_concurrent_trials == 1
 
 
+def test_gemma4_swebench_tools_use_task_environment_and_keep_generation_budget():
+    config = ALL_EVAL_CONFIGS["google/gemma-4-26B-A4B-it"]
+    task = next(task for task in config.tasks if task.task_name == "swe_bench_verified")
+    agent = task.agentic_eval_config
+    assert (
+        agent.agent_kwargs["config"]["environment"]["env"]["PATH"].split(":")[0]
+        == "/opt/miniconda3/envs/testbed/bin"
+    )
+    assert agent.agent_kwargs["max_tokens"] == 32768
+    assert agent.llm_timeout_sec >= 32768 / 40 + 120
+
+
 def test_defaults_to_docker_with_no_env(monkeypatch):
     for var in ("HARBOR_ENV_TYPE", "HARBOR_K8S_NAMESPACE", "HARBOR_TIMEOUT_SEC"):
         monkeypatch.delenv(var, raising=False)

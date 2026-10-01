@@ -5495,6 +5495,9 @@ _eval_config_list = [
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
+                    # 32K output at the measured ~43 tokens/s already exceeds
+                    # 600s before prefill. Keep the independent 2h trial limit.
+                    llm_timeout_sec=30 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
                         # Output cap left at the value the pre-Harbor runs used,
@@ -5502,6 +5505,16 @@ _eval_config_list = [
                         # gemma-4's 131072 ctx.
                         "max_tokens": 32 * 1024,
                         "config": {
+                            # SWE images install the checked-out project and
+                            # dependencies in testbed, not conda's base Python.
+                            # This applies only to tool subprocesses; the
+                            # installed agent keeps its own interpreter.
+                            "environment": {
+                                "env": {
+                                    "PATH": "/opt/miniconda3/envs/testbed/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                                    "CONDA_DEFAULT_ENV": "testbed",
+                                }
+                            },
                             "model": {
                                 "model_kwargs": {
                                     "temperature": 1.0,
