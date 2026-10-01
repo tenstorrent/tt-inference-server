@@ -934,11 +934,15 @@ templates:
         # any smaller mix.
         GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
         GEMMA4_KV_BFP8: "1"  # needle-gated 2026-09-30 (64Kx48, 32Kx96 both 4/4)
+        # Decode buckets: the default {1, max} pads 2+ residents to the B=32
+        # graph -- measured 53 ms/step at b1 vs ~137 ms flat for 3..6 users at
+        # 248K. Intermediate buckets let 2-4 users run B=4 and 5-8 run B=8.
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         GEMMA4_CHUNKED_PREFILL_TRACE: "1"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 640000000  # decode-trace size grows with context x bucket; 512 MB held 3x256K/engine, +2 residents needs margin (bfp8 freed >1.4 GB/device)
+        trace_region_size: 960000000  # four decode buckets (1/4/8/32) hold four resident traces; B=32 alone is ~360 MB
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL (metal demo parity)
         # On-device decode sampling required on TP so token ids >= 65536 are
         # reachable (host sampling only sees device 0's vocab shard).
