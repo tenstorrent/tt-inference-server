@@ -52,7 +52,8 @@
             "Falcon3-3B-Base",
             "Falcon3-7B-Base",
             "Qwen3-4B",
-            "Qwen3-14B"
+            "Qwen3-14B",
+            "Qwen3-8B"
         ]
     },
     "available_markers": {
@@ -109,6 +110,12 @@
         }
     },
     "model_configs": {
+        "Qwen/Qwen3-8B": {
+            "category": "LLM",
+            "compatible_devices": ["p300x2"],
+            "id_name": "Qwen--Qwen3-8B",
+            "weights": ["Qwen3-8B"]
+        },
         "Qwen/Qwen3-14B": {
             "category": "LLM",
             "compatible_devices": ["p300x2"],
