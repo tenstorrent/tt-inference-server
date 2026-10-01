@@ -91,6 +91,13 @@
                     "description": "DiffusionGemma block-serving and request-admission gates"
                 }
             ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["tiiuae/Falcon3-3B-Base"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
         }
     ]
 }
