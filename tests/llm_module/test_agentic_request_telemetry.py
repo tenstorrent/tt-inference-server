@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import copy
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,10 +13,171 @@ import pytest
 from llm_module.agentic.request_telemetry import (
     REPETITION_FEEDBACK,
     RequestTelemetryProxy,
+    SUBMISSION_COMMAND,
+    normalize_submission_marker,
     recent_tool_summary,
     repeated_failure_count,
     response_text_stats,
 )
+
+
+def submission_example():
+    return (
+        {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "role": "assistant",
+                        "content": "Done.\n\n" + SUBMISSION_COMMAND,
+                    },
+                }
+            ],
+            "usage": {"completion_tokens": 100},
+        },
+        {
+            "tools": [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "bash",
+                        "parameters": {"properties": {"command": {"type": "string"}}},
+                    },
+                }
+            ]
+        },
+    )
+
+
+def test_submission_normalization_preserves_output_and_usage():
+    response, payload = submission_example()
+    original = copy.deepcopy(response)
+    normalized = normalize_submission_marker(response, payload)
+    assert response == original
+    assert normalized["usage"] == response["usage"]
+    message = normalized["choices"][0]["message"]
+    assert message["content"] == response["choices"][0]["message"]["content"]
+    assert normalized["choices"][0]["finish_reason"] == "tool_calls"
+    assert message["tool_calls"][0]["function"] == {
+        "name": "bash",
+        "arguments": json.dumps({"command": SUBMISSION_COMMAND}),
+    }
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "Not done",
+        SUBMISSION_COMMAND + " && touch arbitrary",
+        "`" + SUBMISSION_COMMAND + "`",
+        "> " + SUBMISSION_COMMAND,
+        "```bash\n" + SUBMISSION_COMMAND,
+        "~~~bash\n" + SUBMISSION_COMMAND,
+        SUBMISSION_COMMAND + "\nMore work remains.",
+        "I might run " + SUBMISSION_COMMAND,
+        None,
+    ],
+)
+def test_submission_normalization_rejects_ambiguous_text(content):
+    response, payload = submission_example()
+    response["choices"][0]["message"]["content"] = content
+    assert normalize_submission_marker(response, payload) is None
+
+
+@pytest.mark.parametrize(
+    "reason", ["length", "repetition", "error", "tool_calls", None]
+)
+def test_submission_normalization_requires_natural_stop(reason):
+    response, payload = submission_example()
+    response["choices"][0]["finish_reason"] = reason
+    assert normalize_submission_marker(response, payload) is None
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tool_calls", [{"id": "existing"}]),
+        ("function_call", {"name": "other"}),
+        ("refusal", "Refused"),
+        ("role", "user"),
+    ],
+)
+def test_submission_normalization_preserves_other_protocol_actions(field, value):
+    response, payload = submission_example()
+    response["choices"][0]["message"][field] = value
+    assert normalize_submission_marker(response, payload) is None
+
+
+def test_submission_normalization_requires_one_choice_and_available_bash():
+    response, payload = submission_example()
+    assert normalize_submission_marker(response, {}) is None
+    assert (
+        normalize_submission_marker(response, {**payload, "tool_choice": "none"})
+        is None
+    )
+    response["choices"] *= 2
+    assert normalize_submission_marker(response, payload) is None
+
+
+def test_submission_normalization_never_reads_reasoning_for_marker():
+    response, payload = submission_example()
+    response["choices"][0]["message"] = {
+        "role": "assistant",
+        "content": None,
+        "reasoning": SUBMISSION_COMMAND,
+    }
+    assert normalize_submission_marker(response, payload) is None
+
+
+def test_submission_normalization_is_audited_and_default_off(tmp_path):
+    response, payload = submission_example()
+    body = json.dumps(response).encode()
+
+    class Upstream(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+    thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+    thread.start()
+    try:
+        for enabled in (False, True):
+            path = tmp_path / f"submission_{enabled}.jsonl"
+            with RequestTelemetryProxy(
+                f"http://127.0.0.1:{upstream.server_port}/v1",
+                path,
+                5,
+                normalize_submission=enabled,
+            ) as endpoint:
+                with urlopen(
+                    Request(
+                        endpoint + "/chat/completions", json.dumps(payload).encode()
+                    )
+                ) as received:
+                    forwarded = received.read()
+            events = [json.loads(line) for line in path.read_text().splitlines()]
+            assert sum(
+                e["event"] == "submission_marker_normalized" for e in events
+            ) == int(enabled)
+            assert events[1]["finish_reasons"] == ["stop"]
+            assert events[1]["tool_counts"] == [0]
+            if enabled:
+                assert (
+                    json.loads(forwarded)["choices"][0]["finish_reason"] == "tool_calls"
+                )
+            else:
+                assert forwarded == body
+            assert SUBMISSION_COMMAND not in path.read_text()
+    finally:
+        upstream.shutdown()
+        thread.join()
+        upstream.server_close()
 
 
 def test_response_repetition_stats_do_not_record_text():
@@ -113,9 +275,7 @@ def test_nonstream_response_bytes_and_errors_are_preserved(tmp_path, status, bod
     thread = threading.Thread(target=upstream.serve_forever, daemon=True)
     thread.start()
     path = tmp_path / "requests.jsonl"
-    payload = (
-        b'{"messages":[{"role":"user","content":"private prompt"}],"max_tokens":32768,"seed":9472}'
-    )
+    payload = b'{"messages":[{"role":"user","content":"private prompt"}],"max_tokens":32768,"seed":9472}'
     try:
         with RequestTelemetryProxy(
             f"http://127.0.0.1:{upstream.server_port}/v1", path, 5

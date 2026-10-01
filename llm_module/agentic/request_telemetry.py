@@ -3,6 +3,7 @@
 
 """Transparent, payload-free timing for local non-streaming agent requests."""
 
+import copy
 import hashlib
 import json
 import re
@@ -24,6 +25,59 @@ REPETITION_FEEDBACK = (
     "the original issue. Do not submit until you have made and checked the "
     "required fix."
 )
+SUBMISSION_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+
+
+def normalize_submission_marker(response, payload):
+    """Opt-in mini-swe protocol adapter; never interpret arbitrary shell text."""
+    choices = response.get("choices") or []
+    if len(choices) != 1 or payload.get("tool_choice") == "none":
+        return None
+    bash_available = any(
+        tool.get("type") == "function"
+        and tool.get("function", {}).get("name") == "bash"
+        and tool.get("function", {})
+        .get("parameters", {})
+        .get("properties", {})
+        .get("command", {})
+        .get("type")
+        == "string"
+        for tool in payload.get("tools") or []
+    )
+    choice = choices[0]
+    message = choice.get("message") or {}
+    content = message.get("content")
+    if (
+        not bash_available
+        or choice.get("finish_reason") != "stop"
+        or message.get("role") != "assistant"
+        or message.get("refusal")
+        or message.get("tool_calls")
+        or message.get("function_call")
+        or not isinstance(content, str)
+    ):
+        return None
+    lines = content.rstrip().splitlines()
+    if (
+        not lines
+        or lines[-1] != SUBMISSION_COMMAND
+        or sum(line.lstrip().startswith("```") for line in lines) % 2
+        or sum(line.lstrip().startswith("~~~") for line in lines) % 2
+    ):
+        return None
+    normalized = copy.deepcopy(response)
+    normalized["choices"][0]["finish_reason"] = "tool_calls"
+    normalized["choices"][0]["message"]["tool_calls"] = [
+        {
+            "id": "call_submission_" + uuid.uuid4().hex,
+            "type": "function",
+            "function": {
+                "name": "bash",
+                "arguments": json.dumps({"command": SUBMISSION_COMMAND}),
+            },
+        }
+    ]
+    return normalized
 
 
 def response_text_stats(message):
@@ -147,11 +201,13 @@ class RequestTelemetryProxy(AbstractContextManager):
         output: Path,
         timeout: float,
         repetition_feedback_after: int = 0,
+        normalize_submission: bool = False,
     ):
         self.upstream = upstream.rstrip("/")
         self.output = output
         self.timeout = timeout
         self.repetition_feedback_after = repetition_feedback_after
+        self.normalize_submission = normalize_submission
         self.lock = threading.Lock()
         self.previous_response_times = {}
         self.server = None
@@ -277,6 +333,24 @@ class RequestTelemetryProxy(AbstractContextManager):
                             "response_sha256": hashlib.sha256(result).hexdigest(),
                         }
                     )
+                    normalized = (
+                        normalize_submission_marker(parsed, payload)
+                        if owner.normalize_submission and status == 200
+                        else None
+                    )
+                    if normalized is not None:
+                        result = json.dumps(normalized).encode()
+                        owner.record(
+                            {
+                                **common,
+                                "event": "submission_marker_normalized",
+                                "unix_s": time.time(),
+                                "policy": "explicit_final_plaintext_sentinel_to_fixed_bash_call",
+                                "forwarded_response_sha256": hashlib.sha256(
+                                    result
+                                ).hexdigest(),
+                            }
+                        )
                     self.send_response(status)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(result)))

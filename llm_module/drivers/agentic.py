@@ -289,6 +289,7 @@ def build_harbor_config(
         llm_timeout_sec=cfg.llm_timeout_sec,
         request_telemetry=cfg.request_telemetry,
         repetition_feedback_after=cfg.repetition_feedback_after,
+        normalize_submission_marker=cfg.normalize_submission_marker,
         per_task_overhead_sec=cfg.per_task_overhead_sec,
         startup_grace_sec=cfg.startup_grace_sec,
         stall_grace_sec=cfg.stall_grace_sec,
