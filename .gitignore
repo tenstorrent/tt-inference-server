@@ -64,6 +64,7 @@ scripts/examples/example_data
 !requirements*.txt
 !requirements/*.txt
 !**/uv-overrides.txt
+!**/uv-overrides-*.txt
 !**/tsan_suppressions.txt
 !workflows/model_performance_reference.json
 !reference_config/benchmarking/benchmark_targets/*.json

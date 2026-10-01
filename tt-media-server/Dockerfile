@@ -177,11 +177,23 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
 
-# Install tt-vllm-plugin
+# Install tt-vllm-plugin.
+#
+# Resolve against the PyTorch CPU index as well as PyPI. The plugin pins
+# torch>=2.7.1,<2.8 and vllm==0.10.1.1; from PyPI alone that resolves to the CUDA
+# build of torch 2.7.1, which undoes fix_dependencies.sh and pulls fifteen
+# nvidia-*-cu12 packages (~3GB) into an image for Tenstorrent hardware. With the
+# CPU index in the mix the same pins resolve to torch 2.7.1+cpu. The overrides
+# file drops cupy-cuda12x (via ray[cgraph]) and triton, which are CUDA-only too.
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+COPY "tt-media-server/uv-overrides-cpu.txt" "${TT_METAL_HOME}/uv-overrides-cpu.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+    && uv pip install . \
+        --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match \
+        --overrides ${TT_METAL_HOME}/uv-overrides-cpu.txt \
+    && python -c 'import torch, vllm; assert not torch.backends.cuda.is_built(), torch.__version__; print(torch.__version__, vllm.__version__)' \
+    && ! uv pip list 2>/dev/null | grep -iE '^(nvidia-|cupy|triton)'"
 
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10
