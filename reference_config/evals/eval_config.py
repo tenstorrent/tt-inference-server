@@ -8,6 +8,7 @@ import math
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -6145,13 +6146,16 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
-# Focused experiment only: this config runs two serial 20-minute probes, not
+# Focused experiment only: this config runs one 20-minute policy probe, not
 # the five-task release recipe. The final validation restores the full subset.
 _gemma_probe = _eval_config_map["google/gemma-4-26B-A4B-it"]
 _gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_verified")
 _gemma_guard_kwargs = deepcopy(_gemma_swe.agentic_eval_config.agent_kwargs)
 # Explicit per-request seeding for this bounded diagnostic, not a release default.
 _gemma_guard_kwargs["config"]["model"]["model_kwargs"]["seed"] = 9472
+_gemma_guard_kwargs["config"]["agent"] = {
+    "system_template": Path(__file__).with_name("gemma4_focused_completion.txt").read_text()
+}
 _gemma_guard_kwargs["config"]["model"]["model_kwargs"]["extra_body"]["repetition_detection"] = {
     "min_pattern_size": 16,
     "max_pattern_size": 1024,
@@ -6171,7 +6175,6 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
                 task_names_map={
                     EvalLimitMode.CI_NIGHTLY: [
                         "sympy__sympy-13551",
-                        "scikit-learn__scikit-learn-14629",
                     ],
                 },
             ),
