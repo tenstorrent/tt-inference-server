@@ -1,12 +1,26 @@
 diff --git a/src/harbor/agents/terminus_2/terminus_2.py b/src/harbor/agents/terminus_2/terminus_2.py
-index 4dce5528..d62776b3 100644
+index 4dce5528..3b6430ea 100644
 --- a/src/harbor/agents/terminus_2/terminus_2.py
 +++ b/src/harbor/agents/terminus_2/terminus_2.py
-@@ -1122,12 +1122,17 @@ so ask everything you need to know."""
+@@ -56,6 +56,12 @@ from harbor.models.trial.paths import EnvironmentPaths
+ from harbor.utils.trajectory_utils import format_trajectory_json
+ 
+ 
++# A malformed response can keep filling even the compact recovery budget. Keep
++# enough attempts for transient high-temperature verbosity while preventing one
++# logical agent turn from recursively consuming the entire task timeout.
++_MAX_COMPACT_LENGTH_RETRIES = 8
++
++
+ @dataclass
+ class Command:
+     keystrokes: str
+@@ -1122,12 +1128,18 @@ so ask everything you need to know."""
          prompt: str,
          original_instruction: str = "",
          session: TmuxSession | None = None,
 +        compact_retry: bool = False,
++        compact_retry_attempt: int = 0,
      ) -> LLMResponse:
          try:
              start_time = time.time()
@@ -21,7 +35,7 @@ index 4dce5528..d62776b3 100644
              )
              end_time = time.time()
              request_time_ms = (end_time - start_time) * 1000
-@@ -1215,6 +1220,11 @@ so ask everything you need to know."""
+@@ -1215,6 +1227,11 @@ so ask everything you need to know."""
                  e, "truncated_response", "[TRUNCATED RESPONSE NOT AVAILABLE]"
              )
  
@@ -33,7 +47,7 @@ index 4dce5528..d62776b3 100644
              # Try to salvage a valid response from the truncated output
              # Only available for XML parser
              salvaged_response = None
-@@ -1231,13 +1241,25 @@ so ask everything you need to know."""
+@@ -1231,13 +1248,25 @@ so ask everything you need to know."""
                      "Using truncated version."
                  )
  
@@ -60,7 +74,7 @@ index 4dce5528..d62776b3 100644
                  if parse_result.warning:
                      warnings_text = (
                          f"\n\nParser warnings from your truncated response:\n"
-@@ -1256,15 +1278,15 @@ so ask everything you need to know."""
+@@ -1256,22 +1285,36 @@ so ask everything you need to know."""
              error_msg = (
                  "ERROR!! NONE of the actions you just requested were performed "
                  f"because you exceeded {limit_str}. "
@@ -79,12 +93,25 @@ index 4dce5528..d62776b3 100644
 +            chat.record_response(prompt, truncated_llm_response)
              chat.reset_response_chain()
  
++            if (
++                compact_retry
++                and compact_retry_attempt >= _MAX_COMPACT_LENGTH_RETRIES
++            ):
++                self.logger.warning(
++                    "Compact output-length recovery exhausted after %d "
++                    "attempts; returning the final truncated response so the "
++                    "agent loop can make progress.",
++                    compact_retry_attempt,
++                )
++                return truncated_llm_response
++
              return await self._query_llm(
-@@ -1272,6 +1294,7 @@ so ask everything you need to know."""
+                 chat=chat,
                  prompt=error_msg,
                  original_instruction=original_instruction,
                  session=session,
 +                compact_retry=True,
++                compact_retry_attempt=compact_retry_attempt + 1,
              )
  
          except Exception as e:
