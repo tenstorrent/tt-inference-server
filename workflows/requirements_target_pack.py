@@ -39,7 +39,6 @@ from workflow_module.requirements_schema import (
     Scenario,
     Slo,
     input_throughput_tps,
-    requires_input_throughput,
     stated_target,
 )
 from workflow_module.target_pack import TargetPack
@@ -245,8 +244,6 @@ class RequirementsTargetPack(TargetPack):
     def __init__(self, doc: RequirementsDoc, delegate: Any) -> None:
         self._doc = doc
         self._delegate = delegate
-        # Before 3.1.0 input throughput is no requirement: grade it only if stated.
-        self._input_throughput_required = requires_input_throughput(doc.schema_version)
 
     # --- eval configs ---
     def eval_config(self, hf_model_repo: str) -> Optional[Any]:
@@ -771,7 +768,7 @@ class RequirementsTargetPack(TargetPack):
             # exactly this (ISL, OSL, concurrency). A soft column is reported
             # but never blocks; a blank one is no target at all.
             for key, attr in _REFERENCE_KEY_TO_ATTR.items():
-                if key == _INPUT_THROUGHPUT_KEY and self._input_throughput_required:
+                if key == _INPUT_THROUGHPUT_KEY:
                     value = input_throughput_tps(point.reference or {}, isl=point.isl)
                 else:
                     value = stated_target(point.reference or {}, key)
@@ -880,10 +877,9 @@ class RequirementsTargetPack(TargetPack):
                 if point.concurrency <= 0:
                     continue
                 expected = {**point.reference, **soft}
-                if self._input_throughput_required:
-                    derived = input_throughput_tps(point.reference)
-                    if derived is not None:
-                        expected[_INPUT_THROUGHPUT_KEY] = derived
+                derived = input_throughput_tps(point.reference)
+                if derived is not None:
+                    expected[_INPUT_THROUGHPUT_KEY] = derived
                 points.setdefault(point.concurrency, expected)
         return [points[c] for c in sorted(points)]
 
