@@ -204,17 +204,18 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | mochi-1-preview | galaxy, t3k |
 | Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
 | Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
-| Qwen-Image-Edit | galaxy |
+| Qwen-Image-Edit | galaxy, bh-galaxy |
 
 For example, to run flux.1-dev on t3k
 1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
 2. Set device special env variable e.g ```export DEVICE=t3k```.
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
-### Qwen-Image-Edit (WH Galaxy, experimental)
+### Qwen-Image-Edit (WH or BH Galaxy, experimental)
 
 Instruction-based image editing: an input image plus a prompt. One edit runs on all 32 chips of a
-Wormhole Galaxy (TP=8 x SP=4). The VL image+text encode, scheduler and true-CFG run on host; the
+Galaxy (TP=8 x SP=4): validated upstream on Wormhole (`DEVICE=galaxy`); Blackhole (`DEVICE=bh-galaxy`)
+uses the same layout and is not device-validated yet. The VL image+text encode, scheduler and true-CFG run on host; the
 transformer and VAE run on device. Needs a tt-metal build that ships
 `models/tt_dit/pipelines/qwenimage_edit` (branch `tvardhineni/qwen3-image-edit-wh` plus the serving fixes on
 `nkira/qwen-image-edit-trace`; not on main yet).

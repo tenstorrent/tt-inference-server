@@ -167,10 +167,13 @@ def test_constants_register_qwen_image_edit():
     cfg = ModelConfigs[(ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY)]
     assert cfg["device_mesh_shape"] == (4, 8)
     assert cfg["trace_region_size"] == 130000000
-    # Only the WH Galaxy preset exists in tt_dit.
-    assert [k for k in ModelConfigs if k[0] == ModelRunners.TT_QWEN_IMAGE_EDIT] == [
-        (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY)
-    ]
+    # 4x8 Galaxies only (WH and BH): tt_dit has no other Qwen-Image-Edit preset.
+    keys = {k for k in ModelConfigs if k[0] == ModelRunners.TT_QWEN_IMAGE_EDIT}
+    assert keys == {
+        (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY),
+        (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.BLACKHOLE_GALAXY),
+    }
+    assert all(ModelConfigs[k]["device_mesh_shape"] == (4, 8) for k in keys)
 
 
 def test_request_model_and_runner_registered():

@@ -287,8 +287,8 @@ templates:
       default_impl: true
   status: FUNCTIONAL
 
-# Qwen-Image-Edit: instruction edit (input image + prompt) on WH Galaxy, TP=8 x SP=4
-# on all 32 chips; served on /v1/images/edits only. Needs a tt-metal build with
+# Qwen-Image-Edit: instruction edit (input image + prompt) on a WH or BH Galaxy, TP=8 x SP=4
+# on all 32 chips (BH not yet device-validated); served on /v1/images/edits only. Needs a tt-metal build with
 # models/tt_dit/pipelines/qwenimage_edit (branch nkira/qwen-image-edit-trace: Tarun's
 # tvardhineni/qwen3-image-edit-wh plus the per-request prompt and trace-reuse fixes).
 # Disk/RAM are estimates, not measured: the ~58GB diffusers repo plus a
@@ -305,6 +305,10 @@ templates:
     TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
   device_model_specs:
     - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: BLACKHOLE_GALAXY
       max_concurrency: 1
       max_context: 65536  # 64 * 1024
       default_impl: true

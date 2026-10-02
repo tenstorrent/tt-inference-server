@@ -984,6 +984,15 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 130000000,
     },
+    # BH Galaxy: same 4x8 TP=8 x SP=4 layout (the base qwenimage BH 4x8 preset matches WH).
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+        "trace_region_size": 130000000,
+    },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),
         "is_galaxy": False,
