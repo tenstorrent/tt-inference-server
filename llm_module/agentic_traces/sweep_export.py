@@ -169,6 +169,8 @@ UNGRADED_POINT_FIELDS: Tuple[str, ...] = (
 # grades benchmark targets (its comparators are gte/lte).
 # Key on an expected point naming its soft (advisory) fields, as the document spells it.
 SOFT_METRICS_KEY = "softMetrics"
+# Key on an expected point naming the delivery stage it belongs to.
+STAGE_KEY = "stage"
 
 _LOWER_IS_BETTER_FIELDS = frozenset(
     field for field in POINT_FIELDS if field.startswith(("ttft", "tpot", "e2el"))
@@ -354,6 +356,7 @@ def write_agentic_sweep(
 __all__ = [
     "POINT_FIELDS",
     "SOFT_METRICS_KEY",
+    "STAGE_KEY",
     "UNGRADED_POINT_FIELDS",
     "MetricVerdict",
     "PointVerdict",
