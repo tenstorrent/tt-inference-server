@@ -5238,10 +5238,12 @@ _eval_config_list = [
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
-                        # Successful controls finish within 76 turns. Bound
-                        # terminal-recovery loops without constraining any
-                        # observed successful trajectory.
-                        "max_turns": 76,
+                        # CompCert has completed at turn 76, but a controlled
+                        # shard also reached turn 76 while still actively
+                        # repairing and failed only because the loop stopped.
+                        # Keep headroom; use no-progress detection for loops
+                        # rather than truncating legitimate long trajectories.
+                        "max_turns": 100,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
                             "max_output_tokens": 16 * 1024,
