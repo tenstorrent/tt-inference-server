@@ -1475,7 +1475,10 @@ templates:
         # reliability_mode only, no router config, so run 36682118819 set this and still
         # logged "Fabric packet size 4352 B is suboptimal".
         fabric_max_packet_payload_size_bytes: 6144
-        trace_region_size: 1073741824  # 1 GiB, same as the WH demo (fits through traced_128k)
+        # Same as tests/run_ci.sh in tt-metal. A 1 GiB trace region with prefill tracing left too
+        # little DRAM for the batch-8 startup prefill warmup, which then failed to allocate.
+        trace_mode: decode_only
+        trace_region_size: 134217728  # 128 MiB
         l1_small_size: 24576
         # qwen38_27b_t3k samples on device for prefill too; host sampling is opt-in only.
         sample_on_device_mode: all
