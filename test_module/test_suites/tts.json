@@ -1,7 +1,43 @@
 {
-    "_description": "Test suites for TTS model category (SpeechT5)",
+    "_description": "Test suites for TTS model category (SpeechT5, Qwen3-TTS)",
     "_category": "TTS",
     "test_matrices": [
+        {
+            "models": [
+                "qwen3_tts"
+            ],
+            "devices": [
+                "n150",
+                "n300"
+            ],
+            "test_cases": [
+                {
+                    "template": "SpeechT5TTSTest",
+                    "enabled": true,
+                    "description": "SpeechT5 TTS functionality test"
+                },
+                {
+                    "template": "TTSLoadTest",
+                    "enabled": true,
+                    "description": "TTS load test",
+                    "targets": {
+                        "tts_generation_time": 10,
+                        "sample_count": 10,
+                        "compare_audio": true
+                    }
+                },
+                {
+                    "template": "TTSParamTest",
+                    "enabled": true,
+                    "description": "TTS parameter variations test"
+                },
+                {
+                    "template": "TTSIntegrationTest",
+                    "enabled": true,
+                    "description": "TTS error handling and validation test"
+                }
+            ]
+        },
         {
             "models": [
                 "speecht5"

@@ -38,6 +38,8 @@ class TextToSpeechRequest(BaseRequest):
         None  # Base64-encoded or raw bytes of speaker embedding
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
+    voice_clone_audio: Optional[str] = None  # Base64-encoded WAV/MP3/FLAC
+    voice_clone_text: Optional[str] = None  # transcript of clone clip
 
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
