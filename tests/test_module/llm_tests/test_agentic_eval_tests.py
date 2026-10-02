@@ -400,6 +400,12 @@ class TestStandardEvalModeReference:
 
 
 class TestAgenticDriverConfigMapping:
+    def test_repeated_tool_advisory_is_explicit_and_mapped(self):
+        task = _harbor_task()
+        assert not build_harbor_config(task, _server(), _driver_context()).repeated_tool_feedback
+        task.agentic_eval_config.repeated_tool_feedback = True
+        assert build_harbor_config(task, _server(), _driver_context()).repeated_tool_feedback
+
     def test_harbor_config_uses_limit_mode_task_names_and_n_tasks(self):
         task = _harbor_task()
         task.agentic_eval_config.task_names_map = {

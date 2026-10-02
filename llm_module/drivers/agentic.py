@@ -290,6 +290,7 @@ def build_harbor_config(
         request_telemetry=cfg.request_telemetry,
         repetition_feedback_after=cfg.repetition_feedback_after,
         normalize_submission_marker=cfg.normalize_submission_marker,
+        repeated_tool_feedback=getattr(cfg, "repeated_tool_feedback", False),
         per_task_overhead_sec=cfg.per_task_overhead_sec,
         startup_grace_sec=cfg.startup_grace_sec,
         stall_grace_sec=cfg.stall_grace_sec,

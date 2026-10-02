@@ -299,6 +299,7 @@ class HarborEvalConfig:
     request_telemetry: bool = False
     repetition_feedback_after: int = 0
     normalize_submission_marker: bool = False
+    repeated_tool_feedback: bool = False
     # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
     # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
