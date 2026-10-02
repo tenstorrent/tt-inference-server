@@ -14,6 +14,7 @@ from llm_module.agentic.request_telemetry import (
     REPEATED_TOOL_FEEDBACK,
     REPETITION_FEEDBACK,
     SUBMISSION_COMMAND,
+    SUBMISSION_REVIEW_COMMAND,
     RequestTelemetryProxy,
     limit_reasoning_history,
     normalize_submission_marker,
@@ -22,6 +23,7 @@ from llm_module.agentic.request_telemetry import (
     repeated_failure_count,
     repeated_tool_count,
     response_text_stats,
+    review_submission,
 )
 
 
@@ -230,6 +232,86 @@ def test_submission_normalization_never_reads_reasoning_for_marker():
         "reasoning": SUBMISSION_COMMAND,
     }
     assert normalize_submission_marker(response, payload) is None
+
+
+def test_submission_review_only_replaces_exact_single_native_action():
+    response, payload = submission_example()
+    assert review_submission(response) is None
+    native = normalize_submission_marker(response, payload)
+    saved = copy.deepcopy(native)
+    reviewed = review_submission(native)
+    assert native == saved
+    function = reviewed["choices"][0]["message"]["tool_calls"][0]["function"]
+    assert json.loads(function["arguments"])["command"] == SUBMISSION_REVIEW_COMMAND
+    assert reviewed["usage"] == native["usage"]
+    for command in (None, "git status", SUBMISSION_COMMAND + "; git status"):
+        candidate = copy.deepcopy(native)
+        candidate["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = (
+            json.dumps({"command": command})
+        )
+        assert review_submission(candidate) is None
+    native["choices"][0]["message"]["tool_calls"] *= 2
+    assert review_submission(native) is None
+
+
+def test_submission_review_is_once_per_session_default_off_and_audited(tmp_path):
+    response, payload = submission_example()
+    native = normalize_submission_marker(response, payload)
+    body = json.dumps(native).encode()
+
+    class Upstream(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(body)
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+    thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+    thread.start()
+    try:
+        for enabled in (False, True):
+            path = tmp_path / f"review-{enabled}.jsonl"
+            with RequestTelemetryProxy(
+                f"http://127.0.0.1:{upstream.server_port}/v1",
+                path,
+                5,
+                submission_review_once=enabled,
+            ) as endpoint:
+                for session, first in (
+                    ("a", True),
+                    ("a", False),
+                    ("b", True),
+                    (None, False),
+                ):
+                    with urlopen(
+                        Request(
+                            endpoint + "/chat/completions",
+                            json.dumps(payload).encode(),
+                            {"X-Session-ID": session} if session else {},
+                        )
+                    ) as received:
+                        forwarded = received.read()
+                    if enabled and first:
+                        command = json.loads(
+                            json.loads(forwarded)["choices"][0]["message"][
+                                "tool_calls"
+                            ][0]["function"]["arguments"]
+                        )["command"]
+                        assert command == SUBMISSION_REVIEW_COMMAND
+                    else:
+                        assert forwarded == body
+            events = [json.loads(line) for line in path.read_text().splitlines()]
+            assert sum(
+                event["event"] == "submission_review_requested" for event in events
+            ) == (2 if enabled else 0)
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+        thread.join()
 
 
 def test_submission_normalization_is_audited_and_default_off(tmp_path):

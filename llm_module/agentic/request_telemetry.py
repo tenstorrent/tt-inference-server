@@ -27,6 +27,15 @@ REPETITION_FEEDBACK = (
     "required fix."
 )
 SUBMISSION_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+SUBMISSION_REVIEW_COMMAND = (
+    "git diff --check; review_status=$?; git diff --stat; git diff --; "
+    "printf '%s\\n' 'Submission paused once for a generic validation checkpoint. "
+    "Review the actual tracked diff above. If it is empty, no tracked implementation "
+    "change has been made. Confirm the original issue is fixed with executable "
+    "checks, run relevant existing repository tests, and investigate failures or "
+    "unintended changes before submitting again. This checkpoint provides no "
+    'task-specific solution and does not claim tests passed.\'; exit "$review_status"'
+)
 REPEATED_TOOL_FEEDBACK = (
     "Loop check: the most recent shell command and its exact result have appeared "
     "at least twice in the recent tool history. Reuse that evidence rather "
@@ -142,6 +151,34 @@ def response_text_stats(message):
         "max_identical_line_count": max(counts.values(), default=0),
         "repeated_line_char_fraction": repeated_chars / len(text) if text else 0.0,
     }
+
+
+def review_submission(response):
+    """Replace one exact submission action with an audited read-only review action."""
+    choices = response.get("choices") or []
+    if len(choices) != 1 or choices[0].get("finish_reason") != "tool_calls":
+        return None
+    message = choices[0].get("message") or {}
+    calls = message.get("tool_calls") or []
+    if message.get("role") != "assistant" or message.get("refusal") or len(calls) != 1:
+        return None
+    function = calls[0].get("function") or {}
+    try:
+        args = json.loads(function.get("arguments", ""))
+    except (TypeError, ValueError):
+        return None
+    if (
+        function.get("name") != "bash"
+        or not isinstance(args, dict)
+        or not isinstance(args.get("command"), str)
+        or args["command"].strip() != SUBMISSION_COMMAND
+    ):
+        return None
+    reviewed = copy.deepcopy(response)
+    reviewed["choices"][0]["message"]["tool_calls"][0]["function"]["arguments"] = (
+        json.dumps({**args, "command": SUBMISSION_REVIEW_COMMAND})
+    )
+    return reviewed
 
 
 def recent_tool_summary(messages):
@@ -299,6 +336,7 @@ class RequestTelemetryProxy(AbstractContextManager):
         collect_server_metrics: bool = False,
         repeated_tool_feedback: bool = False,
         reasoning_history_limit: int | None = None,
+        submission_review_once: bool = False,
     ):
         self.upstream = upstream.rstrip("/")
         self.output = output
@@ -312,6 +350,8 @@ class RequestTelemetryProxy(AbstractContextManager):
         ):
             raise ValueError("Reasoning history limit must be a nonnegative integer")
         self.reasoning_history_limit = reasoning_history_limit
+        self.submission_review_once = submission_review_once
+        self.reviewed_sessions = set()
         self.lock = threading.Lock()
         self.previous_response_times = {}
         self.server = None
@@ -506,6 +546,31 @@ class RequestTelemetryProxy(AbstractContextManager):
                                 "event": "submission_marker_normalized",
                                 "unix_s": time.time(),
                                 "policy": "explicit_final_plaintext_sentinel_to_fixed_bash_call",
+                                "forwarded_response_sha256": hashlib.sha256(
+                                    result
+                                ).hexdigest(),
+                            }
+                        )
+                    with owner.lock:
+                        reviewed = (
+                            review_submission(normalized or parsed)
+                            if owner.submission_review_once
+                            and status == 200
+                            and common["session"]
+                            and common["session"] not in owner.reviewed_sessions
+                            else None
+                        )
+                        if reviewed is not None:
+                            owner.reviewed_sessions.add(common["session"])
+                    if reviewed is not None:
+                        result = json.dumps(reviewed).encode()
+                        owner.record(
+                            {
+                                **common,
+                                "event": "submission_review_requested",
+                                "unix_s": time.time(),
+                                "policy": "one_exact_submission_to_read_only_diff_review_per_session",
+                                "command": SUBMISSION_REVIEW_COMMAND,
                                 "forwarded_response_sha256": hashlib.sha256(
                                     result
                                 ).hexdigest(),
