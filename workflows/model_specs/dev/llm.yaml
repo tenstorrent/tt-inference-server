@@ -2415,6 +2415,8 @@ templates:
         MESH_DEVICE: "P300x2"
         OMP_NUM_THREADS: "8"
         GEMMA4_AUTOPORT_ALLOW_HOST_SAMPLING: "1"
+        # Reuse compiled kernels across container lifetimes on the persistent model volume.
+        TT_METAL_CACHE: "/home/container_app_user/cache_root/gemma4_metal_kernel_cache"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1000000000

@@ -645,6 +645,9 @@ def test_gemma4_autoport_launch_preserves_full_context_tsu_contract(
     device = spec.device_model_spec
     assert spec.model_name == "gemma-4-26B-A4B-it"
     assert spec.impl.impl_name == "gemma4-autoport"
+    assert spec.env_vars["TT_METAL_CACHE"] == (
+        "/home/container_app_user/cache_root/gemma4_metal_kernel_cache"
+    )
     assert not device.default_impl
     assert device.max_context == 262144
     assert device.max_concurrency == 32
