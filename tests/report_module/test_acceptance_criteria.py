@@ -608,6 +608,24 @@ def test_agentic_targets_fail_with_per_point_blockers():
     assert "tpotMeanMs" in blockers["agentic_traces_targets.c1"]
 
 
+def test_agentic_soft_misses_are_not_named_as_offenders():
+    soft_miss = {**_verdict("ttftMeanMs", False), "soft": True}
+    block = _targets_block(
+        points=[
+            {
+                "concurrency": 1,
+                "met": 0,
+                "graded": 1,
+                "passed": False,
+                "verdicts": [soft_miss, _verdict("tpotMeanMs", False)],
+            }
+        ]
+    )
+    _, blockers, _ = acceptance_criteria_check(_schema(block))
+    assert "tpotMeanMs" in blockers["agentic_traces_targets.c1"]
+    assert "ttftMeanMs" not in blockers["agentic_traces_targets.c1"]
+
+
 def test_agentic_targets_count_is_per_measured_point():
     """Three measured points all missing targets read as 0/3, not 0/1 blocks."""
     block = _targets_block(

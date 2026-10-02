@@ -688,6 +688,11 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
                 entry[header] = _target_cell(verdict) if verdict is not None else "—"
             table_rows.append(entry)
         parts.append(build_markdown_table(table_rows))
+        if any(v.get("soft") for point in points for v in point.get("verdicts") or []):
+            parts.append(
+                "Targets marked (soft) are advisory: they are reported but do "
+                "not fail a point, and are not counted in its targets met."
+            )
 
     if missing:
         listed = ", ".join(f"c{concurrency}" for concurrency in missing)
@@ -707,7 +712,8 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
 
 def _target_field_label(verdict: Mapping[str, Any]) -> str:
     direction = "↓" if verdict.get("lower_is_better") else "↑"
-    return f"`{verdict.get('field')}` {direction}"
+    soft = " (soft)" if verdict.get("soft") else ""
+    return f"`{verdict.get('field')}` {direction}{soft}"
 
 
 def _target_cell(verdict: Mapping[str, Any]) -> str:
