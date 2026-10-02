@@ -497,7 +497,7 @@ class TestDefinitionsPlacement:
 class TestRequirementsTargets:
     """The targets block renders its precomputed verdicts.
 
-    Grading happens in ``build_targets_block`` at parse time; this renderer
+    Grading happens in ``build_targets_blocks`` at parse time; this renderer
     only lays out what the block carries, so the report and the acceptance
     criteria can never disagree about the verdicts.
     """
@@ -628,6 +628,23 @@ class TestRequirementsTargets:
 
         assert "**c4**: no targets declared" in out
         assert "c4 (no targets)" in out
+
+    def test_a_staged_block_names_its_stage(self):
+        block = self._block()
+        block.targets["stage"] = {
+            "key": "performance",
+            "name": "Performance",
+            "position": 2,
+        }
+
+        out = render_agentic_traces_targets(block, METADATA)
+
+        assert "#### Requirements Targets — Performance" in out
+
+    def test_an_unstaged_block_keeps_the_plain_heading(self):
+        out = render_agentic_traces_targets(self._block(), METADATA)
+
+        assert "#### Requirements Targets\n" in out
 
     def test_soft_targets_are_labelled_advisory(self):
         point = {

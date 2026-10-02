@@ -31,6 +31,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from report_module.acceptance_criteria import STAGE_TARGET_KEY
 from report_module.markdown_table import build_markdown_table
 from report_module.renderers import _extract_records, _resolve_model_device, register
 from report_module.schema import Block
@@ -616,7 +617,7 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
     """Render the sweep's grading against the requirements document's targets.
 
     The verdicts are precomputed into the block by
-    :func:`llm_module.parsers.aiperf_agentic_traces.build_targets_block`, so
+    :func:`llm_module.parsers.aiperf_agentic_traces.build_targets_blocks`, so
     this section and the acceptance criteria read the same grading rather
     than each deriving their own. Grading is exact (tolerance 0), matching
     how the document grades benchmark targets: latencies gate at or below
@@ -635,8 +636,14 @@ def render_agentic_traces_targets(block: Block, metadata: Mapping[str, Any]) -> 
     if not points and not missing:
         return ""
 
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    stage = targets.get(STAGE_TARGET_KEY)
+    stage = stage if isinstance(stage, Mapping) else None
+    heading = "#### Requirements Targets"
+    if stage:
+        heading += f" — {stage.get('name') or stage.get('key')}"
     parts = [
-        "#### Requirements Targets\n",
+        f"{heading}\n",
         "Measured against the expected `agenticSweep` points from the "
         "requirements document, exact (tolerance 0): latencies pass at or "
         "below the target (↓), rates at or above (↑). Cells read "

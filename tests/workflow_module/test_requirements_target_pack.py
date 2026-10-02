@@ -24,6 +24,7 @@ from workflows.requirements_target_pack import (
     unknown_eval_names,
 )
 from llm_module.goodput import GoodputSlo
+from report_module.schema import Block
 from workflows.target_pack_provider import TenstorrentTargetPack
 from workflows.workflow_types import DeviceTypes
 
@@ -1176,6 +1177,92 @@ def test_agentic_input_throughput_is_derived_as_total_minus_output():
     )._agentic_expected_sweep()
 
     assert point["inputThroughputTps"] == 900.0
+
+
+def _two_stage_pack():
+    """Accuracy stage holds the eval; performance stage the sweep and agentic."""
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    def stage(key, **fields):
+        return {
+            "key": key,
+            "name": key.title(),
+            "progress": {"status": "not_started"},
+            **fields,
+        }
+
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "id": "d",
+            "model": {"name": "a/b"},
+            "stages": [
+                stage("accuracy", accuracyEvals=[{"name": "GPQA-Diamond"}]),
+                stage(
+                    "performance",
+                    scenarios=[
+                        {
+                            "id": "chat",
+                            "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}],
+                        },
+                        {
+                            "id": "agent",
+                            "kind": "agentic",
+                            "agenticSweep": [{"concurrency": 4}],
+                        },
+                    ],
+                ),
+            ],
+        }
+    )
+    return RequirementsTargetPack(doc, TenstorrentTargetPack()), doc
+
+
+_ACCURACY = {"key": "accuracy", "name": "Accuracy", "position": 1}
+_PERFORMANCE = {"key": "performance", "name": "Performance", "position": 2}
+
+
+def test_stage_of_maps_an_eval_block_by_the_task_it_runs():
+    pack, doc = _two_stage_pack()
+    task = pack.eval_config(doc.model.name).tasks[0].task_name
+
+    assert pack.stage_of(Block(kind="evals", data={"task_name": task})) == _ACCURACY
+
+
+def test_stage_of_maps_a_benchmark_block_by_its_shape():
+    pack, _ = _two_stage_pack()
+    block = Block(
+        kind="benchmarks",
+        data={
+            "input_sequence_length": 128,
+            "output_sequence_length": 128,
+            "concurrency": 1,
+        },
+    )
+
+    assert pack.stage_of(block) == _PERFORMANCE
+    block.data["concurrency"] = 8
+    assert pack.stage_of(block) is None
+
+
+def test_a_single_stage_document_tags_nothing():
+    pack, _ = _sweep_pack([{"isl": 128, "osl": 128, "concurrency": 1}])
+    block = Block(
+        kind="benchmarks",
+        data={
+            "input_sequence_length": 128,
+            "output_sequence_length": 128,
+            "concurrency": 1,
+        },
+    )
+
+    assert pack.stage_of(block) is None
+
+
+def test_multi_stage_agentic_points_carry_their_stage():
+    pack, _ = _two_stage_pack()
+
+    assert [p["stage"] for p in pack._agentic_expected_sweep()] == [_PERFORMANCE]
 
 
 def test_agentic_expected_sweep_dedupes_first_workload_wins():

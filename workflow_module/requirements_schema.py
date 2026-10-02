@@ -53,8 +53,18 @@ PRIORITY_NICE_TO_HAVE = "nice_to_have"
 _VALID_PRIORITIES = frozenset({PRIORITY_MUST, PRIORITY_SHOULD, PRIORITY_NICE_TO_HAVE})
 
 
+# The delivery stage a scenario or eval belongs to, spelled as the validation
+# plan's items spell it; set on each requirement as its stage is read.
+STAGE_FIELD = "stageKey"
+
+
 class RequirementsError(ValueError):
     """Raised when a requirements document cannot be parsed or is unsupported."""
+
+
+def _stage_of(data: Mapping[str, Any]) -> Optional[str]:
+    stage = data.get(STAGE_FIELD)
+    return str(stage) if stage else None
 
 
 def _normalize_priority(value: Any, *, where: str) -> str:
@@ -174,6 +184,7 @@ class AccuracyEval:
     priority: str = PRIORITY_MUST
     unit: str = "%"
     gen_kwargs: Optional[EvalGenKwargs] = None
+    stage: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AccuracyEval":
@@ -198,6 +209,7 @@ class AccuracyEval:
             ),
             unit=str(data.get("unit", "%")),
             gen_kwargs=gen_kwargs if gen_kwargs and gen_kwargs.stated() else None,
+            stage=_stage_of(data),
         )
 
 
@@ -340,6 +352,7 @@ class Scenario:
     slo: Optional[Slo] = None
     sweep: List[SweepPoint] = field(default_factory=list)
     soft_metrics: frozenset = frozenset()
+    stage: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "Scenario":
@@ -358,6 +371,7 @@ class Scenario:
             slo=Slo.from_dict(data.get("slo")),
             sweep=[SweepPoint.from_dict(p) for p in data.get("sweep", [])],
             soft_metrics=_soft_metrics(data),
+            stage=_stage_of(data),
         )
 
 
@@ -406,6 +420,7 @@ class AgenticWorkload:
     max_concurrency: Optional[int] = None
     traces: List[Mapping[str, Any]] = field(default_factory=list)
     soft_metrics: frozenset = frozenset()
+    stage: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AgenticWorkload":
@@ -424,6 +439,7 @@ class AgenticWorkload:
             max_concurrency=_as_optional_int(data.get("maxConcurrency")),
             traces=[dict(t) for t in traces if isinstance(t, Mapping)],
             soft_metrics=_soft_metrics(data),
+            stage=_stage_of(data),
         )
 
 
@@ -474,39 +490,74 @@ def _scenario_kind(entry: Mapping[str, Any]) -> str:
     return str(entry.get("kind", DEFAULT_SCENARIO_KIND))
 
 
-def _lift_single_stage(
-    data: Mapping[str, Any],
-) -> "tuple[Mapping[str, Any], Mapping[str, Any]]":
-    """The document's one delivery stage, with its requirements lifted to the root.
+@dataclass(frozen=True)
+class Stage:
+    """A delivery stage: the unit a report grades on its own."""
 
-    Returns the document and the stage's deployment override (``{}`` if none).
-    A canonical stage carries its own ``scenarios``/``accuracyEvals``; a
-    validation-plan stage carries none (its points are in ``items``) and states
-    the effective deployment. One run validates one stage, so several are
-    rejected rather than merged.
+    key: str
+    name: str
+    position: int  # 1-based, in document order
+
+
+def _read_stages(
+    data: Mapping[str, Any],
+) -> "tuple[Mapping[str, Any], List[Stage], Dict[str, Mapping[str, Any]]]":
+    """Every delivery stage, with its requirements lifted to the root.
+
+    Returns the document, its stages, and each stage's deployment override by
+    key. Each lifted scenario and eval is stamped with its stage key. A
+    canonical stage carries its own ``scenarios``/``accuracyEvals``; a
+    validation-plan stage carries none (its points are in ``items``, already
+    stamped) and states the effective deployment.
     """
-    stages = data.get("stages")
+    raw_stages = data.get("stages")
     if (
-        not isinstance(stages, Sequence)
-        or isinstance(stages, (str, bytes))
-        or not stages
+        not isinstance(raw_stages, Sequence)
+        or isinstance(raw_stages, (str, bytes))
+        or not raw_stages
     ):
         raise RequirementsError("requirements: missing required 'stages'")
-    if len(stages) > 1:
-        keys = ", ".join(
-            str(s.get("key") or s.get("name")) for s in stages if isinstance(s, Mapping)
+    stages: List[Stage] = []
+    scenarios: List[Mapping[str, Any]] = []
+    evals: List[Mapping[str, Any]] = []
+    deployments: Dict[str, Mapping[str, Any]] = {}
+    for position, raw in enumerate(raw_stages, start=1):
+        if not isinstance(raw, Mapping) or not raw.get("key"):
+            raise RequirementsError(f"stages[{position - 1}]: missing required 'key'")
+        key = str(raw["key"])
+        stages.append(
+            Stage(key=key, name=str(raw.get("name") or key), position=position)
         )
+        for entry in raw.get("scenarios", []):
+            if isinstance(entry, Mapping):
+                scenarios.append({**entry, STAGE_FIELD: key})
+        for entry in raw.get("accuracyEvals", []):
+            if isinstance(entry, Mapping):
+                evals.append({**entry, STAGE_FIELD: key})
+        deployment = raw.get("deployment")
+        deployments[key] = deployment if isinstance(deployment, Mapping) else {}
+    return {**data, "scenarios": scenarios, "accuracyEvals": evals}, stages, deployments
+
+
+def _run_deployment(
+    document: Mapping[str, Any], overrides: Mapping[str, Mapping[str, Any]]
+) -> Mapping[str, Any]:
+    """The one deployment every stage runs on: the document's, each override applied.
+
+    A stage override is partial: set keys win, unset inherit. A run measures one
+    server, so stages whose effective deployments differ are rejected.
+    """
+    effective = {
+        key: {**document, **{k: v for k, v in override.items() if v is not None}}
+        for key, override in overrides.items()
+    }
+    first = next(iter(effective.values()))
+    if any(deployment != first for deployment in effective.values()):
         raise RequirementsError(
-            f"requirements: {len(stages)} delivery stages ({keys}); a run "
-            "validates a single-stage document"
+            f"requirements: stages {', '.join(effective)} target different "
+            "deployments; a run measures one deployment"
         )
-    stage = stages[0] if isinstance(stages[0], Mapping) else {}
-    lifted = dict(data)
-    for key in ("scenarios", "accuracyEvals"):
-        if key in stage:
-            lifted[key] = stage[key]
-    deployment = stage.get("deployment")
-    return lifted, deployment if isinstance(deployment, Mapping) else {}
+    return first
 
 
 def _fold_validation_plan(data: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -523,29 +574,36 @@ def _fold_validation_plan(data: Mapping[str, Any]) -> Mapping[str, Any]:
         return data
 
     sweeps: Dict[str, List[Mapping[str, Any]]] = {}
+    stage_by_scenario: Dict[str, Any] = {}
     evals: List[Mapping[str, Any]] = []
     for item in items:
         if not isinstance(item, Mapping):
             continue
         kind = item.get("type")
         targets = item.get("targets")
+        scenario_id = str(item.get("scenarioId", ""))
         if kind == "accuracy_eval":
             spec = item.get("spec")
             if isinstance(spec, Mapping):
-                evals.append(spec)
+                evals.append({**spec, STAGE_FIELD: item.get(STAGE_FIELD)})
         elif kind == "operating_point" and isinstance(targets, Mapping):
             row = dict(targets)
             if item.get("slo"):
                 row["slo"] = item["slo"]
-            sweeps.setdefault(str(item.get("scenarioId", "")), []).append(row)
+            sweeps.setdefault(scenario_id, []).append(row)
+            stage_by_scenario.setdefault(scenario_id, item.get(STAGE_FIELD))
+        elif kind == "agentic_operating_point":
+            stage_by_scenario.setdefault(scenario_id, item.get(STAGE_FIELD))
 
     scenarios: List[Mapping[str, Any]] = []
     for workload in data.get("workloads", []):
         if not isinstance(workload, Mapping):
             continue
         entry = dict(workload)
+        workload_id = str(entry.get("id", ""))
         if _scenario_kind(entry) != AGENTIC_KIND:
-            entry["sweep"] = sweeps.get(str(entry.get("id", "")), [])
+            entry["sweep"] = sweeps.get(workload_id, [])
+        entry[STAGE_FIELD] = stage_by_scenario.get(workload_id)
         scenarios.append(entry)
     return {**data, "scenarios": scenarios, "accuracyEvals": evals}
 
@@ -562,12 +620,13 @@ class RequirementsDoc:
     scenarios: List[Scenario] = field(default_factory=list)
     agentic_workloads: List[AgenticWorkload] = field(default_factory=list)
     meta: Mapping[str, Any] = field(default_factory=dict)
+    stages: List[Stage] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "RequirementsDoc":
         schema_version = str(data.get("schemaVersion", ""))
         _check_schema_version(schema_version)
-        data, stage_deployment = _lift_single_stage(data)
+        data, stages, stage_deployments = _read_stages(data)
         # A validation-plan export carries its sweeps and eval specs in a flat
         # top-level "items" list rather than on the workloads; fold them back
         # so both it and the canonical document load identically.
@@ -582,11 +641,9 @@ class RequirementsDoc:
         if not identity.get("id"):
             raise RequirementsError("requirements: missing required 'id'")
         raw_scenarios = [s for s in data.get("scenarios", []) if isinstance(s, Mapping)]
-        # A stage's deployment is a partial override: set keys win, unset inherit.
-        deployment = {
-            **(identity.get("deployment") or {}),
-            **{k: v for k, v in stage_deployment.items() if v is not None},
-        }
+        deployment = _run_deployment(
+            identity.get("deployment") or {}, stage_deployments
+        )
         return cls(
             id=str(identity["id"]),
             schema_version=schema_version,
@@ -608,6 +665,7 @@ class RequirementsDoc:
                 if _scenario_kind(s) == AGENTIC_KIND
             ],
             meta=dict(identity.get("meta", {})),
+            stages=stages,
         )
 
 
@@ -710,6 +768,8 @@ __all__ = [
     "PRIORITY_MUST",
     "PRIORITY_SHOULD",
     "RequirementsError",
+    "STAGE_FIELD",
+    "Stage",
     "input_throughput_tps",
     "stated_target",
     "AccuracyEval",

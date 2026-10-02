@@ -266,11 +266,119 @@ def test_validation_plan_takes_the_stage_deployment():
     assert [(p.isl, p.concurrency) for p in doc.scenarios[0].sweep] == [(128, 1)]
 
 
-def test_multi_stage_document_rejected():
-    with pytest.raises(RequirementsError, match="2 delivery stages"):
+def _two_stage_doc(**perf_overrides):
+    """Accuracy stage holds the evals; performance stage holds the scenarios."""
+    return {
+        **_doc(deployment={"hardware": "SC8", "maxConcurrencyPerInstance": 32}),
+        "stages": [
+            _stage(
+                key="accuracy",
+                name="Accuracy",
+                accuracyEvals=[{"name": "GPQA Diamond"}],
+            ),
+            _stage(
+                key="performance",
+                name="Performance",
+                scenarios=[
+                    {
+                        "id": "chat",
+                        "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}],
+                    },
+                    {
+                        "id": "agent",
+                        "kind": "agentic",
+                        "agenticSweep": [{"concurrency": 1}],
+                    },
+                ],
+                **perf_overrides,
+            ),
+        ],
+    }
+
+
+def test_every_stage_is_read_and_stamps_its_requirements():
+    doc = RequirementsDoc.from_dict(_two_stage_doc())
+
+    assert [(s.key, s.name, s.position) for s in doc.stages] == [
+        ("accuracy", "Accuracy", 1),
+        ("performance", "Performance", 2),
+    ]
+    assert [(e.name, e.stage) for e in doc.accuracy_evals] == [
+        ("GPQA Diamond", "accuracy")
+    ]
+    assert [(s.id, s.stage) for s in doc.scenarios] == [("chat", "performance")]
+    assert [(w.id, w.stage) for w in doc.agentic_workloads] == [
+        ("agent", "performance")
+    ]
+
+
+def test_a_single_stage_document_still_stamps_its_stage():
+    doc = RequirementsDoc.from_dict(_doc(scenarios=[{"id": "chat", "sweep": []}]))
+
+    assert [s.key for s in doc.stages] == ["stage-1"]
+    assert doc.scenarios[0].stage == "stage-1"
+
+
+def test_stages_must_share_one_deployment():
+    with pytest.raises(RequirementsError, match="accuracy, performance"):
         RequirementsDoc.from_dict(
-            {**_doc(), "stages": [_poc_stage(), _poc_stage(key="ga", name="GA")]}
+            _two_stage_doc(deployment={"maxConcurrencyPerInstance": 64})
         )
+
+
+def test_a_stage_override_equal_to_the_document_is_one_deployment():
+    doc = RequirementsDoc.from_dict(_two_stage_doc(deployment={"hardware": "SC8"}))
+
+    assert doc.deployment.hardware == "SC8"
+
+
+def test_a_validation_plan_stamps_stages_from_its_items():
+    def stage(key):
+        return {
+            "key": key,
+            "name": key.title(),
+            "deployment": {"hardware": "BH-Galaxy"},
+        }
+
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "document": {"id": "d", "model": {"name": "a/b"}, "deployment": {}},
+            "stages": [stage("accuracy"), stage("performance")],
+            "workloads": [
+                {"id": "chat", "kind": "text"},
+                {
+                    "id": "agent",
+                    "kind": "agentic",
+                    "agenticSweep": [{"concurrency": 1}],
+                },
+            ],
+            "items": [
+                {
+                    "type": "accuracy_eval",
+                    "stageKey": "accuracy",
+                    "spec": {"name": "GPQA Diamond"},
+                },
+                {
+                    "type": "operating_point",
+                    "stageKey": "performance",
+                    "scenarioId": "chat",
+                    "targets": {"isl": 128, "osl": 128, "concurrency": 1},
+                },
+                {
+                    "type": "agentic_operating_point",
+                    "stageKey": "performance",
+                    "scenarioId": "agent",
+                    "targets": {"concurrency": 1},
+                },
+            ],
+        }
+    )
+
+    assert [e.stage for e in doc.accuracy_evals] == ["accuracy"]
+    assert [s.stage for s in doc.scenarios] == ["performance"]
+    assert [w.stage for w in doc.agentic_workloads] == ["performance"]
+    assert doc.deployment.hardware == "BH-Galaxy"
 
 
 def test_nice_to_have_is_soft():
