@@ -6,6 +6,7 @@
 import copy
 import hashlib
 import json
+import math
 import re
 import threading
 import time
@@ -26,6 +27,30 @@ REPETITION_FEEDBACK = (
     "required fix."
 )
 SUBMISSION_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+SERVER_COUNTERS = frozenset(
+    {
+        "prompt_tokens_total",
+        "generation_tokens_total",
+        "request_success_total",
+        "time_to_first_token_seconds_count",
+        "time_to_first_token_seconds_sum",
+        "e2e_request_latency_seconds_count",
+        "e2e_request_latency_seconds_sum",
+    }
+)
+
+
+def parse_server_counters(text):
+    """Retain numeric aggregate counters only, never labels or metric payloads."""
+    counters = {}
+    for line in text.splitlines():
+        match = re.fullmatch(r"vllm:(\w+)(?:\{[^\n]*\})? ([\d.eE+\-]+)", line)
+        if match is None or match[1] not in SERVER_COUNTERS:
+            continue
+        value = float(match[2])
+        if math.isfinite(value) and value >= 0:
+            counters[match[1]] = counters.get(match[1], 0) + value
+    return counters
 
 
 def normalize_submission_marker(response, payload):
@@ -202,12 +227,14 @@ class RequestTelemetryProxy(AbstractContextManager):
         timeout: float,
         repetition_feedback_after: int = 0,
         normalize_submission: bool = False,
+        collect_server_metrics: bool = False,
     ):
         self.upstream = upstream.rstrip("/")
         self.output = output
         self.timeout = timeout
         self.repetition_feedback_after = repetition_feedback_after
         self.normalize_submission = normalize_submission
+        self.collect_server_metrics = collect_server_metrics
         self.lock = threading.Lock()
         self.previous_response_times = {}
         self.server = None
@@ -216,6 +243,26 @@ class RequestTelemetryProxy(AbstractContextManager):
         self.output.parent.mkdir(parents=True, exist_ok=True)
         with self.lock, self.output.open("a") as stream:
             stream.write(json.dumps(event) + "\n")
+
+    def snapshot_server_metrics(self, common, phase, headers):
+        """C1-only diagnostic snapshots; counter lag is preserved, not hidden."""
+        if not self.collect_server_metrics:
+            return
+        started = time.monotonic()
+        event = {**common, "event": "server_metrics", "phase": phase}
+        try:
+            endpoint = self.upstream.removesuffix("/v1") + "/metrics"
+            auth = {k: v for k, v in headers.items() if k == "Authorization"}
+            with urlopen(Request(endpoint, headers=auth), timeout=0.5) as response:
+                event["counters"] = parse_server_counters(
+                    response.read(1024 * 1024).decode()
+                )
+        except (OSError, ValueError) as error:
+            event["error_type"] = type(error).__name__
+            # Missing metrics must not repeatedly delay agent work.
+            self.collect_server_metrics = False
+        event.update(unix_s=time.time(), collection_s=time.monotonic() - started)
+        self.record(event)
 
     def __enter__(self):
         owner = self
@@ -291,6 +338,7 @@ class RequestTelemetryProxy(AbstractContextManager):
                 for key in ("Authorization", "X-Session-ID"):
                     if self.headers.get(key):
                         headers[key] = self.headers[key]
+                owner.snapshot_server_metrics(common, "before_request", headers)
                 try:
                     try:
                         response = urlopen(
@@ -333,6 +381,7 @@ class RequestTelemetryProxy(AbstractContextManager):
                             "response_sha256": hashlib.sha256(result).hexdigest(),
                         }
                     )
+                    owner.snapshot_server_metrics(common, "after_response", headers)
                     normalized = (
                         normalize_submission_marker(parsed, payload)
                         if owner.normalize_submission and status == 200

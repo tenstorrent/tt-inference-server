@@ -333,6 +333,7 @@ def run(config: HarborRunConfig) -> int:
             config.llm_timeout_sec or config.agent_timeout_sec or 7200,
             config.repetition_feedback_after,
             normalize_submission=config.normalize_submission_marker,
+            collect_server_metrics=config.n_concurrent_trials == 1,
         ) as proxy:
             env = {
                 k: v

@@ -12,13 +12,64 @@ import pytest
 
 from llm_module.agentic.request_telemetry import (
     REPETITION_FEEDBACK,
-    RequestTelemetryProxy,
     SUBMISSION_COMMAND,
+    RequestTelemetryProxy,
     normalize_submission_marker,
+    parse_server_counters,
     recent_tool_summary,
     repeated_failure_count,
     response_text_stats,
 )
+
+
+def test_server_counters_drop_labels_and_nonfinite_or_unrelated_metrics():
+    assert parse_server_counters(
+        'vllm:request_success_total{model_name="private",finished_reason="stop"} 2\n'
+        'vllm:request_success_total{finished_reason="length"} 3\n'
+        "vllm:time_to_first_token_seconds_sum 1.25e2\n"
+        "vllm:generation_tokens_total 1e999\n"
+        "vllm:prompt_tokens_total -1\n"
+        "private_metric 999\n"
+    ) == {"request_success_total": 5.0, "time_to_first_token_seconds_sum": 125.0}
+
+
+def test_server_metric_snapshots_preserve_timing_and_disable_on_failure(tmp_path):
+    hits = []
+
+    class Upstream(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            hits.append(self.path)
+            self.send_response(200 if len(hits) == 1 else 503)
+            self.end_headers()
+            self.wfile.write(b'vllm:request_success_total{model_name="private"} 7\n')
+
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+    thread = threading.Thread(target=upstream.serve_forever, daemon=True)
+    thread.start()
+    try:
+        path = tmp_path / "metrics.jsonl"
+        proxy = RequestTelemetryProxy(
+            f"http://127.0.0.1:{upstream.server_port}/v1",
+            path,
+            5,
+            collect_server_metrics=True,
+        )
+        for phase in ("before_request", "after_response", "before_request"):
+            proxy.snapshot_server_metrics({"session": "trial"}, phase, {})
+        rows = [json.loads(line) for line in path.read_text().splitlines()]
+        assert len(rows) == 2
+        assert rows[0]["counters"] == {"request_success_total": 7}
+        assert rows[0]["collection_s"] >= 0
+        assert rows[1]["error_type"] == "HTTPError"
+        assert hits == ["/metrics", "/metrics"]
+        assert "private" not in path.read_text()
+    finally:
+        upstream.shutdown()
+        upstream.server_close()
+        thread.join()
 
 
 def submission_example():
