@@ -5263,21 +5263,11 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "terminal-bench/break-filter-js-from-html",
-                            "terminal-bench/cobol-modernization",
                             "terminal-bench/compile-compcert",
-                            "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
-                            # Established cross-model nightly tasks spanning
-                            # ML build, forensics, native optimization, service
-                            # setup, and OCR/data processing. Harbor dynamically
-                            # backfills the five slots as the initial heavy
-                            # cohort finishes, avoiding fixed-wave tail idle.
-                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/cobol-modernization",
                             "terminal-bench/password-recovery",
                             "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
+                            "terminal-bench/qemu-startup",
                         ],
                     },
                     task_overrides={
