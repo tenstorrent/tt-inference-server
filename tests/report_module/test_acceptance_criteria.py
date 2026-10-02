@@ -22,6 +22,7 @@ from report_module.acceptance_criteria import (
     acceptance_criteria_check,
     build_acceptance_export,
     format_acceptance_summary_markdown,
+    spec_tasks_explained_by_waivers,
     task_failure_blockers,
 )
 from report_module.schema import Block, ReportSchema
@@ -945,3 +946,24 @@ def test_evals_known_issue_does_not_waive_spec_tests():
     ]
     accepted, _, _ = acceptance_criteria_check(schema, known_issues)
     assert accepted is False
+
+
+def test_a_spec_task_exit_explained_by_waivers_is_not_a_crash_blocker():
+    # run_spec_tests exits 1 for the waived case; acceptance must not re-block it.
+    schema = _schema(_conformance(("test_penalties", "❌ FAIL")))
+    _, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    waived = spec_tasks_explained_by_waivers(cats)
+    assert waived == {"spec_tests"}
+    assert task_failure_blockers([("spec_tests", 1, True)], waived) == {}
+
+
+def test_an_unwaived_or_crashed_spec_task_still_blocks():
+    schema = _schema(_conformance(("test_stop", "❌ FAIL")))
+    _, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    waived = spec_tasks_explained_by_waivers(cats)
+    assert waived == set()
+    assert "task:spec_tests" in task_failure_blockers([("spec_tests", 1, True)], waived)
+    # A crash that produced no block is never excused, even by a matching waiver.
+    assert "task:spec_tests" in task_failure_blockers(
+        [("spec_tests", 1, False)], {"spec_tests"}
+    )
