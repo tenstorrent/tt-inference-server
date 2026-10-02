@@ -60,7 +60,8 @@
       "TinyLlama-1.1B-Chat-v1.0",
       "stablelm-2-1_6b",
       "Falcon3-1B-Base",
-      "pythia-70m"
+      "pythia-70m",
+      "phi-1_5"
     ]
   },
   "available_markers": {
@@ -603,6 +604,16 @@
       "id_name": "EleutherAI--pythia-70m",
       "weights": [
         "pythia-70m"
+      ]
+    },
+    "microsoft/phi-1_5": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "microsoft--phi-1_5",
+      "weights": [
+        "phi-1_5"
       ]
     }
   },
