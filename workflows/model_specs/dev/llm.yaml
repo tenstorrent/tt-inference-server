@@ -1441,10 +1441,23 @@ templates:
         # GPQA sends sampling parameters the device sampler does not serve; without this the
         # generator refuses them and the engine never starts.
         QWEN_VLLM_HOST_COMPATIBILITY: "1"
-        # Log decode_forward's own p50/p10/p90 every 20 steps. A served step costs far more
-        # than that entry point does -- 168.6 ms against 63.7 ms measured at batch 1 -- and
-        # this is what attributes the difference to the work around the call.
+        # Log decode_forward's own p50/p10/p90 every 20 steps. Note this times submit only:
+        # the plugin passes read_from_device=False, so the blocking read lands elsewhere.
         QWEN_DECODE_STEP_TIMING: "20"
+        # The ten flags tests/run_ci.sh sets in tt-metal, which this row did not. Without them
+        # the server ran an unoptimized path: every decode step took the full batch-8 shape
+        # however few requests were active, and prefill served one request at a time, which is
+        # why TTFT scaled linearly with concurrency. QWEN_COMPACT_DECODE_RESIDUAL is omitted
+        # because it already defaults on, and 0 is its documented rollback.
+        QWEN_DECODE_BUCKETS: "1"
+        QWEN_BATCHED_PREFILL: "1"
+        QWEN_COMPACT_DECODE_ATTENTION: "1"
+        QWEN_COMPACT_DECODE_MLP: "1"
+        QWEN_BATCHED_DECODE_ROPE: "1"
+        QWEN_PREFILL_BATCHED_HEAD: "1"
+        QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD: "1"
+        QWEN_PREFILL_RESIDUAL_LAYOUT: "sharded_replicated_norm"
+        QWEN_PREFILL_STARTUP_WARMUP: "1"
       vllm_args:
         # qwen38_27b_t3k pages its KV cache in fixed 32-token pages.
         block_size: "32"
