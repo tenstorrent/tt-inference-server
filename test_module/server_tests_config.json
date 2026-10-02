@@ -62,7 +62,8 @@
       "Falcon3-1B-Base",
       "pythia-70m",
       "phi-1_5",
-      "Qwen3.8-27B"
+      "Qwen3.8-27B",
+      "phi-1"
     ]
   },
   "available_markers": {
@@ -625,6 +626,16 @@
       "id_name": "Qwen--Qwen3.8-27B",
       "weights": [
         "Qwen3.8-27B"
+      ]
+    },
+    "microsoft/phi-1": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "microsoft--phi-1",
+      "weights": [
+        "phi-1"
       ]
     }
   },
