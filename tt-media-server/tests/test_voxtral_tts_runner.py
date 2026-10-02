@@ -123,3 +123,21 @@ def test_device_params_come_from_the_model_module():
     r = _runner()
     with patch.object(vr.TTVoxtralTTSRunner, "_pipeline_module", staticmethod(lambda: fake_pm)):
         assert r.get_pipeline_device_params() == {"l1_small_size": 131072, "trace_region_size": 250 * 1024 * 1024}
+
+
+def test_voxtral_runs_unthrottled_even_with_the_images_baked_throttle():
+    """The image bakes ENV TT_MM_THROTTLE_PERF=5 and setup_runner_environment only sets the variable when the
+    level is truthy, so the exemption must be "0" (tt-metal: no throttling), not None."""
+    from types import SimpleNamespace
+
+    from config.constants import ModelRunners
+    from config.settings import Settings
+
+    s = SimpleNamespace(model_runner=ModelRunners.TT_VOXTRAL_TTS.value, default_throttle_level="5")
+    Settings._set_throttling_overrides(s)
+    assert s.default_throttle_level == "0"
+    assert s.default_throttle_level  # truthy, so runner_utils writes it over the baked 5
+
+    other = SimpleNamespace(model_runner=ModelRunners.TT_WAN_2_2.value, default_throttle_level="5")
+    Settings._set_throttling_overrides(other)
+    assert other.default_throttle_level is None  # unchanged behaviour for the other exempted runners
