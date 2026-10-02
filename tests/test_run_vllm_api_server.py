@@ -1030,6 +1030,7 @@ def test_autoport_uses_one_persistent_pinned_hub_snapshot(
     snapshot = cache / "models--test--model" / "snapshots" / ("a" * 40)
     module.snapshot_download.return_value = str(snapshot)
     assert module.ensure_weights_available(spec) == snapshot
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(snapshot)
     module.snapshot_download.assert_called_once_with(
         repo_id=spec["hf_model_repo"], revision="a" * 40, cache_dir=cache
     )
@@ -1059,6 +1060,7 @@ def test_autoport_cache_fails_closed(
         module.snapshot_download.side_effect = RuntimeError("offline missing snapshot")
     with pytest.raises(RuntimeError):
         module.ensure_weights_available(spec)
+    assert "MODEL_WEIGHTS_DIR" not in os.environ
     if failure != "offline":
         module.snapshot_download.assert_not_called()
 

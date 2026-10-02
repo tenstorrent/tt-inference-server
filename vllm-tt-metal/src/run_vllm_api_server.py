@@ -728,9 +728,11 @@ def ensure_weights_available(model_spec: dict) -> Path:
             revision,
             cache_dir,
         )
-        return Path(
+        weights_path = Path(
             snapshot_download(repo_id=hf_repo, revision=revision, cache_dir=cache_dir)
         )
+        os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
+        return weights_path
 
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
