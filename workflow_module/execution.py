@@ -26,6 +26,7 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    spec_tasks_explained_by_waivers,
     task_failure_blockers,
 )
 from test_module.task_types import MediaTaskType
@@ -365,7 +366,11 @@ class WorkflowExecution(ABC):
             schema, known_issues=self._known_issues(), model_status=model_status
         )
         crash_blockers = task_failure_blockers(
-            (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
+            (
+                (o.task_type, o.exit_code, o.block_kind is not None)
+                for o in task_outcomes
+            ),
+            waived_tasks=spec_tasks_explained_by_waivers(categories),
         )
         if crash_blockers:
             blockers = {**blockers, **crash_blockers}

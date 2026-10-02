@@ -135,6 +135,7 @@ def acceptance_criteria_check(
 
 def task_failure_blockers(
     outcomes: Iterable[Tuple[str, int, bool]],
+    waived_tasks: Iterable[str] = (),
 ) -> Dict[str, str]:
     """Blockers for workflow tasks whose process exited non-zero.
 
@@ -143,10 +144,18 @@ def task_failure_blockers(
     missing category as ``NA`` rather than a failure. Surfacing the raw task
     exit code here keeps the acceptance verdict consistent with the workflow's
     return code so a crash can never be laundered into a silent ``PASS``.
+
+    ``waived_tasks`` names tasks whose non-zero exit is fully explained by
+    failures a known_issues waiver already demoted (see
+    :func:`spec_tasks_explained_by_waivers`); a crash still blocks, because it
+    leaves an ERROR block or no block, which no waiver matches.
     """
     blockers: Dict[str, str] = {}
+    waived = set(waived_tasks)
     for task_type, exit_code, produced_block in outcomes:
         if exit_code == 0:
+            continue
+        if produced_block and task_type in waived:
             continue
         detail = (
             "and produced no report block"
@@ -157,6 +166,24 @@ def task_failure_blockers(
             f"Task '{task_type}' failed (exit={exit_code}) {detail}."
         )
     return blockers
+
+
+def spec_tasks_explained_by_waivers(categories: Iterable[CategoryResult]) -> set:
+    """Task types whose exit code only reflects known_issues-waived failures.
+
+    run_spec_tests exits non-zero for any failing case, before waivers are
+    applied. When the Spec Tests category has no blocker, at least one waiver
+    and no ERROR (an error is never waived), that exit is fully explained.
+    """
+    for category in categories:
+        if (
+            category.name == CATEGORY_SPEC_TESTS
+            and category.status == STATUS_PASS
+            and category.waived
+            and not category.blockers
+        ):
+            return {KIND_SPEC_TESTS}
+    return set()
 
 
 def _find_waiver(
