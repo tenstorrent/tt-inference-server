@@ -109,6 +109,7 @@ class HarborRunConfig:
     request_telemetry: bool = False
     repetition_feedback_after: int = 0
     normalize_submission_marker: bool = False
+    repeated_tool_feedback: bool = False
 
 
 def _apply_mini_swe_agent_defaults(
@@ -319,6 +320,8 @@ def _annotate_result_file(result_file: Path) -> None:
 def run(config: HarborRunConfig) -> int:
     if config.normalize_submission_marker and not config.request_telemetry:
         raise ValueError("Submission normalization requires audited request telemetry")
+    if config.repeated_tool_feedback and not config.request_telemetry:
+        raise ValueError("Repeated-tool feedback requires audited request telemetry")
     if config.request_telemetry:
         from llm_module.agentic.request_telemetry import RequestTelemetryProxy
 
@@ -334,6 +337,7 @@ def run(config: HarborRunConfig) -> int:
             config.repetition_feedback_after,
             normalize_submission=config.normalize_submission_marker,
             collect_server_metrics=config.n_concurrent_trials == 1,
+            repeated_tool_feedback=config.repeated_tool_feedback,
         ) as proxy:
             env = {
                 k: v

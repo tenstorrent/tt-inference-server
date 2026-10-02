@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from llm_module.agentic.request_telemetry import (
+    REPEATED_TOOL_FEEDBACK,
     REPETITION_FEEDBACK,
     SUBMISSION_COMMAND,
     RequestTelemetryProxy,
@@ -18,6 +19,7 @@ from llm_module.agentic.request_telemetry import (
     parse_server_counters,
     recent_tool_summary,
     repeated_failure_count,
+    repeated_tool_count,
     response_text_stats,
 )
 
@@ -373,7 +375,42 @@ def test_nonstream_response_bytes_and_errors_are_preserved(tmp_path, status, bod
         thread.join()
 
 
-def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path):
+def test_exact_repeat_detector_includes_nonconsecutive_successes():
+    def pair(command="inspect", output="same", returncode=0):
+        return [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": "x",
+                        "function": {
+                            "name": "bash",
+                            "arguments": json.dumps({"command": command}),
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "x",
+                "content": json.dumps({"returncode": returncode, "output": output}),
+            },
+        ]
+
+    history = pair() + pair("different") + pair() + pair("other") + pair()
+    original = copy.deepcopy(history)
+    assert repeated_tool_count(history) == 3
+    assert repeated_tool_count(history, window=3) == 2
+    assert repeated_tool_count(history + pair(output="changed")) == 1
+    assert repeated_tool_count(history + pair(returncode=1)) == 1
+    assert (
+        repeated_tool_count(history + [{"role": "tool", "content": "malformed"}]) == 0
+    )
+    assert history == original
+
+
+@pytest.mark.parametrize("mode", ["failed", "exact"])
+def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path, mode):
     seen = []
 
     class Upstream(BaseHTTPRequestHandler):
@@ -402,7 +439,12 @@ def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path):
             }
         ],
     }
-    failure = {"role": "tool", "content": '{"returncode":1,"output":""}'}
+    failure = {
+        "role": "tool",
+        "content": json.dumps(
+            {"returncode": 1 if mode == "failed" else 0, "output": ""}
+        ),
+    }
     payload = {
         "messages": [action, failure] * 3,
         "temperature": 1,
@@ -416,7 +458,8 @@ def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path):
                 f"http://127.0.0.1:{upstream.server_port}/v1",
                 path,
                 5,
-                repetition_feedback_after=threshold,
+                repetition_feedback_after=threshold if mode == "failed" else 0,
+                repeated_tool_feedback=bool(threshold) if mode == "exact" else False,
             ) as endpoint:
                 with urlopen(
                     Request(
@@ -425,14 +468,24 @@ def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path):
                 ) as response:
                     assert response.status == 200
             records = [json.loads(line) for line in path.read_text().splitlines()]
-            assert sum(r["event"] == "repetition_feedback" for r in records) == bool(
-                threshold
+            event = (
+                "repetition_feedback" if mode == "failed" else "repeated_tool_feedback"
             )
+            assert sum(r["event"] == event for r in records) == bool(threshold)
         assert seen[0] == payload
         assert seen[1] == {
             **payload,
             "messages": payload["messages"]
-            + [{"role": "user", "content": REPETITION_FEEDBACK}],
+            + [
+                {
+                    "role": "user",
+                    "content": (
+                        REPETITION_FEEDBACK
+                        if mode == "failed"
+                        else REPEATED_TOOL_FEEDBACK
+                    ),
+                }
+            ],
         }
     finally:
         upstream.shutdown()

@@ -27,6 +27,14 @@ REPETITION_FEEDBACK = (
     "required fix."
 )
 SUBMISSION_COMMAND = "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
+REPEATED_TOOL_FEEDBACK = (
+    "Loop check: the most recent shell command and its exact result have appeared "
+    "at least twice in the recent tool history. Reuse that evidence rather "
+    "than repeating equivalent inspections, unless a relevant change makes a "
+    "rerun necessary. Reconsider your current hypothesis, make the smallest "
+    "justified source change, validate the original issue, and submit only the "
+    "actual checked patch. This note supplies no task-specific solution."
+)
 SERVER_COUNTERS = frozenset(
     {
         "prompt_tokens_total",
@@ -219,6 +227,42 @@ def repeated_failure_count(messages):
     return count
 
 
+def repeated_tool_count(messages, window=32):
+    """Count exact repeats of the latest bash command/result; never skip execution."""
+    signatures, pending = [], {}
+    for message in messages:
+        if message.get("role") == "assistant":
+            pending = {
+                call.get("id"): call.get("function", {})
+                for call in message.get("tool_calls") or []
+            }
+        elif message.get("role") == "tool":
+            function = pending.pop(message.get("tool_call_id"), {})
+            signature = None
+            if function.get("name") == "bash":
+                try:
+                    args = json.loads(function.get("arguments", ""))
+                    result = json.loads(message.get("content", ""))
+                    if (
+                        isinstance(args, dict)
+                        and isinstance(args.get("command"), str)
+                        and isinstance(result, dict)
+                    ):
+                        signature = json.dumps(
+                            [
+                                args["command"],
+                                result.get("returncode"),
+                                result.get("output"),
+                            ],
+                            sort_keys=True,
+                        )
+                except (TypeError, ValueError):
+                    pass
+            signatures.append(signature)
+    recent = signatures[-window:]
+    return recent.count(recent[-1]) if recent and recent[-1] is not None else 0
+
+
 class RequestTelemetryProxy(AbstractContextManager):
     def __init__(
         self,
@@ -228,6 +272,7 @@ class RequestTelemetryProxy(AbstractContextManager):
         repetition_feedback_after: int = 0,
         normalize_submission: bool = False,
         collect_server_metrics: bool = False,
+        repeated_tool_feedback: bool = False,
     ):
         self.upstream = upstream.rstrip("/")
         self.output = output
@@ -235,6 +280,7 @@ class RequestTelemetryProxy(AbstractContextManager):
         self.repetition_feedback_after = repetition_feedback_after
         self.normalize_submission = normalize_submission
         self.collect_server_metrics = collect_server_metrics
+        self.repeated_tool_feedback = repeated_tool_feedback
         self.lock = threading.Lock()
         self.previous_response_times = {}
         self.server = None
@@ -331,6 +377,22 @@ class RequestTelemetryProxy(AbstractContextManager):
                             "unix_s": time.time(),
                             "consecutive_failures": repetitions,
                             "feedback": REPETITION_FEEDBACK,
+                            "forwarded_body_sha256": hashlib.sha256(body).hexdigest(),
+                        }
+                    )
+                exact_repeats = repeated_tool_count(payload.get("messages", []))
+                if owner.repeated_tool_feedback and exact_repeats >= 2:
+                    payload["messages"].append(
+                        {"role": "user", "content": REPEATED_TOOL_FEEDBACK}
+                    )
+                    body = json.dumps(payload).encode()
+                    owner.record(
+                        {
+                            **common,
+                            "event": "repeated_tool_feedback",
+                            "unix_s": time.time(),
+                            "recent_exact_repeats": exact_repeats,
+                            "feedback": REPEATED_TOOL_FEEDBACK,
                             "forwarded_body_sha256": hashlib.sha256(body).hexdigest(),
                         }
                     )
