@@ -165,4 +165,4 @@ ENV MODEL=bge-large-en-v1.5
 EXPOSE 8000
 
 # Default command - run the media server via uvicorn
-CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && source ./run_uvicorn.sh"]
+CMD ["/bin/bash", "-c", "source /opt/ttnn-venv/bin/activate && UVICORN_EXEC=1 source ./run_uvicorn.sh"]

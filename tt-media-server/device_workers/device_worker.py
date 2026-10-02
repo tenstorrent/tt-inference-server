@@ -195,13 +195,18 @@ def device_worker(
             loop.close()
             break
 
-        # Canary-monitor probe: the monitor only submits a probe when idle, so
-        # it normally arrives as its own singleton batch.
-        if isinstance(requests[0], CanaryProbeRequest):
-            _run_canary_probe(
-                device_runner, requests[0], worker_id, result_queue, logger
-            )
-            continue
+        # Canary-monitor probe: the monitor only submits a probe when idle, so it
+        # normally arrives as its own singleton batch. get_many can still drain it
+        # together with real requests (batch runners take up to max_batch_size), so
+        # run every probe on its own and serve the rest; skipping the whole batch
+        # would leave the co-batched requests unanswered until their timeout.
+        canaries = [r for r in requests if isinstance(r, CanaryProbeRequest)]
+        if canaries:
+            for probe in canaries:
+                _run_canary_probe(device_runner, probe, worker_id, result_queue, logger)
+            requests = [r for r in requests if not isinstance(r, CanaryProbeRequest)]
+            if not requests:
+                continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
         for request in requests:

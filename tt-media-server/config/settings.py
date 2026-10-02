@@ -364,6 +364,11 @@ class Settings(BaseSettings):
             ModelRunners.TT_MINIMAX_H3_T2VA.value,
         ]:
             self.default_throttle_level = None
+        # Voxtral TTS runs unthrottled: TT_MM_THROTTLE_PERF=5 costs ~30% per decode frame (38 -> 50 ms at 16 users).
+        # "0" (tt-metal: no throttling), not None: None leaves the image's baked ENV TT_MM_THROTTLE_PERF=5 in place,
+        # because setup_runner_environment only sets the variable when the level is truthy.
+        if self.model_runner == ModelRunners.TT_VOXTRAL_TTS.value:
+            self.default_throttle_level = "0"
 
     def _set_mesh_overrides(self):
         env_mesh_map = {

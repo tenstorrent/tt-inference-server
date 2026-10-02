@@ -326,4 +326,4 @@ EXPOSE 8000
 ENTRYPOINT ["./docker-entrypoint.sh"]
 # Default to uvicorn
 ENV SERVER_MODE=uvicorn
-CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else source ./run_uvicorn.sh; fi"]
+CMD ["/bin/bash", "-c", "source ${PYTHON_ENV_DIR}/bin/activate && cd ${TT_METAL_HOME}/server/ && if [ \"$SERVER_MODE\" = \"cpp\" ]; then source ./run_cpp.sh; else UVICORN_EXEC=1 source ./run_uvicorn.sh; fi"]

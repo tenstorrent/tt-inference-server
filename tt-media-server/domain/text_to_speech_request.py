@@ -39,6 +39,32 @@ class TextToSpeechRequest(BaseRequest):
     )
     speaker_id: Optional[str] = None  # ID for pre-configured speaker embeddings
 
+    # Voice-preset models (Voxtral): the preset name, e.g. "neutral_male"; falls back to
+    # speaker_id, then the runner's default. language is accepted for API parity (Voxtral's
+    # presets imply their language). seed makes the stochastic sampler repeatable.
+    voice: Optional[str] = None
+    language: Optional[str] = None
+    seed: Optional[int] = None
+
+    @field_validator("seed", mode="before")
+    @classmethod
+    def validate_seed(cls, v):
+        if v is None or v == "":
+            return None
+        # bool is an int subclass and int(1.7) == 1: reject both instead of silently coercing.
+        if isinstance(v, bool) or (isinstance(v, float) and not v.is_integer()):
+            raise ValueError("seed must be an integer")
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("seed must be an integer")
+        if v < 0:
+            raise ValueError("seed must be >= 0")
+        # torch.Generator().manual_seed overflows at 2**64; keep to the signed 64-bit range.
+        if v >= 2**63:
+            raise ValueError("seed must be < 2**63")
+        return v
+
     # Response format: wav (default), mp3, ogg, json, or verbose_json
     response_format: str = "wav"
 

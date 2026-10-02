@@ -586,6 +586,53 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 {"text": "Hello world", "response_format": "verbose_json"}
 ```
 
+# Voxtral TTS (Blackhole)
+
+`mistralai/Voxtral-4B-TTS-2603`: text plus one of 20 voice presets in, 24 kHz speech out. Model code in
+tt-metal `models/experimental/voxtral_tts` (and `tt/ttnn_voxtral_batched.py` for B users per step).
+
+> **License:** the Voxtral-4B-TTS weights and voice presets are released under **CC BY-NC 4.0 (non-commercial)**.
+> The container downloads them from Hugging Face on first start; whoever runs it accepts that license.
+> The runner and model code are Apache-2.0.
+
+```bash
+export MODEL=voxtral-4b-tts            # ModelNames.VOXTRAL_4B_TTS
+export MODEL_RUNNER=tt-voxtral-tts     # ModelRunners.TT_VOXTRAL_TTS
+export DEVICE=p300x2                   # p300x2 (QuietBox 2, the target) | p300 | bh-galaxy | p150; one chip per worker
+# optional
+export MAX_BATCH_SIZE=16               # default 16: users per decode step (8 = lowest latency, 32 = max throughput)
+export VOXTRAL_DEFAULT_VOICE=neutral_male
+export VOXTRAL_MAX_SEQ_LEN=2048        # KV window per user; 1024 halves cache memory
+```
+
+Request fields on `POST /v1/audio/speech`: `text`, `voice` (preset name; `speaker_id` is accepted as an alias),
+`seed` (repeatable sampling), `response_format` (wav default, mp3, ogg, json). Voices: `neutral_male`,
+`neutral_female`, `casual_male`, `casual_female`, `cheerful_female`, and `<lang>_male` / `<lang>_female` for
+`ar`, `de`, `es`, `fr`, `hi`, `it`, `nl`, `pt`. Long texts are split at sentence boundaries and concatenated.
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' -H 'Content-Type: application/json' \
+  -d '{"text": "Hello from Tenstorrent.", "voice": "neutral_male", "seed": 0}' -o speech.wav
+```
+
+Target hardware: Blackhole p300 / QuietBox 2 (p300x2), the cards the tt-metal port was brought up on. Measured
+natively (not in the container, matmul throttle off) on one Blackhole chip of a BH Galaxy (2026-10-02, tt-metal
+`aa9ceef57af`, `max_seq_len` 1024; p300 / p300x2 not yet measured). Every batch size, B=1 included, runs the batched
+pipeline: trace captured once at warmup, the per-frame loop entirely on device (sampling, stop logic, positions,
+noise and the next input embedding; the host only enqueues trace replays):
+
+| users per step | decode ms per 80 ms frame | real time per user (decode only) | wall RTF per user (incl. prefill and codec) | frames/s per chip |
+|---|---|---|---|---|
+| 1 | 23.3 | 3.4x | 3.2x | 40 |
+| 8 | 30.6 | 2.6x | 2.1x | 206 |
+| 16 (default) | 34.1 | 2.3x | 1.6x | 313 |
+| 32 | 46.9 | 1.7x | 1.0x | 412 |
+
+Intelligibility gate: every voice x 2 sentences through the batched path, Whisper-large-v3 WER per language under the
+single-user suite ceilings at 1, 8 and 32 users (mean WER 0.0095 / 0.0112 / 0.0116). Each worker owns one chip;
+`DEVICE=p300x2` starts four workers, so aggregate capacity is four times the per-chip row.
+
 # Image search test call
 
 The image search API uses a CNN model to search for similar images. It supports multiple input methods.

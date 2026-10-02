@@ -594,3 +594,48 @@ def reset_mocks():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v", "--timeout=10"])
+
+
+@patch("device_workers.device_worker.threading.Timer")
+def test_canary_drained_with_requests_is_run_alone_and_the_rest_are_served(
+    mock_timer, mock_queues
+):
+    """get_many can drain a canary probe together with real requests (batch runners take up to
+    max_batch_size). The probe runs on its own and the real requests still reach run() and get answered."""
+    from config.constants import CanaryProbeRequest
+
+    task_queue, result_queue, warmup_signals_queue, error_queue = mock_queues
+    mock_timer.return_value = Mock()
+    probe = CanaryProbeRequest()
+    reqs = [
+        MockImageGenerateRequest("task_1", "p1", 25),
+        MockImageGenerateRequest("task_2", "p2", 25),
+    ]
+    task_queue.get_many.side_effect = create_get_many_side_effect(
+        [[reqs[0], probe, reqs[1]]]
+    )
+
+    runner = Mock()
+    runner.set_device.return_value = Mock()
+    runner.run.return_value = [Mock(), Mock()]
+    mock_loop = Mock()
+    mock_loop.run_until_complete = Mock(return_value=None)
+
+    get_runner = patch(
+        "device_workers.worker_utils.get_device_runner", return_value=runner
+    )
+    new_loop = patch("asyncio.new_event_loop", return_value=mock_loop)
+    set_loop = patch("asyncio.set_event_loop", Mock())
+    probe_patch = patch("device_workers.device_worker._run_canary_probe")
+    with get_runner, new_loop, set_loop, probe_patch as run_probe, pytest.raises(
+        WorkerExitException
+    ):
+        device_worker(
+            "worker_0", task_queue, result_queue, warmup_signals_queue, error_queue
+        )
+
+    run_probe.assert_called_once()
+    assert run_probe.call_args[0][1] is probe
+    assert [r._task_id for r in runner.run.call_args[0][0]] == ["task_1", "task_2"]
+    assert [t[1] for t in result_queue.put_many.call_args[0][0]] == ["task_1", "task_2"]
+    error_queue.put.assert_not_called()

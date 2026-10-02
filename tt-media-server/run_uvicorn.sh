@@ -43,4 +43,6 @@ if [ -n "${HF_HOME:-}" ]; then
     fi
 fi
 
-uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"
+# UVICORN_EXEC=1 (the container CMD): exec, so uvicorn replaces the shell and receives docker stop's SIGTERM
+# (bash as PID 1 ignores it; Docker then SIGKILLs mid device work). Unset (interactive `source`, tests): plain call.
+${UVICORN_EXEC:+exec} uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"

@@ -125,4 +125,4 @@ RUN python3.12 "${APP_DIR}/server/scripts/build_merge_venv.py" \
 # spinup inference server
 WORKDIR "${APP_DIR}"
 EXPOSE 8000
-CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && source ./run_uvicorn.sh --skip-venv"]
+CMD ["/bin/bash", "-c", "cd ${APP_DIR}/server/ && source venv-worker/bin/activate && UVICORN_EXEC=1 source ./run_uvicorn.sh --skip-venv"]
