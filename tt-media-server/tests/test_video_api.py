@@ -147,14 +147,11 @@ class TestSubmitGenerateVideoRequest:
             request=request,
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         assert response.status_code == 202
         assert response.body is not None
-        mock_service.create_job.assert_called_once_with(
-            JobTypes.VIDEO, request, org_id="test_org"
-        )
+        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
 
     @pytest.mark.asyncio
     async def test_submit_generate_video_request_failure(self):
@@ -171,7 +168,6 @@ class TestSubmitGenerateVideoRequest:
                 request=request,
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 500
@@ -218,13 +214,10 @@ class TestGetVideoMetadata:
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         assert response.status_code == 200
-        mock_service.get_job_metadata.assert_called_once_with(
-            "job_123", org_id="test_org"
-        )
+        mock_service.get_job_metadata.assert_called_once_with("job_123")
 
     def test_get_video_metadata_not_found(self):
         """Test video metadata retrieval when job not found"""
@@ -236,7 +229,6 @@ class TestGetVideoMetadata:
                 job_id="non_existent_job",
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -260,7 +252,6 @@ class TestGetJobsMetadata:
         response = get_jobs_metadata(
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         assert response.status_code == 200
@@ -275,7 +266,6 @@ class TestGetJobsMetadata:
             get_jobs_metadata(
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -309,14 +299,11 @@ class TestDownloadVideoContent:
                     request=mock_request,
                     service=mock_service,
                     api_key="test_key",
-                    org_id="test_org",
                 )
 
                 assert response.path == tmp_path
                 assert response.media_type == "video/mp4"
-                mock_service.get_job_result_path.assert_called_once_with(
-                    "job_123", org_id="test_org"
-                )
+                mock_service.get_job_result_path.assert_called_once_with("job_123")
         finally:
             os.unlink(tmp_path)
 
@@ -348,7 +335,6 @@ class TestDownloadVideoContent:
                     request=MagicMock(),
                     service=mock_service,
                     api_key="test_key",
-                    org_id="test_org",
                 )
 
             assert len(created) == 1
@@ -388,7 +374,6 @@ class TestDownloadVideoContent:
                     request=MagicMock(),
                     service=mock_service,
                     api_key="test_key",
-                    org_id="test_org",
                 )
 
             # Falls back to the original file, and the stub is already gone.
@@ -420,7 +405,6 @@ class TestDownloadVideoContent:
                     request=mock_request,
                     service=mock_service,
                     api_key="test_key",
-                    org_id="test_org",
                 )
 
                 # Should still return FileResponse
@@ -442,7 +426,6 @@ class TestDownloadVideoContent:
                 request=mock_request,
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -463,7 +446,6 @@ class TestDownloadVideoContent:
                 request=mock_request,
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -484,7 +466,6 @@ class TestDownloadVideoContent:
                 request=mock_request,
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -510,11 +491,10 @@ class TestCancelVideoJob:
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         assert response.status_code == 200
-        mock_service.cancel_job.assert_called_once_with("job_123", org_id="test_org")
+        mock_service.cancel_job.assert_called_once_with("job_123")
 
     def test_cancel_video_job_not_found(self):
         """Test video job cancellation when job not found"""
@@ -526,7 +506,6 @@ class TestCancelVideoJob:
                 job_id="non_existent_job",
                 service=mock_service,
                 api_key="test_key",
-                org_id="test_org",
             )
 
         assert exc_info.value.status_code == 404
@@ -792,7 +771,6 @@ class TestResponseContent:
             job_id="job_123",
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         # JSONResponse body contains the serialized content
@@ -832,13 +810,10 @@ class TestSubmitGenerateVideoI2VRequest:
             request=request,
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         assert response.status_code == 202
-        mock_service.create_job.assert_called_once_with(
-            JobTypes.VIDEO, request, org_id="test_org"
-        )
+        mock_service.create_job.assert_called_once_with(JobTypes.VIDEO, request)
 
     @pytest.mark.asyncio
     async def test_submit_i2v_request_queue_full_returns_429(self):
@@ -887,7 +862,6 @@ class TestSubmitGenerateVideoI2VRequest:
             request=request,
             service=mock_service,
             api_key="test_key",
-            org_id="test_org",
         )
 
         args, _ = mock_service.create_job.call_args

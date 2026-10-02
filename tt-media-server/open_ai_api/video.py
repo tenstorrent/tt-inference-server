@@ -37,7 +37,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from model_services.base_job_service import BaseJobService
 from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
-from security.api_key_checker import get_api_key, get_org_id
+from security.api_key_checker import get_api_key
 from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
@@ -271,7 +271,6 @@ async def _resolve_image_prompt_urls(request: VideoGenerateRequest) -> None:
 async def _submit_video_request(
     request: VideoGenerateRequest,
     service: BaseJobService,
-    org_id: str | None = None,
 ):
     """Shared submit logic for T2V and I2V generation endpoints.
 
@@ -329,7 +328,7 @@ async def _submit_video_request(
             )
 
         # Async mode: create job and return job metadata
-        job_data = await service.create_job(JobTypes.VIDEO, request, org_id=org_id)
+        job_data = await service.create_job(JobTypes.VIDEO, request)
         return JSONResponse(content=job_data, status_code=202)
     except HTTPException:
         raise
@@ -345,7 +344,6 @@ async def submit_generate_video_request(
     request: Annotated[VideoGenerateRequest, Body(openapi_examples=_T2V_EXAMPLES)],
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """
     Create a new text-to-video generation job.
@@ -360,7 +358,7 @@ async def submit_generate_video_request(
     Raises:
         HTTPException: If video generation job submission fails.
     """
-    return await _submit_video_request(request, service, org_id=org_id)
+    return await _submit_video_request(request, service)
 
 
 @router.post("/generations/i2v")
@@ -368,7 +366,6 @@ async def submit_generate_video_i2v_request(
     request: Annotated[VideoI2VGenerateRequest, Body(openapi_examples=_I2V_EXAMPLES)],
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """
     Create a new image-to-video generation job (Wan2.2 I2V).
@@ -382,7 +379,7 @@ async def submit_generate_video_i2v_request(
     Raises:
         HTTPException: If video generation job submission fails.
     """
-    return await _submit_video_request(request, service, org_id=org_id)
+    return await _submit_video_request(request, service)
 
 
 @router.post("/generations/i2v/upload")
@@ -395,7 +392,6 @@ async def submit_generate_video_i2v_upload(
     negative_prompt: Optional[str] = Form(None),
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """Generate I2V video from a multipart-uploaded image file.
 
@@ -430,7 +426,7 @@ async def submit_generate_video_i2v_upload(
         raise HTTPException(
             status_code=422, detail=e.errors(include_url=False, include_context=False)
         )
-    return await _submit_video_request(request, service, org_id=org_id)
+    return await _submit_video_request(request, service)
 
 
 @router.get("/generations/{job_id}")
@@ -438,7 +434,6 @@ def get_video_metadata(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """
     Fetch the latest metadata for a generated video.
@@ -449,7 +444,7 @@ def get_video_metadata(
     Raises:
         HTTPException: If video job not found.
     """
-    job_data = service.get_job_metadata(job_id, org_id=org_id)
+    job_data = service.get_job_metadata(job_id)
     if job_data is None:
         raise HTTPException(status_code=404, detail="Video job not found")
 
@@ -460,7 +455,6 @@ def get_video_metadata(
 def get_jobs_metadata(
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """
     Get all jobs metadata
@@ -468,7 +462,7 @@ def get_jobs_metadata(
     Returns:
         JSONResponse: Array of video job objects with current status and metadata.
     """
-    job_data = service.get_all_jobs_metadata(org_id=org_id)
+    job_data = service.get_all_jobs_metadata()
     if job_data is None:
         raise HTTPException(status_code=404, detail="Job metadata not found")
 
@@ -484,7 +478,6 @@ def download_video_content(
     request: Request,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """
     Download the generated video file as an attachment.
@@ -495,7 +488,7 @@ def download_video_content(
     Raises:
         HTTPException: If video not found, not completed, or failed.
     """
-    file_path = service.get_job_result_path(job_id, org_id=org_id)
+    file_path = service.get_job_result_path(job_id)
     if (
         file_path is None
         or not isinstance(file_path, str)
@@ -532,7 +525,6 @@ def cancel_video_job(
     job_id: str,
     service: BaseJobService = Depends(service_resolver),
     api_key: str = Security(get_api_key),
-    org_id: str | None = Depends(get_org_id),
 ):
     """
     Permanently cancel a video job and its stored assets.
@@ -543,7 +535,7 @@ def cancel_video_job(
     Raises:
         HTTPException: If video not found.
     """
-    status = service.cancel_job(job_id, org_id=org_id)
+    status = service.cancel_job(job_id)
     if not status:
         raise HTTPException(status_code=404, detail="Video job not found")
 
