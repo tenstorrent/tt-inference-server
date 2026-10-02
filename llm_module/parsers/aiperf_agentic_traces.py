@@ -91,24 +91,26 @@ def _normalize_timestamp(raw_date: Any) -> str:
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def build_targets_block(
+def build_targets_blocks(
     payloads: Sequence[Mapping[str, Any]], *, device: str = ""
-) -> Optional[Block]:
+) -> List[Block]:
     """Grade the measured sweep against the document's expected points.
 
-    Returns one sweep-level block holding the precomputed verdicts, so the
-    report renderer and the acceptance criteria read the same grading instead
-    of each deriving their own. Built from whatever runs succeeded, so a
-    sweep that lost a point still grades the rest -- the lost points are
-    named in ``missing_concurrencies``. None when no payload carries an
-    expected sweep: a catalog run has nothing to grade against and gets no
-    block.
+    Returns sweep-level blocks holding the precomputed verdicts, so the report
+    renderer and the acceptance criteria read the same grading instead of each
+    deriving their own: one per delivery stage when the expected points name
+    stages, one otherwise. Built from whatever runs succeeded, so a sweep that
+    lost a point still grades the rest -- the lost points are named in
+    ``missing_concurrencies``. Empty when no payload carries an expected sweep:
+    a catalog run has nothing to grade against and gets no block.
     """
     from llm_module.agentic_traces.sweep_export import (
+        STAGE_KEY,
         expected_sweep_from_record,
         grade_agentic_sweep,
         to_agentic_sweep,
     )
+    from report_module.acceptance_criteria import STAGE_TARGET_KEY
 
     expected_sweep: Optional[List[Dict[str, Any]]] = None
     for payload in payloads:
@@ -116,9 +118,22 @@ def build_targets_block(
         if expected_sweep:
             break
     if not expected_sweep:
-        return None
+        return []
 
-    verdicts, missing = grade_agentic_sweep(to_agentic_sweep(payloads), expected_sweep)
+    by_stage: Dict[Optional[str], List[Dict[str, Any]]] = {}
+    stages: Dict[str, Mapping[str, Any]] = {}
+    for point in expected_sweep:
+        stage = point.get(STAGE_KEY)
+        key = (
+            str(stage["key"])
+            if isinstance(stage, Mapping) and stage.get("key")
+            else None
+        )
+        if key:
+            stages[key] = stage
+        by_stage.setdefault(key, []).append(point)
+
+    measured = to_agentic_sweep(payloads)
     first = payloads[0]
     model = str(first.get("model_id") or first.get("model") or "")
     timestamp = _normalize_timestamp(first.get("date"))
@@ -129,15 +144,25 @@ def build_targets_block(
         targets["device"] = device
     if timestamp:
         targets["timestamp"] = timestamp
-    return Block(
-        kind=TARGETS_BLOCK_KIND,
-        id=slugify_name_parts(model, device) or None,
-        data={
-            "points": [point.to_dict() for point in verdicts],
-            "missing_concurrencies": list(missing),
-        },
-        targets=targets,
-    )
+
+    blocks: List[Block] = []
+    for key, expected in by_stage.items():
+        verdicts, missing = grade_agentic_sweep(measured, expected)
+        block_targets = dict(targets)
+        if key:
+            block_targets[STAGE_TARGET_KEY] = dict(stages[key])
+        blocks.append(
+            Block(
+                kind=TARGETS_BLOCK_KIND,
+                id=slugify_name_parts(model, device, key) or None,
+                data={
+                    "points": [point.to_dict() for point in verdicts],
+                    "missing_concurrencies": list(missing),
+                },
+                targets=block_targets,
+            )
+        )
+    return blocks
 
 
-__all__ = ["AIPerfAgenticTracesParser", "TARGETS_BLOCK_KIND", "build_targets_block"]
+__all__ = ["AIPerfAgenticTracesParser", "TARGETS_BLOCK_KIND", "build_targets_blocks"]
