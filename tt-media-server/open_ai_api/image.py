@@ -267,5 +267,8 @@ elif settings.model_runner == ModelRunners.TT_FLUX_1_KONTEXT_DEV.value:
     router.include_router(generate_image_router)
     router.include_router(edit_image_router)
     router.include_router(lora_router)
+elif settings.model_runner == ModelRunners.TT_QWEN_IMAGE_EDIT.value:
+    # Instruction edit only (an input image is required): /edits, no mask.
+    router.include_router(edit_image_router)
 else:
     router.include_router(generate_image_router)

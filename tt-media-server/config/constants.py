@@ -20,6 +20,7 @@ class SupportedModels(Enum):
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Technologies/Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen/Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen/Qwen-Image-2512"
+    QWEN_IMAGE_EDIT = "Qwen/Qwen-Image-Edit"
     MOCHI_1 = "genmo/mochi-1-preview"
     WAN_2_2 = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
@@ -72,6 +73,7 @@ class ModelNames(Enum):
     MOTIF_IMAGE_6B_PREVIEW = "Motif-Image-6B-Preview"
     QWEN_IMAGE = "Qwen-Image"
     QWEN_IMAGE_2512 = "Qwen-Image-2512"
+    QWEN_IMAGE_EDIT = "Qwen-Image-Edit"
     MOCHI_1 = "mochi-1-preview"
     WAN_2_2 = "Wan2.2-T2V-A14B-Diffusers"
     WAN_2_2_T2V_PRODIA = "Wan2.2-T2V-A14B-Prodia"
@@ -126,6 +128,7 @@ class ModelRunners(Enum):
     TT_MOTIF_IMAGE_6B_PREVIEW = "tt-motif-image-6b-preview"
     TT_QWEN_IMAGE = "tt-qwen-image"
     TT_QWEN_IMAGE_2512 = "tt-qwen-image-2512"
+    TT_QWEN_IMAGE_EDIT = "tt-qwen-image-edit"
     TT_MOCHI_1 = "tt-mochi-1"
     TT_WAN_2_2 = "tt-wan2.2"
     TT_WAN_2_2_T2V_PRODIA = "tt-wan2.2-t2v-prodia"
@@ -194,6 +197,7 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW,
         ModelRunners.TT_QWEN_IMAGE,
         ModelRunners.TT_QWEN_IMAGE_2512,
+        ModelRunners.TT_QWEN_IMAGE_EDIT,
         ModelRunners.TT_XLA_SDXL,
         ModelRunners.TT_Z_IMAGE_TURBO,
     },
@@ -342,6 +346,7 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MOTIF_IMAGE_6B_PREVIEW: {ModelNames.MOTIF_IMAGE_6B_PREVIEW},
     ModelRunners.TT_QWEN_IMAGE: {ModelNames.QWEN_IMAGE},
     ModelRunners.TT_QWEN_IMAGE_2512: {ModelNames.QWEN_IMAGE_2512},
+    ModelRunners.TT_QWEN_IMAGE_EDIT: {ModelNames.QWEN_IMAGE_EDIT},
     ModelRunners.TT_MOCHI_1: {ModelNames.MOCHI_1},
     ModelRunners.TT_WAN_2_2: {ModelNames.WAN_2_2},
     ModelRunners.TT_WAN_2_2_T2V_PRODIA: {ModelNames.WAN_2_2_T2V_PRODIA},
@@ -967,6 +972,17 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
+    },
+    # Qwen-Image-Edit: one image on all 32 WH chips (TP=8 x SP=4, the only tt_dit
+    # preset). ~88 s per 50-step edit at 1024^2; a new prompt length re-captures
+    # the denoise trace, so leave headroom over the warm time.
+    (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 2000,
+        "trace_region_size": 130000000,
     },
     (ModelRunners.TT_MOCHI_1, DeviceTypes.T3K): {
         "device_mesh_shape": (2, 4),

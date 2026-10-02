@@ -61,6 +61,16 @@ from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
 )
+
+try:
+    from models.tt_dit.pipelines.qwenimage_edit.pipeline_qwenimage_edit import (
+        QwenImageEditPipeline,
+    )
+except ImportError:
+    # Not on tt-metal main yet (branch tvardhineni/qwen3-image-edit-wh). Same
+    # containment as Flux1-Kontext above: the other runners stay loadable and
+    # TTQwenImageEditRunner.create_pipeline reports the missing pipeline.
+    QwenImageEditPipeline = None
 from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
     StableDiffusion3Pipeline,
 )
@@ -87,6 +97,11 @@ from tt_model_runners.minimax_h3_policy import (
     minimax_h3_frames_are_aligned,
     minimax_h3_parse_aspect_ratio,
 )
+from tt_model_runners.qwen_image_edit_policy import (
+    QWEN_IMAGE_EDIT_DEFAULT_SIDE,
+    QWEN_IMAGE_EDIT_DEFAULT_TRUE_CFG_SCALE,
+    qwen_image_edit_pipeline_kwargs,
+)
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
 from utils.logger import log_exception_chain
@@ -110,6 +125,7 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_T2VA.value: "MiniMaxH3-T2VA",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
+    ModelRunners.TT_QWEN_IMAGE_EDIT.value: "Qwen-Image-Edit",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 
@@ -507,6 +523,70 @@ class TTQwenImageRunner(TTDiTRunner):
 
     def get_pipeline_device_params(self):
         return {"trace_region_size": 47000000}
+
+
+# Qwen-Image-Edit: instruction edit (input image + prompt) on all 32 WH Galaxy
+# chips. The pipeline drives the reference diffusers pipeline on host (VL encode,
+# scheduler, true-CFG) with the transformer and VAE on device, and takes the image
+# directly, so run() is overridden like Kontext's. Requests arrive as
+# ImageEditRequest; mask and strength do not apply.
+class TTQwenImageEditRunner(TTDiTRunner):
+    def __init__(self, device_id: str):
+        super().__init__(device_id)
+        self.image_manager = ImageManager("img")
+
+    def create_pipeline(self):
+        if QwenImageEditPipeline is None:
+            raise ImportError(
+                "Qwen-Image-Edit requires models.tt_dit.pipelines.qwenimage_edit, "
+                "which this tt-metal build does not provide. Use a tt-metal revision "
+                "that ships the Qwen-Image-Edit pipeline to run this model."
+            )
+        try:
+            return QwenImageEditPipeline.create_pipeline(
+                mesh_device=self.ttnn_device,
+                checkpoint_name=self.settings.model_weights_path,
+            )
+        except Exception as e:
+            log_exception_chain(
+                self.logger,
+                self.device_id,
+                "Qwen-Image-Edit pipeline creation failed",
+                e,
+            )
+            raise
+
+    def get_pipeline_device_params(self):
+        return {"trace_region_size": self.settings.trace_region_size}
+
+    def run(self, requests: list[ImageGenerateRequest]):
+        request = requests[0]
+        image_b64 = getattr(request, "image", None)
+        if image_b64:
+            # The pipeline letterboxes to its square canvas, so decode at the
+            # original size; resizing here would distort the aspect ratio.
+            image = self.image_manager.base64_to_pil_image(image_b64, target_mode="RGB")
+        elif self._warming_up:
+            # The shared warmup request carries no image; any RGB image compiles
+            # and traces the same 1024^2 shapes.
+            image = Image.new(
+                "RGB", (QWEN_IMAGE_EDIT_DEFAULT_SIDE, QWEN_IMAGE_EDIT_DEFAULT_SIDE)
+            )
+            request.guidance_scale = QWEN_IMAGE_EDIT_DEFAULT_TRUE_CFG_SCALE
+        else:
+            raise ValueError("Qwen-Image-Edit requires an input image")
+
+        kwargs = qwen_image_edit_pipeline_kwargs(request, image)
+        self.logger.info(
+            f"Device {self.device_id}: Qwen-Image-Edit inference "
+            f"({kwargs['side']}^2, {kwargs['num_inference_steps']} steps, "
+            f"cfg {kwargs['true_cfg_scale']})"
+        )
+        images = self.pipeline(**kwargs)
+        self.logger.debug(
+            f"Device {self.device_id}: Qwen-Image-Edit inference completed"
+        )
+        return images
 
 
 class TTMochi1Runner(TTDiTRunner):

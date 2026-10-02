@@ -40,6 +40,9 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_QWEN_IMAGE_2512: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImage2512Runner"]
     ).TTQwenImageRunner(wid),
+    ModelRunners.TT_QWEN_IMAGE_EDIT: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTQwenImageEditRunner"]
+    ).TTQwenImageEditRunner(wid),
     ModelRunners.TT_MOCHI_1: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),
