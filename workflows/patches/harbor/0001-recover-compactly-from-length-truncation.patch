@@ -32,7 +32,7 @@ index 4dce5528..3b6430ea 100644
 +                chat_template_kwargs = extra_body.setdefault(
 +                    "chat_template_kwargs", {}
 +                )
-+                chat_template_kwargs["reasoning_effort"] = "minimal"
++                chat_template_kwargs["reasoning_effort"] = "low"
              llm_response = await chat.chat(
                  prompt,
 -                **self._llm_call_kwargs,
