@@ -19,6 +19,7 @@ from workflow_module.requirements_schema import (
     Slo,
     effective_slo,
     load_requirements,
+    stated_target,
 )
 
 _FIXTURE = (
@@ -184,9 +185,113 @@ def test_unknown_keys_are_ignored(tmp_path):
 
 def test_unsupported_schema_major_rejected(tmp_path):
     path = tmp_path / "doc.json"
-    path.write_text(json.dumps({"schemaVersion": "3.0.0", "model": {"name": "a/b"}}))
+    path.write_text(json.dumps({"schemaVersion": "4.0.0", "model": {"name": "a/b"}}))
     with pytest.raises(RequirementsError, match="Unsupported schemaVersion"):
         load_requirements(path)
+
+
+def _v3_stage(**overrides):
+    stage = {
+        "key": "poc",
+        "name": "Proof of concept",
+        "scenarios": [
+            {"id": "chat", "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}]}
+        ],
+        "accuracyEvals": [{"name": "GPQA Diamond"}],
+        "progress": {"status": "in_progress"},
+    }
+    stage.update(overrides)
+    return stage
+
+
+def test_v3_single_stage_document_loads_from_its_stage():
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.0.0",
+            "id": "d",
+            "model": {"name": "a/b"},
+            "deployment": {"hardware": "SC8", "maxConcurrencyPerInstance": 32},
+            "stages": [_v3_stage(deployment={"maxConcurrencyPerInstance": 64})],
+        }
+    )
+    assert [s.id for s in doc.scenarios] == ["chat"]
+    assert [e.name for e in doc.accuracy_evals] == ["GPQA Diamond"]
+    # A stage deployment is a partial override: set keys win, unset inherit.
+    assert doc.deployment.hardware == "SC8"
+    assert doc.deployment.max_concurrency_per_instance == 64
+
+
+def test_v3_validation_plan_takes_the_stage_deployment():
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "document": {"id": "d", "model": {"name": "a/b"}, "deployment": {}},
+            "stages": [
+                {"key": "poc", "name": "PoC", "deployment": {"hardware": "BH-Galaxy"}}
+            ],
+            "workloads": [{"id": "chat", "kind": "text", "maxConcurrency": 1}],
+            "items": [
+                {
+                    "type": "operating_point",
+                    "stageKey": "poc",
+                    "scenarioId": "chat",
+                    "targets": {"isl": 128, "osl": 128, "concurrency": 1},
+                }
+            ],
+        }
+    )
+    assert doc.deployment.hardware == "BH-Galaxy"
+    assert [(p.isl, p.concurrency) for p in doc.scenarios[0].sweep] == [(128, 1)]
+
+
+def test_multi_stage_document_rejected():
+    with pytest.raises(RequirementsError, match="2 delivery stages"):
+        RequirementsDoc.from_dict(
+            {
+                "schemaVersion": "3.0.0",
+                "model": {"name": "a/b"},
+                "stages": [_v3_stage(), _v3_stage(key="ga", name="GA")],
+            }
+        )
+
+
+def test_nice_to_have_is_soft():
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "model": {"name": "a/b"},
+            "accuracyEvals": [{"name": "X", "priority": "nice_to_have"}],
+        }
+    )
+    assert doc.accuracy_evals[0].priority == PRIORITY_SHOULD
+
+
+def test_soft_metrics_are_read_per_scenario():
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "model": {"name": "a/b"},
+            "scenarios": [
+                {"id": "chat", "softMetrics": ["ttftMeanMs"], "sweep": []},
+                {
+                    "id": "agent",
+                    "kind": "agentic",
+                    "softMetrics": ["e2elP95Ms"],
+                    "agenticSweep": [{"concurrency": 1}],
+                },
+            ],
+        }
+    )
+    assert doc.scenarios[0].soft_metrics == frozenset({"ttftMeanMs"})
+    assert doc.agentic_workloads[0].soft_metrics == frozenset({"e2elP95Ms"})
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [(250, 250.0), (0.5, 0.5), (0, None), (None, None), (True, None), ("1", None)],
+)
+def test_stated_target_treats_zero_as_blank(value, expected):
+    assert stated_target({"ttftMeanMs": value}, "ttftMeanMs") == expected
 
 
 def test_missing_schema_version_rejected(tmp_path):

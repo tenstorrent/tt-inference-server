@@ -1044,6 +1044,99 @@ def test_agentic_config_carries_the_documents_expected_sweep():
     assert all(run.expected_sweep == sweep for run in config.runs)
 
 
+def _sweep_pack(rows, soft=(), slo=None):
+    """A pack whose single text scenario sweeps ``rows``."""
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    scenario = {"id": "chat", "softMetrics": list(soft), "sweep": rows}
+    if slo:
+        scenario["slo"] = slo
+    doc = RequirementsDoc.from_dict(
+        {"schemaVersion": "3.1.0", "model": {"name": "a/b"}, "scenarios": [scenario]}
+    )
+    return RequirementsTargetPack(doc, TenstorrentTargetPack()), doc.scenarios[0]
+
+
+def test_soft_sweep_metrics_grade_as_should():
+    pack, scenario = _sweep_pack(
+        [
+            {
+                "isl": 128,
+                "osl": 128,
+                "concurrency": 1,
+                "ttftMeanMs": 400,
+                "decodeThroughputTps": 50,
+            }
+        ],
+        soft=["ttftMeanMs"],
+    )
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    assert point.target_priorities == {"ttft_ms": "should", "tput": "must"}
+    assert point.priority == "must"
+
+
+def test_blank_sweep_metrics_are_not_targets():
+    pack, scenario = _sweep_pack(
+        [
+            {
+                "isl": 128,
+                "osl": 128,
+                "concurrency": 1,
+                "ttftMeanMs": 0,
+                "goodputPct": 0,
+                "decodeThroughputTps": 50,
+            }
+        ],
+        soft=["ttftMeanMs", "goodputPct"],
+    )
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    target = point.targets["target"]
+    assert target.ttft_ms is None and target.goodput is None
+    assert point.target_priorities == {"tput": "must"}
+
+
+def test_a_scenario_gate_skips_a_blank_row():
+    """A blank TTFT (0) would otherwise read as the best TTFT in the sweep."""
+    pack, scenario = _sweep_pack(
+        [
+            {"isl": 128, "osl": 128, "concurrency": 1, "ttftMeanMs": 0},
+            {"isl": 128, "osl": 128, "concurrency": 8, "ttftMeanMs": 900},
+        ],
+        soft=["ttftMeanMs"],
+        slo={"ttftMs": 1000},
+    )
+    blank, stated = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    assert stated.targets["target"].ttft_ms == 1000
+    assert blank.targets == {}
+
+
+def test_agentic_expected_sweep_carries_the_soft_list():
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "model": {"name": "a/b"},
+            "scenarios": [
+                {
+                    "id": "agent",
+                    "kind": "agentic",
+                    "softMetrics": ["ttftMeanMs"],
+                    "agenticSweep": [{"concurrency": 1, "ttftMeanMs": 800.0}],
+                }
+            ],
+        }
+    )
+    pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
+
+    assert pack._agentic_expected_sweep() == [
+        {"concurrency": 1, "ttftMeanMs": 800.0, "softMetrics": ["ttftMeanMs"]}
+    ]
+
+
 def test_agentic_expected_sweep_dedupes_first_workload_wins():
     """Two workloads sharing an operating point grade against the first,
     matching the concurrency dedupe that keeps the run from replaying twice."""
