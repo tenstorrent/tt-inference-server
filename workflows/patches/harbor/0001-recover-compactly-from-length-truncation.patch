@@ -1,0 +1,162 @@
+diff --git a/src/harbor/agents/terminus_2/terminus_2.py b/src/harbor/agents/terminus_2/terminus_2.py
+index 4dce5528..d62776b3 100644
+--- a/src/harbor/agents/terminus_2/terminus_2.py
++++ b/src/harbor/agents/terminus_2/terminus_2.py
+@@ -1122,12 +1122,17 @@ so ask everything you need to know."""
+         prompt: str,
+         original_instruction: str = "",
+         session: TmuxSession | None = None,
++        compact_retry: bool = False,
+     ) -> LLMResponse:
+         try:
+             start_time = time.time()
++            call_kwargs = copy.deepcopy(self._llm_call_kwargs)
++            if compact_retry:
++                configured_limit = call_kwargs.get("max_tokens", 4096)
++                call_kwargs["max_tokens"] = min(configured_limit, 4096)
+             llm_response = await chat.chat(
+                 prompt,
+-                **self._llm_call_kwargs,
++                **call_kwargs,
+             )
+             end_time = time.time()
+             request_time_ms = (end_time - start_time) * 1000
+@@ -1215,6 +1220,11 @@ so ask everything you need to know."""
+                 e, "truncated_response", "[TRUNCATED RESPONSE NOT AVAILABLE]"
+             )
+ 
++            truncated_llm_response = LLMResponse(
++                content=truncated_response,
++                usage=getattr(e, "usage", None),
++            )
++
+             # Try to salvage a valid response from the truncated output
+             # Only available for XML parser
+             salvaged_response = None
+@@ -1231,13 +1241,25 @@ so ask everything you need to know."""
+                     "Using truncated version."
+                 )
+ 
+-                return salvaged_response
++                salvaged_llm_response = LLMResponse(
++                    content=salvaged_response,
++                    usage=getattr(e, "usage", None),
++                )
++                chat.record_response(prompt, salvaged_llm_response)
++                return salvaged_llm_response
+ 
+             # If we get here, we couldn't salvage a valid response
+             # Try to parse the truncated response to get warnings
+             warnings_text = ""
+             try:
+                 parse_result = self._parser.parse_response(truncated_response)
++                if not parse_result.error:
++                    self.logger.debug(
++                        "Output exceeded length but contains a complete valid "
++                        "response. Using it without regeneration."
++                    )
++                    chat.record_response(prompt, truncated_llm_response)
++                    return truncated_llm_response
+                 if parse_result.warning:
+                     warnings_text = (
+                         f"\n\nParser warnings from your truncated response:\n"
+@@ -1256,15 +1278,15 @@ so ask everything you need to know."""
+             error_msg = (
+                 "ERROR!! NONE of the actions you just requested were performed "
+                 f"because you exceeded {limit_str}. "
+-                f"Your outputs must be less than {limit_str}. Re-issue this request, "
+-                f"breaking it into chunks each of which is less than {limit_str}."
++                "Re-issue only the next action as one compact JSON response. "
++                "Do not repeat your prior reasoning. Keep analysis and plan to "
++                "at most 200 words total and use at most 4096 tokens."
+             )
+ 
+             if warnings_text:
+                 error_msg += warnings_text
+ 
+-            chat.messages.append({"role": "user", "content": prompt})
+-            chat.messages.append({"role": "assistant", "content": truncated_response})
++            chat.record_response(prompt, truncated_llm_response)
+             chat.reset_response_chain()
+ 
+             return await self._query_llm(
+@@ -1272,6 +1294,7 @@ so ask everything you need to know."""
+                 prompt=error_msg,
+                 original_instruction=original_instruction,
+                 session=session,
++                compact_retry=True,
+             )
+ 
+         except Exception as e:
+diff --git a/src/harbor/llms/base.py b/src/harbor/llms/base.py
+index 6aae2154..146685ad 100644
+--- a/src/harbor/llms/base.py
++++ b/src/harbor/llms/base.py
+@@ -46,9 +46,15 @@ class ContextLengthExceededError(Exception):
+ class OutputLengthExceededError(Exception):
+     """Raised when the LLM response was truncated due to max_tokens limit."""
+ 
+-    def __init__(self, message: str, truncated_response: str | None = None):
++    def __init__(
++        self,
++        message: str,
++        truncated_response: str | None = None,
++        usage: UsageInfo | None = None,
++    ):
+         super().__init__(message)
+         self.truncated_response = truncated_response
++        self.usage = usage
+ 
+ 
+ class BaseLLM(ABC):
+diff --git a/src/harbor/llms/chat.py b/src/harbor/llms/chat.py
+index a04475d2..eacf16cd 100644
+--- a/src/harbor/llms/chat.py
++++ b/src/harbor/llms/chat.py
+@@ -94,6 +94,18 @@ class Chat:
+             **kwargs,
+         )
+ 
++        self.record_response(prompt, llm_response)
++        return llm_response
++
++    def record_response(self, prompt: str, llm_response: LLMResponse) -> None:
++        """Record a response obtained outside the normal successful call path.
++
++        Length-truncated responses still consumed tokens and form part of the
++        conversation.  Agents that salvage or retry them use this helper so
++        accounting and chat history stay identical to a normally returned
++        response.
++        """
++
+         # Track response chain for Responses API
+         if llm_response.response_id is not None:
+             self._last_response_id = llm_response.response_id
+@@ -120,7 +132,6 @@ class Chat:
+                 assistant_message,
+             ]
+         )
+-        return llm_response
+ 
+     def reset_response_chain(self) -> None:
+         """Reset the response chain so the next call sends full message history.
+diff --git a/src/harbor/llms/lite_llm.py b/src/harbor/llms/lite_llm.py
+index d790e5d1..86e52d3e 100644
+--- a/src/harbor/llms/lite_llm.py
++++ b/src/harbor/llms/lite_llm.py
+@@ -435,6 +435,7 @@ class LiteLLM(BaseLLM):
+                 f"Model {self._model_name} hit max_tokens limit. "
+                 f"Response was truncated. Consider increasing max_tokens if possible.",
+                 truncated_response=content,
++                usage=usage_info,
+             )
+             raise exc
+ 
+@@ -765,6 +766,7 @@ class LiteLLM(BaseLLM):
+                     f"Model {self._model_name} hit max_tokens limit. "
+                     f"Response was truncated.",
+                     truncated_response=content,
++                    usage=usage_info,
+                 )
+ 
+         response_id = getattr(response, "id", None)
