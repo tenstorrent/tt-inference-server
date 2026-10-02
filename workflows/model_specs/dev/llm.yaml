@@ -1532,6 +1532,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: ad6ae147eeed5e5bf7cbf0c9818479c1ecc37ff72197ac1bad789318ebb7dfbf
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -1561,6 +1562,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: fb6516149d49163f02892e8055722ded71ed7b84990becfb2bee8cf68795242e
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
     vllm_args:
@@ -1603,12 +1605,17 @@ templates:
         MESH_DEVICE: P150x4
         QUETZAL_VLLM: "1"
         QUETZAL_BUNDLE_MANIFEST_SHA256: 7b764baa4dacc11549bff5d19e491e2eafa5756dfa5a1fdf5248ef1b3b139bd9
+        QUETZAL_KV_BLOCK_SIZE: '64'
         QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
         VLLM_PLUGINS: quetzal_model_registry,tt
+        QZ_PREFILL_WARMUP: "1"
+        QUETZAL_NO_TRACE: "0"
+        TTQ_GDN_DECODE_T1: "1"
       vllm_args:
         # From the artifact's own checkpoint_revision; no Hugging Face lookup.
         revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
         tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+        block_size: 64
         enable_auto_tool_choice: true
         tool_call_parser: qwen3_coder
         reasoning_parser: qwen3
@@ -1619,6 +1626,8 @@ templates:
         # Measured against this package on P300X2 at tt-metal fbfae672 and
         # recorded as qualified in the overlay; not an inherited default.
         trace_region_size: 134217728
+        kv_cache_usable_tokens: 262144
+      max_tokens_all_users_override: 262144
   status: EXPERIMENTAL
   has_builtin_warmup: true
   metadata:
@@ -2268,6 +2277,7 @@ templates:
         MESH_DEVICE: P150x4
         QUETZAL_VLLM: "1"
         QUETZAL_BUNDLE_MANIFEST_SHA256: 1118a183960df63b02cc4ecef591c4319dd0f5682dc2ef6ac5eaeb823cc9a1f8
+        QUETZAL_KV_BLOCK_SIZE: '64'
         QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
         VLLM_PLUGINS: quetzal_model_registry,tt
       vllm_args:
@@ -3306,6 +3316,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: b2a59cf54e815987ee72bb981156100fab140147a837f7151016208d4c2728d1
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       TTQ_TUNED_ROW_ALL_REDUCE_MODE: all_gather_fast_reduce
@@ -3347,6 +3358,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: 21b4e76cb4c0b9a113e1f093d9fb94294bfcc11055f649152d9c6ea14c7838fb
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3385,6 +3397,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: c4674fb8a8b56a118ca107d8c8e6b4dc111569fa8217ecc25644923ec2fd34e6
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3426,6 +3439,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: afbf447ab2c696126a9867bea321fbb59d31e8510c5993f4bd6be7e407cf93d9
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3464,6 +3478,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: 0668ccaecd895f164a8e1357d9424cc13fdc96c8811d97125e4f8f226f2cc90c
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3505,6 +3520,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: 03abb87a4455cde2ab5625ec148fe076c6d8d35a6117cf412b9b0bd053fa6f16
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3543,6 +3559,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: 23d95a3ec4ac2459e882b7be33469db8e1ec04bbc6d418140ecdbf2ec2762726
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3581,6 +3598,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: d52b8efef478b97547f9ded6288fc76c5ad37151b00176470bde08ccf259874d
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3619,6 +3637,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: f304ffd144806bbbfd4c40227b9b6e3d4524091f88ba1936e040ca24fc38cb62
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3657,6 +3676,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: 9e998e801d78190cf5dcf421f9a448f246ca3a0c92b8a2420392806914bcf636
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3695,6 +3715,7 @@ templates:
       MESH_DEVICE: P150x4
       QUETZAL_VLLM: '1'
       QUETZAL_BUNDLE_MANIFEST_SHA256: 0db9043f14d178c807bd57f36b6f4efe04b35d3dee475f75d906ec107d3d49b2
+      QUETZAL_KV_BLOCK_SIZE: '64'
       QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
       VLLM_PLUGINS: quetzal_model_registry,tt
       QZ_PREFILL_WARMUP: '1'
@@ -3709,4 +3730,80 @@ templates:
       l1_small_size: 16384
       kv_cache_usable_tokens: 4096
     max_tokens_all_users_override: 4096
+  status: EXPERIMENTAL
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : EleutherAI/pythia-70m
+# package manifest sha256 : dfd737b33f7bffccd80b2d093f9201ad09bcf7f715de637e62ddfa15249f875c
+# overlay sha256          : 0a88a0db3f0c0a994b591a5004b34ab8b58cb5e79c22a0096493f735bde2780c
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 1024 prefill / 2048 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - EleutherAI/pythia-70m
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 2048
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: dfd737b33f7bffccd80b2d093f9201ad09bcf7f715de637e62ddfa15249f875c
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: a39f36b100fe8a5377810d56c3f4789b9c53ac42
+      tokenizer_revision: a39f36b100fe8a5377810d56c3f4789b9c53ac42
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 2048
+    max_tokens_all_users_override: 2048
+  status: EXPERIMENTAL
+# GENERATED by scripts/generate_ttis_handover.py -- review, do not hand-edit.
+# model_id                : microsoft/phi-1_5
+# package manifest sha256 : 35e88e3912fbeb979c5efa9a6e512ea1779309ad12a1b5c1cfed2f634ae7d631
+# overlay sha256          : 3c242e1920a9c60319503064d0aa925cb183985a1ad31ad06ec62603e425b3d3
+# effective qualification : investigating (resolution: agreement)
+# artifact span           : 1024 prefill / 2048 decode
+#
+# TTIS status is EXPERIMENTAL by policy and is NOT derived from the
+# qualification state. Promotion is a separate human decision.
+- weights:
+  - microsoft/phi-1_5
+  impl: quetzal
+  inference_engine: VLLM
+  has_builtin_warmup: true
+  device_model_specs:
+  - device: P300X2
+    max_concurrency: 32
+    max_context: 2048
+    default_impl: false
+    env_vars:
+      MESH_DEVICE: P150x4
+      QUETZAL_VLLM: '1'
+      QUETZAL_BUNDLE_MANIFEST_SHA256: 35e88e3912fbeb979c5efa9a6e512ea1779309ad12a1b5c1cfed2f634ae7d631
+      QUETZAL_PACKAGE_ROOT: /home/container_app_user/quetzal/package
+      VLLM_PLUGINS: quetzal_model_registry,tt
+      QZ_PREFILL_WARMUP: '1'
+      QUETZAL_NO_TRACE: '0'
+    vllm_args:
+      revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
+      tokenizer_revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
+      block_size: 64
+    override_tt_config:
+      sample_on_device_mode: all
+      trace_region_size: 134217728
+      l1_small_size: 16384
+      kv_cache_usable_tokens: 2048
+    max_tokens_all_users_override: 2048
   status: EXPERIMENTAL
