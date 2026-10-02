@@ -59,6 +59,30 @@ GUIDANCE_SCALE_INPAINTING = 8.0
 SEED_INPAINTING = 0
 STRENGTH_INPAINTING = 0.99
 
+# Instruction edit (Qwen-Image-Edit): edits of the inpainting payload's photo (Half Dome, a
+# mountain road, pines). CLIP scores each output against a caption of the expected result, not
+# the instruction text, so the score tracks whether the edit was applied.
+INSTRUCTION_EDIT_INFERENCE_STEPS = 20
+SEED_INSTRUCTION_EDIT = 0
+INSTRUCTION_EDIT_CASES = (
+    (
+        "Cover the mountain and the trees with snow.",
+        "a snow-covered granite mountain and snowy pine trees",
+    ),
+    (
+        "Make it a night scene with a full moon in the sky.",
+        "a mountain road at night under a full moon",
+    ),
+    (
+        "Turn the photo into a watercolor painting.",
+        "a watercolor painting of a mountain and a road",
+    ),
+    (
+        "Add a red car driving on the road.",
+        "a red car on a mountain road",
+    ),
+)
+
 
 def _image_ttft(status_list: list[ImageGenerationTestStatus]) -> float:
     return sum(s.elapsed for s in status_list) / len(status_list) if status_list else 0
@@ -380,6 +404,98 @@ async def _run_inpainting_generation_eval(
     return status_list, total_time
 
 
+async def _generate_instruction_edit_eval_async(
+    ctx: MediaContext,
+    session: aiohttp.ClientSession,
+    instruction: str,
+    input_image: str,
+) -> tuple[bool, float, Optional[str]]:
+    logger.info(f"🏞️ Editing image for instruction: {instruction}")
+    headers = {
+        "accept": "application/json",
+        "Authorization": "Bearer your-secret-key",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "prompt": instruction,
+        "image": input_image,
+        "seed": SEED_INSTRUCTION_EDIT,
+        "number_of_images": 1,
+        "num_inference_steps": INSTRUCTION_EDIT_INFERENCE_STEPS,
+        "image_return_format": IMAGE_FORMAT_FOR_EVALS,
+        "image_quality": IMAGE_QUALITY_FOR_EVALS,
+    }
+    start_time = time.time()
+    try:
+        async with session.post(
+            f"{ctx.base_url}/v1/images/edits",
+            json=payload,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=25000),
+        ) as response:
+            elapsed = time.time() - start_time
+            if response.status != 200:
+                logger.error(
+                    f"❌ Instruction edit for eval failed with status: {response.status}"
+                )
+                return False, elapsed, None
+            response_data = await response.json()
+            images = response_data.get("images", [])
+            base64image = images[0] if images else None
+            logger.info(f"✅ Instruction edit for eval succeeded in {elapsed:.2f}s")
+            return True, elapsed, base64image
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"❌ Instruction edit for eval failed: {e}")
+        return False, elapsed, None
+
+
+async def _run_instruction_edit_eval(
+    ctx: MediaContext, runner: Optional[str] = None
+) -> tuple[list[ImageGenerationTestStatus], float]:
+    logger.info(f"Running instruction edit eval ({len(INSTRUCTION_EDIT_CASES)} edits).")
+    with open(f"{ctx.test_payloads_path}/image_client_inpainting_payload", "r") as f:
+        input_image = json.load(f)["inpaint_image"]
+
+    status_list: list[ImageGenerationTestStatus] = []
+    failed: list[str] = []
+    async with aiohttp.ClientSession() as session:
+        total_start_time = time.time()
+        # One edit occupies the whole mesh, so send them one at a time: concurrent
+        # requests would only queue and inflate each measured latency.
+        for instruction, caption in INSTRUCTION_EDIT_CASES:
+            status, elapsed, base64image = await _generate_instruction_edit_eval_async(
+                ctx, session, instruction, input_image
+            )
+            if not status or base64image is None:
+                failed.append(instruction)
+                continue
+            status_list.append(
+                ImageGenerationTestStatus(
+                    status=status,
+                    elapsed=elapsed,
+                    num_inference_steps=INSTRUCTION_EDIT_INFERENCE_STEPS,
+                    inference_steps_per_second=(
+                        INSTRUCTION_EDIT_INFERENCE_STEPS / elapsed if elapsed > 0 else 0
+                    ),
+                    base64image=base64image,
+                    # CLIP compares the output with this text: the expected result.
+                    prompt=caption,
+                )
+            )
+        total_time = time.time() - total_start_time
+
+    logger.info(
+        f"Instruction edits: {len(status_list)} succeeded, {len(failed)} failed "
+        f"in {total_time:.2f}s"
+    )
+    if failed:
+        raise RuntimeError(
+            f"❌ Instruction edit failed for {failed} - cannot calculate accuracy metrics"
+        )
+    return status_list, total_time
+
+
 async def _run_image_generation_eval_test(
     ctx: MediaContext, runner: Optional[str] = None
 ) -> dict:
@@ -447,6 +563,7 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-flux.1-schnell": _run_image_generation_eval_test,
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,
     "tt-z-image-turbo": _run_image_generation_eval_test,
+    "tt-qwen-image-edit": _run_instruction_edit_eval,
 }
 
 

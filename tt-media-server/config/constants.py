@@ -974,8 +974,8 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     # Qwen-Image-Edit: one image on all 32 WH chips (TP=8 x SP=4, the only tt_dit
-    # preset). ~88 s per 50-step edit at 1024^2; a new prompt length re-captures
-    # the denoise trace, so leave headroom over the warm time.
+    # preset). ~88 s per 50-step edit at 1024^2; a prompt in a new 128-token length
+    # bucket re-captures the denoise trace, so leave headroom over the warm time.
     (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,

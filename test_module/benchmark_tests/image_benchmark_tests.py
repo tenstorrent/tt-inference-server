@@ -54,7 +54,7 @@ STRENGTH_INPAINTING = 0.99
 
 # Qwen-Image-Edit: two transformer forwards per step (true-CFG) on all 32 chips;
 # ~88 s per 50-step edit upstream, so the inpainting 90 s timeout is too short,
-# and a new prompt length re-captures the denoise trace on first use.
+# and a prompt in a new 128-token length bucket re-captures the denoise trace.
 QWEN_IMAGE_EDIT_INFERENCE_STEPS = 20
 QWEN_IMAGE_EDIT_REQUEST_TIMEOUT_S = 600
 SEED_QWEN_IMAGE_EDIT = 0

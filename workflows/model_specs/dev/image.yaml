@@ -289,7 +289,8 @@ templates:
 
 # Qwen-Image-Edit: instruction edit (input image + prompt) on WH Galaxy, TP=8 x SP=4
 # on all 32 chips; served on /v1/images/edits only. Needs a tt-metal build with
-# models/tt_dit/pipelines/qwenimage_edit (branch tvardhineni/qwen3-image-edit-wh).
+# models/tt_dit/pipelines/qwenimage_edit (branch nkira/qwen-image-edit-trace: Tarun's
+# tvardhineni/qwen3-image-edit-wh plus the per-request prompt and trace-reuse fixes).
 # Disk/RAM are estimates, not measured: the ~58GB diffusers repo plus a
 # transformer-sized tt_dit cache; the host loads the full diffusers pipeline.
 - weights:
