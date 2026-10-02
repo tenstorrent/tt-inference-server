@@ -15,7 +15,7 @@ index 4dce5528..3b6430ea 100644
  @dataclass
  class Command:
      keystrokes: str
-@@ -1122,12 +1128,23 @@ so ask everything you need to know."""
+@@ -1122,12 +1128,18 @@ so ask everything you need to know."""
          prompt: str,
          original_instruction: str = "",
          session: TmuxSession | None = None,
@@ -28,11 +28,6 @@ index 4dce5528..3b6430ea 100644
 +            if compact_retry:
 +                configured_limit = call_kwargs.get("max_tokens", 4096)
 +                call_kwargs["max_tokens"] = min(configured_limit, 4096)
-+                extra_body = call_kwargs.setdefault("extra_body", {})
-+                chat_template_kwargs = extra_body.setdefault(
-+                    "chat_template_kwargs", {}
-+                )
-+                chat_template_kwargs["reasoning_effort"] = "low"
              llm_response = await chat.chat(
                  prompt,
 -                **self._llm_call_kwargs,
@@ -40,7 +35,7 @@ index 4dce5528..3b6430ea 100644
              )
              end_time = time.time()
              request_time_ms = (end_time - start_time) * 1000
-@@ -1215,6 +1232,11 @@ so ask everything you need to know."""
+@@ -1215,6 +1227,11 @@ so ask everything you need to know."""
                  e, "truncated_response", "[TRUNCATED RESPONSE NOT AVAILABLE]"
              )
  
@@ -52,7 +47,7 @@ index 4dce5528..3b6430ea 100644
              # Try to salvage a valid response from the truncated output
              # Only available for XML parser
              salvaged_response = None
-@@ -1231,13 +1253,25 @@ so ask everything you need to know."""
+@@ -1231,13 +1248,25 @@ so ask everything you need to know."""
                      "Using truncated version."
                  )
  
@@ -79,7 +74,7 @@ index 4dce5528..3b6430ea 100644
                  if parse_result.warning:
                      warnings_text = (
                          f"\n\nParser warnings from your truncated response:\n"
-@@ -1256,22 +1290,36 @@ so ask everything you need to know."""
+@@ -1256,22 +1285,36 @@ so ask everything you need to know."""
              error_msg = (
                  "ERROR!! NONE of the actions you just requested were performed "
                  f"because you exceeded {limit_str}. "
