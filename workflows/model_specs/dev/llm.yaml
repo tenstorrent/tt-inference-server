@@ -700,7 +700,7 @@ templates:
         fabric_config: FABRIC_1D
         trace_region_size: 960000000  # four resident decode-bucket traces
         l1_small_size: 24576
-        sample_on_device_mode: decode_only  # TP: host sampling only sees device 0's vocab shard
+        sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
       vllm_args:
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
