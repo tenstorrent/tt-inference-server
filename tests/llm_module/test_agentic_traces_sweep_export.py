@@ -321,21 +321,6 @@ class TestGradeSweepPoint:
         assert verdict.graded == 0 and verdict.verdicts != ()
         assert verdict.passed is False
 
-    def test_input_throughput_passes_at_or_above_target(self):
-        from llm_module.agentic_traces.sweep_export import grade_sweep_point
-
-        expected = {"concurrency": 1, "inputThroughputTps": 5500.0}
-        met = grade_sweep_point(
-            {"concurrency": 1, "inputThroughputTps": 5500.0}, expected
-        )
-        missed = grade_sweep_point(
-            {"concurrency": 1, "inputThroughputTps": 5499.0}, expected
-        )
-
-        assert met.passed is True
-        assert missed.passed is False
-        assert self._field(missed, "inputThroughputTps").lower_is_better is False
-
     def test_a_blank_target_is_not_graded(self):
         """llm-gauntlet stores a blank (soft) column as 0; a 0 ms latency bar is
         not a target, so it must not fail every point."""

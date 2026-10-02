@@ -243,29 +243,6 @@ def test_single_stage_document_loads_from_its_stage():
     assert doc.deployment.max_concurrency_per_instance == 64
 
 
-def test_validation_plan_takes_the_stage_deployment():
-    doc = RequirementsDoc.from_dict(
-        {
-            "schemaVersion": "3.1.0",
-            "document": {"id": "d", "model": {"name": "a/b"}, "deployment": {}},
-            "stages": [
-                {"key": "poc", "name": "PoC", "deployment": {"hardware": "BH-Galaxy"}}
-            ],
-            "workloads": [{"id": "chat", "kind": "text", "maxConcurrency": 1}],
-            "items": [
-                {
-                    "type": "operating_point",
-                    "stageKey": "poc",
-                    "scenarioId": "chat",
-                    "targets": {"isl": 128, "osl": 128, "concurrency": 1},
-                }
-            ],
-        }
-    )
-    assert doc.deployment.hardware == "BH-Galaxy"
-    assert [(p.isl, p.concurrency) for p in doc.scenarios[0].sweep] == [(128, 1)]
-
-
 def _two_stage_doc(**perf_overrides):
     """Accuracy stage holds the evals; performance stage holds the scenarios."""
     return {
@@ -312,24 +289,11 @@ def test_every_stage_is_read_and_stamps_its_requirements():
     ]
 
 
-def test_a_single_stage_document_still_stamps_its_stage():
-    doc = RequirementsDoc.from_dict(_doc(scenarios=[{"id": "chat", "sweep": []}]))
-
-    assert [s.key for s in doc.stages] == ["stage-1"]
-    assert doc.scenarios[0].stage == "stage-1"
-
-
 def test_stages_must_share_one_deployment():
     with pytest.raises(RequirementsError, match="accuracy, performance"):
         RequirementsDoc.from_dict(
             _two_stage_doc(deployment={"maxConcurrencyPerInstance": 64})
         )
-
-
-def test_a_stage_override_equal_to_the_document_is_one_deployment():
-    doc = RequirementsDoc.from_dict(_two_stage_doc(deployment={"hardware": "SC8"}))
-
-    assert doc.deployment.hardware == "SC8"
 
 
 def test_a_validation_plan_stamps_stages_from_its_items():

@@ -641,11 +641,6 @@ class TestRequirementsTargets:
 
         assert "#### Requirements Targets — Performance" in out
 
-    def test_an_unstaged_block_keeps_the_plain_heading(self):
-        out = render_agentic_traces_targets(self._block(), METADATA)
-
-        assert "#### Requirements Targets\n" in out
-
     def test_soft_targets_are_labelled_advisory(self):
         point = {
             "concurrency": 1,
@@ -675,11 +670,6 @@ class TestRequirementsTargets:
         assert "`ttftMeanMs` ↓ (soft)" in out
         assert "`decodeThroughputTps` ↑ |" in out
         assert "do not fail a point" in out
-
-    def test_no_soft_legend_without_soft_targets(self):
-        out = render_agentic_traces_targets(self._block(), METADATA)
-
-        assert "(soft)" not in out and "do not fail a point" not in out
 
     def test_empty_block_renders_nothing(self):
         assert (

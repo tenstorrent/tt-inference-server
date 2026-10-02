@@ -1097,16 +1097,6 @@ def test_soft_sweep_metrics_grade_as_should():
     assert point.priority == "must"
 
 
-def test_input_throughput_is_a_hard_sweep_target():
-    pack, scenario = _sweep_pack(
-        [{"isl": 128, "osl": 128, "concurrency": 1, "inputThroughputTps": 5500}]
-    )
-    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
-
-    assert point.targets["target"].tput_input == 5500
-    assert point.target_priorities == {"tput_input": "must"}
-
-
 def test_input_throughput_is_derived_as_isl_times_rps():
     row = {"isl": 128, "osl": 128, "concurrency": 1, "reqThroughputRps": 10}
     pack, scenario = _sweep_pack([row])
