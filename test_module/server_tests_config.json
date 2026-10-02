@@ -1,1029 +1,1088 @@
 {
-    "_version": "1.0.0",
-    "_description": "Server tests schema configuration. Test suites are in test_suites/*.json",
-    "model_categories": {
-        "IMAGE": [
-            "stabilityai/stable-diffusion-xl-base-1.0",
-            "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
-            "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
-            "stabilityai/stable-diffusion-3.5-large",
-            "black-forest-labs/FLUX.1-dev",
-            "black-forest-labs/FLUX.1-schnell",
-            "Motif-Technologies/Motif-Image-6B-Preview",
-            "Tongyi-MAI/Z-Image-Turbo"
-        ],
-        "AUDIO": [
-            "distil-whisper/distil-large-v3",
-            "openai/whisper-large-v3"
-        ],
-        "CNN": [
-            "resnet-50",
-            "vovnet",
-            "mobilenetv2",
-            "efficientnet",
-            "segformer",
-            "unet",
-            "vit"
-        ],
-        "EMBEDDING": [
-            "BAAI/bge-large-en-v1.5",
-            "Qwen/Qwen3-Embedding-4B",
-            "Qwen/Qwen3-Embedding-8B",
-            "bge-m3"
-        ],
-        "TTS": [
-            "microsoft/speecht5_tts",
-            "coqui/XTTS-v2"
-        ],
-        "VIDEO": [
-            "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
-            "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
-            "genmo/mochi-1-preview"
-        ],
-        "LLM": [
-            "openai/gpt-oss-120b",
-            "Qwen/Qwen3-32B",
-            "meta-llama/Llama-3.1-8B-Instruct",
-            "meta-llama/Llama-3.2-1B-Instruct",
-            "meta-llama/Llama-3.3-70B-Instruct",
-            "openai/gpt-oss-20b",
-            "google/diffusiongemma-26B-A4B-it",
-            "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-            "Falcon3-3B-Base",
-            "Falcon3-7B-Base",
-            "Qwen/Qwen3-4B",
-            "Qwen3-14B",
-            "Qwen/Qwen3-8B",
-            "Qwen2.5-Coder-7B",
-            "Qwen2.5-Coder-7B-Instruct",
-            "TinyLlama_v1.1",
-            "TinyLlama-1.1B-Chat-v1.0",
-            "stablelm-2-1_6b",
-            "Falcon3-1B-Base"
-        ]
-    },
-    "available_markers": {
-        "test_types": {
-            "load": "Load testing with concurrent requests",
-            "param": "Parameter validation tests",
-            "e2e": "Full system tests covering complete workflows",
-            "eval": "Model evaluation tests"
-        },
-        "performance_characteristics": {
-            "slow": "Tests taking >30 seconds to complete",
-            "heavy": "Resource-intensive tests (large models, high memory)",
-            "fast": "Tests completing in <10 seconds"
-        },
-        "hardware_targets": {
-            "n150": "Tests for N150 device (1 chip)",
-            "n300": "Tests for N300 device (2 chips)",
-            "t3k": "Tests for T3K device (4 chips)",
-            "galaxy": "Tests for Galaxy device (32 chips)",
-            "blackhole_galaxy": "Tests for Blackhole Galaxy device (32 P150 chips)",
-            "p150": "Tests for P150 device (1 chip)",
-            "p150x4": "Tests for P150x4 device (4 chips)",
-            "p150x8": "Tests for P150x8 device (8 chips)",
-            "p300": "Tests for P300 device (2 chips)",
-            "p300x2": "Tests for P300x2 device (4 chips)"
-        },
-        "model_categories": {
-            "image": "Image generation/processing model tests",
-            "audio": "Audio transcription model tests",
-            "cnn": "CNN model tests",
-            "llm": "Large Language Model tests",
-            "embedding": "Embedding model tests",
-            "tts": "Text-to-speech model tests",
-            "video": "Video generation model tests"
-        },
-        "specific_models": {
-            "sdxl": "Stable Diffusion XL tests",
-            "sdxl_img2img": "Stable Diffusion XL img2img tests",
-            "sdxl_inpaint": "Stable Diffusion XL inpainting tests",
-            "sd35": "Stable Diffusion 3.5 tests",
-            "whisper": "Whisper model tests",
-            "distil_whisper": "Distil Whisper model tests",
-            "flux_dev": "FLUX.1-dev model tests",
-            "flux_schnell": "FLUX.1-schnell model tests",
-            "motif": "Motif image generation model tests",
-            "bge": "BGE embedding model tests",
-            "qwen3_emb": "Qwen3 embedding model tests",
-            "speecht5": "SpeechT5 TTS model tests",
-            "wan": "Wan video generation model tests",
-            "wan_i2v": "Wan image-to-video generation model tests",
-            "mochi": "Mochi video generation model tests",
-            "mobilenetv2": "MobileNetV2 CNN model tests",
-            "bge_m3": "BGE-M3 embedding model tests"
-        }
-    },
-    "model_configs": {
-        "tiiuae/Falcon3-1B-Base": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "tiiuae--Falcon3-1B-Base",
-            "weights": ["Falcon3-1B-Base"]
-        },
-        "stabilityai/stablelm-2-1_6b": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "stabilityai--stablelm-2-1_6b",
-            "weights": ["stablelm-2-1_6b"]
-        },
-        "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "TinyLlama--TinyLlama-1.1B-Chat-v1.0",
-            "weights": ["TinyLlama-1.1B-Chat-v1.0"]
-        },
-        "TinyLlama/TinyLlama_v1.1": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "TinyLlama--TinyLlama_v1.1",
-            "weights": ["TinyLlama_v1.1"]
-        },
-        "Qwen/Qwen2.5-Coder-7B-Instruct": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "Qwen--Qwen2.5-Coder-7B-Instruct",
-            "weights": ["Qwen2.5-Coder-7B-Instruct"]
-        },
-        "Qwen/Qwen2.5-Coder-7B": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "Qwen--Qwen2.5-Coder-7B",
-            "weights": ["Qwen2.5-Coder-7B"]
-        },
-        "Qwen/Qwen3-8B": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "Qwen--Qwen3-8B",
-            "weights": ["Qwen/Qwen3-8B"]
-        },
-        "Qwen/Qwen3-14B": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "Qwen--Qwen3-14B",
-            "weights": ["Qwen3-14B"]
-        },
-        "Qwen/Qwen3-4B": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "Qwen--Qwen3-4B",
-            "weights": ["Qwen/Qwen3-4B"]
-        },
-        "tiiuae/Falcon3-7B-Base": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "tiiuae--Falcon3-7B-Base",
-            "weights": ["Falcon3-7B-Base"]
-        },
-        "tiiuae/Falcon3-3B-Base": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "tiiuae--Falcon3-3B-Base",
-            "weights": ["Falcon3-3B-Base"]
-        },
-        "openai/gpt-oss-120b": {
-            "category": "LLM",
-            "compatible_devices": ["p300x2"],
-            "id_name": "openai--gpt-oss-120b",
-            "weights": ["openai/gpt-oss-120b"]
-        },
-        "mobilenetv2": {
-            "weights": [
-                "mobilenetv2"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150",
-                "n300"
-            ]
-        },
-        "resnet": {
-            "id_name": "resnet-50",
-            "weights": [
-                "resnet-50"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150",
-                "n300"
-            ]
-        },
-        "efficientnet": {
-            "weights": [
-                "efficientnet"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "segformer": {
-            "weights": [
-                "segformer"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "unet": {
-            "weights": [
-                "unet"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "vit": {
-            "weights": [
-                "vit"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "vovnet": {
-            "weights": [
-                "vovnet"
-            ],
-            "category": "CNN",
-            "compatible_devices": [
-                "n150"
-            ]
-        },
-        "distil_whisper": {
-            "id_name": "distil-whisper",
-            "weights": [
-                "distil-whisper/distil-large-v3"
-            ],
-            "category": "AUDIO",
-            "compatible_devices": [
-                "n150",
-                "p150",
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "whisper": {
-            "weights": [
-                "openai/whisper-large-v3"
-            ],
-            "category": "AUDIO",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy",
-                "blackhole_galaxy"
-            ]
-        },
-        "wan": {
-            "weights": [
-                "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
-            ],
-            "category": "VIDEO",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "wan_i2v": {
-            "id_name": "wan-i2v",
-            "weights": [
-                "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
-            ],
-            "category": "VIDEO",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "mochi": {
-            "weights": [
-                "genmo/mochi-1-preview"
-            ],
-            "category": "VIDEO",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "sdxl": {
-            "weights": [
-                "stabilityai/stable-diffusion-xl-base-1.0"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy",
-                "n300",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "sdxl_img2img": {
-            "id_name": "sdxl-img2img",
-            "weights": [
-                "stabilityai/stable-diffusion-xl-base-1.0-img-2-img"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "sdxl_inpaint": {
-            "id_name": "sdxl-inpaint",
-            "weights": [
-                "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "sd35": {
-            "weights": [
-                "stabilityai/stable-diffusion-3.5-large"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "flux_dev": {
-            "id_name": "flux-dev",
-            "weights": [
-                "black-forest-labs/FLUX.1-dev"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300",
-                "p300x2"
-            ]
-        },
-        "flux_schnell": {
-            "id_name": "flux-schnell",
-            "weights": [
-                "black-forest-labs/FLUX.1-schnell"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300",
-                "p300x2"
-            ]
-        },
-        "motif": {
-            "weights": [
-                "Motif-Technologies/Motif-Image-6B-Preview"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "t3k",
-                "galaxy",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "z_image_turbo": {
-            "weights": [
-                "Tongyi-MAI/Z-Image-Turbo"
-            ],
-            "category": "IMAGE",
-            "compatible_devices": [
-                "p300x2"
-            ]
-        },
-        "bge": {
-            "weights": [
-                "BAAI/bge-large-en-v1.5"
-            ],
-            "category": "EMBEDDING",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "qwen3_emb": {
-            "id_name": "qwen3-emb-8b",
-            "weights": [
-                "Qwen/Qwen3-Embedding-8B",
-                "Qwen/Qwen3-Embedding-4B"
-            ],
-            "category": "EMBEDDING",
-            "compatible_devices": [
-                "n150",
-                "t3k",
-                "galaxy"
-            ]
-        },
-        "speecht5": {
-            "weights": [
-                "microsoft/speecht5_tts"
-            ],
-            "category": "TTS",
-            "compatible_devices": [
-                "n150",
-                "p150"
-            ]
-        },
-        "diffusiongemma_26b": {
-            "id_name": "diffusiongemma-26b-a4b-it",
-            "weights": [
-                "google/diffusiongemma-26B-A4B-it"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "p300x2"
-            ]
-        },
-        "gpt_oss_20b": {
-            "id_name": "gpt-oss-20b",
-            "weights": [
-                "openai/gpt-oss-20b"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "t3k",
-                "galaxy_t3k",
-                "galaxy"
-            ]
-        },
-        "qwen3_32b": {
-            "id_name": "qwen3-32b",
-            "weights": [
-                "Qwen/Qwen3-32B"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "galaxy",
-                "blackhole_galaxy",
-                "t3k",
-                "galaxy_t3k",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "llama_70b_family": {
-            "id_name": "llama-70b",
-            "weights": [
-                "meta-llama/Llama-3.3-70B-Instruct"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "galaxy",
-                "t3k",
-                "galaxy_t3k",
-                "p150x4",
-                "p150x8",
-                "p300x2"
-            ]
-        },
-        "llama_3_1_8b": {
-            "id_name": "llama-3.1-8b",
-            "weights": [
-                "meta-llama/Llama-3.1-8B-Instruct"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "n150",
-                "n300",
-                "t3k",
-                "gpu",
-                "p100",
-                "p150",
-                "p150x4",
-                "p150x8",
-                "p300",
-                "p300x2",
-                "galaxy",
-                "galaxy_t3k"
-            ]
-        },
-        "llama_3_2_1b": {
-            "id_name": "llama-3.2-1b",
-            "weights": [
-                "meta-llama/Llama-3.2-1B-Instruct"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "p300x2"
-            ]
-        },
-        "mistral_small_24b": {
-            "id_name": "mistral-small-3.1-24b",
-            "weights": [
-                "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
-            ],
-            "category": "LLM",
-            "compatible_devices": [
-                "blackhole_galaxy"
-            ]
-        }
-    },
-    "hardware_defaults": {
-        "n150": {
-            "num_of_devices": 1,
-            "liveness_retry_attempts": 80
-        },
-        "n300": {
-            "num_of_devices": 2,
-            "liveness_retry_attempts": 100
-        },
-        "t3k": {
-            "num_of_devices": 4,
-            "liveness_retry_attempts": 120
-        },
-        "galaxy": {
-            "num_of_devices": 32,
-            "liveness_retry_attempts": 220
-        },
-        "blackhole_galaxy": {
-            "num_of_devices": 32,
-            "liveness_retry_attempts": 220
-        },
-        "p150": {
-            "num_of_devices": 1,
-            "liveness_retry_attempts": 80
-        },
-        "p150x4": {
-            "num_of_devices": 4,
-            "liveness_retry_attempts": 120
-        },
-        "p150x8": {
-            "num_of_devices": 8,
-            "liveness_retry_attempts": 140
-        },
-        "p300": {
-            "num_of_devices": 2,
-            "liveness_retry_attempts": 100
-        },
-        "p300x2": {
-            "num_of_devices": 4,
-            "liveness_retry_attempts": 120
-        }
-    },
-    "prerequisite_tests": [
-        {
-            "name": "DeviceLivenessTest",
-            "module": "test_module.health_tests.device_liveness_test",
-            "description": "Test for device liveness checks - runs before all other tests",
-            "engines": [
-                "media",
-                "forge"
-            ],
-            "exclude_categories": [
-                "LLM"
-            ],
-            "markers": [
-                "fast",
-                "prerequisite"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_delay": 10,
-                "break_on_failure": true,
-                "mock_mode": false
-            },
-            "_comment": "retry_attempts and num_of_devices derived from hardware_defaults. Gated by both 'engines' and 'exclude_categories' (LLM suites run bare vllm serve, which has no /tt-liveness route; the LLM path gates on /health)."
-        },
-        {
-            "name": "LoggerForkSafetyTest",
-            "module": "test_module.unit_tests.logger_fork_safety_test",
-            "description": "Test for logging fork safety to prevent deadlocks",
-            "markers": [
-                "fast",
-                "prerequisite"
-            ],
-            "test_config": {
-                "test_timeout": 60,
-                "retry_attempts": 1,
-                "retry_delay": 5,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        }
+  "_version": "1.0.0",
+  "_description": "Server tests schema configuration. Test suites are in test_suites/*.json",
+  "model_categories": {
+    "IMAGE": [
+      "stabilityai/stable-diffusion-xl-base-1.0",
+      "stabilityai/stable-diffusion-xl-base-1.0-img-2-img",
+      "diffusers/stable-diffusion-xl-1.0-inpainting-0.1",
+      "stabilityai/stable-diffusion-3.5-large",
+      "black-forest-labs/FLUX.1-dev",
+      "black-forest-labs/FLUX.1-schnell",
+      "Motif-Technologies/Motif-Image-6B-Preview",
+      "Tongyi-MAI/Z-Image-Turbo"
     ],
-    "test_templates": {
-        "ImageGenerationLoadTest": {
-            "module": "test_module.load_param_tests.image_generation_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "ImageGenerationParamTest": {
-            "module": "test_module.load_param_tests.image_generation_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "Img2ImgGenerationParamTest": {
-            "module": "test_module.load_param_tests.img2img_generation_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "InpaintingGenerationParamTest": {
-            "module": "test_module.load_param_tests.inpainting_generation_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "ImageGenerationEvalsTest": {
-            "module": "test_module.eval_tests.image_generation_eval_test",
-            "markers": [
-                "eval",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "ImageGenerationLoraLoadTest": {
-            "module": "test_module.load_param_tests.image_generation_lora_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadTest": {
-            "module": "test_module.load_param_tests.audio_transcription_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionParamTest": {
-            "module": "test_module.load_param_tests.audio_transcription_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadDp2Chunk5Test": {
-            "module": "test_module.load_param_tests.audio_transcription_load_dp2_chunk5_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "AudioTranscriptionLoadDp2Chunk30Test": {
-            "module": "test_module.load_param_tests.audio_transcription_load_dp2_chunk30_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "DeviceStabilityTest": {
-            "module": "test_module.stability_tests.device_stability_test",
-            "markers": [
-                "stability",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "CnnLoadTest": {
-            "module": "test_module.load_param_tests.cnn_load_test",
-            "markers": [
-                "load",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "CnnParamTest": {
-            "module": "test_module.load_param_tests.cnn_param_test",
-            "markers": [
-                "param",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "EmbeddingLoadTest": {
-            "module": "test_module.load_param_tests.embedding_load_test",
-            "markers": [
-                "load",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "SpeechT5TTSTest": {
-            "module": "test_module.integration_tests.speecht5_tts_test",
-            "markers": [
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "TTSLoadTest": {
-            "module": "test_module.load_param_tests.tts_load_test",
-            "markers": [
-                "load",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "TTSParamTest": {
-            "module": "test_module.load_param_tests.tts_param_test",
-            "markers": [
-                "param",
-                "e2e"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "TTSIntegrationTest": {
-            "module": "test_module.integration_tests.tts_integration_test",
-            "markers": [
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationLoadTest": {
-            "module": "test_module.load_param_tests.video_generation_load_test",
-            "markers": [
-                "load",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationParamTest": {
-            "module": "test_module.load_param_tests.video_generation_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationI2VTest": {
-            "module": "test_module.load_param_tests.video_generation_i2v_test",
-            "markers": [
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VideoGenerationI2VParamTest": {
-            "module": "test_module.load_param_tests.video_generation_i2v_param_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 1,
-                "retry_delay": 60,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VLLMParamConformanceTest": {
-            "module": "test_module.llm_tests.vllm_param_conformance_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 0,
-                "retry_delay": 10,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VLLMResponsesParamConformanceTest": {
-            "module": "test_module.llm_tests.vllm_param_conformance_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 0,
-                "retry_delay": 10,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VLLMQwen3StreamingParamConformanceTest": {
-            "module": "test_module.llm_tests.vllm_param_conformance_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow"
-            ],
-            "test_config": {
-                "test_timeout": 3600,
-                "retry_attempts": 0,
-                "retry_delay": 10,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        },
-        "VLLMDiffusionGemmaParamConformanceTest": {
-            "module": "test_module.llm_tests.vllm_param_conformance_test",
-            "markers": [
-                "param",
-                "e2e",
-                "slow",
-                "heavy"
-            ],
-            "test_config": {
-                "timeout": 3600,
-                "retry_attempts": 0,
-                "retry_delay": 10,
-                "break_on_failure": false,
-                "mock_mode": false
-            }
-        }
+    "AUDIO": [
+      "distil-whisper/distil-large-v3",
+      "openai/whisper-large-v3"
+    ],
+    "CNN": [
+      "resnet-50",
+      "vovnet",
+      "mobilenetv2",
+      "efficientnet",
+      "segformer",
+      "unet",
+      "vit"
+    ],
+    "EMBEDDING": [
+      "BAAI/bge-large-en-v1.5",
+      "Qwen/Qwen3-Embedding-4B",
+      "Qwen/Qwen3-Embedding-8B",
+      "bge-m3"
+    ],
+    "TTS": [
+      "microsoft/speecht5_tts",
+      "coqui/XTTS-v2"
+    ],
+    "VIDEO": [
+      "Wan-AI/Wan2.2-T2V-A14B-Diffusers",
+      "Wan-AI/Wan2.2-I2V-A14B-Diffusers",
+      "genmo/mochi-1-preview"
+    ],
+    "LLM": [
+      "openai/gpt-oss-120b",
+      "Qwen/Qwen3-32B",
+      "meta-llama/Llama-3.1-8B-Instruct",
+      "meta-llama/Llama-3.2-1B-Instruct",
+      "meta-llama/Llama-3.3-70B-Instruct",
+      "openai/gpt-oss-20b",
+      "google/diffusiongemma-26B-A4B-it",
+      "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+      "Falcon3-3B-Base",
+      "Falcon3-7B-Base",
+      "Qwen/Qwen3-4B",
+      "Qwen3-14B",
+      "Qwen/Qwen3-8B",
+      "Qwen2.5-Coder-7B",
+      "Qwen2.5-Coder-7B-Instruct",
+      "TinyLlama_v1.1",
+      "TinyLlama-1.1B-Chat-v1.0",
+      "stablelm-2-1_6b",
+      "Falcon3-1B-Base",
+      "pythia-70m"
+    ]
+  },
+  "available_markers": {
+    "test_types": {
+      "load": "Load testing with concurrent requests",
+      "param": "Parameter validation tests",
+      "e2e": "Full system tests covering complete workflows",
+      "eval": "Model evaluation tests"
     },
-    "_comment": "test_suites are loaded from test_suites/*.json files",
-    "test_suites": []
+    "performance_characteristics": {
+      "slow": "Tests taking >30 seconds to complete",
+      "heavy": "Resource-intensive tests (large models, high memory)",
+      "fast": "Tests completing in <10 seconds"
+    },
+    "hardware_targets": {
+      "n150": "Tests for N150 device (1 chip)",
+      "n300": "Tests for N300 device (2 chips)",
+      "t3k": "Tests for T3K device (4 chips)",
+      "galaxy": "Tests for Galaxy device (32 chips)",
+      "blackhole_galaxy": "Tests for Blackhole Galaxy device (32 P150 chips)",
+      "p150": "Tests for P150 device (1 chip)",
+      "p150x4": "Tests for P150x4 device (4 chips)",
+      "p150x8": "Tests for P150x8 device (8 chips)",
+      "p300": "Tests for P300 device (2 chips)",
+      "p300x2": "Tests for P300x2 device (4 chips)"
+    },
+    "model_categories": {
+      "image": "Image generation/processing model tests",
+      "audio": "Audio transcription model tests",
+      "cnn": "CNN model tests",
+      "llm": "Large Language Model tests",
+      "embedding": "Embedding model tests",
+      "tts": "Text-to-speech model tests",
+      "video": "Video generation model tests"
+    },
+    "specific_models": {
+      "sdxl": "Stable Diffusion XL tests",
+      "sdxl_img2img": "Stable Diffusion XL img2img tests",
+      "sdxl_inpaint": "Stable Diffusion XL inpainting tests",
+      "sd35": "Stable Diffusion 3.5 tests",
+      "whisper": "Whisper model tests",
+      "distil_whisper": "Distil Whisper model tests",
+      "flux_dev": "FLUX.1-dev model tests",
+      "flux_schnell": "FLUX.1-schnell model tests",
+      "motif": "Motif image generation model tests",
+      "bge": "BGE embedding model tests",
+      "qwen3_emb": "Qwen3 embedding model tests",
+      "speecht5": "SpeechT5 TTS model tests",
+      "wan": "Wan video generation model tests",
+      "wan_i2v": "Wan image-to-video generation model tests",
+      "mochi": "Mochi video generation model tests",
+      "mobilenetv2": "MobileNetV2 CNN model tests",
+      "bge_m3": "BGE-M3 embedding model tests"
+    }
+  },
+  "model_configs": {
+    "tiiuae/Falcon3-1B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-1B-Base",
+      "weights": [
+        "Falcon3-1B-Base"
+      ]
+    },
+    "stabilityai/stablelm-2-1_6b": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "stabilityai--stablelm-2-1_6b",
+      "weights": [
+        "stablelm-2-1_6b"
+      ]
+    },
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "TinyLlama--TinyLlama-1.1B-Chat-v1.0",
+      "weights": [
+        "TinyLlama-1.1B-Chat-v1.0"
+      ]
+    },
+    "TinyLlama/TinyLlama_v1.1": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "TinyLlama--TinyLlama_v1.1",
+      "weights": [
+        "TinyLlama_v1.1"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-7B-Instruct",
+      "weights": [
+        "Qwen2.5-Coder-7B-Instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-7B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-7B",
+      "weights": [
+        "Qwen2.5-Coder-7B"
+      ]
+    },
+    "Qwen/Qwen3-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-8B",
+      "weights": [
+        "Qwen/Qwen3-8B"
+      ]
+    },
+    "Qwen/Qwen3-14B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-14B",
+      "weights": [
+        "Qwen3-14B"
+      ]
+    },
+    "Qwen/Qwen3-4B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-4B",
+      "weights": [
+        "Qwen/Qwen3-4B"
+      ]
+    },
+    "tiiuae/Falcon3-7B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-7B-Base",
+      "weights": [
+        "Falcon3-7B-Base"
+      ]
+    },
+    "tiiuae/Falcon3-3B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-3B-Base",
+      "weights": [
+        "Falcon3-3B-Base"
+      ]
+    },
+    "openai/gpt-oss-120b": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "openai--gpt-oss-120b",
+      "weights": [
+        "openai/gpt-oss-120b"
+      ]
+    },
+    "mobilenetv2": {
+      "weights": [
+        "mobilenetv2"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150",
+        "n300"
+      ]
+    },
+    "resnet": {
+      "id_name": "resnet-50",
+      "weights": [
+        "resnet-50"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150",
+        "n300"
+      ]
+    },
+    "efficientnet": {
+      "weights": [
+        "efficientnet"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150"
+      ]
+    },
+    "segformer": {
+      "weights": [
+        "segformer"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150"
+      ]
+    },
+    "unet": {
+      "weights": [
+        "unet"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150"
+      ]
+    },
+    "vit": {
+      "weights": [
+        "vit"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150"
+      ]
+    },
+    "vovnet": {
+      "weights": [
+        "vovnet"
+      ],
+      "category": "CNN",
+      "compatible_devices": [
+        "n150"
+      ]
+    },
+    "distil_whisper": {
+      "id_name": "distil-whisper",
+      "weights": [
+        "distil-whisper/distil-large-v3"
+      ],
+      "category": "AUDIO",
+      "compatible_devices": [
+        "n150",
+        "p150",
+        "t3k",
+        "galaxy"
+      ]
+    },
+    "whisper": {
+      "weights": [
+        "openai/whisper-large-v3"
+      ],
+      "category": "AUDIO",
+      "compatible_devices": [
+        "n150",
+        "t3k",
+        "galaxy",
+        "blackhole_galaxy"
+      ]
+    },
+    "wan": {
+      "weights": [
+        "Wan-AI/Wan2.2-T2V-A14B-Diffusers"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "t3k",
+        "galaxy",
+        "p150x4",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "wan_i2v": {
+      "id_name": "wan-i2v",
+      "weights": [
+        "Wan-AI/Wan2.2-I2V-A14B-Diffusers"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "t3k",
+        "galaxy",
+        "p150x4",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "mochi": {
+      "weights": [
+        "genmo/mochi-1-preview"
+      ],
+      "category": "VIDEO",
+      "compatible_devices": [
+        "t3k",
+        "galaxy",
+        "p150x4",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "sdxl": {
+      "weights": [
+        "stabilityai/stable-diffusion-xl-base-1.0"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "n150",
+        "t3k",
+        "galaxy",
+        "n300",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "sdxl_img2img": {
+      "id_name": "sdxl-img2img",
+      "weights": [
+        "stabilityai/stable-diffusion-xl-base-1.0-img-2-img"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "n150",
+        "t3k",
+        "galaxy"
+      ]
+    },
+    "sdxl_inpaint": {
+      "id_name": "sdxl-inpaint",
+      "weights": [
+        "diffusers/stable-diffusion-xl-1.0-inpainting-0.1"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "n150",
+        "t3k",
+        "galaxy"
+      ]
+    },
+    "sd35": {
+      "weights": [
+        "stabilityai/stable-diffusion-3.5-large"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "t3k",
+        "galaxy"
+      ]
+    },
+    "flux_dev": {
+      "id_name": "flux-dev",
+      "weights": [
+        "black-forest-labs/FLUX.1-dev"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "t3k",
+        "galaxy",
+        "p150x4",
+        "p150x8",
+        "p300",
+        "p300x2"
+      ]
+    },
+    "flux_schnell": {
+      "id_name": "flux-schnell",
+      "weights": [
+        "black-forest-labs/FLUX.1-schnell"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "t3k",
+        "galaxy",
+        "p150x4",
+        "p150x8",
+        "p300",
+        "p300x2"
+      ]
+    },
+    "motif": {
+      "weights": [
+        "Motif-Technologies/Motif-Image-6B-Preview"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "t3k",
+        "galaxy",
+        "p150x4",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "z_image_turbo": {
+      "weights": [
+        "Tongyi-MAI/Z-Image-Turbo"
+      ],
+      "category": "IMAGE",
+      "compatible_devices": [
+        "p300x2"
+      ]
+    },
+    "bge": {
+      "weights": [
+        "BAAI/bge-large-en-v1.5"
+      ],
+      "category": "EMBEDDING",
+      "compatible_devices": [
+        "n150",
+        "t3k",
+        "galaxy"
+      ]
+    },
+    "qwen3_emb": {
+      "id_name": "qwen3-emb-8b",
+      "weights": [
+        "Qwen/Qwen3-Embedding-8B",
+        "Qwen/Qwen3-Embedding-4B"
+      ],
+      "category": "EMBEDDING",
+      "compatible_devices": [
+        "n150",
+        "t3k",
+        "galaxy"
+      ]
+    },
+    "speecht5": {
+      "weights": [
+        "microsoft/speecht5_tts"
+      ],
+      "category": "TTS",
+      "compatible_devices": [
+        "n150",
+        "p150"
+      ]
+    },
+    "diffusiongemma_26b": {
+      "id_name": "diffusiongemma-26b-a4b-it",
+      "weights": [
+        "google/diffusiongemma-26B-A4B-it"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ]
+    },
+    "gpt_oss_20b": {
+      "id_name": "gpt-oss-20b",
+      "weights": [
+        "openai/gpt-oss-20b"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "t3k",
+        "galaxy_t3k",
+        "galaxy"
+      ]
+    },
+    "qwen3_32b": {
+      "id_name": "qwen3-32b",
+      "weights": [
+        "Qwen/Qwen3-32B"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "galaxy",
+        "blackhole_galaxy",
+        "t3k",
+        "galaxy_t3k",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "llama_70b_family": {
+      "id_name": "llama-70b",
+      "weights": [
+        "meta-llama/Llama-3.3-70B-Instruct"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "galaxy",
+        "t3k",
+        "galaxy_t3k",
+        "p150x4",
+        "p150x8",
+        "p300x2"
+      ]
+    },
+    "llama_3_1_8b": {
+      "id_name": "llama-3.1-8b",
+      "weights": [
+        "meta-llama/Llama-3.1-8B-Instruct"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "n150",
+        "n300",
+        "t3k",
+        "gpu",
+        "p100",
+        "p150",
+        "p150x4",
+        "p150x8",
+        "p300",
+        "p300x2",
+        "galaxy",
+        "galaxy_t3k"
+      ]
+    },
+    "llama_3_2_1b": {
+      "id_name": "llama-3.2-1b",
+      "weights": [
+        "meta-llama/Llama-3.2-1B-Instruct"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ]
+    },
+    "mistral_small_24b": {
+      "id_name": "mistral-small-3.1-24b",
+      "weights": [
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "blackhole_galaxy"
+      ]
+    },
+    "EleutherAI/pythia-70m": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "EleutherAI--pythia-70m",
+      "weights": [
+        "pythia-70m"
+      ]
+    }
+  },
+  "hardware_defaults": {
+    "n150": {
+      "num_of_devices": 1,
+      "liveness_retry_attempts": 80
+    },
+    "n300": {
+      "num_of_devices": 2,
+      "liveness_retry_attempts": 100
+    },
+    "t3k": {
+      "num_of_devices": 4,
+      "liveness_retry_attempts": 120
+    },
+    "galaxy": {
+      "num_of_devices": 32,
+      "liveness_retry_attempts": 220
+    },
+    "blackhole_galaxy": {
+      "num_of_devices": 32,
+      "liveness_retry_attempts": 220
+    },
+    "p150": {
+      "num_of_devices": 1,
+      "liveness_retry_attempts": 80
+    },
+    "p150x4": {
+      "num_of_devices": 4,
+      "liveness_retry_attempts": 120
+    },
+    "p150x8": {
+      "num_of_devices": 8,
+      "liveness_retry_attempts": 140
+    },
+    "p300": {
+      "num_of_devices": 2,
+      "liveness_retry_attempts": 100
+    },
+    "p300x2": {
+      "num_of_devices": 4,
+      "liveness_retry_attempts": 120
+    }
+  },
+  "prerequisite_tests": [
+    {
+      "name": "DeviceLivenessTest",
+      "module": "test_module.health_tests.device_liveness_test",
+      "description": "Test for device liveness checks - runs before all other tests",
+      "engines": [
+        "media",
+        "forge"
+      ],
+      "exclude_categories": [
+        "LLM"
+      ],
+      "markers": [
+        "fast",
+        "prerequisite"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_delay": 10,
+        "break_on_failure": true,
+        "mock_mode": false
+      },
+      "_comment": "retry_attempts and num_of_devices derived from hardware_defaults. Gated by both 'engines' and 'exclude_categories' (LLM suites run bare vllm serve, which has no /tt-liveness route; the LLM path gates on /health)."
+    },
+    {
+      "name": "LoggerForkSafetyTest",
+      "module": "test_module.unit_tests.logger_fork_safety_test",
+      "description": "Test for logging fork safety to prevent deadlocks",
+      "markers": [
+        "fast",
+        "prerequisite"
+      ],
+      "test_config": {
+        "test_timeout": 60,
+        "retry_attempts": 1,
+        "retry_delay": 5,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    }
+  ],
+  "test_templates": {
+    "ImageGenerationLoadTest": {
+      "module": "test_module.load_param_tests.image_generation_load_test",
+      "markers": [
+        "load",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationParamTest": {
+      "module": "test_module.load_param_tests.image_generation_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "Img2ImgGenerationParamTest": {
+      "module": "test_module.load_param_tests.img2img_generation_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "InpaintingGenerationParamTest": {
+      "module": "test_module.load_param_tests.inpainting_generation_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationEvalsTest": {
+      "module": "test_module.eval_tests.image_generation_eval_test",
+      "markers": [
+        "eval",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "ImageGenerationLoraLoadTest": {
+      "module": "test_module.load_param_tests.image_generation_lora_load_test",
+      "markers": [
+        "load",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "AudioTranscriptionLoadTest": {
+      "module": "test_module.load_param_tests.audio_transcription_load_test",
+      "markers": [
+        "load",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "AudioTranscriptionParamTest": {
+      "module": "test_module.load_param_tests.audio_transcription_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "AudioTranscriptionLoadDp2Chunk5Test": {
+      "module": "test_module.load_param_tests.audio_transcription_load_dp2_chunk5_test",
+      "markers": [
+        "load",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "AudioTranscriptionLoadDp2Chunk30Test": {
+      "module": "test_module.load_param_tests.audio_transcription_load_dp2_chunk30_test",
+      "markers": [
+        "load",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "DeviceStabilityTest": {
+      "module": "test_module.stability_tests.device_stability_test",
+      "markers": [
+        "stability",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "CnnLoadTest": {
+      "module": "test_module.load_param_tests.cnn_load_test",
+      "markers": [
+        "load",
+        "e2e"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "CnnParamTest": {
+      "module": "test_module.load_param_tests.cnn_param_test",
+      "markers": [
+        "param",
+        "e2e"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "EmbeddingLoadTest": {
+      "module": "test_module.load_param_tests.embedding_load_test",
+      "markers": [
+        "load",
+        "e2e"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "SpeechT5TTSTest": {
+      "module": "test_module.integration_tests.speecht5_tts_test",
+      "markers": [
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "TTSLoadTest": {
+      "module": "test_module.load_param_tests.tts_load_test",
+      "markers": [
+        "load",
+        "e2e"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "TTSParamTest": {
+      "module": "test_module.load_param_tests.tts_param_test",
+      "markers": [
+        "param",
+        "e2e"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "TTSIntegrationTest": {
+      "module": "test_module.integration_tests.tts_integration_test",
+      "markers": [
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationLoadTest": {
+      "module": "test_module.load_param_tests.video_generation_load_test",
+      "markers": [
+        "load",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationParamTest": {
+      "module": "test_module.load_param_tests.video_generation_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationI2VTest": {
+      "module": "test_module.load_param_tests.video_generation_i2v_test",
+      "markers": [
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VideoGenerationI2VParamTest": {
+      "module": "test_module.load_param_tests.video_generation_i2v_param_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 1,
+        "retry_delay": 60,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VLLMParamConformanceTest": {
+      "module": "test_module.llm_tests.vllm_param_conformance_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VLLMResponsesParamConformanceTest": {
+      "module": "test_module.llm_tests.vllm_param_conformance_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VLLMQwen3StreamingParamConformanceTest": {
+      "module": "test_module.llm_tests.vllm_param_conformance_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "test_timeout": 3600,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    },
+    "VLLMDiffusionGemmaParamConformanceTest": {
+      "module": "test_module.llm_tests.vllm_param_conformance_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow",
+        "heavy"
+      ],
+      "test_config": {
+        "timeout": 3600,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false
+      }
+    }
+  },
+  "_comment": "test_suites are loaded from test_suites/*.json files",
+  "test_suites": []
 }
