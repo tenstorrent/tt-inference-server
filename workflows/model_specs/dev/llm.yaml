@@ -689,7 +689,13 @@ templates:
         # Intermediate decode buckets so 2-8 residents avoid padding to the B=32 graph.
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+        # bounded device rings stay off. Traced chunked prefill still carries one chunk
+        # table for all layers; keep it untraced until per-layer traced chunk tables land.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 960000000  # four resident decode-bucket traces
@@ -704,9 +710,11 @@ templates:
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill; 65536/4096 parity with P150X8/P300X2.
+        # Token-chunked prefill. vLLM charges each sliding-window group
+        # window + max_num_batched_tokens per request, so the 65536 budget used
+        # elsewhere would reserve the whole context per request under hybrid groups.
         enable_chunked_prefill: true
-        max_num_batched_tokens: 65536
+        max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
     # GPU (H100 NVL) bring-your-own vLLM server (see docs/gpu_workflows.md); used
     # to collect GPU reference eval scores for GPQA-Diamond, Terminal-Bench 2.0,
