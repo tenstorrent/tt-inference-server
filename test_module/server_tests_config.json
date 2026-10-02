@@ -63,7 +63,8 @@
       "pythia-70m",
       "phi-1_5",
       "Qwen3.8-27B",
-      "phi-1"
+      "phi-1",
+      "Qwen2.5-14B-Instruct-1M"
     ]
   },
   "available_markers": {
@@ -636,6 +637,16 @@
       "id_name": "microsoft--phi-1",
       "weights": [
         "phi-1"
+      ]
+    },
+    "Qwen/Qwen2.5-14B-Instruct-1M": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-14B-Instruct-1M",
+      "weights": [
+        "Qwen2.5-14B-Instruct-1M"
       ]
     }
   },
