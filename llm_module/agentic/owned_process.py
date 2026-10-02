@@ -18,14 +18,23 @@ import time
 def identity(pid):
     try:
         fields = Path("/proc/{}/stat".format(pid)).read_text().rsplit(")", 1)[1].split()
-        return {"pid": int(pid), "state": fields[0], "parent": int(fields[1]), "start": int(fields[19])}
+        return {
+            "pid": int(pid),
+            "state": fields[0],
+            "parent": int(fields[1]),
+            "start": int(fields[19]),
+        }
     except (OSError, ValueError, IndexError):
         return None
 
 
 def same_process(record):
     actual = identity(record["pid"])
-    return actual is not None and actual["start"] == record["start"] and actual["state"] != "Z"
+    return (
+        actual is not None
+        and actual["start"] == record["start"]
+        and actual["state"] != "Z"
+    )
 
 
 def send(record, sig):
@@ -65,7 +74,11 @@ def cleanup(base):
         return {"status": "launch_cancelled", "owned_processes": 0, "live_remaining": 0}
     root = json.loads(marker.read_text())
     if not same_process(root):
-        return {"status": "root_already_exited", "owned_processes": 0, "live_remaining": 0}
+        return {
+            "status": "root_already_exited",
+            "owned_processes": 0,
+            "live_remaining": 0,
+        }
     owned = {root["pid"]: root}
     send(root, signal.SIGSTOP)
     # Freeze discovered parents before scanning again, so they cannot fork
@@ -89,7 +102,9 @@ def cleanup(base):
     for row in reversed(list(owned.values())):
         send(row, signal.SIGKILL)
     deadline = time.monotonic() + 2
-    while any(same_process(row) for row in owned.values()) and time.monotonic() < deadline:
+    while (
+        any(same_process(row) for row in owned.values()) and time.monotonic() < deadline
+    ):
         time.sleep(0.02)
     remaining = sum(same_process(row) for row in owned.values())
     if remaining:

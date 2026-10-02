@@ -18,6 +18,11 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from llm_module.agentic.abortable_request import (
+    ClientDisconnected,
+    post_until_disconnect,
+)
+
 REPETITION_FEEDBACK = (
     "Loop check: the same command has been repeated with the same unsuccessful "
     "result. Repeating it again without new evidence or a relevant change will "
@@ -337,6 +342,7 @@ class RequestTelemetryProxy(AbstractContextManager):
         repeated_tool_feedback: bool = False,
         reasoning_history_limit: int | None = None,
         submission_review_once: bool = False,
+        abort_on_client_disconnect: bool = False,
     ):
         self.upstream = upstream.rstrip("/")
         self.output = output
@@ -351,6 +357,7 @@ class RequestTelemetryProxy(AbstractContextManager):
             raise ValueError("Reasoning history limit must be a nonnegative integer")
         self.reasoning_history_limit = reasoning_history_limit
         self.submission_review_once = submission_review_once
+        self.abort_on_client_disconnect = abort_on_client_disconnect
         self.reviewed_sessions = set()
         self.lock = threading.Lock()
         self.previous_response_times = {}
@@ -491,18 +498,27 @@ class RequestTelemetryProxy(AbstractContextManager):
                         headers[key] = self.headers[key]
                 owner.snapshot_server_metrics(common, "before_request", headers)
                 try:
-                    try:
-                        response = urlopen(
-                            Request(
-                                owner.upstream + "/chat/completions", body, headers
-                            ),
-                            timeout=owner.timeout,
+                    if owner.abort_on_client_disconnect:
+                        result, status = post_until_disconnect(
+                            owner.upstream + "/chat/completions",
+                            body,
+                            headers,
+                            owner.timeout,
+                            self.connection,
                         )
-                    except HTTPError as error:
-                        response = error
-                    with response:
-                        result = response.read()
-                        status = response.status
+                    else:
+                        try:
+                            response = urlopen(
+                                Request(
+                                    owner.upstream + "/chat/completions", body, headers
+                                ),
+                                timeout=owner.timeout,
+                            )
+                        except HTTPError as error:
+                            response = error
+                        with response:
+                            result = response.read()
+                            status = response.status
                     try:
                         parsed = json.loads(result)
                     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -581,6 +597,18 @@ class RequestTelemetryProxy(AbstractContextManager):
                     self.send_header("Content-Length", str(len(result)))
                     self.end_headers()
                     self.wfile.write(result)
+                except ClientDisconnected:
+                    owner.record(
+                        {
+                            **common,
+                            "event": "upstream_abort_requested",
+                            "unix_s": time.time(),
+                            "elapsed_s": time.monotonic() - started,
+                        }
+                    )
+                    owner.snapshot_server_metrics(
+                        common, "after_client_disconnect", headers
+                    )
                 except (BrokenPipeError, ConnectionResetError):
                     owner.record(
                         {

@@ -113,6 +113,7 @@ class HarborRunConfig:
     reasoning_history_limit: Optional[int] = None
     submission_review_once: bool = False
     owned_command_cleanup: bool = False
+    abort_on_client_disconnect: bool = False
 
 
 def _apply_mini_swe_agent_defaults(
@@ -211,7 +212,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         or config.agent_import_path is not None
         or config.environment_type != "docker"
     ):
-        raise ValueError("Owned command cleanup supports only built-in Docker mini-swe-agent trials")
+        raise ValueError(
+            "Owned command cleanup supports only built-in Docker mini-swe-agent trials"
+        )
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -253,7 +256,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         "kwargs": _get_agent_kwargs(config),
     }
     if config.owned_command_cleanup:
-        agent_config["import_path"] = "llm_module.agentic.owned_mini_swe_agent:OwnedMiniSweAgent"
+        agent_config["import_path"] = (
+            "llm_module.agentic.owned_mini_swe_agent:OwnedMiniSweAgent"
+        )
     elif config.agent_import_path:
         agent_config["import_path"] = config.agent_import_path
     else:
@@ -330,6 +335,8 @@ def _annotate_result_file(result_file: Path) -> None:
 
 
 def run(config: HarborRunConfig) -> int:
+    if config.abort_on_client_disconnect and not config.request_telemetry:
+        raise ValueError("Disconnect propagation requires audited request telemetry")
     if config.normalize_submission_marker and not config.request_telemetry:
         raise ValueError("Submission normalization requires audited request telemetry")
     if config.repeated_tool_feedback and not config.request_telemetry:
@@ -353,6 +360,7 @@ def run(config: HarborRunConfig) -> int:
             config.repetition_feedback_after,
             normalize_submission=config.normalize_submission_marker,
             collect_server_metrics=config.n_concurrent_trials == 1,
+            abort_on_client_disconnect=config.abort_on_client_disconnect,
             repeated_tool_feedback=config.repeated_tool_feedback,
             reasoning_history_limit=config.reasoning_history_limit,
             submission_review_once=config.submission_review_once,

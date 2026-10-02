@@ -29,13 +29,25 @@ def wait_record(base):
 
 def test_cancellation_stops_detached_child_and_not_unrelated_peer(marker, tmp_path):
     target, ready = tmp_path / "late-write", tmp_path / "ready"
-    child = "import time; from pathlib import Path; time.sleep(1); Path({!r}).touch()".format(str(target))
+    child = "import time; from pathlib import Path; time.sleep(1); Path({!r}).touch()".format(
+        str(target)
+    )
     program = (
         "import subprocess,sys,time; from pathlib import Path; "
         "subprocess.Popen([sys.executable,'-c', {!r}], start_new_session=True); "
         "Path({!r}).touch(); time.sleep(30)"
     ).format(child, str(ready))
-    root = subprocess.Popen([sys.executable, owned_process.__file__, "launch", marker, sys.executable, "-c", program])
+    root = subprocess.Popen(
+        [
+            sys.executable,
+            owned_process.__file__,
+            "launch",
+            marker,
+            sys.executable,
+            "-c",
+            program,
+        ]
+    )
     peer = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
         wait_record(marker)
@@ -45,7 +57,11 @@ def test_cancellation_stops_detached_child_and_not_unrelated_peer(marker, tmp_pa
             time.sleep(0.01)
         assert ready.exists()
         report = owned_process.cleanup(marker)
-        assert report == {"status": "stopped", "owned_processes": 2, "live_remaining": 0}
+        assert report == {
+            "status": "stopped",
+            "owned_processes": 2,
+            "live_remaining": 0,
+        }
         root.wait(timeout=2)
         time.sleep(1.1)
         assert not target.exists()
@@ -62,7 +78,15 @@ def test_late_launch_is_rejected_after_cleanup(marker, tmp_path):
     report = owned_process.cleanup(marker)
     assert report["status"] == "launch_cancelled"
     result = subprocess.run(
-        [sys.executable, owned_process.__file__, "launch", marker, sys.executable, "-c", "open({!r},'w').close()".format(str(target))]
+        [
+            sys.executable,
+            owned_process.__file__,
+            "launch",
+            marker,
+            sys.executable,
+            "-c",
+            "open({!r},'w').close()".format(str(target)),
+        ]
     )
     assert result.returncode == 125
     assert not target.exists()
@@ -82,6 +106,8 @@ def test_reused_pid_identity_is_not_signaled(marker):
 
 
 def test_cli_rejects_unscoped_marker_path():
-    result = subprocess.run([sys.executable, owned_process.__file__, "cleanup", "/tmp"], capture_output=True)
+    result = subprocess.run(
+        [sys.executable, owned_process.__file__, "cleanup", "/tmp"], capture_output=True
+    )
     assert result.returncode != 0
     assert b"unscoped" in result.stderr

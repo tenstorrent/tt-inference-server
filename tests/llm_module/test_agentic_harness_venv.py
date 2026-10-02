@@ -76,7 +76,9 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
         harbor, "run_with_progress", fake_run_with_progress
     ), patch.object(
         harbor, "_annotate_result_file", lambda *_a, **_k: None
-    ), patch.object(harbor.sys, "executable", "/cur/bin/python"):
+    ), patch.object(
+        harbor.sys, "executable", "/cur/bin/python"
+    ):
         harbor.run(config)
 
     assert captured["cmd"][0] == str(Path("/cur/bin/python").parent / "harbor")
@@ -84,22 +86,35 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
 
 def test_owned_command_cleanup_is_opt_in_and_retains_mini_defaults(tmp_path):
     original = replace(_harbor_config(tmp_path, _VENV_PY), agent="mini-swe-agent")
-    ordinary = json.loads(harbor._write_harbor_config(original).read_text())["agents"][0]
+    ordinary = json.loads(harbor._write_harbor_config(original).read_text())["agents"][
+        0
+    ]
     assert ordinary["name"] == "mini-swe-agent"
     assert "import_path" not in ordinary
     candidate = replace(original, owned_command_cleanup=True)
     actual = json.loads(harbor._write_harbor_config(candidate).read_text())["agents"][0]
-    assert actual["import_path"] == "llm_module.agentic.owned_mini_swe_agent:OwnedMiniSweAgent"
+    assert (
+        actual["import_path"]
+        == "llm_module.agentic.owned_mini_swe_agent:OwnedMiniSweAgent"
+    )
     assert "name" not in actual
     assert actual["kwargs"] == ordinary["kwargs"]
     assert actual["kwargs"]["config"]["model"]["model_kwargs"]["drop_params"] is True
-    for changes in ({"agent": "terminus"}, {"environment_type": "kubernetes"}, {"agent_import_path": "x:Y"}):
+    for changes in (
+        {"agent": "terminus"},
+        {"environment_type": "kubernetes"},
+        {"agent_import_path": "x:Y"},
+    ):
         with pytest.raises(ValueError, match="only built-in Docker"):
             harbor._write_harbor_config(replace(candidate, **changes))
 
 
 def test_owned_command_adapter_is_importable_by_harbor_child(tmp_path, monkeypatch):
-    config = replace(_harbor_config(tmp_path, _VENV_PY), agent="mini-swe-agent", owned_command_cleanup=True)
+    config = replace(
+        _harbor_config(tmp_path, _VENV_PY),
+        agent="mini-swe-agent",
+        owned_command_cleanup=True,
+    )
     monkeypatch.setenv("PYTHONPATH", "/existing/path")
     captured = {}
 
@@ -107,7 +122,19 @@ def test_owned_command_adapter_is_importable_by_harbor_child(tmp_path, monkeypat
         captured.update(kwargs)
         return 0
 
-    with patch.object(harbor, "run_with_progress", fake_run), patch.object(harbor, "_annotate_result_file"):
+    with patch.object(harbor, "run_with_progress", fake_run), patch.object(
+        harbor, "_annotate_result_file"
+    ):
         harbor.run(config)
     assert captured["env"]["PYTHONPATH"].endswith(":/existing/path")
-    assert captured["env"]["PYTHONPATH"].startswith(str(Path(harbor.__file__).resolve().parents[2]))
+    assert captured["env"]["PYTHONPATH"].startswith(
+        str(Path(harbor.__file__).resolve().parents[2])
+    )
+
+
+def test_disconnect_propagation_requires_audited_proxy(tmp_path):
+    config = replace(
+        _harbor_config(tmp_path, _VENV_PY), abort_on_client_disconnect=True
+    )
+    with pytest.raises(ValueError, match="audited request telemetry"):
+        harbor.run(config)
