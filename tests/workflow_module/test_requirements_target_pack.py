@@ -1044,7 +1044,7 @@ def test_agentic_config_carries_the_documents_expected_sweep():
     assert all(run.expected_sweep == sweep for run in config.runs)
 
 
-def _sweep_pack(rows, soft=(), slo=None):
+def _sweep_pack(rows, soft=(), slo=None, schema_version="3.1.0"):
     """A pack whose single text scenario sweeps ``rows``."""
     from workflow_module.requirements_schema import RequirementsDoc
 
@@ -1052,7 +1052,11 @@ def _sweep_pack(rows, soft=(), slo=None):
     if slo:
         scenario["slo"] = slo
     doc = RequirementsDoc.from_dict(
-        {"schemaVersion": "3.1.0", "model": {"name": "a/b"}, "scenarios": [scenario]}
+        {
+            "schemaVersion": schema_version,
+            "model": {"name": "a/b"},
+            "scenarios": [scenario],
+        }
     )
     return RequirementsTargetPack(doc, TenstorrentTargetPack()), doc.scenarios[0]
 
@@ -1074,6 +1078,28 @@ def test_soft_sweep_metrics_grade_as_should():
 
     assert point.target_priorities == {"ttft_ms": "should", "tput": "must"}
     assert point.priority == "must"
+
+
+def test_input_throughput_is_a_hard_sweep_target():
+    pack, scenario = _sweep_pack(
+        [{"isl": 128, "osl": 128, "concurrency": 1, "inputThroughputTps": 5500}]
+    )
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    assert point.targets["target"].tput_input == 5500
+    assert point.target_priorities == {"tput_input": "must"}
+
+
+def test_input_throughput_is_derived_as_isl_times_rps_from_3_1():
+    row = {"isl": 128, "osl": 128, "concurrency": 1, "reqThroughputRps": 10}
+    pack, scenario = _sweep_pack([row])
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+    assert point.targets["target"].tput_input == 1280
+
+    # Before 3.1.0 the document has no input-throughput requirement.
+    old_pack, old_scenario = _sweep_pack([row], schema_version="3.0.0")
+    (old_point,) = old_pack._scenario_params(old_scenario, DeviceTypes.GALAXY, None)
+    assert old_point.targets == {}
 
 
 def test_blank_sweep_metrics_are_not_targets():
@@ -1135,6 +1161,29 @@ def test_agentic_expected_sweep_carries_the_soft_list():
     assert pack._agentic_expected_sweep() == [
         {"concurrency": 1, "ttftMeanMs": 800.0, "softMetrics": ["ttftMeanMs"]}
     ]
+
+
+@pytest.mark.parametrize(
+    "schema_version, expected_input", [("3.1.0", 900.0), ("3.0.0", None)]
+)
+def test_agentic_input_throughput_is_derived_as_total_minus_output(
+    schema_version, expected_input
+):
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    row = {"concurrency": 1, "totalThroughputTps": 1000.0, "decodeThroughputTps": 100.0}
+    doc = RequirementsDoc.from_dict(
+        {
+            "schemaVersion": schema_version,
+            "model": {"name": "a/b"},
+            "scenarios": [{"id": "agent", "kind": "agentic", "agenticSweep": [row]}],
+        }
+    )
+    (point,) = RequirementsTargetPack(
+        doc, TenstorrentTargetPack()
+    )._agentic_expected_sweep()
+
+    assert point.get("inputThroughputTps") == expected_input
 
 
 def test_agentic_expected_sweep_dedupes_first_workload_wins():

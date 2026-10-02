@@ -18,7 +18,9 @@ from workflow_module.requirements_schema import (
     RequirementsDoc,
     Slo,
     effective_slo,
+    input_throughput_tps,
     load_requirements,
+    requires_input_throughput,
     stated_target,
 )
 
@@ -284,6 +286,35 @@ def test_soft_metrics_are_read_per_scenario():
     )
     assert doc.scenarios[0].soft_metrics == frozenset({"ttftMeanMs"})
     assert doc.agentic_workloads[0].soft_metrics == frozenset({"e2elP95Ms"})
+
+
+@pytest.mark.parametrize(
+    "row, isl, expected",
+    [
+        ({"inputThroughputTps": 5500}, 128, 5500.0),  # stated wins
+        ({"reqThroughputRps": 10}, 128, 1280.0),  # fixed-length: ISL x RPS
+        ({"totalThroughputTps": 1000, "decodeThroughputTps": 100}, None, 900.0),
+        ({"totalThroughputTps": 100, "decodeThroughputTps": 100}, None, None),
+        ({"reqThroughputRps": 10}, None, None),  # agentic needs total and output
+        ({}, 128, None),
+    ],
+)
+def test_input_throughput_follows_the_gauntlet_reader_rule(row, isl, expected):
+    assert input_throughput_tps(row, isl=isl) == expected
+
+
+@pytest.mark.parametrize(
+    "version, required",
+    [
+        ("3.1.0", True),
+        ("3.2.5", True),
+        ("4.0.0", True),
+        ("3.0.0", False),
+        ("2.8.0", False),
+    ],
+)
+def test_input_throughput_is_required_from_3_1(version, required):
+    assert requires_input_throughput(version) is required
 
 
 @pytest.mark.parametrize(
