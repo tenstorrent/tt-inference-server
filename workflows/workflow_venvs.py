@@ -657,6 +657,10 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.PREFIX_CACHE,
         requirements_file="prefix-cache.txt",
+        # Force transformers 5.x so gemma-4's list-valued extra_special_tokens
+        # parses at aiperf tokenizer init; same constraint and rationale as
+        # llm-vllm-overrides.txt. See prefix-cache-overrides.txt.
+        overrides_file="prefix-cache-overrides.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
