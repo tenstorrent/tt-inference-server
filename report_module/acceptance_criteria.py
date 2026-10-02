@@ -124,7 +124,7 @@ def acceptance_criteria_check(
     categories = [
         _check_benchmarks(schema, model_status),
         _check_evals(schema, known_issues, model_status),
-        _check_spec_tests(schema),
+        _check_spec_tests(schema, known_issues),
         _check_agentic_targets(schema),
     ]
     blockers: Dict[str, str] = {}
@@ -551,7 +551,53 @@ def _check_evals(
     )
 
 
-def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
+def _spec_failing_cases(block: Block) -> Optional[List[str]]:
+    """Names of the non-passing test cases a spec block reports, or None.
+
+    VLLMParamConformanceTest reports one row per pytest function in
+    ``parameter_conformance_summary`` (``{"test_case", "status", "summary"}``).
+    A block without that per-case breakdown returns None: nothing finer than
+    the whole block can then be matched against a waiver.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    rows = data.get("parameter_conformance_summary")
+    if not isinstance(rows, list) or not rows:
+        return None
+    failing = []
+    for row in rows:
+        if not isinstance(row, Mapping) or not row.get("test_case"):
+            return None
+        if "PASS" not in str(row.get("status", "")).upper():
+            failing.append(str(row["test_case"]))
+    return failing
+
+
+def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optional[str]:
+    """Reason(s) when every failure in a blocking spec block is a known issue.
+
+    Mirrors the EVALS waiver: a model_spec ``known_issues`` entry with
+    workflow_type SPEC_TESTS waives exactly the test case its ``task_name``
+    names (e.g. ``test_penalties``); one with no ``task_name`` waives the
+    workflow. A single unwaived failing case keeps the block a blocker.
+    """
+    whole = _find_waiver(known_issues, "SPEC_TESTS", None)
+    if whole is not None:
+        return whole
+    failing = _spec_failing_cases(block)
+    if not failing:
+        return None
+    reasons = []
+    for case in failing:
+        reason = _find_waiver(known_issues, "SPEC_TESTS", case)
+        if reason is None:
+            return None
+        reasons.append(f"{case}: {reason}")
+    return "; ".join(reasons)
+
+
+def _check_spec_tests(
+    schema: ReportSchema, known_issues: Optional[Iterable[Any]] = None
+) -> CategoryResult:
     spec_blocks = [
         b
         for b in schema.sections
@@ -563,16 +609,26 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         return CategoryResult(CATEGORY_SPEC_TESTS, STATUS_NA, 0, 0)
 
     blockers: Dict[str, str] = {}
+    waived: Dict[str, str] = {}
     failed = 0
     skipped = 0
     na = 0
     for block in spec_blocks:
         test_status = _block_test_status(block)
         if test_status.is_blocking:
-            blockers[f"spec.{_block_key(block)}"] = (
+            message = (
                 f"{block.title or block.kind} reported status={test_status.value} "
                 f"(attempts={block.data.get('attempts', '?')})"
             )
+            reason = (
+                _spec_waiver(block, known_issues)
+                if test_status is TestStatus.FAIL
+                else None
+            )
+            if reason is not None:
+                waived[f"spec.{_block_key(block)}"] = f"{message} (waived: {reason})"
+                continue
+            blockers[f"spec.{_block_key(block)}"] = message
             failed += 1
         elif test_status is TestStatus.SKIP:
             skipped += 1
@@ -588,6 +644,7 @@ def _check_spec_tests(schema: ReportSchema) -> CategoryResult:
         na=na,
         skipped=skipped,
         blockers=blockers,
+        waived=waived,
     )
 
 
