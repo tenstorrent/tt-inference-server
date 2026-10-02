@@ -154,7 +154,7 @@ curl -s http://127.0.0.1:8000/v1/models | jq
 ```
 
 `/health` and `/v1/models` do not require an API key. Generation endpoints do.
-Unless `API_KEY` or `API_KEYS` is set, the default key is `your-secret-key`.
+Unless `API_KEY` is set, the default key is `your-secret-key`.
 
 ## Submit a Video Job
 
