@@ -1054,6 +1054,18 @@ def _normalize_vllm_arg_name(arg_name: str) -> str:
 
 
 def _append_vllm_arg(argv: list[str], arg_name: str, value) -> None:
+    # Model-owned parsers must resolve in both local and container checkouts,
+    # independently of the wrapper's vllm-tt-metal/src working directory.
+    if (
+        _normalize_vllm_arg_name(arg_name)
+        in {"reasoning_parser_plugin", "tool_parser_plugin"}
+        and isinstance(value, str)
+        and value.startswith("${TT_METAL_HOME}/")
+    ):
+        metal_home = os.environ.get("TT_METAL_HOME")
+        if not metal_home:
+            raise ValueError("TT_METAL_HOME is required for model-owned parser paths")
+        value = str(Path(metal_home) / value[len("${TT_METAL_HOME}/") :])
     if value is None:
         return
     if isinstance(value, bool):

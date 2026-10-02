@@ -429,7 +429,15 @@ qwen38_27b_qb2_impl = ImplSpec(
     code_path="models/demos/qwen38_27b_qb2",
 )
 
+granite_autoport_impl = ImplSpec(
+    impl_id="granite_autoport",
+    impl_name="granite-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/ibm_granite_granite_4_2_30b",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
+    "granite_autoport": granite_autoport_impl,
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,

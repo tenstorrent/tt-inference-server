@@ -3925,3 +3925,36 @@ templates:
       kv_cache_usable_tokens: 131072
     max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
+
+# Granite autoport: local Stage 1-11 validated; agentic qualification pending.
+- weights:
+    - ibm-granite/granite-4.2-30b
+  impl: granite_autoport
+  inference_engine: VLLM
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 131072
+      default_impl: true
+      env_vars:
+        HF_MODEL: ibm-granite/granite-4.2-30b
+        MESH_DEVICE: P300x2
+        GRANITE_VLLM_HOST_COMPAT: stochastic
+        TT_MODEL_CLASS_OVERRIDES: TTGraniteForCausalLM=models.autoports.ibm_granite_granite_4_2_30b.tt.generator_vllm:GraniteForCausalLM
+      vllm_args:
+        revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        tokenizer_revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        block_size: 32
+        max_num_seqs: 16
+        no-enable-prefix-caching: true
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_xml
+        reasoning_parser: granite_thinking_parser
+        reasoning_parser_plugin: ${TT_METAL_HOME}/models/autoports/ibm_granite_granite_4_2_30b/tt/granite_thinking_parser.py
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 134217728
+        sample_on_device_mode: all
