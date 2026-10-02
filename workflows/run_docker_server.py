@@ -18,7 +18,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
-from workflows.autoport_precision_overlay import precision_overlay_args
+from workflows.autoport_precision_overlay import (
+    pinned_hf_cache_args,
+    precision_overlay_args,
+)
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -528,6 +531,7 @@ def generate_docker_run_command(
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
         *precision_overlay_args(model_spec, runtime_config, repo_root_path),
+        *pinned_hf_cache_args(model_spec),
     ]
 
     if model_spec.inference_engine in (

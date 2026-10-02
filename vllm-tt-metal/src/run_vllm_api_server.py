@@ -702,6 +702,36 @@ def ensure_weights_available(model_spec: dict) -> Path:
     if model_spec.get("impl", {}).get("impl_id") == QUETZAL_IMPL_ID:
         return _ensure_quetzal_metadata(model_spec)
 
+    if model_spec.get("metadata", {}).get("autoport_pinned_hf_cache"):
+        args = model_spec.get("device_model_spec", {}).get("vllm_args", {})
+        revision = args.get("revision")
+        if not isinstance(revision, str) or not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise RuntimeError(
+                "Pinned autoport cache requires an immutable checkpoint revision"
+            )
+        if args.get("tokenizer_revision") != revision:
+            raise RuntimeError(
+                "Pinned autoport cache requires matching tokenizer_revision"
+            )
+        cache_root = Path(
+            os.getenv("CACHE_ROOT", "/home/container_app_user/cache_root")
+        )
+        cache_dir = cache_root / "huggingface" / "hub"
+        if os.getenv("HF_HUB_CACHE") != str(cache_dir):
+            raise RuntimeError(
+                "Pinned autoport cache requires HF_HUB_CACHE before Python startup"
+            )
+        hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+        logger.info(
+            "Using persistent pinned HF snapshot repo=%s revision=%s cache=%s",
+            hf_repo,
+            revision,
+            cache_dir,
+        )
+        return Path(
+            snapshot_download(repo_id=hf_repo, revision=revision, cache_dir=cache_dir)
+        )
+
     # Default: download weights into cache_root.
     # snapshot_download resumes partial downloads and skips files already present, so
     # always invoke it: a partially-downloaded directory looks non-empty but would crash

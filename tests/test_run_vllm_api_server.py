@@ -1012,6 +1012,57 @@ def _weights_spec():
     }
 
 
+def test_autoport_uses_one_persistent_pinned_hub_snapshot(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    cache = tmp_path / "huggingface" / "hub"
+    monkeypatch.setenv("HF_HUB_CACHE", str(cache))
+    spec = _weights_spec()
+    spec.update(
+        metadata={"autoport_pinned_hf_cache": True},
+        device_model_spec={
+            "vllm_args": {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+        },
+    )
+    snapshot = cache / "models--test--model" / "snapshots" / ("a" * 40)
+    module.snapshot_download.return_value = str(snapshot)
+    assert module.ensure_weights_available(spec) == snapshot
+    module.snapshot_download.assert_called_once_with(
+        repo_id=spec["hf_model_repo"], revision="a" * 40, cache_dir=cache
+    )
+
+
+@pytest.mark.parametrize("failure", ["mutable", "tokenizer", "environment", "offline"])
+def test_autoport_cache_fails_closed(
+    monkeypatch, tmp_path, run_vllm_api_server_module, failure
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "huggingface" / "hub"))
+    args = {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+    spec = _weights_spec()
+    spec.update(
+        metadata={"autoport_pinned_hf_cache": True},
+        device_model_spec={"vllm_args": args},
+    )
+    if failure == "mutable":
+        args["revision"] = "main"
+    elif failure == "tokenizer":
+        args["tokenizer_revision"] = "b" * 40
+    elif failure == "environment":
+        monkeypatch.delenv("HF_HUB_CACHE")
+    else:
+        module.snapshot_download.side_effect = RuntimeError("offline missing snapshot")
+    with pytest.raises(RuntimeError):
+        module.ensure_weights_available(spec)
+    if failure != "offline":
+        module.snapshot_download.assert_not_called()
+
+
 def test_quetzal_fetches_only_pinned_metadata(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):

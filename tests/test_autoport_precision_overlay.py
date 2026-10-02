@@ -6,7 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from workflows.autoport_precision_overlay import precision_overlay_args
+from workflows.autoport_precision_overlay import (
+    pinned_hf_cache_args,
+    precision_overlay_args,
+)
 
 
 def spec(path="reference_config/policy.json", code_path="models/autoports/example"):
@@ -32,6 +35,21 @@ def test_no_overlay_preserves_existing_command(tmp_path):
         )
         == []
     )
+
+
+def test_pinned_cache_is_explicit_and_set_before_python():
+    model = spec()
+    assert pinned_hf_cache_args(model) == []
+    model.metadata["autoport_pinned_hf_cache"] = True
+    assert pinned_hf_cache_args(model) == [
+        "--env",
+        "HF_HOME=/home/container_app_user/cache_root/huggingface",
+        "--env",
+        "HF_HUB_CACHE=/home/container_app_user/cache_root/huggingface/hub",
+    ]
+    model.impl.code_path = "models/demos/example"
+    with pytest.raises(ValueError, match="autoport implementation"):
+        pinned_hf_cache_args(model)
 
 
 def test_explicit_overlay_is_readonly_and_scoped(tmp_path, caplog):

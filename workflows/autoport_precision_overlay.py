@@ -11,6 +11,22 @@ from pathlib import Path, PurePosixPath
 logger = logging.getLogger("run_log")
 
 
+def pinned_hf_cache_args(model_spec):
+    """Set cache locations before Python imports Hugging Face's constants."""
+    if not (getattr(model_spec, "metadata", None) or {}).get(
+        "autoport_pinned_hf_cache"
+    ):
+        return []
+    if not str(model_spec.impl.code_path).startswith("models/autoports/"):
+        raise ValueError("Pinned autoport cache requires an autoport implementation")
+    return [
+        "--env",
+        "HF_HOME=/home/container_app_user/cache_root/huggingface",
+        "--env",
+        "HF_HUB_CACHE=/home/container_app_user/cache_root/huggingface/hub",
+    ]
+
+
 def precision_overlay_args(model_spec, runtime_config, repo_root):
     relative = (getattr(model_spec, "metadata", None) or {}).get(
         "autoport_precision_config"
