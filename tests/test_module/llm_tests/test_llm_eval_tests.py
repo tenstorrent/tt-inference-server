@@ -26,6 +26,13 @@ from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 _MOD = "test_module.llm_tests.llm_eval_tests"
 
 
+def tmp_output_path():
+    import tempfile
+    from pathlib import Path
+
+    return Path(tempfile.mkdtemp())
+
+
 # --- fixtures ----------------------------------------------------------------
 
 
@@ -105,6 +112,28 @@ def _command_gen_kwargs(command):
 
 
 class TestEvalCommand:
+    @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
+    @pytest.mark.parametrize("value", [0, -1, True, 1.5])
+    def test_invalid_execution_policy(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            EvalTask(task_name="aime25", **{field: value})
+
+    def test_task_attempt_budget_overrides_device_default(self):
+        # max_attempts is a TOTAL attempt count including the first, which is
+        # what docs/eval_execution_budgets.md promises. lm-eval's max_retries
+        # counts only the retries after the first attempt, so the total must be
+        # converted rather than passed through.
+        task = EvalTask(task_name="aime25", max_attempts=1)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+        assert "max_retries=0" in model_args
+
+    def test_attempt_budget_is_a_total_not_a_retry_count(self):
+        task = EvalTask(task_name="aime25", max_attempts=3)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+        assert "max_retries=2" in model_args
+
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
         command = _build_eval_test_command(task)
@@ -535,8 +564,18 @@ class TestRunLLMEval:
         )
         assert len(out) == 1
         assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
-        assert "no eval results parsed" in out[0].data["error"]
+        # main settled on this wording for a non-deadline subprocess failure
+        # (see test_bad_result_does_not_reuse_old_scores_or_stop_later_tasks);
+        # this PR only adds the rc=124 deadline case on top of it.
+        assert "no eval results parsed (rc=1)" in out[0].data["error"]
         run_task.assert_called_once()
+
+    def test_deadline_cannot_score_partial_results_as_pass(self):
+        out, _, score_task, _ = self._run([_task()], blocks=[MagicMock()], run_rc=124)
+        score_task.assert_not_called()
+        assert out[0].data["subprocess_rc"] == 124
+        assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "incomplete" in out[0].data["error"]
 
     def test_min_context_skip(self):
         # Task needs more context than the device provides: not run, but now a
@@ -638,6 +677,12 @@ class TestEvalsWorkflowLLMOverride:
         assert outcomes[0].exit_code == 0
         assert outcomes[0].block_kind is None
 
+    def test_incomplete_subprocess_is_nonzero_workflow(self):
+        wf = self._wf("llm")
+        block = SimpleNamespace(kind="evals", data={"subprocess_rc": 124})
+        with patch(f"{_MOD}.run_llm_eval", return_value=[block]):
+            assert wf.run_tasks()[0].exit_code == 1
+
     def test_llm_raises_fails_task(self):
         wf = self._wf("llm")
         with patch(f"{_MOD}.run_llm_eval", side_effect=RuntimeError("boom")):
@@ -653,3 +698,39 @@ class TestEvalsWorkflowLLMOverride:
         run.assert_not_called()
         dispatch.assert_called_once()
         assert outcomes == ["media-outcome"]
+
+
+class TestDeadlineReachesRunCommand:
+    """Regression guard: a declared deadline must reach proc.run_command.
+
+    wall_clock_timeout_seconds was previously declared, validated, documented
+    and unit-tested for validation only, yet never passed to run_command -- so
+    the bounded path in proc.py was unreachable and the field had no effect.
+    """
+
+    def _invoke(self, task):
+        seen = {}
+
+        def fake_run_command(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), patch(
+            f"{_MOD}.run_command", side_effect=fake_run_command
+        ):
+            rc = mod._run_eval_task(_ctx(), task, "", output_path=tmp_output_path())
+        return rc, seen
+
+    def test_declared_deadline_is_passed_through(self):
+        rc, seen = self._invoke(
+            EvalTask(task_name="aime25", wall_clock_timeout_seconds=3600)
+        )
+        assert rc == 0
+        assert seen.get("timeout_seconds") == 3600
+
+    def test_absent_deadline_leaves_execution_unbounded(self):
+        rc, seen = self._invoke(EvalTask(task_name="aime25"))
+        assert rc == 0
+        # Passing timeout_seconds=None would still select the bounded POSIX
+        # path, so unbounded callers must omit the argument entirely.
+        assert "timeout_seconds" not in seen
