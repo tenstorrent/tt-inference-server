@@ -4,8 +4,9 @@
 
 """Voxtral-4B-TTS (mistralai/Voxtral-4B-TTS-2603) runner: text + voice preset -> 24 kHz speech.
 
-Model code: tt-metal `models/experimental/voxtral_tts` (TtVoxtralPipeline, one request at a time)
-and `TtVoxtralBatchedPipeline` (B users per decode step), selected by settings.max_batch_size.
+Model code: tt-metal `models/experimental/voxtral_tts`, `TtVoxtralBatchedPipeline` at B = settings.max_batch_size
+users per decode step (B = 1 included), so the whole per-frame loop (sampling, stop, positions, noise, next input
+embedding) runs on device. VOXTRAL_HOST_LOOP=1 selects the original single-user TtVoxtralPipeline (host loop).
 Both open nothing themselves: the device comes from BaseMetalDeviceRunner.set_device() with the
 L1 scratch and trace region the model exports.
 
@@ -169,14 +170,14 @@ class TTVoxtralTTSRunner(BaseMetalDeviceRunner):
         pm = self._pipeline_module()
         max_seq_len = int(os.environ.get("VOXTRAL_MAX_SEQ_LEN", "2048"))
         ckpt = self._ckpt_path()
-        if self.batch > 1:
+        if os.environ.get("VOXTRAL_HOST_LOOP", "0") == "1" and self.batch == 1:
+            self.pipeline = pm.TtVoxtralPipeline(self.ttnn_device, ckpt_path=ckpt, max_seq_len=max_seq_len)
+        else:
             from models.experimental.voxtral_tts.tt.ttnn_voxtral_batched import TtVoxtralBatchedPipeline
 
             self.pipeline = TtVoxtralBatchedPipeline(
                 self.ttnn_device, ckpt_path=ckpt, max_batch=self.batch, max_seq_len=max_seq_len
             )
-        else:
-            self.pipeline = pm.TtVoxtralPipeline(self.ttnn_device, ckpt_path=ckpt, max_seq_len=max_seq_len)
         self.model_dir = self.pipeline.model_dir
         self.voices = list(frontend.voices(self.model_dir))
         if DEFAULT_VOICE not in self.voices:
