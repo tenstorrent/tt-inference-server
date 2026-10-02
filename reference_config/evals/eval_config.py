@@ -5300,17 +5300,8 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # CI tiers (per Tom Stesco: ci-nightly ~= 1 h per eval
-                # dataset; ci-long = full; smoke-test shorter still). 0.2 =
-                # doc_ids 0-39, realigning the nightly subset with the
-                # calibrated CI_NIGHTLY mode_reference_score above (80.00 on
-                # those 40 docs). Budget holds with a wide margin: the full
-                # 198-sample set measured 35 min on the BH Galaxy DP4xTP8
-                # bfp8 baseline (2026-10-01), so the 40-doc subset is ~7 min.
-                # The earlier 0.05 traded down for batch-1 serving where
-                # ~48K-token samples ran sequentially; that rationale is
-                # obsolete on the concurrent serving config. CI_LONG is
-                # deliberately absent: no entry = full dataset.
+                # ci-nightly ~1 h per dataset: 0.2 = doc_ids 0-39, matching the
+                # calibrated CI_NIGHTLY reference score above. No CI_LONG entry = full set.
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -5354,18 +5345,9 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # mmlu_pro is a GROUP of 14 subject subtasks and lm-eval
-                # applies the limit PER SUBTASK: an int multiplies by 14, a
-                # fraction applies to each subtask's size (total ~= fraction x
-                # 12,032). CI tiers per Tom Stesco: ci-nightly ~= 1 h per eval
-                # dataset, ci-long = full (no entry = full), smoke-test
-                # shorter still. 0.07 ~= 842 questions ~= 1 h at the measured
-                # ~4.2 s/sample on the BH Galaxy DP4xTP8 bfp8 baseline (full
-                # 12,032 ran 13.5 h end to end, 2026-10-01); expect ~2-4x
-                # longer on a single-engine P150x8 CI box. The old int 3
-                # (42 questions) predates that serving config — and the
-                # 99-hour ETA note below it described batch-1 serving.
-                # 1/subtask = 14 questions on smoke (~1 min).
+                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
+                # subtask (an int multiplies by 14, a fraction scales each subtask).
+                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,

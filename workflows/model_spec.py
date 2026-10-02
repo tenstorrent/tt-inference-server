@@ -412,12 +412,8 @@ gemma4_dflash_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4",
 )
-# Same drafter and model code as gemma4_dflash, but served on the plugin's
-# speculative CONTRACT: vLLM owns the draft scheduling through
-# speculative_config and the plugin verifies and accepts, so every step
-# streams rather than emitting a GEMMA4_DFLASH_SERVE_BLOCK-token block. A
-# separate impl so a run report names the rail that produced it, and so the
-# two can be benchmarked against each other without editing the spec.
+# dFlash on the plugin's speculative contract (vLLM-scheduled drafts, every
+# step streams); a separate impl so run reports name the rail.
 gemma4_dflash_contract_impl = ImplSpec(
     impl_id="gemma4_dflash_contract",
     impl_name="gemma4-dflash-contract",
