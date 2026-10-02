@@ -112,6 +112,7 @@ class HarborRunConfig:
     repeated_tool_feedback: bool = False
     reasoning_history_limit: Optional[int] = None
     submission_review_once: bool = False
+    owned_command_cleanup: bool = False
 
 
 def _apply_mini_swe_agent_defaults(
@@ -205,6 +206,12 @@ def _format_kwarg(value: Any) -> str:
 
 
 def _write_harbor_config(config: HarborRunConfig) -> Path:
+    if config.owned_command_cleanup and (
+        config.agent != _MINI_SWE_AGENT
+        or config.agent_import_path is not None
+        or config.environment_type != "docker"
+    ):
+        raise ValueError("Owned command cleanup supports only built-in Docker mini-swe-agent trials")
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
@@ -245,7 +252,9 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         "override_timeout_sec": config.agent_timeout_sec,
         "kwargs": _get_agent_kwargs(config),
     }
-    if config.agent_import_path:
+    if config.owned_command_cleanup:
+        agent_config["import_path"] = "llm_module.agentic.owned_mini_swe_agent:OwnedMiniSweAgent"
+    elif config.agent_import_path:
         agent_config["import_path"] = config.agent_import_path
     else:
         agent_config["name"] = config.agent
@@ -295,6 +304,7 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
+        or config.owned_command_cleanup
         or bool(config.agent_env)
         or bool(config.environment_env)
         or bool(config.verifier_env)
@@ -432,6 +442,10 @@ def _run(config: HarborRunConfig) -> int:
     # Host-executed agents use this endpoint directly. Container-executed
     # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
+    if config.owned_command_cleanup:
+        root = str(Path(__file__).resolve().parents[2])
+        prior = process_env.get("PYTHONPATH", "")
+        process_env["PYTHONPATH"] = root + (os.pathsep + prior if prior else "")
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(
