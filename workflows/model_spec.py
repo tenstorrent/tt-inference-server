@@ -430,6 +430,12 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+qwen38_27b_qb2_impl = ImplSpec(
+    impl_id="qwen38_27b_qb2",
+    impl_name="qwen38-27b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/qwen38_27b_qb2",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -438,6 +444,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
@@ -1076,8 +1083,11 @@ class ModelSpecTemplate:
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    # Dev entries may select an already-reviewed image only by immutable OCI
+    # digest. Tags and source/build release pins remain prod-only.
+    docker_image: Optional[str] = None
     # True when the catalog explicitly pinned the image via `version` or
-    # `docker_image` (prod templates always do; dev never does). When neither is
+    # `docker_image`. When neither is
     # set, no docker tag is synthesized, so these specs are excluded from
     # IMAGE_PINNED_MODEL_SPECS (the list the helm chart generator consumes).
     # Set by _build_template from YAML key presence; defaults True for directly
@@ -1224,7 +1234,6 @@ class ProdModelSpecTemplate(ModelSpecTemplate):
     tt_metal_commit: str
     version: str
     vllm_commit: Optional[str] = None
-    docker_image: Optional[str] = None
 
 
 # Catalog data lives in workflows/model_specs/catalog.yaml.
@@ -1278,6 +1287,14 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
     with the offending weights for a readable, catalog-scoped message.
     """
     kwargs = dict(data)
+    if env != "prod" and (docker_image := data.get("docker_image")) is not None:
+        if (
+            not isinstance(docker_image, str)
+            or re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", docker_image) is None
+        ):
+            raise ValueError(
+                "dev docker_image must be an immutable OCI repo@sha256 digest"
+            )
     impl_id = kwargs["impl"]
     if impl_id not in _IMPL_REGISTRY:
         raise ValueError(

@@ -3,6 +3,13 @@
     "_category": "LLM",
     "test_matrices": [
         {
+            "devices": ["p300x2"],
+            "models": ["openai/gpt-oss-120b"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
             "models": [
                 "qwen3_32b",
                 "llama_3_1_8b",
@@ -83,6 +90,83 @@
                     "enabled": true,
                     "description": "DiffusionGemma block-serving and request-admission gates"
                 }
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["tiiuae/Falcon3-3B-Base"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["tiiuae/Falcon3-7B-Base"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen3-4B"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen3-14B"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen3-8B"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen2.5-Coder-7B"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["Qwen/Qwen2.5-Coder-7B-Instruct"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["TinyLlama/TinyLlama_v1.1"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["TinyLlama/TinyLlama-1.1B-Chat-v1.0"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["stabilityai/stablelm-2-1_6b"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
+            ]
+        },
+        {
+            "devices": ["p300x2"],
+            "models": ["tiiuae/Falcon3-1B-Base"],
+            "test_cases": [
+                {"enabled": true, "template": "VLLMParamConformanceTest"}
             ]
         }
     ]

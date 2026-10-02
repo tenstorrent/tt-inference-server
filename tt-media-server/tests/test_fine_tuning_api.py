@@ -79,6 +79,20 @@ class TestSubmitCustomDatasetJob:
             == 422
         )
 
+    def test_returns_500_with_error_message_when_job_creation_fails(
+        self, submit, mock_service
+    ):
+        mock_service.create_job.side_effect = RuntimeError("Job queue unavailable")
+
+        response = submit(
+            train_dataset_path="/datasets/train.json",
+            file_type="json",
+            template="alpaca",
+        )
+
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Job queue unavailable"
+
 
 class TestGetCatalog:
     def test_returns_catalog_json(self, client):
