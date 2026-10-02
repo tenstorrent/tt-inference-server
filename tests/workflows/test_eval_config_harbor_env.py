@@ -54,17 +54,26 @@ def test_gemma4_swebench_tools_use_task_environment_and_keep_generation_budget()
     assert agent.llm_timeout_sec >= 32768 / 40 + 120
 
 
-def test_gemma4_focused_policy_keeps_sampling_and_task_prompt():
+def test_gemma4_five_task_candidate_preserves_original_prompt_and_timeout():
     config = ALL_EVAL_CONFIGS["google/gemma-4-26B-A4B-it"]
     task = next(task for task in config.tasks if task.task_name == "swe_bench_verified")
     kwargs = task.agentic_eval_config.agent_kwargs["config"]
     model = kwargs["model"]["model_kwargs"]
     assert (model["temperature"], model["top_p"], model["seed"]) == (1.0, 0.95, 9472)
     assert model["extra_body"]["top_k"] == 20
-    policy = kwargs["agent"]
-    assert set(policy) == {"system_template"}
-    assert "inspect the diff once" in policy["system_template"]
-    assert "do not claim success or submit an untested change" in policy["system_template"]
+    assert "system_template" not in kwargs.get("agent", {})
+    agent = task.agentic_eval_config
+    assert agent.agent_timeout_sec == 7200
+    assert agent.repetition_feedback_after == 0
+    assert agent.repeated_tool_feedback is False
+    assert agent.normalize_submission_marker is True
+    selections = list(agent.task_names_map.values())
+    assert len(selections) == 1
+    assert set(selections[0]) == {
+        "astropy__astropy-14096", "django__django-11299", "matplotlib__matplotlib-25332",
+        "scikit-learn__scikit-learn-14629", "sympy__sympy-13551",
+    }
+    assert len(selections[0]) == 5
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):

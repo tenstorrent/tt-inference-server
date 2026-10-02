@@ -8,7 +8,6 @@ import math
 import os
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -6147,16 +6146,13 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
-# Focused experiment only: this config runs one 20-minute policy probe, not
-# the five-task release recipe. The final validation restores the full subset.
+# Original five-task, serial release-style measurement with explicit candidate
+# precision/seed/guard/adapter deviations. The agent prompt remains original.
 _gemma_probe = _eval_config_map["google/gemma-4-26B-A4B-it"]
 _gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_verified")
 _gemma_guard_kwargs = deepcopy(_gemma_swe.agentic_eval_config.agent_kwargs)
 # Explicit per-request seeding for this bounded diagnostic, not a release default.
 _gemma_guard_kwargs["config"]["model"]["model_kwargs"]["seed"] = 9472
-_gemma_guard_kwargs["config"]["agent"] = {
-    "system_template": Path(__file__).with_name("gemma4_focused_completion.txt").read_text()
-}
 _gemma_guard_kwargs["config"]["model"]["model_kwargs"]["extra_body"]["repetition_detection"] = {
     "min_pattern_size": 16,
     "max_pattern_size": 1024,
@@ -6169,12 +6165,16 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
             _gemma_swe,
             agentic_eval_config=replace(
                 _gemma_swe.agentic_eval_config,
-                agent_timeout_sec=20 * 60,
+                agent_timeout_sec=2 * 60 * 60,
                 repetition_feedback_after=0,
                 normalize_submission_marker=True,
                 agent_kwargs=_gemma_guard_kwargs,
                 task_names_map={
                     EvalLimitMode.CI_NIGHTLY: [
+                        "astropy__astropy-14096",
+                        "django__django-11299",
+                        "matplotlib__matplotlib-25332",
+                        "scikit-learn__scikit-learn-14629",
                         "sympy__sympy-13551",
                     ],
                 },
