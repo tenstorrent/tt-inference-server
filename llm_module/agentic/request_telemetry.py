@@ -32,8 +32,11 @@ REPEATED_TOOL_FEEDBACK = (
     "at least twice in the recent tool history. Reuse that evidence rather "
     "than repeating equivalent inspections, unless a relevant change makes a "
     "rerun necessary. Reconsider your current hypothesis, make the smallest "
-    "justified source change, validate the original issue, and submit only the "
-    "actual checked patch. This note supplies no task-specific solution."
+    "justified source change, and validate the original issue. Before submission, "
+    "run relevant existing repository tests for the edited code, not only custom "
+    "examples, and investigate any regression. Review the actual diff for "
+    "unintended deletions and submit only the checked patch. "
+    "This note supplies no task-specific solution."
 )
 SERVER_COUNTERS = frozenset(
     {
