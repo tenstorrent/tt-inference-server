@@ -294,7 +294,17 @@ class WorkflowExecution(ABC):
                 error=str(e),
             )
 
-        failed_tasks = [outcome for outcome in task_outcomes if not outcome.succeeded]
+        # A task whose non-zero exit only reflects known_issues-waived failures
+        # (see spec_tasks_explained_by_waivers) is not a failed task.
+        waived_tasks = getattr(self, "_waived_task_types", set())
+        failed_tasks = [
+            outcome
+            for outcome in task_outcomes
+            if not outcome.succeeded
+            and not (
+                outcome.block_kind is not None and outcome.task_type in waived_tasks
+            )
+        ]
         return_code = 0 if accepted and not failed_tasks else 1
         if failed_tasks:
             self.logger.error(
@@ -365,12 +375,15 @@ class WorkflowExecution(ABC):
         accepted, blockers, categories = acceptance_criteria_check(
             schema, known_issues=self._known_issues(), model_status=model_status
         )
+        waived_tasks = spec_tasks_explained_by_waivers(categories)
+        # run() reads this so the workflow exit agrees with the verdict.
+        self._waived_task_types = waived_tasks
         crash_blockers = task_failure_blockers(
             (
                 (o.task_type, o.exit_code, o.block_kind is not None)
                 for o in task_outcomes
             ),
-            waived_tasks=spec_tasks_explained_by_waivers(categories),
+            waived_tasks=waived_tasks,
         )
         if crash_blockers:
             blockers = {**blockers, **crash_blockers}
