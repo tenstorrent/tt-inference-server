@@ -1,0 +1,397 @@
+{
+ "_source": "AIA-581 benchmark plan (spec v8) \u2014 10 cases, low=min bar / high=max bar on size, duration, count | 2026-09-21: +11 duration-series cases (same inputs as their anchor, other durations) so every input shape has a 5 s / 10 s / 15 s cell; the original 10 ids and their inputs are unchanged",
+ "_fixed": {
+  "aspect_ratio": "16:9 (short edge 768 -> 1344x768)",
+  "steps": 50,
+  "seed": 42,
+  "quality": "omitted (lossless, no cache backend)",
+  "runs": "1 discarded warmup + 3 measured"
+ },
+ "smoke": {
+  "id": "SMOKE",
+  "task": "t2va",
+  "duration_s": 5,
+  "steps": 8,
+  "seed": 42,
+  "aspect_ratio": "16:9",
+  "prompt": "prompt_min.txt",
+  "_why": "shortest possible real generation: proves submit -> poll -> content lifecycle without spending 50 steps"
+ },
+ "cases": [
+  {
+   "id": "T2VA-L",
+   "task": "t2va",
+   "bar": "min",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_min.txt"
+  },
+  {
+   "id": "T2VA-M",
+   "task": "t2va",
+   "bar": "mid",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt"
+  },
+  {
+   "id": "T2VA-H",
+   "task": "t2va",
+   "bar": "max",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt"
+  },
+  {
+   "id": "FL2VA-L",
+   "task": "fl2va",
+   "bar": "min",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_min.txt",
+   "images": [
+    "img_min_256px_scientist.jpg"
+   ]
+  },
+  {
+   "id": "FL2VA-M",
+   "task": "fl2va",
+   "bar": "mid",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_old_man_portrait.jpg"
+   ]
+  },
+  {
+   "id": "FL2VA-H",
+   "task": "fl2va",
+   "bar": "max",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt",
+   "images": [
+    "img_max_27mb_astronaut.jpg",
+    "img_min_256px_scientist.jpg"
+   ],
+   "_note": "2-image mode (first + last) and both pixel extremes in one case"
+  },
+  {
+   "id": "REF2VA-L",
+   "task": "ref2va",
+   "bar": "min",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_min.txt",
+   "images": [
+    "img_min_256px_scientist.jpg"
+   ],
+   "videos": [
+    "vid_min_2s_city_skyline.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav"
+   ],
+   "_note": "every modality at its documented minimum bar"
+  },
+  {
+   "id": "REF2VA-M",
+   "task": "ref2va",
+   "bar": "mid",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_city_skyline.jpg",
+    "img_std_old_man_portrait.jpg",
+    "img_std_three_people.jpg"
+   ],
+   "videos": [
+    "vid_min_2s_city_skyline.mp4",
+    "vid_std_5s_man_talking.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav",
+    "aud_std_5s_score.wav"
+   ]
+  },
+  {
+   "id": "REF2VA-H",
+   "task": "ref2va",
+   "bar": "max",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt",
+   "images": [
+    "img_std_city_skyline.jpg",
+    "img_std_old_man_portrait.jpg",
+    "img_std_three_people.jpg",
+    "img_std_robot_street.jpg",
+    "img_std_young_man_canal.jpg",
+    "img_std_earth_from_iss.jpg"
+   ],
+   "videos": [
+    "vid_ns2_city.mp4",
+    "vid_ns5_man.mp4",
+    "vid_ns7_robot.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav",
+    "aud_std_5s_score.wav",
+    "aud_max7_score.wav"
+   ],
+   "_note": "12 files = documented count cap (6 img + 3 vid + 3 aud); audio total 14.04s. FINDING: the '<=15s total audio' limit ALSO counts audio embedded in reference VIDEOS, which the docs do not state. With audio-bearing videos (2+5+8) plus audio files (2+5+8) the engine rejects with 'MiniMax H3 audio references must be at most 15 seconds in total' even though each modality is individually within its documented cap. Reference videos here are therefore SILENT so the file-count cap can be exercised."
+  },
+  {
+   "id": "SIZE-V",
+   "task": "ref2va",
+   "bar": "max single video file",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "videos": [
+    "vid_max_8s_47mb_robot_street.mp4"
+   ],
+   "_note": "47.6 MB single reference video - file-size bar"
+  },
+  {
+   "id": "FL2VA-L2",
+   "task": "fl2va",
+   "bar": "first + last keyframe",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt",
+   "images": [
+    "img_max_27mb_astronaut.jpg",
+    "img_min_256px_scientist.jpg"
+   ],
+   "_note": "duration series of FL2VA-H: identical inputs and prompt, 5 s (added 2026-09-21 to fill the first + last keyframe row at every duration)"
+  },
+  {
+   "id": "FL2VA-M2",
+   "task": "fl2va",
+   "bar": "first + last keyframe",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt",
+   "images": [
+    "img_max_27mb_astronaut.jpg",
+    "img_min_256px_scientist.jpg"
+   ],
+   "_note": "duration series of FL2VA-H: identical inputs and prompt, 10 s (added 2026-09-21 to fill the first + last keyframe row at every duration)"
+  },
+  {
+   "id": "REF2VA-L10",
+   "task": "ref2va",
+   "bar": "min inputs (1 img + 1 vid + 1 aud)",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_min.txt",
+   "images": [
+    "img_min_256px_scientist.jpg"
+   ],
+   "videos": [
+    "vid_min_2s_city_skyline.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav"
+   ],
+   "_note": "duration series of REF2VA-L: identical inputs and prompt, 10 s (added 2026-09-21 to fill the min inputs (1 img + 1 vid + 1 aud) row at every duration)"
+  },
+  {
+   "id": "REF2VA-L15",
+   "task": "ref2va",
+   "bar": "min inputs (1 img + 1 vid + 1 aud)",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_min.txt",
+   "images": [
+    "img_min_256px_scientist.jpg"
+   ],
+   "videos": [
+    "vid_min_2s_city_skyline.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav"
+   ],
+   "_note": "duration series of REF2VA-L: identical inputs and prompt, 15 s (added 2026-09-21 to fill the min inputs (1 img + 1 vid + 1 aud) row at every duration)"
+  },
+  {
+   "id": "SIZE-V10",
+   "task": "ref2va",
+   "bar": "max single video file",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "videos": [
+    "vid_max_8s_47mb_robot_street.mp4"
+   ],
+   "_note": "duration series of SIZE-V: identical inputs and prompt, 10 s (added 2026-09-21 to fill the max single video file row at every duration)"
+  },
+  {
+   "id": "SIZE-V15",
+   "task": "ref2va",
+   "bar": "max single video file",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "videos": [
+    "vid_max_8s_47mb_robot_street.mp4"
+   ],
+   "_note": "duration series of SIZE-V: identical inputs and prompt, 15 s (added 2026-09-21 to fill the max single video file row at every duration)"
+  },
+  {
+   "id": "REF2VA-M5",
+   "task": "ref2va",
+   "bar": "mid inputs (3 img + 2 vid + 2 aud)",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_city_skyline.jpg",
+    "img_std_old_man_portrait.jpg",
+    "img_std_three_people.jpg"
+   ],
+   "videos": [
+    "vid_min_2s_city_skyline.mp4",
+    "vid_std_5s_man_talking.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav",
+    "aud_std_5s_score.wav"
+   ],
+   "_note": "duration series of REF2VA-M: identical inputs and prompt, 5 s (added 2026-09-21 to fill the mid inputs (3 img + 2 vid + 2 aud) row at every duration)"
+  },
+  {
+   "id": "REF2VA-M15",
+   "task": "ref2va",
+   "bar": "mid inputs (3 img + 2 vid + 2 aud)",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_city_skyline.jpg",
+    "img_std_old_man_portrait.jpg",
+    "img_std_three_people.jpg"
+   ],
+   "videos": [
+    "vid_min_2s_city_skyline.mp4",
+    "vid_std_5s_man_talking.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav",
+    "aud_std_5s_score.wav"
+   ],
+   "_note": "duration series of REF2VA-M: identical inputs and prompt, 15 s (added 2026-09-21 to fill the mid inputs (3 img + 2 vid + 2 aud) row at every duration)"
+  },
+  {
+   "id": "REF2VA-H5",
+   "task": "ref2va",
+   "bar": "max inputs (6 img + 3 vid + 3 aud, silent videos)",
+   "duration_s": 5,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt",
+   "images": [
+    "img_std_city_skyline.jpg",
+    "img_std_old_man_portrait.jpg",
+    "img_std_three_people.jpg",
+    "img_std_robot_street.jpg",
+    "img_std_young_man_canal.jpg",
+    "img_std_earth_from_iss.jpg"
+   ],
+   "videos": [
+    "vid_ns2_city.mp4",
+    "vid_ns5_man.mp4",
+    "vid_ns7_robot.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav",
+    "aud_std_5s_score.wav",
+    "aud_max7_score.wav"
+   ],
+   "_note": "duration series of REF2VA-H: identical inputs and prompt, 5 s (added 2026-09-21 to fill the max inputs (6 img + 3 vid + 3 aud, silent videos) row at every duration)"
+  },
+  {
+   "id": "REF2VA-H10",
+   "task": "ref2va",
+   "bar": "max inputs (6 img + 3 vid + 3 aud, silent videos)",
+   "duration_s": 10,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_max_7000chars.txt",
+   "images": [
+    "img_std_city_skyline.jpg",
+    "img_std_old_man_portrait.jpg",
+    "img_std_three_people.jpg",
+    "img_std_robot_street.jpg",
+    "img_std_young_man_canal.jpg",
+    "img_std_earth_from_iss.jpg"
+   ],
+   "videos": [
+    "vid_ns2_city.mp4",
+    "vid_ns5_man.mp4",
+    "vid_ns7_robot.mp4"
+   ],
+   "audios": [
+    "aud_min_2s_score.wav",
+    "aud_std_5s_score.wav",
+    "aud_max7_score.wav"
+   ],
+   "_note": "duration series of REF2VA-H: identical inputs and prompt, 10 s (added 2026-09-21 to fill the max inputs (6 img + 3 vid + 3 aud, silent videos) row at every duration)"
+  },
+  {
+   "id": "FL2VA-H1",
+   "task": "fl2va",
+   "bar": "first keyframe",
+   "duration_s": 15,
+   "steps": 50,
+   "seed": 42,
+   "aspect_ratio": "16:9",
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_old_man_portrait.jpg"
+   ],
+   "_note": "duration series of FL2VA-M: identical inputs and prompt, 15 s (added 2026-09-21 to fill the first keyframe row at every duration)"
+  }
+ ]
+}

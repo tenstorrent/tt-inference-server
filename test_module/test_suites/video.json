@@ -138,6 +138,86 @@
                     "description": "Video generation param test"
                 }
             ]
+        },
+        {
+            "models": [
+                "minimax_h3"
+            ],
+            "devices": [
+                "blackhole_galaxy"
+            ],
+            "num_of_devices": 1,
+            "test_cases": [
+                {
+                    "template": "MiniMaxH3CreateContractTest",
+                    "enabled": true,
+                    "description": "MiniMax-H3 V1 request contract: auth, unknown fields, aspect ratio, duration, step count",
+                    "targets": {
+                        "profile": "validation",
+                        "request_timeout": 60
+                    }
+                },
+                {
+                    "template": "MiniMaxH3LifecycleDownloadTest",
+                    "enabled": true,
+                    "description": "One 16:9 / 5 s t2va job: create, query, list, download, video + non-silent audio",
+                    "targets": {
+                        "poll_timeout": 1800,
+                        "download_timeout": 600,
+                        "sample_count": 8
+                    }
+                },
+                {
+                    "template": "MiniMaxH3CancelLifecycleTest",
+                    "enabled": false,
+                    "description": "Disabled: cancelling an in-flight job took the multi-host deployment down (PR #5053); enable once verified on a single host",
+                    "targets": {
+                        "poll_timeout": 300,
+                        "poll_interval": 1
+                    }
+                },
+                {
+                    "template": "MiniMaxH3BenchmarkTest",
+                    "enabled": true,
+                    "description": "h3-benchmark on a single BH Galaxy: health pre-gate, probe, smoke, then the t2va cases with every clip judged (24 fps, 17n+5 frames, 1344x768, audio present and not railed)",
+                    "targets": {
+                        "task": "t2va",
+                        "timeout_table": "BH1X",
+                        "idle_wait_s": 60,
+                        "plan_ci": [
+                            {
+                                "cases": [
+                                    "T2VA-L"
+                                ],
+                                "runs": 3
+                            },
+                            {
+                                "cases": [
+                                    "T2VA-M",
+                                    "T2VA-H"
+                                ],
+                                "runs": 1
+                            }
+                        ],
+                        "plan_full": [
+                            {
+                                "cases": [
+                                    "T2VA-L",
+                                    "T2VA-M",
+                                    "T2VA-H"
+                                ],
+                                "runs": 3
+                            }
+                        ],
+                        "target_times_s": {
+                            "T2VA-L": 90,
+                            "T2VA-M": 160,
+                            "T2VA-H": 225
+                        },
+                        "enforce_timing": false
+                    }
+                }
+            ]
         }
     ]
 }

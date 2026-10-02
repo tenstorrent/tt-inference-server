@@ -284,6 +284,20 @@
             "output_type": "pil"
         }
     },
+    "MiniMaxAI/MiniMax-H3": {
+        "hf_id": "MiniMaxAI/MiniMax-H3",
+        "num_inference_steps": 50,
+        "accuracy": {
+            "1": {
+                "generation_success_ratio_min": 1.0,
+                "max_invalid_videos": 0,
+                "max_frozen_videos": 0
+            }
+        },
+        "extra_args": {
+            "output_type": "pil"
+        }
+    },
     "Tongyi-MAI/Z-Image-Turbo-512x512": {
         "hf_id": "Tongyi-MAI/Z-Image-Turbo",
         "accuracy": {

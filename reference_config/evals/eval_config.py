@@ -4594,6 +4594,26 @@ _eval_config_list = [
         ],
     ),
     EvalConfig(
+        hf_model_repo="MiniMaxAI/MiniMax-H3",
+        tasks=[
+            EvalTask(
+                task_name="minimax_h3_video_quality",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    # Graded by test_module/eval_tests/minimax_h3_video_quality_test.py
+                    # (structural checks; CLIP off until a BH Galaxy range is measured).
+                    # This entry satisfies the shared EVALS/RELEASE registration contract.
+                    published_score=0.0,
+                    published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-H3",
+                    score_func=lambda results: 0.0,
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="Wan-AI/Wan2.2-T2V-A14B-Diffusers",
         tasks=[
             EvalTask(

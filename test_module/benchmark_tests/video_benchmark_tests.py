@@ -46,7 +46,22 @@ VIDEO_INFERENCE_STEPS = {
     "genmo/mochi-1-preview": 50,
     "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 40,
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": 40,
+    # MiniMax-H3 runs a fixed 50-step schedule and refuses an explicit step count (422);
+    # the value here labels the rows and feeds inference_steps_per_second only.
+    "MiniMaxAI/MiniMax-H3": 50,
 }
+MINIMAX_H3_MODEL_NAMES = frozenset({"MiniMaxAI/MiniMax-H3", "MiniMax-H3"})
+MINIMAX_H3_DURATION_SECONDS = 5
+MINIMAX_H3_ASPECT_RATIO = "16:9"
+# First request per shape compiles inside the request unless the spec warms it
+# (MINIMAX_H3_WARM_SHAPES); 16:9/5 s is ~70 s warm on a single BH Galaxy.
+MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
+
+
+def is_minimax_h3_model(model_name: str) -> bool:
+    return model_name in MINIMAX_H3_MODEL_NAMES
+
+
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -146,6 +161,15 @@ def _generate_video(
         model_name=model_name,
         image_b64=image_b64,
     )
+    if is_minimax_h3_model(model_name):
+        # The shape is chosen with the two H3 request fields; num_inference_steps is
+        # refused by the deployment, so it must not be sent.
+        payload = {
+            "prompt": prompt,
+            "aspect_ratio": MINIMAX_H3_ASPECT_RATIO,
+            "duration_seconds": MINIMAX_H3_DURATION_SECONDS,
+            "seed": 0,
+        }
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 
@@ -167,7 +191,16 @@ def _generate_video(
         job_id = job_data.get("id")
         logger.info(f"Video generation job submitted: {job_id}")
 
-        video_path = _poll_video_completion(ctx, job_id, headers)
+        video_path = _poll_video_completion(
+            ctx,
+            job_id,
+            headers,
+            timeout=(
+                MINIMAX_H3_VIDEO_TIMEOUT_SECONDS
+                if is_minimax_h3_model(model_name)
+                else DEFAULT_VIDEO_TIMEOUT_SECONDS
+            ),
+        )
         elapsed = time.time() - start_time
 
         if video_path:

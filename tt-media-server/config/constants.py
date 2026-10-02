@@ -1036,6 +1036,18 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
+    # CI and run.py pass DEVICE=blackhole_galaxy (-> DeviceTypes.BLACKHOLE_GALAXY). Without this
+    # key the lookup misses and the runner silently opens a (1, 1) mesh on a 32-chip box.
+    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        # Weights are never fetched by the service: MODEL_WEIGHTS_DIR under --host-weights-dir,
+        # else MINIMAX_H3_MODEL_PATH inside cache_root (see workflows/model_specs/dev/video.yaml).
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,

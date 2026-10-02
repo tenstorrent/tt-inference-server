@@ -225,6 +225,11 @@ jobs:
             requirements-dev.txt
             tt-media-server/requirements.txt
 
+      - name: Install ffmpeg (MiniMax-H3 judge and mock tests)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
