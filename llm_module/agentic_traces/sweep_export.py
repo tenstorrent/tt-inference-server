@@ -40,6 +40,7 @@ _SWEEP_FIELD_TO_METRIC: Tuple[Tuple[str, str], ...] = (
     ("e2elP90Ms", "p90_e2el_ms"),
     ("e2elP95Ms", "p95_e2el_ms"),
     ("reqThroughputRps", "request_throughput"),
+    ("inputThroughputTps", "input_token_throughput"),
     ("totalThroughputTps", "total_token_throughput"),
     ("decodeThroughputTps", "output_token_throughput"),
     ("inputTokensMean", "mean_isl"),

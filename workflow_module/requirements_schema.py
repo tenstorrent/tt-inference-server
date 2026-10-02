@@ -81,6 +81,39 @@ def stated_target(row: Mapping[str, Any], key: str) -> Optional[float]:
     return float(value)
 
 
+# Schema version that introduced the always-hard input-throughput requirement.
+_INPUT_THROUGHPUT_SINCE = (3, 1)
+
+
+def requires_input_throughput(schema_version: str) -> bool:
+    """True if a document of ``schema_version`` requires input throughput."""
+    try:
+        major, minor = (int(part) for part in schema_version.split(".")[:2])
+    except ValueError:
+        return False
+    return (major, minor) >= _INPUT_THROUGHPUT_SINCE
+
+
+def input_throughput_tps(
+    row: Mapping[str, Any], *, isl: Optional[int] = None
+) -> Optional[float]:
+    """A row's input-throughput target, read the way llm-gauntlet reads it.
+
+    The stated ``inputThroughputTps``, else derived: ``ISL x RPS`` for a
+    fixed-length row (pass ``isl``), ``total - output`` for an agentic row.
+    """
+    if row.get("inputThroughputTps") is not None:
+        return stated_target(row, "inputThroughputTps")
+    if isl is not None:
+        rps = stated_target(row, "reqThroughputRps")
+        return isl * rps if rps is not None else None
+    total = stated_target(row, "totalThroughputTps")
+    output = stated_target(row, "decodeThroughputTps")
+    if total is None or output is None or total <= output:
+        return None
+    return total - output
+
+
 def _soft_metrics(data: Mapping[str, Any]) -> frozenset:
     """A scenario's ``softMetrics``: columns reported but never asserted."""
     raw = data.get("softMetrics")
@@ -747,6 +780,8 @@ __all__ = [
     "PRIORITY_MUST",
     "PRIORITY_SHOULD",
     "RequirementsError",
+    "input_throughput_tps",
+    "requires_input_throughput",
     "stated_target",
     "AccuracyEval",
     "EvalGenKwargs",
