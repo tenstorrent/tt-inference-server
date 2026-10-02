@@ -110,6 +110,7 @@ class HarborRunConfig:
     repetition_feedback_after: int = 0
     normalize_submission_marker: bool = False
     repeated_tool_feedback: bool = False
+    reasoning_history_limit: Optional[int] = None
 
 
 def _apply_mini_swe_agent_defaults(
@@ -322,6 +323,8 @@ def run(config: HarborRunConfig) -> int:
         raise ValueError("Submission normalization requires audited request telemetry")
     if config.repeated_tool_feedback and not config.request_telemetry:
         raise ValueError("Repeated-tool feedback requires audited request telemetry")
+    if config.reasoning_history_limit is not None and not config.request_telemetry:
+        raise ValueError("Reasoning history policy requires audited request telemetry")
     if config.request_telemetry:
         from llm_module.agentic.request_telemetry import RequestTelemetryProxy
 
@@ -338,6 +341,7 @@ def run(config: HarborRunConfig) -> int:
             normalize_submission=config.normalize_submission_marker,
             collect_server_metrics=config.n_concurrent_trials == 1,
             repeated_tool_feedback=config.repeated_tool_feedback,
+            reasoning_history_limit=config.reasoning_history_limit,
         ) as proxy:
             env = {
                 k: v

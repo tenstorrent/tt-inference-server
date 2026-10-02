@@ -15,6 +15,7 @@ from llm_module.agentic.request_telemetry import (
     REPETITION_FEEDBACK,
     SUBMISSION_COMMAND,
     RequestTelemetryProxy,
+    limit_reasoning_history,
     normalize_submission_marker,
     parse_server_counters,
     recent_tool_summary,
@@ -22,6 +23,41 @@ from llm_module.agentic.request_telemetry import (
     repeated_tool_count,
     response_text_stats,
 )
+
+
+@pytest.mark.parametrize("keep", [0, 1, 2, 10])
+def test_reasoning_history_policy_preserves_all_visible_evidence(keep):
+    messages = [
+        {"role": "system", "content": "instructions", "reasoning": "untouched"},
+        {
+            "role": "assistant",
+            "content": "visible",
+            "reasoning_content": "old analysis",
+            "tool_calls": [{"id": "a"}],
+        },
+        {"role": "tool", "content": "observed result", "tool_call_id": "a"},
+        {"role": "assistant", "content": "next visible", "reasoning": "latest plan"},
+        {"role": "user", "content": "task", "reasoning_content": "untouched"},
+    ]
+    saved = copy.deepcopy(messages)
+    result, removed = limit_reasoning_history(messages, keep)
+    assert messages == saved
+    assert [row["message_index"] for row in removed] == (
+        [1, 3] if keep == 0 else [1] if keep == 1 else []
+    )
+    for before, after in zip(messages, result):
+        for key in ("role", "content", "tool_calls", "tool_call_id"):
+            assert before.get(key) == after.get(key)
+    assert result[0] == messages[0]
+    assert result[-1] == messages[-1]
+    if keep:
+        assert result[3]["reasoning"] == "latest plan"
+
+
+@pytest.mark.parametrize("invalid", [-1, True, 1.5, "1"])
+def test_reasoning_history_policy_rejects_invalid_limits(invalid):
+    with pytest.raises(ValueError, match="nonnegative integer"):
+        limit_reasoning_history([], invalid)
 
 
 def test_server_counters_drop_labels_and_nonfinite_or_unrelated_metrics():
@@ -409,7 +445,7 @@ def test_exact_repeat_detector_includes_nonconsecutive_successes():
     assert history == original
 
 
-@pytest.mark.parametrize("mode", ["failed", "exact"])
+@pytest.mark.parametrize("mode", ["failed", "exact", "reasoning"])
 def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path, mode):
     seen = []
 
@@ -430,6 +466,7 @@ def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path, mode):
     thread.start()
     action = {
         "role": "assistant",
+        "reasoning_content": "private diagnostic reasoning",
         "tool_calls": [
             {
                 "function": {
@@ -460,6 +497,9 @@ def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path, mode):
                 5,
                 repetition_feedback_after=threshold if mode == "failed" else 0,
                 repeated_tool_feedback=bool(threshold) if mode == "exact" else False,
+                reasoning_history_limit=(
+                    1 if mode == "reasoning" and threshold else None
+                ),
             ) as endpoint:
                 with urlopen(
                     Request(
@@ -469,10 +509,21 @@ def test_feedback_is_opt_in_and_preserves_history_and_sampling(tmp_path, mode):
                     assert response.status == 200
             records = [json.loads(line) for line in path.read_text().splitlines()]
             event = (
-                "repetition_feedback" if mode == "failed" else "repeated_tool_feedback"
+                "repetition_feedback"
+                if mode == "failed"
+                else (
+                    "repeated_tool_feedback"
+                    if mode == "exact"
+                    else "reasoning_history_limited"
+                )
             )
             assert sum(r["event"] == event for r in records) == bool(threshold)
+            assert "private diagnostic reasoning" not in path.read_text()
         assert seen[0] == payload
+        if mode == "reasoning":
+            expected, _ = limit_reasoning_history(payload["messages"], 1)
+            assert seen[1] == {**payload, "messages": expected}
+            return
         assert seen[1] == {
             **payload,
             "messages": payload["messages"]

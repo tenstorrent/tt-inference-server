@@ -266,6 +266,28 @@ def repeated_tool_count(messages, window=32):
     return recent.count(recent[-1]) if recent and recent[-1] is not None else 0
 
 
+def limit_reasoning_history(messages, keep):
+    """Explicit context-policy control; preserve visible answers and tool evidence."""
+    if type(keep) is not int or keep < 0:
+        raise ValueError("Reasoning history limit must be a nonnegative integer")
+    result = [copy.deepcopy(message) for message in messages]
+    indices = [
+        i for i, message in enumerate(result) if message.get("role") == "assistant"
+    ]
+    removed = []
+    for index in indices[:-keep] if keep else indices:
+        fields = {}
+        for key in ("reasoning", "reasoning_content"):
+            if key in result[index]:
+                value = result[index].pop(key)
+                fields[key] = len(value) if isinstance(value, str) else 0
+        if fields:
+            removed.append(
+                {"message_index": index, "removed_chars": sum(fields.values())}
+            )
+    return result, removed
+
+
 class RequestTelemetryProxy(AbstractContextManager):
     def __init__(
         self,
@@ -276,6 +298,7 @@ class RequestTelemetryProxy(AbstractContextManager):
         normalize_submission: bool = False,
         collect_server_metrics: bool = False,
         repeated_tool_feedback: bool = False,
+        reasoning_history_limit: int | None = None,
     ):
         self.upstream = upstream.rstrip("/")
         self.output = output
@@ -284,6 +307,11 @@ class RequestTelemetryProxy(AbstractContextManager):
         self.normalize_submission = normalize_submission
         self.collect_server_metrics = collect_server_metrics
         self.repeated_tool_feedback = repeated_tool_feedback
+        if reasoning_history_limit is not None and (
+            type(reasoning_history_limit) is not int or reasoning_history_limit < 0
+        ):
+            raise ValueError("Reasoning history limit must be a nonnegative integer")
+        self.reasoning_history_limit = reasoning_history_limit
         self.lock = threading.Lock()
         self.previous_response_times = {}
         self.server = None
@@ -364,6 +392,24 @@ class RequestTelemetryProxy(AbstractContextManager):
                         ),
                     }
                 )
+                if owner.reasoning_history_limit is not None:
+                    payload["messages"], removed = limit_reasoning_history(
+                        payload.get("messages", []), owner.reasoning_history_limit
+                    )
+                    if removed:
+                        body = json.dumps(payload).encode()
+                        owner.record(
+                            {
+                                **common,
+                                "event": "reasoning_history_limited",
+                                "unix_s": time.time(),
+                                "keep_assistant_messages": owner.reasoning_history_limit,
+                                "removed": removed,
+                                "forwarded_body_sha256": hashlib.sha256(
+                                    body
+                                ).hexdigest(),
+                            }
+                        )
                 repetitions = repeated_failure_count(payload.get("messages", []))
                 if (
                     owner.repetition_feedback_after
