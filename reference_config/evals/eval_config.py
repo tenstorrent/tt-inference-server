@@ -5241,7 +5241,7 @@ _eval_config_list = [
                         # Successful controls finish within 76 turns. Bound
                         # terminal-recovery loops without constraining any
                         # observed successful trajectory.
-                        "max_turns": 100,
+                        "max_turns": 76,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
                             "max_output_tokens": 16 * 1024,
