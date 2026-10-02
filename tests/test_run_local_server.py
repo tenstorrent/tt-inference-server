@@ -289,6 +289,9 @@ class TestRunLocalServer:
         assert env["TT_CACHE_PATH"].startswith(
             str(setup_config.host_tt_metal_cache_dir.resolve())
         )
+        assert env["TT_METAL_CACHE"] == str(
+            Path(env["TT_CACHE_PATH"]) / "tt_metal_cache"
+        )
 
     def test_build_local_server_env_uses_host_hf_cache_snapshot(self, tmp_path):
         repo_root = tmp_path / "repo"
