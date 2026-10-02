@@ -1,22 +1,22 @@
 {
-  "schemaVersion": "2.8.0",
+  "schemaVersion": "3.1.0",
   "document": {
-    "schemaVersion": "2.8.0",
+    "schemaVersion": "3.1.0",
     "id": "23fe5fdb-9ebb-4148-837a-5ea1823f5245",
     "meta": {
-      "title": "Random",
+      "title": "BlackBox.ai Kimi-K2.7-Code Requirements",
       "customer": "Random-customer",
       "customerId": "random-customer",
-      "author": "Random",
+      "author": "Benjamin Goel",
       "status": "draft",
       "revision": 4,
       "createdAt": "2026-09-15T11:24:33.922Z",
       "updatedAt": "2026-09-15T13:06:05.974Z"
     },
     "model": {
-      "name": "Qwen/Qwen3-32B",
-      "repoUrl": "https://huggingface.co/Qwen/Qwen3-32B",
-      "contextLength": 131072
+      "name": "zai-org/GLM-5.2-FP8",
+      "repoUrl": "https://huggingface.co/moonshotai/Kimi-K2.7-Code",
+      "contextLength": 262144
     },
     "deployment": {
       "environment": "on_prem",
@@ -25,12 +25,30 @@
       "maxInstances": 18
     }
   },
+  "stages": [
+    {
+      "key": "stage-1",
+      "name": "Stage 1",
+      "position": 1,
+      "status": "not_started",
+      "statusLabel": "Not started",
+      "deployment": {
+        "environment": "on_prem",
+        "hardware": "BH-Galaxy",
+        "maxConcurrencyPerInstance": 32,
+        "maxInstances": 18
+      }
+    }
+  ],
   "workloads": [
     {
       "kind": "text",
       "id": "s-26c79c84",
       "name": "Agentic Coding Service",
-      "oslValues": [128, 1024],
+      "oslValues": [
+        128,
+        1024
+      ],
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
@@ -89,7 +107,7 @@
           "tpotP95Ms": 3.98,
           "e2elMeanMs": 7709.43,
           "e2elP50Ms": 3630.29,
-          "e2elP90Ms": 18718.4,
+          "e2elP90Ms": 18718.399999999998,
           "e2elP95Ms": 25340.41,
           "reqThroughputRps": 0.07159,
           "totalThroughputTps": 18815.91616,
@@ -98,9 +116,9 @@
           "inputTokensP95": 494215.5,
           "outputTokensMean": 1930.40541,
           "outputTokensP95": 6911.9,
-          "kvCacheHitRatePct": 98.6972174156267,
-          "e2eNormIntvtyP75Tps": 170.108412861143,
-          "e2eNormIntvtyP90Tps": 102.433475750155,
+          "kvCacheHitRatePct": 98.69721741562668,
+          "e2eNormIntvtyP75Tps": 170.10841286114254,
+          "e2eNormIntvtyP90Tps": 102.43347575015501,
           "goodputPct": 90,
           "slo": {
             "ttftMs": 10000,
@@ -113,15 +131,15 @@
           "ttftMeanMs": 582.38,
           "ttftP50Ms": 353.99,
           "ttftP90Ms": 1277.94,
-          "ttftP95Ms": 1410.65,
+          "ttftP95Ms": 1410.6499999999999,
           "tpotMeanMs": 3.78,
           "tpotP50Ms": 3.54,
           "tpotP90Ms": 3.93,
           "tpotP95Ms": 4.2,
           "e2elMeanMs": 5254.92,
           "e2elP50Ms": 1973.73,
-          "e2elP90Ms": 14690.04,
-          "e2elP95Ms": 20890.24,
+          "e2elP90Ms": 14690.039999999999,
+          "e2elP95Ms": 20890.239999999998,
           "reqThroughputRps": 0.16184,
           "totalThroughputTps": 29403.22136,
           "decodeThroughputTps": 208.46592,
@@ -129,9 +147,9 @@
           "inputTokensP95": 581762.7,
           "outputTokensMean": 1289.56701,
           "outputTokensP95": 5414.1,
-          "kvCacheHitRatePct": 97.1940661916114,
-          "e2eNormIntvtyP75Tps": 181.80849073356,
-          "e2eNormIntvtyP90Tps": 117.549595971253,
+          "kvCacheHitRatePct": 97.19406619161144,
+          "e2eNormIntvtyP75Tps": 181.80849073356003,
+          "e2eNormIntvtyP90Tps": 117.54959597125251,
           "goodputPct": 90,
           "slo": {
             "ttftMs": 10000,
@@ -144,14 +162,14 @@
           "ttftMeanMs": 588.15,
           "ttftP50Ms": 365.26,
           "ttftP90Ms": 1241.5,
-          "ttftP95Ms": 1482.86,
+          "ttftP95Ms": 1482.8600000000001,
           "tpotMeanMs": 4.26,
-          "tpotP50Ms": 3.86,
+          "tpotP50Ms": 3.8600000000000003,
           "tpotP90Ms": 5.15,
           "tpotP95Ms": 6.28,
           "e2elMeanMs": 5115.03,
           "e2elP50Ms": 2439.36,
-          "e2elP90Ms": 12238.79,
+          "e2elP90Ms": 12238.789999999999,
           "e2elP95Ms": 19609.64,
           "reqThroughputRps": 0.36049,
           "totalThroughputTps": 54634.054,
@@ -161,8 +179,8 @@
           "outputTokensMean": 1120.38863,
           "outputTokensP95": 4480.85,
           "kvCacheHitRatePct": 96.6451234929271,
-          "e2eNormIntvtyP75Tps": 159.200154728955,
-          "e2eNormIntvtyP90Tps": 112.851894526235,
+          "e2eNormIntvtyP75Tps": 159.20015472895477,
+          "e2eNormIntvtyP90Tps": 112.85189452623473,
           "goodputPct": 90,
           "slo": {
             "ttftMs": 10000,
@@ -179,7 +197,7 @@
           "tpotMeanMs": 5.43,
           "tpotP50Ms": 4.22,
           "tpotP90Ms": 5.98,
-          "tpotP95Ms": 7.1,
+          "tpotP95Ms": 7.1000000000000005,
           "e2elMeanMs": 5575.01,
           "e2elP50Ms": 2277.32,
           "e2elP90Ms": 13419.35,
@@ -191,9 +209,9 @@
           "inputTokensP95": 380809,
           "outputTokensMean": 1093.53962,
           "outputTokensP95": 4780.4,
-          "kvCacheHitRatePct": 94.0754144693319,
-          "e2eNormIntvtyP75Tps": 143.198440373396,
-          "e2eNormIntvtyP90Tps": 97.5228153385464,
+          "kvCacheHitRatePct": 94.07541446933188,
+          "e2eNormIntvtyP75Tps": 143.19844037339624,
+          "e2eNormIntvtyP90Tps": 97.52281533854638,
           "goodputPct": 90,
           "slo": {
             "ttftMs": 10000,
@@ -203,11 +221,11 @@
         },
         {
           "concurrency": 32,
-          "ttftMeanMs": 6123.06,
+          "ttftMeanMs": 6123.0599999999995,
           "ttftP50Ms": 3513.12,
           "ttftP90Ms": 15065.64,
           "ttftP95Ms": 19872.47,
-          "tpotMeanMs": 14.04,
+          "tpotMeanMs": 14.040000000000001,
           "tpotP50Ms": 10.97,
           "tpotP90Ms": 21.52,
           "tpotP95Ms": 28.63,
@@ -222,9 +240,9 @@
           "inputTokensP95": 359307.8,
           "outputTokensMean": 982.03324,
           "outputTokensP95": 3932.4,
-          "kvCacheHitRatePct": 28.6350384245175,
-          "e2eNormIntvtyP75Tps": 24.185894697726,
-          "e2eNormIntvtyP90Tps": 10.5953375242601,
+          "kvCacheHitRatePct": 28.63503842451754,
+          "e2eNormIntvtyP75Tps": 24.185894697726027,
+          "e2eNormIntvtyP90Tps": 10.595337524260145,
           "goodputPct": 90,
           "slo": {
             "ttftMs": 10000,
@@ -269,6 +287,8 @@
   "items": [
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -291,20 +311,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1280
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -327,20 +369,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1280
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -363,20 +427,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 2560
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -399,20 +485,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 2560
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -435,20 +543,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 5120
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -471,20 +601,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 5120
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -507,20 +659,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 10240
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -543,20 +717,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 10240
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -579,20 +775,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 20480
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -615,20 +833,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 20480
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -651,20 +891,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 40960
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -687,20 +949,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 40960
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -723,20 +1007,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 81920
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -759,20 +1065,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 81920
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -795,20 +1123,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 163840
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -831,20 +1181,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 163840
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -867,20 +1239,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 327680
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -903,20 +1297,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 327680
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -939,20 +1355,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 655360
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -975,20 +1413,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 655360
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1011,20 +1471,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1310720
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1047,20 +1529,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1310720
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 128 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 128 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1083,20 +1587,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1280
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 128, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1119,20 +1645,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1280
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 128, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1155,20 +1703,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 2560
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 256, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1191,20 +1761,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 2560
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 256, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1227,20 +1819,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 5120
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 512, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1263,20 +1877,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 5120
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 512, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1299,20 +1935,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 10240
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 1024, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1335,20 +1993,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 10240
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 1024, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1371,20 +2051,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 20480
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 2048, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1407,20 +2109,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 20480
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 2048, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1443,20 +2167,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 40960
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 4096, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1479,20 +2225,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 40960
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 4096, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1515,20 +2283,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 81920
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 8192, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1551,20 +2341,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 81920
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 8192, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1587,20 +2399,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 163840
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 16384, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1623,20 +2457,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 163840
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 16384, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1659,20 +2515,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 327680
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 32768, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1695,20 +2573,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 327680
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 32768, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1731,20 +2631,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 655360
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 65536, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1767,20 +2689,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 655360
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 65536, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1803,20 +2747,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1310720
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 1, ISL 131072, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "s-26c79c84",
       "scenarioName": "Agentic Coding Service",
       "kind": "text",
@@ -1839,20 +2805,42 @@
         "decodeThroughputTps": 100000,
         "totalThroughputTps": 100000,
         "reqThroughputRps": 10,
-        "goodputPct": 90
+        "goodputPct": 90,
+        "inputThroughputTps": 1310720
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP99Ms",
+          "tpotMs",
+          "tpotP50Ms",
+          "tpotP99Ms",
+          "e2elMs",
+          "e2elP50Ms",
+          "e2elP99Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 15000,
         "tpotMs": 25,
         "e2elMs": 20000
       },
-      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 1024 with token-only requests; measured TTFT/TPOT/E2EL/throughput must meet these values, and goodput counts only requests inside the SLO.",
+      "methodology": "Run `vllm bench serve` at concurrency 32, ISL 131072, OSL 1024 with token-only requests; measured values must meet every `enforcement.hard` target (asserted in Models CI), `enforcement.soft` targets are reported but advisory, and goodput counts only requests inside the SLO.",
       "tools": [
         "vllm bench serve"
       ]
     },
     {
       "type": "agentic_operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "e05dd9db-4763-41c2-9208-faf14434bff2",
       "scenarioName": "New agentic scenario",
       "concurrency": 1,
@@ -1871,7 +2859,7 @@
         "tpotP95Ms": 3.98,
         "e2elMeanMs": 7709.43,
         "e2elP50Ms": 3630.29,
-        "e2elP90Ms": 18718.4,
+        "e2elP90Ms": 18718.399999999998,
         "e2elP95Ms": 25340.41,
         "reqThroughputRps": 0.07159,
         "totalThroughputTps": 18815.91616,
@@ -1880,23 +2868,51 @@
         "inputTokensP95": 494215.5,
         "outputTokensMean": 1930.40541,
         "outputTokensP95": 6911.9,
-        "kvCacheHitRatePct": 98.6972174156267,
-        "e2eNormIntvtyP75Tps": 170.108412861143,
-        "e2eNormIntvtyP90Tps": 102.433475750155,
-        "goodputPct": 90
+        "kvCacheHitRatePct": 98.69721741562668,
+        "e2eNormIntvtyP75Tps": 170.10841286114254,
+        "e2eNormIntvtyP90Tps": 102.43347575015501,
+        "goodputPct": 90,
+        "inputThroughputTps": 18677.4168
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP90Ms",
+          "ttftP95Ms",
+          "tpotMeanMs",
+          "tpotP50Ms",
+          "tpotP90Ms",
+          "tpotP95Ms",
+          "e2elMeanMs",
+          "e2elP50Ms",
+          "e2elP90Ms",
+          "e2elP95Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "kvCacheHitRatePct",
+          "e2eNormIntvtyP75Tps",
+          "e2eNormIntvtyP90Tps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 10000,
         "tpotMs": 25,
         "e2elMs": 15000
       },
-      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 1; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 1; measured per-turn values must meet every `enforcement.hard` target (asserted in Models CI), and `enforcement.soft` targets are reported but advisory. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
       "tools": [
         "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
       ]
     },
     {
       "type": "agentic_operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "e05dd9db-4763-41c2-9208-faf14434bff2",
       "scenarioName": "New agentic scenario",
       "concurrency": 4,
@@ -1908,15 +2924,15 @@
         "ttftMeanMs": 582.38,
         "ttftP50Ms": 353.99,
         "ttftP90Ms": 1277.94,
-        "ttftP95Ms": 1410.65,
+        "ttftP95Ms": 1410.6499999999999,
         "tpotMeanMs": 3.78,
         "tpotP50Ms": 3.54,
         "tpotP90Ms": 3.93,
         "tpotP95Ms": 4.2,
         "e2elMeanMs": 5254.92,
         "e2elP50Ms": 1973.73,
-        "e2elP90Ms": 14690.04,
-        "e2elP95Ms": 20890.24,
+        "e2elP90Ms": 14690.039999999999,
+        "e2elP95Ms": 20890.239999999998,
         "reqThroughputRps": 0.16184,
         "totalThroughputTps": 29403.22136,
         "decodeThroughputTps": 208.46592,
@@ -1924,23 +2940,51 @@
         "inputTokensP95": 581762.7,
         "outputTokensMean": 1289.56701,
         "outputTokensP95": 5414.1,
-        "kvCacheHitRatePct": 97.1940661916114,
-        "e2eNormIntvtyP75Tps": 181.80849073356,
-        "e2eNormIntvtyP90Tps": 117.549595971253,
-        "goodputPct": 90
+        "kvCacheHitRatePct": 97.19406619161144,
+        "e2eNormIntvtyP75Tps": 181.80849073356003,
+        "e2eNormIntvtyP90Tps": 117.54959597125251,
+        "goodputPct": 90,
+        "inputThroughputTps": 29194.75544
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP90Ms",
+          "ttftP95Ms",
+          "tpotMeanMs",
+          "tpotP50Ms",
+          "tpotP90Ms",
+          "tpotP95Ms",
+          "e2elMeanMs",
+          "e2elP50Ms",
+          "e2elP90Ms",
+          "e2elP95Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "kvCacheHitRatePct",
+          "e2eNormIntvtyP75Tps",
+          "e2eNormIntvtyP90Tps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 10000,
         "tpotMs": 25,
         "e2elMs": 15000
       },
-      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 4; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 4; measured per-turn values must meet every `enforcement.hard` target (asserted in Models CI), and `enforcement.soft` targets are reported but advisory. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
       "tools": [
         "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
       ]
     },
     {
       "type": "agentic_operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "e05dd9db-4763-41c2-9208-faf14434bff2",
       "scenarioName": "New agentic scenario",
       "concurrency": 8,
@@ -1952,14 +2996,14 @@
         "ttftMeanMs": 588.15,
         "ttftP50Ms": 365.26,
         "ttftP90Ms": 1241.5,
-        "ttftP95Ms": 1482.86,
+        "ttftP95Ms": 1482.8600000000001,
         "tpotMeanMs": 4.26,
-        "tpotP50Ms": 3.86,
+        "tpotP50Ms": 3.8600000000000003,
         "tpotP90Ms": 5.15,
         "tpotP95Ms": 6.28,
         "e2elMeanMs": 5115.03,
         "e2elP50Ms": 2439.36,
-        "e2elP90Ms": 12238.79,
+        "e2elP90Ms": 12238.789999999999,
         "e2elP95Ms": 19609.64,
         "reqThroughputRps": 0.36049,
         "totalThroughputTps": 54634.054,
@@ -1969,22 +3013,50 @@
         "outputTokensMean": 1120.38863,
         "outputTokensP95": 4480.85,
         "kvCacheHitRatePct": 96.6451234929271,
-        "e2eNormIntvtyP75Tps": 159.200154728955,
-        "e2eNormIntvtyP90Tps": 112.851894526235,
-        "goodputPct": 90
+        "e2eNormIntvtyP75Tps": 159.20015472895477,
+        "e2eNormIntvtyP90Tps": 112.85189452623473,
+        "goodputPct": 90,
+        "inputThroughputTps": 54229.964159999996
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP90Ms",
+          "ttftP95Ms",
+          "tpotMeanMs",
+          "tpotP50Ms",
+          "tpotP90Ms",
+          "tpotP95Ms",
+          "e2elMeanMs",
+          "e2elP50Ms",
+          "e2elP90Ms",
+          "e2elP95Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "kvCacheHitRatePct",
+          "e2eNormIntvtyP75Tps",
+          "e2eNormIntvtyP90Tps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 10000,
         "tpotMs": 25,
         "e2elMs": 15000
       },
-      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 8; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 8; measured per-turn values must meet every `enforcement.hard` target (asserted in Models CI), and `enforcement.soft` targets are reported but advisory. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
       "tools": [
         "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
       ]
     },
     {
       "type": "agentic_operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "e05dd9db-4763-41c2-9208-faf14434bff2",
       "scenarioName": "New agentic scenario",
       "concurrency": 12,
@@ -2000,7 +3072,7 @@
         "tpotMeanMs": 5.43,
         "tpotP50Ms": 4.22,
         "tpotP90Ms": 5.98,
-        "tpotP95Ms": 7.1,
+        "tpotP95Ms": 7.1000000000000005,
         "e2elMeanMs": 5575.01,
         "e2elP50Ms": 2277.32,
         "e2elP90Ms": 13419.35,
@@ -2012,23 +3084,51 @@
         "inputTokensP95": 380809,
         "outputTokensMean": 1093.53962,
         "outputTokensP95": 4780.4,
-        "kvCacheHitRatePct": 94.0754144693319,
-        "e2eNormIntvtyP75Tps": 143.198440373396,
-        "e2eNormIntvtyP90Tps": 97.5228153385464,
-        "goodputPct": 90
+        "kvCacheHitRatePct": 94.07541446933188,
+        "e2eNormIntvtyP75Tps": 143.19844037339624,
+        "e2eNormIntvtyP90Tps": 97.52281533854638,
+        "goodputPct": 90,
+        "inputThroughputTps": 63937.81432
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP90Ms",
+          "ttftP95Ms",
+          "tpotMeanMs",
+          "tpotP50Ms",
+          "tpotP90Ms",
+          "tpotP95Ms",
+          "e2elMeanMs",
+          "e2elP50Ms",
+          "e2elP90Ms",
+          "e2elP95Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "kvCacheHitRatePct",
+          "e2eNormIntvtyP75Tps",
+          "e2eNormIntvtyP90Tps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 10000,
         "tpotMs": 25,
         "e2elMs": 15000
       },
-      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 12; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 12; measured per-turn values must meet every `enforcement.hard` target (asserted in Models CI), and `enforcement.soft` targets are reported but advisory. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
       "tools": [
         "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
       ]
     },
     {
       "type": "agentic_operating_point",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "scenarioId": "e05dd9db-4763-41c2-9208-faf14434bff2",
       "scenarioName": "New agentic scenario",
       "concurrency": 32,
@@ -2037,11 +3137,11 @@
       ],
       "targets": {
         "concurrency": 32,
-        "ttftMeanMs": 6123.06,
+        "ttftMeanMs": 6123.0599999999995,
         "ttftP50Ms": 3513.12,
         "ttftP90Ms": 15065.64,
         "ttftP95Ms": 19872.47,
-        "tpotMeanMs": 14.04,
+        "tpotMeanMs": 14.040000000000001,
         "tpotP50Ms": 10.97,
         "tpotP90Ms": 21.52,
         "tpotP95Ms": 28.63,
@@ -2056,23 +3156,51 @@
         "inputTokensP95": 359307.8,
         "outputTokensMean": 982.03324,
         "outputTokensP95": 3932.4,
-        "kvCacheHitRatePct": 28.6350384245175,
-        "e2eNormIntvtyP75Tps": 24.185894697726,
-        "e2eNormIntvtyP90Tps": 10.5953375242601,
-        "goodputPct": 90
+        "kvCacheHitRatePct": 28.63503842451754,
+        "e2eNormIntvtyP75Tps": 24.185894697726027,
+        "e2eNormIntvtyP90Tps": 10.595337524260145,
+        "goodputPct": 90,
+        "inputThroughputTps": 134480.04992
+      },
+      "enforcement": {
+        "hard": [
+          "ttftMeanMs",
+          "ttftP50Ms",
+          "ttftP90Ms",
+          "ttftP95Ms",
+          "tpotMeanMs",
+          "tpotP50Ms",
+          "tpotP90Ms",
+          "tpotP95Ms",
+          "e2elMeanMs",
+          "e2elP50Ms",
+          "e2elP90Ms",
+          "e2elP95Ms",
+          "inputThroughputTps",
+          "decodeThroughputTps",
+          "totalThroughputTps",
+          "reqThroughputRps",
+          "kvCacheHitRatePct",
+          "e2eNormIntvtyP75Tps",
+          "e2eNormIntvtyP90Tps",
+          "goodputPct"
+        ],
+        "soft": []
       },
       "slo": {
         "ttftMs": 10000,
         "tpotMs": 25,
         "e2elMs": 15000
       },
-      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 32; measured per-turn TTFT/TPOT/E2EL and throughput must meet these values. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
+      "methodology": "Replay the scenario's declared agentic trace mix at concurrency 32; measured per-turn values must meet every `enforcement.hard` target (asserted in Models CI), and `enforcement.soft` targets are reported but advisory. Latencies stop at p95 — the data source publishes no p99 for these families — and client-side tool execution is excluded.",
       "tools": [
         "NVIDIA AIPerf InferenceX AgentX MVP benchmark"
       ]
     },
     {
       "type": "accuracy_eval",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "spec": {
         "name": "GPQA-Diamond",
         "taskCategory": "reasoning",
@@ -2094,6 +3222,8 @@
     },
     {
       "type": "accuracy_eval",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "spec": {
         "name": "Terminal-Bench 2.1",
         "taskCategory": "agentic",
@@ -2115,6 +3245,8 @@
     },
     {
       "type": "accuracy_eval",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "spec": {
         "name": "SWE-bench Verified",
         "taskCategory": "agentic",
@@ -2134,6 +3266,8 @@
     },
     {
       "type": "accuracy_eval",
+      "stageKey": "stage-1",
+      "stageName": "Stage 1",
       "spec": {
         "name": "Tau^3-Banking Benchmark",
         "taskCategory": "agentic",

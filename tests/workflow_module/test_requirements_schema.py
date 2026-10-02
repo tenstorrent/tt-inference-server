@@ -20,7 +20,6 @@ from workflow_module.requirements_schema import (
     effective_slo,
     input_throughput_tps,
     load_requirements,
-    requires_input_throughput,
     stated_target,
 )
 
@@ -32,10 +31,31 @@ _FIXTURE = (
 )
 
 
+def _stage(**fields):
+    """One delivery stage; a 3.x document always has at least one."""
+    return {
+        "key": "stage-1",
+        "name": "Stage 1",
+        "progress": {"status": "not_started"},
+        **fields,
+    }
+
+
+def _doc(*, scenarios=(), evals=(), **identity):
+    """A minimal canonical 3.1 document whose single stage holds ``scenarios``."""
+    return {
+        "schemaVersion": "3.1.0",
+        "id": "d",
+        "model": {"name": "a/b"},
+        **identity,
+        "stages": [_stage(scenarios=list(scenarios), accuracyEvals=list(evals))],
+    }
+
+
 def test_loads_acme_fixture():
     doc = load_requirements(_FIXTURE)
     assert doc.id == "acme-llm-serving"
-    assert doc.schema_version == "2.1.0"
+    assert doc.schema_version == "3.1.0"
     assert doc.model.name == "openai/gpt-oss-120b"
     assert doc.model.context_length == 131072
     assert doc.deployment.hardware == "SC8"
@@ -60,15 +80,7 @@ def test_load_resolves_traversal_to_real_file(tmp_path):
     sub = tmp_path / "sub"
     sub.mkdir()
     target = tmp_path / "req.json"
-    target.write_text(
-        json.dumps(
-            {
-                "schemaVersion": "2.1.0",
-                "model": {"name": "acme/tiny"},
-                "deployment": {},
-            }
-        )
-    )
+    target.write_text(json.dumps(_doc(model={"name": "acme/tiny"}, deployment={})))
     doc = load_requirements(sub / ".." / "req.json")
     assert doc.model.name == "acme/tiny"
 
@@ -168,15 +180,11 @@ def test_scenario_sweep_and_targets_parsed():
 
 
 def test_unknown_keys_are_ignored(tmp_path):
-    doc_dict = {
-        "schemaVersion": "2.9.0",
-        "id": "x",
-        "model": {"name": "foo/bar", "contextLength": 4096, "somethingNew": 1},
-        "deployment": {"hardware": "SC8", "futureField": True},
-        "accuracyEvals": [],
-        "scenarios": [],
-        "unrecognizedTopLevel": {"a": 1},
-    }
+    doc_dict = _doc(
+        model={"name": "foo/bar", "contextLength": 4096, "somethingNew": 1},
+        deployment={"hardware": "SC8", "futureField": True},
+        unrecognizedTopLevel={"a": 1},
+    )
     path = tmp_path / "doc.json"
     path.write_text(json.dumps(doc_dict))
     doc = load_requirements(path)
@@ -185,35 +193,47 @@ def test_unknown_keys_are_ignored(tmp_path):
     assert doc.model.context_length == 4096
 
 
-def test_unsupported_schema_major_rejected(tmp_path):
+@pytest.mark.parametrize("version", ["2.8.0", "3.0.0", "4.0.0"])
+def test_versions_outside_3_1_and_later_3_x_rejected(tmp_path, version):
     path = tmp_path / "doc.json"
-    path.write_text(json.dumps({"schemaVersion": "4.0.0", "model": {"name": "a/b"}}))
+    path.write_text(json.dumps({**_doc(), "schemaVersion": version}))
     with pytest.raises(RequirementsError, match="Unsupported schemaVersion"):
         load_requirements(path)
 
 
-def _v3_stage(**overrides):
-    stage = {
-        "key": "poc",
-        "name": "Proof of concept",
-        "scenarios": [
+def test_later_3_x_minors_load():
+    assert RequirementsDoc.from_dict({**_doc(), "schemaVersion": "3.7.2"}).id == "d"
+
+
+def test_missing_stages_rejected():
+    doc_dict = _doc()
+    del doc_dict["stages"]
+    with pytest.raises(RequirementsError, match="stages"):
+        RequirementsDoc.from_dict(doc_dict)
+
+
+def test_missing_id_rejected():
+    doc_dict = _doc()
+    del doc_dict["id"]
+    with pytest.raises(RequirementsError, match="'id'"):
+        RequirementsDoc.from_dict(doc_dict)
+
+
+def _poc_stage(**overrides):
+    return _stage(
+        scenarios=[
             {"id": "chat", "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}]}
         ],
-        "accuracyEvals": [{"name": "GPQA Diamond"}],
-        "progress": {"status": "in_progress"},
-    }
-    stage.update(overrides)
-    return stage
+        accuracyEvals=[{"name": "GPQA Diamond"}],
+        **overrides,
+    )
 
 
-def test_v3_single_stage_document_loads_from_its_stage():
+def test_single_stage_document_loads_from_its_stage():
     doc = RequirementsDoc.from_dict(
         {
-            "schemaVersion": "3.0.0",
-            "id": "d",
-            "model": {"name": "a/b"},
-            "deployment": {"hardware": "SC8", "maxConcurrencyPerInstance": 32},
-            "stages": [_v3_stage(deployment={"maxConcurrencyPerInstance": 64})],
+            **_doc(deployment={"hardware": "SC8", "maxConcurrencyPerInstance": 32}),
+            "stages": [_poc_stage(deployment={"maxConcurrencyPerInstance": 64})],
         }
     )
     assert [s.id for s in doc.scenarios] == ["chat"]
@@ -223,7 +243,7 @@ def test_v3_single_stage_document_loads_from_its_stage():
     assert doc.deployment.max_concurrency_per_instance == 64
 
 
-def test_v3_validation_plan_takes_the_stage_deployment():
+def test_validation_plan_takes_the_stage_deployment():
     doc = RequirementsDoc.from_dict(
         {
             "schemaVersion": "3.1.0",
@@ -249,31 +269,21 @@ def test_v3_validation_plan_takes_the_stage_deployment():
 def test_multi_stage_document_rejected():
     with pytest.raises(RequirementsError, match="2 delivery stages"):
         RequirementsDoc.from_dict(
-            {
-                "schemaVersion": "3.0.0",
-                "model": {"name": "a/b"},
-                "stages": [_v3_stage(), _v3_stage(key="ga", name="GA")],
-            }
+            {**_doc(), "stages": [_poc_stage(), _poc_stage(key="ga", name="GA")]}
         )
 
 
 def test_nice_to_have_is_soft():
     doc = RequirementsDoc.from_dict(
-        {
-            "schemaVersion": "3.1.0",
-            "model": {"name": "a/b"},
-            "accuracyEvals": [{"name": "X", "priority": "nice_to_have"}],
-        }
+        _doc(evals=[{"name": "X", "priority": "nice_to_have"}])
     )
     assert doc.accuracy_evals[0].priority == PRIORITY_SHOULD
 
 
 def test_soft_metrics_are_read_per_scenario():
     doc = RequirementsDoc.from_dict(
-        {
-            "schemaVersion": "3.1.0",
-            "model": {"name": "a/b"},
-            "scenarios": [
+        _doc(
+            scenarios=[
                 {"id": "chat", "softMetrics": ["ttftMeanMs"], "sweep": []},
                 {
                     "id": "agent",
@@ -281,8 +291,8 @@ def test_soft_metrics_are_read_per_scenario():
                     "softMetrics": ["e2elP95Ms"],
                     "agenticSweep": [{"concurrency": 1}],
                 },
-            ],
-        }
+            ]
+        )
     )
     assert doc.scenarios[0].soft_metrics == frozenset({"ttftMeanMs"})
     assert doc.agentic_workloads[0].soft_metrics == frozenset({"e2elP95Ms"})
@@ -304,20 +314,6 @@ def test_input_throughput_follows_the_gauntlet_reader_rule(row, isl, expected):
 
 
 @pytest.mark.parametrize(
-    "version, required",
-    [
-        ("3.1.0", True),
-        ("3.2.5", True),
-        ("4.0.0", True),
-        ("3.0.0", False),
-        ("2.8.0", False),
-    ],
-)
-def test_input_throughput_is_required_from_3_1(version, required):
-    assert requires_input_throughput(version) is required
-
-
-@pytest.mark.parametrize(
     "value, expected",
     [(250, 250.0), (0.5, 0.5), (0, None), (None, None), (True, None), ("1", None)],
 )
@@ -334,7 +330,9 @@ def test_missing_schema_version_rejected(tmp_path):
 
 def test_missing_model_rejected(tmp_path):
     path = tmp_path / "doc.json"
-    path.write_text(json.dumps({"schemaVersion": "2.0.0"}))
+    doc_dict = _doc()
+    del doc_dict["model"]
+    path.write_text(json.dumps(doc_dict))
     with pytest.raises(RequirementsError, match="model"):
         load_requirements(path)
 
@@ -345,11 +343,7 @@ def test_missing_file_rejected(tmp_path):
 
 
 def test_invalid_priority_rejected(tmp_path):
-    doc_dict = {
-        "schemaVersion": "2.0.0",
-        "model": {"name": "a/b"},
-        "accuracyEvals": [{"name": "X", "priority": "nice-to-have"}],
-    }
+    doc_dict = _doc(evals=[{"name": "X", "priority": "nice-to-have"}])
     path = tmp_path / "doc.json"
     path.write_text(json.dumps(doc_dict))
     with pytest.raises(RequirementsError, match="priority"):
@@ -357,18 +351,16 @@ def test_invalid_priority_rejected(tmp_path):
 
 
 def test_invalid_comparator_rejected(tmp_path):
-    doc_dict = {
-        "schemaVersion": "2.0.0",
-        "model": {"name": "a/b"},
-        "scenarios": [
+    doc_dict = _doc(
+        scenarios=[
             {
                 "id": "s",
                 "scalarTargets": [
                     {"metric": "system_throughput", "target": 1, "comparator": "eq"}
                 ],
             }
-        ],
-    }
+        ]
+    )
     path = tmp_path / "doc.json"
     path.write_text(json.dumps(doc_dict))
     with pytest.raises(RequirementsError, match="comparator"):
@@ -376,7 +368,7 @@ def test_invalid_comparator_rejected(tmp_path):
 
 
 def _agentic_doc(**overrides):
-    """A schema 2.6 document: identity nested, agentic sweep in workloads."""
+    """A validation plan: identity under 'document', agentic sweep inline on its workload."""
     workload = {
         "kind": "agentic",
         "id": "w1",
@@ -391,14 +383,16 @@ def _agentic_doc(**overrides):
     }
     workload.update(overrides)
     return {
-        "schemaVersion": "2.6.0",
+        "schemaVersion": "3.1.0",
         "document": {
             "id": "doc-1",
             "meta": {"customer": "Ant"},
             "model": {"name": "google/gemma-4-31B-it", "contextLength": 131072},
             "deployment": {"hardware": "SC24", "maxConcurrencyPerInstance": 1},
         },
+        "stages": [_stage(deployment={"hardware": "SC24"})],
         "workloads": [workload],
+        "items": [],
     }
 
 
@@ -409,7 +403,7 @@ def _write(tmp_path, doc_dict):
 
 
 def test_reads_identity_from_the_document_envelope(tmp_path):
-    """Schema 2.6 nests model/deployment/meta under 'document'."""
+    """A validation plan nests model/deployment/meta under 'document'."""
     doc = load_requirements(_write(tmp_path, _agentic_doc()))
 
     assert doc.id == "doc-1"
@@ -458,39 +452,48 @@ def test_sweep_point_without_concurrency_rejected(tmp_path):
 def _canonical_doc(*extra_scenarios):
     """A canonical document: every workload is a scenarios[] entry with a kind.
 
-    This is the shape llm-gauntlet itself stores and exports (see
-    ``requirements/examples/acme-agentic-coding.json``) — there is no top-level
-    ``workloads`` key at all.
+    This is the shape llm-gauntlet itself stores, with the scenarios on the
+    document's single delivery stage.
     """
     return {
-        "schemaVersion": "2.7.0",
+        "schemaVersion": "3.1.0",
         "id": "canon-1",
         "model": {"name": "moonshotai/Kimi-K2.7-Code", "contextLength": 262144},
         "deployment": {"hardware": "SC20", "maxConcurrencyPerInstance": 32},
-        "scenarios": [
-            {
-                "kind": "text",
-                "id": "s-text",
-                "oslValues": [128],
-                "slo": {"ttftMs": 4100, "tpotMs": 22.2, "e2elMs": 10000},
-                "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}],
-            },
-            {
-                "kind": "agentic",
-                "id": "s-agentic",
-                "name": "Claude Code trace replay",
-                "oslValues": [],
-                "slo": {"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000},
-                "maxConcurrency": 64,
-                "agenticWorkload": {"traces": [{"name": "AgentX - Claude Code"}]},
-                "agenticSweep": [
-                    {"concurrency": 1, "e2elP90Ms": 16475.15},
-                    {"concurrency": 64},
-                ],
-            },
-            *extra_scenarios,
+        "stages": [
+            _stage(
+                scenarios=[
+                    {
+                        "kind": "text",
+                        "id": "s-text",
+                        "oslValues": [128],
+                        "slo": {"ttftMs": 4100, "tpotMs": 22.2, "e2elMs": 10000},
+                        "sweep": [{"isl": 128, "osl": 128, "concurrency": 1}],
+                    },
+                    {
+                        "kind": "agentic",
+                        "id": "s-agentic",
+                        "name": "Claude Code trace replay",
+                        "oslValues": [],
+                        "slo": {"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000},
+                        "maxConcurrency": 64,
+                        "agenticWorkload": {
+                            "traces": [{"name": "AgentX - Claude Code"}]
+                        },
+                        "agenticSweep": [
+                            {"concurrency": 1, "e2elP90Ms": 16475.15},
+                            {"concurrency": 64},
+                        ],
+                    },
+                    *extra_scenarios,
+                ]
+            )
         ],
     }
+
+
+def _scenarios(doc_dict):
+    return doc_dict["stages"][0]["scenarios"]
 
 
 def test_canonical_agentic_scenario_drives_the_sweep(tmp_path):
@@ -536,47 +539,12 @@ def test_non_agentic_kinds_stay_benchmark_scenarios(tmp_path, kind):
     assert [w.id for w in doc.agentic_workloads] == ["s-agentic"]
 
 
-def test_both_spellings_of_one_workload_replay_it_once(tmp_path):
-    """scenarios[] wins; a duplicate would replay every concurrency twice."""
+def test_agentic_workload_needs_an_id(tmp_path):
     doc_dict = _canonical_doc()
-    doc_dict["workloads"] = [
-        {
-            "kind": "agentic",
-            "id": "s-agentic",
-            "name": "stale export copy",
-            "agenticSweep": [{"concurrency": 999}],
-        }
-    ]
-
-    doc = load_requirements(_write(tmp_path, doc_dict))
-
-    (workload,) = doc.agentic_workloads
-    assert workload.name == "Claude Code trace replay"
-    assert [p.concurrency for p in workload.sweep] == [1, 64]
-
-
-def test_agentic_workload_needs_an_id_or_name(tmp_path):
-    doc_dict = _canonical_doc()
-    del doc_dict["scenarios"][1]["id"]
-    del doc_dict["scenarios"][1]["name"]
+    del _scenarios(doc_dict)[1]["id"]
 
     with pytest.raises(RequirementsError, match="agentic workload"):
         load_requirements(_write(tmp_path, doc_dict))
-
-
-def test_flat_documents_still_load(tmp_path):
-    """Earlier 2.x revisions put identity at the top level and have no sweep."""
-    doc_dict = {
-        "schemaVersion": "2.1.0",
-        "model": {"name": "a/b"},
-        "deployment": {"hardware": "SC8"},
-    }
-
-    doc = load_requirements(_write(tmp_path, doc_dict))
-
-    assert doc.model.name == "a/b"
-    assert doc.deployment.hardware == "SC8"
-    assert doc.agentic_workloads == []
 
 
 # --- per-row SLO overrides ---------------------------------------------------
@@ -585,7 +553,7 @@ def test_flat_documents_still_load(tmp_path):
 def test_sweep_point_slo_is_typed_and_empty_means_absent(tmp_path):
     """An empty {} is how a serialized document spells "no SLOs declared"."""
     doc_dict = _canonical_doc()
-    doc_dict["scenarios"][0]["sweep"] = [
+    _scenarios(doc_dict)[0]["sweep"] = [
         {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 900}},
         {"isl": 128, "osl": 128, "concurrency": 32, "slo": {}},
         {"isl": 256, "osl": 128, "concurrency": 1},
@@ -602,7 +570,7 @@ def test_sweep_point_slo_is_typed_and_empty_means_absent(tmp_path):
 
 def test_agentic_sweep_point_slo_is_typed(tmp_path):
     doc_dict = _canonical_doc()
-    doc_dict["scenarios"][1]["agenticSweep"] = [
+    _scenarios(doc_dict)[1]["agenticSweep"] = [
         {"concurrency": 1, "slo": {"tpotMs": 5}},
         {"concurrency": 64},
     ]
@@ -650,7 +618,7 @@ def test_effective_slo_none_keeps_unmeasurable_distinguishable():
 
 def test_sweep_point_effective_slo_helper(tmp_path):
     doc_dict = _canonical_doc()
-    doc_dict["scenarios"][0]["sweep"] = [
+    _scenarios(doc_dict)[0]["sweep"] = [
         {"isl": 128, "osl": 128, "concurrency": 1, "slo": {"ttftMs": 900}}
     ]
 
@@ -666,7 +634,8 @@ def test_sweep_point_effective_slo_helper(tmp_path):
 
 def _plan(*, items, workloads):
     return {
-        "schemaVersion": "2.7.0",
+        "schemaVersion": "3.1.0",
+        "stages": [_stage(deployment={"hardware": "SC20"})],
         "document": {
             "id": "plan-1",
             "meta": {"customer": "Acme"},
@@ -759,53 +728,8 @@ def test_export_eval_specs_are_unwrapped(tmp_path):
     assert doc.accuracy_evals[0].gpu_reference_score == 88.4
 
 
-def test_export_agentic_items_carry_their_slo_inside_targets(tmp_path):
-    """An agentic item has no sibling slo; the row's own rides in targets."""
-    plan = _plan(
-        workloads=[
-            {
-                "kind": "agentic",
-                "id": "s-agentic",
-                "name": "Claude Code replay",
-                "oslValues": [],
-                "slo": {},
-                "maxConcurrency": 64,
-                "agenticWorkload": {"traces": [{"name": "AgentX"}]},
-            }
-        ],
-        items=[
-            {
-                "type": "agentic_operating_point",
-                "scenarioId": "s-agentic",
-                "concurrency": 1,
-                "targets": {
-                    "concurrency": 1,
-                    "ttftMeanMs": 798.82,
-                    "goodputPct": 90,
-                    "slo": {"ttftMs": 1000, "tpotMs": 10, "e2elMs": 20000},
-                },
-            },
-            {
-                "type": "agentic_operating_point",
-                "scenarioId": "s-agentic",
-                "concurrency": 64,
-                "targets": {"concurrency": 64, "goodputPct": 0},
-            },
-        ],
-    )
-
-    doc = load_requirements(_write(tmp_path, plan))
-
-    (workload,) = doc.agentic_workloads
-    assert [p.concurrency for p in workload.sweep] == [1, 64]
-    assert workload.max_concurrency == 64
-    assert workload.sweep[0].slo == Slo(ttft_ms=1000, tpot_ms=10, e2el_ms=20000)
-    assert workload.sweep[1].slo is None
-    assert doc.scenarios == []
-
-
-def test_export_keeps_an_inline_sweep_as_authoritative(tmp_path):
-    """A workload that kept its sweep is not second-guessed by the items list."""
+def test_export_agentic_points_come_from_the_inline_sweep(tmp_path):
+    """An agentic workload keeps its sweep inline; agentic items are not re-read."""
     plan = _plan(
         workloads=[
             {
