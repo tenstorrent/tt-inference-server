@@ -34,6 +34,7 @@ def post_until_disconnect(url, body, headers, timeout, downstream):
     )
     connection = connection_type(parsed.hostname, parsed.port, timeout=timeout)
     stopped, disconnected = threading.Event(), threading.Event()
+    wake_read, wake_write = socket.socketpair()
     watcher = None
     try:
         connection.connect()
@@ -42,9 +43,9 @@ def post_until_disconnect(url, body, headers, timeout, downstream):
         def watch():
             while not stopped.is_set():
                 try:
-                    ready, _, _ = select.select([downstream], [], [], 0.05)
-                    if not ready:
-                        continue
+                    ready, _, _ = select.select([downstream, wake_read], [], [])
+                    if wake_read in ready or stopped.is_set():
+                        return
                     closed = not downstream.recv(
                         1, socket.MSG_PEEK | socket.MSG_DONTWAIT
                     )
@@ -81,5 +82,11 @@ def post_until_disconnect(url, body, headers, timeout, downstream):
     finally:
         stopped.set()
         if watcher is not None:
+            try:
+                wake_write.send(b"x")
+            except OSError:
+                pass
             watcher.join(timeout=0.2)
+        wake_read.close()
+        wake_write.close()
         connection.close()
