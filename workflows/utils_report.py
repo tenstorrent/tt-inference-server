@@ -26,6 +26,7 @@ class PerformanceTarget:
     tpot_ms: float = None
     e2el_ms: float = None
     tput_total: float = None
+    tput_input: float = None
     goodput: float = None
     tolerance: float = 0.0
 
