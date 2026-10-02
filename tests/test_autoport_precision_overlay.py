@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
+import hashlib
 import json
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 from workflows.autoport_precision_overlay import (
     pinned_hf_cache_args,
     precision_overlay_args,
+    source_overlay_args,
 )
 
 
@@ -26,6 +28,67 @@ def policy(root):
         json.dumps({"schema_version": 1, "config_id": "diagnostic_unselected"})
     )
     return target
+
+
+def source_policy(root):
+    model = spec()
+    files = {}
+    for name in ("precision_policy", "multichip_decoder"):
+        relative = f"reference_config/autoport_sources/{name}.source"
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# source fixture\n")
+        files[f"tt/{name}.py"] = {
+            "source": relative,
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }
+    model.metadata["autoport_source_overlay"] = {
+        "tt_metal_revision": "a" * 40,
+        "files": files,
+    }
+    return model
+
+
+def test_attested_source_overlay_is_readonly_and_keeps_image_native_code(tmp_path):
+    model = source_policy(tmp_path)
+    args = source_overlay_args(model, SimpleNamespace(dev_mode=True), tmp_path)
+    assert len(args) == 4
+    assert args[::2] == ["--mount", "--mount"]
+    assert all(arg.endswith(",readonly") for arg in args[1::2])
+    assert all("/tt/" in arg and ".py,readonly" in arg for arg in args[1::2])
+    assert source_overlay_args(spec(), SimpleNamespace(dev_mode=False), tmp_path) == []
+
+
+@pytest.mark.parametrize("failure", ["nondev", "revision", "target", "hash", "escape"])
+def test_source_overlay_rejects_unattested_or_unscoped_files(tmp_path, failure):
+    model = source_policy(tmp_path)
+    overlay = model.metadata["autoport_source_overlay"]
+    entry = overlay["files"]["tt/precision_policy.py"]
+    if failure == "revision":
+        overlay["tt_metal_revision"] = "main"
+    elif failure == "target":
+        overlay["files"]["../../native.so"] = entry
+    elif failure == "hash":
+        entry["sha256"] = "b" * 64
+    elif failure == "escape":
+        source = tmp_path / entry["source"]
+        outside = tmp_path / "outside.source"
+        outside.write_bytes(source.read_bytes())
+        source.unlink()
+        source.symlink_to(outside)
+    with pytest.raises(ValueError):
+        source_overlay_args(
+            model, SimpleNamespace(dev_mode=failure != "nondev"), tmp_path
+        )
+
+
+def test_schema_two_requires_attested_source_overlay(tmp_path):
+    target = policy(tmp_path)
+    target.write_text('{"schema_version":2,"config_id":"prefill_control"}')
+    with pytest.raises(ValueError, match="attested"):
+        precision_overlay_args(spec(), SimpleNamespace(dev_mode=True), tmp_path)
+    model = source_policy(tmp_path)
+    assert precision_overlay_args(model, SimpleNamespace(dev_mode=True), tmp_path)
 
 
 def test_no_overlay_preserves_existing_command(tmp_path):
