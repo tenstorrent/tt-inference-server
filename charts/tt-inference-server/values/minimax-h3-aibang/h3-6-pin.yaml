@@ -1,0 +1,4 @@
+fullnameOverride: h3-6
+defaults:
+  nodeSelector:
+    kubernetes.io/hostname: om-e1-gbh02

@@ -1,0 +1,37 @@
+# Bypass DRA (tt-dra-driver 0.0.29 CDI-collapses all 32 boards onto
+# /dev/tenstorrent/0 on this cluster). Mount /dev/tenstorrent via hostPath +
+# privileged, like the ttop-wan chart's deviceMountType=privileged. Revert by
+# removing this line once the AI& FM-agent/driver device_node_id fix lands.
+hostPathDevices: true
+hfToken: ""   # never commit the token: pass it at install with --set hfToken="$HF_TOKEN"
+# NFS (nfs4) model root, mounted commonly on all BH-galaxy nodes; contains
+# model_index.json + transformer/vae/text_encoder/tokenizer (465G superset).
+hfCacheDir: "/data_bh/h3"
+# DIT cache (~157G, built first boot) on the SAME NFS export → built once,
+# reused cluster-wide (overrides the chart's node-local /opt/cache default).
+cache:
+  hostPath: "/data_bh/h3/dit_cache"
+models:
+  MiniMax-H3:
+    media:
+      galaxy:
+        impls:
+          tt_transformers:
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server
+              tag: 0.20.0-a01e402540629bb5cadd8642fbde1b83c06f6a05-8d074f3-94847719620
+defaults:
+  image:
+    pullSecrets:
+      - name: ghcr-tt-shield
+  # Require a bearer key on the /v1/videos endpoints.
+  extraEnv:
+    - name: API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: h3-api-key
+          key: API_KEY
+fullnameOverride: h3-1
+defaults:
+  nodeSelector:
+    kubernetes.io/hostname: om-e4-gbh02
