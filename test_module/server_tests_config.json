@@ -51,9 +51,9 @@
             "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
             "Falcon3-3B-Base",
             "Falcon3-7B-Base",
-            "Qwen3-4B",
+            "Qwen/Qwen3-4B",
             "Qwen3-14B",
-            "Qwen3-8B",
+            "Qwen/Qwen3-8B",
             "Qwen2.5-Coder-7B",
             "Qwen2.5-Coder-7B-Instruct",
             "TinyLlama_v1.1",
@@ -156,7 +156,7 @@
             "category": "LLM",
             "compatible_devices": ["p300x2"],
             "id_name": "Qwen--Qwen3-8B",
-            "weights": ["Qwen3-8B"]
+            "weights": ["Qwen/Qwen3-8B"]
         },
         "Qwen/Qwen3-14B": {
             "category": "LLM",
@@ -168,7 +168,7 @@
             "category": "LLM",
             "compatible_devices": ["p300x2"],
             "id_name": "Qwen--Qwen3-4B",
-            "weights": ["Qwen3-4B"]
+            "weights": ["Qwen/Qwen3-4B"]
         },
         "tiiuae/Falcon3-7B-Base": {
             "category": "LLM",
