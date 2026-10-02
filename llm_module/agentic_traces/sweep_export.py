@@ -166,6 +166,9 @@ UNGRADED_POINT_FIELDS: Tuple[str, ...] = (
 # Direction by family: latencies gate at or below the target, rates at or
 # above. Exact comparison, tolerance 0, matching how the requirements document
 # grades benchmark targets (its comparators are gte/lte).
+# Key on an expected point naming its soft (advisory) fields, as the document spells it.
+SOFT_METRICS_KEY = "softMetrics"
+
 _LOWER_IS_BETTER_FIELDS = frozenset(
     field for field in POINT_FIELDS if field.startswith(("ttft", "tpot", "e2el"))
 )
@@ -180,6 +183,7 @@ class MetricVerdict:
     target: float
     measured: Optional[float]  # None: the run never produced this metric
     lower_is_better: bool
+    soft: bool = False  # reported, but never fails the point
 
     @property
     def passed(self) -> Optional[bool]:
@@ -199,35 +203,44 @@ class MetricVerdict:
             "measured": self.measured,
             "passed": self.passed,
             "lower_is_better": self.lower_is_better,
+            "soft": self.soft,
         }
 
 
 @dataclass(frozen=True)
 class PointVerdict:
-    """Every graded field at one concurrency, plus the point's own verdict."""
+    """Every graded field at one concurrency, plus the point's own verdict.
+
+    ``graded``, ``met`` and ``passed`` count hard fields only; soft verdicts
+    stay in ``verdicts`` so the report still shows them.
+    """
 
     concurrency: int
     verdicts: Tuple[MetricVerdict, ...]
 
     @property
+    def _hard(self) -> Tuple[MetricVerdict, ...]:
+        return tuple(v for v in self.verdicts if not v.soft)
+
+    @property
     def graded(self) -> int:
-        return sum(1 for v in self.verdicts if v.passed is not None)
+        return sum(1 for v in self._hard if v.passed is not None)
 
     @property
     def met(self) -> int:
-        return sum(1 for v in self.verdicts if v.passed is True)
+        return sum(1 for v in self._hard if v.passed is True)
 
     @property
     def passed(self) -> Optional[bool]:
-        """A point passes when every graded field does.
+        """A point passes when every graded hard field does.
 
-        None when the document declared no gradable fields at this
+        None when the document declared no gradable hard fields at this
         concurrency: an empty point promises nothing, so there is nothing to
         fail. A point that declared fields the run never measured still fails
         (``graded`` is 0 with verdicts present) -- that gap is the run's, not
         the document's.
         """
-        if not self.verdicts:
+        if not self._hard:
             return None
         return self.graded > 0 and self.met == self.graded
 
@@ -249,15 +262,18 @@ def grade_sweep_point(
 
     Only fields the document states are graded, in document order; a field the
     run did not measure is reported as ungraded rather than failed, so a
-    partial export reads as a gap in the measurement, not a regression.
+    partial export reads as a gap in the measurement, not a regression. A 0 is
+    a blank column, not a target; fields named in the point's ``softMetrics``
+    are graded as soft.
     """
     concurrency = int(expected.get("concurrency") or measured.get("concurrency") or 0)
+    soft = frozenset(expected.get(SOFT_METRICS_KEY) or ())
     verdicts: List[MetricVerdict] = []
     for field in POINT_FIELDS:
         if field in UNGRADED_POINT_FIELDS:
             continue
         target = _number(expected.get(field))
-        if target is None:
+        if target is None or target <= 0:
             continue
         verdicts.append(
             MetricVerdict(
@@ -265,6 +281,7 @@ def grade_sweep_point(
                 target=target,
                 measured=_number(measured.get(field)),
                 lower_is_better=field in _LOWER_IS_BETTER_FIELDS,
+                soft=field in soft,
             )
         )
     return PointVerdict(concurrency=concurrency, verdicts=tuple(verdicts))
@@ -335,6 +352,7 @@ def write_agentic_sweep(
 
 __all__ = [
     "POINT_FIELDS",
+    "SOFT_METRICS_KEY",
     "UNGRADED_POINT_FIELDS",
     "MetricVerdict",
     "PointVerdict",

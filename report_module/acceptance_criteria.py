@@ -758,10 +758,13 @@ def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
                     "produced none of the declared metrics."
                 )
                 continue
+            # A soft miss is reported in the table but is not why a point fails.
             offenders = [
                 str(v.get("field"))
                 for v in point.get("verdicts") or []
-                if isinstance(v, Mapping) and v.get("passed") is False
+                if isinstance(v, Mapping)
+                and v.get("passed") is False
+                and not v.get("soft")
             ]
             suffix = f" ({', '.join(offenders[:3])}, ...)" if offenders else ""
             blockers[f"{block_key}.c{concurrency}"] = (

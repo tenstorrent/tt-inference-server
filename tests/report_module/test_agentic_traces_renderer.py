@@ -629,6 +629,36 @@ class TestRequirementsTargets:
         assert "**c4**: no targets declared" in out
         assert "c4 (no targets)" in out
 
+    def test_soft_targets_are_labelled_advisory(self):
+        point = {
+            "concurrency": 1,
+            "met": 1,
+            "graded": 1,
+            "passed": True,
+            "verdicts": [
+                {
+                    "field": "ttftMeanMs",
+                    "target": 800.0,
+                    "measured": 900.0,
+                    "passed": False,
+                    "lower_is_better": True,
+                    "soft": True,
+                },
+                {
+                    "field": "decodeThroughputTps",
+                    "target": 150.0,
+                    "measured": 200.0,
+                    "passed": True,
+                    "lower_is_better": False,
+                },
+            ],
+        }
+        out = render_agentic_traces_targets(self._block(points=(point,)), METADATA)
+
+        assert "`ttftMeanMs` ↓ (soft)" in out
+        assert "`decodeThroughputTps` ↑ |" in out
+        assert "do not fail a point" in out
+
     def test_empty_block_renders_nothing(self):
         assert (
             render_agentic_traces_targets(self._block(points=(), missing=()), METADATA)
