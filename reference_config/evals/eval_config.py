@@ -1773,7 +1773,11 @@ _eval_config_list = [
             # cannot select a task without also restricting its samples).
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=16,
+                # The endpoint cuts connections at 30 min. At ~2.4K prompt
+                # tokens/s, 16 x ~340K-token prompts need ~37 min of prefill,
+                # so queued requests were cut and retried, and the retries
+                # piled up in the engine. 4 keeps each request well inside.
+                max_concurrent=4,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 score=EvalTaskScore(
