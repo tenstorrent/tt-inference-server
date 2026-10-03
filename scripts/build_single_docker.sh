@@ -74,6 +74,7 @@ UBUNTU_VERSION="20.04"
 CONTAINER_APP_UID=1000
 TT_METAL_COMMIT_SHA_OR_TAG=v0.56.0-rc6
 TT_VLLM_COMMIT_SHA_OR_TAG=b9564bf364e95a3850619fc7b2ed968cc71e30b7
+TT_VLLM_REPOSITORY="tenstorrent/vllm-tt-plugin"
 TT_QUETZAL_COMMIT_SHA=""
 TT_QUETZAL_SOURCE_DIR=""
 TAG_SUFFIX=""
@@ -105,6 +106,14 @@ while [ $# -gt 0 ]; do
                 exit 1
             fi
             TT_METAL_COMMIT_SHA_OR_TAG="$2"
+            shift
+            ;;
+        --vllm-repository)
+            if [ $# -lt 2 ] || [[ ! "$2" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+                echo "⛔ Error: --vllm-repository requires a GitHub owner/repository."
+                exit 1
+            fi
+            TT_VLLM_REPOSITORY="$2"
             shift
             ;;
         --vllm-commit)
@@ -346,6 +355,7 @@ generate_model_specs_json()
         --build-arg TT_METAL_DOCKERFILE_URL="${TT_METAL_DOCKERFILE_URL}" \
         --build-arg TT_METAL_COMMIT_SHA_OR_TAG="${TT_METAL_COMMIT_SHA_OR_TAG}" \
         --build-arg TT_VLLM_COMMIT_SHA_OR_TAG="${TT_VLLM_COMMIT_SHA_OR_TAG}" \
+        --build-arg TT_VLLM_REPOSITORY="${TT_VLLM_REPOSITORY}" \
         "${QUETZAL_BUILD_ARGS[@]}" \
         --build-arg CONTAINER_APP_UID="${CONTAINER_APP_UID}" \
         . -f vllm-tt-metal/vllm.tt-metal.src.dev.Dockerfile

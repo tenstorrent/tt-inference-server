@@ -18,6 +18,7 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 # Build arguments
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_VLLM_COMMIT_SHA_OR_TAG
+ARG TT_VLLM_REPOSITORY=tenstorrent/vllm-tt-plugin
 ARG TT_QUETZAL_COMMIT_SHA=""
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 ARG CONTAINER_APP_UID=1000
@@ -107,7 +108,7 @@ RUN /bin/bash -c "git clone --depth 1 https://github.com/tenstorrent-metal/tt-me
 # Build vllm-tt-plugin - clone with minimal history and clean.
 # The plugin owns the vLLM version pin and its dependency overrides, so the
 # install is delegated to its own docs/install-vllm-tt.sh rather than restated here
-RUN /bin/bash -c "git clone https://github.com/tenstorrent/vllm-tt-plugin.git ${vllm_tt_plugin_dir} \
+RUN /bin/bash -c "git clone https://github.com/${TT_VLLM_REPOSITORY}.git ${vllm_tt_plugin_dir} \
     && cd ${vllm_tt_plugin_dir} \
     && git checkout ${TT_VLLM_COMMIT_SHA_OR_TAG} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
