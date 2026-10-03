@@ -703,6 +703,16 @@
       "weights": [
         "Qwen/Qwen3-1.7B"
       ]
+    },
+    "meta-llama/Llama-3.2-1B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "meta-llama--Llama-3.2-1B-Instruct",
+      "weights": [
+        "meta-llama/Llama-3.2-1B-Instruct"
+      ]
     }
   },
   "hardware_defaults": {
