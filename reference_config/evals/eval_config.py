@@ -5077,17 +5077,17 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                # Long-reasoning requests can fill the 131K-token KV budget and
-                # leave preempted streams silent for more than idle_timeout even
-                # while the engine is healthy. Eight still produced 900-second
-                # queue gaps in an exact full-eval replay; four keeps every stream
-                # inside the available KV budget so the timeout detects a stall.
-                max_concurrent=4,
+                # This device has one shared 131K-token KV pool. Four clients
+                # missed the full AIME deadline at 24/30, while eight completed
+                # all requests in 2h46m. Keep eight and allow the measured healthy
+                # 18-minute preemption gap below to drain without corrupting a
+                # response into a partial-output sentinel.
+                max_concurrent=8,
                 model_kwargs={
                     # With streamed chat responses, this bounds silence between
                     # chunks rather than total generation time. A healthy long
                     # generation can continue while a stalled request fails once.
-                    "idle_timeout": "900",
+                    "idle_timeout": "1800",
                 },
                 gen_kwargs={
                     # Required for idle_timeout to mean time since the last token.
@@ -5108,7 +5108,7 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                wall_clock_timeout_seconds=14400,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -5131,14 +5131,15 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                # Keep long-reasoning streams below the KV-starvation point; see
-                # the matching AIME configuration above.
-                max_concurrent=4,
+                # Match AIME's measured throughput-safe client count. GPQA has
+                # 198 full samples, so its task budget reflects the observed
+                # 48 samples in 2h15m rather than the old unmeasured 3-hour cap.
+                max_concurrent=8,
                 model_kwargs={
                     # With streamed chat responses, this bounds silence between
                     # chunks rather than total generation time. A healthy long
                     # generation can continue while a stalled request fails once.
-                    "idle_timeout": "900",
+                    "idle_timeout": "1800",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -5154,7 +5155,7 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                wall_clock_timeout_seconds=36000,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
@@ -5185,7 +5186,9 @@ _eval_config_list = [
                     "reasoning_effort": "low",
                     "do_sample": "true",
                     "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
+                    # The GPU reference used max_tokens=32768 for this
+                    # low-reasoning generative MMLU path (TTIS issue #1322).
+                    "max_gen_toks": 32 * 1024,
                     "until": ["</s>"],
                 },
             ),

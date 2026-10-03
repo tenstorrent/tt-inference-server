@@ -26,9 +26,28 @@ Buffered results not yet written by the harness cannot be recovered by this
 wrapper. Children that deliberately escape the process group are outside this
 contract. Existing calls without a budget retain their previous execution path.
 
-This addresses unbounded harness execution, not the cause of long model answers.
-The motivating GPT Shield run's apparent retry exhaustion remains an inference
-until its client log is available. No running jobs are modified by this patch.
+## GPT-OSS-120B p300x2 measured budgets
+
+Shield runs `37097968441` (eight clients) and `37104338100` (four clients)
+replaced estimates with full-run measurements on the Quetzal p300x2 package.
+The four-client run reached only 24/30 AIME samples in three hours, then GPQA
+also reached its three-hour deadline. The eight-client run completed AIME in
+about 2h46m, but a 900-second read-idle limit converted six requests into
+partial/error sentinels; GPQA processed 48/198 samples in 2h15m before its
+three-hour deadline. Server telemetry in the four-client run showed a healthy
+request remain preempted for about 18 minutes before decode resumed.
+
+The reviewed retry therefore uses eight clients, a 1800-second streamed read
+idle limit, a four-hour AIME task budget, and a ten-hour GPQA task budget. The
+official high-reasoning tasks retain their 120K generation allowance. MMLU is
+the low-reasoning path and uses a 32K generation cap, matching the GPU-reference
+command recorded in issue #1322. The workflow-level 18-hour limit remains the
+final bound. These values are evidence from this package and device; they are
+not defaults for other models or hardware.
+
+This addresses unbounded harness execution and measured scheduler starvation;
+it does not change why the model produces long answers. Both cited Shield jobs
+were terminal before these values were selected, so no running job was changed.
 
 ## Why `model_kwargs["timeout"]` is not a stall detector
 
