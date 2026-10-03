@@ -84,6 +84,7 @@ class HarborRunConfig:
     # ... for the ``kubernetes`` environment). Only expressible through the
     # config file, so a non-empty value forces that path.
     environment_kwargs: dict[str, Any] = field(default_factory=dict)
+    extra_docker_compose: list[str] = field(default_factory=list)
     # Per-request LLM read timeout, injected into a mini-swe-agent run as
     # ``model.model_kwargs.timeout`` (see ``_apply_mini_swe_agent_defaults``).
     # litellm's OpenAI-compatible path otherwise defaults to an infinite read
@@ -227,6 +228,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
             encoding="utf-8",
         )
         environment_config["extra_docker_compose"] = [str(overlay_path)]
+    if config.extra_docker_compose:
+        environment_config.setdefault("extra_docker_compose", []).extend(
+            config.extra_docker_compose
+        )
     if config.override_cpus is not None:
         environment_config["override_cpus"] = config.override_cpus
     if config.override_memory_mb is not None:
@@ -314,6 +319,7 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
         or bool(config.environment_env)
         or bool(config.verifier_env)
         or bool(config.environment_kwargs)
+        or bool(config.extra_docker_compose)
     )
 
 

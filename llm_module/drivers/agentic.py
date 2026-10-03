@@ -220,6 +220,11 @@ def build_harbor_config(
         environment_kwargs=(
             cfg.environment_kwargs if cfg.environment_type == "kubernetes" else {}
         ),
+        extra_docker_compose=(
+            getattr(cfg, "extra_docker_compose", [])
+            if cfg.environment_type == "docker"
+            else []
+        ),
         harbor_timeout_sec=cfg.harbor_timeout_sec,
         llm_timeout_sec=cfg.llm_timeout_sec,
         per_task_overhead_sec=cfg.per_task_overhead_sec,

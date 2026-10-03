@@ -285,6 +285,8 @@ class HarborEvalConfig:
     environment_env: Dict[str, str] = field(default_factory=dict)
     verifier_env: Dict[str, str] = field(default_factory=dict)
     environment_kwargs: Dict[str, Any] = field(default_factory=_harbor_env_kwargs)
+    # Optional Docker network/service overlays; paths must exist on the runner.
+    extra_docker_compose: List[str] = field(default_factory=list)
     harbor_timeout_sec: Optional[float] = field(default_factory=_harbor_timeout_sec)
     # Per-request LLM read timeout for the mini-swe-agent backend, injected into
     # the generated mini config as ``model.model_kwargs.timeout``. Brings a
