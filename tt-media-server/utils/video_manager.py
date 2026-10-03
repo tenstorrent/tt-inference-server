@@ -64,7 +64,9 @@ class VideoManager:
 
         Env (optional):
             TT_VIDEO_EXPORT_CRF: 0–51, lower = better quality. Default 23.
-            TT_VIDEO_EXPORT_PRESET: ultrafast … veryslow. Default medium.
+            TT_VIDEO_EXPORT_PRESET: ultrafast … veryslow. Default veryfast.
+            (veryfast ships ~2.5x smaller files than ultrafast at the same CRF,
+            with negligible extra encode time — the export is on the request path.)
         """
         if hasattr(frames, "frames"):
             frames = frames.frames
@@ -74,7 +76,7 @@ class VideoManager:
 
         crf = int(os.environ.get("TT_VIDEO_EXPORT_CRF", "23"))
         crf = max(_MIN_CRF, min(_MAX_CRF, crf))
-        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "ultrafast").strip()
+        preset = os.environ.get("TT_VIDEO_EXPORT_PRESET", "veryfast").strip()
 
         frames = _normalize_shape(frames)
         frames = _normalize_channels(frames)
