@@ -27,6 +27,30 @@ as-is. Its Qwen3.8 eval configuration intentionally isolates Terminal-Bench and
 removes the GPQA and SWE tasks from that model entry. A production PR should
 split reusable harness/serving changes from cohort-specific configuration.
 
+### Release validation application (October 3, 2026)
+
+The derived branch
+`mvasiljevic/qwen38-release-optimized-evals-20261003` restores the release
+evaluation suites and applies the safe parts of the Terminal optimization to
+them. The executable configuration is pinned at commit
+`1207774e430688d021a5d7b5f89419e99c5bc0b0` and contains:
+
+- 10 GPQA questions at concurrency five, temperature 1.0, medium reasoning,
+  and a 16K output cap;
+- the validated 10-task Terminal-Bench dynamic queue at concurrency five;
+- 5 SWE-bench Verified tasks at concurrency five, temperature 1.0, medium
+  reasoning, a 16K output cap, and server-metrics collection;
+- the same exact model image, tt-metal/vLLM pins, Harbor compact-recovery pin,
+  persistent TT-Metal cache, fixed QEMU task, and corrected aggregation path.
+
+The release configuration and routing passed 227 focused tests. Release CI
+[run 37125582459](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37125582459)
+was dispatched in CI mode at 2026-10-03 13:15 UTC. It runs the complete
+benchmark matrix plus the bounded 10 GPQA / 10 Terminal / 5 SWE cohorts. The
+dispatch uses the exact executable commit above, rather than a moving branch;
+its final benchmark, accuracy, time, and token results should be added here
+when the workflow completes.
+
 ## Executive result
 
 The device was not the primary cause of the six-hour Terminal-Bench runs.
