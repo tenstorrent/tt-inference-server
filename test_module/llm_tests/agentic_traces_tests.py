@@ -46,7 +46,7 @@ from llm_module.drivers.aiperf_agentic_traces import (
 from llm_module.drivers.swo_bench_agentic_traces import SwoBenchAgenticTracesDriver
 from llm_module.parsers.aiperf_agentic_traces import (
     AIPerfAgenticTracesParser,
-    build_targets_block,
+    build_targets_blocks,
 )
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from llm_module.runner import RunnerResult
@@ -286,9 +286,7 @@ def run_agentic_traces(
     # acceptance criteria read the same verdicts. None for catalog runs,
     # which carry no expectations.
     if payloads:
-        targets_block = build_targets_block(payloads, device=device_label)
-        if targets_block is not None:
-            result.blocks.append(targets_block)
+        result.blocks.extend(build_targets_blocks(payloads, device=device_label))
 
     if not result.blocks:
         logger.error("[agentic-traces] No blocks produced -- sweep had zero successes.")
