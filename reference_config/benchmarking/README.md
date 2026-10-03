@@ -82,6 +82,22 @@ Purpose: defines all static information known ahead of run time for benchmarks t
 
 ## Benchmark Targets
 
+### Fixed-workload protocol
+
+Catalogue metadata can opt into `benchmark_protocol: fixed_workload` with
+`benchmark_repetitions: 3` (the default for this protocol). It selects the pinned
+vLLM client/tokenizer, first-to-last nonempty-content timing, fixed greedy seeds,
+ignore-EOS output lengths, unlimited request rate, exact token/request validation,
+and request-count-specific target matching. Each point with a measured target
+gets one complete workload warmup and the configured number of repetitions.
+Points without targets retain one ungraded execution. `benchmark_require_complete_metrics`
+requires each declared metric to be present. Default/`standard` protocol behavior
+is unchanged. The legacy `benchmark_token_timing: true` flag remains an alias.
+
+The timing adapter uses private vLLM 0.13.0 helpers and Transformers 4.57.6.
+Revalidate payloads, tokenization and streaming timing before upgrading either
+client dependency; server versions are independent of these client pins.
+
 The reference targets are based on theoretical performance estimates for each model architecture and hardware combination, for example Llama-3.3-70B on T3K (TT-LoudBox). Model architecture is the set of weights with a common architecture that can be run interchangeably (perhaps with small tweaks to hyperparameters), each model architecture is keyed by the 1st weight for the default implementation in `workflows/model_spec.py`.
 
 For example, `Llama-3.3-70B` is the key for

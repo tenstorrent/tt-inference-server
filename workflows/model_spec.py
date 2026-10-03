@@ -98,7 +98,9 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    hf_model_repo: str, perf_targets_map: Dict[str, float]
+    hf_model_repo: str,
+    perf_targets_map: Dict[str, float],
+    impl_id: Optional[str] = None,
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
     model_data = model_performance_reference.get(hf_model_repo, {})
@@ -109,6 +111,10 @@ def get_perf_reference_map(
         params_list: List[BenchmarkTaskParams] = []
 
         for bench in benchmarks:
+            # Measured references can differ between implementations of one
+            # checkpoint. Unscoped entries retain their shared legacy behavior.
+            if bench.get("impl") is not None and bench["impl"] != impl_id:
+                continue
             # Parse performance targets under the "reference" key.
             target_dict = {}
             targets = bench.get("targets", {})
@@ -1137,7 +1143,7 @@ class ModelSpecTemplate:
 
         for weight in self.weights:
             template_reference_map = get_perf_reference_map(
-                weight, self.perf_targets_map
+                weight, self.perf_targets_map, impl_id=self.impl.impl_id
             )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -1161,6 +1167,7 @@ class ModelSpecTemplate:
                             **self.perf_targets_map,
                             **device_model_spec.perf_targets_map,
                         },
+                        impl_id=self.impl.impl_id,
                     )
                 else:
                     perf_reference_map = template_reference_map
