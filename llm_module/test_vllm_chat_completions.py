@@ -29,6 +29,28 @@ def repetition_stats(text):
     }
 
 
+def message_text(response):
+    """Return generated text from either OpenAI chat response channel.
+
+    Reasoning models can legitimately exhaust a short ``max_tokens`` budget
+    before opening their final channel.  vLLM then returns ``content=None``
+    and preserves the generated tokens in ``reasoning_content``.  Parameter
+    conformance still has to inspect those tokens: stop, seed, penalties, and
+    coherence apply to generation regardless of which channel contains it.
+    """
+    message = response["choices"][0]["message"]
+    text = (
+        message.get("content")
+        or message.get("reasoning_content")
+        or message.get("reasoning")
+    )
+    assert isinstance(text, str) and text, (
+        "Response contained no generated text in content or reasoning_content: "
+        f"{response}"
+    )
+    return text
+
+
 def shannon_entropy(tokens):
     total = len(tokens)
     if total == 0:
@@ -98,7 +120,7 @@ def test_stop(report_test, api_client, stop_seq, request):
     payload = {"messages": prompt, "stop": stop_seq, "max_tokens": 1024}
     response = api_client(payload)
 
-    output_text = response["choices"][0]["message"]["content"]
+    output_text = message_text(response)
     for seq in stop_seq:
         assert seq not in output_text, f"Sequence {seq} was in {output_text}"
 
@@ -110,8 +132,8 @@ def test_seed_reproducibility(report_test, api_client, request):
     response1 = api_client(payload)
     response2 = api_client(payload)
 
-    output1 = response1["choices"][0]["message"]["content"]
-    output2 = response2["choices"][0]["message"]["content"]
+    output1 = message_text(response1)
+    output2 = message_text(response2)
     assert output1 and output1 == output2, (
         f"Seed did not produce reproducible results. Output 1: '{output1}', Output 2: '{output2}'"
     )
@@ -141,7 +163,7 @@ def test_coherence_verbatim_echo(report_test, api_client, request):
     payload = {"messages": prompt, "max_tokens": 32, "temperature": 0}
     response = api_client(payload)
 
-    output_text = response["choices"][0]["message"]["content"]
+    output_text = message_text(response)
     assert sentence in output_text, (
         "Coherence guard failed: model did not echo the sentence verbatim "
         "(likely gibberish from a corrupted forward pass). Expected to find "
@@ -186,7 +208,7 @@ async def test_non_uniform_seeding(report_test, api_client, request):
             response = await asyncio.to_thread(api_client, payload)
             return {
                 "seed": seed_val,
-                "content": response["choices"][0]["message"]["content"].strip(),
+                "content": message_text(response).strip(),
                 "id": response["id"],
             }
         except Exception as e:
@@ -273,8 +295,8 @@ def test_determinism_parameters(
     response1 = api_client(payload)
     response2 = api_client(payload)
 
-    output1 = response1["choices"][0]["message"]["content"]
-    output2 = response2["choices"][0]["message"]["content"]
+    output1 = message_text(response1)
+    output2 = message_text(response2)
     assert output1 and output1 == output2, (
         f"{param_name}={param_value} was not deterministic. Output 1: '{output1}', Output 2: '{output2}'"
     )
@@ -309,8 +331,8 @@ def test_penalties(
     response_test = api_client(payload_test, timeout=None)
 
     # Compute baseline and test statistics
-    text_base = response_base["choices"][0]["message"]["content"]
-    text_test = response_test["choices"][0]["message"]["content"]
+    text_base = message_text(response_base)
+    text_test = message_text(response_test)
 
     base_stats = repetition_stats(text_base)
     test_stats = repetition_stats(text_test)
