@@ -869,6 +869,7 @@ def test_missing_measurement_for_configured_required_target_blocks():
     assert not accepted and blockers
     assert acceptance_criteria_check(_schema(block), model_status="EXPERIMENTAL")[0]
 
+
 def _spec_suite(failing, passing=(), status="fail"):
     """A suite-style spec block with per-case verdicts (VLLMParamConformanceTest shape)."""
     summary = [{"test_case": c, "status": "❌ FAIL"} for c in failing]

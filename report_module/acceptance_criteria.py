@@ -596,9 +596,7 @@ def _failing_spec_cases(block: Block) -> List[str]:
     ]
 
 
-def _spec_waiver(
-    block: Block, known_issues: Optional[Iterable[Any]]
-) -> Optional[str]:
+def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optional[str]:
     """Waiver reason for this block, or None.
 
     Matches a waiver naming the suite, else only when every failing case is

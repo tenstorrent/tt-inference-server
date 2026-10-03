@@ -385,7 +385,10 @@ class WorkflowExecution(ABC):
         )
         waived_task_types = fully_waived_task_types(categories)
         crash_blockers = task_failure_blockers(
-            ((o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes),
+            (
+                (o.task_type, o.exit_code, o.block_kind is not None)
+                for o in task_outcomes
+            ),
             waived_task_types=waived_task_types,
         )
         if crash_blockers:

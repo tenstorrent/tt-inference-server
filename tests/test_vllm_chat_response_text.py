@@ -22,15 +22,21 @@ def _response(**message):
 
 
 def test_message_text_prefers_the_final_channel():
-    assert message_text(
-        _response(content="final answer", reasoning_content="private work")
-    ) == "final answer"
+    assert (
+        message_text(
+            _response(content="final answer", reasoning_content="private work")
+        )
+        == "final answer"
+    )
 
 
 def test_message_text_keeps_reasoning_only_truncated_generation_testable():
-    assert message_text(
-        _response(content=None, reasoning_content="generated before max_tokens")
-    ) == "generated before max_tokens"
+    assert (
+        message_text(
+            _response(content=None, reasoning_content="generated before max_tokens")
+        )
+        == "generated before max_tokens"
+    )
 
 
 def test_message_text_rejects_a_response_without_generated_text():

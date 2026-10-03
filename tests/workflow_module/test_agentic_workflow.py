@@ -133,10 +133,11 @@ class TestAgenticWorkflowRunTasks:
         assert outcomes[0].exit_code == 1
         assert outcomes[0].block_kind == "evals"
 
-        accepted, blockers = wf.apply_acceptance_criteria(
+        accepted, blockers, waived_task_types = wf.apply_acceptance_criteria(
             MagicMock(sections=[block], metadata={}), outcomes
         )
         assert accepted is False
+        assert waived_task_types == set()
         assert blockers["task:evaluation"] == (
             "Task 'evaluation' failed (exit=1) after producing a report block."
         )
