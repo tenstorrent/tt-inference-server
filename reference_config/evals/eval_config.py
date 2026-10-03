@@ -5275,6 +5275,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mbpp_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=90.2,
@@ -5299,6 +5300,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="humaneval_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=92.7,
@@ -5352,6 +5354,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mbpp_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=None,
@@ -5376,6 +5379,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="humaneval_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=None,
@@ -5405,6 +5409,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mbpp_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=None,
@@ -5429,6 +5434,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="humaneval_instruct",
+                allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
                     published_score=None,
