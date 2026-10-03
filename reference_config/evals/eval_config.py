@@ -5077,12 +5077,12 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                # Thirty-two simultaneous long-reasoning requests can fill the
-                # 131K-token KV budget and leave preempted streams silent for more
-                # than idle_timeout even while the engine is healthy. Eight keeps
-                # active streams making progress and preserves the timeout as a
-                # detector for a genuinely stalled server.
-                max_concurrent=8,
+                # Long-reasoning requests can fill the 131K-token KV budget and
+                # leave preempted streams silent for more than idle_timeout even
+                # while the engine is healthy. Eight still produced 900-second
+                # queue gaps in an exact full-eval replay; four keeps every stream
+                # inside the available KV budget so the timeout detects a stall.
+                max_concurrent=4,
                 model_kwargs={
                     # With streamed chat responses, this bounds silence between
                     # chunks rather than total generation time. A healthy long
@@ -5133,7 +5133,7 @@ _eval_config_list = [
                 capture_reasoning=True,
                 # Keep long-reasoning streams below the KV-starvation point; see
                 # the matching AIME configuration above.
-                max_concurrent=8,
+                max_concurrent=4,
                 model_kwargs={
                     # With streamed chat responses, this bounds silence between
                     # chunks rather than total generation time. A healthy long
