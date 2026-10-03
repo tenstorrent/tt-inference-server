@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
-# Ported from #5234 (setuptools pin only; NLTK preflight not included).
+# Ported from #5234 (setuptools pin and NLTK preflight ordering).
 
 from types import SimpleNamespace
 
@@ -36,6 +36,8 @@ def test_meta_setuptools_is_pinned_before_install_or_cached_use(
     wv.setup_evals_meta(config, spec)
     assert "setuptools>=77,<81" in str(calls[0])
     assert not any("-U pip setuptools" in str(cmd) for cmd in calls)
+    scoring = next(i for i, cmd in enumerate(calls) if "setup_nltk_data.py" in str(cmd))
+    assert scoring > 0
     if not cached:
         install = next(i for i, cmd in enumerate(calls) if "-e ." in str(cmd))
         assert install > 0
