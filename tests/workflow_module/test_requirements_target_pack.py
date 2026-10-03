@@ -693,6 +693,7 @@ def test_benchmark_config_per_metric_priorities(pack, doc):
         "e2el_ms": "must",
         "tput": "must",
         "tput_total": "must",
+        "tput_input": "must",  # derived: ISL x reqThroughputRps
         "goodput": "should",
     }
 
@@ -918,23 +919,25 @@ def _agentic_pack(concurrencies, slo=None, sweep=None):
     """A pack whose document sweeps ``concurrencies`` for an agentic workload."""
     from workflow_module.requirements_schema import RequirementsDoc
 
+    workload = {
+        "kind": "agentic",
+        "id": "w1",
+        "slo": slo or {},
+        "agenticSweep": (
+            sweep if sweep is not None else [{"concurrency": c} for c in concurrencies]
+        ),
+    }
     doc_dict = {
-        "schemaVersion": "2.6.0",
-        "document": {
-            "id": "d",
-            "model": {"name": "google/gemma-4-31B-it"},
-            "deployment": {"hardware": "SC24"},
-        },
-        "workloads": [
+        "schemaVersion": "3.1.0",
+        "id": "d",
+        "model": {"name": "google/gemma-4-31B-it"},
+        "deployment": {"hardware": "SC24"},
+        "stages": [
             {
-                "kind": "agentic",
-                "id": "w1",
-                "slo": slo or {},
-                "agenticSweep": (
-                    sweep
-                    if sweep is not None
-                    else [{"concurrency": c} for c in concurrencies]
-                ),
+                "key": "stage-1",
+                "name": "Stage 1",
+                "progress": {"status": "not_started"},
+                "scenarios": [workload],
             }
         ],
     }
@@ -1044,6 +1047,127 @@ def test_agentic_config_carries_the_documents_expected_sweep():
     assert all(run.expected_sweep == sweep for run in config.runs)
 
 
+def _staged_doc(*scenarios):
+    """A 3.1 document whose single delivery stage holds ``scenarios``."""
+    from workflow_module.requirements_schema import RequirementsDoc
+
+    return RequirementsDoc.from_dict(
+        {
+            "schemaVersion": "3.1.0",
+            "id": "d",
+            "model": {"name": "a/b"},
+            "stages": [
+                {
+                    "key": "stage-1",
+                    "name": "Stage 1",
+                    "progress": {"status": "not_started"},
+                    "scenarios": list(scenarios),
+                }
+            ],
+        }
+    )
+
+
+def _sweep_pack(rows, soft=(), slo=None):
+    """A pack whose single text scenario sweeps ``rows``."""
+    scenario = {"id": "chat", "softMetrics": list(soft), "sweep": rows}
+    if slo:
+        scenario["slo"] = slo
+    doc = _staged_doc(scenario)
+    return RequirementsTargetPack(doc, TenstorrentTargetPack()), doc.scenarios[0]
+
+
+def test_soft_sweep_metrics_grade_as_should():
+    pack, scenario = _sweep_pack(
+        [
+            {
+                "isl": 128,
+                "osl": 128,
+                "concurrency": 1,
+                "ttftMeanMs": 400,
+                "decodeThroughputTps": 50,
+            }
+        ],
+        soft=["ttftMeanMs"],
+    )
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    assert point.target_priorities == {"ttft_ms": "should", "tput": "must"}
+    assert point.priority == "must"
+
+
+def test_input_throughput_is_derived_as_isl_times_rps():
+    row = {"isl": 128, "osl": 128, "concurrency": 1, "reqThroughputRps": 10}
+    pack, scenario = _sweep_pack([row])
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    assert point.targets["target"].tput_input == 1280
+    assert point.target_priorities == {"tput_input": "must"}
+
+
+def test_blank_sweep_metrics_are_not_targets():
+    pack, scenario = _sweep_pack(
+        [
+            {
+                "isl": 128,
+                "osl": 128,
+                "concurrency": 1,
+                "ttftMeanMs": 0,
+                "goodputPct": 0,
+                "decodeThroughputTps": 50,
+            }
+        ],
+        soft=["ttftMeanMs", "goodputPct"],
+    )
+    (point,) = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    target = point.targets["target"]
+    assert target.ttft_ms is None and target.goodput is None
+    assert point.target_priorities == {"tput": "must"}
+
+
+def test_a_scenario_gate_skips_a_blank_row():
+    """A blank TTFT (0) would otherwise read as the best TTFT in the sweep."""
+    pack, scenario = _sweep_pack(
+        [
+            {"isl": 128, "osl": 128, "concurrency": 1, "ttftMeanMs": 0},
+            {"isl": 128, "osl": 128, "concurrency": 8, "ttftMeanMs": 900},
+        ],
+        soft=["ttftMeanMs"],
+        slo={"ttftMs": 1000},
+    )
+    blank, stated = pack._scenario_params(scenario, DeviceTypes.GALAXY, None)
+
+    assert stated.targets["target"].ttft_ms == 1000
+    assert blank.targets == {}
+
+
+def test_agentic_expected_sweep_carries_the_soft_list():
+    doc = _staged_doc(
+        {
+            "id": "agent",
+            "kind": "agentic",
+            "softMetrics": ["ttftMeanMs"],
+            "agenticSweep": [{"concurrency": 1, "ttftMeanMs": 800.0}],
+        }
+    )
+    pack = RequirementsTargetPack(doc, TenstorrentTargetPack())
+
+    assert pack._agentic_expected_sweep() == [
+        {"concurrency": 1, "ttftMeanMs": 800.0, "softMetrics": ["ttftMeanMs"]}
+    ]
+
+
+def test_agentic_input_throughput_is_derived_as_total_minus_output():
+    row = {"concurrency": 1, "totalThroughputTps": 1000.0, "decodeThroughputTps": 100.0}
+    doc = _staged_doc({"id": "agent", "kind": "agentic", "agenticSweep": [row]})
+    (point,) = RequirementsTargetPack(
+        doc, TenstorrentTargetPack()
+    )._agentic_expected_sweep()
+
+    assert point["inputThroughputTps"] == 900.0
+
+
 def test_agentic_expected_sweep_dedupes_first_workload_wins():
     """Two workloads sharing an operating point grade against the first,
     matching the concurrency dedupe that keeps the run from replaying twice."""
@@ -1093,9 +1217,21 @@ def test_merged_document_evals_are_all_mapped():
     ]
     doc = RequirementsDoc.from_dict(
         {
-            "schemaVersion": "2.7.0",
+            "schemaVersion": "3.1.0",
+            "id": "d",
             "model": {"name": "moonshotai/Kimi-K2.7-Code"},
-            "accuracyEvals": [{"name": n, "gpuReferenceScore": 1.0} for n in names],
+            "stages": [
+                {
+                    **{
+                        "key": "stage-1",
+                        "name": "Stage 1",
+                        "progress": {"status": "not_started"},
+                    },
+                    "accuracyEvals": [
+                        {"name": n, "gpuReferenceScore": 1.0} for n in names
+                    ],
+                }
+            ],
         }
     )
     assert isinstance(doc.accuracy_evals[0], AccuracyEval)
@@ -1120,17 +1256,26 @@ def _per_point_pack(sweep, scenario_slo=None):
 
     doc = RequirementsDoc.from_dict(
         {
-            "schemaVersion": "2.7.0",
+            "schemaVersion": "3.1.0",
             "id": "d",
             "model": {"name": "google/gemma-4-31B-it", "contextLength": 131072},
             "deployment": {"hardware": "SC24", "maxConcurrencyPerInstance": 32},
-            "scenarios": [
+            "stages": [
                 {
-                    "kind": "text",
-                    "id": "s1",
-                    "oslValues": [128],
-                    "slo": scenario_slo or {},
-                    "sweep": sweep,
+                    **{
+                        "key": "stage-1",
+                        "name": "Stage 1",
+                        "progress": {"status": "not_started"},
+                    },
+                    "scenarios": [
+                        {
+                            "kind": "text",
+                            "id": "s1",
+                            "oslValues": [128],
+                            "slo": scenario_slo or {},
+                            "sweep": sweep,
+                        }
+                    ],
                 }
             ],
         }
@@ -1270,21 +1415,34 @@ def test_agentic_goodput_collision_warns_and_keeps_the_first(caplog):
 
     doc = RequirementsDoc.from_dict(
         {
-            "schemaVersion": "2.7.0",
+            "schemaVersion": "3.1.0",
             "id": "d",
             "model": {"name": "google/gemma-4-31B-it"},
             "deployment": {"hardware": "SC24"},
-            "workloads": [
+            "stages": [
                 {
-                    "kind": "agentic",
-                    "id": "w1",
-                    "agenticSweep": [{"concurrency": 8, "slo": {"ttftMs": 1000}}],
-                },
-                {
-                    "kind": "agentic",
-                    "id": "w2",
-                    "agenticSweep": [{"concurrency": 8, "slo": {"ttftMs": 4000}}],
-                },
+                    **{
+                        "key": "stage-1",
+                        "name": "Stage 1",
+                        "progress": {"status": "not_started"},
+                    },
+                    "scenarios": [
+                        {
+                            "kind": "agentic",
+                            "id": "w1",
+                            "agenticSweep": [
+                                {"concurrency": 8, "slo": {"ttftMs": 1000}}
+                            ],
+                        },
+                        {
+                            "kind": "agentic",
+                            "id": "w2",
+                            "agenticSweep": [
+                                {"concurrency": 8, "slo": {"ttftMs": 4000}}
+                            ],
+                        },
+                    ],
+                }
             ],
         }
     )
