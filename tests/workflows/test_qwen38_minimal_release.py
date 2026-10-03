@@ -56,22 +56,18 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
 
     assert [task.task_name for task in tasks] == [
         "r1_gpqa_diamond",
-        "terminal_bench_2_1",
         "swe_bench_verified",
     ]
     assert [task.workflow_venv_type for task in tasks] == [
         WorkflowVenvType.EVALS_COMMON,
         WorkflowVenvType.EVALS_AGENTIC,
-        WorkflowVenvType.EVALS_AGENTIC,
     ]
     assert tasks[0].limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
 
-    terminal = tasks[1].agentic_eval_config
-    swe = tasks[2].agentic_eval_config
-    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
+    swe = tasks[1].agentic_eval_config
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
-    assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
+    assert swe.n_concurrent_trials == 5
+    assert swe.agent_timeout_sec == 6 * 60 * 60
     assert swe.llm_timeout_sec == 60 * 60
 
 
@@ -79,8 +75,7 @@ def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
     cases = [
         (tasks[0], 10, 90.0, 80.0),
-        (tasks[1], 5, 80.0, 60.0),
-        (tasks[2], 5, 60.0, 40.0),
+        (tasks[1], 5, 60.0, 40.0),
     ]
 
     for task, total, passing_score, failing_score in cases:
