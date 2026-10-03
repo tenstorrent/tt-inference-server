@@ -54,12 +54,25 @@ def test_qwen38_release_runs_full_benchmarks_but_grades_only_128_128():
 def test_qwen38_release_has_one_result_per_requested_eval_suite():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
 
-    assert [task.task_name for task in tasks] == ["terminal_bench_2_1"]
+    assert [task.task_name for task in tasks] == [
+        "r1_gpqa_diamond",
+        "terminal_bench_2_1",
+        "swe_bench_verified",
+    ]
     assert [task.workflow_venv_type for task in tasks] == [
-        WorkflowVenvType.EVALS_AGENTIC
+        WorkflowVenvType.EVALS_COMMON,
+        WorkflowVenvType.EVALS_AGENTIC,
+        WorkflowVenvType.EVALS_AGENTIC,
     ]
 
-    terminal = tasks[0].agentic_eval_config
+    gpqa = tasks[0]
+    assert gpqa.max_concurrent == 5
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert gpqa.gen_kwargs["temperature"] == 1.0
+    assert gpqa.gen_kwargs["reasoning_effort"] == "medium"
+    assert gpqa.gen_kwargs["max_gen_toks"] == 16 * 1024
+
+    terminal = tasks[1].agentic_eval_config
     assert terminal.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
         "terminal-bench/break-filter-js-from-html",
         "terminal-bench/cobol-modernization",
@@ -91,10 +104,35 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
         }
     }
 
+    swe = tasks[2].agentic_eval_config
+    assert swe.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "django__django-11299",
+        "astropy__astropy-14096",
+        "matplotlib__matplotlib-25332",
+        "sympy__sympy-13551",
+        "scikit-learn__scikit-learn-14629",
+    ]
+    assert swe.n_concurrent_trials == 5
+    assert swe.agent_timeout_sec == 6 * 60 * 60
+    assert swe.collect_server_metrics is True
+    assert swe.agent_kwargs["max_tokens"] == 16 * 1024
+    assert swe.agent_kwargs["config"]["model"]["model_kwargs"] == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "extra_body": {
+            "top_k": 20,
+            "chat_template_kwargs": {"reasoning_effort": "medium"},
+        },
+    }
+
 
 def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
-    cases = [(tasks[0], 5, 80.0, 60.0)]
+    cases = [
+        (tasks[0], 10, 90.0, 80.0),
+        (tasks[1], 5, 80.0, 60.0),
+        (tasks[2], 5, 60.0, 40.0),
+    ]
 
     for task, total, passing_score, failing_score in cases:
         reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)

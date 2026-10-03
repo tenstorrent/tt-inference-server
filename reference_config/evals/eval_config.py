@@ -5207,6 +5207,50 @@ _eval_config_list = [
         hf_model_repo="Qwen/Qwen3.8-27B",
         tasks=[
             EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=90.0,
+                            ref="QB2 Qwen3.8 release cohort: 9/10 GPQA",
+                            tolerance=0.0,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=5,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    # The optimized Terminal campaign showed that Qwen3.8's
+                    # default xhigh template spends most of its time expanding
+                    # alternatives. Medium preserves thinking while bounding
+                    # that tail; 16K is ample for a single GPQA response.
+                    "reasoning_effort": "medium",
+                    "max_gen_toks": 16 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -5215,7 +5259,7 @@ _eval_config_list = [
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=80.0,
-                            ref="QB2 Qwen3.8 release cohort: 4/5 Terminal-Bench 2.1",
+                            ref="QB2 Qwen3.8 optimized release cohort: 8/10 Terminal-Bench 2.1",
                             tolerance=0.0,
                         ),
                     },
@@ -5288,6 +5332,67 @@ _eval_config_list = [
                             "git_url": "https://github.com/mvasiljevicTT/terminal-bench-2-1.git",
                             "git_commit_id": "a355fc6aaeaf62ba94b6cab023e179c7e440c651",
                         }
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=61.7,
+                    published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="QB2 Qwen3.8 release cohort: 3/5 SWE-bench Verified",
+                            tolerance=0.0,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    collect_server_metrics=True,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        # Match the validated Terminal output budget and avoid
+                        # unbounded xhigh decode tails while retaining Qwen's
+                        # recommended high-temperature sampling recipe.
+                        "max_tokens": 16 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "reasoning_effort": "medium"
+                                        },
+                                    },
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
                     },
                 ),
                 limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
