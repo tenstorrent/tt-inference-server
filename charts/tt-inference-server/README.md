@@ -2,13 +2,14 @@
 
 Deploys vLLM, media, and forge inference backends on Tenstorrent hardware.
 
-**Chart version:** 0.2.0 | **App version:** 0.12.0
+**Chart version:** 0.2.0
 
 ## Contents
 
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Requirements](#requirements)
+- [Supported Image Releases](#supported-image-releases)
 - [Device Acquisition (DRA)](#device-acquisition-dra)
 - [Quick Start](#quick-start)
 - [Chart Structure](#chart-structure)
@@ -89,6 +90,45 @@ kubectl get resourceslices       # <node> / tenstorrent.com, one device per boar
 
 ---
 
+## Supported Image Releases
+
+Each row in this chart pins its own server image, and those pins span many
+product releases. The chart drives the server through interfaces that older
+images do not have, so there is a **floor** per engine. A row pinned below its
+floor is refused at render (`imageFloor.enforce`, default `true`) instead of
+failing later on hardware.
+
+| engine | floor | what needs it |
+|---|---|---|
+| `vllm` | **0.11.0** | The chart passes `--model` / `--tt-device` as container args. |
+| `media`, `forge` | **0.15.0** | Only when `auth.disabled=true`, which needs `NO_AUTH`. |
+
+**Why 0.11.0 for vLLM.** Kubernetes `args` replace a container image's `CMD`, not
+its `ENTRYPOINT`. Images from 0.11.0 on declare
+`ENTRYPOINT ["/bin/bash","-c","… exec python run_vllm_api_server.py \"$@\"","--"]`,
+so the chart's args reach the server, which resolves the model from the catalogue
+baked into the image. Earlier images instead declare
+`ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]` with the server started from
+`CMD`: the chart's args displace that `CMD`, and the server never starts. The
+boundary is visible in the published images themselves — read `.config.Entrypoint`
+from an image's config blob to check any tag.
+**Why 0.15.0 for media/forge `auth.disabled`.** `NO_AUTH` only exists from 0.15.0;
+an older server ignores it and still requires `Authorization: Bearer <API_KEY>`,
+falling back to a built-in default key when `API_KEY` is unset. So the release
+does not serve unauthenticated as asked — clients that send no header are
+rejected, and the ones that get in do so with a key published in the server's
+source. `auth.disabled` is refused on those images rather than silently meaning
+something else; use `auth.apiKey` instead, or a newer pin.
+
+A row's release is the version prefix of its `image.tag` (`0.9.0-c254ee3-c4f2327`
+is release `0.9.0`). Some forge rows are pinned to commit-hash tags with no
+version prefix; those cannot be placed against a floor and are allowed through.
+
+> Refreshing a pin below the floor is a change to the ModelSpec catalogue, not to
+> this chart.
+
+---
+
 ## Device Acquisition (DRA)
 
 The chart renders a `ResourceClaimTemplate`; every Pod gets its own claim from
@@ -163,6 +203,7 @@ The chart's named templates (all prefixed `tt-inference-server.`), grouped by ro
 | Helper | Purpose |
 |---|---|
 | `validateValues` | Fails the render if `model`/`device` is missing, or the resolved combination has no entry in `models`. |
+| `validateImageFloor` | Fails the render when the resolved row's image predates its engine's floor (see [Supported Image Releases](#supported-image-releases)). |
 | `resolvedEngine` | Picks the engine: `.Values.engine`, else the sole engine offering the device, else `models.<model>.defaultEngine`. |
 | `resolvedImpl` | Picks the impl: `.Values.impl`, else `models.<model>.<engine>.<device>.defaultImpl`. |
 | `resolvedConfig` | Deep-merges `defaults` with the resolved impl block into the effective config (see [Configuration System](#configuration-system)). |
@@ -172,6 +213,7 @@ The chart's named templates (all prefixed `tt-inference-server.`), grouped by ro
 | Helper | Purpose |
 |---|---|
 | `image` | Container image string `repository:tag`. |
+| `imageTag` | Resolved image tag; also the value of `app.kubernetes.io/version`. |
 | `containerEnv` | Container env, merged from spec env, hf-cache env, and `extraEnv` `valueFrom` entries. |
 | `cacheHostPath` | `cache.hostPath` if set, else `/opt/cache/<model>-<device>-<impl>`. |
 | `draDeviceCount` | DRA board count for `device` from `deviceBoardCounts` (fails for unsupported shapes). |
@@ -237,6 +279,9 @@ Set per release, typically via `--set`.
 | `hfCacheDir` | no | `""` | Host path to a pre-downloaded HuggingFace weights directory. Mounted read-only at `/mnt/hf-cache`; skips download at startup. |
 | `auth.apiKey` | yes* | `""` | Bearer key clients must send. Stored in the release Secret as `API_KEY` (media/forge) or `VLLM_API_KEY` (vllm). *Required for `media` and `forge` engines unless `auth.disabled=true`: those servers guard their inference routes with a literal bearer key and fall back to a well-known built-in default when unset. |
 | `auth.disabled` | no | `false` | Run the server with authentication off (`NO_AUTH=1`). media/forge only — vLLM is already open when `auth.apiKey` is unset. |
+| `imageFloor.enforce` | no | `true` | Refuse at render when the resolved row's image is older than its engine's floor (see [Supported Image Releases](#supported-image-releases)). Set `false` only to reproduce the resulting runtime failure deliberately. |
+| `imageFloor.vllm` | no | `0.11.0` | Oldest image release whose ENTRYPOINT forwards the chart's `--model` / `--tt-device` args to the server. Also what the [Supported Models](#supported-models) table filters on. |
+| `imageFloor.authDisabled` | no | `0.15.0` | Oldest image release that honours `NO_AUTH`; checked only when `auth.disabled=true` (media/forge). |
 | `hugepages.enabled` | no | `true` | Whether Tenstorrent boards need 1Gi hugepages. Set `false` on IOMMU + KMD 1.29.0+ clusters to drop the `hugepages-1Gi` request/limit, the `/dev/hugepages-1G` volume + mounts, and the `cleanup-hugepages` initContainer. |
 | `hugepages.size` | no | `""` | Hugepage request/limit when enabled. Empty means one 1Gi page per ASIC of the chosen device (`deviceChipCounts`) — 1Gi on an n150, 8Gi on a T3K, 32Gi on a Galaxy. |
 | `podMonitor.enabled` | no | `false` | Emit a `PodMonitor` scraping the server's `/metrics`. Requires the Prometheus Operator CRDs (`monitoring.coreos.com`); leave `false` on clusters without them. |
@@ -288,46 +333,25 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 
 | Model | Devices |
 |---|---|
-| `AFM-4.5B` | n300, t3k |
 | `DeepSeek-R1-0528` | galaxy |
-| `DeepSeek-R1-Distill-Llama-70B` | galaxy, p150x4, p150x8, p300x2, t3k |
-| `Llama-3.1-70B` | galaxy, p150x4, p150x8, p300x2, t3k |
-| `Llama-3.1-70B-Instruct` | galaxy, p150x4, p150x8, p300x2, t3k |
-| `Llama-3.1-8B` | galaxy, gpu, n150, n300, p100, p150, p150x4, p150x8, p300, p300x2, t3k |
-| `Llama-3.1-8B-Instruct` | galaxy, gpu, n150, n300, p100, p150, p150x4, p150x8, p300, p300x2, t3k |
-| `Llama-3.2-11B-Vision` | n300, t3k |
-| `Llama-3.2-11B-Vision-Instruct` | n300, t3k |
+| `DeepSeek-R1-Distill-Llama-70B` | p300x2, t3k |
+| `Llama-3.1-70B` | p300x2, t3k |
+| `Llama-3.1-70B-Instruct` | p300x2, t3k |
+| `Llama-3.1-8B` | galaxy, p100, p150, p300, p300x2 |
+| `Llama-3.1-8B-Instruct` | galaxy, p100, p150, p300, p300x2 |
 | `Llama-3.2-1B` | n150, n300, t3k |
 | `Llama-3.2-1B-Instruct` | n150, n300, t3k |
-| `Llama-3.2-3B` | n150, n300, t3k |
-| `Llama-3.2-3B-Instruct` | n150, n300, t3k |
-| `Llama-3.2-90B-Vision` | t3k |
-| `Llama-3.2-90B-Vision-Instruct` | t3k |
-| `Llama-3.3-70B-Instruct` | galaxy, p150x4, p150x8, p300x2, t3k |
-| `Mistral-7B-Instruct-v0.3` | n150, n300, t3k |
-| `QwQ-32B` | galaxy, t3k |
-| `Qwen2.5-72B` | galaxy, t3k |
-| `Qwen2.5-72B-Instruct` | galaxy, t3k |
-| `Qwen2.5-7B` | n150x4, n300 |
-| `Qwen2.5-7B-Instruct` | n150x4, n300 |
-| `Qwen2.5-Coder-32B-Instruct` | t3k |
-| `Qwen2.5-VL-32B-Instruct` | t3k |
-| `Qwen2.5-VL-3B-Instruct` | n150, n300 |
-| `Qwen2.5-VL-72B-Instruct` | gpu, t3k |
-| `Qwen2.5-VL-7B-Instruct` | n150, n300 |
-| `Qwen3-32B` | galaxy, p150x8, p300x2, t3k |
-| `Qwen3-8B` | galaxy, n150, n300, p300, t3k |
+| `Llama-3.3-70B-Instruct` | p300x2, t3k |
+| `Qwen3-32B` | galaxy, p300x2 |
 | `Qwen3-VL-32B-Instruct` | t3k |
 | `Qwen3.6-27B` | p150x8, p300x2 |
 | `diffusiongemma-26B-A4B-it` | p300x2 |
-| `gemma-3-1b-it` | n150 |
-| `gemma-3-27b-it` | galaxy, p300x2, t3k |
-| `gemma-3-4b-it` | n150, n300, p150, t3k |
 | `gemma-4-31B-it` | p300x2 |
 | `gpt-oss-120b` | galaxy, p300x2, t3k |
-| `gpt-oss-20b` | galaxy, t3k |
-| `medgemma-27b-it` | galaxy, p300x2, t3k |
-| `medgemma-4b-it` | n150, n300, p150, t3k |
+
+> 83 model/device rows are left out: their pinned image predates the
+> 0.11.0 floor for this engine, so the chart refuses them at render. See
+> [Supported Image Releases](#supported-image-releases).
 
 ### Media
 
