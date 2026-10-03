@@ -121,7 +121,7 @@ RUN git clone --depth 1 https://github.com/tenstorrent-metal/tt-metal.git ${TT_M
     && echo "source ${PYTHON_ENV_DIR}/bin/activate" >> ${HOME_DIR}/.bashrc \
     && uv pip install --upgrade setuptools wheel \
     && bash ./build_metal.sh --release -e \
-    && bash ./build_metal.sh --release -e --build-metal-tests -c --configure-only \
+    && bash ./build_metal.sh --release -e --build-metal-tests --configure-only \
     && cmake --build build_Release --target test_system_health -j$(nproc) \
     && uv pip install --upgrade cmake \
     && hash -r \
@@ -177,11 +177,23 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
 
-# Install tt-vllm-plugin
+# Install tt-vllm-plugin.
+#
+# Resolve against the PyTorch CPU index as well as PyPI. The plugin pins
+# torch>=2.7.1,<2.8 and vllm==0.10.1.1; from PyPI alone that resolves to the CUDA
+# build of torch 2.7.1, which undoes fix_dependencies.sh and pulls fifteen
+# nvidia-*-cu12 packages (~3GB) into an image for Tenstorrent hardware. With the
+# CPU index in the mix the same pins resolve to torch 2.7.1+cpu. The overrides
+# file drops cupy-cuda12x (via ray[cgraph]) and triton, which are CUDA-only too.
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
+COPY "tt-media-server/uv-overrides-cpu.txt" "${TT_METAL_HOME}/uv-overrides-cpu.txt"
 RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+    && uv pip install . \
+        --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match \
+        --overrides ${TT_METAL_HOME}/uv-overrides-cpu.txt \
+    && python -c 'import torch, vllm; assert not torch.backends.cuda.is_built(), torch.__version__; print(torch.__version__, vllm.__version__)' \
+    && ! uv pip list 2>/dev/null | grep -iE '^(nvidia-|cupy|triton)'"
 
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10
@@ -251,7 +263,11 @@ RUN rm -rf ${HOME_DIR}/.rustup \
     && rm -rf ${HOME_DIR}/tt-metal/server/tests \
     && rm -rf ${HOME_DIR}/tt-metal/server/scripts \
     && rm -rf /usr/local/rustup \
-    && rm -rf /usr/include
+    && rm -rf /usr/include \
+    && echo "=== builder home size breakdown (informs the runtime-stage layer split) ===" \
+    && du -xsh ${HOME_DIR}/.[!.]* ${HOME_DIR}/* 2>/dev/null | sort -h \
+    && du -xsh ${HOME_DIR}/tt-metal/.[!.]* ${HOME_DIR}/tt-metal/* 2>/dev/null | sort -h | tail -15 \
+    && du -xsh ${PYTHON_ENV_DIR}/lib/python*/site-packages/* 2>/dev/null | sort -h | tail -12
 
 
 # ==============================================================================
@@ -303,12 +319,54 @@ RUN useradd -u ${CONTAINER_APP_UID} -s /bin/bash -d ${HOME_DIR} ${CONTAINER_APP_
     && mkdir -p /run/sshd \
     && chmod 755 /run/sshd
 
-# Copy everything from builder
-COPY --from=builder --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
-    /home/container_app_user ${HOME_DIR}
+# Copy the builder's home into the runtime image as four layers of roughly equal
+# size, instead of one ~11GB layer.
+#
+# BuildKit compresses each layer on one core at export time, so a single-layer
+# copy made "exporting layers" take ~17 min in CI. Layers compress in parallel, so
+# the export takes about as long as the largest layer. Sizes measured on the
+# 2026-10 image with CPU-only torch (builder home ~11GB): python_env 5.4GB, of
+# which vllm 1.2GB and torch 0.7GB; build_Release 2.6GB; audio_venv 1.6GB;
+# everything else 1.3GB. Grouped along those folders:
+#
+#   1. python_env, except vllm (bin/, torch, the other packages)     ~4.2GB
+#   2. build_Release                                                 ~2.6GB
+#   3. audio_venv + python_env's vllm                                ~2.8GB
+#   4. the rest of the home dir
+#      (tt-metal sources, runtime/, server/, models/, .bashrc)       ~1.3GB
+#
+# Each RUN bind-mounts the builder's home read-only at /mnt/builder and copies its
+# share. Ownership is set in the same RUN that writes the files on purpose: a later
+# `chown -R` / `chmod -R` would copy every touched file into yet another layer.
+# The final filesystem is identical to the single COPY.
+ARG APP_OWNER=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME}
+ENV SITE_PACKAGES_REL=lib/python3.10/site-packages
 
-# Fix venv permissions (COPY --chown can break symlink permissions)
-RUN chmod -R +x ${PYTHON_ENV_DIR}/bin
+# 1. the main venv, except vllm
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    test -d /mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL}/vllm \
+    && mkdir -p ${PYTHON_ENV_DIR} \
+    && tar -C /mnt/builder/tt-metal/python_env --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
+        --exclude=./${SITE_PACKAGES_REL}/vllm -cf - . | tar -C ${PYTHON_ENV_DIR} -xf - \
+    && chmod -R +x ${PYTHON_ENV_DIR}/bin
+
+# 2. tt-metal build output
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    cp -a /mnt/builder/tt-metal/build_Release ${TT_METAL_HOME}/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/build_Release
+
+# 3. the audio venv and vllm
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    cp -a /mnt/builder/tt-metal/audio_venv ${TT_METAL_HOME}/ \
+    && cp -a /mnt/builder/tt-metal/python_env/${SITE_PACKAGES_REL}/vllm ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/ \
+    && chown -R ${APP_OWNER} ${TT_METAL_HOME}/audio_venv ${PYTHON_ENV_DIR}/${SITE_PACKAGES_REL}/vllm
+
+# 4. everything else in the home dir
+RUN --mount=type=bind,from=builder,source=/home/container_app_user,target=/mnt/builder \
+    tar -C /mnt/builder --owner=${CONTAINER_APP_USERNAME} --group=${CONTAINER_APP_USERNAME} --anchored \
+        --exclude=./tt-metal/python_env --exclude=./tt-metal/audio_venv --exclude=./tt-metal/build_Release \
+        -cf - . | tar -C ${HOME_DIR} -xf - \
+    && test -L ${TT_METAL_HOME}/build && test -x ${PYTHON_ENV_DIR}/bin/python
 
 USER ${CONTAINER_APP_USERNAME}
 WORKDIR ${HOME_DIR}/tt-metal
