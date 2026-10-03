@@ -65,7 +65,8 @@
       "Qwen3.8-27B",
       "phi-1",
       "Qwen2.5-14B-Instruct-1M",
-      "Llama-3.1-8B-Instruct"
+      "Llama-3.1-8B-Instruct",
+      "MiniMaxAI/MiniMax-M3"
     ]
   },
   "available_markers": {
@@ -598,6 +599,16 @@
       "category": "LLM",
       "compatible_devices": [
         "blackhole_galaxy"
+      ]
+    },
+    "minimax_m3": {
+      "id_name": "minimax-m3",
+      "weights": [
+        "MiniMaxAI/MiniMax-M3"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
       ]
     },
     "EleutherAI/pythia-70m": {
@@ -1135,6 +1146,30 @@
         "retry_delay": 10,
         "break_on_failure": false,
         "mock_mode": false
+      }
+    },
+    "ToolCallSchemaConformanceTest": {
+      "module": "test_module.llm_tests.tool_call_schema_conformance_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 7200,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "pass_rate_threshold": 0.995,
+        "tool_choice": "auto",
+        "think_mode": "none",
+        "thinking": false,
+        "case_selection": "all",
+        "case_retries": 3,
+        "workers": 16,
+        "max_tokens": 2048,
+        "request_timeout": 600
       }
     }
   },
