@@ -39,6 +39,7 @@ def mock_scheduler():
     scheduler.result_queues = {}
     scheduler.deep_restart_workers = AsyncMock()
     scheduler.restart_worker = Mock()
+    scheduler.replace_worker = Mock()
     return scheduler
 
 
@@ -54,7 +55,9 @@ def mock_job_manager():
         return_value={"job_id": "job_1", "status": "running"}
     )
     job_manager.get_job_result_path = Mock(return_value="/tmp/result.json")
-    job_manager.cancel_job = Mock(return_value=True)
+    job_manager.cancel_job = Mock(
+        return_value={"job_id": "job_1", "status": "cancelling"}
+    )
     return job_manager
 
 
@@ -286,8 +289,10 @@ class TestWorkerManagement:
     async def test_device_reset(self, base_service, mock_scheduler):
         """Test device_reset creates background task"""
         await base_service.device_reset("0")
+        await asyncio.sleep(0.01)
 
         base_service._mock_logger.info.assert_called()
+        mock_scheduler.restart_worker.assert_called_once_with("0")
 
     @pytest.mark.asyncio
     async def test_start_workers_async_success(self, base_service, mock_scheduler):
@@ -791,7 +796,7 @@ class TestJobManagement:
         result = base_job_service.cancel_job("job_1")
 
         mock_job_manager.cancel_job.assert_called_once_with("job_1", org_id=None)
-        assert result is True
+        assert result == {"job_id": "job_1", "status": "cancelling"}
 
     def test_delete_job(self, base_job_service, mock_job_manager):
         mock_job_manager.delete_job.return_value = True

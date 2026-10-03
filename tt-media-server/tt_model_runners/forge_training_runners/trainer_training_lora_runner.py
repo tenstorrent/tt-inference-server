@@ -91,12 +91,10 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request._start_event:
-            request._start_event.set()
-            self.logger.info(
-                f"Job started at Device {self.device_id}",
-                extra={"log_type": "info", "step": 0},
-            )
+        self.logger.info(
+            f"Job started at Device {self.device_id}",
+            extra={"log_type": "info", "step": 0},
+        )
 
         callbacks = (
             self._metrics_callback,

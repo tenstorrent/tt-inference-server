@@ -207,10 +207,6 @@ class TrainingLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request._start_event:
-            request._start_event.set()
-            self.logger.info(f"Device {self.device_id}: Start event set")
-
         mesh = self._create_mesh() if self._is_multichip else None
 
         # Load datasets.

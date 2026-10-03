@@ -9,7 +9,12 @@ from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
-from device_workers.worker_utils import initialize_device_worker, signalJobStart
+from device_workers.worker_utils import (
+    claim_job_for_worker,
+    dequeue_and_claim_requests,
+    initialize_device_worker,
+    release_job_from_worker,
+)
 from utils.logger import TTLogger
 
 
@@ -75,8 +80,11 @@ async def _continuous_fan_out(
     inflight: dict[asyncio.Task, Any] = {}
     shutdown_seen = False
 
-    def schedule(req: Any) -> None:
-        signalJobStart(req)
+    def schedule(req: Any, already_claimed: bool = False) -> None:
+        # The outer worker claims the initial batch before entering fan-out.
+        # Requests pulled here as top-ups still need to be claimed.
+        if not already_claimed and not claim_job_for_worker(req, worker_id):
+            return
         task = asyncio.create_task(device_runner._run_async([req]))
         inflight[task] = req
 
@@ -86,7 +94,7 @@ async def _continuous_fan_out(
         if isinstance(req, CanaryProbeRequest):
             _run_canary_probe(device_runner, req, worker_id, result_queue, logger)
             continue
-        schedule(req)
+        schedule(req, already_claimed=True)
 
     while inflight:
         done, _pending = await asyncio.wait(
@@ -154,6 +162,8 @@ def device_worker(
     error_queue: Queue,
     result_queue_name: None | str = None,
     cancel_queue: Queue = None,  # accepted for signature parity with dynamic-batch worker; unused here (legacy batched-sync path has no async tasks to cancel mid-flight).
+    retirement_event=None,
+    claim_lock=None,
 ):
     logger = TTLogger()
 
@@ -181,12 +191,20 @@ def device_worker(
 
     # Main processing loop
     while True:
-        requests: list[object] = task_queue.get_many(
-            max_messages_to_get=settings.max_batch_size,
+        requests = dequeue_and_claim_requests(
+            task_queue,
+            worker_id,
+            settings.max_batch_size,
             block=True,
             timeout=0.2,  # 200ms timeout - the batch queue will handle optimal batching
+            retirement_event=retirement_event,
+            claim_lock=claim_lock,
         )
-        if requests is None or len(requests) == 0:
+        if requests is None:
+            logger.info(f"Worker {worker_id} retiring before dequeuing more work")
+            loop.close()
+            break
+        if not requests:
             continue
 
         # Check for shutdown sentinel
@@ -204,8 +222,6 @@ def device_worker(
             continue
 
         logger.info(f"Worker {worker_id} processing tasks: {requests.__len__()}")
-        for request in requests:
-            signalJobStart(request)
         responses = None
 
         successful = False
@@ -321,6 +337,9 @@ def device_worker(
             for request in requests:
                 error_queue.put((worker_id, request._task_id, error_msg))
             continue
+        finally:
+            for request in requests:
+                release_job_from_worker(request, claim_lock)
 
         logger.debug(
             f"Worker {worker_id} finished processing tasks: {requests.__len__()}"

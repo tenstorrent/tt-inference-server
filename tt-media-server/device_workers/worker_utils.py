@@ -3,17 +3,79 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import asyncio
+import os
+from contextlib import nullcontext
+from typing import Any, Optional
 
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.runner_fabric import get_device_runner
 from utils.logger import TTLogger
 
 
-def signalJobStart(request) -> None:
-    """Notify JobManager that a device worker has started this request."""
-    startEvent = getattr(request, "_start_event", None)
-    if startEvent is not None:
-        startEvent.set()
+def claim_job_for_worker(request, worker_id: str) -> bool:
+    """Assign the request and signal that worker processing has started.
+
+    Returns false when the request was cancelled while waiting in the queue.
+    """
+    cancel_event = getattr(request, "_cancel_event", None)
+    if cancel_event is not None and cancel_event.is_set():
+        return False
+
+    worker_assignment = getattr(request, "_worker_assignment", None)
+    if worker_assignment is not None:
+        worker_assignment.identity = (worker_id, os.getpid())
+
+    if cancel_event is not None and cancel_event.is_set():
+        if worker_assignment is not None:
+            worker_assignment.identity = None
+        return False
+
+    start_event = getattr(request, "_start_event", None)
+    if start_event is not None:
+        start_event.set()
+    return True
+
+
+def dequeue_and_claim_requests(
+    task_queue,
+    worker_id: str,
+    max_messages_to_get: int,
+    *,
+    block: bool,
+    timeout: float,
+    retirement_event=None,
+    claim_lock=None,
+) -> Optional[list[Any]]:
+    """Dequeue and claim work behind the worker's retirement barrier.
+
+    Retirement is enabled only for single-job training workers. An actively
+    assigned training worker cannot be waiting here, so a retirement published
+    during ``get_many`` belongs to a job that already released this worker.
+    The assignment validation then prevents terminating newly claimed work.
+    """
+    with claim_lock if claim_lock is not None else nullcontext():
+        if retirement_event is not None and retirement_event.is_set():
+            return None
+
+        requests = task_queue.get_many(
+            max_messages_to_get=max_messages_to_get,
+            block=block,
+            timeout=timeout,
+        )
+        if not requests:
+            return []
+
+        return [
+            request for request in requests if claim_job_for_worker(request, worker_id)
+        ]
+
+
+def release_job_from_worker(request, claim_lock=None) -> None:
+    """Clear a completed request's worker assignment."""
+    with claim_lock if claim_lock is not None else nullcontext():
+        worker_assignment = getattr(request, "_worker_assignment", None)
+        if worker_assignment is not None:
+            worker_assignment.identity = None
 
 
 def initialize_device_worker(worker_id: str, logger: TTLogger):

@@ -4,7 +4,9 @@
 
 import asyncio
 import sys
+import threading
 from multiprocessing import Process, Queue
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -42,12 +44,14 @@ sys.modules["utils.logger"] = Mock()
 sys.modules["utils.logger"].TTLogger = Mock(return_value=mock_logger)
 
 # Import module under test after mocking dependencies
+from domain.worker_replacement import WorkerReplacementOutcome
 from model_services.scheduler import Scheduler
 
 
 def create_mock_queue():
     """Helper to create a mock queue with common methods"""
     queue = Mock(spec=Queue)
+    queue.name = "test-queue"
     queue.put = Mock()
     queue.get = Mock()
     queue.full = Mock(return_value=False)
@@ -289,6 +293,60 @@ class TestScheduler:
         call_args = mock_process_cls.call_args
         assert call_args.kwargs["target"] == device_worker
 
+    @patch("model_services.scheduler.ProcessLock")
+    @patch("model_services.scheduler.ProcessEvent")
+    @patch("model_services.scheduler.Process")
+    def test_start_worker_creates_retirement_primitives_for_training_only(
+        self,
+        mock_process_cls,
+        mock_process_event,
+        mock_process_lock,
+        scheduler,
+        mock_process,
+    ):
+        mock_process_cls.return_value = mock_process
+        retirement_event = mock_process_event.return_value
+        claim_lock = mock_process_lock.return_value
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        scheduler.worker_info = {}
+        scheduler.settings.model_service = "training"
+        scheduler.settings.use_dynamic_batcher = False
+        scheduler.settings.max_batch_size = 1
+
+        scheduler._start_worker(worker_id="0")
+
+        assert scheduler.worker_info["0"]["retirement_event"] is retirement_event
+        assert scheduler.worker_info["0"]["claim_lock"] is claim_lock
+
+        scheduler.worker_info = {}
+        scheduler.settings.model_service = "video"
+        scheduler._start_worker(worker_id="0")
+
+        assert scheduler.worker_info["0"]["retirement_event"] is None
+        assert scheduler.worker_info["0"]["claim_lock"] is None
+        mock_process_event.assert_called_once()
+        mock_process_lock.assert_called_once()
+        scheduler.settings.use_dynamic_batcher = True
+
+    @pytest.mark.parametrize(
+        ("use_dynamic_batcher", "max_batch_size"),
+        [(True, 1), (False, 2)],
+    )
+    def test_training_workers_reject_concurrent_configuration(
+        self, scheduler, use_dynamic_batcher, max_batch_size
+    ):
+        scheduler.settings.model_service = "training"
+        scheduler.settings.use_dynamic_batcher = use_dynamic_batcher
+        scheduler.settings.max_batch_size = max_batch_size
+
+        try:
+            with pytest.raises(ValueError, match="Training workers require"):
+                scheduler._validate_training_worker_configuration()
+        finally:
+            scheduler.settings.model_service = "video"
+            scheduler.settings.use_dynamic_batcher = True
+            scheduler.settings.max_batch_size = 1
+
     @patch("model_services.scheduler.Process")
     def test_restart_worker_passes_existing_queue_index_to_start_worker(
         self, mock_process_cls, scheduler, mock_process
@@ -312,6 +370,196 @@ class TestScheduler:
 
         assert scheduler.worker_info["0"]["queue_index"] == 1
         mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_kills_process_that_does_not_terminate(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        old_process = Mock(spec=Process)
+        old_process.pid = 123
+        old_process.is_alive = Mock(side_effect=[True, True, False])
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        scheduler.restart_worker("0")
+
+        old_process.terminate.assert_called_once()
+        old_process.kill.assert_called_once()
+        assert old_process.join.call_count == 2
+        mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_does_not_replace_process_that_cannot_be_stopped(
+        self, mock_process_cls, scheduler
+    ):
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        old_process = Mock(spec=Process)
+        old_process.pid = 123
+        old_process.is_alive = Mock(return_value=True)
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        with pytest.raises(RuntimeError, match="could not be stopped"):
+            scheduler.restart_worker("0")
+
+        mock_process_cls.assert_not_called()
+
+    @patch("model_services.scheduler.Process")
+    def test_restart_worker_ignores_stale_process(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        current_process = Mock(spec=Process)
+        stale_process = Mock(spec=Process)
+        scheduler.worker_info["0"] = {
+            "process": current_process,
+            "restart_count": 1,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+
+        restarted = scheduler.restart_worker("0", expected_process=stale_process)
+
+        assert restarted is False
+        current_process.terminate.assert_not_called()
+        mock_process_cls.assert_not_called()
+
+    @patch("model_services.scheduler.Process")
+    def test_intentional_worker_replacement_does_not_count_as_failure(
+        self, mock_process_cls, scheduler, mock_process
+    ):
+        mock_process_cls.return_value = mock_process
+        scheduler.result_queues_by_worker = {0: create_mock_queue()}
+        old_process = Mock(spec=Process)
+        old_process.is_alive = Mock(return_value=False)
+        scheduler.worker_info["0"] = {
+            "process": old_process,
+            "restart_count": 2,
+            "queue_index": 0,
+            "error_count": 2,
+        }
+
+        scheduler.replace_worker("0")
+
+        assert scheduler.worker_info["0"]["restart_count"] == 2
+        assert scheduler.worker_info["0"]["error_count"] == 0
+        mock_process_cls.assert_called_once()
+
+    @patch("model_services.scheduler.Process")
+    def test_intentional_replacement_ignores_stale_worker_pid(
+        self, mock_process_cls, scheduler
+    ):
+        current_process = Mock(spec=Process)
+        current_process.pid = 456
+        scheduler.worker_info["0"] = {
+            "process": current_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+        }
+        worker_assignment = SimpleNamespace(identity=("0", 123))
+
+        replaced = scheduler.replace_worker(
+            "0", expected_pid=123, worker_assignment=worker_assignment
+        )
+
+        assert replaced == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+        assert worker_assignment.identity is None
+        current_process.terminate.assert_not_called()
+        mock_process_cls.assert_not_called()
+
+    def test_mark_worker_retiring_blocks_new_claims(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = Mock()
+        claim_lock = MagicMock()
+        claim_lock.acquire.return_value = True
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+        worker_assignment = Mock()
+        worker_assignment.identity = ("0", 123)
+
+        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
+
+        assert marked is True
+        retirement_event.set.assert_called_once()
+        claim_lock.acquire.assert_not_called()
+
+    def test_mark_worker_retiring_ignores_stale_worker_pid(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 456
+        retirement_event = Mock()
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": MagicMock(),
+        }
+
+        marked = scheduler.mark_worker_retiring("0", expected_pid=123)
+
+        assert marked is False
+        retirement_event.set.assert_not_called()
+
+    def test_replace_worker_rechecks_assignment_after_active_claim(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = threading.Event()
+        claim_lock = threading.Lock()
+        claim_lock.acquire()
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+        worker_assignment = SimpleNamespace(identity=("0", 123))
+        scheduler.mark_worker_retiring("0", 123)
+        result = []
+
+        retirement_thread = threading.Thread(
+            target=lambda: result.append(
+                scheduler.replace_worker("0", 123, worker_assignment)
+            )
+        )
+        retirement_thread.start()
+
+        worker_assignment.identity = None
+        claim_lock.release()
+        retirement_thread.join(timeout=1)
+
+        assert result == [WorkerReplacementOutcome.ASSIGNMENT_RELEASED]
+        assert retirement_event.is_set() is False
+
+    def test_replace_worker_fails_when_claim_barrier_times_out(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = Mock()
+        claim_lock = MagicMock()
+        claim_lock.acquire.return_value = False
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+        worker_assignment = Mock()
+        scheduler.mark_worker_retiring("0", 123)
+
+        replaced = scheduler.replace_worker("0", 123, worker_assignment)
+
+        assert replaced == WorkerReplacementOutcome.RETRY_REQUIRED
+        retirement_event.clear.assert_not_called()
+        claim_lock.release.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(
@@ -346,6 +594,44 @@ class TestScheduler:
 
         mock_logger.error.assert_any_call("Failed to restart worker 0: Restart failed")
         assert scheduler.worker_info["0"]["restart_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_worker_health_monitor_replaces_retired_worker_without_failure_count(
+        self, scheduler
+    ):
+        dead_process = Mock(spec=Process)
+        dead_process.pid = 123
+        dead_process.is_alive = Mock(return_value=False)
+        retirement_event = Mock()
+        retirement_event.is_set.return_value = True
+        scheduler.worker_info["0"] = {
+            "process": dead_process,
+            "restart_count": 0,
+            "queue_index": 0,
+            "error_count": 0,
+            "retirement_event": retirement_event,
+        }
+        scheduler.is_ready = True
+        scheduler.monitor_running = True
+        first_sleep = True
+
+        async def stop_after_first_iteration(timeout):
+            nonlocal first_sleep
+            if first_sleep:
+                first_sleep = False
+                scheduler.monitor_running = False
+
+        with patch.object(scheduler, "replace_worker") as replace_worker, patch.object(
+            scheduler, "restart_worker"
+        ) as restart_worker, patch(
+            "model_services.scheduler.asyncio.sleep",
+            side_effect=stop_after_first_iteration,
+        ):
+            await asyncio.wait_for(scheduler.worker_health_monitor(), timeout=1.0)
+
+        replace_worker.assert_called_once_with("0", expected_pid=123)
+        restart_worker.assert_not_called()
+        assert scheduler.worker_info["0"]["restart_count"] == 0
 
     @pytest.mark.asyncio
     async def test_worker_health_monitor_calls_deep_restart_when_restart_count_exceeded(
