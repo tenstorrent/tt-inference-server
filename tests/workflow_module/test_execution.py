@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from unittest.mock import MagicMock
 
@@ -17,6 +18,13 @@ from workflow_module.execution import (
     WorkflowResult,
 )
 from workflow_module.workflows import ReleaseWorkflow
+
+_WIRING_PLAN = (
+    Path(__file__).resolve().parents[1]
+    / "fixtures"
+    / "requirements"
+    / "wiring-plan-qwen3-32b.json"
+)
 
 
 class TestTaskOutcome:
@@ -140,3 +148,40 @@ class TestInjectMetadata:
             "model_impl",
         ):
             assert absent not in schema.metadata
+
+    def test_requirements_run_records_the_document(self, monkeypatch):
+        from workflow_module import target_pack
+        from workflow_module.requirements_schema import load_requirements
+        from workflows.requirements_target_pack import RequirementsTargetPack
+        from workflows.target_pack_provider import TenstorrentTargetPack
+
+        doc = load_requirements(_WIRING_PLAN)
+        monkeypatch.setattr(
+            target_pack,
+            "_target_pack",
+            RequirementsTargetPack(doc, TenstorrentTargetPack()),
+        )
+        schema = ReportSchema(
+            metadata={"model_name": "m", "device": "SUPER_CLUSTER"}, sections=[]
+        )
+
+        _make_workflow(OrchestratorMetadata(server_mode="API")).inject_metadata(schema)
+
+        assert schema.metadata["requirements_document"] == {
+            "schema_version": "2.8.0",
+            "id": "23fe5fdb-9ebb-4148-837a-5ea1823f5245",
+            "revision": 4,
+        }
+
+    def test_catalog_run_has_no_requirements_document(self, monkeypatch):
+        from workflow_module import target_pack
+        from workflows.target_pack_provider import TenstorrentTargetPack
+
+        monkeypatch.setattr(target_pack, "_target_pack", TenstorrentTargetPack())
+        schema = ReportSchema(
+            metadata={"model_name": "m", "device": "N150"}, sections=[]
+        )
+
+        _make_workflow(OrchestratorMetadata(server_mode="API")).inject_metadata(schema)
+
+        assert "requirements_document" not in schema.metadata
