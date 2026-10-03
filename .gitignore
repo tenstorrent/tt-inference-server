@@ -44,6 +44,7 @@ generated_modules
 # Requirements-driven validation test fixtures are committed so the requirements
 # schema/target-pack tests can run out of the box.
 !tests/fixtures/requirements/*.json
+!charts/tt-inference-server/dashboards/*.json
 *.pt
 *.tti
 *.txt

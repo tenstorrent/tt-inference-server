@@ -1,0 +1,3322 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "title": "tt-inference-server \u2014 media server",
+  "uid": "ttis-media",
+  "description": "Application metrics for the tt-inference-server media and forge engines (the forge image runs the same server). Overview, Device and HTTP hold for every model runner; the per-domain rows below them are emitted by the runners that implement them and stay empty otherwise. model_type carries the runner name (e.g. tt-whisper).",
+  "tags": [
+    "tenstorrent",
+    "tt-inference-server"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0,
+        "refresh": 1
+      },
+      {
+        "name": "job",
+        "label": "job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "allValue": ".*",
+        "query": {
+          "query": "label_values(tt_media_server_requests_base_total, job)",
+          "refId": "job"
+        },
+        "definition": "label_values(tt_media_server_requests_base_total, job)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "pod",
+        "label": "pod",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "allValue": ".*",
+        "query": {
+          "query": "label_values(tt_media_server_requests_base_total, pod)",
+          "refId": "pod"
+        },
+        "definition": "label_values(tt_media_server_requests_base_total, pod)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "runner",
+        "label": "runner",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "allValue": ".*",
+        "query": {
+          "query": "label_values(tt_media_server_requests_base_total, model_type)",
+          "refId": "runner"
+        },
+        "definition": "label_values(tt_media_server_requests_base_total, model_type)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "options": [],
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "id": 1,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Requests/s",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(tt_media_server_requests_base_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Jobs in progress",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(tt_media_server_jobs_in_progress{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Inference failure ratio",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(rate(tt_media_server_model_inference_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__rate_interval])) or vector(0)) / clamp_min(sum(rate(tt_media_server_model_inference_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])), 1e-9)",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "id": 4
+    },
+    {
+      "type": "stat",
+      "title": "Request duration p95",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Request rate by runner",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (model_type) (rate(tt_media_server_requests_base_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+          "legendFormat": "{{model_type}}",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Request duration",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "p50",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "refId": "B",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(tt_media_server_requests_base_duration_seconds_total_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "p99",
+          "refId": "C",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 5,
+        "w": 12,
+        "h": 8
+      },
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "Stage duration p95",
+      "description": "One unit per panel: all three are wall-clock seconds.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_pre_processing_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "pre-processing",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_model_inference_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "inference",
+          "refId": "B",
+          "editorMode": "code",
+          "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_post_processing_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "post-processing",
+          "refId": "C",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "id": 8
+    },
+    {
+      "type": "table",
+      "title": "Server info",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "description": "Labels of tt_media_server_info_info: what this release is running.",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "tt_media_server_info_info{job=~\"$job\", pod=~\"$pod\"}",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true,
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            }
+          }
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Download result duration p95",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_download_result_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "download",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 12,
+        "h": 8
+      },
+      "id": 10
+    },
+    {
+      "type": "row",
+      "title": "Device & lifecycle",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 24,
+        "h": 1
+      },
+      "id": 11,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Warmup failures",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(tt_media_server_device_warmup_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__range])) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 6,
+        "h": 4
+      },
+      "id": 12
+    },
+    {
+      "type": "stat",
+      "title": "Model load failures",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(tt_media_server_model_load_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\", status!=\"success\"}[$__range])) or vector(0)",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 30,
+        "w": 6,
+        "h": 4
+      },
+      "id": 13
+    },
+    {
+      "type": "stat",
+      "title": "Canary state",
+      "description": "The canary probes the inference path itself, so this is liveness as the server sees it, not just a port being open.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max((tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"dead\"} == 1) * 4 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"suspect\"} == 1) * 3 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"probing\"} == 1) * 2 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"starting\"} == 1) * 1 or (tt_canary_state{job=~\"$job\", pod=~\"$pod\", state=\"healthy\"} == 1) * 0 or vector(-1))",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "blue",
+                "value": 1
+              },
+              {
+                "color": "blue",
+                "value": 2
+              },
+              {
+                "color": "orange",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 4
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "-1": {
+                  "text": "no canary",
+                  "index": 0
+                },
+                "0": {
+                  "text": "healthy",
+                  "index": 1
+                },
+                "1": {
+                  "text": "starting",
+                  "index": 2
+                },
+                "2": {
+                  "text": "probing",
+                  "index": 3
+                },
+                "3": {
+                  "text": "suspect",
+                  "index": 4
+                },
+                "4": {
+                  "text": "dead",
+                  "index": 5
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 30,
+        "w": 6,
+        "h": 4
+      },
+      "id": 14
+    },
+    {
+      "type": "stat",
+      "title": "Since last canary success",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - max(tt_canary_last_success_timestamp{job=~\"$job\", pod=~\"$pod\"})",
+          "legendFormat": "",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 30,
+        "w": 6,
+        "h": 4
+      },
+      "id": 15
+    },
+    {
+      "type": "timeseries",
+      "title": "Inference duration p95 by device",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, device_id) (rate(tt_media_server_model_inference_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "{{device_id}}",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "id": 16
+    },
+    {
+      "type": "timeseries",
+      "title": "Device warmup duration p95 by device",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, device_id) (rate(tt_media_server_device_warmup_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+          "legendFormat": "{{device_id}}",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 34,
+        "w": 12,
+        "h": 8
+      },
+      "id": 17
+    },
+    {
+      "type": "timeseries",
+      "title": "Canary probe latency p95",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, depth) (rate(tt_canary_probe_latency_seconds_bucket{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])))",
+          "legendFormat": "{{depth}}",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "id": 18
+    },
+    {
+      "type": "timeseries",
+      "title": "Canary failures/s",
+      "description": "or vector(0) so a period with no failures reads zero instead of No data.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (depth) (rate(tt_canary_failures_total{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "{{depth}}",
+          "refId": "A",
+          "editorMode": "code",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 42,
+        "w": 12,
+        "h": 8
+      },
+      "id": 19
+    },
+    {
+      "type": "row",
+      "title": "Audio \u2014 speech to text (transcription routes, server image 0.22.0+)",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 24,
+        "h": 1
+      },
+      "id": 20,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "STT realtime factor p50",
+          "description": "Audio seconds processed per wall-clock second.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_stt_realtime_factor_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 51,
+            "w": 6,
+            "h": 4
+          },
+          "id": 21
+        },
+        {
+          "type": "stat",
+          "title": "STT requests/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_stt_requests_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 51,
+            "w": 6,
+            "h": 4
+          },
+          "id": 22
+        },
+        {
+          "type": "stat",
+          "title": "Audio ingested/s",
+          "description": "Seconds of input audio per second.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_stt_input_audio_seconds_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 51,
+            "w": 6,
+            "h": 4
+          },
+          "id": 23
+        },
+        {
+          "type": "stat",
+          "title": "Output characters/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_stt_output_characters_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 51,
+            "w": 6,
+            "h": 4
+          },
+          "id": 24
+        },
+        {
+          "type": "timeseries",
+          "title": "STT request duration",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(tt_media_server_audio_stt_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "refId": "C",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 55,
+            "w": 12,
+            "h": 8
+          },
+          "id": 25
+        },
+        {
+          "type": "timeseries",
+          "title": "STT streaming latency p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_first_partial_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "first partial",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_partial_interval_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "partial interval",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_stt_finalization_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "finalization",
+              "refId": "C",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 55,
+            "w": 12,
+            "h": 8
+          },
+          "id": 26
+        },
+        {
+          "type": "timeseries",
+          "title": "Pipeline stage p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_input_preparation_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "input prep",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_chunking_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "chunking",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_feature_extraction_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "feature extraction",
+              "refId": "C",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_encoder_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "encoder",
+              "refId": "D",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_vad_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "VAD",
+              "refId": "E",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 63,
+            "w": 12,
+            "h": 8
+          },
+          "id": 27
+        },
+        {
+          "type": "timeseries",
+          "title": "No-speech probability p90",
+          "description": "Kept apart from the latency panels: a probability does not share an axis with seconds.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.9, sum by (le) (rate(tt_media_server_audio_stt_no_speech_probability_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "p90",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 63,
+            "w": 12,
+            "h": 8
+          },
+          "id": 28
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Audio \u2014 text to speech (speecht5 runner, server image 0.22.0+)",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 71,
+        "w": 24,
+        "h": 1
+      },
+      "id": 29,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "TTS realtime factor p50",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_audio_tts_realtime_factor_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 72,
+            "w": 6,
+            "h": 4
+          },
+          "id": 30
+        },
+        {
+          "type": "stat",
+          "title": "TTS requests/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_tts_requests_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 72,
+            "w": 6,
+            "h": 4
+          },
+          "id": 31
+        },
+        {
+          "type": "stat",
+          "title": "Audio produced/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_tts_output_audio_seconds_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 72,
+            "w": 6,
+            "h": 4
+          },
+          "id": 32
+        },
+        {
+          "type": "stat",
+          "title": "First chunk p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_tts_first_chunk_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 72,
+            "w": 6,
+            "h": 4
+          },
+          "id": 33
+        },
+        {
+          "type": "timeseries",
+          "title": "TTS request duration p95 by response format",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le, response_format) (rate(tt_media_server_audio_tts_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "{{response_format}}",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 76,
+            "w": 12,
+            "h": 8
+          },
+          "id": 34
+        },
+        {
+          "type": "timeseries",
+          "title": "TTS chunk generation p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_audio_tts_chunk_generation_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "chunk generation",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 76,
+            "w": 12,
+            "h": 8
+          },
+          "id": 35
+        },
+        {
+          "type": "timeseries",
+          "title": "Input rate",
+          "description": "Counts per second, so one axis; output audio seconds live in their own tile.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_tts_input_characters_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "characters/s",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_tts_input_tokens_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "tokens/s",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_audio_tts_input_words_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "words/s",
+              "refId": "C",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 84,
+            "w": 12,
+            "h": 8
+          },
+          "id": 36
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Image (SDXL / FLUX / z-image runners, server image 0.22.0+)",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 24,
+        "h": 1
+      },
+      "id": 37,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Images/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_image_vae_images_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 93,
+            "w": 6,
+            "h": 4
+          },
+          "id": 38
+        },
+        {
+          "type": "stat",
+          "title": "Denoise steps/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_image_denoise_steps_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 93,
+            "w": 6,
+            "h": 4
+          },
+          "id": 39
+        },
+        {
+          "type": "stat",
+          "title": "Engine duration p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_engine_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 93,
+            "w": 6,
+            "h": 4
+          },
+          "id": 40
+        },
+        {
+          "type": "stat",
+          "title": "Pixels/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_image_vae_pixels_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 93,
+            "w": 6,
+            "h": 4
+          },
+          "id": 41
+        },
+        {
+          "type": "timeseries",
+          "title": "Image stage p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_conditioning_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "conditioning",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_denoise_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "denoise",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_vae_decode_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "VAE decode",
+              "refId": "C",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_engine_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "engine total",
+              "refId": "D",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 97,
+            "w": 12,
+            "h": 8
+          },
+          "id": 42
+        },
+        {
+          "type": "timeseries",
+          "title": "Denoise step duration p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_image_denoise_step_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "per step",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 97,
+            "w": 12,
+            "h": 8
+          },
+          "id": 43
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Video (DiT runners, server image 0.22.0+)",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 105,
+        "w": 24,
+        "h": 1
+      },
+      "id": 44,
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Generations in progress",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(tt_media_server_video_generations_in_progress{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"})",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 106,
+            "w": 6,
+            "h": 4
+          },
+          "id": 45
+        },
+        {
+          "type": "stat",
+          "title": "Realtime factor p50",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(tt_media_server_video_realtime_factor_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 6,
+            "y": 106,
+            "w": 6,
+            "h": 4
+          },
+          "id": 46
+        },
+        {
+          "type": "stat",
+          "title": "Frames generated/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_video_frames_generated_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 106,
+            "w": 6,
+            "h": 4
+          },
+          "id": 47
+        },
+        {
+          "type": "stat",
+          "title": "Since last generation",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "time() - max(tt_media_server_video_last_generation_timestamp{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"})",
+              "legendFormat": "",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "text",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "gridPos": {
+            "x": 18,
+            "y": 106,
+            "w": 6,
+            "h": 4
+          },
+          "id": 48
+        },
+        {
+          "type": "timeseries",
+          "title": "Generation duration p95 by resolution",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le, resolution) (rate(tt_media_server_video_generation_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "{{resolution}}",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 110,
+            "w": 12,
+            "h": 8
+          },
+          "id": 49
+        },
+        {
+          "type": "timeseries",
+          "title": "Video stage p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_step_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "denoise step",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_denoise_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "denoise total",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_vae_decode_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "VAE decode",
+              "refId": "C",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_encode_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "encode",
+              "refId": "D",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 110,
+            "w": 12,
+            "h": 8
+          },
+          "id": 50
+        },
+        {
+          "type": "timeseries",
+          "title": "Generation outcome/s",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (status) (rate(tt_media_server_video_generation_total{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval]))",
+              "legendFormat": "{{status}}",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 118,
+            "w": 12,
+            "h": 8
+          },
+          "id": 51
+        },
+        {
+          "type": "timeseries",
+          "title": "Output size p95",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(tt_media_server_video_output_size_bytes_bucket{job=~\"$job\", pod=~\"$pod\", model_type=~\"$runner\"}[$__rate_interval])))",
+              "legendFormat": "per generation",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 118,
+            "w": 12,
+            "h": 8
+          },
+          "id": 52
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "HTTP (needs ENABLE_METRICS, set when podMonitor.enabled)",
+      "collapsed": true,
+      "gridPos": {
+        "x": 0,
+        "y": 126,
+        "w": 24,
+        "h": 1
+      },
+      "id": 53,
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "HTTP request rate by status",
+          "description": "Needs ENABLE_METRICS, which the chart sets when podMonitor.enabled is true.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum by (status) (rate(tt_media_server_requests_http_request_duration_seconds_count{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval]))",
+              "legendFormat": "{{status}}",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "normal"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 127,
+            "w": 12,
+            "h": 8
+          },
+          "id": 54
+        },
+        {
+          "type": "timeseries",
+          "title": "HTTP latency p95 by handler",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "histogram_quantile(0.95, sum by (le, handler) (rate(tt_media_server_requests_http_request_duration_seconds_bucket{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])))",
+              "legendFormat": "{{handler}}",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 127,
+            "w": 12,
+            "h": 8
+          },
+          "id": 55
+        },
+        {
+          "type": "timeseries",
+          "title": "Payload size (mean)",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_requests_http_request_size_bytes_sum{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])) / sum(rate(tt_media_server_requests_http_request_size_bytes_count{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval]))",
+              "legendFormat": "request",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(rate(tt_media_server_responses_http_response_size_bytes_sum{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval])) / sum(rate(tt_media_server_responses_http_response_size_bytes_count{job=~\"$job\", pod=~\"$pod\"}[$__rate_interval]))",
+              "legendFormat": "response",
+              "refId": "B",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 135,
+            "w": 12,
+            "h": 8
+          },
+          "id": 56
+        },
+        {
+          "type": "timeseries",
+          "title": "Requests in progress",
+          "description": "",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "expr": "sum(tt_media_server_requests_inprogress{job=~\"$job\", pod=~\"$pod\"})",
+              "legendFormat": "in progress",
+              "refId": "A",
+              "editorMode": "code",
+              "range": true
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "spanNulls": true,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": false,
+              "calcs": []
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 12,
+            "y": 135,
+            "w": 12,
+            "h": 8
+          },
+          "id": 57
+        }
+      ]
+    }
+  ]
+}
