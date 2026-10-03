@@ -73,6 +73,8 @@ class FakeHarborConfig:
     harbor_timeout_sec: Optional[float] = None
     llm_timeout_sec: Optional[int] = 10 * 60
     request_telemetry: bool = False
+    owned_command_cleanup: bool = False
+    abort_on_client_disconnect: bool = False
     repetition_feedback_after: int = 0
     normalize_submission_marker: bool = False
     per_task_overhead_sec: int = 20 * 60
@@ -400,11 +402,24 @@ class TestStandardEvalModeReference:
 
 
 class TestAgenticDriverConfigMapping:
+    def test_owned_cleanup_and_upstream_abort_are_explicit_and_mapped(self):
+        task = _harbor_task()
+        cfg = build_harbor_config(task, _server(), _driver_context())
+        assert not cfg.owned_command_cleanup and not cfg.abort_on_client_disconnect
+        task.agentic_eval_config.owned_command_cleanup = True
+        task.agentic_eval_config.abort_on_client_disconnect = True
+        cfg = build_harbor_config(task, _server(), _driver_context())
+        assert cfg.owned_command_cleanup and cfg.abort_on_client_disconnect
+
     def test_repeated_tool_advisory_is_explicit_and_mapped(self):
         task = _harbor_task()
-        assert not build_harbor_config(task, _server(), _driver_context()).repeated_tool_feedback
+        assert not build_harbor_config(
+            task, _server(), _driver_context()
+        ).repeated_tool_feedback
         task.agentic_eval_config.repeated_tool_feedback = True
-        assert build_harbor_config(task, _server(), _driver_context()).repeated_tool_feedback
+        assert build_harbor_config(
+            task, _server(), _driver_context()
+        ).repeated_tool_feedback
 
     def test_harbor_config_uses_limit_mode_task_names_and_n_tasks(self):
         task = _harbor_task()
@@ -1156,7 +1171,9 @@ class TestAgenticBridge:
         ), patch(
             "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
             return_value=driver,
-        ), patch("test_module.llm_tests.agentic_eval_tests.accept_blocks") as accept:
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.accept_blocks"
+        ) as accept:
             blocks = run_llm_agentic_eval(ctx)
 
         assert blocks == [block]
@@ -1202,7 +1219,9 @@ class TestAgenticBridge:
             side_effect=[finished, killed],
         ), patch(
             "test_module.llm_tests.agentic_eval_tests.accept_blocks"
-        ) as accept, pytest.raises(KeyboardInterrupt):
+        ) as accept, pytest.raises(
+            KeyboardInterrupt
+        ):
             run_llm_agentic_eval(ctx)
 
         accept.assert_called_once()
@@ -1236,7 +1255,9 @@ class TestAgenticBridge:
             side_effect=[failed, killed],
         ), patch(
             "test_module.llm_tests.agentic_eval_tests.accept_blocks"
-        ) as accept, pytest.raises(KeyboardInterrupt):
+        ) as accept, pytest.raises(
+            KeyboardInterrupt
+        ):
             run_llm_agentic_eval(ctx)
 
         assert accept.call_args.args[0] == [failure_block]

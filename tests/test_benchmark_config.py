@@ -45,6 +45,32 @@ def _import_benchmark_config(monkeypatch):
     return importlib.import_module(module_name)
 
 
+def test_gemma4_release_preserves_established_capacity_capped_matrix(monkeypatch):
+    from pathlib import Path
+    from workflows.model_spec import load_templates_from_yaml, get_model_spec_map
+
+    catalog = Path(__file__).parents[1] / "workflows/model_specs/dev/llm.yaml"
+    specs = get_model_spec_map(load_templates_from_yaml(catalog, env="dev"))
+    spec = next(s for s in specs.values() if s.impl.impl_id == "gemma4_autoport")
+    config = _import_benchmark_config(monkeypatch).get_benchmark_config(spec)
+    rows = config.tasks[0].param_map[spec.device_type]
+    assert len(config.tasks) == 1
+    assert len(rows) == 23
+    assert [(p.isl, p.osl, p.max_concurrency, p.num_prompts) for p in rows[:2]] == [
+        (128, 128, 1, 8),
+        (128, 128, 32, 256),
+    ]
+    assert [(p.isl, p.max_concurrency) for p in rows[-7:]] == [
+        (16384, 1),
+        (16384, 15),
+        (32768, 1),
+        (32768, 7),
+        (65536, 1),
+        (65536, 3),
+        (131072, 1),
+    ]
+
+
 def _allowed_max_concurrency(
     *, isl: int, osl: int, max_context: int, model_max_concurrency: int
 ) -> int:

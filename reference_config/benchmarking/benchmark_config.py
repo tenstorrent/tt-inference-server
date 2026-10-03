@@ -15,7 +15,6 @@ from workflows.workflow_types import (
     WorkflowVenvType,
 )
 
-
 # Forge models need a newer vllm client that can load their tokenizers; other
 # engines use the shared client.
 _VLLM_BENCHMARK_VENV_BY_ENGINE = {
@@ -590,9 +589,8 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
-    # Gemma optimization qualification uses C1/C8/C16 only. Keep every standard
-    # context/output shape and skip concurrency points beyond the shared KV
-    # budget; this does not reduce the server's 32-slot/full-context capability.
+    # Gemma release coverage uses the established Qwen-style shape sweep,
+    # at C1 and the capacity-capped maximum concurrency for each shape.
     if model_spec.impl.impl_id == "gemma4_autoport":
         return BenchmarkConfig(
             model_id=model_spec.model_id,
@@ -600,22 +598,14 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                 BenchmarkTask(
                     param_map={
                         device: [
-                            BenchmarkTaskParams(
+                            params
+                            for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+                            for params in _expand_text_sweep_params(
                                 isl=isl,
                                 osl=osl,
-                                max_concurrency=concurrency,
-                                num_prompts=get_num_prompts(isl, osl, concurrency),
-                            )
-                            for isl, osl in BENCHMARK_ISL_OSL_PAIRS
-                            for concurrency in (1, 8, 16)
-                            if isl + osl <= max_context
-                            and concurrency
-                            <= get_benchmark_max_concurrency(
-                                isl,
-                                osl,
-                                max_context,
-                                max_tokens_all_users,
-                                model_max_concurrency,
+                                max_context=max_context,
+                                max_tokens_all_users=max_tokens_all_users,
+                                model_max_concurrency=model_max_concurrency,
                             )
                         ]
                     },

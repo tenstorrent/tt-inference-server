@@ -17,11 +17,13 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from reference_config.evals.eval_config import ALL_EVAL_CONFIGS, TerminalBenchEvalConfig
 from workflows.workflow_venvs import HARBOR_REF, HARBOR_REPO
+from workflow_module.engine_types import EvalLimitMode
 
 
 def _config(**overrides) -> TerminalBenchEvalConfig:
@@ -40,6 +42,50 @@ def test_gemma4_26b_swebench_runs_serially():
     task = next(task for task in config.tasks if task.task_name == "swe_bench_verified")
 
     assert task.agentic_eval_config.n_concurrent_trials == 1
+
+
+def test_gemma4_release_has_exact_subsets_and_explicit_policy():
+    tasks = ALL_EVAL_CONFIGS["google/gemma-4-26B-A4B-it"].tasks
+    assert [task.task_name for task in tasks] == [
+        "r1_gpqa_diamond",
+        "terminal_bench_2",
+        "swe_bench_verified",
+    ]
+    gpqa, terminal, swe = tasks
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert gpqa.max_concurrent == 1
+    assert gpqa.seed == 42
+    assert gpqa.api_request_overrides["seed"] == 9472
+    guard = {"min_pattern_size": 16, "max_pattern_size": 1024, "min_count": 8}
+    assert gpqa.api_request_overrides["repetition_detection"] == guard
+    tb = terminal.agentic_eval_config
+    assert tb.n_concurrent_trials == 1
+    assert tb.agent_timeout_sec == 10800
+    assert tb.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "terminal-bench/caffe-cifar-10",
+        "terminal-bench/password-recovery",
+        "terminal-bench/portfolio-optimization",
+        "terminal-bench/hf-model-inference",
+        "terminal-bench/financial-document-processor",
+    ]
+    assert tb.agent_kwargs["llm_kwargs"]["seed"] == 9472
+    assert tb.agent_kwargs["llm_kwargs"]["extra_body"]["repetition_detection"] == guard
+    assert not tb.normalize_submission_marker
+    assert not tb.owned_command_cleanup
+    for agent in (tb, swe.agentic_eval_config):
+        assert agent.request_telemetry and agent.abort_on_client_disconnect
+        assert agent.n_attempts == 1
+    assert swe.agentic_eval_config.owned_command_cleanup
+    catalog = Path(__file__).parents[2] / "workflows/model_specs/dev/llm.yaml"
+    specs = [
+        spec
+        for spec in yaml.safe_load(catalog.read_text())["templates"]
+        if spec["impl"] == "gemma4_autoport"
+    ]
+    assert specs
+    for spec in specs:
+        metadata = spec["metadata"]["google/gemma-4-26B-A4B-it"]
+        assert "evals" not in metadata.get("ci_workflow_overrides", {})
 
 
 def test_gemma4_swebench_tools_use_task_environment_and_keep_generation_budget():
@@ -70,8 +116,11 @@ def test_gemma4_five_task_candidate_preserves_original_prompt_and_timeout():
     selections = list(agent.task_names_map.values())
     assert len(selections) == 1
     assert set(selections[0]) == {
-        "astropy__astropy-14096", "django__django-11299", "matplotlib__matplotlib-25332",
-        "scikit-learn__scikit-learn-14629", "sympy__sympy-13551",
+        "astropy__astropy-14096",
+        "django__django-11299",
+        "matplotlib__matplotlib-25332",
+        "scikit-learn__scikit-learn-14629",
+        "sympy__sympy-13551",
     }
     assert len(selections[0]) == 5
 

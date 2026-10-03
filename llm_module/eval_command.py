@@ -280,6 +280,20 @@ def build_eval_command(
         lm_eval_exec = task_venv_path / "bin" / "lm_eval"
 
     lm_eval_prefix = [str(lm_eval_exec)]
+    api_request_overrides = getattr(task, "api_request_overrides", {})
+    if api_request_overrides:
+        if task.workflow_venv_type != WorkflowVenvType.EVALS_COMMON:
+            raise ValueError(
+                "api_request_overrides requires the common lm-eval backend"
+            )
+        if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+            raise ValueError("api_request_overrides cannot combine with seed removal")
+        lm_eval_prefix = [
+            str(task_venv_path / "bin" / "python"),
+            str(Path(__file__).with_name("lm_eval_request_overrides.py")),
+            "--request-overrides-json",
+            json.dumps(api_request_overrides, sort_keys=True),
+        ]
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993
     if not getattr(task, "propagate_seed_to_gen_kwargs", True):

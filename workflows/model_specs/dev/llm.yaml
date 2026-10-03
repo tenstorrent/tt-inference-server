@@ -2445,9 +2445,7 @@ templates:
 
   metadata:
     google/gemma-4-26B-A4B-it:
-      ci_workflow_overrides:
-        evals: agentic
-      # Bounded diagnostic startup; final comparison records/restores its warmup policy.
+      # Persistent-server release: evals, benchmarks, API checks, then agentic.
       background_trace_context_lens: [[4096, 4]]
       # Experimental policy overlay; immutable inference image is reused.
       autoport_precision_config: reference_config/precision/gemma4_eval_bfp8.json

@@ -105,6 +105,15 @@ def _command_gen_kwargs(command):
 
 
 class TestEvalCommand:
+    def test_gemma4_structured_guard_is_explicit_without_changing_harness_seed(self):
+        task = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks[0]
+        command = _build_eval_test_command(task)
+        assert command[1].endswith("lm_eval_request_overrides.py")
+        overrides = json.loads(command[command.index("--request-overrides-json") + 1])
+        assert overrides == task.api_request_overrides
+        assert str(command[command.index("--seed") + 1]) == "42"
+        assert _command_gen_kwargs(command)["max_gen_toks"] == "32768"
+
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
         command = _build_eval_test_command(task)
@@ -498,9 +507,13 @@ class TestRunLLMEval:
             f"{_MOD}.HttpServerController", return_value=server
         ), patch(f"{_MOD}._run_eval_task", return_value=run_rc) as run_task, patch(
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
-        ), patch(f"{_MOD}.load_eval_results", return_value=(results or {}, {})), patch(
+        ), patch(
+            f"{_MOD}.load_eval_results", return_value=(results or {}, {})
+        ), patch(
             f"{_MOD}.blocks_for_task", return_value=blocks if blocks is not None else []
-        ) as score_task, patch(f"{_MOD}.accept_blocks") as accept, patch(
+        ) as score_task, patch(
+            f"{_MOD}.accept_blocks"
+        ) as accept, patch(
             f"{_MOD}.block_id", return_value=""
         ):
             out = mod.run_llm_eval(_ctx())
@@ -566,12 +579,18 @@ class TestRunLLMEval:
             f"{_MOD}.HttpServerController", return_value=server
         ), patch(f"{_MOD}._run_eval_task", side_effect=run_eval_task), patch(
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
-        ), patch(f"{_MOD}.load_eval_results", return_value=({}, {})), patch(
+        ), patch(
+            f"{_MOD}.load_eval_results", return_value=({}, {})
+        ), patch(
             f"{_MOD}.blocks_for_task",
             side_effect=lambda _ctx, task, *_a, **_k: blocks_by_task[task.task_name],
-        ), patch(f"{_MOD}.accept_blocks") as accept, patch(
+        ), patch(
+            f"{_MOD}.accept_blocks"
+        ) as accept, patch(
             f"{_MOD}.block_id", return_value=""
-        ), pytest.raises(KeyboardInterrupt):
+        ), pytest.raises(
+            KeyboardInterrupt
+        ):
             mod.run_llm_eval(_ctx())
         return accept
 

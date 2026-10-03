@@ -299,6 +299,8 @@ class HarborEvalConfig:
     repetition_feedback_after: int = 0
     normalize_submission_marker: bool = False
     repeated_tool_feedback: bool = False
+    owned_command_cleanup: bool = False
+    abort_on_client_disconnect: bool = False
     # Allowance for Harbor's additive non-agent phases (env build ~600s, agent
     # setup ~360s, verifier ~60s), added to the agent budget for each wave.
     per_task_overhead_sec: int = 20 * 60
@@ -346,6 +348,8 @@ class EvalTask:
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
     # opt out of receiving it as an OpenAI request sampling parameter.
     propagate_seed_to_gen_kwargs: bool = True
+    # Structured API parameters cannot pass through lm-eval's comma-split CLI.
+    api_request_overrides: Dict[str, Any] = field(default_factory=dict)
     model_kwargs: Dict[str, str] = field(default_factory=lambda: {})
     # Note: include_path is specified relative to the respective venv
     include_path: str = None
@@ -6146,21 +6150,54 @@ _eval_config_list = [
 _eval_config_map = map_configs_by_attr(
     config_list=_eval_config_list, attr="hf_model_repo"
 )
-# Original five-task, serial release-style measurement with explicit candidate
-# precision/seed/guard/adapter deviations. The agent prompt remains original.
+# Accepted release candidate: GPQA10, TerminalBench5 and the original SWE5.
+# Explicit seed/guard/adapter deviations remain visible; prompts are unchanged.
 _gemma_probe = _eval_config_map["google/gemma-4-26B-A4B-it"]
+_gemma_gpqa = next(t for t in _gemma_probe.tasks if t.task_name == "r1_gpqa_diamond")
+_gemma_terminal = next(
+    t for t in _gemma_probe.tasks if t.task_name == "terminal_bench_2"
+)
 _gemma_swe = next(t for t in _gemma_probe.tasks if t.task_name == "swe_bench_verified")
-_gemma_guard_kwargs = deepcopy(_gemma_swe.agentic_eval_config.agent_kwargs)
-# Explicit per-request seeding for this bounded diagnostic, not a release default.
-_gemma_guard_kwargs["config"]["model"]["model_kwargs"]["seed"] = 9472
-_gemma_guard_kwargs["config"]["model"]["model_kwargs"]["extra_body"]["repetition_detection"] = {
+_gemma_repetition_guard = {
     "min_pattern_size": 16,
     "max_pattern_size": 1024,
     "min_count": 8,
 }
+_gemma_terminal_kwargs = deepcopy(_gemma_terminal.agentic_eval_config.agent_kwargs)
+_gemma_terminal_kwargs["llm_kwargs"]["seed"] = 9472
+_gemma_terminal_kwargs["llm_kwargs"]["extra_body"]["repetition_detection"] = deepcopy(
+    _gemma_repetition_guard
+)
+_gemma_guard_kwargs = deepcopy(_gemma_swe.agentic_eval_config.agent_kwargs)
+# Explicit candidate sampling seed, not the upstream model's default policy.
+_gemma_guard_kwargs["config"]["model"]["model_kwargs"]["seed"] = 9472
+_gemma_guard_kwargs["config"]["model"]["model_kwargs"]["extra_body"][
+    "repetition_detection"
+] = deepcopy(_gemma_repetition_guard)
 _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
     _gemma_probe,
     tasks=[
+        replace(
+            _gemma_gpqa,
+            limit_samples_map={
+                **_gemma_gpqa.limit_samples_map,
+                EvalLimitMode.CI_NIGHTLY: 10,
+            },
+            api_request_overrides={
+                "seed": 9472,
+                "repetition_detection": deepcopy(_gemma_repetition_guard),
+            },
+        ),
+        replace(
+            _gemma_terminal,
+            agentic_eval_config=replace(
+                _gemma_terminal.agentic_eval_config,
+                n_concurrent_trials=1,
+                request_telemetry=True,
+                abort_on_client_disconnect=True,
+                agent_kwargs=_gemma_terminal_kwargs,
+            ),
+        ),
         replace(
             _gemma_swe,
             agentic_eval_config=replace(
@@ -6168,6 +6205,8 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
                 agent_timeout_sec=2 * 60 * 60,
                 repetition_feedback_after=0,
                 normalize_submission_marker=True,
+                owned_command_cleanup=True,
+                abort_on_client_disconnect=True,
                 agent_kwargs=_gemma_guard_kwargs,
                 task_names_map={
                     EvalLimitMode.CI_NIGHTLY: [
@@ -6179,7 +6218,7 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
                     ],
                 },
             ),
-        )
+        ),
     ],
 )
 # Keyed by the full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct") so
