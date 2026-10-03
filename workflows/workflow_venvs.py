@@ -537,6 +537,25 @@ def setup_evals_meta(
     ):
         return True
 
+    # lm-eval 0.4.4 IFEval imports pkg_resources, removed in setuptools 81.
+    # Pin before any cookbook install, and repair cached venvs too
+    # (ported from #5234).
+    if (
+        run_command(
+            [
+                str(UV_EXEC),
+                "pip",
+                "install",
+                "--managed-python",
+                "--python",
+                str(venv_config.venv_python),
+                "setuptools>=77,<81",
+            ],
+            logger=logger,
+        )
+        != 0
+    ):
+        return False
     setup_succeeded = True
     cookbook_dir = venv_config.venv_path / "llama-cookbook"
     original_dir = os.getcwd()
@@ -548,10 +567,9 @@ def setup_evals_meta(
             f"git clone https://github.com/meta-llama/llama-cookbook.git {cookbook_dir}"
         )
         setup_succeeded = run_command(clone_cmd, logger=logger) == 0 and setup_succeeded
-        # cookbook editable install needs modern setuptools
         setup_succeeded = (
             run_command(
-                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip setuptools",
+                f"{UV_EXEC} pip install --managed-python --python {venv_config.venv_python} -U pip",
                 logger=logger,
             )
             == 0
