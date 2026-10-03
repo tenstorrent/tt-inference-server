@@ -249,6 +249,27 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
     if config.environment_env:
         environment_config["env"] = config.environment_env
+        # Harbor's environment.env reaches only the main service. The official
+        # tau3 sidecar has its own Compose environment and needs the same model
+        # endpoint and simulator sampling overrides.
+        if config.agent_import_path and config.agent_import_path.endswith(
+            "tau3_llm_agent:Tau3LLMAgent"
+        ):
+            overlay_path = config.jobs_dir / f"{config.task_name}_tau3_runtime_env.json"
+            overlay_path.write_text(
+                json.dumps(
+                    {
+                        "services": {
+                            "tau3-runtime": {"environment": config.environment_env}
+                        }
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            environment_config.setdefault("extra_docker_compose", []).append(
+                str(overlay_path)
+            )
 
     verifier_config: dict[str, Any] = {}
     if config.verifier_env:
