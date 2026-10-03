@@ -6,12 +6,16 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from workflow_module.engine_types import ModelStatusTypes
 
 from .schema import Block, ReportSchema
 from .status import TestStatus, glyph_for_label
+
+# Block.targets key naming the delivery stage a block is graded under:
+# ``{"key", "name", "position"}``. Set for multi-stage requirements runs only.
+STAGE_TARGET_KEY = "stage"
 
 # Three canonical kinds emitted by every runner. Acceptance routes by
 # this field alone — no substring matching, no frozensets, no regex.
@@ -199,7 +203,79 @@ ACCEPTANCE_EXPORT_KEYS = (
     "acceptance_blockers",
     "acceptance_criteria_metadata",
     "acceptance_summary_markdown",
+    "acceptance_stages",
 )
+
+
+@dataclass
+class StageResult:
+    """One delivery stage's verdict, graded on the blocks tagged with it."""
+
+    key: str
+    name: str
+    position: int
+    accepted: bool
+    blockers: Dict[str, str]
+    categories: List[CategoryResult]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "key": self.key,
+            "name": self.name,
+            "position": self.position,
+            "status": STATUS_PASS if self.accepted else STATUS_FAIL,
+            "blockers": dict(self.blockers),
+            "categories": [category.to_dict() for category in self.categories],
+        }
+
+
+def _block_stage(block: Block) -> Optional[Mapping[str, Any]]:
+    targets = block.targets if isinstance(block.targets, Mapping) else {}
+    stage = targets.get(STAGE_TARGET_KEY)
+    return stage if isinstance(stage, Mapping) and stage.get("key") else None
+
+
+def stage_results(
+    schema: ReportSchema,
+    overall_blockers: Mapping[str, str],
+    *,
+    known_issues: Optional[Iterable[Any]] = None,
+    model_status: Optional[str] = None,
+) -> List[StageResult]:
+    """Each tagged stage graded by the usual checks on its own blocks.
+
+    The overall verdict stays authoritative: a stage keeps only the blockers
+    the overall result still has, so a waiver applied there holds here too.
+    Untagged blocks count toward the overall verdict only.
+    """
+    stages: Dict[str, Mapping[str, Any]] = {}
+    for block in schema.sections:
+        stage = _block_stage(block)
+        if stage is not None:
+            stages.setdefault(str(stage["key"]), stage)
+    results: List[StageResult] = []
+    for key, stage in sorted(stages.items(), key=lambda kv: kv[1].get("position", 0)):
+        subset = ReportSchema(
+            metadata=schema.metadata,
+            sections=[
+                b for b in schema.sections if (_block_stage(b) or {}).get("key") == key
+            ],
+        )
+        _, blockers, categories = acceptance_criteria_check(
+            subset, known_issues=known_issues, model_status=model_status
+        )
+        kept = {k: v for k, v in blockers.items() if k in overall_blockers}
+        results.append(
+            StageResult(
+                key=key,
+                name=str(stage.get("name") or key),
+                position=int(stage.get("position") or 0),
+                accepted=not kept,
+                blockers=kept,
+                categories=[c for c in categories if c.total],
+            )
+        )
+    return results
 
 
 def build_acceptance_export(
@@ -207,6 +283,7 @@ def build_acceptance_export(
     blockers: Mapping[str, str],
     categories: List[CategoryResult],
     model_status: str | None = None,
+    stages: Sequence[StageResult] = (),
 ) -> Dict[str, Any]:
     return {
         "acceptance_criteria": accepted,
@@ -217,8 +294,9 @@ def build_acceptance_export(
             "categories": [category.to_dict() for category in categories],
         },
         "acceptance_summary_markdown": format_acceptance_summary_markdown(
-            accepted, blockers, categories, model_status
+            accepted, blockers, categories, model_status, stages
         ),
+        "acceptance_stages": [stage.to_dict() for stage in stages],
     }
 
 
@@ -227,6 +305,7 @@ def format_acceptance_summary_markdown(
     blockers: Mapping[str, str],
     categories: List[CategoryResult],
     model_status: str | None = None,
+    stages: Sequence[StageResult] = (),
 ) -> str:
     lines = [
         "### Acceptance Criteria",
@@ -239,6 +318,21 @@ def format_acceptance_summary_markdown(
         lines.append(
             f"- {category.name}: {_status_badge(category.status)} ({_detail(category)})"
         )
+    if stages:
+        lines += [
+            "",
+            "#### Delivery stages",
+            "",
+            "| Stage | Status | Graded |",
+            "|---|---|---|",
+        ]
+        for stage in stages:
+            graded = "; ".join(f"{c.name} {_detail(c)}" for c in stage.categories)
+            lines.append(
+                f"| {stage.position}. {stage.name} | "
+                f"{_status_badge(STATUS_PASS if stage.accepted else STATUS_FAIL)} | "
+                f"{graded or 'no blocks present'} |"
+            )
 
     if not blockers:
         lines.append("- All acceptance criteria passed.")
@@ -595,7 +689,7 @@ def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
     """Grade the agentic-traces targets blocks from requirements-driven runs.
 
     Each block carries the sweep's precomputed verdicts (see
-    ``build_targets_block``): one entry per measured concurrency plus the
+    ``build_targets_blocks``): one entry per measured concurrency plus the
     document points the sweep never reached. The count is per measured point
     (``2/3 passed`` reads as "two concurrencies met their targets"), and a
     point blocks when any graded metric missed. A point where the document
@@ -621,6 +715,10 @@ def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
     any_missing = False
     for block in targets_blocks:
         block_key = _block_key(block)
+        stage = _block_stage(block)
+        if stage is not None:
+            # One targets block per stage: keep their blocker keys apart.
+            block_key = f"{block_key}[{stage['key']}]"
         data = block.data
         points = [p for p in data.get("points") or [] if isinstance(p, Mapping)]
         missing = [c for c in data.get("missing_concurrencies") or []]
@@ -646,10 +744,13 @@ def _check_agentic_targets(schema: ReportSchema) -> CategoryResult:
                     "produced none of the declared metrics."
                 )
                 continue
+            # A soft miss is reported in the table but is not why a point fails.
             offenders = [
                 str(v.get("field"))
                 for v in point.get("verdicts") or []
-                if isinstance(v, Mapping) and v.get("passed") is False
+                if isinstance(v, Mapping)
+                and v.get("passed") is False
+                and not v.get("soft")
             ]
             suffix = f" ({', '.join(offenders[:3])}, ...)" if offenders else ""
             blockers[f"{block_key}.c{concurrency}"] = (
@@ -815,6 +916,9 @@ __all__ = [
     "format_acceptance_summary_markdown",
     "ACCEPTANCE_EXPORT_KEYS",
     "CategoryResult",
+    "STAGE_TARGET_KEY",
+    "StageResult",
+    "stage_results",
     "KIND_BENCHMARKS",
     "KIND_EVALS",
     "KIND_SPEC_TESTS",
