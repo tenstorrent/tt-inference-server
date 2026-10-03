@@ -5546,12 +5546,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # CI_NIGHTLY 0.05 (~10 samples), not the usual 0.2: reasoning
-                # eval (~48K tokens/sample) served batch-1, so samples run
-                # sequentially and dominate CI runtime. Widen EvalTaskScore
-                # tolerance if the small-N accuracy gate flakes.
+                # ci-nightly ~1 h per dataset: 0.2 = doc_ids 0-39, matching the
+                # calibrated CI_NIGHTLY reference score above. No CI_LONG entry = full set.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -5593,13 +5591,11 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # mmlu_pro is a GROUP of 14 subject subtasks and lm-eval
-                # applies the limit PER SUBTASK: an int here multiplies by 14.
-                # 3/subtask = ~42 questions per nightly run, 1/subtask = 14 on
-                # smoke. (A first attempt set 40, which became 560 scheduled
-                # samples and a ~99-hour ETA.)
+                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
+                # subtask (an int multiplies by 14, a fraction scales each subtask).
+                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.CI_NIGHTLY: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
