@@ -386,6 +386,8 @@ def _build_spec_decode_options(
 
     return SpecDecodeOptions(
         preset=args.spec_decode_preset,
+        isls=getattr(args, "spec_decode_isls", None),
+        concurrencies=getattr(args, "spec_decode_concurrencies", None),
         warmup_requests=args.spec_decode_warmup_requests,
         auth_token=_resolve_auth_token(args),
         metrics_urls=tuple(getattr(args, "spec_decode_metrics_url", None) or ()),

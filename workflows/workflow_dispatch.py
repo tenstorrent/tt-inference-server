@@ -586,8 +586,21 @@ def _forward_agentic_traces_metrics_urls(cmd, runtime_config) -> None:
 def _forward_spec_decode(cmd, runtime_config) -> None:
     if not getattr(runtime_config, "spec_decode", False):
         return
+    _forward_spec_decode_sweep(cmd, runtime_config)
+
+
+def _forward_spec_decode_sweep(cmd, runtime_config) -> None:
+    """Emit ``--spec-decode`` and the sweep-shaping flags."""
     cmd.append("--spec-decode")
     cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
+    _extend_if_set(
+        cmd, "--spec-decode-isls", getattr(runtime_config, "spec_decode_isls", None)
+    )
+    _extend_if_set(
+        cmd,
+        "--spec-decode-concurrencies",
+        getattr(runtime_config, "spec_decode_concurrencies", None),
+    )
     _extend_if_set(
         cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
     )
@@ -739,12 +752,7 @@ def _build_spec_decode_cmd(
     cmd = _base_engine_argv(
         launcher, model_spec, runtime_config, json_fpath, output_dir, "benchmarks"
     )
-    cmd.append("--spec-decode")
-    cmd.extend(["--spec-decode-preset", runtime_config.spec_decode_preset])
-    _extend_if_set(
-        cmd, "--spec-decode-warmup-requests", runtime_config.spec_decode_warmup_requests
-    )
-    _forward_spec_decode_metrics_urls(cmd, runtime_config)
+    _forward_spec_decode_sweep(cmd, runtime_config)
     _forward_jwt(cmd, runtime_config)
     return cmd
 

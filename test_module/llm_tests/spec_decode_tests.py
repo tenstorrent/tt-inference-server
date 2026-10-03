@@ -54,6 +54,8 @@ def run_spec_decode(
     ctx: MediaContext,
     *,
     preset: str = "full",
+    isls: Optional[str] = None,
+    concurrencies: Optional[str] = None,
     warmup_requests: int = DEFAULT_WARMUP_REQUESTS,
     auth_token: str = "",
     metrics_urls: Sequence[str] = (),
@@ -75,7 +77,14 @@ def run_spec_decode(
         every SPEED-Bench qualitative category plus the whole throughput
         ISL x concurrency grid; ``ci`` runs only the ``coding``
         qualitative category plus ``speed_bench_throughput_32k`` at
-        concurrency 1/16/64.
+        concurrency 1/16/64; ``throughput`` runs only the throughput grid.
+    isls:
+        Comma-separated throughput ISL buckets (``--spec-decode-isls``,
+        e.g. ``"1k,8k"``) replacing the preset's. ``None`` keeps the preset's.
+    concurrencies:
+        Comma-separated throughput concurrencies
+        (``--spec-decode-concurrencies``, e.g. ``"1,8,32"``) replacing the
+        preset's. ``None`` keeps the preset's.
     warmup_requests:
         Short chat-completion requests sent before the sweep (matches v1
         behavior; 0 disables).
@@ -108,7 +117,7 @@ def run_spec_decode(
         :func:`workflow_module.accept_blocks` so the unified report
         generator picks them up.
     """
-    runs = build_spec_decode_runs(preset)
+    runs = build_spec_decode_runs(preset, isls=isls, concurrencies=concurrencies)
     if not runs:
         logger.error("Spec-decode sweep is empty (preset=%s); nothing to run.", preset)
         return []
