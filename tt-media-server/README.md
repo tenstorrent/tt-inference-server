@@ -211,14 +211,14 @@ For example, to run flux.1-dev on t3k
 2. Set device special env variable e.g ```export DEVICE=t3k```.
 3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
 
-### Qwen-Image-Edit (WH or BH Galaxy, experimental)
+### Qwen-Image-Edit (WH Galaxy, experimental)
 
 Instruction-based image editing: an input image plus a prompt. One edit runs on all 32 chips of a
-Galaxy (TP=8 x SP=4): validated upstream on Wormhole (`DEVICE=galaxy`); Blackhole (`DEVICE=bh-galaxy`)
-uses the same layout and is not device-validated yet. The VL image+text encode, scheduler and true-CFG run on host; the
+Wormhole Galaxy (`DEVICE=galaxy`): CFG-parallel by default, with the cond and uncond forwards running
+concurrently on two 4x4 submeshes (TP=4 x SP=4 each); the `bh-galaxy` entry is untested. The VL
+image+text encode, scheduler and true-CFG run on host; the
 transformer and VAE run on device. Needs a tt-metal build that ships
-`models/tt_dit/pipelines/qwenimage_edit` (branch `tvardhineni/qwen3-image-edit-wh` plus the serving fixes on
-`nkira/qwen-image-edit-trace`; not on main yet).
+`models/tt_dit/pipelines/qwenimage_edit` (branch `sdawle/tvardhineni/qwen3-image-edit-wh`, not on main yet).
 
 ```bash
 export MODEL=Qwen-Image-Edit DEVICE=galaxy MODEL_RUNNER=tt-qwen-image-edit
@@ -239,10 +239,9 @@ curl -s localhost:8000/v1/images/edits -H "Authorization: Bearer $API_KEY" \
   `width`/`height`, if given, must both be 1024.
 - `guidance_scale` is the true-CFG scale (default 4.0); `negative_prompt` defaults to `" "`.
 - `num_inference_steps` defaults to 20 (12-50). Each step is two transformer forwards (cond + uncond).
-- Upstream numbers (tt-metal branch README, not measured by this server): ~460 ms per traced forward,
-  ~88 s per 50-step 1024x1024 edit, of which ~32 s is the host VL encode and the VAE.
-- The denoise trace is reused across prompts whose length falls in the same 128-token bucket (tt-metal
-  `nkira/qwen-image-edit-trace`); crossing into a new bucket re-captures it once.
+- Upstream numbers (WH Galaxy, 50 steps, CFG-parallel): ~43 s warm wall per 1024x1024 edit.
+- The denoise trace is keyed on the prompt's token length and the step count, so a request with a new
+  prompt length or step count re-captures it (the first request is slower).
 
 ## VLLM with TT Plugin Setup
 

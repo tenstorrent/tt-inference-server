@@ -287,10 +287,10 @@ templates:
       default_impl: true
   status: FUNCTIONAL
 
-# Qwen-Image-Edit: instruction edit (input image + prompt) on a WH or BH Galaxy, TP=8 x SP=4
-# on all 32 chips (BH not yet device-validated); served on /v1/images/edits only. Needs a tt-metal build with
-# models/tt_dit/pipelines/qwenimage_edit (branch nkira/qwen-image-edit-trace: Tarun's
-# tvardhineni/qwen3-image-edit-wh plus the per-request prompt and trace-reuse fixes).
+# Qwen-Image-Edit: instruction edit (input image + prompt) on a WH Galaxy, all 32 chips,
+# CFG-parallel (two 4x4 submeshes, TP=4 x SP=4); BH Galaxy untested. Served on
+# /v1/images/edits only. Needs a tt-metal build with models/tt_dit/pipelines/qwenimage_edit
+# (branch sdawle/tvardhineni/qwen3-image-edit-wh).
 # Disk/RAM are estimates, not measured: the ~58GB diffusers repo plus a
 # transformer-sized tt_dit cache; the host loads the full diffusers pipeline.
 - weights:
