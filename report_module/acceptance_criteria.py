@@ -168,22 +168,38 @@ def task_failure_blockers(
     return blockers
 
 
-def spec_tasks_explained_by_waivers(categories: Iterable[CategoryResult]) -> set:
+def spec_tasks_explained_by_waivers(
+    categories: Iterable[CategoryResult],
+    schema: ReportSchema,
+    known_issues: Optional[Iterable[Any]] = None,
+) -> set:
     """Task types whose exit code only reflects known_issues-waived failures.
 
     run_spec_tests exits non-zero for any failing case, before waivers are
     applied. When the Spec Tests category has no blocker, at least one waiver
-    and no ERROR (an error is never waived), that exit is fully explained.
+    and no ERROR (an error is never waived), that exit is fully explained --
+    but only if EVERY blocking spec_tests block is waived. The graded category
+    drops INFRA_TASK_TYPES blocks, while run_spec_tests still counts their
+    failures in the exit code, so they are re-checked here from the schema.
     """
-    for category in categories:
-        if (
-            category.name == CATEGORY_SPEC_TESTS
-            and category.status == STATUS_PASS
-            and category.waived
-            and not category.blockers
-        ):
-            return {KIND_SPEC_TESTS}
-    return set()
+    explained = any(
+        category.name == CATEGORY_SPEC_TESTS
+        and category.status == STATUS_PASS
+        and category.waived
+        and not category.blockers
+        for category in categories
+    )
+    if not explained:
+        return set()
+    for block in schema.sections:
+        if block.kind != KIND_SPEC_TESTS or not isinstance(block.data, Mapping):
+            continue
+        status = _block_test_status(block)
+        if not status.is_blocking:
+            continue
+        if status is not TestStatus.FAIL or _spec_waiver(block, known_issues) is None:
+            return set()
+    return {KIND_SPEC_TESTS}
 
 
 def _find_waiver(
@@ -594,7 +610,8 @@ def _spec_failing_cases(block: Block) -> Optional[List[str]]:
     for row in rows:
         if not isinstance(row, Mapping) or not row.get("test_case"):
             return None
-        if "PASS" not in str(row.get("status", "")).upper():
+        # Rows are exactly PASS, FAIL or SKIP; a SKIP ran nothing, so it needs no waiver.
+        if "FAIL" in str(row.get("status", "")).upper():
             failing.append(str(row["test_case"]))
     return failing
 

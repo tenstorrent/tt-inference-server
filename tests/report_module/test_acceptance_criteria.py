@@ -952,7 +952,7 @@ def test_a_spec_task_exit_explained_by_waivers_is_not_a_crash_blocker():
     # run_spec_tests exits 1 for the waived case; acceptance must not re-block it.
     schema = _schema(_conformance(("test_penalties", "❌ FAIL")))
     _, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
-    waived = spec_tasks_explained_by_waivers(cats)
+    waived = spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER)
     assert waived == {"spec_tests"}
     assert task_failure_blockers([("spec_tests", 1, True)], waived) == {}
 
@@ -960,10 +960,39 @@ def test_a_spec_task_exit_explained_by_waivers_is_not_a_crash_blocker():
 def test_an_unwaived_or_crashed_spec_task_still_blocks():
     schema = _schema(_conformance(("test_stop", "❌ FAIL")))
     _, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
-    waived = spec_tasks_explained_by_waivers(cats)
+    waived = spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER)
     assert waived == set()
     assert "task:spec_tests" in task_failure_blockers([("spec_tests", 1, True)], waived)
     # A crash that produced no block is never excused, even by a matching waiver.
     assert "task:spec_tests" in task_failure_blockers(
         [("spec_tests", 1, False)], {"spec_tests"}
     )
+
+
+def test_a_failing_infra_spec_block_is_not_excused_by_a_waiver_elsewhere():
+    # The graded category drops INFRA_TASK_TYPES blocks, but run_spec_tests
+    # still exits 1 for them; a waiver on test_penalties must not excuse it.
+    schema = _schema(
+        _conformance(("test_penalties", "❌ FAIL")),
+        Block(
+            kind="spec_tests",
+            title="Health",
+            task_type="health",
+            data={"success": False, "status": "fail"},
+        ),
+    )
+    accepted, _, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    waived = spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER)
+    assert waived == set()
+    assert "task:spec_tests" in task_failure_blockers([("spec_tests", 1, True)], waived)
+
+
+def test_a_skipped_case_does_not_need_a_waiver():
+    schema = _schema(
+        _conformance(("test_penalties", "❌ FAIL"), ("test_logprobs", "⚠️ SKIP"))
+    )
+    accepted, blockers, cats = acceptance_criteria_check(schema, _PENALTIES_WAIVER)
+    assert accepted is True, blockers
+    assert spec_tasks_explained_by_waivers(cats, schema, _PENALTIES_WAIVER) == {
+        "spec_tests"
+    }

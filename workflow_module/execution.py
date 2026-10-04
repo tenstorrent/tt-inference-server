@@ -375,7 +375,9 @@ class WorkflowExecution(ABC):
         accepted, blockers, categories = acceptance_criteria_check(
             schema, known_issues=self._known_issues(), model_status=model_status
         )
-        waived_tasks = spec_tasks_explained_by_waivers(categories)
+        waived_tasks = spec_tasks_explained_by_waivers(
+            categories, schema, known_issues=self._known_issues()
+        )
         # run() reads this so the workflow exit agrees with the verdict.
         self._waived_task_types = waived_tasks
         crash_blockers = task_failure_blockers(
