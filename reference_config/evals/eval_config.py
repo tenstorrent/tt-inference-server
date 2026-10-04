@@ -2937,6 +2937,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 # max_gen_toks restored 12288 -> 32768: fits the P150 max_model_len
@@ -3018,6 +3023,11 @@ _eval_config_list = [
                 # max_length clamped 65536 -> 40960 (Qwen3-14B max context).
                 model_kwargs={
                     "max_length": 40960,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 # gen_kwargs as on Qwen3-8B (https://huggingface.co/Qwen/Qwen3-14B#best-practices).
                 gen_kwargs={
@@ -3094,6 +3104,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 # max_gen_toks restored 12288 -> 32768 (see Qwen3-8B gpqa above).
                 gen_kwargs={
@@ -3170,6 +3185,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 40960,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -3244,6 +3264,11 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 40960,
+                    # Whole-request budget (the pinned harness has no idle timer). Measured
+                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
+                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
+                    # without this the default cut 101/198 prompts (run 37073280081).
+                    "timeout": "3600",
                 },
                 gen_kwargs={
                     "stream": "true",
