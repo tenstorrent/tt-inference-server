@@ -1771,6 +1771,9 @@ _eval_config_list = [
             # Experiment branch: r1_gpqa_diamond is left out of this list so
             # `inference-workflow-evals` runs LongBench alone (--eval-samples
             # cannot select a task without also restricting its samples).
+            #
+            # longbench2_generate is listed twice: a 256K-470K ISL window at
+            # concurrency 4, then a 256K-900K window at concurrency 1.
             EvalTask(
                 task_name="longbench2_generate",
                 # The endpoint cuts connections at 30 min. At ~2.4K prompt
@@ -1813,6 +1816,51 @@ _eval_config_list = [
                 custom_dataset_kwargs={
                     "minimum_isl": 256 * 1024,  # 256K
                     "maximum_isl": 470 * 1000,  # 470K (+64K gen + template < 550K)
+                    "pretrained": "MiniMaxAI/MiniMax-M3",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="longbench2_generate",
+                # Up to ~900K-token prompts: one at a time so a request never
+                # waits behind another's prefill.
+                max_concurrent=1,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1024 * 1024,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/MiniMaxAI/MiniMax-M3/blob/main/special_tokens_map.json
+                    "until": ["[e~["],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                # Select samples by input sequence length (ISL), measured by
+                # tokenizing each sample's context with `pretrained`; only
+                # samples with minimum_isl <= ISL <= maximum_isl are kept.
+                # The ceiling leaves room for the chat template, question and
+                # max_gen_toks (64K) under the 1M (1048576) max_model_len.
+                # Forwarded to the lm-eval fork loader via --metadata.
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (+64K gen + template < 1M)
                     "pretrained": "MiniMaxAI/MiniMax-M3",
                     "tokenizer_num_proc": 32,
                 },
@@ -1971,7 +2019,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=62,
+                    n_concurrent_trials=6,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
