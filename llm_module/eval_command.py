@@ -34,6 +34,46 @@ _MAX_GEN_TOKS_PROMPT_RESERVE = 1024
 _MIN_OUTPUT_TOKENS = 256
 
 
+def _effective_model_kwargs(
+    task: "EvalTask", device_max_context: Optional[int]
+) -> dict:
+    """Bind text-harness context to the selected deployment envelope."""
+    model_kwargs = dict(task.model_kwargs or {})
+    if task.workflow_venv_type in (
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ):
+        return model_kwargs
+    if not device_max_context:
+        raise ValueError(
+            f"{task.task_name} requires device_model_spec.max_context for text evals"
+        )
+    try:
+        device_max_context = int(device_max_context)
+        requested = int(model_kwargs.get("max_length", device_max_context))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        ) from exc
+    if device_max_context <= 0 or requested <= 0:
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        )
+    if requested > device_max_context:
+        raise ValueError(
+            f"{task.task_name} requests harness max_length={requested}, exceeding "
+            f"device max_context={device_max_context}"
+        )
+    minimum = getattr(task, "min_context_required", None)
+    if minimum is not None and device_max_context < minimum:
+        raise ValueError(
+            f"{task.task_name} requires device context >= {minimum}, but "
+            f"device max_context={device_max_context}"
+        )
+    model_kwargs["max_length"] = requested
+    return model_kwargs
+
+
 def _clamp_max_gen_toks(
     gen_kwargs: dict, device_max_context: Optional[int], task_name: str
 ) -> dict:
@@ -232,8 +272,11 @@ def build_eval_command(
     device_max_context = getattr(
         getattr(model_spec, "device_model_spec", None), "max_context", None
     )
+    effective_model_kwargs = _effective_model_kwargs(task, device_max_context)
     effective_gen_kwargs = _clamp_max_gen_toks(
-        task.gen_kwargs, device_max_context, task.task_name
+        task.gen_kwargs,
+        effective_model_kwargs.get("max_length"),
+        task.task_name,
     )
     if getattr(task, "propagate_seed_to_gen_kwargs", True):
         effective_gen_kwargs = _inject_seed_into_gen_kwargs(
@@ -305,7 +348,7 @@ def build_eval_command(
             str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
         ]
 
-    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    model_kwargs_list = [f"{k}={v}" for k, v in effective_model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 
