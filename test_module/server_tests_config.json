@@ -71,7 +71,8 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "Qwen/Qwen1.5-0.5B-Chat",
-      "ALLaM-AI/ALLaM-7B-Instruct-preview"
+      "ALLaM-AI/ALLaM-7B-Instruct-preview",
+      "deepseek-ai/deepseek-coder-1.3b-instruct"
     ]
   },
   "available_markers": {
@@ -744,6 +745,16 @@
       "id_name": "ALLaM-AI--ALLaM-7B-Instruct-preview",
       "weights": [
         "ALLaM-AI/ALLaM-7B-Instruct-preview"
+      ]
+    },
+    "deepseek-ai/deepseek-coder-1.3b-instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--deepseek-coder-1.3b-instruct",
+      "weights": [
+        "deepseek-ai/deepseek-coder-1.3b-instruct"
       ]
     }
   },
