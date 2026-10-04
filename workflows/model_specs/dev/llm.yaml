@@ -532,8 +532,7 @@ templates:
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
-# BH Galaxy adaptive server on the contract rail, graded on its own entry so
-# P150X8 on this impl can stay EXPERIMENTAL.
+# BH Galaxy adaptive server on the contract rail (own entry; no graded run yet).
 - weights:
     - google/gemma-4-31B-it
   impl: gemma4_dflash_contract
@@ -578,7 +577,7 @@ templates:
         speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
         no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-  status: COMPLETE
+  status: EXPERIMENTAL
   has_builtin_warmup: true
 
 - weights:
