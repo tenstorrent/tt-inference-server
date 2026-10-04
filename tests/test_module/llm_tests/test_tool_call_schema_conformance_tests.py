@@ -14,6 +14,7 @@ from test_module.llm_tests.tool_call_schema_conformance_test import (
     _PYTEST_OPTIONS,
     ENV_PREFIX,
     ToolCallSchemaConformanceTest,
+    grade_tool_call_schema_results,
 )
 
 
@@ -81,3 +82,26 @@ def test_invalid_sampling_params_fail_before_the_suite_runs(monkeypatch, value):
 
     with pytest.raises(ValueError):
         _args({})
+
+
+def _cases(passed: int, failed: int) -> list:
+    return [{"status": "passed", "mode": "stream"}] * passed + [
+        {"status": "failed", "mode": "stream", "cause": "invalid_json"}
+    ] * failed
+
+
+def test_default_threshold_requires_every_case():
+    test = ToolCallSchemaConformanceTest(TestConfig({}), {})
+    threshold = test._resolve_threshold()
+
+    assert threshold == 1.0
+    assert grade_tool_call_schema_results(_cases(408, 0), threshold)["success"]
+    assert not grade_tool_call_schema_results(_cases(407, 1), threshold)["success"]
+
+
+def test_targets_can_lower_the_threshold():
+    test = ToolCallSchemaConformanceTest(TestConfig({}), {"pass_rate_threshold": 0.995})
+
+    assert grade_tool_call_schema_results(_cases(406, 2), test._resolve_threshold())[
+        "success"
+    ]

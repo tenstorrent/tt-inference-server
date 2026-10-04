@@ -1172,7 +1172,7 @@
         "retry_delay": 10,
         "break_on_failure": false,
         "mock_mode": false,
-        "pass_rate_threshold": 0.995,
+        "pass_rate_threshold": 1.0,
         "tool_choice": "auto",
         "think_mode": "none",
         "thinking": false,

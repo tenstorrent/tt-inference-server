@@ -6,9 +6,10 @@
 
 Runs ``llm_module/test_tool_call_json_schema.py`` in a child pytest process
 (same mechanics as :class:`VLLMParamConformanceTest`) and grades it on a pass
-rate rather than all-or-nothing: the suite sends 408 tool-call requests whose
-arguments must validate against walle JSON Schemas, and a model that gets
->= ``pass_rate_threshold`` (default 99.5%) of them right passes.
+rate: the suite sends 408 tool-call requests whose arguments must validate
+against walle JSON Schemas, and a model passes when it gets
+>= ``pass_rate_threshold`` of them right. The default is 100% (every case);
+a model can be given a lower threshold through its targets.
 
 Status: PASS when ``pass_rate >= threshold``, FAIL below it, ERROR when the
 child pytest produced no report, ran no cases, or never reached the server
@@ -37,7 +38,7 @@ from .vllm_param_conformance_test import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PASS_RATE_THRESHOLD = 0.995
+DEFAULT_PASS_RATE_THRESHOLD = 1.0
 THRESHOLD_KEY = "pass_rate_threshold"
 # Must match test_tool_call_json_schema.REPORT_RESULTS_KEY (not imported: that
 # would pull llm_module into the orchestrator's import chain).
@@ -209,7 +210,7 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
         }
 
     def _resolve_threshold(self) -> float:
-        """targets.pass_rate_threshold (per-model override) > test_config > 0.995."""
+        """targets.pass_rate_threshold (per-model override) > test_config > 1.0."""
         raw = self.targets.get(THRESHOLD_KEY)
         if raw is None:
             raw = self.config.get(THRESHOLD_KEY, DEFAULT_PASS_RATE_THRESHOLD)
