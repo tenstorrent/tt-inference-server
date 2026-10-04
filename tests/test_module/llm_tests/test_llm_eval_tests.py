@@ -166,14 +166,6 @@ class TestEvalCommand:
                 8192,
                 "device max_context=8192",
             ),
-            (
-                EvalTask(
-                    task_name="oversized",
-                    model_kwargs={"max_length": 65536},
-                ),
-                32768,
-                "exceeding device max_context=32768",
-            ),
         ],
     )
     def test_text_harness_rejects_context_contract_mismatch(
@@ -181,6 +173,14 @@ class TestEvalCommand:
     ):
         with pytest.raises(ValueError, match=error):
             _build_eval_test_command(task, max_context=max_context)
+
+    def test_task_max_length_above_device_context_is_bound_to_the_device(self):
+        task = EvalTask(task_name="oversized", model_kwargs={"max_length": 65536})
+
+        command = _build_eval_test_command(task, max_context=40960)
+
+        assert _command_model_kwargs(command)["max_length"] == "40960"
+        assert task.model_kwargs["max_length"] == 65536
 
     def test_explicit_task_max_length_may_be_below_device_minimum(self):
         task = EvalTask(

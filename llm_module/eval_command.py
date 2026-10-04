@@ -59,11 +59,11 @@ def _effective_model_kwargs(
         raise ValueError(
             f"{task.task_name} requires positive integer max_context/max_length"
         )
-    if requested > device_max_context:
-        raise ValueError(
-            f"{task.task_name} requests harness max_length={requested}, exceeding "
-            f"device max_context={device_max_context}"
-        )
+    # A shared task config may declare a larger harness window than this
+    # deployment serves (e.g. 65536 on a 40960-token device). The harness can
+    # only use what the device holds, so bind it to the device rather than
+    # refusing a config that ran before this binding existed.
+    requested = min(requested, device_max_context)
     minimum = getattr(task, "min_context_required", None)
     if minimum is not None and device_max_context < minimum:
         raise ValueError(
