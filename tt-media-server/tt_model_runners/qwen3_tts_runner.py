@@ -78,6 +78,11 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         self.tokenizer = None
         self.main_weights = None
         self.decoder_weights = None
+        self.device_decoder = None
+        # Decode the speech tokenizer on device by default (length-flat ~0.3-0.45s
+        # vs the CPU path that scales with frames). Set TT_QWEN3_DEVICE_DECODE=0 to
+        # fall back to the CPU decode_icl_audio (for A/B or debugging).
+        self._use_device_decode = os.environ.get("TT_QWEN3_DEVICE_DECODE", "1") == "1"
         self.config = None
         self.voice_prompts: Optional[VoicePromptManager] = None
         self._post_warmup_rng_state = None
@@ -230,6 +235,18 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             self.ttnn_device, self.model, self.config, self.main_weights
         )
 
+        if self._use_device_decode:
+            # Build the on-device speech-tokenizer decoder once and pre-warm the
+            # expected decode buckets (ref frames + up to max_new_tokens generated,
+            # rounded up to 64-frame buckets), so the first live request doesn't pay
+            # the one-time per-bucket kernel compile.
+            self.logger.info(f"Device {self.device_id}: Building on-device speech decoder...")
+            self.device_decoder = api.build_device_decoder(self.ttnn_device, self.decoder_weights)
+            warm_buckets = [64, 128, 192, 256, 320, 384]
+            self.logger.info(f"Device {self.device_id}: Warming decoder buckets {warm_buckets}...")
+            api.warmup_device_decoder(self.device_decoder, warm_buckets)
+            self.logger.info(f"Device {self.device_id}: On-device speech decoder ready")
+
         self.voice_prompts = VoicePromptManager()
         self.voice_prompts.preload()
         self.voice_prompts.precompute_speaker_embeddings(self.model)
@@ -372,7 +389,15 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         # speech -- that is what truncated the first word(s) of the output.
         # tt-metal #57964 adds decode_icl_audio and defaults trim_codec_frames
         # to 0 (deprecated), so the old trim branch is removed here.
-        audio = api.decode_icl_audio(ref_codes, codes, self.decoder_weights)
+        #
+        # On-device decode (default): decode_audio_device runs the same cat+cut on
+        # the TT device (length-flat ~0.3-0.45s warm) instead of the CPU path that
+        # scaled with frame count and inflated TTFT. Both return generated speech
+        # only. CPU path kept as a fallback via TT_QWEN3_DEVICE_DECODE=0.
+        if self._use_device_decode and self.device_decoder is not None:
+            audio = api.decode_audio_device(ref_codes, codes, self.device_decoder)
+        else:
+            audio = api.decode_icl_audio(ref_codes, codes, self.decoder_weights)
         audio_np = audio.squeeze().detach().cpu().float().numpy()
         duration_s = float(len(audio_np)) / SAMPLE_RATE_HZ
 
