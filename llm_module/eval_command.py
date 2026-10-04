@@ -33,6 +33,14 @@ SMOKE_TEST_EVAL_LIMIT = 3
 _MAX_GEN_TOKS_PROMPT_RESERVE = 1024
 _MIN_OUTPUT_TOKENS = 256
 
+# Headroom kept between the harness window and device_model_spec.max_context.
+# lm-eval left-truncates to max_length - 1 - max_gen_toks, so a window equal to
+# max_context lands every long prompt at exactly prompt + max_tokens ==
+# max_context - 1; the gpt-oss aime25 note records empty responses on TT at that
+# boundary. One paged-KV block (64 tokens) of slack keeps requests strictly
+# inside the served context at negligible cost to a 32K-131K window.
+_HARNESS_CONTEXT_RESERVE = 64
+
 
 def _effective_model_kwargs(
     task: "EvalTask", device_max_context: Optional[int]
@@ -63,7 +71,8 @@ def _effective_model_kwargs(
     # deployment serves (e.g. 65536 on a 40960-token device). The harness can
     # only use what the device holds, so bind it to the device rather than
     # refusing a config that ran before this binding existed.
-    requested = min(requested, device_max_context)
+    ceiling = max(device_max_context - _HARNESS_CONTEXT_RESERVE, 1)
+    requested = min(requested, ceiling)
     minimum = getattr(task, "min_context_required", None)
     if minimum is not None and device_max_context < minimum:
         raise ValueError(

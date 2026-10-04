@@ -156,7 +156,7 @@ class TestEvalCommand:
             max_context=32768,
         )
 
-        assert _command_model_kwargs(command)["max_length"] == "32768"
+        assert _command_model_kwargs(command)["max_length"] == str(32768 - 64)
 
     @pytest.mark.parametrize(
         "task,max_context,error",
@@ -179,7 +179,7 @@ class TestEvalCommand:
 
         command = _build_eval_test_command(task, max_context=40960)
 
-        assert _command_model_kwargs(command)["max_length"] == "40960"
+        assert _command_model_kwargs(command)["max_length"] == str(40960 - 64)
         assert task.model_kwargs["max_length"] == 65536
 
     def test_explicit_task_max_length_may_be_below_device_minimum(self):
@@ -327,7 +327,8 @@ class TestLlama1BLongBenchEvalContract:
         assert task.apply_chat_template is False
         assert "--apply_chat_template" not in command
         assert "/v1/completions" in command[command.index("--model_args") + 1]
-        assert _command_model_kwargs(command)["max_length"] == "32768"
+        # One paged-KV block below max_context: prompt + max_tokens stays inside.
+        assert _command_model_kwargs(command)["max_length"] == str(32768 - 64)
         assert _command_gen_kwargs(command) == {
             "stream": "False",
             "temperature": "0",
@@ -834,3 +835,18 @@ class TestDeadlineReachesRunCommand:
         # Passing timeout_seconds=None would still select the bounded POSIX
         # path, so unbounded callers must omit the argument entirely.
         assert "timeout_seconds" not in seen
+
+
+def test_harness_window_keeps_a_block_of_headroom_below_max_context():
+    """A long prompt must land strictly inside the served context.
+
+    lm-eval truncates to max_length - 1 - max_gen_toks, so max_length ==
+    max_context puts prompt + max_tokens at max_context - 1 (the aime25 empty-
+    response boundary on TT). The window keeps one paged-KV block of slack.
+    """
+    command = _build_eval_test_command(
+        EvalTask(task_name="long_context", min_context_required=16384),
+        max_context=131072,
+    )
+    max_length = int(_command_model_kwargs(command)["max_length"])
+    assert max_length == 131072 - 64
