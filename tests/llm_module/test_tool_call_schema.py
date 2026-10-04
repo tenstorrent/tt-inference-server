@@ -86,3 +86,63 @@ def test_thinking_fields_still_apply_with_sampling_params():
 
     assert payload["thinking"] == {"type": "enabled"}
     assert payload["temperature"] == 1.0
+
+
+def test_streamed_non_ascii_arguments_decode_as_utf8():
+    """A bare ``text/event-stream`` (no charset) must not be read as ISO-8859-1."""
+    import io
+    import json
+
+    import requests
+
+    from llm_module.tool_call_schema import SelectedCase, ValidatorCase, evaluate_once
+
+    schema = {
+        "type": "object",
+        "required": ["value"],
+        "additionalProperties": False,
+        "properties": {
+            "value": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {"abc😊": {"type": "string"}},
+            }
+        },
+    }
+    arguments = json.dumps({"value": {"abc😊": "x"}}, ensure_ascii=False)
+    chunk = {
+        "choices": [
+            {
+                "index": 0,
+                "delta": {
+                    "tool_calls": [
+                        {
+                            "index": 0,
+                            "id": "call_0",
+                            "type": "function",
+                            "function": {
+                                "name": "kvv_walle_case",
+                                "arguments": arguments,
+                            },
+                        }
+                    ]
+                },
+                "finish_reason": "tool_calls",
+            }
+        ]
+    }
+    body = f"data: {json.dumps(chunk, ensure_ascii=False)}\n\ndata: [DONE]\n\n"
+
+    response = requests.Response()
+    response.status_code = 200
+    response.headers["Content-Type"] = "text/event-stream"
+    response.encoding = requests.utils.get_encoding_from_headers(response.headers)
+    response.raw = io.BytesIO(body.encode("utf-8"))
+    selected = SelectedCase(ValidatorCase("TestEmoji", 1, "{}"), schema, "object")
+
+    attempt = evaluate_once(
+        lambda payload, stream: response, selected, "stream", SuiteSettings()
+    )
+
+    assert attempt.passed, attempt.message
+    assert json.loads(attempt.arguments) == {"value": {"abc😊": "x"}}

@@ -783,6 +783,11 @@ def evaluate_once(
                 CAUSE_HTTP_ERROR, f"HTTP {status}: {response.text}", http_status=status
             )
         if stream:
+            # SSE is UTF-8 by definition, but servers often send a bare
+            # ``text/event-stream`` content type, for which requests falls
+            # back to ISO-8859-1 and garbles non-ASCII text (e.g. emoji
+            # property names).
+            response.encoding = "utf-8"
             completion = reassemble_stream(response.iter_lines(decode_unicode=True))
         else:
             completion = parse_completion(response.json())
