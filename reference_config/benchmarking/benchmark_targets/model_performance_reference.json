@@ -7026,6 +7026,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 27.07,
+                        "tput": 25.4
+                    },
                     "measured": {
                         "ttft_ms": 432.9,
                         "tput_user": 27.07,
@@ -7045,7 +7049,11 @@
                     "TPOT at burst concurrency varies with prefill/decode phase overlap.",
                     "No 'theoretical' block yet: the only defensible prefill ceiling is the",
                     "gemma4_d_p kernel stack and functional tiers from it would fail",
-                    "long-ISL TTFT by design; add when those kernels land here."
+                    "long-ISL TTFT by design; add when those kernels land here.",
+                    "'theoretical' carries throughput only (no Blackhole Galaxy ceiling has been",
+                    "derived for this model); it is set to the measured level so the functional",
+                    "(10%) and complete (50%) tiers exist and grade. ttft_ms is omitted from it:",
+                    "burst TTFT is queue-inclusive and already graded by the measured block."
                 ]
             },
             {
@@ -7059,6 +7067,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 13.76,
+                        "tput": 882.0
+                    },
                     "measured": {
                         "ttft_ms": 8942.8,
                         "tput_user": 13.76,
@@ -7078,6 +7090,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.79,
+                        "tput": 26.6
+                    },
                     "measured": {
                         "ttft_ms": 390.4,
                         "tput_user": 26.79,
@@ -7097,6 +7113,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 18.26,
+                        "tput": 1943.3
+                    },
                     "measured": {
                         "ttft_ms": 8906.9,
                         "tput_user": 18.26,
@@ -7116,6 +7136,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.43,
+                        "tput": 24.6
+                    },
                     "measured": {
                         "ttft_ms": 589.7,
                         "tput_user": 26.43,
@@ -7135,6 +7159,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 12.91,
+                        "tput": 712.1
+                    },
                     "measured": {
                         "ttft_ms": 14703.7,
                         "tput_user": 12.91,
@@ -7154,6 +7182,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.39,
+                        "tput": 21.8
+                    },
                     "measured": {
                         "ttft_ms": 1428.4,
                         "tput_user": 26.39,
@@ -7173,6 +7205,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 10.46,
+                        "tput": 419.4
+                    },
                     "measured": {
                         "ttft_ms": 30159.4,
                         "tput_user": 10.46,
@@ -7192,6 +7228,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.31,
+                        "tput": 19.8
+                    },
                     "measured": {
                         "ttft_ms": 2005.3,
                         "tput_user": 26.31,
@@ -7211,6 +7251,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 6.51,
+                        "tput": 310.6
+                    },
                     "measured": {
                         "ttft_ms": 33643.8,
                         "tput_user": 6.51,
@@ -7230,6 +7274,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.22,
+                        "tput": 16.3
+                    },
                     "measured": {
                         "ttft_ms": 3385.6,
                         "tput_user": 26.22,
@@ -7249,6 +7297,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 4.44,
+                        "tput": 176.6
+                    },
                     "measured": {
                         "ttft_ms": 64324.8,
                         "tput_user": 4.44,
@@ -7268,6 +7320,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.18,
+                        "tput": 24.5
+                    },
                     "measured": {
                         "ttft_ms": 2692.0,
                         "tput_user": 26.18,
@@ -7287,6 +7343,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 12.36,
+                        "tput": 857.6
+                    },
                     "measured": {
                         "ttft_ms": 52362.4,
                         "tput_user": 12.36,
@@ -7306,6 +7366,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 26.11,
+                        "tput": 24.3
+                    },
                     "measured": {
                         "ttft_ms": 3121.4,
                         "tput_user": 26.11,
@@ -7325,6 +7389,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 11.93,
+                        "tput": 742.9
+                    },
                     "measured": {
                         "ttft_ms": 45462.5,
                         "tput_user": 11.93,
@@ -7344,6 +7412,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 25.98,
+                        "tput": 12.2
+                    },
                     "measured": {
                         "ttft_ms": 5989.1,
                         "tput_user": 25.98,
@@ -7363,6 +7435,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 3.21,
+                        "tput": 91.0
+                    },
                     "measured": {
                         "ttft_ms": 44630.3,
                         "tput_user": 3.21,
@@ -7382,6 +7458,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 23.64,
+                        "tput": 7.5
+                    },
                     "measured": {
                         "ttft_ms": 12532.4,
                         "tput_user": 23.64,
@@ -7401,6 +7481,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 9.65,
+                        "tput": 43.7
+                    },
                     "measured": {
                         "ttft_ms": 78562.7,
                         "tput_user": 9.65,
@@ -7420,6 +7504,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 22.73,
+                        "tput": 4.0
+                    },
                     "measured": {
                         "ttft_ms": 27542.1,
                         "tput_user": 22.73,
@@ -7439,6 +7527,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 11.16,
+                        "tput": 17.9
+                    },
                     "measured": {
                         "ttft_ms": 92770.5,
                         "tput_user": 11.16,
@@ -7458,6 +7550,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 21.2,
+                        "tput": 1.7
+                    },
                     "measured": {
                         "ttft_ms": 70230.7,
                         "tput_user": 21.2,
@@ -7477,6 +7573,10 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {
+                    "theoretical": {
+                        "tput_user": 12.17,
+                        "tput": 6.3
+                    },
                     "measured": {
                         "ttft_ms": 123872.7,
                         "tput_user": 12.17,
@@ -7556,6 +7656,38 @@
                         "ttft_ms": 150,
                         "tput_user": 28,
                         "tput": 700
+                    }
+                }
+            }
+        ]
+    },
+    "google/gemma-4-12B-it": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "QB2 (P150x4 mesh) tt-transformers, from the gemma-4 vLLM CI leg on bh_quietbox_2",
+                    "(tt-metal run 37078342702): 32 x 128/128 issued at once, mean TPOT 31.5 ms,",
+                    "384.6 tok/s aggregate, 32/32 served and coherent. ttft_ms omitted: a 32-way",
+                    "burst TTFT is queue-inclusive (5.2 s mean). 'theoretical' is set to the",
+                    "measured level (no QB2 ceiling derived); replace with a conc-1 sweep when run."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.0,
+                        "tput": 380.0
+                    },
+                    "measured": {
+                        "tput_user": 31.0,
+                        "tput": 380.0,
+                        "tolerance": 0.1
                     }
                 }
             }
