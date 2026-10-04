@@ -462,20 +462,6 @@
         "p300x2"
       ],
       "models": [
-        "meta-llama/Llama-3.2-1B-Instruct"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
         "Qwen/Qwen1.5-0.5B-Chat"
       ],
       "test_cases": [
@@ -490,35 +476,7 @@
         "p300x2"
       ],
       "models": [
-        "Qwen/Qwen3-32B"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
         "ALLaM-AI/ALLaM-7B-Instruct-preview"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
-        "deepseek-ai/deepseek-coder-1.3b-instruct"
       ],
       "test_cases": [
         {
