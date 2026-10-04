@@ -85,3 +85,46 @@ def test_diffusiongemma_suite_fails_loudly_without_max_context():
 
     with pytest.raises(RuntimeError, match="max_context"):
         test._extra_pytest_args()
+
+
+def _ctx_with_vllm_args(vllm_args):
+    ctx = _fake_ctx(hf_model_repo="org/model", model_name="model")
+    ctx.model_spec.device_model_spec = SimpleNamespace(vllm_args=vllm_args)
+    return ctx
+
+
+def test_suite_disables_thinking_when_the_served_spec_defaults_it_on():
+    """The conformance checks read message.content; a server whose template
+    defaults to a thought channel must be asked for thinking off per request."""
+    test = _make_test(
+        _ctx_with_vllm_args(
+            {"default-chat-template-kwargs": '{"enable_thinking": true}'}
+        )
+    )
+    assert test._extra_pytest_args() == [
+        "--chat-template-kwargs",
+        '{"enable_thinking": false}',
+    ]
+
+
+@pytest.mark.parametrize(
+    "vllm_args",
+    [
+        {},
+        {"default-chat-template-kwargs": '{"enable_thinking": false}'},
+        {"default-chat-template-kwargs": "not json"},
+        {"max_num_seqs": 32},
+    ],
+)
+def test_suite_leaves_the_template_alone_otherwise(vllm_args):
+    assert _make_test(_ctx_with_vllm_args(vllm_args))._extra_pytest_args() == []
+
+
+def test_suite_without_ctx_or_device_spec_adds_no_template_args():
+    assert VLLMParamConformanceTest(TestConfig({}), {})._extra_pytest_args() == []
+    assert (
+        _make_test(
+            _fake_ctx(hf_model_repo="org/m", model_name="m")
+        )._extra_pytest_args()
+        == []
+    )

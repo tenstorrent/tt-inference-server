@@ -165,6 +165,35 @@ class VLLMParamConformanceTest(BaseTest):
         return json.loads(report_path.read_text())
 
     def _extra_pytest_args(self) -> List[str]:
+        return self._thinking_off_args()
+
+    def _thinking_off_args(self) -> List[str]:
+        """Disable the chat template's thought channel for the suite when the
+        served spec enables it by default.
+
+        The conformance checks read ``message.content``; a server that spends
+        a 32-token budget inside the thought channel returns ``content=None``
+        and every such check fails for the wrong reason. Request-level
+        ``chat_template_kwargs`` wins over the server default, so the suite
+        asks for thinking off and measures the sampling interface itself.
+        """
+        device_spec = (
+            getattr(self.ctx.model_spec, "device_model_spec", None)
+            if self.ctx is not None
+            else None
+        )
+        vllm_args = getattr(device_spec, "vllm_args", None) or {}
+        raw = vllm_args.get("default-chat-template-kwargs") or vllm_args.get(
+            "default_chat_template_kwargs"
+        )
+        if not raw:
+            return []
+        try:
+            defaults = json.loads(raw) if isinstance(raw, str) else dict(raw)
+        except (ValueError, TypeError):
+            return []
+        if defaults.get("enable_thinking") is True:
+            return ["--chat-template-kwargs", json.dumps({"enable_thinking": False})]
         return []
 
     def _record_pytest_output(
