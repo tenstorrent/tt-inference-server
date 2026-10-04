@@ -72,7 +72,8 @@
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
       "moonshotai/Kimi-K2.7-Code",
-      "Qwen/Qwen1.5-0.5B-Chat"
+      "Qwen/Qwen1.5-0.5B-Chat",
+      "ALLaM-AI/ALLaM-7B-Instruct-preview"
     ]
   },
   "available_markers": {
@@ -755,6 +756,16 @@
       "id_name": "Qwen--Qwen3-32B",
       "weights": [
         "Qwen/Qwen3-32B"
+      ]
+    },
+    "ALLaM-AI/ALLaM-7B-Instruct-preview": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "ALLaM-AI--ALLaM-7B-Instruct-preview",
+      "weights": [
+        "ALLaM-AI/ALLaM-7B-Instruct-preview"
       ]
     }
   },
