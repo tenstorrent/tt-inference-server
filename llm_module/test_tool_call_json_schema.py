@@ -10,7 +10,10 @@ tool, in non-streaming and streaming mode, and the model's
 selection that is 204 cases x 2 modes = 408 tests.
 
 Requests for every collected test run up front on a thread pool
-(``--schema-workers``), each case retried up to ``--schema-retries`` times;
+(``--schema-workers``), each case retried up to ``--schema-retries`` times,
+optionally with sampling params (``--schema-default-sampling``,
+``--schema-sampling-params``) and a per-request prefix-cache bypass
+(``--schema-cache-bypass``);
 the per-test functions then assert their own result. Per-case records, with
 untruncated failure messages, go to
 ``<output-path>/parameter_report_<task-name>.json`` under
@@ -34,6 +37,7 @@ from llm_module.tool_call_schema import (
     ChatCompletionsClient,
     SuiteSettings,
     load_cases,
+    resolve_sampling_params,
     run_cases,
     select_cases,
 )
@@ -56,6 +60,11 @@ def _settings(config: pytest.Config) -> SuiteSettings:
         case_retries=config.getoption("--schema-retries"),
         workers=config.getoption("--schema-workers"),
         request_timeout=config.getoption("--schema-request-timeout"),
+        sampling_params=resolve_sampling_params(
+            config.getoption("--schema-default-sampling"),
+            config.getoption("--schema-sampling-params"),
+        ),
+        cache_bypass=config.getoption("--schema-cache-bypass"),
     )
 
 

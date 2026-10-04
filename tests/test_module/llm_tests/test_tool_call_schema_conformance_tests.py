@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
+
+"""Tests for the tool-call JSON-schema spec-test wrapper's pytest arguments."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from test_module._test_common import TestConfig
+from test_module.llm_tests.tool_call_schema_conformance_test import (
+    _PYTEST_OPTIONS,
+    ENV_PREFIX,
+    ToolCallSchemaConformanceTest,
+)
+
+
+@pytest.fixture(autouse=True)
+def _no_env_overrides(monkeypatch):
+    """Keep a caller's TOOL_CALL_SCHEMA_* environment out of these tests."""
+    for key, _option, _kind in _PYTEST_OPTIONS:
+        monkeypatch.delenv(ENV_PREFIX + key.upper(), raising=False)
+
+
+def _args(config) -> list:
+    return ToolCallSchemaConformanceTest(TestConfig(config), {})._extra_pytest_args()
+
+
+def test_config_values_map_to_pytest_options():
+    args = _args({"case_retries": 3, "workers": 16, "tool_choice": "auto"})
+
+    assert args == [
+        "--schema-tool-choice",
+        "auto",
+        "--schema-retries",
+        "3",
+        "--schema-workers",
+        "16",
+        "--tb=line",
+    ]
+
+
+def test_sampling_and_cache_bypass_from_config():
+    args = _args(
+        {
+            "default_sampling": True,
+            "sampling_params": {"top_k": 0, "seed": None},
+            "cache_bypass": True,
+        }
+    )
+
+    assert "--schema-default-sampling" in args
+    assert "--schema-cache-bypass" in args
+    params = args[args.index("--schema-sampling-params") + 1]
+    assert json.loads(params) == {"top_k": 0, "seed": None}
+
+
+def test_false_flags_add_nothing():
+    assert _args({"default_sampling": False, "cache_bypass": False}) == ["--tb=line"]
+
+
+def test_environment_overrides_test_config(monkeypatch):
+    monkeypatch.setenv("TOOL_CALL_SCHEMA_CASE_RETRIES", "0")
+    monkeypatch.setenv("TOOL_CALL_SCHEMA_DEFAULT_SAMPLING", "yes")
+    monkeypatch.setenv("TOOL_CALL_SCHEMA_CACHE_BYPASS", "false")
+    monkeypatch.setenv("TOOL_CALL_SCHEMA_SAMPLING_PARAMS", '{"top_k":0}')
+
+    args = _args({"case_retries": 3, "default_sampling": False, "cache_bypass": True})
+
+    assert args[args.index("--schema-retries") + 1] == "0"
+    assert "--schema-default-sampling" in args
+    assert "--schema-cache-bypass" not in args
+    assert json.loads(args[args.index("--schema-sampling-params") + 1]) == {"top_k": 0}
+
+
+@pytest.mark.parametrize("value", ["[1]", "not json"])
+def test_invalid_sampling_params_fail_before_the_suite_runs(monkeypatch, value):
+    monkeypatch.setenv("TOOL_CALL_SCHEMA_SAMPLING_PARAMS", value)
+
+    with pytest.raises(ValueError):
+        _args({})

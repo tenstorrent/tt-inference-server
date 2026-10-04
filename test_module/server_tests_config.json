@@ -1169,7 +1169,9 @@
         "case_retries": 3,
         "workers": 16,
         "max_tokens": 2048,
-        "request_timeout": 600
+        "request_timeout": 600,
+        "default_sampling": false,
+        "cache_bypass": false
       }
     }
   },

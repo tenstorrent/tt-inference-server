@@ -13,11 +13,18 @@ arguments must validate against walle JSON Schemas, and a model that gets
 Status: PASS when ``pass_rate >= threshold``, FAIL below it, ERROR when the
 child pytest produced no report, ran no cases, or never reached the server
 (every case a connection error).
+
+Settings come from ``test_config``; an environment variable
+``TOOL_CALL_SCHEMA_<KEY>`` overrides the key of the same name (e.g.
+``TOOL_CALL_SCHEMA_CASE_RETRIES=0``), so a CI dispatch can change a run without
+editing the suite files.
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import tempfile
 from collections import Counter
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -38,8 +45,12 @@ REPORT_RESULTS_KEY = "test_tool_call_json_schema"
 CONNECTION_ERROR_CAUSE = "connection_error"
 UNKNOWN_CAUSE = "unknown"
 
+ENV_PREFIX = "TOOL_CALL_SCHEMA_"
+_FALSE_STRINGS = ("", "0", "false", "no", "off")
+
 # test_config key -> (pytest option, kind). Unset keys keep the suite defaults
-# in llm_module/tool_call_schema.py.
+# in llm_module/tool_call_schema.py. kind: "value" is passed as a string,
+# "flag" as a bare option when true, "json" as a JSON object.
 _PYTEST_OPTIONS = (
     ("tool_choice", "--schema-tool-choice", "value"),
     ("think_mode", "--schema-think-mode", "value"),
@@ -50,7 +61,35 @@ _PYTEST_OPTIONS = (
     ("case_retries", "--schema-retries", "value"),
     ("workers", "--schema-workers", "value"),
     ("request_timeout", "--schema-request-timeout", "value"),
+    ("default_sampling", "--schema-default-sampling", "flag"),
+    ("sampling_params", "--schema-sampling-params", "json"),
+    ("cache_bypass", "--schema-cache-bypass", "flag"),
 )
+
+
+def _setting(config: Mapping[str, Any], key: str, kind: str) -> Optional[Any]:
+    """``TOOL_CALL_SCHEMA_<KEY>`` from the environment, else ``config[key]``."""
+    raw = os.environ.get(ENV_PREFIX + key.upper())
+    if raw is None:
+        return config.get(key)
+    logger.info(
+        "Tool-call schema setting %s overridden by %s%s", key, ENV_PREFIX, key.upper()
+    )
+    if kind == "flag":
+        return raw.strip().lower() not in _FALSE_STRINGS
+    return raw
+
+
+def _option_args(key: str, option: str, kind: str, value: Any) -> List[str]:
+    if kind == "flag":
+        return [option] if value else []
+    if kind == "json":
+        if isinstance(value, str):
+            value = json.loads(value) if value.strip() else {}
+        if not isinstance(value, dict):
+            raise ValueError(f"{key} must be a JSON object, got {value!r}")
+        return [option, json.dumps(value)]
+    return [option, str(value)]
 
 
 def _percent(fraction: float) -> str:
@@ -200,14 +239,9 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
     def _extra_pytest_args(self) -> List[str]:
         args: List[str] = []
         for key, option, kind in _PYTEST_OPTIONS:
-            value: Optional[Any] = self.config.get(key)
-            if value is None:
-                continue
-            if kind == "flag":
-                if value:
-                    args.append(option)
-            else:
-                args.extend([option, str(value)])
+            value = _setting(self.config, key, kind)
+            if value is not None:
+                args.extend(_option_args(key, option, kind, value))
         # One line per failing case instead of a traceback each.
         args.append("--tb=line")
         return args

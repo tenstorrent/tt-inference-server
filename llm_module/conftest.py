@@ -95,6 +95,26 @@ def pytest_addoption(parser):
         help="per-request timeout in seconds (default: %(default)s)",
     )
     group.addoption(
+        "--schema-default-sampling",
+        action="store_true",
+        default=False,
+        help="send DEFAULT_SAMPLING_PARAMS (temperature 1.0, top_p 0.95, top_k 50, "
+        "n 1, presence/frequency_penalty 0) with every request",
+    )
+    group.addoption(
+        "--schema-sampling-params",
+        default="",
+        help="JSON object of sampling params merged over the defaults (or sent on "
+        "its own without --schema-default-sampling), e.g. '{\"top_k\": 0}'",
+    )
+    group.addoption(
+        "--schema-cache-bypass",
+        action="store_true",
+        default=False,
+        help="start every request's tool description with a unique id so no "
+        "request can be served from the server's prefix cache",
+    )
+    group.addoption(
         "--schema-case-dir",
         default=str(DEFAULT_CASE_DIR),
         help="walle validator_cases directory (default: bundled snapshot)",

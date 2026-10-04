@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -61,6 +62,19 @@ DEFAULT_REQUEST_TIMEOUT_S = 600.0
 # Pause between attempts of the same case (the source suite used
 # pytest-rerunfailures with --reruns-delay 2).
 DEFAULT_RETRY_DELAY_S = 2.0
+# Sampling params sent with default_sampling: the fixed values from the Kimi
+# K2.7 Code quickstart (https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart)
+# plus top_k 50. Without them some deployments sample from the full
+# distribution (or reuse one fixed seed), which shows up as corrupted tool
+# names and JSON rather than as model errors.
+DEFAULT_SAMPLING_PARAMS: Dict[str, Any] = {
+    "temperature": 1.0,
+    "top_p": 0.95,
+    "top_k": 50,
+    "n": 1,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+}
 
 PASSED = "passed"
 FAILED = "failed"
@@ -431,6 +445,11 @@ class SuiteSettings:
     case_retries: int = DEFAULT_CASE_RETRIES
     workers: int = DEFAULT_WORKERS
     request_timeout: float = DEFAULT_REQUEST_TIMEOUT_S
+    # Added to every request when set (see resolve_sampling_params).
+    sampling_params: Optional[Dict[str, Any]] = None
+    # Give every request a unique prompt prefix so none can be served from
+    # the server's prefix cache.
+    cache_bypass: bool = False
 
     def __post_init__(self) -> None:
         for name, value, allowed in (
@@ -450,6 +469,12 @@ class SuiteSettings:
             raise ValueError(f"workers must be >= 1, got {self.workers}")
         if self.request_timeout <= 0:
             raise ValueError(f"request_timeout must be > 0, got {self.request_timeout}")
+        if self.sampling_params is not None and not isinstance(
+            self.sampling_params, dict
+        ):
+            raise ValueError(
+                f"sampling_params must be a dict, got {self.sampling_params!r}"
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -458,6 +483,26 @@ class SuiteSettings:
 # --------------------------------------------------------------------------
 # Requests and responses
 # --------------------------------------------------------------------------
+
+
+def resolve_sampling_params(
+    default_sampling: bool, overrides: Any = None
+) -> Optional[Dict[str, Any]]:
+    """The sampling params to send, or None to send none.
+
+    ``overrides`` (a dict, or a JSON object as a string) is merged over
+    DEFAULT_SAMPLING_PARAMS when ``default_sampling`` is set, and sent on its
+    own otherwise. A null value is sent as JSON null (e.g. ``{"seed": null}``).
+    """
+    if isinstance(overrides, str):
+        overrides = json.loads(overrides) if overrides.strip() else None
+    if overrides is not None and not isinstance(overrides, dict):
+        raise ValueError(f"sampling params must be a JSON object, got {overrides!r}")
+    params = {
+        **(DEFAULT_SAMPLING_PARAMS if default_sampling else {}),
+        **(overrides or {}),
+    }
+    return params or None
 
 
 def thinking_extra_body(thinking: bool, think_mode: str) -> Dict[str, Any]:
@@ -472,7 +517,16 @@ def thinking_extra_body(thinking: bool, think_mode: str) -> Dict[str, Any]:
 def build_request(
     schema: Any, settings: SuiteSettings, *, stream: bool
 ) -> Dict[str, Any]:
-    """Chat-completions payload offering ``schema`` as the only tool."""
+    """Chat-completions payload offering ``schema`` as the only tool.
+
+    With ``settings.cache_bypass`` the tool description starts with a fresh
+    id. Chat templates that render tool declarations before the messages
+    (Kimi's does) then have no prompt prefix that can match one the server
+    has cached.
+    """
+    description = TOOL_DESCRIPTION
+    if settings.cache_bypass:
+        description = f"[request {uuid.uuid4().hex}] {description}"
     payload: Dict[str, Any] = {
         "messages": [{"role": "user", "content": USER_PROMPT}],
         "tools": [
@@ -480,7 +534,7 @@ def build_request(
                 "type": "function",
                 "function": {
                     "name": TOOL_NAME,
-                    "description": TOOL_DESCRIPTION,
+                    "description": description,
                     "parameters": schema,
                     "strict": True,
                 },
@@ -491,6 +545,7 @@ def build_request(
     }
     if stream:
         payload["stream"] = True
+    payload.update(settings.sampling_params or {})
     payload.update(thinking_extra_body(settings.thinking, settings.think_mode))
     return payload
 
