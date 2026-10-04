@@ -49,22 +49,27 @@
       "openai/gpt-oss-20b",
       "google/diffusiongemma-26B-A4B-it",
       "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-      "Falcon3-3B-Base",
-      "Falcon3-7B-Base",
+      "tiiuae/Falcon3-3B-Base",
+      "tiiuae/Falcon3-7B-Base",
       "Qwen/Qwen3-4B",
-      "Qwen3-14B",
+      "Qwen/Qwen3-14B",
       "Qwen/Qwen3-8B",
-      "Qwen2.5-Coder-7B",
-      "Qwen2.5-Coder-7B-Instruct",
-      "TinyLlama_v1.1",
-      "TinyLlama-1.1B-Chat-v1.0",
-      "stablelm-2-1_6b",
-      "Falcon3-1B-Base",
-      "pythia-70m",
-      "phi-1_5",
-      "Qwen3.8-27B",
-      "phi-1",
-      "Qwen2.5-14B-Instruct-1M"
+      "Qwen/Qwen2.5-Coder-7B",
+      "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "TinyLlama/TinyLlama_v1.1",
+      "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+      "stabilityai/stablelm-2-1_6b",
+      "tiiuae/Falcon3-1B-Base",
+      "EleutherAI/pythia-70m",
+      "microsoft/phi-1_5",
+      "Qwen/Qwen3.8-27B",
+      "microsoft/phi-1",
+      "Qwen/Qwen2.5-14B-Instruct-1M",
+      "meta-llama/Llama-3.1-8B-Instruct",
+      "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "meta-llama/Llama-3.2-3B-Instruct",
+      "Qwen/Qwen3-0.6B",
+      "Qwen/Qwen3-1.7B"
     ]
   },
   "available_markers": {
@@ -128,7 +133,7 @@
       ],
       "id_name": "tiiuae--Falcon3-1B-Base",
       "weights": [
-        "Falcon3-1B-Base"
+        "tiiuae/Falcon3-1B-Base"
       ]
     },
     "stabilityai/stablelm-2-1_6b": {
@@ -138,7 +143,7 @@
       ],
       "id_name": "stabilityai--stablelm-2-1_6b",
       "weights": [
-        "stablelm-2-1_6b"
+        "stabilityai/stablelm-2-1_6b"
       ]
     },
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0": {
@@ -148,7 +153,7 @@
       ],
       "id_name": "TinyLlama--TinyLlama-1.1B-Chat-v1.0",
       "weights": [
-        "TinyLlama-1.1B-Chat-v1.0"
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
       ]
     },
     "TinyLlama/TinyLlama_v1.1": {
@@ -158,7 +163,7 @@
       ],
       "id_name": "TinyLlama--TinyLlama_v1.1",
       "weights": [
-        "TinyLlama_v1.1"
+        "TinyLlama/TinyLlama_v1.1"
       ]
     },
     "Qwen/Qwen2.5-Coder-7B-Instruct": {
@@ -168,7 +173,7 @@
       ],
       "id_name": "Qwen--Qwen2.5-Coder-7B-Instruct",
       "weights": [
-        "Qwen2.5-Coder-7B-Instruct"
+        "Qwen/Qwen2.5-Coder-7B-Instruct"
       ]
     },
     "Qwen/Qwen2.5-Coder-7B": {
@@ -178,7 +183,7 @@
       ],
       "id_name": "Qwen--Qwen2.5-Coder-7B",
       "weights": [
-        "Qwen2.5-Coder-7B"
+        "Qwen/Qwen2.5-Coder-7B"
       ]
     },
     "Qwen/Qwen3-8B": {
@@ -198,7 +203,7 @@
       ],
       "id_name": "Qwen--Qwen3-14B",
       "weights": [
-        "Qwen3-14B"
+        "Qwen/Qwen3-14B"
       ]
     },
     "Qwen/Qwen3-4B": {
@@ -218,7 +223,7 @@
       ],
       "id_name": "tiiuae--Falcon3-7B-Base",
       "weights": [
-        "Falcon3-7B-Base"
+        "tiiuae/Falcon3-7B-Base"
       ]
     },
     "tiiuae/Falcon3-3B-Base": {
@@ -228,7 +233,7 @@
       ],
       "id_name": "tiiuae--Falcon3-3B-Base",
       "weights": [
-        "Falcon3-3B-Base"
+        "tiiuae/Falcon3-3B-Base"
       ]
     },
     "openai/gpt-oss-120b": {
@@ -606,7 +611,7 @@
       ],
       "id_name": "EleutherAI--pythia-70m",
       "weights": [
-        "pythia-70m"
+        "EleutherAI/pythia-70m"
       ]
     },
     "microsoft/phi-1_5": {
@@ -616,7 +621,7 @@
       ],
       "id_name": "microsoft--phi-1_5",
       "weights": [
-        "phi-1_5"
+        "microsoft/phi-1_5"
       ]
     },
     "Qwen/Qwen3.8-27B": {
@@ -626,7 +631,7 @@
       ],
       "id_name": "Qwen--Qwen3.8-27B",
       "weights": [
-        "Qwen3.8-27B"
+        "Qwen/Qwen3.8-27B"
       ]
     },
     "microsoft/phi-1": {
@@ -636,7 +641,7 @@
       ],
       "id_name": "microsoft--phi-1",
       "weights": [
-        "phi-1"
+        "microsoft/phi-1"
       ]
     },
     "Qwen/Qwen2.5-14B-Instruct-1M": {
@@ -646,7 +651,7 @@
       ],
       "id_name": "Qwen--Qwen2.5-14B-Instruct-1M",
       "weights": [
-        "Qwen2.5-14B-Instruct-1M"
+        "Qwen/Qwen2.5-14B-Instruct-1M"
       ]
     },
     "meta-llama/Llama-3.1-8B-Instruct": {
@@ -657,6 +662,46 @@
       "id_name": "meta-llama--Llama-3.1-8B-Instruct",
       "weights": [
         "meta-llama/Llama-3.1-8B-Instruct"
+      ]
+    },
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "HuggingFaceTB--SmolLM2-1.7B-Instruct",
+      "weights": [
+        "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+      ]
+    },
+    "meta-llama/Llama-3.2-3B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "meta-llama--Llama-3.2-3B-Instruct",
+      "weights": [
+        "meta-llama/Llama-3.2-3B-Instruct"
+      ]
+    },
+    "Qwen/Qwen3-0.6B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-0.6B",
+      "weights": [
+        "Qwen/Qwen3-0.6B"
+      ]
+    },
+    "Qwen/Qwen3-1.7B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-1.7B",
+      "weights": [
+        "Qwen/Qwen3-1.7B"
       ]
     }
   },
