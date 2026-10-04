@@ -543,7 +543,8 @@
       "category": "LLM",
       "compatible_devices": [
         "p300x2",
-        "p150x8"
+        "p150x8",
+        "blackhole_galaxy"
       ]
     },
     "gpt_oss_20b": {
