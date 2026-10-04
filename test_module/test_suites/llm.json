@@ -129,6 +129,21 @@
       ]
     },
     {
+      "models": [
+        "kimi_k2_7_code"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas (pass rate >= 99.5%)"
+        }
+      ]
+    },
+    {
       "devices": [
         "p300x2"
       ],
