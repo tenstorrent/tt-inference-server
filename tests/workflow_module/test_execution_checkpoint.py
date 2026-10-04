@@ -143,3 +143,59 @@ def test_hook_is_removed_after_the_run_and_the_previous_one_restored(tmp_path):
 
     assert outer_calls == []  # the workflow's hook replaced it during the run
     assert acc.set_on_accept(None) is outer
+
+
+class _SpecWorkflow(WorkflowExecution):
+    """One spec_tests task that exits 1 for a single failing conformance case."""
+
+    name = "spec_tests"
+
+    def __init__(self, *args, failing_case: str, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.failing_case = failing_case
+
+    def run_tasks(self) -> List[TaskOutcome]:
+        block = Block(
+            kind="spec_tests",
+            title="VLLMParamConformanceTest",
+            task_type="functional",
+            data={
+                "success": False,
+                "status": "fail",
+                "parameter_conformance_summary": [
+                    {"test_case": "test_logprobs", "status": "✅ PASS"},
+                    {"test_case": self.failing_case, "status": "❌ FAIL"},
+                ],
+            },
+        )
+        self.accumulator.accept([block], envelope=ENVELOPE)
+        return [TaskOutcome("spec_tests", 1, 1.0, "spec_tests")]
+
+
+def _spec_workflow(tmp_path: Path, failing_case: str) -> _SpecWorkflow:
+    ctx = _ctx(tmp_path)
+    ctx.output_path = str(tmp_path / "reports_output" / "spec_tests" / "out")
+    ctx.model_spec.device_model_spec.known_issues = [
+        {
+            "workflow_type": "SPEC_TESTS",
+            "task_name": "test_penalties",
+            "reason": "#3888",
+        }
+    ]
+    ctx.model_spec.status = "EXPERIMENTAL"
+    return _SpecWorkflow(
+        ctx,
+        accumulator=BlockAccumulator(),
+        orchestrator_metadata=OrchestratorMetadata(run_command=RUN_COMMAND),
+        failing_case=failing_case,
+    )
+
+
+def test_a_spec_task_failing_only_on_a_waived_case_exits_zero(tmp_path):
+    result = _spec_workflow(tmp_path, "test_penalties").run()
+    assert result.return_code == 0
+
+
+def test_a_spec_task_failing_on_an_unwaived_case_still_exits_one(tmp_path):
+    result = _spec_workflow(tmp_path, "test_stop").run()
+    assert result.return_code == 1
