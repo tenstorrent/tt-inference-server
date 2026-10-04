@@ -89,13 +89,24 @@ def _diffusiongemma_eval_task(task_name):
     return next(task for task in tasks if task.task_name == task_name)
 
 
-def _build_eval_test_command(task):
+def _llama_1b_eval_task(task_name):
+    tasks = _eval_config_map["meta-llama/Llama-3.2-1B-Instruct"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
+def _build_eval_test_command(
+    task,
+    *,
+    hf_model_repo="google/diffusiongemma-26B-A4B-it",
+    model_id="diffusiongemma-26B-A4B-it",
+    max_context=262144,
+):
     model_spec = SimpleNamespace(
-        model_id="diffusiongemma-26B-A4B-it",
-        model_name="diffusiongemma-26B-A4B-it",
-        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        model_id=model_id,
+        model_name=model_id,
+        hf_model_repo=hf_model_repo,
         device_model_spec=SimpleNamespace(
-            max_context=262144,
+            max_context=max_context,
             max_concurrency=1,
             eval_max_retries=0,
         ),
@@ -105,6 +116,11 @@ def _build_eval_test_command(task):
 
 def _command_gen_kwargs(command):
     raw = command[command.index("--gen_kwargs") + 1]
+    return dict(item.split("=", 1) for item in raw.split(","))
+
+
+def _command_model_kwargs(command):
+    raw = command[command.index("--model_args") + 1]
     return dict(item.split("=", 1) for item in raw.split(","))
 
 
@@ -133,6 +149,66 @@ class TestEvalCommand:
         command = _build_eval_test_command(task)
         model_args = command[command.index("--model_args") + 1]
         assert "max_retries=2" in model_args
+
+    def test_text_harness_context_comes_from_selected_device_spec(self):
+        command = _build_eval_test_command(
+            EvalTask(task_name="long_context", min_context_required=16384),
+            max_context=32768,
+        )
+
+        assert _command_model_kwargs(command)["max_length"] == "32768"
+
+    @pytest.mark.parametrize(
+        "task,max_context,error",
+        [
+            (
+                EvalTask(task_name="undersized", min_context_required=16384),
+                8192,
+                "device max_context=8192",
+            ),
+        ],
+    )
+    def test_text_harness_rejects_context_contract_mismatch(
+        self, task, max_context, error
+    ):
+        with pytest.raises(ValueError, match=error):
+            _build_eval_test_command(task, max_context=max_context)
+
+    def test_task_max_length_above_device_context_is_bound_to_the_device(self):
+        task = EvalTask(task_name="oversized", model_kwargs={"max_length": 65536})
+
+        command = _build_eval_test_command(task, max_context=40960)
+
+        assert _command_model_kwargs(command)["max_length"] == "40960"
+        assert task.model_kwargs["max_length"] == 65536
+
+    def test_explicit_task_max_length_may_be_below_device_minimum(self):
+        task = EvalTask(
+            task_name="task_specific_truncation",
+            min_context_required=16384,
+            model_kwargs={"max_length": 8192},
+        )
+
+        command = _build_eval_test_command(task, max_context=32768)
+
+        assert _command_model_kwargs(command)["max_length"] == "8192"
+
+    def test_text_harness_requires_a_declared_device_context(self):
+        with pytest.raises(ValueError, match="requires device_model_spec.max_context"):
+            _build_eval_test_command(EvalTask(task_name="unbounded"), max_context=None)
+
+    def test_output_clamp_uses_explicit_harness_context_without_mutating_task(self):
+        task = EvalTask(
+            task_name="bounded_generation",
+            model_kwargs={"max_length": 4096},
+            gen_kwargs={"max_gen_toks": 8192},
+        )
+
+        command = _build_eval_test_command(task, max_context=32768)
+
+        assert _command_gen_kwargs(command)["max_gen_toks"] == "3072"
+        assert task.model_kwargs == {"max_length": 4096}
+        assert task.gen_kwargs == {"max_gen_toks": 8192}
 
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
@@ -234,6 +310,30 @@ class TestDiffusionGemmaEvalContract:
         assert config.agent_timeout_sec == 45 * 60
         assert config.agent_kwargs["model_info"]["max_output_tokens"] == 4 * 1024
         assert config.agent_kwargs["llm_kwargs"]["max_tokens"] == 4 * 1024
+
+
+class TestLlama1BLongBenchEvalContract:
+    @pytest.mark.parametrize("task_name", ["longbench_code_e", "longbench_fewshot_e"])
+    def test_code_and_fewshot_match_raw_completion_reference(self, task_name):
+        task = _llama_1b_eval_task(task_name)
+        command = _build_eval_test_command(
+            task,
+            hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
+            model_id="Llama-3.2-1B-Instruct",
+            max_context=32768,
+        )
+
+        assert task.use_chat_api is False
+        assert task.apply_chat_template is False
+        assert "--apply_chat_template" not in command
+        assert "/v1/completions" in command[command.index("--model_args") + 1]
+        assert _command_model_kwargs(command)["max_length"] == "32768"
+        assert _command_gen_kwargs(command) == {
+            "stream": "False",
+            "temperature": "0",
+            "max_gen_toks": "512",
+            "seed": "42",
+        }
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------
