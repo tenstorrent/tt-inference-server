@@ -325,8 +325,9 @@ templates:
   status: EXPERIMENTAL
   has_builtin_warmup: true
 
-# BH Galaxy 12B MTP adaptive server, graded on its own entry so P150X8 on this
-# impl can stay EXPERIMENTAL.
+# BH Galaxy 12B MTP adaptive server on its own entry. Stays EXPERIMENTAL: at
+# max_concurrency 128 MTP still captures its fused trace inside decode steps
+# (worker RPC timeout), and no 12B Galaxy benchmark targets exist yet.
 - weights:
     - google/gemma-4-12B-it
   impl: gemma4_mtp
@@ -368,7 +369,7 @@ templates:
         enable_chunked_prefill: false
         no-enable-prefix-caching: true
         max_num_batched_tokens: 65536
-  status: COMPLETE
+  status: EXPERIMENTAL
   has_builtin_warmup: true
 
 - weights:
