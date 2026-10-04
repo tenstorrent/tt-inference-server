@@ -420,6 +420,48 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "HuggingFaceTB/SmolLM2-360M-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }
