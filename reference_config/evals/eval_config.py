@@ -560,7 +560,7 @@ _eval_config_list = [
                 ),
                 (
                     "tau3_bench_banking",
-                    "sierra-research/tau3-bench",
+                    "sierra-research/tau3-bench@sha256:a57304f682894ac061090769af771a3617664f3ff6e5417d4eadf8e30433e4d9",
                     "tau3_llm_agent",
                     "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
                     {

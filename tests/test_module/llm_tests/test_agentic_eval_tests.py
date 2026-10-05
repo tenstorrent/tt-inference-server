@@ -572,13 +572,72 @@ class TestHarborHarness:
             "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
         )
         assert "name" not in harbor_config["agents"][0]
+        endpoint_env = {
+            "OPENAI_BASE_URL": "http://host.docker.internal:8000/v1",
+            "OPENAI_API_BASE": "http://host.docker.internal:8000/v1",
+        }
+        assert harbor_config["agents"][0]["env"] == endpoint_env
         assert harbor_config["environment"]["env"] == {
-            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"
+            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B",
+            **endpoint_env,
         }
         assert harbor_config["verifier"]["env"] == {
-            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B",
+            **endpoint_env,
         }
+        overlays = [
+            json.loads(Path(path).read_text())
+            for path in harbor_config["environment"]["extra_docker_compose"]
+        ]
+        assert overlays[0] == {
+            "services": {
+                service: {"extra_hosts": ["host.docker.internal:host-gateway"]}
+                for service in ("main", "tau3-runtime")
+            }
+        }
+        assert (
+            overlays[1]["services"]["tau3-runtime"]["environment"]
+            == (harbor_config["environment"]["env"])
+        )
+        assert cfg.environment_env == {"TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"}
+        assert (
+            run_cmd.call_args.kwargs["env"]["OPENAI_BASE_URL"]
+            == "http://127.0.0.1:8000/v1"
+        )
         run_cmd.assert_called_once()
+
+    def test_tau3_preserves_distinct_remote_runtime_and_verifier(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench@sha256:frozen"
+        task.agentic_eval_config.environment_env = {
+            "OPENAI_BASE_URL": "https://simulator.example/v1"
+        }
+        task.agentic_eval_config.verifier_env = {
+            "OPENAI_API_BASE": "https://verifier.example/v1"
+        }
+        cfg = build_harbor_config(
+            task, _server(), DriverContext(output_dir=tmp_path, device="N150")
+        )
+        data = json.loads(harbor._write_harbor_config(cfg).read_text())
+        assert data["datasets"][0]["name"] == "sierra-research/tau3-bench"
+        assert data["datasets"][0]["ref"] == "sha256:frozen"
+        assert (
+            data["environment"]["env"]["OPENAI_API_BASE"]
+            == "https://simulator.example/v1"
+        )
+        assert (
+            data["verifier"]["env"]["OPENAI_BASE_URL"] == "https://verifier.example/v1"
+        )
+        assert (
+            data["environment"]["env"]["OPENAI_BASE_URL"]
+            == "https://simulator.example/v1"
+        )
+        assert (
+            data["verifier"]["env"]["OPENAI_API_BASE"] == "https://verifier.example/v1"
+        )
 
     def test_environment_kwargs_force_the_config_file_path(self, tmp_path):
         """Cluster knobs have no CLI equivalent, so they must select --config.

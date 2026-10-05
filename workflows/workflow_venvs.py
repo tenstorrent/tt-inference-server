@@ -39,8 +39,8 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # Track the runtime branch during development. It will be protected and require
 # review before merging changes. Switch to a specific commit once development
 # is stable.
-HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
+HARBOR_REPO = "https://github.com/mvasiljevicTT/harbor.git"
+HARBOR_REF = "b6427ad14b13903bd41769de666d44cd602b24dd"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
 

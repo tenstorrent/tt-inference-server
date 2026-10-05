@@ -168,25 +168,51 @@ def _get_agent_endpoint(config: HarborRunConfig) -> str:
     return values[0] if values else config.api_base
 
 
-def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
+def _is_tau3_agent(config: HarborRunConfig) -> bool:
+    return bool(
+        config.agent_import_path
+        and config.agent_import_path.endswith("tau3_llm_agent:Tau3LLMAgent")
+    )
+
+
+def _installed_agent_needs_host_gateway(config: HarborRunConfig) -> bool:
     return (
-        config.agent == _MINI_SWE_AGENT
-        and config.agent_import_path is None
+        (
+            (config.agent == _MINI_SWE_AGENT and config.agent_import_path is None)
+            or _is_tau3_agent(config)
+        )
         and config.environment_type == "docker"
         and urlsplit(_get_agent_endpoint(config)).hostname
         in {"127.0.0.1", "localhost", "::1"}
     )
 
 
+def _docker_host_endpoint(endpoint: str) -> str:
+    parsed = urlsplit(endpoint)
+    if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return endpoint
+    host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
+    return urlunsplit(
+        parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
+    )
+
+
+def _container_endpoint_env(env: dict[str, str], default: str) -> dict[str, str]:
+    endpoint = env.get("OPENAI_BASE_URL", env.get("OPENAI_API_BASE", default))
+    return {
+        **env,
+        **{
+            key: _docker_host_endpoint(env.get(key, endpoint))
+            for key in _OPENAI_ENDPOINT_ENV
+        },
+    }
+
+
 def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
     env = dict(config.agent_env)
     endpoint = _get_agent_endpoint(config)
-    if _mini_swe_needs_host_gateway(config):
-        parsed = urlsplit(endpoint)
-        host = f"[{parsed.hostname}]" if parsed.hostname == "::1" else parsed.hostname
-        endpoint = urlunsplit(
-            parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
-        )
+    if _installed_agent_needs_host_gateway(config):
+        endpoint = _docker_host_endpoint(endpoint)
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     return env
 
@@ -203,7 +229,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    dataset_name, _, dataset_ref = config.dataset.partition("@")
+    dataset_config: dict[str, Any] = {"name": dataset_name}
+    if dataset_ref:
+        dataset_config["ref"] = dataset_ref
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:
@@ -212,19 +241,17 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
-    if _mini_swe_needs_host_gateway(config):
+    if _installed_agent_needs_host_gateway(config):
         overlay_path = (
             config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
         )
+        services = {"main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}}
+        if _is_tau3_agent(config):
+            services["tau3-runtime"] = {
+                "extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]
+            }
         overlay_path.write_text(
-            json.dumps(
-                {
-                    "services": {
-                        "main": {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
-                    }
-                },
-                indent=2,
-            ),
+            json.dumps({"services": services}, indent=2),
             encoding="utf-8",
         )
         environment_config["extra_docker_compose"] = [str(overlay_path)]
@@ -252,8 +279,13 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     if agent_env:
         agent_config["env"] = agent_env
 
-    if config.environment_env:
-        environment_config["env"] = config.environment_env
+    environment_env = dict(config.environment_env)
+    if _is_tau3_agent(config) and _installed_agent_needs_host_gateway(config):
+        environment_env = _container_endpoint_env(
+            environment_env, agent_env["OPENAI_BASE_URL"]
+        )
+    if environment_env:
+        environment_config["env"] = environment_env
         # Harbor's environment.env reaches only the main service. The official
         # tau3 sidecar has its own Compose environment and needs the same model
         # endpoint and simulator sampling overrides.
@@ -263,11 +295,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
             overlay_path = config.jobs_dir / f"{config.task_name}_tau3_runtime_env.json"
             overlay_path.write_text(
                 json.dumps(
-                    {
-                        "services": {
-                            "tau3-runtime": {"environment": config.environment_env}
-                        }
-                    },
+                    {"services": {"tau3-runtime": {"environment": environment_env}}},
                     indent=2,
                 ),
                 encoding="utf-8",
@@ -278,7 +306,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
     verifier_config: dict[str, Any] = {}
     if config.verifier_env:
-        verifier_config["env"] = config.verifier_env
+        verifier_config["env"] = dict(config.verifier_env)
+        if _is_tau3_agent(config) and _installed_agent_needs_host_gateway(config):
+            verifier_config["env"] = _container_endpoint_env(
+                verifier_config["env"], agent_env["OPENAI_BASE_URL"]
+            )
 
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
@@ -311,7 +343,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        _mini_swe_needs_host_gateway(config)
+        _installed_agent_needs_host_gateway(config)
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
