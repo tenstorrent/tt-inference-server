@@ -6563,6 +6563,9 @@ _eval_config_list = [
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=77.2,
+                    # Both TT devices land 71.5 (Galaxy) and 73.9 (QB2) on the ci-nightly subset, evenly
+                    # spread across the 14 subjects; 0.10 as for the 31B gpqa gate until a GPU reference exists.
+                    tolerance=0.10,
                     published_score_ref="https://huggingface.co/google/gemma-4-12B-it",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
