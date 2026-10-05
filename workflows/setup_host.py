@@ -48,6 +48,34 @@ def _dir_bytes(path: Path) -> int:
     return total
 
 
+def widen_mount_for_symlinks(snapshot_dir: Path, mount_dir: Path) -> Path:
+    """Return the smallest ancestor of ``mount_dir`` that contains every symlink
+    target under ``snapshot_dir``.
+
+    huggingface_hub >= 2 keeps large files in a shared content-addressed store
+    (``<hub>/blobs/<xx>/<sha256>``) and the per-repo ``blobs/`` entries are
+    symlinks into it, so a read-only bind mount of ``models--org--name`` alone
+    leaves the snapshot's safetensors dangling inside the container. Mounting the
+    nearest common ancestor (normally ``<hub>``) keeps every link resolvable; the
+    container path is derived relative to the mount, so nothing else changes.
+    """
+    mount = Path(mount_dir).resolve()
+    snapshot_dir = Path(snapshot_dir)
+    if not snapshot_dir.is_dir():
+        return Path(mount_dir)
+    widened = False
+    for entry in snapshot_dir.rglob("*"):
+        if not entry.is_symlink():
+            continue
+        target = entry.resolve()
+        while not target.is_relative_to(mount):
+            if mount.parent == mount:
+                return Path(mount_dir)
+            mount = mount.parent
+            widened = True
+    return mount if widened else Path(mount_dir)
+
+
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
@@ -186,8 +214,9 @@ class SetupConfig:
                 )
             else:
                 self.host_model_weights_snapshot_dir = host_model_weights_snapshot_dir
-                self.host_model_weights_mount_dir = (
-                    self.host_model_weights_snapshot_dir.parent.parent
+                self.host_model_weights_mount_dir = widen_mount_for_symlinks(
+                    self.host_model_weights_snapshot_dir,
+                    self.host_model_weights_snapshot_dir.parent.parent,
                 )
             self.container_model_weights_snapshot_dir = (
                 self.container_model_weights_mount_dir
