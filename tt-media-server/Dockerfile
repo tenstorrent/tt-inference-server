@@ -182,7 +182,9 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
 # torch 2.11.0). Images that serve only tt_dit models (e.g. Qwen-Image-Edit, whose host
 # Qwen2.5-VL encode is validated on tt-metal's transformers) build with
 # --build-arg INSTALL_TT_VLLM_PLUGIN=0; only the vLLM runners import vllm.
-ARG INSTALL_TT_VLLM_PLUGIN=1
+# Release branch for the Qwen-Image-Edit image: default 0, because tt-shield's
+# on-dispatch-build-media-server passes only TT_METAL_COMMIT_SHA_OR_TAG.
+ARG INSTALL_TT_VLLM_PLUGIN=0
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
 RUN if [ "${INSTALL_TT_VLLM_PLUGIN}" = "1" ]; then /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
