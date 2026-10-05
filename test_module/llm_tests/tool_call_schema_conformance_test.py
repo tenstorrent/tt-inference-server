@@ -11,6 +11,10 @@ against walle JSON Schemas, and a model passes when it gets
 >= ``pass_rate_threshold`` of them right. The default is 100% (every case);
 a model can be given a lower threshold through its targets.
 
+``non_blocking`` (with an optional ``non_blocking_reason``) marks the run as
+informational: acceptance waives its FAIL, so it never blocks. The suites use
+it for the ``tool_choice=required`` run.
+
 ``exclude_ref_schemas`` keeps the cases whose schema uses ``$ref`` out of the
 run, so they are neither sent nor graded; the result lists them under
 ``excluded_cases``. MiniMax-M3 sets it because the server's MiniMax tool-call
@@ -55,6 +59,9 @@ REPORT_RESULTS_KEY = "test_tool_call_json_schema"
 PROGRESS_PREFIX = "[tool-call-schema progress]"
 # Must match tool_call_schema.DEFAULT_TOOL_CHOICE (same reason).
 DEFAULT_TOOL_CHOICE = "auto"
+# Must match report_module.acceptance_criteria.NON_BLOCKING_KEY / _REASON_KEY.
+NON_BLOCKING_KEY = "non_blocking"
+NON_BLOCKING_REASON_KEY = "non_blocking_reason"
 CONNECTION_ERROR_CAUSE = "connection_error"
 UNKNOWN_CAUSE = "unknown"
 
@@ -221,6 +228,7 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
             "settings": report.get("settings", {}),
             **graded,
             "excluded_cases": report.get("excluded_cases") or [],
+            **self._non_blocking_fields(),
         }
 
     def _resolve_threshold(self) -> float:
@@ -256,10 +264,22 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
         ``tool_choice`` (auto, then required), and the blocks must be told apart."""
         block = super()._block(data)
         tool_choice = _setting(self.config, "tool_choice", "value")
-        return replace(
-            block,
-            title=f"{block.title} (tool_choice={tool_choice or DEFAULT_TOOL_CHOICE})",
-        )
+        label = f"tool_choice={tool_choice or DEFAULT_TOOL_CHOICE}"
+        if self._non_blocking_fields():
+            label += ", non-blocking"
+        return replace(block, title=f"{block.title} ({label})")
+
+    def _non_blocking_fields(self) -> Dict[str, Any]:
+        """Block-data keys acceptance reads to waive this run's FAIL. Read from
+        test_config only: a TOOL_CALL_SCHEMA_* override would reach every run."""
+        if self.config.get(NON_BLOCKING_KEY) is not True:
+            return {}
+        return {
+            NON_BLOCKING_KEY: True,
+            NON_BLOCKING_REASON_KEY: str(
+                self.config.get(NON_BLOCKING_REASON_KEY) or "non-blocking run"
+            ),
+        }
 
     def _on_pytest_output_line(self, line: str) -> None:
         if line.startswith(PROGRESS_PREFIX):

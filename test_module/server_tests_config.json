@@ -1227,7 +1227,8 @@
         "request_timeout": 600,
         "default_sampling": false,
         "cache_bypass": false,
-        "exclude_ref_schemas": false
+        "exclude_ref_schemas": false,
+        "non_blocking": false
       }
     }
   },

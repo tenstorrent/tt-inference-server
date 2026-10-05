@@ -165,3 +165,31 @@ def test_block_title_names_the_tool_choice(config, title):
     test = ToolCallSchemaConformanceTest(TestConfig(config), {})
 
     assert test._block({}).title == title
+
+
+def test_non_blocking_run_is_flagged_for_acceptance_and_titled():
+    test = ToolCallSchemaConformanceTest(
+        TestConfig(
+            {
+                "tool_choice": "required",
+                "non_blocking": True,
+                "non_blocking_reason": "r",
+            }
+        ),
+        {},
+    )
+
+    assert test._non_blocking_fields() == {
+        "non_blocking": True,
+        "non_blocking_reason": "r",
+    }
+    assert (
+        test._block({}).title
+        == "Tool Call Json Schema (tool_choice=required, non-blocking)"
+    )
+
+
+def test_runs_are_blocking_by_default():
+    test = ToolCallSchemaConformanceTest(TestConfig({"non_blocking": False}), {})
+
+    assert test._non_blocking_fields() == {}
