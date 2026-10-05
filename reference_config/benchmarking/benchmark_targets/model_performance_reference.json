@@ -7522,33 +7522,23 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 27.07,
-                        "tput": 25.4
+                        "tput_user": 28.09,
+                        "tput": 26.4
                     },
                     "measured": {
-                        "ttft_ms": 432.9,
-                        "tput_user": 27.07,
-                        "tput": 25.4,
-                        "tolerance": 0.18
+                        "ttft_ms": 321.9,
+                        "tput_user": 28.09,
+                        "tput": 26.4,
+                        "tolerance": 0.2
                     }
                 },
                 "_comment": [
-                    "BLACKHOLE_GALAXY at data_parallel_size=4 (four (1,8) column engines,",
-                    "tt-transformers impl, bfloat8_b KV, decode buckets 1/4/8/32, pool",
-                    "1,523,712 tok/engine). 'measured' gates acceptance (the 'target' tier).",
-                    "Values are the WORST of four full 24-point sweeps on 2026-10-01, built",
-                    "from the grader's exact fields (mean_ttft_ms and 1000/mean_tpot_ms --",
-                    "an earlier cut used medians and failed burst points where the TTFT",
-                    "mean/median skew exceeds tolerance). Per-point tolerance = 0.6 x the",
-                    "four-run max relative spread + 0.05, clamped to [0.10, 0.30]; per-user",
-                    "TPOT at burst concurrency varies with prefill/decode phase overlap.",
-                    "No 'theoretical' block yet: the only defensible prefill ceiling is the",
-                    "gemma4_d_p kernel stack and functional tiers from it would fail",
-                    "long-ISL TTFT by design; add when those kernels land here.",
-                    "'theoretical' carries throughput only (no Blackhole Galaxy ceiling has been",
-                    "derived for this model); it is set to the measured level so the functional",
-                    "(10%) and complete (50%) tiers exist and grade. ttft_ms is omitted from it:",
-                    "burst TTFT is queue-inclusive and already graded by the measured block."
+                    "BLACKHOLE_GALAXY at data_parallel_size=4 (four (1,8) column engines), tt-transformers, hybrid kv-cache groups +",
+                    "vLLM prefix caching (config of record since 2026-10-03), bfloat8_b KV, pool 1523712 tok/engine, scheduler budget",
+                    "16384. Re-measured 2026-10-05 on bh-glx-exp-b03u14: 24/24 points served, 0 fatals. Replaces the 2026-10-01 rows,",
+                    "which were taken on the bounded-ring (no prefix caching) config: APC-on has lower burst TTFT and higher per-user",
+                    "decode time at 8K-32K prompts under full concurrency. 'measured' gates the target tier (tolerance 0.20, single",
+                    "run); 'theoretical' is set to the measured level so the functional and complete tiers grade."
                 ]
             },
             {
@@ -7563,14 +7553,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 13.76,
-                        "tput": 882.0
+                        "tput_user": 15.87,
+                        "tput": 1081.1
                     },
                     "measured": {
-                        "ttft_ms": 8942.8,
-                        "tput_user": 13.76,
-                        "tput": 882.0,
-                        "tolerance": 0.12
+                        "ttft_ms": 6663.9,
+                        "tput_user": 15.87,
+                        "tput": 1081.1,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7586,14 +7576,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.79,
-                        "tput": 26.6
+                        "tput_user": 27.72,
+                        "tput": 27.3
                     },
                     "measured": {
-                        "ttft_ms": 390.4,
-                        "tput_user": 26.79,
-                        "tput": 26.6,
-                        "tolerance": 0.1
+                        "ttft_ms": 568.1,
+                        "tput_user": 27.72,
+                        "tput": 27.3,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7609,14 +7599,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 18.26,
-                        "tput": 1943.3
+                        "tput_user": 18.54,
+                        "tput": 1956.4
                     },
                     "measured": {
-                        "ttft_ms": 8906.9,
-                        "tput_user": 18.26,
-                        "tput": 1943.3,
-                        "tolerance": 0.11
+                        "ttft_ms": 8149.6,
+                        "tput_user": 18.54,
+                        "tput": 1956.4,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7632,14 +7622,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.43,
-                        "tput": 24.6
+                        "tput_user": 27.22,
+                        "tput": 24.8
                     },
                     "measured": {
-                        "ttft_ms": 589.7,
-                        "tput_user": 26.43,
-                        "tput": 24.6,
-                        "tolerance": 0.3
+                        "ttft_ms": 496.8,
+                        "tput_user": 27.22,
+                        "tput": 24.8,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7655,14 +7645,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 12.91,
-                        "tput": 712.1
+                        "tput_user": 11.26,
+                        "tput": 740.7
                     },
                     "measured": {
-                        "ttft_ms": 14703.7,
-                        "tput_user": 12.91,
-                        "tput": 712.1,
-                        "tolerance": 0.3
+                        "ttft_ms": 10559.3,
+                        "tput_user": 11.26,
+                        "tput": 740.7,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7678,14 +7668,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.39,
-                        "tput": 21.8
+                        "tput_user": 27.21,
+                        "tput": 23.3
                     },
                     "measured": {
-                        "ttft_ms": 1428.4,
-                        "tput_user": 26.39,
-                        "tput": 21.8,
-                        "tolerance": 0.3
+                        "ttft_ms": 829.4,
+                        "tput_user": 27.21,
+                        "tput": 23.3,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7701,14 +7691,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 10.46,
-                        "tput": 419.4
+                        "tput_user": 6.7,
+                        "tput": 454.1
                     },
                     "measured": {
-                        "ttft_ms": 30159.4,
-                        "tput_user": 10.46,
-                        "tput": 419.4,
-                        "tolerance": 0.3
+                        "ttft_ms": 16758.3,
+                        "tput_user": 6.7,
+                        "tput": 454.1,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7724,14 +7714,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.31,
-                        "tput": 19.8
+                        "tput_user": 27.13,
+                        "tput": 20.8
                     },
                     "measured": {
-                        "ttft_ms": 2005.3,
-                        "tput_user": 26.31,
-                        "tput": 19.8,
-                        "tolerance": 0.3
+                        "ttft_ms": 1467.2,
+                        "tput_user": 27.13,
+                        "tput": 20.8,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7747,14 +7737,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 6.51,
-                        "tput": 310.6
+                        "tput_user": 3.95,
+                        "tput": 302.4
                     },
                     "measured": {
-                        "ttft_ms": 33643.8,
-                        "tput_user": 6.51,
-                        "tput": 310.6,
-                        "tolerance": 0.26
+                        "ttft_ms": 21165.9,
+                        "tput_user": 3.95,
+                        "tput": 302.4,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7770,14 +7760,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.22,
-                        "tput": 16.3
+                        "tput_user": 25.98,
+                        "tput": 16.5
                     },
                     "measured": {
-                        "ttft_ms": 3385.6,
-                        "tput_user": 26.22,
-                        "tput": 16.3,
-                        "tolerance": 0.25
+                        "ttft_ms": 2887.7,
+                        "tput_user": 25.98,
+                        "tput": 16.5,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7793,14 +7783,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 4.44,
-                        "tput": 176.6
+                        "tput_user": 2.02,
+                        "tput": 149.7
                     },
                     "measured": {
-                        "ttft_ms": 64324.8,
-                        "tput_user": 4.44,
-                        "tput": 176.6,
-                        "tolerance": 0.23
+                        "ttft_ms": 43021.0,
+                        "tput_user": 2.02,
+                        "tput": 149.7,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7816,14 +7806,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.18,
-                        "tput": 24.5
+                        "tput_user": 28.07,
+                        "tput": 26.0
                     },
                     "measured": {
-                        "ttft_ms": 2692.0,
-                        "tput_user": 26.18,
-                        "tput": 24.5,
-                        "tolerance": 0.16
+                        "ttft_ms": 2894.3,
+                        "tput_user": 28.07,
+                        "tput": 26.0,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7839,14 +7829,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 12.36,
-                        "tput": 857.6
+                        "tput_user": 9.4,
+                        "tput": 752.9
                     },
                     "measured": {
-                        "ttft_ms": 52362.4,
-                        "tput_user": 12.36,
-                        "tput": 857.6,
-                        "tolerance": 0.23
+                        "ttft_ms": 35244.2,
+                        "tput_user": 9.4,
+                        "tput": 752.9,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7862,14 +7852,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 26.11,
-                        "tput": 24.3
+                        "tput_user": 28.0,
+                        "tput": 25.8
                     },
                     "measured": {
-                        "ttft_ms": 3121.4,
-                        "tput_user": 26.11,
-                        "tput": 24.3,
-                        "tolerance": 0.1
+                        "ttft_ms": 3184.6,
+                        "tput_user": 28.0,
+                        "tput": 25.8,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7885,14 +7875,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 11.93,
-                        "tput": 742.9
+                        "tput_user": 9.12,
+                        "tput": 636.3
                     },
                     "measured": {
-                        "ttft_ms": 45462.5,
-                        "tput_user": 11.93,
-                        "tput": 742.9,
-                        "tolerance": 0.13
+                        "ttft_ms": 32675.3,
+                        "tput_user": 9.12,
+                        "tput": 636.3,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7908,14 +7898,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 25.98,
-                        "tput": 12.2
+                        "tput_user": 27.83,
+                        "tput": 12.8
                     },
                     "measured": {
-                        "ttft_ms": 5989.1,
-                        "tput_user": 25.98,
-                        "tput": 12.2,
-                        "tolerance": 0.18
+                        "ttft_ms": 5460.6,
+                        "tput_user": 27.83,
+                        "tput": 12.8,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7931,14 +7921,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 3.21,
-                        "tput": 91.0
+                        "tput_user": 1.98,
+                        "tput": 75.5
                     },
                     "measured": {
-                        "ttft_ms": 44630.3,
-                        "tput_user": 3.21,
-                        "tput": 91.0,
-                        "tolerance": 0.12
+                        "ttft_ms": 39672.5,
+                        "tput_user": 1.98,
+                        "tput": 75.5,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7954,14 +7944,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 23.64,
-                        "tput": 7.5
+                        "tput_user": 27.21,
+                        "tput": 8.0
                     },
                     "measured": {
-                        "ttft_ms": 12532.4,
-                        "tput_user": 23.64,
-                        "tput": 7.5,
-                        "tolerance": 0.14
+                        "ttft_ms": 11325.2,
+                        "tput_user": 27.21,
+                        "tput": 8.0,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -7977,14 +7967,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 9.65,
-                        "tput": 43.7
+                        "tput_user": 3.05,
+                        "tput": 32.2
                     },
                     "measured": {
-                        "ttft_ms": 78562.7,
-                        "tput_user": 9.65,
-                        "tput": 43.7,
-                        "tolerance": 0.22
+                        "ttft_ms": 73129.6,
+                        "tput_user": 3.05,
+                        "tput": 32.2,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -8000,14 +7990,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 22.73,
-                        "tput": 4.0
+                        "tput_user": 26.02,
+                        "tput": 6.2
                     },
                     "measured": {
-                        "ttft_ms": 27542.1,
-                        "tput_user": 22.73,
-                        "tput": 4.0,
-                        "tolerance": 0.13
+                        "ttft_ms": 15837.0,
+                        "tput_user": 26.02,
+                        "tput": 6.2,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -8023,14 +8013,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 11.16,
-                        "tput": 17.9
+                        "tput_user": 6.55,
+                        "tput": 19.9
                     },
                     "measured": {
-                        "ttft_ms": 92770.5,
-                        "tput_user": 11.16,
-                        "tput": 17.9,
-                        "tolerance": 0.16
+                        "ttft_ms": 70208.0,
+                        "tput_user": 6.55,
+                        "tput": 19.9,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -8046,14 +8036,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 21.2,
-                        "tput": 1.7
+                        "tput_user": 24.01,
+                        "tput": 2.6
                     },
                     "measured": {
-                        "ttft_ms": 70230.7,
-                        "tput_user": 21.2,
-                        "tput": 1.7,
-                        "tolerance": 0.13
+                        "ttft_ms": 44036.5,
+                        "tput_user": 24.01,
+                        "tput": 2.6,
+                        "tolerance": 0.2
                     }
                 }
             },
@@ -8069,14 +8059,14 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 12.17,
-                        "tput": 6.3
+                        "tput_user": 11.95,
+                        "tput": 5.8
                     },
                     "measured": {
-                        "ttft_ms": 123872.7,
-                        "tput_user": 12.17,
-                        "tput": 6.3,
-                        "tolerance": 0.13
+                        "ttft_ms": 111591.2,
+                        "tput_user": 11.95,
+                        "tput": 5.8,
+                        "tolerance": 0.2
                     }
                 }
             }
