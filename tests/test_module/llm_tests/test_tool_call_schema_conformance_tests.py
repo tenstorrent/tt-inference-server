@@ -150,3 +150,16 @@ def test_only_progress_lines_are_logged(caplog):
         test._on_pytest_output_line(progress)
 
     assert [r.getMessage() for r in caplog.records] == [progress]
+
+
+@pytest.mark.parametrize(
+    ("config", "title"),
+    [
+        ({}, "Tool Call Json Schema (tool_choice=auto)"),
+        ({"tool_choice": "required"}, "Tool Call Json Schema (tool_choice=required)"),
+    ],
+)
+def test_block_title_names_the_tool_choice(config, title):
+    test = ToolCallSchemaConformanceTest(TestConfig(config), {})
+
+    assert test._block({}).title == title

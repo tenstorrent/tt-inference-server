@@ -33,7 +33,10 @@ import logging
 import os
 import tempfile
 from collections import Counter
+from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence
+
+from report_module.schema import Block
 
 from .vllm_param_conformance_test import (
     FAILED_STATUS,
@@ -50,6 +53,8 @@ THRESHOLD_KEY = "pass_rate_threshold"
 REPORT_RESULTS_KEY = "test_tool_call_json_schema"
 # Must match test_tool_call_json_schema.PROGRESS_PREFIX (same reason).
 PROGRESS_PREFIX = "[tool-call-schema progress]"
+# Must match tool_call_schema.DEFAULT_TOOL_CHOICE (same reason).
+DEFAULT_TOOL_CHOICE = "auto"
 CONNECTION_ERROR_CAUSE = "connection_error"
 UNKNOWN_CAUSE = "unknown"
 
@@ -245,6 +250,16 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
                 "server unreachable: every tool-call schema case failed with a "
                 f"connection error, e.g. {cases[0].get('message', '')}"
             )
+
+    def _block(self, data: Dict[str, Any]) -> Block:
+        """Name the tool choice in the title: a suite runs this test once per
+        ``tool_choice`` (auto, then required), and the blocks must be told apart."""
+        block = super()._block(data)
+        tool_choice = _setting(self.config, "tool_choice", "value")
+        return replace(
+            block,
+            title=f"{block.title} (tool_choice={tool_choice or DEFAULT_TOOL_CHOICE})",
+        )
 
     def _on_pytest_output_line(self, line: str) -> None:
         if line.startswith(PROGRESS_PREFIX):
