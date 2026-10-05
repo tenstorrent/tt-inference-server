@@ -245,7 +245,7 @@ def _write_harbor_adapters_pth(
     if site_packages is None:
         logger.error(
             "Could not locate site-packages under %s to write harbor-adapters.pth",
-            venv_config.venv_path,
+            venv_config.venv_python,
         )
         return False
     pth_file = site_packages / "harbor-adapters.pth"
@@ -704,7 +704,10 @@ def setup_evals_common(
     """
     if not verify_evals_common_lm_eval(venv_config, model_spec):
         return False
-    return (
+    # Best effort: most EVALS_COMMON tasks never touch NLTK, so a failed fetch
+    # (e.g. no network) must not fail venv setup for them. ifeval then fails
+    # at scoring exactly as it did before this staging step existed.
+    staged = (
         run_command(
             [
                 str(venv_config.venv_python),
@@ -714,6 +717,13 @@ def setup_evals_common(
         )
         == 0
     )
+    if not staged:
+        logger.warning(
+            "Could not stage NLTK Punkt data in %s; ifeval/leaderboard_ifeval "
+            "scoring will fail, other evals are unaffected.",
+            venv_config.venv_python,
+        )
+    return True
 
 
 # Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==

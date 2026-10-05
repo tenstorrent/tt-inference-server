@@ -60,3 +60,14 @@ def test_evals_common_setup_skips_nltk_when_the_harness_is_unverified():
         assert not setup_evals_common(venv, model_spec=SimpleNamespace())
 
     assert run.call_count == 1
+
+
+def test_evals_common_setup_survives_an_nltk_staging_failure():
+    # Most EVALS_COMMON tasks never use NLTK; a failed Punkt fetch (e.g. no
+    # network) must not fail venv setup for them.
+    venv = SimpleNamespace(venv_python=Path("/venv/bin/python"))
+
+    with patch("workflows.workflow_venvs.run_command", side_effect=[0, 1]) as run:
+        assert setup_evals_common(venv, model_spec=SimpleNamespace())
+
+    assert run.call_count == 2
