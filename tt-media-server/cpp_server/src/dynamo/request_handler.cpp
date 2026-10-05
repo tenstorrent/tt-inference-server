@@ -33,23 +33,6 @@ namespace tt::dynamo {
 
 namespace {
 
-/// Trace context the transaction should continue. Normally the
-/// frontend-forwarded header; on the decode half of a Dynamo-routed
-/// disaggregated request the traceparent the prefill server embedded in
-/// tt_prefill_result wins — the frontend issues the decode hop under a fresh
-/// trace context, which would otherwise split prefill and decode into two
-/// unrelated Sentry traces.
-std::string effectiveTraceparent(const GenerateRequest& dynReq) {
-  if (tt::config::dynamoRoutingEnabled() &&
-      tt::config::llmMode() == tt::config::LLMMode::DECODE_ONLY) {
-    if (std::string embedded = prefillResultTraceparent(dynReq.raw);
-        !embedded.empty()) {
-      return embedded;
-    }
-  }
-  return tt::telemetry::traceparentFromHeaders(dynReq.headers);
-}
-
 /// One Sentry transaction per Dynamo generate request. The name/op encode
 /// the server role so prefill and decode hops of one disaggregated request
 /// show up as distinct transactions inside the same distributed trace.
@@ -67,7 +50,8 @@ std::shared_ptr<tt::telemetry::Transaction> startGenerateTransaction(
     op = "llm.decode";
   }
   auto tx = std::make_shared<tt::telemetry::Transaction>(
-      tt::telemetry::startTransaction(name, op, effectiveTraceparent(dynReq)));
+      tt::telemetry::startTransaction(
+          name, op, tt::telemetry::traceparentFromHeaders(dynReq.headers)));
   tx->setTag("llm.mode", modeTag);
   if (!requestId.empty()) tx->setTag("dynamo.request_id", requestId);
   if (!dynReq.model.empty()) tx->setTag("llm.model", dynReq.model);
@@ -187,8 +171,8 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
     try {
       disaggregation->handlePrefillFirstRequest(
           *req, prefillMessage.registrationHashes,
-          [sendChunk, signalDone, prefillDone,
-           tx](const tt::sockets::PrefillResultMessage& result) {
+          [sendChunk, signalDone,
+           prefillDone](const tt::sockets::PrefillResultMessage& result) {
             bool expected = false;
             if (!prefillDone->compare_exchange_strong(expected, true)) {
               return;
@@ -208,15 +192,6 @@ void DynamoRequestHandler::handle(const GenerateRequest& dynReq,
             }
             Json::Value params(Json::objectValue);
             params["tt_prefill_result"] = prefillResultToJson(resultForDynamo);
-            // Embed this transaction's trace context: the frontend forwards
-            // disaggregated_params verbatim to the decode worker, which
-            // continues this trace with it (the frontend issues the decode
-            // hop under a fresh trace context, so without this the two halves
-            // of a disaggregated request land in separate Sentry traces).
-            if (const std::string traceparent = tx->traceparent();
-                !traceparent.empty()) {
-              params["tt_prefill_result"]["traceparent"] = traceparent;
-            }
             out.disaggregated_params = std::move(params);
             DynamoUsage du;
             du.prompt_tokens =

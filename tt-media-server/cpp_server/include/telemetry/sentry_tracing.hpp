@@ -15,9 +15,7 @@
  * without an upstream trace publishes nothing to Sentry. The frontend does
  * not forward `sentry-trace`/`baggage`, so those are deliberately not
  * handled. Transaction::traceparent() emits the header value for the next
- * hop: the disaggregated decode -> prefill ZMQ leg (PrefillRequestMessage),
- * or the Dynamo-routed prefill -> decode handoff (embedded in
- * tt_prefill_result, which the frontend forwards verbatim).
+ * hop (the disaggregated decode -> prefill ZMQ leg).
  *
  * Configuration comes from tt::config (env vars with compiled-in defaults
  * from config/defaults.hpp): SENTRY_DSN (default: the shared

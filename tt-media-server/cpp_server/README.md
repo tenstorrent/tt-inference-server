@@ -51,12 +51,7 @@ continues that trace with a single Sentry transaction per server role:
 otherwise. A request without a (valid) `traceparent` publishes nothing — the
 server never starts a trace of its own. On the decode → prefill ZMQ hop the
 decode transaction's traceparent rides inside `PrefillRequestMessage`, so
-both halves of a disaggregated request appear in one trace. Under Dynamo
-routing (frontend → prefill, then frontend → decode) the frontend issues the
-decode hop under a fresh trace context, so the prefill server embeds its
-transaction's traceparent in `tt_prefill_result` and the decode server
-continues that trace instead of the header one — both halves still share the
-client's trace.
+both halves of a disaggregated request appear in one trace.
 
 Configuration: env vars override the compiled-in defaults from
 `include/config/defaults.hpp` (see `tt::config::sentry*` in
