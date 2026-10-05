@@ -6555,6 +6555,52 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
+                # scored by the task's own answer extractor. Unlike bare
+                # n-shot GPQA, the few-shot examples demonstrate reasoning
+                # before the final answer, so they do not suppress thinking.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=77.2,
+                    published_score_ref="https://huggingface.co/google/gemma-4-12B-it",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Match 31B entry: use the
+                # chat endpoint with server-side thinking and non-streaming
+                # responses for this 5-shot MMLU-Pro sweep.
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 49152,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 8192,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
+                # subtask (an int multiplies by 14, a fraction scales each subtask).
+                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.07,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
