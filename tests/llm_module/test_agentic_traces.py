@@ -62,7 +62,7 @@ from reference_config.agentic_traces.agentic_traces_config import (
 from report_module.schema import Block
 from workflows.workflow_types import AgenticTracesMode
 
-KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 # InferenceX #2829, the commit SemiAnalysis's B300 GLM agentic sweep landed as.
 KIMI_PINNED_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
 
