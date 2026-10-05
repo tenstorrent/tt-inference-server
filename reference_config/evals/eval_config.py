@@ -6198,6 +6198,20 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
         ),
         replace(
             _gemma_swe,
+            score=replace(
+                _gemma_swe.score,
+                mode_reference_scores={
+                    EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                        score=40.0,
+                        ref=(
+                            "Gemma4 26B QB2 SWE5: 2/5, "
+                            "https://github.com/tenstorrent/tt-agentic-bringup-qb2/"
+                            "actions/runs/36983437902/job/110763074189"
+                        ),
+                        tolerance=0.10,
+                    ),
+                },
+            ),
             agentic_eval_config=replace(
                 _gemma_swe.agentic_eval_config,
                 agent_timeout_sec=2 * 60 * 60,

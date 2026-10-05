@@ -2440,7 +2440,7 @@ templates:
         no-enable-prefix-caching: true
         # Throughput profile; --no-async-scheduling remains the TTFT-priority option.
         async-scheduling: true
-  status: EXPERIMENTAL
+  status: FUNCTIONAL
   has_builtin_warmup: false
 
   metadata:

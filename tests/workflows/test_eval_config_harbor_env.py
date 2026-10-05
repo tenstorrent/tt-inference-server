@@ -21,7 +21,12 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from reference_config.evals.eval_config import ALL_EVAL_CONFIGS, TerminalBenchEvalConfig
+from reference_config.evals.eval_config import (
+    ALL_EVAL_CONFIGS,
+    TerminalBenchEvalConfig,
+    accept_eval_score,
+    resolve_eval_reference,
+)
 from workflows.workflow_venvs import HARBOR_REF, HARBOR_REPO
 from workflow_module.engine_types import EvalLimitMode
 
@@ -78,6 +83,11 @@ def test_gemma4_release_has_exact_subsets_and_explicit_policy():
     assert not tb.abort_on_client_disconnect
     swe_agent = swe.agentic_eval_config
     assert swe_agent.request_telemetry and swe_agent.abort_on_client_disconnect
+    swe_ref = resolve_eval_reference(swe.score, EvalLimitMode.CI_NIGHTLY)
+    assert swe_ref["reference_score"] == 40.0
+    assert swe_ref["tolerance"] == 0.10
+    assert accept_eval_score(swe_ref, 20.0, n_total=5) is True
+    assert accept_eval_score(swe_ref, 0.0, n_total=5) is False
     for agent in (tb, swe_agent):
         assert agent.n_attempts == 1
     assert swe.agentic_eval_config.owned_command_cleanup
@@ -89,6 +99,7 @@ def test_gemma4_release_has_exact_subsets_and_explicit_policy():
     ]
     assert specs
     for spec in specs:
+        assert spec["status"] == "FUNCTIONAL"
         metadata = spec["metadata"]["google/gemma-4-26B-A4B-it"]
         assert "evals" not in metadata.get("ci_workflow_overrides", {})
 
