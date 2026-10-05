@@ -65,6 +65,9 @@ class Qwen3TTSConstants:
     TRACE_REGION_SIZE = 512_000_000
     NUM_COMMAND_QUEUES = 2
     MAX_NEW_TOKENS = 256
+    # Longest reference (in 12.5 fps codec frames, so 150 ~= 12s) the device decoder
+    # warms buckets for. Ad-hoc voice clones above this are rejected, not decoded.
+    MAX_REF_FRAMES = 150
 
 
 class TTQwen3TTSRunner(BaseMetalDeviceRunner):
@@ -235,18 +238,6 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             self.ttnn_device, self.model, self.config, self.main_weights
         )
 
-        if self._use_device_decode:
-            # Build the on-device speech-tokenizer decoder once and pre-warm the
-            # expected decode buckets (ref frames + up to max_new_tokens generated,
-            # rounded up to 64-frame buckets), so the first live request doesn't pay
-            # the one-time per-bucket kernel compile.
-            self.logger.info(f"Device {self.device_id}: Building on-device speech decoder...")
-            self.device_decoder = api.build_device_decoder(self.ttnn_device, self.decoder_weights)
-            warm_buckets = [64, 128, 192, 256, 320, 384]
-            self.logger.info(f"Device {self.device_id}: Warming decoder buckets {warm_buckets}...")
-            api.warmup_device_decoder(self.device_decoder, warm_buckets)
-            self.logger.info(f"Device {self.device_id}: On-device speech decoder ready")
-
         self.voice_prompts = VoicePromptManager()
         self.voice_prompts.preload()
         self.voice_prompts.precompute_speaker_embeddings(self.model)
@@ -254,6 +245,39 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             f"Device {self.device_id}: Voice prompts ready: "
             f"{self.voice_prompts.list_available()}"
         )
+
+        if self._use_device_decode:
+            # Built after the voice prompts so the warmed buckets can cover the
+            # reference too: decode_audio_device decodes cat([ref_codes, codes]), so
+            # sizing buckets off the generated count alone leaves live requests
+            # un-warmed. Ad-hoc clones carry a caller-supplied reference, so allow
+            # headroom past the presets; a longer one is then rejected by the frozen
+            # decoder instead of preparing conv weights on an already-traced device.
+            preset_ref_frames = 0
+            for voice_id in self.voice_prompts.list_available():
+                prompt = self.voice_prompts.get(voice_id)
+                if prompt is not None:
+                    preset_ref_frames = max(preset_ref_frames, int(prompt.ref_codes.shape[0]))
+            max_ref_frames = max(
+                preset_ref_frames,
+                int(
+                    os.environ.get(
+                        "TT_QWEN3_MAX_REF_FRAMES", Qwen3TTSConstants.MAX_REF_FRAMES
+                    )
+                ),
+            )
+            self.logger.info(
+                f"Device {self.device_id}: Building on-device speech decoder "
+                f"(ref<={max_ref_frames} + gen<={max_new} frames)..."
+            )
+            self.device_decoder, warm_buckets = api.prepare_device_decoder(
+                self.ttnn_device, self.decoder_weights, max_ref_frames, max_new
+            )
+            self.logger.info(
+                f"Device {self.device_id}: On-device speech decoder ready; "
+                f"warmed and froze buckets {warm_buckets}"
+            )
+
         self._post_warmup_rng_state = torch.get_rng_state()
 
     def _warmup_inference(self) -> None:
