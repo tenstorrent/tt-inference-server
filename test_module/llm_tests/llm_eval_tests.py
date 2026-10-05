@@ -190,7 +190,9 @@ def _score_one(
     configured_keys = kwargs.get("result_keys", [])
     actual_data = results.get(t_key, {})
     key_found = any(
-        _multilevel_key_resolves(results, k) if isinstance(k, tuple) else k in actual_data
+        _multilevel_key_resolves(results, k)
+        if isinstance(k, tuple)
+        else k in actual_data
         for k in configured_keys
     )
     if not key_found:
