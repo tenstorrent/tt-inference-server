@@ -159,7 +159,11 @@
         {
           "template": "ToolCallSchemaConformanceTest",
           "enabled": true,
-          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate 100%)"
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate >= 99.08%)",
+          "_comment_threshold": "pass_rate_threshold = mean - 2 sample std of 10 runs on GPU vLLM (all 408 cases, no retries, 2026-10-05): 99.66% - 2 x 0.29% = 99.08%, i.e. at least 405 of 408.",
+          "targets": {
+            "pass_rate_threshold": 0.9908
+          }
         },
         {
           "template": "ToolCallSchemaConformanceTest",
