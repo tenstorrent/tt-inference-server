@@ -4231,6 +4231,10 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_pro",
+                # ALLaM's chat template enforces strict user/assistant alternation and rejects
+                # lm-eval's few-shot chat rendering ("Conversation roles must alternate",
+                # Shield run 37310746376); score the plain few-shot prompt instead.
+                apply_chat_template=False,
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,
