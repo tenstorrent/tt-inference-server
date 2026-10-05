@@ -102,6 +102,8 @@ templates:
       vllm_args:
         data_parallel_size: 4
         max_num_seqs: 32  # override the default inferred by max_concurrency
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
