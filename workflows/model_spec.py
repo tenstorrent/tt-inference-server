@@ -428,6 +428,15 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
+# DeepSeek-V4.1-Flash on Blackhole Galaxy (4x8 mesh, 32 chips). Own tt-metal
+# package (not deepseek_v3): batch = 4 mesh rows x U users per row, traced chunked
+# prefill, paged KV, optional spec decode (DSV41_SPEC).
+deepseek_v41_flash_impl = ImplSpec(
+    impl_id="deepseek_v41_flash",
+    impl_name="deepseek-v41-flash",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/deepseek_v41_flash",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -440,6 +449,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
+    "deepseek_v41_flash": deepseek_v41_flash_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "forge_vllm_plugin": forge_vllm_plugin_impl,
