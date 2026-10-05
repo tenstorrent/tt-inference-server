@@ -426,7 +426,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # no SwarmOne scenario is recorded for this model. Same InferenceX pin as
     # Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_GLM-5.2_super_cluster",
+        model_id="id_blaze_GLM-5.2_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
@@ -437,7 +437,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
         ),
     ),
     AgenticTracesConfig(
-        model_id="id_tt-transformers_GLM-5.3_super_cluster",
+        model_id="id_blaze_GLM-5.3_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
@@ -491,7 +491,7 @@ _REQUIREMENTS_SYNTHESIZED_IMPL_ID = "requirements_synthesized"
 # currently the only onboarded one. Its default sweep is the
 # InferenceX Weka replay (SwarmOne is opt-in, so no swo-bench license is
 # needed); the InferenceX pin and mode settings carry over unchanged.
-_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 
 
 def _borrows_template(model_spec) -> bool:
