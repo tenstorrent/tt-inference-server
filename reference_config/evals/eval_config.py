@@ -5224,8 +5224,10 @@ _eval_config_list = [
             EvalTask(
                 task_name="leaderboard_ifeval",
                 score=EvalTaskScore(
-                    published_score=56.21,
-                    published_score_ref="https://huggingface.co/arcee-ai/Arcee-Spark (Open LLM Leaderboard results on the model card)",
+                    # The model card's 56.21 is the leaderboard's displayed IFEval, the MEAN of prompt- and
+                    # instruction-level strict acc; this task scores prompt-level only.
+                    published_score=51.39,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/arcee-ai/Arcee-Spark/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -5345,13 +5347,12 @@ _eval_config_list = [
             ),
         ],
     ),
-# Draft TTIS EvalConfig entries for 12 base (non-chat) checkpoints served by quetzal on P300X2.
-# Paste inside _eval_config_list in reference_config/evals/eval_config.py.
-# All tasks use the text completions endpoint (use_chat_api=False) and apply_chat_template=False,
-# because these are pretrained checkpoints served without a chat template.
-# Open LLM Leaderboard v2 (OLL) numbers come from the per-model results JSON (2025-02-13 re-scoring,
-# which is what the leaderboard currently displays), run with the same lm-eval leaderboard_* tasks and n-shot.
-
+    # Draft TTIS EvalConfig entries for 12 base (non-chat) checkpoints served by quetzal on P300X2.
+    # Paste inside _eval_config_list in reference_config/evals/eval_config.py.
+    # All tasks use the text completions endpoint (use_chat_api=False) and apply_chat_template=False,
+    # because these are pretrained checkpoints served without a chat template.
+    # Open LLM Leaderboard v2 (OLL) numbers come from the per-model results JSON (2025-02-13 re-scoring,
+    # which is what the leaderboard currently displays), run with the same lm-eval leaderboard_* tasks and n-shot.
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.2-1B",
