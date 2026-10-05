@@ -720,11 +720,15 @@ def ensure_weights_available(model_spec: dict) -> Path:
     model_name = model_spec["model_name"]
     weights_path = cache_root / "weights" / model_name
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
+    # A spec that pins vLLM to an immutable checkpoint (vllm_args.revision) gets the
+    # same checkpoint here, so the served weights do not drift when the hub's main moves.
+    revision = (model_spec.get("device_model_spec") or {}).get("vllm_args", {}).get("revision")
 
     weights_path.mkdir(parents=True, exist_ok=True)
-    logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
+    at_revision = f" at revision {revision}" if revision else ""
+    logger.info(f"Downloading weights from {hf_repo}{at_revision} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+        snapshot_download(repo_id=hf_repo, local_dir=weights_path, revision=revision)
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(
