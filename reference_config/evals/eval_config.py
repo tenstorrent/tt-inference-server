@@ -6342,6 +6342,142 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
+            EvalTask(
+                # Terminal-Bench 2 (89 tasks) through Harbor / terminus-2 with
+                # thinking on. Knobs are the ones validated on the gemma4_31b_qb2
+                # serving stack in tt-agentic-bringup-qb2 #56 (CI runs of
+                # 2026-09-21..23): 50 turns and 3 h per task, 64K-in / 16K-out
+                # agent budgets, model-card sampling with the device sampler's
+                # top_k=20. Raising turns/time/output cap or disabling thinking
+                # was measured there and did not move the score.
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # The model card / tech report publish only "Terminal Bench
+                    # Hard", a different suite from this harness, so no
+                    # published score is set.
+                    published_score=None,
+                    published_score_ref="https://arxiv.org/abs/2607.02770",
+                    # H100 reference vLLM (max-model-len 204800, thinking on,
+                    # temp 1.0 / top_p 0.95 / top_k 20, 112K in / 80K out),
+                    # terminus-2, 2026-06-17: 40/89 solved.
+                    gpu_reference_score=44.94,
+                    gpu_reference_score_ref="run.py --workflow agentic terminal_bench_2 full (89), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-17",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        # terminus-2 defaults to an effectively unbounded turn
+                        # count; 50 turns at ~3 min/turn (thinking on, ~40
+                        # tok/s single-user decode) matches the 3 h budget.
+                        "max_turns": 50,
+                        "model_info": {
+                            "max_input_tokens": 64 * 1024,
+                            "max_output_tokens": 16 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            # qemu-startup is ungradeable for any model: its
+                            # Debian 11 image can no longer apt-get the
+                            # verifier's dependencies (reward 0 even for the
+                            # task's own reference solution). Replaced by a
+                            # task of the same difficulty and category whose
+                            # reference solution passes 8/8.
+                            "terminal-bench/nginx-request-logging",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                # SWE-bench Verified (500 instances) through Harbor /
+                # mini-swe-agent, graded in-container by Harbor. Same sampling
+                # as terminal_bench_2 above; 100-step limit and 16K output cap
+                # as in the #56 runs (agents used 32-50 of 100 steps).
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not published for Gemma 4.
+                    published_score=None,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    # H100 reference vLLM (max-model-len 204800, thinking on,
+                    # temp 1.0 / top_p 0.95 / top_k 20, 160K in / 32K out),
+                    # mini-swe-agent, 2026-06-18: 324/500 resolved.
+                    gpu_reference_score=64.8,
+                    gpu_reference_score_ref="run.py --workflow agentic swe_bench_verified full (500), H100 gemma-4-31B-it bring-your-own vLLM w/ enable_thinking=true, 2026-06-18",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 16 * 1024,
+                        "config": {
+                            "agent": {
+                                "step_limit": 100,
+                            },
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
