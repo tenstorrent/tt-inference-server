@@ -858,7 +858,8 @@ def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
     # metric-mismatch auto-detect used to substitute as a bare string --
     # score_multilevel_keys_mean then asserted and the task scored 0.
     task = next(
-        t for t in _eval_config_map["meta-llama/Llama-3.2-3B"].tasks
+        t
+        for t in _eval_config_map["meta-llama/Llama-3.2-3B"].tasks
         if t.task_name == "leaderboard_math_hard"
     )
     subtasks = [k[0] for k in task.score.score_func_kwargs["result_keys"]]
@@ -868,4 +869,46 @@ def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
     score, ratio, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
     assert score == pytest.approx(2.0)
     assert ratio == pytest.approx(2.0 / task.score.published_score)
+    assert check == ReportCheckTypes.PASS
+
+
+def test_group_task_subtasks_survive_loading_and_score(tmp_path):
+    # leaderboard_math_hard's results file lists the group first and its seven
+    # subtasks as siblings. The loader used to keep only the first entry, so
+    # score_multilevel_keys_mean never saw the subtasks and the task scored 0.
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = ["leaderboard_math_algebra_hard", "leaderboard_math_geometry_hard"]
+    payload = {
+        "results": {
+            "leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"},
+            **{
+                name: {"alias": f" - {name}", "exact_match,none": 0.02}
+                for name in subtasks
+            },
+        },
+        "configs": {
+            name: {"task": name, "dataset_path": "math"}
+            for name in ["leaderboard_math_hard", *subtasks]
+        },
+    }
+    path = tmp_path / "results_2026-10-05T10-17-59.json"
+    path.write_text(json.dumps(payload))
+    results, _ = mod.load_eval_results([str(path)])
+    assert set(subtasks) <= set(results)
+
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
+    )
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, _, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
     assert check == ReportCheckTypes.PASS

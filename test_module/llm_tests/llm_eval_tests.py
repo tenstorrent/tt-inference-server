@@ -79,7 +79,7 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     return sorted(set(files))
 
 
-def _extract_json(json_path: Path) -> tuple[str, dict, int | None]:
+def _extract_json(json_path: Path) -> tuple[str, dict, int | None, dict]:
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict):
@@ -118,7 +118,14 @@ def _extract_json(json_path: Path) -> tuple[str, dict, int | None]:
     count = sample_info.get("effective") if isinstance(sample_info, dict) else None
     if not isinstance(count, int) or isinstance(count, bool):
         count = None
-    return task_name, metrics, count
+    # A group task (e.g. leaderboard_math_hard) writes its subtasks as sibling
+    # entries in the same file; score_multilevel_keys_mean reads them by name.
+    subtasks = {
+        name: {k: v for k, v in sub.items() if "alias" not in k and "_stderr" not in k}
+        for name, sub in results.items()
+        if name != task_name and isinstance(sub, dict)
+    }
+    return task_name, metrics, count, subtasks
 
 
 def load_eval_results(files) -> tuple[dict, dict]:
@@ -138,7 +145,7 @@ def load_eval_results(files) -> tuple[dict, dict]:
 
     results: dict = {}
     counts: dict = {}
-    for _, (task_name, metrics, count) in sorted(
+    for _, (task_name, metrics, count, subtasks) in sorted(
         loaded, key=lambda item: item[0], reverse=True
     ):
         if task_name in results:
@@ -146,6 +153,8 @@ def load_eval_results(files) -> tuple[dict, dict]:
         results[task_name] = metrics
         if count is not None:
             counts[task_name] = count
+        for name, sub_metrics in subtasks.items():
+            results.setdefault(name, sub_metrics)
     return results, counts
 
 
@@ -189,7 +198,9 @@ def _score_one(
     configured_keys = kwargs.get("result_keys", [])
     actual_data = results.get(t_key, {})
     key_found = any(
-        _multilevel_key_resolves(results, k) if isinstance(k, tuple) else k in actual_data
+        _multilevel_key_resolves(results, k)
+        if isinstance(k, tuple)
+        else k in actual_data
         for k in configured_keys
     )
     if not key_found:
