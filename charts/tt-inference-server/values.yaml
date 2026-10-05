@@ -40,6 +40,21 @@ auth:
   # Serve without authentication (NO_AUTH=1). media/forge only.
   disabled: false
 
+# The chart drives the server through interfaces that older images lack, so a row
+# pinned below the release that introduced them is refused at render. Set enforce
+# false only to reproduce the resulting runtime failure on purpose. The floors
+# live here rather than in the templates so the chart and the generated
+# Supported Models table read the same values.
+imageFloor:
+  enforce: true
+  # Release whose ENTRYPOINT forwards container args to the server; earlier
+  # images start it from CMD, which the chart's --model/--tt-device replace.
+  vllm: "0.11.0"
+  # Release that honours NO_AUTH. Applies only when auth.disabled is set; below
+  # it the flag does nothing and the server still requires a bearer key, so the
+  # release would not serve unauthenticated as asked.
+  authDisabled: "0.15.0"
+
 # Tenstorrent boards need 1Gi hugepages unless the cluster runs IOMMU + KMD
 # 1.29.0+, where they aren't required. When disabled, the chart drops the
 # hugepages-1Gi request/limit, the /dev/hugepages-1G volume + mounts, and the

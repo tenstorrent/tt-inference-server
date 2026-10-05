@@ -46,6 +46,48 @@ it is open unless VLLM_API_KEY is set, which is what auth.apiKey sets.
     {{- fail (printf "engine '%s' authenticates its inference routes with a bearer key, and leaving it unset would silently use the server image's built-in default. Set auth.apiKey=<key> (stored in the release Secret as API_KEY), or auth.disabled=true to run without auth." $engine) }}
   {{- end }}
 {{- end }}
+
+{{- include "tt-inference-server.validateImageFloor" . }}
+{{- end }}
+
+{{/*
+The chart drives the server through interfaces that only exist in images from a
+certain release onwards, so a row pinned below that release cannot serve and is
+refused here rather than at runtime:
+
+  - vllm: the chart passes --model/--tt-device as container args. Images before
+    0.11.0 start the server from CMD, which those args replace, and they leave
+    CACHE_ROOT unset, which their entrypoint requires — verified on hardware:
+    the container crash-loops in its entrypoint, and with CACHE_ROOT supplied it
+    then fails on `exec: "--model"`.
+  - media/forge: auth.disabled maps to NO_AUTH, which the server only honours
+    from 0.15.0. Below that the flag does nothing: the server still demands a
+    bearer key and falls back to a built-in default, so clients that send no
+    header are rejected — not the unauthenticated serving that was asked for.
+
+Rows whose tag carries no release prefix (forge commit-hash builds) can't be
+placed against a floor, so they pass.
+*/}}
+{{- define "tt-inference-server.validateImageFloor" -}}
+{{- if dig "enforce" true (.Values.imageFloor | default dict) }}
+{{- $engine := include "tt-inference-server.resolvedEngine" . }}
+{{- $tag := include "tt-inference-server.imageTag" . }}
+{{- $release := regexFind "^[0-9]+\\.[0-9]+\\.[0-9]+" $tag }}
+{{- if $release }}
+{{- $floors := .Values.imageFloor | default dict }}
+{{- if eq $engine "vllm" }}
+  {{- $floor := dig "vllm" "" $floors }}
+  {{- if and $floor (not (semverCompare (printf ">=%s" $floor) $release)) }}
+    {{- fail (printf "model '%s' on device '%s' is pinned to image tag '%s' (release %s), below this chart's floor of %s for the vllm engine. The chart passes --model/--tt-device as container args, but images before 0.11.0 use an ENTRYPOINT that does not forward them (and do not set CACHE_ROOT, which that same entrypoint requires), so the container dies in its entrypoint and the server never starts. Choose a model/device whose pinned image is 0.11.0 or newer, or have the pin refreshed in the ModelSpec catalogue. Set imageFloor.enforce=false only to reproduce this failure deliberately." .Values.model .Values.device $tag $release $floor) }}
+  {{- end }}
+{{- else if dig "disabled" false (.Values.auth | default dict) }}
+  {{- $floor := dig "authDisabled" "" $floors }}
+  {{- if and $floor (not (semverCompare (printf ">=%s" $floor) $release)) }}
+    {{- fail (printf "auth.disabled=true requires NO_AUTH, which the '%s' server only honours from release %s, but model '%s' on device '%s' is pinned to image tag '%s' (release %s). That server ignores NO_AUTH and still requires Authorization: Bearer <API_KEY>, falling back to a key published in its own source when API_KEY is unset, so the release would not serve unauthenticated as asked: clients sending no header are rejected. Set auth.apiKey=<key> instead, or use a newer pin. Set imageFloor.enforce=false only to reproduce this failure deliberately." $engine $floor .Values.model .Values.device $tag $release) }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -125,7 +167,18 @@ Container image string built from resolved config.
 */}}
 {{- define "tt-inference-server.image" -}}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
-{{- printf "%s:%s" $cfg.image.repository $cfg.image.tag }}
+{{- printf "%s:%s" $cfg.image.repository (include "tt-inference-server.imageTag" .) }}
+{{- end }}
+
+{{/*
+Resolved image tag, and the value of app.kubernetes.io/version. One release runs
+one pinned image, so the tag is the only value that names what is actually
+serving; the chart itself has no single app version to report, since the
+catalogue's rows span many product releases.
+*/}}
+{{- define "tt-inference-server.imageTag" -}}
+{{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- $cfg.image.tag | toString }}
 {{- end }}
 
 {{/*
@@ -250,9 +303,7 @@ Chart name helpers
 {{- define "tt-inference-server.labels" -}}
 helm.sh/chart: {{ include "tt-inference-server.chart" . }}
 {{ include "tt-inference-server.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
-{{- end }}
+app.kubernetes.io/version: {{ include "tt-inference-server.imageTag" . | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 

@@ -15,6 +15,10 @@
 #                                   chart is broken" from "the pin is stale".
 #                                   Never the steady state: the smoke guards
 #                                   that pin.
+#   IMAGE_FLOOR                     true|false (default true). false waives the
+#                                   chart's image-release floor, for driving a
+#                                   candidate IMAGE_TAG that predates it. The
+#                                   server is expected to fail in that case.
 #   HUGEPAGES                       true|false (default: probe the node)
 #   POD_PROXY                       http proxy the Pod should use for weight
 #                                   downloads (default: $HTTPS_PROXY with its
@@ -41,6 +45,7 @@ IMPL="${IMPL:-}"
 NAMESPACE="${NAMESPACE:-ttis-hw-smoke}"
 RELEASE="${RELEASE:-ttis-hw}"
 IMAGE_TAG="${IMAGE_TAG:-}"
+IMAGE_FLOOR="${IMAGE_FLOOR:-true}"
 HUGEPAGES="${HUGEPAGES:-}"
 POD_PROXY="${POD_PROXY:-}"
 HF_TOKEN="${HF_TOKEN:-}"
@@ -88,6 +93,7 @@ secs_between() { echo $(( $(date -d "$2" +%s) - $(date -d "$1" +%s) )); }
 
 log "chart selection"
 HELM_SET=(--set "model=$MODEL" --set "device=$DEVICE")
+[ "$IMAGE_FLOOR" = "false" ] && HELM_SET+=(--set "imageFloor.enforce=false")
 [ -n "$ENGINE" ]       && HELM_SET+=(--set "engine=$ENGINE")
 [ -n "$IMPL" ]         && HELM_SET+=(--set "impl=$IMPL")
 [ -n "$HF_TOKEN" ]     && HELM_SET+=(--set "hfToken=$HF_TOKEN")
@@ -177,7 +183,7 @@ if [ -n "$OVERRIDES" ]; then
 fi
 
 RENDERED="$(helm template "$RELEASE" "$CHART" --namespace "$NAMESPACE" "${HELM_SET[@]}")" \
-  || fail "helm template failed for model=$MODEL device=$DEVICE — does that model/engine/device/impl row exist?"
+  || fail "helm template failed for model=$MODEL device=$DEVICE — does that model/engine/device/impl row exist, and is its image at or above the chart's floor (see IMAGE_FLOOR)?"
 IMAGE_REF="$(printf '%s\n' "$RENDERED" | awk '$1=="image:" && $2 ~ /ghcr.io|docker.io|\//{print $2}' | grep -v busybox | head -1)"
 WANT_BOARD="$(printf '%s\n' "$RENDERED" | awk -F'"' '/boardName ==/{print $(NF-1)}')"
 WANT_COUNT="$(printf '%s\n' "$RENDERED" | awk '$1=="count:"{print $2; exit}')"
