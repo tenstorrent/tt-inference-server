@@ -6588,7 +6588,9 @@ _eval_config_list = [
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 8192,
+                    # 11% of the 12B answers were empty at 8192 (thinking never terminated; the 31B
+                    # loses 3.7% the same way), which is the whole gap to the model-card score.
+                    "max_gen_toks": 16384,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
