@@ -5549,14 +5549,16 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 524288,
-                    "timeout": 7200,
+                    "timeout": 14400,
                 },
+                # 64K output: at 32K, 8/40 GPQA and 13/33 HMMT traces hit the cap with no
+                # final answer (run 36837441412); the card asks for >= 32768.
                 # Model-card sampling. No top_k: served by the model's exact
                 # host sampler (K2_VLLM_ALLOW_HOST_SAMPLING=1 in the spec).
                 # stream=false is required by lm-eval's chat-completions parser.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 65536,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -5630,11 +5632,11 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 524288,
-                    "timeout": 7200,
+                    "timeout": 14400,
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 65536,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -5671,11 +5673,11 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 524288,
-                    "timeout": 7200,
+                    "timeout": 14400,
                 },
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32768,
+                    "max_gen_toks": 65536,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
