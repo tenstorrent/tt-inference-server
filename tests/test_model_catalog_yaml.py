@@ -457,3 +457,35 @@ def test_super_cluster_dev_llm_templates_use_blaze_impl():
             f"{template.weights} on SUPER_CLUSTER must use impl blaze, "
             f"got {template.impl.impl_id}"
         )
+
+
+def test_performance_references_are_scoped_to_implementation(monkeypatch):
+    from workflows import model_spec
+
+    common = {"isl": 128, "osl": 128, "max_concurrency": 1, "num_prompts": 8}
+    monkeypatch.setattr(
+        model_spec,
+        "model_performance_reference",
+        {
+            "test/model": {
+                "p300x2": [
+                    {**common, "targets": {"measured": {"tput_user": 10.0}}},
+                    {
+                        **common,
+                        "impl": "llama31_8b_qb2",
+                        "targets": {
+                            "measured": {"tput_user": 130.0, "tolerance": 0.05}
+                        },
+                    },
+                ]
+            }
+        },
+    )
+
+    def rates(impl):
+        refs = model_spec.get_perf_reference_map("test/model", {}, impl_id=impl)
+        return [r.targets["target"].tput_user for r in refs[DeviceTypes.P300X2]]
+
+    assert rates("tt_transformers") == [10.0]
+    assert rates(None) == [10.0]
+    assert rates("llama31_8b_qb2") == [10.0, 130.0]

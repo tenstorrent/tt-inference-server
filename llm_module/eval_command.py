@@ -56,6 +56,10 @@ def _effective_model_kwargs(
         raise ValueError(
             f"{task.task_name} requires device_model_spec.max_context for text evals"
         )
+    if isinstance(device_max_context, bool):
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        )
     try:
         device_max_context = int(device_max_context)
         requested = int(model_kwargs.get("max_length", device_max_context))
@@ -229,6 +233,7 @@ def build_eval_command(
     service_port,
     runtime_config=None,
     deploy_url: str = "http://127.0.0.1",
+    tokenizer_path: Optional[str] = None,
 ) -> List[str]:
     """Build the lm_eval / lmms-eval command for one standard eval task."""
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC:
@@ -357,6 +362,8 @@ def build_eval_command(
             str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
         ]
 
+    if tokenizer_path is not None:
+        effective_model_kwargs["tokenizer"] = tokenizer_path
     model_kwargs_list = [f"{k}={v}" for k, v in effective_model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)

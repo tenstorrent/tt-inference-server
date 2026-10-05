@@ -4980,6 +4980,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_code_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4995,6 +4997,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_fewshot_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -5010,6 +5014,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_multi_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -5025,6 +5031,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_single_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -5040,6 +5048,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_summarization_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -5055,6 +5065,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_synthetic_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
