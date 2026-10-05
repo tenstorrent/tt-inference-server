@@ -3,9 +3,11 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import shutil
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional, Tuple
@@ -39,6 +41,8 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # is stable.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
 HARBOR_REF = "tt-inference-server"
+
+EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -263,6 +267,118 @@ INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
 # Records the revision the checkout is currently on, so a repeat run with the
 # same pin skips the fetch + reinstall and a run with a different pin does not.
 _INFERENCEX_REF_STAMP = ".inferencex_ref"
+# Patches carried here until they land upstream. Each subdirectory names the
+# path inside the InferenceX checkout the patches apply to (``aiperf`` ->
+# ``utils/aiperf``); files apply in sorted order.
+# TODO(#5254): remove patches/inferencex/aiperf/0001-wait-for-all-service-replicas.patch
+# once upstream AgentX / InferenceX rebases its vendored aiperf onto a revision
+# that includes https://github.com/ai-dynamo/aiperf/pull/1348 and the
+# InferenceX pin moves to it. If no patches are left after that, also remove
+# _INFERENCEX_PATCH_DIR, _INFERENCEX_PATCH_TARGETS, _inferencex_patches,
+# _inferencex_stamp, _patch_check, _apply_inferencex_patches, their call sites
+# in setup_agentic_traces and tests/test_workflow_venvs_patches.py.
+# https://github.com/tenstorrent/tt-inference-server/issues/5254
+_INFERENCEX_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "inferencex"
+_INFERENCEX_PATCH_TARGETS = {"aiperf": Path("utils") / "aiperf"}
+
+
+def _inferencex_patches() -> list[tuple[Path, Path]]:
+    """(patch file, target path relative to the checkout) for every carried patch."""
+    patches: list[tuple[Path, Path]] = []
+    for subdir, target in sorted(_INFERENCEX_PATCH_TARGETS.items()):
+        patch_dir = _INFERENCEX_PATCH_DIR / subdir
+        if patch_dir.is_dir():
+            patches.extend((p, target) for p in sorted(patch_dir.glob("*.patch")))
+    return patches
+
+
+def _inferencex_stamp(git_ref: str) -> str:
+    """Ref plus a digest of the carried patches, so a patch change re-runs setup."""
+    patches = _inferencex_patches()
+    if not patches:
+        return git_ref
+    digest = hashlib.sha256()
+    for patch, _ in patches:
+        digest.update(patch.name.encode())
+        digest.update(patch.read_bytes())
+    return f"{git_ref}+patches:{digest.hexdigest()[:16]}"
+
+
+def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
+    """Quiet `git apply --check`: these probes are expected to fail on one side."""
+    result = subprocess.run(
+        ["git", "-C", str(target_dir), "apply", "--check", *flags, str(patch)],
+        capture_output=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
+    """Apply the carried patches to a fresh checkout; already-applied ones are skipped."""
+    for patch, target in _inferencex_patches():
+        target_dir = repo_dir / target
+        # An unpopulated submodule is an empty directory inside the superproject;
+        # `git apply` run there ignores every path in the patch and reports
+        # success, so require the submodule's own .git entry.
+        if not (target_dir / ".git").exists():
+            logger.error("Patch target %s is not a checkout under %s", target, repo_dir)
+            return False
+        if _patch_check(target_dir, patch, "--reverse"):
+            logger.info("Patch %s already applied to %s", patch.name, target)
+            continue
+        if not _patch_check(target_dir, patch):
+            logger.error(
+                "Patch %s does not apply to %s at this InferenceX ref; drop or "
+                "refresh it against the pinned revision.",
+                patch.name,
+                target,
+            )
+            return False
+        if (
+            run_command(
+                ["git", "-C", str(target_dir), "apply", str(patch)], logger=logger
+            )
+            != 0
+        ):
+            return False
+        logger.info("Applied %s to %s", patch.name, target)
+    return True
+
+
+# InferenceX pins whose vendored aiperf builds the agentic auto-warmup phase
+# without ``phase_kind``. 8f12037728d6 vendors aiperf 754356e9 (agentx-v1.0.5),
+# which still does.
+_AGENTIC_WARMUP_PATCH_REFS = frozenset({"8f12037728d6fc118422318d5472f147dcc2a291"})
+
+
+def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
+    # Separate auto-warmup from profiling:
+    # https://github.com/SemiAnalysisAI/agentx-harness/pull/44
+    # Without ``phase_kind="warmup"`` AIPerf tags the auto-warmup's server
+    # metric baselines as profiling, so warmup counter growth (including the
+    # prompt-token sources the prefix-cache hit rate is computed from) leaks
+    # into the profiling totals.
+    # TODO(#5253): remove this function, _AGENTIC_WARMUP_PATCH_REFS, their call
+    # sites in setup_agentic_traces and tests/workflows/test_agentic_warmup_patch.py
+    # once https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
+    # InferenceX pin moves to a revision that vendors it.
+    # https://github.com/tenstorrent/tt-inference-server/issues/5253
+    if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
+        return True
+    config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
+    source = config_path.read_text(encoding="utf-8")
+    old = (
+        "        phase=CreditPhase.WARMUP,\n"
+        "        timing_mode=TimingMode.AGENTIC_REPLAY,\n"
+    )
+    new = old + '        phase_kind="warmup",\n'
+    if source.count(old) != 1:
+        logger.error("Unexpected AIPerf warmup configuration: %s", config_path)
+        return False
+    if new not in source:
+        config_path.write_text(source.replace(old, new, 1), encoding="utf-8")
+    return True
 
 
 def setup_agentic_traces(
@@ -315,15 +431,21 @@ def setup_agentic_traces(
     git_ref = config.inferencex_git_ref
     repo_dir = venv_config.venv_path / "InferenceX"
     stamp_file = venv_config.venv_path / _INFERENCEX_REF_STAMP
+    stamp = _inferencex_stamp(git_ref)
 
     if repo_dir.is_dir() and stamp_file.is_file():
-        if stamp_file.read_text().strip() == git_ref:
+        if stamp_file.read_text().strip() == stamp:
+            # The stamp only says the patches were applied at setup time. Check
+            # the tree on every run and re-apply if something reset it, so a
+            # run never silently proceeds without them.
+            if not _apply_inferencex_patches(repo_dir, logger):
+                return False
             logger.info(
                 "InferenceX already checked out at %s in %s; skipping setup.",
                 git_ref,
                 repo_dir,
             )
-            return True
+            return _patch_agentic_warmup(repo_dir, git_ref)
         logger.info(
             "InferenceX checkout is on a different ref than the configured %s; "
             "re-checking out and reinstalling.",
@@ -357,6 +479,8 @@ def setup_agentic_traces(
         != 0
     ):
         return False
+    if not _apply_inferencex_patches(repo_dir, logger):
+        return False
 
     logger.warning(
         "Installing the InferenceX AIPerf fork; this pulls transformers from "
@@ -383,7 +507,10 @@ def setup_agentic_traces(
     if run_command(install_cmd, logger=logger) != 0:
         return False
 
-    stamp_file.write_text(f"{git_ref}\n")
+    if not _patch_agentic_warmup(repo_dir, git_ref):
+        return False
+
+    stamp_file.write_text(f"{stamp}\n")
     logger.info("InferenceX ready at %s (ref %s)", repo_dir, git_ref)
     return True
 
@@ -497,6 +624,39 @@ def setup_evals_meta(
     # meta_ifeval) when a sibling model's data overwrote the shared dir.
     os.chdir(original_dir)
     return setup_succeeded
+
+
+def verify_evals_common_lm_eval(
+    venv_config: VenvConfig,
+    model_spec: ModelSpec,
+) -> bool:
+    """Fail closed unless EVALS_COMMON installed the reviewed harness commit.
+
+    PEP 610 requires direct-URL installs to retain their resolved VCS commit in
+    ``direct_url.json``. Printing that record puts the immutable dependency in
+    every setup log; comparing it here prevents a stale persistent venv or an
+    installer regression from silently running a different harness.
+    """
+    del model_spec
+    probe = f"""
+import importlib.metadata
+import json
+
+expected = {EVALS_COMMON_LM_EVAL_COMMIT!r}
+dist = importlib.metadata.distribution("lm-eval")
+record = json.loads(dist.read_text("direct_url.json"))
+actual = record.get("vcs_info", {{}}).get("commit_id")
+print(json.dumps({{"distribution": dist.metadata["Name"], "commit_id": actual}}, sort_keys=True))
+if actual != expected:
+    raise SystemExit(f"lm-eval commit mismatch: expected {{expected}}, installed {{actual}}")
+"""
+    return (
+        run_command(
+            [str(venv_config.venv_python), "-c", probe],
+            logger=logger,
+        )
+        == 0
+    )
 
 
 # Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
@@ -627,6 +787,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
+        setup_function=verify_evals_common_lm_eval,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,

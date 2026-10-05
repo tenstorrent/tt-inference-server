@@ -17,6 +17,8 @@ This rebuilds that answer without re-running anything:
       -> build_merged_schema(...)     -> ReportSchema   (sections concatenated)
       -> acceptance_criteria_check    -> recomputed, model_status-gated
       -> ReportGenerator.generate     -> report_<id>.md + data/report_data_<id>.json
+      -> with --job-id N              -> merged_report_<N>.json (the full merge)
+                                         + report_acceptance_<N>.json (acceptance only)
 
 Inclusion is decided by SHAPE, never by test name, so a new exabox test needs no
 change here:
@@ -35,9 +37,16 @@ acceptance criteria is still a real measurement.
 Run as::
 
     python3 -m workflow_module.exabox_merged_report \\
-        --container-dir <dir of downloaded report artifacts> \\
+        --container-dir <dir of per-test report bundles> \\
         --output-dir <dir> [--model M] [--target T] [--job-id N] \\
         [--missing-test 'inference-workflow-benchmarks --dev-mode']
+
+The per-test reports are the ``report_*_<job_id>.json`` files under
+``--container-dir``; the trailing job id orders attempts of one test. The data
+collector parses ``report_*_<job_id>.json`` files and already has every
+per-test report, so ``report_acceptance_<N>.json`` carries only the verdict across
+all tests; ``merged_report_<N>.json`` (which the collector does not parse) holds
+everything. ``release_report.md`` is the markdown.
 """
 
 from __future__ import annotations
@@ -54,20 +63,18 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from report_module import (
     GenerateResult,
+    ReportFileSaver,
     ReportGenerator,
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
     task_failure_blockers,
 )
+from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
 
 logger = logging.getLogger(__name__)
 
-#: Only the job-id-suffixed copies written by tt-shield's "Prepare reports for
-#: the data collector" step. run.py's own
-#: ``workflow_logs/reports_output/<wf>/data/report_data_<model>_<ts>.json`` is
-#: the same content under a different name, so matching both would duplicate
-#: every section.
+#: The per-test reports: ``report_<workflow>_<n>_<job_id>.json``.
 REPORT_GLOB = "report_*.json"
 
 #: Also discovered, purely so the skip is visible in the coverage summary
@@ -185,13 +192,7 @@ def discover_test_reports(container: Path) -> List[Path]:
     """Every candidate report under ``container``, oldest job id first."""
     found: List[Path] = []
     for pattern in (REPORT_GLOB, *EXTRA_GLOBS):
-        for path in sorted(container.rglob(pattern)):
-            # run.py's own output tree, re-uploaded inside each artifact.
-            if "workflow_logs" in path.parts:
-                continue
-            if path.name.startswith("report_data_"):
-                continue
-            found.append(path)
+        found.extend(sorted(container.rglob(pattern)))
     return found
 
 
@@ -536,6 +537,22 @@ def merge_reports(
     return result, stats
 
 
+def write_acceptance(merged_json: Path, dest: Path) -> None:
+    """Write the merged report's acceptance fields, without its sections, to ``dest``.
+
+    The data collector has already ingested every per-test report, so a file
+    with sections would store each measurement a second time. What only the
+    merge knows is the verdict across all tests (requested tests that never
+    reported, re-applied waivers), so that is all this file carries.
+    """
+    merged = json.loads(merged_json.read_text())
+    acceptance = {"metadata": merged.get("metadata", {})}
+    acceptance.update(
+        {key: merged[key] for key in ACCEPTANCE_EXPORT_KEYS if key in merged}
+    )
+    ReportFileSaver.write_json(acceptance, dest, strict=True)
+
+
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
@@ -555,7 +572,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--output-dir",
         required=True,
         type=Path,
-        help="Where to write report_<id>.md and data/report_data_<id>.json",
+        help="Where to write the merged report and release_report.md",
     )
     parser.add_argument(
         "--model", default="", help="Model id, for the merge description"
@@ -566,8 +583,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--job-id",
         default="",
-        help="Aggregating job id. When given, job-id-named copies are "
-        "written so the data collector can attribute the report.",
+        help="Aggregating job id. When given, merged_report_<job_id>.json (the "
+        "full merge) and report_acceptance_<job_id>.json (the verdict only, for "
+        "the data collector, which already has every per-test report) are written.",
     )
     parser.add_argument(
         "--missing-test",
@@ -620,12 +638,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 1
 
     # The data collector keys a report to its CI job by the trailing
-    # _<job_id> in the filename, and ignores anything else. The generator
-    # names its output after report_id, so publish job-id-named copies too.
+    # _<job_id> in the filename; the generator names its files after report_id.
     if args.job_id:
-        json_copy = args.output_dir / f"report_{args.job_id}.json"
-        shutil.copyfile(result.json_path, json_copy)
-        stats["json_path"] = str(json_copy)
+        merged = args.output_dir / f"merged_report_{args.job_id}.json"
+        shutil.copyfile(result.json_path, merged)
+        stats["merged_path"] = str(merged)
+        acceptance = args.output_dir / f"report_acceptance_{args.job_id}.json"
+        write_acceptance(result.json_path, acceptance)
+        stats["acceptance_path"] = str(acceptance)
     md_copy = args.output_dir / "release_report.md"
     shutil.copyfile(result.markdown_path, md_copy)
     stats["markdown_path"] = str(md_copy)

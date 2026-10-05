@@ -805,6 +805,48 @@ class TestMiniSweAgentParity:
         kwargs = harbor._get_agent_kwargs(cfg)
         assert "config" not in kwargs
 
+    def test_mini_swe_docker_uses_host_gateway(self, tmp_path):
+        cfg = build_harbor_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch.object(harbor, "run_with_progress", return_value=17) as run_cmd:
+            assert harbor.run(cfg) == 17
+
+        assert run_cmd.call_args.kwargs["env"]["OPENAI_API_BASE"] == (
+            "http://127.0.0.1:8000/v1"
+        )
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["agents"][0]["env"] == {
+            "OPENAI_BASE_URL": "http://host.docker.internal:8000/v1",
+            "OPENAI_API_BASE": "http://host.docker.internal:8000/v1",
+        }
+        overlay_path = Path(harbor_config["environment"]["extra_docker_compose"][0])
+        assert json.loads(overlay_path.read_text()) == {
+            "services": {
+                "main": {
+                    "extra_hosts": ["host.docker.internal:host-gateway"],
+                }
+            }
+        }
+
+    def test_host_executed_agent_keeps_loopback_endpoint(self, tmp_path):
+        cfg = build_harbor_config(
+            _harbor_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        assert harbor._get_agent_env(cfg) == {
+            "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+            "OPENAI_API_BASE": "http://127.0.0.1:8000/v1",
+        }
+
 
 class TestAgenticLimitResolution:
     def test_fractional_agentic_limits_become_one_task(self):
