@@ -6642,6 +6642,13 @@ _eval_config_list = [
                             # for curl in the task image, so curl/uvx are missing and no test
                             # executes; reward 0 regardless; run 37249479221).
                             "terminal-bench/nginx-request-logging",
+                            # +5 tasks validated with the oracle agent on the gemma QB2
+                            # exploratory set, for a less noisy K2 signal.
+                            "terminal-bench/fix-git",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/largest-eigenval",
                         ],
                     },
                 ),
