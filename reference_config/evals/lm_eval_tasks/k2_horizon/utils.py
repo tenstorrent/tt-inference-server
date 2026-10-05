@@ -45,3 +45,10 @@ def extract_hle_choice(response: str):
 def process_results_hle_mc(doc: dict, results: List[str]) -> Dict[str, int]:
     gold = str(doc["answer"]).strip().strip("()").upper()[:1]
     return {"exact_match": int(extract_hle_choice(results[0]) == gold)}
+
+
+def process_results_math_avg(doc: dict, results: List[str]) -> Dict[str, float]:
+    """avg@k: mean r1_evals math equivalence over every sampled answer of a problem."""
+    responses = results[0] if results and isinstance(results[0], list) else results
+    scores = [process_results_math(doc, [r])["exact_match"] for r in responses]
+    return {"exact_match": sum(scores) / len(scores) if scores else 0.0}

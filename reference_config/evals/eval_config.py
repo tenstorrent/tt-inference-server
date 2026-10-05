@@ -6529,6 +6529,9 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
+                # avg@4 (repeats in the task YAML): keep the harness seed out of the
+                # requests, otherwise all 4 samples of a problem are identical.
+                propagate_seed_to_gen_kwargs=False,
                 model_kwargs={
                     "max_length": 524288,
                     "timeout": 14400,
@@ -6541,7 +6544,7 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "top_p": 0.95,
                 },
-                # All 33 problems nightly (served at up to 32 concurrent users).
+                # All 33 problems x 4 samples nightly (up to 32 concurrent users).
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 33,
                     EvalLimitMode.SMOKE_TEST: 2,
