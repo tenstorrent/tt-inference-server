@@ -13,3 +13,15 @@ git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git@v0.4.1
 pyjwt
 pillow
 qwen_vl_utils
+
+# ocrbench_v2 scorers, imported at module scope but undeclared by lmms-eval v0.4.1.
+# nltk needs the wordnet corpus at scoring time, so offline runners need NLTK_DATA.
+apted
+distance
+editdistance
+ipdb
+jieba
+Levenshtein
+lxml
+nltk
+zss
