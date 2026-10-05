@@ -620,6 +620,40 @@ class TestSetupHostDockerCommand:
         assert _find_env_var(docker_command, "MODEL_WEIGHTS_DIR") is None
         assert _find_env_var(docker_command, "TT_CACHE_PATH") is None
 
+    def test_granite_cache_paths_are_container_only(
+        self, tiny_model_spec, mock_cli_args, temp_dir, monkeypatch
+    ):
+        from dataclasses import replace
+        from workflows.model_spec import granite_autoport_impl
+        from workflows.utils import load_dotenv
+
+        host_cache = str(temp_dir / "host-hf")
+        dotenv = temp_dir / ".env"
+        dotenv.write_text(f"HF_HOME={host_cache}\n")
+        monkeypatch.setenv("HF_HOME", host_cache)
+        monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+        assert load_dotenv(dotenv)
+        spec = replace(tiny_model_spec, impl=granite_autoport_impl)
+        command, _ = self._generate_cmd(
+            spec,
+            mock_cli_args,
+            SetupConfig(model_spec=spec),
+            self._make_json_fpath(temp_dir),
+        )
+        cache = "/home/container_app_user/cache_root/huggingface"
+        assert _find_env_var(command, "HF_HOME") == cache
+        assert _find_env_var(command, "MODEL_WEIGHTS_DIR") == (
+            f"{cache}/hub/models--ibm-granite--granite-4.2-30b/"
+            "snapshots/9e668ce1c538387ef24d3644e9b0606647762636"
+        )
+        assert command.index("--env-file") < command.index(
+            "-e", command.index("--env-file")
+        )
+        assert spec.docker_image in command
+        assert os.environ["HF_HOME"] == host_cache
+        assert "MODEL_WEIGHTS_DIR" not in os.environ
+        assert "/home/container_app_user" not in dotenv.read_text()
+
     def test_host_volume_mode_docker_command(
         self, tiny_model_spec, mock_cli_args, temp_dir
     ):

@@ -581,6 +581,19 @@ def generate_docker_run_command(
     # fmt: on
 
     docker_env_vars = {}
+    if model_spec.impl.impl_id == "granite_autoport":
+        # The prepared immutable snapshot lives in the server volume, not on
+        # the host running benchmark/evaluation clients. Keep paths Docker-only.
+        granite_cache = "/home/container_app_user/cache_root/huggingface"
+        docker_env_vars.update(
+            {
+                "HF_HOME": granite_cache,
+                "MODEL_WEIGHTS_DIR": (
+                    f"{granite_cache}/hub/models--ibm-granite--granite-4.2-30b/"
+                    "snapshots/9e668ce1c538387ef24d3644e9b0606647762636"
+                ),
+            }
+        )
     if quetzal_package_mount:
         docker_env_vars.update(
             quetzal_package_env(quetzal_package_mount, local_server=False)
