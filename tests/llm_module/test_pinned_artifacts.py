@@ -36,10 +36,12 @@ def model_args(command):
 
 
 @pytest.mark.parametrize("context", [8192, 131072])
-def test_longbench_defaults_to_device_context_for_any_implementation(tmp_path, context):
+def test_longbench_uses_device_context_with_upstream_headroom_for_any_implementation(
+    tmp_path, context
+):
     task = EvalTask(task_name="longbench_single_e", model_kwargs={})
     command = build_eval_command(task, spec(context=context), None, tmp_path, 8000)
-    assert model_args(command)["max_length"] == str(context)
+    assert model_args(command)["max_length"] == str(context - 64)
     assert task.model_kwargs == {}
 
 

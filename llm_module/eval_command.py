@@ -56,6 +56,10 @@ def _effective_model_kwargs(
         raise ValueError(
             f"{task.task_name} requires device_model_spec.max_context for text evals"
         )
+    if isinstance(device_max_context, bool):
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        )
     try:
         device_max_context = int(device_max_context)
         requested = int(model_kwargs.get("max_length", device_max_context))
