@@ -56,7 +56,7 @@ DEFAULT_SELECTION = "all"
 DEFAULT_TOOL_CHOICE = "auto"
 DEFAULT_THINK_MODE = "none"
 DEFAULT_MAX_TOKENS = 2048
-DEFAULT_CASE_RETRIES = 3
+DEFAULT_CASE_RETRIES = 0
 DEFAULT_WORKERS = 16
 DEFAULT_REQUEST_TIMEOUT_S = 600.0
 # Pause between attempts of the same case (the source suite used
@@ -149,6 +149,16 @@ class SelectedCase:
     @property
     def case_id(self) -> str:
         return self.case.case_id
+
+    @property
+    def uses_ref(self) -> bool:
+        """Whether the sent schema types anything through ``$ref``.
+
+        Servers that rebuild typed arguments from a text tool-call format
+        (MiniMax's XML) must follow ``$ref`` -> ``$defs`` to coerce values;
+        see ``SuiteSettings.exclude_ref_schemas``.
+        """
+        return bool(_collect_refs(self.schema))
 
 
 def load_cases(case_dir: Path = DEFAULT_CASE_DIR) -> List[ValidatorCase]:
@@ -408,8 +418,13 @@ def select_cases(
     *,
     selection: str = DEFAULT_SELECTION,
     max_cases: Optional[int] = None,
+    exclude_ref: bool = False,
 ) -> List[SelectedCase]:
-    """Keep the runnable cases matching ``selection`` (all / explicit / object)."""
+    """Keep the runnable cases matching ``selection`` (all / explicit / object).
+
+    ``exclude_ref`` also drops every case whose schema uses ``$ref``
+    (``SelectedCase.uses_ref``), before ``max_cases`` is counted.
+    """
     if selection not in SELECTIONS:
         raise ValueError(f"selection must be one of {SELECTIONS}, got {selection!r}")
     selected: List[SelectedCase] = []
@@ -423,7 +438,10 @@ def select_cases(
             continue
         if selection == "object" and reason != "object_parameter_schema":
             continue
-        selected.append(SelectedCase(case, schema, reason))
+        candidate = SelectedCase(case, schema, reason)
+        if exclude_ref and candidate.uses_ref:
+            continue
+        selected.append(candidate)
     return selected
 
 
@@ -450,6 +468,15 @@ class SuiteSettings:
     # Give every request a unique prompt prefix so none can be served from
     # the server's prefix cache.
     cache_bypass: bool = False
+    # Do not send cases whose schema types values through $ref -> $defs (35 of
+    # the 204 with the default selection). For servers whose tool-call parser
+    # cannot resolve $ref, e.g. MiniMax: its tool calls are XML, so every value
+    # arrives as text and the parser converts it to the schema's type, but the
+    # MiniMax parsers in ai-dynamo 1.3.0 (dynamo-parsers 5.0.0) and vLLM 0.30.0
+    # never follow $ref, so 3 comes back as "3" and an array as {"item": [...]}
+    # even when the model wrote the right value. An upstream bug (GPU vLLM
+    # returns the same output), not a model or device one.
+    exclude_ref_schemas: bool = False
 
     def __post_init__(self) -> None:
         for name, value, allowed in (

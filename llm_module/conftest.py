@@ -115,6 +115,14 @@ def pytest_addoption(parser):
         "request can be served from the server's prefix cache",
     )
     group.addoption(
+        "--schema-exclude-ref",
+        action="store_true",
+        default=False,
+        help="do not send cases whose schema uses $ref; for servers whose "
+        "tool-call parser cannot resolve $ref (MiniMax, see "
+        "SuiteSettings.exclude_ref_schemas). Listed under excluded_cases",
+    )
+    group.addoption(
         "--schema-case-dir",
         default=str(DEFAULT_CASE_DIR),
         help="walle validator_cases directory (default: bundled snapshot)",

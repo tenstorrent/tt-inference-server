@@ -12,8 +12,10 @@ from llm_module.tool_call_schema import (
     DEFAULT_SAMPLING_PARAMS,
     TOOL_DESCRIPTION,
     SuiteSettings,
+    ValidatorCase,
     build_request,
     resolve_sampling_params,
+    select_cases,
 )
 
 SCHEMA = {"type": "object", "properties": {"value": {"type": "string"}}}
@@ -146,3 +148,27 @@ def test_streamed_non_ascii_arguments_decode_as_utf8():
 
     assert attempt.passed, attempt.message
     assert json.loads(attempt.arguments) == {"value": {"abc😊": "x"}}
+
+
+def _case(line: int, schema: str) -> ValidatorCase:
+    return ValidatorCase(suite="TestRefs", line=line, schema_text=schema)
+
+
+INLINE_CASE = _case(1, '{"type": "integer"}')
+REF_CASE = _case(
+    2,
+    '{"$defs": {"n": {"type": "integer"}}, "type": "array", "items": {"$ref": "#/$defs/n"}}',
+)
+
+
+def test_uses_ref_flags_only_schemas_typed_through_ref():
+    inline, ref = select_cases([INLINE_CASE, REF_CASE])
+
+    assert not inline.uses_ref
+    assert ref.uses_ref
+
+
+def test_exclude_ref_drops_ref_cases_before_max_cases():
+    kept = select_cases([REF_CASE, INLINE_CASE], max_cases=1, exclude_ref=True)
+
+    assert [c.case_id for c in kept] == [INLINE_CASE.case_id]

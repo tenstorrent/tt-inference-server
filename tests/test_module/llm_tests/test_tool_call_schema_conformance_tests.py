@@ -58,6 +58,11 @@ def test_sampling_and_cache_bypass_from_config():
     assert json.loads(params) == {"top_k": 0, "seed": None}
 
 
+def test_exclude_ref_schemas_maps_to_its_flag():
+    assert "--schema-exclude-ref" in _args({"exclude_ref_schemas": True})
+    assert "--schema-exclude-ref" not in _args({"exclude_ref_schemas": False})
+
+
 def test_false_flags_add_nothing():
     assert _args({"default_sampling": False, "cache_bypass": False}) == ["--tb=line"]
 

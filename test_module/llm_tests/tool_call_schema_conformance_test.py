@@ -11,13 +11,18 @@ against walle JSON Schemas, and a model passes when it gets
 >= ``pass_rate_threshold`` of them right. The default is 100% (every case);
 a model can be given a lower threshold through its targets.
 
+``exclude_ref_schemas`` keeps the cases whose schema uses ``$ref`` out of the
+run, so they are neither sent nor graded; the result lists them under
+``excluded_cases``. MiniMax-M3 sets it because the server's MiniMax tool-call
+parser loses ``$ref`` types (see ``SuiteSettings.exclude_ref_schemas``).
+
 Status: PASS when ``pass_rate >= threshold``, FAIL below it, ERROR when the
 child pytest produced no report, ran no cases, or never reached the server
 (every case a connection error).
 
 Settings come from ``test_config``; an environment variable
 ``TOOL_CALL_SCHEMA_<KEY>`` overrides the key of the same name (e.g.
-``TOOL_CALL_SCHEMA_CASE_RETRIES=0``), so a CI dispatch can change a run without
+``TOOL_CALL_SCHEMA_CASE_RETRIES=3``), so a CI dispatch can change a run without
 editing the suite files.
 """
 
@@ -65,6 +70,7 @@ _PYTEST_OPTIONS = (
     ("default_sampling", "--schema-default-sampling", "flag"),
     ("sampling_params", "--schema-sampling-params", "json"),
     ("cache_bypass", "--schema-cache-bypass", "flag"),
+    ("exclude_ref_schemas", "--schema-exclude-ref", "flag"),
 )
 
 
@@ -207,6 +213,7 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
             "task_name": report.get("task_name", self.REPORT_TASK_NAME),
             "settings": report.get("settings", {}),
             **graded,
+            "excluded_cases": report.get("excluded_cases") or [],
         }
 
     def _resolve_threshold(self) -> float:

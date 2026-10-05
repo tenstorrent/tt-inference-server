@@ -13,7 +13,8 @@ Requests for every collected test run up front on a thread pool
 (``--schema-workers``), each case retried up to ``--schema-retries`` times,
 optionally with sampling params (``--schema-default-sampling``,
 ``--schema-sampling-params``) and a per-request prefix-cache bypass
-(``--schema-cache-bypass``);
+(``--schema-cache-bypass``), and with ``--schema-exclude-ref`` the cases
+whose schema uses ``$ref`` left out (listed under ``excluded_cases``);
 the per-test functions then assert their own result. Per-case records, with
 untruncated failure messages, go to
 ``<output-path>/parameter_report_<task-name>.json`` under
@@ -65,6 +66,7 @@ def _settings(config: pytest.Config) -> SuiteSettings:
             config.getoption("--schema-sampling-params"),
         ),
         cache_bypass=config.getoption("--schema-cache-bypass"),
+        exclude_ref_schemas=config.getoption("--schema-exclude-ref"),
     )
 
 
@@ -76,6 +78,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
         load_cases(metafunc.config.getoption("--schema-case-dir")),
         selection=settings.selection,
         max_cases=settings.max_cases,
+        exclude_ref=settings.exclude_ref_schemas,
     )
     metafunc.parametrize(
         CASE_PARAM,
@@ -110,6 +113,7 @@ def tool_schema_results(
 
     results_report["tool_name"] = TOOL_NAME
     results_report["settings"] = settings.to_dict()
+    results_report["excluded_cases"] = _excluded_ref_cases(config, settings)
     results_report["results"][REPORT_RESULTS_KEY] = [
         {
             "test_id": item.nodeid,
@@ -119,6 +123,21 @@ def tool_schema_results(
         for item, result in zip(items, results)
     ]
     return {(result.case_id, result.mode): result for result in results}
+
+
+def _excluded_ref_cases(config: pytest.Config, settings: SuiteSettings) -> list:
+    """The $ref cases ``--schema-exclude-ref`` kept out of the run, so the
+    report names them (``max_cases`` is ignored: it is a debugging cap)."""
+    if not settings.exclude_ref_schemas:
+        return []
+    return [
+        {"case_id": case.case_id, "suite": case.case.suite, "reason": "uses_ref"}
+        for case in select_cases(
+            load_cases(config.getoption("--schema-case-dir")),
+            selection=settings.selection,
+        )
+        if case.uses_ref
+    ]
 
 
 def test_tool_call_json_schema(tool_schema_case, tool_schema_results):
