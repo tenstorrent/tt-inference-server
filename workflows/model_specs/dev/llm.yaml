@@ -693,8 +693,12 @@ templates:
         # 6 x 256K users per engine (24 per Galaxy); bfloat8_b KV halves pool bytes.
         GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
         GEMMA4_KV_BFP8: "1"
-        # Intermediate decode buckets so 2-8 residents avoid padding to the B=32 graph.
-        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        # Buckets 1 and 32 only: concurrent same-seed requests must decode in the same
+        # padded batch shape to stay bit-identical (spec test_non_uniform_seeding at DP=4);
+        # the decode SDPA splits its cores per padded row, so a different bucket changes the
+        # reduction order. Bucket 1 keeps single-user decode; the 4/8 buckets that were
+        # faster for 2-8 residents are follow-up work (needs active-row core allocation).
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
         # bounded device rings stay off. Traced chunked prefill still carries one chunk
@@ -1175,6 +1179,7 @@ templates:
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
       env_vars:
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,32"  # as on the 31B Galaxy entry (seeding at DP=4)
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 12 x 256K users per engine (2x the 31B pool: 8 full layers x 8 KV heads vs 10 x 16);
