@@ -8,13 +8,16 @@ from __future__ import annotations
 
 import pytest
 
+from llm_module import tool_call_schema
 from llm_module.tool_call_schema import (
     DEFAULT_SAMPLING_PARAMS,
     TOOL_DESCRIPTION,
+    CaseResult,
     SuiteSettings,
     ValidatorCase,
     build_request,
     resolve_sampling_params,
+    run_cases,
     select_cases,
 )
 
@@ -172,3 +175,32 @@ def test_exclude_ref_drops_ref_cases_before_max_cases():
     kept = select_cases([REF_CASE, INLINE_CASE], max_cases=1, exclude_ref=True)
 
     assert [c.case_id for c in kept] == [INLINE_CASE.case_id]
+
+
+def test_run_cases_reports_each_result_and_keeps_task_order(monkeypatch):
+    def fake_run_case(send, selected, mode, settings, *, retry_delay):
+        return CaseResult(
+            case_id=selected,
+            suite="S",
+            line=0,
+            mode=mode,
+            selection_reason="",
+            status="passed",
+            cause=None,
+            message="",
+            attempts=1,
+        )
+
+    monkeypatch.setattr(tool_call_schema, "run_case", fake_run_case)
+    tasks = [(f"case{i}", "stream") for i in range(5)]
+    seen = []
+
+    results = run_cases(
+        None,
+        tasks,
+        SuiteSettings(workers=3),
+        on_result=lambda done, total, result: seen.append((done, total)),
+    )
+
+    assert [r.case_id for r in results] == [f"case{i}" for i in range(5)]
+    assert seen == [(i, 5) for i in range(1, 6)]

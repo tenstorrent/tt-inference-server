@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import sys
 
 import pytest
 
@@ -13,6 +16,7 @@ from test_module._test_common import TestConfig
 from test_module.llm_tests.tool_call_schema_conformance_test import (
     _PYTEST_OPTIONS,
     ENV_PREFIX,
+    PROGRESS_PREFIX,
     ToolCallSchemaConformanceTest,
     grade_tool_call_schema_results,
 )
@@ -110,3 +114,39 @@ def test_targets_can_lower_the_threshold():
     assert grade_tool_call_schema_results(_cases(406, 2), test._resolve_threshold())[
         "success"
     ]
+
+
+def test_child_output_is_streamed_line_by_line():
+    """Complete lines reach the hook as they arrive, including an unterminated
+    last line and one longer than asyncio's default 64 KiB readline limit."""
+    long_line = "x" * 200_000
+    script = f"import sys; sys.stdout.write('a\\nb\\n{long_line}\\ntail')"
+    test = ToolCallSchemaConformanceTest(TestConfig({}), {})
+    lines = []
+    test._on_pytest_output_line = lines.append
+
+    async def run():
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-c",
+            script,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        return await test._stream_pytest_output(process)
+
+    output = asyncio.run(run())
+
+    assert lines == ["a", "b", long_line, "tail"]
+    assert output == f"a\nb\n{long_line}\ntail".encode()
+
+
+def test_only_progress_lines_are_logged(caplog):
+    test = ToolCallSchemaConformanceTest(TestConfig({}), {})
+    progress = f"{PROGRESS_PREFIX} 17/338 done (5%): 17 passed, 0 failed, 0m42s"
+
+    with caplog.at_level(logging.INFO):
+        test._on_pytest_output_line("..F..")
+        test._on_pytest_output_line(progress)
+
+    assert [r.getMessage() for r in caplog.records] == [progress]

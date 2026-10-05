@@ -48,6 +48,8 @@ THRESHOLD_KEY = "pass_rate_threshold"
 # Must match test_tool_call_json_schema.REPORT_RESULTS_KEY (not imported: that
 # would pull llm_module into the orchestrator's import chain).
 REPORT_RESULTS_KEY = "test_tool_call_json_schema"
+# Must match test_tool_call_json_schema.PROGRESS_PREFIX (same reason).
+PROGRESS_PREFIX = "[tool-call-schema progress]"
 CONNECTION_ERROR_CAUSE = "connection_error"
 UNKNOWN_CAUSE = "unknown"
 
@@ -243,6 +245,10 @@ class ToolCallSchemaConformanceTest(VLLMParamConformanceTest):
                 "server unreachable: every tool-call schema case failed with a "
                 f"connection error, e.g. {cases[0].get('message', '')}"
             )
+
+    def _on_pytest_output_line(self, line: str) -> None:
+        if line.startswith(PROGRESS_PREFIX):
+            logger.info("%s", line)
 
     def _extra_pytest_args(self) -> List[str]:
         args: List[str] = []

@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -910,17 +910,27 @@ def run_cases(
     settings: SuiteSettings,
     *,
     retry_delay: float = DEFAULT_RETRY_DELAY_S,
+    on_result: Optional[Callable[[int, int, CaseResult], None]] = None,
 ) -> List[CaseResult]:
-    """Run ``(case, mode)`` tasks on ``settings.workers`` threads, in order."""
+    """Run ``(case, mode)`` tasks on ``settings.workers`` threads.
+
+    Results come back in task order. ``on_result(done, total, result)`` is
+    called on the calling thread as each task finishes, in completion order.
+    """
     if not tasks:
         return []
     workers = min(settings.workers, len(tasks))
+    results: List[Optional[CaseResult]] = [None] * len(tasks)
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(
-            pool.map(
-                lambda task: run_case(
-                    send, task[0], task[1], settings, retry_delay=retry_delay
-                ),
-                tasks,
-            )
-        )
+        futures = {
+            pool.submit(
+                run_case, send, case, mode, settings, retry_delay=retry_delay
+            ): i
+            for i, (case, mode) in enumerate(tasks)
+        }
+        for done, future in enumerate(as_completed(futures), start=1):
+            result = future.result()
+            results[futures[future]] = result
+            if on_result is not None:
+                on_result(done, len(tasks), result)
+    return results

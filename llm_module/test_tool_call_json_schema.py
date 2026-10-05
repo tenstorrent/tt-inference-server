@@ -27,7 +27,8 @@ pass rate against a threshold. Options are declared in ``llm_module/conftest.py`
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+import time
+from typing import Callable, Dict, Tuple
 
 import pytest
 
@@ -48,6 +49,10 @@ from test_fixtures.conftest import _get_bearer_token
 # llm_module suites).
 REPORT_RESULTS_KEY = "test_tool_call_json_schema"
 CASE_PARAM = "tool_schema_case"
+# Prefix of the live progress lines; the spec-test wrapper logs lines that
+# start with it while the suite runs (PROGRESS_PREFIX there must match).
+PROGRESS_PREFIX = "[tool-call-schema progress]"
+PROGRESS_STEPS = 20
 
 
 def _settings(config: pytest.Config) -> SuiteSettings:
@@ -109,7 +114,9 @@ def tool_schema_results(
         bearer_token=_get_bearer_token(),
         timeout=settings.request_timeout,
     )
-    results = run_cases(client, tasks, settings)
+    results = run_cases(
+        client, tasks, settings, on_result=_progress_reporter(request.config)
+    )
 
     results_report["tool_name"] = TOOL_NAME
     results_report["settings"] = settings.to_dict()
@@ -123,6 +130,38 @@ def tool_schema_results(
         for item, result in zip(items, results)
     ]
     return {(result.case_id, result.mode): result for result in results}
+
+
+def _progress_reporter(
+    config: pytest.Config,
+) -> Callable[[int, int, CaseResult], None]:
+    """Print ``PROGRESS_PREFIX done/total ...`` every ~5% of cases and at the end.
+
+    Every request runs inside one session fixture, so pytest itself prints
+    nothing until all are done. The lines bypass output capture, which would
+    otherwise hold them until the fixture returns.
+    """
+    capman = config.pluginmanager.getplugin("capturemanager")
+    start = time.monotonic()
+    counts = {"passed": 0, "failed": 0}
+
+    def report(done: int, total: int, result: CaseResult) -> None:
+        counts["passed" if result.passed else "failed"] += 1
+        if done % max(1, total // PROGRESS_STEPS) and done != total:
+            return
+        elapsed = int(time.monotonic() - start)
+        line = (
+            f"{PROGRESS_PREFIX} {done}/{total} done ({done * 100 // total}%): "
+            f"{counts['passed']} passed, {counts['failed']} failed, "
+            f"{elapsed // 60}m{elapsed % 60:02d}s"
+        )
+        if capman is None:
+            print(line, flush=True)
+            return
+        with capman.global_and_fixture_disabled():
+            print(line, flush=True)
+
+    return report
 
 
 def _excluded_ref_cases(config: pytest.Config, settings: SuiteSettings) -> list:
