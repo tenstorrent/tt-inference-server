@@ -3926,12 +3926,12 @@ templates:
     max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
 
-# Granite autoport: local Stage 1-11 validated; agentic qualification pending.
+# Granite autoport: functional; release targets and CI subsets are explicit.
 - weights:
     - ibm-granite/granite-4.2-30b
   impl: granite_autoport
   inference_engine: VLLM
-  status: EXPERIMENTAL
+  status: FUNCTIONAL
   has_builtin_warmup: true
   device_model_specs:
     - device: P300X2

@@ -7123,6 +7123,24 @@
                 "image_width": null,
                 "images_per_prompt": null,
                 "targets": {}
+            },
+            {
+                "_comment": "User-specified release targets for ISL/OSL128, concurrency1.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 68,
+                        "tput_user": 65,
+                        "tput": 65
+                    }
+                }
             }
         ]
     }
