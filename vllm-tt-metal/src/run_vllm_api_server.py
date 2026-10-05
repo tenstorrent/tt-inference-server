@@ -773,6 +773,7 @@ def register_tt_models(impl_id=None):
 
     llama_text_versions = {
         "llama3_70b_galaxy": "llama3_70b_galaxy",
+        "llama31_8b_qb2": "llama31_8b_qb2",
     }
     os.environ["TT_LLAMA_TEXT_VER"] = llama_text_versions.get(
         impl_id, "tt_transformers"
