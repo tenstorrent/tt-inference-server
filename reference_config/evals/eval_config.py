@@ -489,113 +489,39 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    # Isolated GPQA qualification branch: only first 10 Diamond questions.
     EvalConfig(
         hf_model_repo="ibm-granite/granite-4.2-30b",
         tasks=[
             EvalTask(
-                task_name=name,
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=16,
                 use_chat_api=True,
-                num_fewshot=fewshot,
+                num_fewshot=0,
+                seed=42,
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=66.41,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    # Published GPQA protocol is not fully specified; no matched GPU baseline.
                     score_func=score_task_single_key,
-                    score_func_kwargs={"result_keys": [metric], "unit": "percent"},
+                    score_func_kwargs={"result_keys": ["exact_match,flexible-extract"], "unit": "percent"},
                 ),
                 model_kwargs={"max_length": 131072, "timeout": 3600},
                 gen_kwargs={
-                    "max_gen_toks": 4096,
+                    "max_gen_toks": 32768,
                     "temperature": 1.0,
                     "top_p": 0.95,
                     "do_sample": "true",
                     "stream": "false",
                     "until": [],
-                    "chat_template_kwargs": {
-                        "enable_thinking": True,
-                        "low_effort": True,
-                    },
+                    "chat_template_kwargs": {"enable_thinking": True, "low_effort": False},
                 },
-            )
-            for name, fewshot, metric in [
-                ("mmlu_pro", 5, "exact_match,custom-extract"),
-                ("ifeval", 0, "prompt_level_strict_acc,none"),
-            ]
-        ]
-        + [
-            # No borrowed scores or adjusted benchmark task budgets. Full runs
-            # retain dataset defaults; smoke selection is explicit and bounded.
-            EvalTask(
-                task_name=name,
-                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
-                ),
-                agentic_eval_config=HarborEvalConfig(
-                    dataset=dataset,
-                    agent=agent,
-                    n_concurrent_trials=1,
-                    n_attempts=1,
-                    agent_import_path=import_path,
-                    agent_kwargs=kwargs,
-                    environment_env=environment_env,
-                    verifier_env=verifier_env,
-                    task_names=task_names,
-                ),
-                limit_samples_map={EvalLimitMode.SMOKE_TEST: 1},
-            )
-            for name, dataset, agent, import_path, kwargs, environment_env, verifier_env, task_names in [
-                (
-                    "terminal_bench_2_1",
-                    "terminal-bench/terminal-bench-2-1",
-                    "terminus-2",
-                    None,
-                    {"temperature": 1.0, "llm_kwargs": {"top_p": 0.95}},
-                    {},
-                    {},
-                    [],
-                ),
-                (
-                    "tau3_bench_banking",
-                    "sierra-research/tau3-bench",
-                    "tau3_llm_agent",
-                    "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
-                    {
-                        "tau2_trial_index": 0,
-                        "temperature": 1.0,
-                        "llm_args_json": '{"top_p": 0.95, "extra_body": {"chat_template_kwargs": {"enable_thinking": true, "low_effort": true}}}',
-                        "read_timeout_sec": 120,
-                        "tool_timeout_sec": 900,
-                        "max_steps": 200,
-                    },
-                    {
-                        "TAU2_USER_MODEL": "openai/ibm-granite/granite-4.2-30b",
-                        "TAU2_USER_LLM_ARGS_JSON": '{"temperature": 1.0, "top_p": 0.95, "extra_body": {"chat_template_kwargs": {"enable_thinking": true, "low_effort": true}}}',
-                    },
-                    {"TAU2_NL_ASSERTIONS_MODEL": "openai/ibm-granite/granite-4.2-30b"},
-                    ["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
-                ),
-                (
-                    "swe_bench_verified",
-                    "swebench-verified",
-                    "mini-swe-agent",
-                    None,
-                    {
-                        "version": MINI_SWE_AGENT_VERSION,
-                        "config": {
-                            "model": {
-                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
-                            }
-                        },
-                    },
-                    {},
-                    {},
-                    [],
-                ),
-            ]
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+            ),
         ],
     ),
     EvalConfig(
