@@ -518,7 +518,6 @@ _eval_config_list = [
                 },
             )
             for name, fewshot, metric in [
-                ("mmlu_pro", 5, "exact_match,custom-extract"),
                 ("ifeval", 0, "prompt_level_strict_acc,none"),
             ]
         ]
