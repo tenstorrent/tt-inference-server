@@ -2095,22 +2095,23 @@ templates:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
 
-# DeepSeek-V4.1-Flash on Blackhole Galaxy (32x P150, (4,8) mesh). BRING-UP ONLY:
-# the tt-metal package models/demos/blackhole/deepseek_v41_flash has no
-# vLLM-compatible generator class yet (no initialize_vllm_model /
-# allocate_kv_cache / TT architecture registered with the vLLM TT plugin), so
-# this spec cannot serve until that exists. The hf-overrides architecture name
-# below (TTDeepseekV41ForCausalLM) is the name that class must register.
+# DeepSeek-V4.1-Flash on Blackhole Galaxy (32x P150, (4,8) mesh). BRING-UP.
+# vLLM class: models/demos/blackhole/deepseek_v41_flash/tt/generator_vllm.py
+# (DeepseekV41ForCausalLM), registered by the tt-vllm-plugin as
+# TTDeepseekV41ForCausalLM through the bundle folder's vllm_metadata.json:
+# EXTRA_MODELS_DIR must be the PARENT of that folder (models/demos/blackhole),
+# the plugin scans its sub-folders. On branch ssinghal/dsv4p1-vllm of tt-metal.
+# transformers does not know model_type deepseek_v41, so vLLM is given a
+# llama-shaped config shim (hf_config_path) + the checkpoint tokenizer + a chat
+# template equal to the checkpoint's encoding.py (non-thinking chat).
 #
-# Validated in the tt-metal demo (not through vLLM): batch 4..128 (4 mesh rows
-# x U users per row), ISL up to 64k. 128k / 256k are NOT validated, hence
-# max_context 65536.
+# Validated in the tt-metal demo (not yet through vLLM end to end): batch 4..128
+# (4 mesh rows x U users per row), ISL up to 64k. 128k / 256k are NOT validated.
 #   - DSV41_POOL_DTYPE=fp8: fp8_e4m3 paged KV pool, needed for batch 128 at long ISL.
 #   - DSV41_ENGRAM_RAM=1: Engram tables (2 x 95 GB) held in host RAM (Engram stays on).
-#   - DSV41_LAYERS=0-39: full model (anything else is a few-layer smoke run).
-#   - DSV41_SPEC (spec decode, k=1..5) is left unset: the SpecRunner is driven by
-#     the demo, not by the vLLM generator interface.
-#   - Greedy sampling only (Generator.decode_forward asserts temperature 0).
+#   - DSV41_LAYERS=0-39: full model (e.g. 0-3 for a smoke run).
+#   - DSV41_SPEC (spec decode) must stay unset (the adapter refuses it).
+#   - Greedy on device; temperature > 0 falls back to host sampling on logits (slow).
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash
   impl: deepseek_v41_flash
@@ -2133,9 +2134,12 @@ templates:
         DSV41_TRACE_REGION: "1600000000"
         DSV41_CKPT: /mnt/tt-data/ssinghal/deepseek-v41-flash  # local HF checkpoint dir
         DSV41_WEIGHT_CACHE: /mnt/tt-data/ssinghal/dsv4-weight-cache
-        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos/blackhole"
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
+        hf_config_path: "../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config"
+        tokenizer: /mnt/tt-data/ssinghal/deepseek-v41-flash
+        chat_template: "../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja"
         max_num_seqs: "128"
         max_model_len: "65536"
         no-enable-prefix-caching: true
