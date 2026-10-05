@@ -2323,7 +2323,7 @@ templates:
           # set via GEMMA4_MAX_TOKENS_ALL_USERS below. Servable prompt tops out at the
           # 32768 power-of-2 prefill bucket (next bucket, 65536, exceeds this pool).
       max_context: 49152      # 48 * 1024
-      default_impl: true
+      default_impl: false
       env_vars:
             # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
             # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
@@ -2477,4 +2477,43 @@ templates:
       output_block_size: 256
         # A request must leave one full output canvas inside max_context.
       max_effective_input_tokens: 261888
+- weights:
+    - google/gemma-4-31B-it
+  impl: gemma4_31b_qb2
+  inference_engine: VLLM
+  version: "0.23.0"
+  tt_metal_commit: "2fd9445"
+  vllm_commit: "7250ddf"
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 1
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 536870912
+        l1_small_size: 16384
+      vllm_args:
+        block_size: '128'
+        hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
+        max-logprobs: '-1'
+        async-scheduling: true
+        no-enable-prefix-caching: true
+          # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
+          # prefill and rejects budgets above 8192 batched tokens. Requests that
+          # omit top_k need a default inside the device sampler's 1..32 range.
+        enable-chunked-prefill: true
+        max_num_batched_tokens: '8192'
+        override_generation_config: '{"top_k": 20}'
+        reasoning-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking":true}'
+  status: COMPLETE
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+
 

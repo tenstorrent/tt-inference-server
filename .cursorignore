@@ -18,3 +18,4 @@ release_model_spec.json
 docs/model_support/**
 .pre-commit/
 .workflow_venvs/
+llm-gauntlet/

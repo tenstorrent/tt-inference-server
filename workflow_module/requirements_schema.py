@@ -27,13 +27,20 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
 # Major version of ``schemaVersion`` this loader understands. A document whose
 # major differs is rejected rather than silently mis-parsed.
 SUPPORTED_SCHEMA_MAJOR = 2
+
+# Scenario ``kind`` discriminator. A canonical document keeps every workload in
+# ``scenarios[]`` and tells them apart by this field; the agentic one is split
+# out into :attr:`RequirementsDoc.agentic_workloads` because it sweeps
+# concurrency alone and drives a different workflow.
+AGENTIC_KIND = "agentic"
+DEFAULT_SCENARIO_KIND = "text"
 
 # Accepted priority values. ``must`` failures block acceptance; ``should``
 # failures are informational (see report_module/acceptance_criteria.py).
@@ -60,6 +67,57 @@ def _normalize_priority(value: Any, *, where: str) -> str:
 
 
 @dataclass(frozen=True)
+class EvalGenKwargs:
+    """Generation parameters one accuracy eval must be measured under.
+
+    A closed set, mirroring the document's own ``genKwargs``: a reference score
+    is only a bar if the graded run samples the way the reference run did, and
+    a misspelled parameter is a score measured under settings nobody chose.
+    ``None`` is the document saying nothing about that parameter, which leaves
+    whatever the harness already had for it.
+
+    The field names are the document's, transliterated to snake_case. They
+    coincide with what lm-eval calls these parameters because the document
+    names them from that vocabulary; mapping them onto a harness is still the
+    adapter's job, not this loader's.
+    """
+
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    max_gen_toks: Optional[int] = None
+    reasoning_effort: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "EvalGenKwargs":
+        return cls(
+            temperature=_as_optional_float(data.get("temperature")),
+            top_p=_as_optional_float(data.get("topP")),
+            top_k=_as_optional_int(data.get("topK")),
+            max_gen_toks=_as_optional_int(data.get("maxGenToks")),
+            reasoning_effort=(
+                str(data["reasoningEffort"])
+                if data.get("reasoningEffort") is not None
+                else None
+            ),
+        )
+
+    def stated(self) -> Dict[str, Any]:
+        """Only the parameters the document actually set, in field order."""
+        return {
+            name: value
+            for name, value in (
+                ("temperature", self.temperature),
+                ("top_p", self.top_p),
+                ("top_k", self.top_k),
+                ("max_gen_toks", self.max_gen_toks),
+                ("reasoning_effort", self.reasoning_effort),
+            )
+            if value is not None
+        }
+
+
+@dataclass(frozen=True)
 class AccuracyEval:
     """One accuracy benchmark to run, with the score reference that gates it."""
 
@@ -71,12 +129,19 @@ class AccuracyEval:
     tolerance: float = 0.05
     priority: str = PRIORITY_MUST
     unit: str = "%"
+    gen_kwargs: Optional[EvalGenKwargs] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AccuracyEval":
         name = data.get("name")
         if not name:
             raise RequirementsError("accuracyEvals[]: missing required 'name'")
+        raw_gen_kwargs = data.get("genKwargs")
+        gen_kwargs = (
+            EvalGenKwargs.from_dict(raw_gen_kwargs)
+            if isinstance(raw_gen_kwargs, Mapping)
+            else None
+        )
         return cls(
             name=str(name),
             task_category=data.get("taskCategory"),
@@ -88,6 +153,7 @@ class AccuracyEval:
                 data.get("priority"), where=f"accuracyEvals[{name!r}]"
             ),
             unit=str(data.get("unit", "%")),
+            gen_kwargs=gen_kwargs if gen_kwargs and gen_kwargs.stated() else None,
         )
 
 
@@ -132,7 +198,12 @@ class ScalarTarget:
 
 @dataclass(frozen=True)
 class Slo:
-    """Per-request service-level objectives for a scenario (all in ms)."""
+    """Per-request service-level objectives (all in ms).
+
+    Declared by a scenario/workload as its default, and optionally overridden
+    per sweep row. An unset field means "no bar for this metric", which is why
+    :meth:`merged_over` inherits rather than treating ``None`` as a value.
+    """
 
     ttft_ms: Optional[float] = None
     tpot_ms: Optional[float] = None
@@ -140,6 +211,10 @@ class Slo:
 
     @classmethod
     def from_dict(cls, data: Optional[Mapping[str, Any]]) -> Optional["Slo"]:
+        # An empty ``{}`` is indistinguishable from an absent key, and must
+        # stay that way: the upstream schema defaults a scenario's slo to
+        # ``{}``, so serialized documents routinely carry one, and it means
+        # "no SLOs declared" rather than "all bars present but unset".
         if not data:
             return None
         return cls(
@@ -148,20 +223,47 @@ class Slo:
             e2el_ms=_as_optional_float(data.get("e2elMs")),
         )
 
+    def merged_over(self, default: Optional["Slo"]) -> "Slo":
+        """This SLO layered over ``default``: a set field wins, unset inherits."""
+        if default is None:
+            return self
+        return Slo(
+            ttft_ms=self.ttft_ms if self.ttft_ms is not None else default.ttft_ms,
+            tpot_ms=self.tpot_ms if self.tpot_ms is not None else default.tpot_ms,
+            e2el_ms=self.e2el_ms if self.e2el_ms is not None else default.e2el_ms,
+        )
+
+
+def effective_slo(row: Optional[Slo], default: Optional[Slo]) -> Optional[Slo]:
+    """The SLOs in force for one sweep row: its own layered over the default.
+
+    Field-wise merge, row wins, unset inherits from default (mirrors
+    ``effectiveSlo`` in llm-gauntlet's schema package). Returns ``None`` when
+    nothing is declared either side.
+    """
+    merged = row.merged_over(default) if row is not None else default
+    if merged is None or (
+        merged.ttft_ms is None and merged.tpot_ms is None and merged.e2el_ms is None
+    ):
+        return None
+    return merged
+
 
 @dataclass(frozen=True)
 class SweepPoint:
     """One (ISL, OSL, concurrency) point in a benchmark sweep.
 
     Only the fields the engine consumes to *drive* a run (isl/osl/concurrency)
-    are typed; the remaining reference measurements from the document are kept
-    verbatim in :attr:`reference` for display/provenance.
+    and the optional per-row SLO override are typed; the remaining reference
+    measurements from the document are kept verbatim in :attr:`reference` for
+    display/provenance.
     """
 
     isl: int
     osl: int
     concurrency: int
     reference: Mapping[str, Any] = field(default_factory=dict)
+    slo: Optional[Slo] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "SweepPoint":
@@ -173,7 +275,12 @@ class SweepPoint:
             osl=int(data["osl"]),
             concurrency=int(data["concurrency"]),
             reference=dict(data),
+            slo=Slo.from_dict(data.get("slo")),
         )
+
+    def effective_slo(self, default: Optional[Slo]) -> Optional[Slo]:
+        """SLOs in force for this point, its own override beating ``default``."""
+        return effective_slo(self.slo, default)
 
 
 @dataclass(frozen=True)
@@ -220,12 +327,21 @@ class AgenticSweepPoint:
 
     concurrency: int
     reference: Mapping[str, Any] = field(default_factory=dict)
+    slo: Optional[Slo] = None
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AgenticSweepPoint":
         if data.get("concurrency") is None:
             raise RequirementsError("agenticSweep[]: missing required 'concurrency'")
-        return cls(concurrency=int(data["concurrency"]), reference=dict(data))
+        return cls(
+            concurrency=int(data["concurrency"]),
+            reference=dict(data),
+            slo=Slo.from_dict(data.get("slo")),
+        )
+
+    def effective_slo(self, default: Optional[Slo]) -> Optional[Slo]:
+        """SLOs in force for this point, its own override beating ``default``."""
+        return effective_slo(self.slo, default)
 
 
 @dataclass(frozen=True)
@@ -235,6 +351,9 @@ class AgenticWorkload:
     The agentic counterpart to :class:`Scenario`. It sweeps concurrency alone
     rather than (ISL, OSL, concurrency), because the prompt sizes come from the
     replayed traces instead of the document.
+
+    Accepts either spelling: a canonical ``scenarios[]`` entry with
+    ``kind: agentic``, or a ``workloads[]`` entry from a validation-plan export.
     """
 
     id: str
@@ -248,7 +367,7 @@ class AgenticWorkload:
     def from_dict(cls, data: Mapping[str, Any]) -> "AgenticWorkload":
         workload_id = data.get("id") or data.get("name")
         if not workload_id:
-            raise RequirementsError("workloads[]: missing required 'id'")
+            raise RequirementsError("agentic workload: missing required 'id' or 'name'")
         agentic = data.get("agenticWorkload")
         traces = agentic.get("traces", []) if isinstance(agentic, Mapping) else []
         return cls(
@@ -305,6 +424,96 @@ class Deployment:
         )
 
 
+def _scenario_kind(entry: Mapping[str, Any]) -> str:
+    """The ``kind`` of a scenario/workload entry, defaulted like the schema."""
+    return str(entry.get("kind", DEFAULT_SCENARIO_KIND))
+
+
+def _fold_validation_plan(data: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Fold a validation-plan export back into the canonical document shape.
+
+    Regroups the flat ``items[]`` list (one entry per operating point) back
+    into ``scenarios``/``workloads`` by ``scenarioId``. Each item's ``targets``
+    *is* the sweep row, so this is a regroup, not a field translation. A
+    document with no ``items`` is returned untouched.
+    """
+    items = data.get("items")
+    if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+        return data
+
+    sweeps: Dict[str, List[Mapping[str, Any]]] = {}
+    agentic_sweeps: Dict[str, List[Mapping[str, Any]]] = {}
+    evals: List[Mapping[str, Any]] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        kind = item.get("type")
+        targets = item.get("targets")
+        if kind == "accuracy_eval":
+            spec = item.get("spec")
+            if isinstance(spec, Mapping):
+                evals.append(spec)
+        elif kind == "operating_point" and isinstance(targets, Mapping):
+            row = dict(targets)
+            if item.get("slo"):
+                row["slo"] = item["slo"]
+            sweeps.setdefault(str(item.get("scenarioId", "")), []).append(row)
+        elif kind == "agentic_operating_point" and isinstance(targets, Mapping):
+            # An agentic item has no sibling ``slo``: the row's own SLOs ride
+            # inside ``targets`` (AgenticOperatingPointItem declares no slo
+            # field), so the row is already complete.
+            agentic_sweeps.setdefault(str(item.get("scenarioId", "")), []).append(
+                dict(targets)
+            )
+
+    scenarios: List[Mapping[str, Any]] = [
+        dict(s) for s in data.get("scenarios", []) if isinstance(s, Mapping)
+    ]
+    for workload in data.get("workloads", []):
+        if not isinstance(workload, Mapping):
+            continue
+        entry = dict(workload)
+        key = str(entry.get("id", ""))
+        # Only fill what the export stripped: a workload that kept its sweep
+        # inline (some exports do) is authoritative and left alone.
+        if _scenario_kind(entry) == AGENTIC_KIND:
+            if not entry.get("agenticSweep") and key in agentic_sweeps:
+                entry["agenticSweep"] = agentic_sweeps[key]
+        elif not entry.get("sweep") and key in sweeps:
+            entry["sweep"] = sweeps[key]
+        scenarios.append(entry)
+
+    folded = dict(data)
+    folded["scenarios"] = scenarios
+    # Every workload is now represented in ``scenarios``; dropping the list it
+    # came from keeps the agentic dedupe from seeing each one twice.
+    folded.pop("workloads", None)
+    if evals:
+        existing = [e for e in data.get("accuracyEvals", []) if isinstance(e, Mapping)]
+        folded["accuracyEvals"] = existing + evals
+    return folded
+
+
+def _agentic_workloads(
+    scenarios: Sequence[Mapping[str, Any]],
+    workloads: Sequence[Mapping[str, Any]],
+) -> List[AgenticWorkload]:
+    """Agentic workloads from both document spellings, ``scenarios[]`` winning.
+
+    Deduplicated by id: a document carrying both spellings of the same workload
+    would otherwise replay every concurrency twice, and one trace replay costs
+    at least ``AGENTIC_TRACES_MIN_PROFILE_SECONDS`` (900s) of profiling.
+    ``scenarios[]`` is read first, so the canonical spelling wins.
+    """
+    found: Dict[str, AgenticWorkload] = {}
+    for entry in (*scenarios, *workloads):
+        if _scenario_kind(entry) != AGENTIC_KIND:
+            continue
+        workload = AgenticWorkload.from_dict(entry)
+        found.setdefault(workload.id, workload)
+    return list(found.values())
+
+
 @dataclass(frozen=True)
 class RequirementsDoc:
     """Parsed LLM-serving requirements document."""
@@ -322,6 +531,10 @@ class RequirementsDoc:
     def from_dict(cls, data: Mapping[str, Any]) -> "RequirementsDoc":
         schema_version = str(data.get("schemaVersion", ""))
         _check_schema_version(schema_version)
+        # A validation-plan export carries its sweeps and eval specs in a flat
+        # top-level "items" list rather than on the workloads; fold them back
+        # so both it and the canonical document load identically.
+        data = _fold_validation_plan(data)
         # Later 2.x revisions wrap identity (model, deployment, meta) in a
         # "document" envelope and carry the agentic sweep in a sibling
         # "workloads" list; earlier ones put identity at the top level. Read
@@ -331,6 +544,8 @@ class RequirementsDoc:
         model_data = identity.get("model")
         if not isinstance(model_data, Mapping):
             raise RequirementsError("requirements: missing required 'model' object")
+        raw_scenarios = [s for s in data.get("scenarios", []) if isinstance(s, Mapping)]
+        raw_workloads = [w for w in data.get("workloads", []) if isinstance(w, Mapping)]
         return cls(
             id=str(identity.get("id") or model_data.get("name") or "requirements"),
             schema_version=schema_version,
@@ -339,12 +554,14 @@ class RequirementsDoc:
             accuracy_evals=[
                 AccuracyEval.from_dict(e) for e in data.get("accuracyEvals", [])
             ],
-            scenarios=[Scenario.from_dict(s) for s in data.get("scenarios", [])],
-            agentic_workloads=[
-                AgenticWorkload.from_dict(w)
-                for w in data.get("workloads", [])
-                if isinstance(w, Mapping) and w.get("kind") == "agentic"
+            # Only the agentic kind is split out; other kinds stay here and are
+            # skipped downstream by the adapter, not here.
+            scenarios=[
+                Scenario.from_dict(s)
+                for s in raw_scenarios
+                if _scenario_kind(s) != AGENTIC_KIND
             ],
+            agentic_workloads=_agentic_workloads(raw_scenarios, raw_workloads),
             meta=dict(identity.get("meta", {})),
         )
 
@@ -388,15 +605,30 @@ def load_requirements(path: Union[str, Path]) -> RequirementsDoc:
             f"Requirements document must be a JSON object, got {type(data).__name__}"
         )
     doc = RequirementsDoc.from_dict(data)
+    # Report where the agentic workloads came from: a document whose agentic
+    # scenario silently went unread is exactly the failure this loader used to
+    # have, and a bare count made it invisible.
+    agentic_in_scenarios = sum(
+        1
+        for s in data.get("scenarios", [])
+        if isinstance(s, Mapping) and _scenario_kind(s) == AGENTIC_KIND
+    )
     logger.info(
         "Loaded requirements id=%s model=%s hardware=%s "
-        "(%d evals, %d scenarios, %d agentic workloads)",
+        "(%d evals, %d benchmark scenarios, %d agentic workloads; "
+        "%d declared in scenarios[], %d in workloads[])",
         doc.id,
         doc.model.name,
         doc.deployment.hardware,
         len(doc.accuracy_evals),
         len(doc.scenarios),
         len(doc.agentic_workloads),
+        agentic_in_scenarios,
+        sum(
+            1
+            for w in data.get("workloads", [])
+            if isinstance(w, Mapping) and _scenario_kind(w) == AGENTIC_KIND
+        ),
     )
     return doc
 
@@ -441,12 +673,16 @@ def _as_optional_int(value: Any) -> Optional[int]:
 
 __all__ = [
     "SUPPORTED_SCHEMA_MAJOR",
+    "AGENTIC_KIND",
+    "DEFAULT_SCENARIO_KIND",
     "PRIORITY_MUST",
     "PRIORITY_SHOULD",
     "RequirementsError",
     "AccuracyEval",
+    "EvalGenKwargs",
     "ScalarTarget",
     "Slo",
+    "effective_slo",
     "SweepPoint",
     "Scenario",
     "AgenticSweepPoint",

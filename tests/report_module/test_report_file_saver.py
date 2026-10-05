@@ -44,3 +44,26 @@ def test_strict_reraises_on_failure(tmp_path: Path):
     target.mkdir()
     with pytest.raises(Exception):
         ReportFileSaver.write_markdown("x", target, strict=True)
+
+
+@pytest.mark.parametrize("kind", ["json", "markdown"])
+def test_interrupted_replacement_preserves_previous_report(tmp_path, monkeypatch, kind):
+    path = tmp_path / "report"
+    path.write_text("previous report")
+
+    def interrupt_replace(source, destination):
+        assert source.parent == path.parent
+        assert source.read_text()  # The replacement is complete before publication.
+        assert destination == path
+        assert path.read_text() == "previous report"
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(Path, "replace", interrupt_replace)
+    with pytest.raises(KeyboardInterrupt):
+        if kind == "json":
+            ReportFileSaver.write_json({"new": "report"}, path, strict=True)
+        else:
+            ReportFileSaver.write_markdown("new report", path, strict=True)
+
+    assert path.read_text() == "previous report"
+    assert list(tmp_path.iterdir()) == [path]

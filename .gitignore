@@ -91,3 +91,7 @@ test_fixtures/datasets/*
 model_spec.json
 # deprecated
 default_model_spec.json
+
+# Requirements documents/validation plans are pulled from llm-gauntlet on
+# demand by --requirements-json "llm-gauntlet;<path>"; a run artifact, not source.
+/llm-gauntlet/

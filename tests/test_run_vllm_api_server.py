@@ -685,6 +685,72 @@ def test_resolve_service_port_reads_port_from_sys_argv(
     assert run_vllm_api_server_module.resolve_service_port() == expected_port
 
 
+@pytest.mark.parametrize(
+    "plugin_config",
+    [
+        json.dumps({"tt": {}}),
+        {"tt": {}},
+        "",
+        "not-json",
+        None,
+    ],
+)
+def test_absorb_empty_plugin_config(run_vllm_api_server_module, plugin_config):
+    default_vllm_args = {"port": 8000}
+    if plugin_config is not None:
+        default_vllm_args["plugin_config"] = plugin_config
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert "plugin_config" not in default_vllm_args
+    assert "plugin-config" not in default_vllm_args
+    assert "additional_config" not in default_vllm_args
+
+
+def test_absorb_plugin_config(
+    run_vllm_api_server_module,
+):
+    default_vllm_args = {
+        "port": 8000,
+        "plugin_config": json.dumps({"tt": {"trace_mode": False, "foo": 1}}),
+    }
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert "plugin_config" not in default_vllm_args
+    assert default_vllm_args["additional_config"] == {
+        "tt": {"trace_mode": False, "foo": 1}
+    }
+
+
+def test_absorb_plugin_config_preserves_existing_tt_values(
+    run_vllm_api_server_module,
+):
+    default_vllm_args = {
+        "plugin_config": {"tt": {"tt_data_parallel": 99, "foo": 1}},
+        "additional_config": json.dumps(
+            {
+                "tt": {"tt_data_parallel": 2},
+                "other_plugin": {"enabled": True},
+            }
+        ),
+    }
+
+    run_vllm_api_server_module.absorb_plugin_config_into_additional_config(
+        default_vllm_args
+    )
+
+    assert default_vllm_args["additional_config"]["tt"] == {
+        "tt_data_parallel": 2,
+        "foo": 1,
+    }
+    assert default_vllm_args["additional_config"]["other_plugin"] == {"enabled": True}
+
+
 def test_model_spec_can_disable_and_clear_inherited_metal_timeout(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -901,6 +967,122 @@ def _weights_spec():
     }
 
 
+def test_quetzal_fetches_only_pinned_metadata(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = MagicMock()
+    transformers.AutoTokenizer = MagicMock()
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "quetzal"},
+        device_model_spec={
+            "vllm_args": {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+        },
+    )
+    path = module.ensure_weights_available(spec)
+    kwargs = module.snapshot_download.call_args.kwargs
+    assert kwargs["revision"] == "a" * 40
+    assert kwargs["allow_patterns"]
+    assert not any(
+        pattern.endswith((".pt", ".bin", ".safetensors", ".py")) or pattern == "*"
+        for pattern in kwargs["allow_patterns"]
+    )
+    transformers.AutoConfig.from_pretrained.assert_called_once_with(
+        path, local_files_only=True, trust_remote_code=False
+    )
+    transformers.AutoTokenizer.from_pretrained.assert_called_once_with(
+        path, local_files_only=True, trust_remote_code=False
+    )
+    assert os.environ["MODEL_WEIGHTS_DIR"] == str(path)
+
+
+def test_quetzal_missing_metadata_fails_closed(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    module.snapshot_download.side_effect = RuntimeError("offline")
+    transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = MagicMock()
+    transformers.AutoConfig.from_pretrained.side_effect = ValueError("missing config")
+    transformers.AutoTokenizer = MagicMock()
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "quetzal"},
+        device_model_spec={
+            "vllm_args": {"revision": "a" * 40, "tokenizer_revision": "a" * 40}
+        },
+    )
+    with pytest.raises(RuntimeError, match="metadata unavailable"):
+        module.ensure_weights_available(spec)
+    assert "MODEL_WEIGHTS_DIR" not in os.environ
+
+
+@pytest.mark.parametrize(
+    "revision,tokenizer",
+    [
+        (None, None),
+        ("main", "main"),
+        ("a" * 12, "a" * 12),
+        (True, True),
+        ("a" * 40, "b" * 40),
+    ],
+)
+def test_quetzal_metadata_refuses_unpinned_or_mismatched_revision(
+    monkeypatch, tmp_path, run_vllm_api_server_module, revision, tokenizer
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    spec = _weights_spec()
+    spec.update(
+        impl={"impl_id": "quetzal"},
+        device_model_spec={
+            "vllm_args": {"revision": revision, "tokenizer_revision": tokenizer}
+        },
+    )
+    with pytest.raises(RuntimeError, match="revision"):
+        module.ensure_weights_available(spec)
+    module.snapshot_download.assert_not_called()
+
+
+def test_quetzal_metadata_namespaces_equal_short_names(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    transformers = types.ModuleType("transformers")
+    transformers.AutoConfig = MagicMock()
+    transformers.AutoTokenizer = MagicMock()
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+    paths = []
+    for repo in ("first/same-name", "second/same-name"):
+        monkeypatch.delenv("MODEL_WEIGHTS_DIR", raising=False)
+        paths.append(
+            module.ensure_weights_available(
+                {
+                    "model_name": "same-name",
+                    "hf_model_repo": repo,
+                    "impl": {"impl_id": "quetzal"},
+                    "device_model_spec": {
+                        "vllm_args": {
+                            "revision": "a" * 40,
+                            "tokenizer_revision": "a" * 40,
+                        }
+                    },
+                }
+            )
+        )
+    assert paths[0] != paths[1]
+
+
 def test_ensure_weights_available_resumes_partial_download(
     monkeypatch, tmp_path, run_vllm_api_server_module
 ):
@@ -954,3 +1136,37 @@ def test_ensure_weights_available_raises_when_unreachable_and_no_weights(
 
     with pytest.raises(RuntimeError):
         run_vllm_api_server_module.ensure_weights_available(_weights_spec())
+
+
+@pytest.mark.parametrize(
+    "canonical,colocated,disabled,expected",
+    [
+        (None, False, False, "5.0"),
+        (None, True, False, "120.0"),
+        ("42.0", True, False, "42.0"),
+        ("42.0", False, False, "42.0"),
+        ("42.0", True, True, None),
+    ],
+)
+def test_metal_timeout_override_precedence(
+    monkeypatch,
+    run_vllm_api_server_module,
+    canonical,
+    colocated,
+    disabled,
+    expected,
+):
+    for name, value in {
+        "TT_METAL_OPERATION_TIMEOUT_SECONDS": canonical,
+        "TT_COLOCATED_INFERENCE": "1" if colocated else "0",
+        "DISABLE_METAL_OP_TIMEOUT": "1" if disabled else "0",
+        "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE": "stale",
+    }.items():
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    run_vllm_api_server_module.set_metal_timeout_env_vars()
+    assert os.environ.get("TT_METAL_OPERATION_TIMEOUT_SECONDS") == expected
+    if disabled:
+        assert "TT_METAL_DISPATCH_TIMEOUT_COMMAND_TO_EXECUTE" not in os.environ

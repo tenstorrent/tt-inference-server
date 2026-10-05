@@ -568,6 +568,13 @@ def generate_docker_run_command(
             f"src={quetzal_package_mount.host_root},"
             f"dst={quetzal_package_mount.runtime_root},readonly",
         ])
+        for auxiliary in quetzal_package_mount.auxiliary:
+            docker_command.extend([
+                "--mount",
+                "type=bind,"
+                f"src={auxiliary.host_root},"
+                f"dst={auxiliary.runtime_root},readonly",
+            ])
 
     if runtime_config.interactive:
         docker_command.append("-itd")

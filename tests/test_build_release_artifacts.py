@@ -10,6 +10,7 @@ import pytest
 
 from scripts.release.build_release_artifacts import (
     artifact_model_token,
+    bundle_name,
     device_from_jobs,
     resolve_model,
     resolve_configured_scope,
@@ -66,10 +67,11 @@ def test_config_scope_resolves_exact_artifact_identity(tmp_path):
         }
     }
 
-    models, expected = resolve_configured_scope(config, _write_dev(tmp_path))
+    targets, expected, kinds = resolve_configured_scope(config, _write_dev(tmp_path))
 
-    assert models == {"Qwen/Qwen3-32B": ["galaxy"]}
-    assert expected == {("Qwen/Qwen3-32B", "galaxy"): IDENTITY}
+    assert targets == {("Qwen/Qwen3-32B", None): ["galaxy"]}
+    assert expected == {("Qwen/Qwen3-32B", "galaxy", None): IDENTITY}
+    assert kinds == {"Qwen/Qwen3-32B": ["release"]}
 
 
 def test_artifact_and_job_matching_support_full_name_variants():
@@ -127,7 +129,8 @@ def test_artifact_resolution_selects_unique_exact_identity(tmp_path, monkeypatch
         "org/repo",
         tmp_path,
         {},
-        {("Qwen/Qwen3-32B", "galaxy"): IDENTITY},
+        {("Qwen/Qwen3-32B", "galaxy", None): IDENTITY},
+        impl=None,
     )
 
     assert chosen == {"galaxy": artifacts[1]}
@@ -142,7 +145,8 @@ def test_artifact_resolution_selects_unique_exact_identity(tmp_path, monkeypatch
             "org/repo",
             tmp_path,
             {},
-            {("Qwen/Qwen3-32B", "galaxy"): IDENTITY},
+            {("Qwen/Qwen3-32B", "galaxy", None): IDENTITY},
+            impl=None,
         )
 
 
@@ -254,3 +258,171 @@ templates:
 
     with pytest.raises(ValueError, match="collide on artifact filename"):
         resolve_configured_scope(config, dev)
+
+
+def test_job_matching_uses_the_impl_from_the_logs_artifact(tmp_path, monkeypatch):
+    """tt-shield names a non-default impl's job ``run-release-<model>@<impl>-...``;
+    the impl comes from the logs artifact's ``_<impl-or-default>`` suffix."""
+    artifacts = [
+        {
+            "id": 1,
+            "name": "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_bh-qb-ge_llama31-8b-qb2",
+        },
+    ]
+    jobs = [
+        {
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@-bh-qb-ge-p300x2"
+        },
+    ]
+
+    def no_download(*_args):
+        raise AssertionError("device should come from the job name, not the bundle")
+
+    monkeypatch.setattr(
+        "scripts.release.build_release_artifacts.download_artifact", no_download
+    )
+    chosen = resolve_model(
+        "meta-llama/Llama-3.1-8B-Instruct",
+        ["p300x2"],
+        artifacts,
+        jobs,
+        "org/repo",
+        tmp_path,
+        {},
+    )
+    assert chosen == {"p300x2": artifacts[0]}
+
+
+def test_device_from_jobs_keeps_default_and_impl_jobs_apart():
+    model = "meta-llama/Llama-3.1-8B-Instruct"
+    jobs = [
+        {
+            "name": "run-release-meta-llama__Llama-3.1-8B-Instruct@llama31-8b-qb2@-bh-qb-ge-p300x2"
+        },
+        {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300"},
+    ]
+    assert device_from_jobs(jobs, model, "bh-qb-ge", impl="llama31-8b-qb2") == "p300x2"
+    assert device_from_jobs(jobs, model, "bh-qb-ge") == "p300"
+
+
+def test_device_from_jobs_reads_runs_from_before_leaf_job_names():
+    """Before tt-shield named jobs ``<model>@<impl>``, an impl's job carried the
+    bare model. The logs artifact already proves which impl ran, and the runner
+    label pins its job, so such a run still resolves."""
+    model = "meta-llama/Llama-3.1-8B-Instruct"
+    legacy = [
+        {
+            "name": "_ / vLLM / run-training_tests-meta-llama__Llama-3.1-8B-Instruct-bh-qb-ge-p300x2"
+        }
+    ]
+    assert (
+        device_from_jobs(
+            legacy, model, "bh-qb-ge", "training_tests", impl="trainer-training-lora"
+        )
+        == "p300x2"
+    )
+    # A run that already uses leaf names never falls back to the bare-model job.
+    current = legacy + [
+        {"name": "run-release-meta-llama__Llama-3.1-8B-Instruct@other@-bh-qb-ge-p300"}
+    ]
+    assert (
+        device_from_jobs(
+            current, model, "bh-qb-ge", "training_tests", impl="trainer-training-lora"
+        )
+        is None
+    )
+
+
+TT = ("Qwen/Qwen3-32B", "GALAXY", "vLLM", "tt_transformers")
+
+
+def _two_impl_dev(tmp_path):
+    dev = _write_dev(tmp_path)
+    with (dev / "llm.yaml").open("a") as file:
+        file.write(
+            """- weights: [Qwen/Qwen3-32B]
+  impl: tt_transformers
+  inference_engine: VLLM
+  device_model_specs:
+    - {device: GALAXY, max_concurrency: 1, max_context: 32768}
+"""
+        )
+    return dev
+
+
+TWO_IMPL_CONFIG = {
+    "models": {
+        "Qwen3-32B": {
+            "implementations": [
+                {
+                    "inference_engine": "vLLM",
+                    "ci": {"release": {"devices": ["GALAXY"]}},
+                },
+                {
+                    "inference_engine": "vLLM",
+                    "impl": "tt-transformers",
+                    "ci": {"release": {"devices": ["GALAXY"]}},
+                },
+            ]
+        }
+    }
+}
+
+
+def test_config_scope_releases_two_impls_of_one_model_device(tmp_path):
+    targets, expected, _kinds = resolve_configured_scope(
+        TWO_IMPL_CONFIG, _two_impl_dev(tmp_path)
+    )
+    assert targets == {
+        ("Qwen/Qwen3-32B", None): ["galaxy"],
+        ("Qwen/Qwen3-32B", "tt-transformers"): ["galaxy"],
+    }
+    assert expected == {
+        ("Qwen/Qwen3-32B", "galaxy", None): IDENTITY,
+        ("Qwen/Qwen3-32B", "galaxy", "tt-transformers"): TT,
+    }
+
+
+def test_each_impl_resolves_its_own_bundle(tmp_path, monkeypatch):
+    """Both impls ran; each release entry takes the bundle whose artifact suffix
+    names its impl (``_default`` for the default) and whose identity matches."""
+    artifacts = [
+        {"id": 1, "name": "workflow_logs_release_Qwen__Qwen3-32B_6u_default"},
+        {"id": 2, "name": "workflow_logs_release_Qwen__Qwen3-32B_6u_tt-transformers"},
+    ]
+    jobs = [
+        {"name": "_ / vLLM / run-release-Qwen__Qwen3-32B-6u-galaxy"},
+        {"name": "_ / vLLM / run-release-Qwen__Qwen3-32B@tt-transformers@-6u-galaxy"},
+    ]
+    paths = {1: _bundle(tmp_path, IDENTITY, "d.zip"), 2: _bundle(tmp_path, TT, "t.zip")}
+    monkeypatch.setattr(
+        "scripts.release.build_release_artifacts.download_artifact",
+        lambda repo, artifact, tmp, cache: paths[artifact["id"]],
+    )
+    _targets, expected, _kinds = resolve_configured_scope(
+        TWO_IMPL_CONFIG, _two_impl_dev(tmp_path)
+    )
+    for impl, artifact in [(None, artifacts[0]), ("tt-transformers", artifacts[1])]:
+        chosen = resolve_model(
+            "Qwen/Qwen3-32B",
+            ["galaxy"],
+            artifacts,
+            jobs,
+            "org/repo",
+            tmp_path,
+            {},
+            expected,
+            impl=impl,
+        )
+        assert chosen == {"galaxy": artifact}
+
+
+def test_bundle_names_change_only_where_a_device_ships_two_impls():
+    model = "meta-llama/Llama-3.1-8B-Instruct"
+    base = "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct"
+    assert bundle_name(model, "p150", "trainer-training-lora") == f"{base}_p150.zip"
+    assert bundle_name(model, "p300x2", None, shared=True) == f"{base}_p300x2.zip"
+    assert (
+        bundle_name(model, "p300x2", "llama31-8b-qb2", shared=True)
+        == f"{base}_p300x2_llama31-8b-qb2.zip"
+    )

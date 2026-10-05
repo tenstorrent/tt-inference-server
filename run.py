@@ -37,6 +37,7 @@ from workflows.multihost_orchestrator import (
     is_multihost_deployment,
     setup_multihost_config,
 )
+from workflows.quetzal_package import resolve_quetzal_package_mount  # noqa: E402
 from workflows.requirements_cli import (
     add_requirements_argument,
     apply_requirements,
@@ -199,15 +200,17 @@ def parse_arguments():
     parser.add_argument(
         "--service-port",
         type=str,
-        help="SERVICE_PORT",
-        default=os.getenv("SERVICE_PORT", "8000"),
+        default=None,
+        help="SERVICE_PORT. Defaults to the SERVICE_PORT env var, then 443 when "
+        "--server-url is an https URL without an explicit port, else 8000.",
     )
     parser.add_argument(
         "--server-url",
         type=str,
         default=None,
         help="Base URL of an already-running inference server to target (e.g. 'http://192.168.1.10'). "
-        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server.",
+        "Overrides the default http://127.0.0.1. Use together with --service-port when not using --docker-server or --local-server. "
+        "An explicit port in the URL wins; an https URL without a port defaults to 443 unless --service-port is given.",
     )
     parser.add_argument(
         "--bind-host",
@@ -756,6 +759,14 @@ def parse_arguments():
             args.server_url = normalize_server_url(args.server_url)
         except ValueError as e:
             parser.error(str(e))
+    if args.service_port is None:
+        # Precedence: explicit --service-port > SERVICE_PORT env > 443 for an
+        # https --server-url without a port > 8000.
+        from utils.url_helpers import default_service_port
+
+        args.service_port = os.getenv("SERVICE_PORT") or default_service_port(
+            args.server_url
+        )
     if args.custom_weights is not None:
         if not args.custom_weights.strip():
             parser.error("--custom-weights cannot be empty.")
@@ -1234,6 +1245,10 @@ def main():
             logger.info("Running inference server in Docker container ...")
         else:
             logger.info("Resolving local-server host storage ...")
+        # Validation above admits the immutable Quetzal package and all of its
+        # auxiliary roots.  Such a package supplies the runtime device weights,
+        # so host setup must not apply Hugging Face weight-download sizing to it.
+        package_mount = resolve_quetzal_package_mount(model_spec, runtime_config)
         setup_config = setup_host(
             model_spec=model_spec,
             jwt_secret=os.getenv("JWT_SECRET"),
@@ -1246,6 +1261,7 @@ def main():
                 runtime_config.image_user if runtime_config.docker_server else None
             ),
             local_server=runtime_config.local_server,
+            package_provides_weights=package_mount is not None,
         )
 
     # step 4: optionally run inference server. Server bring-up runs as a

@@ -241,6 +241,7 @@ class HostSetupManager:
         host_weights_dir: str = None,
         image_user: str = None,
         local_server: bool = False,
+        package_provides_weights: bool = False,
     ):
         self.model_spec = model_spec
         self.automatic = automatic
@@ -250,6 +251,14 @@ class HostSetupManager:
             host_hf_cache=host_hf_cache,
             host_weights_dir=host_weights_dir,
             local_server=local_server,
+            # An admitted immutable package is the runtime weight source.  Do
+            # not apply the Hugging Face download/repack contract (including
+            # its host-RAM heuristic) to that path.
+            model_source=(
+                ModelSource.NOACTION.value
+                if package_provides_weights
+                else os.getenv("MODEL_SOURCE", ModelSource.HUGGINGFACE.value)
+            ),
         )
         self.jwt_secret = jwt_secret
         self.hf_token = hf_token
@@ -730,6 +739,7 @@ def setup_host(
     host_weights_dir=None,
     image_user=None,
     local_server=False,
+    package_provides_weights=False,
 ):
     automatic = bool(automatic_setup)
 
@@ -743,6 +753,7 @@ def setup_host(
         host_weights_dir=host_weights_dir,
         image_user=image_user,
         local_server=local_server,
+        package_provides_weights=package_provides_weights,
     )
     manager.run_setup()
     return manager.setup_config
