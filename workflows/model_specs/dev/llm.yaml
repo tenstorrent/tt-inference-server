@@ -102,6 +102,8 @@ templates:
       vllm_args:
         data_parallel_size: 4
         max_num_seqs: 32  # override the default inferred by max_concurrency
+        # Default to the device sampler's top-k limit. Requests can override this value.
+        override_generation_config: '{"top_k": 32}'
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 134217728  # 128 MB; vLLM default 50 MB is too small for long prefill
@@ -2790,7 +2792,7 @@ templates:
 # no local TT serving is implied.
 - weights:
     - moonshotai/Kimi-K2.6
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -2815,7 +2817,7 @@ templates:
 # no local TT serving is implied.
 - weights:
     - MiniMaxAI/MiniMax-M2.7
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -2833,7 +2835,7 @@ templates:
 
 - weights:
     - openai/gpt-oss-120b
-  impl: gpt_oss
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -2851,7 +2853,7 @@ templates:
 
 - weights:
     - moonshotai/Kimi-K2.7-Code
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -2875,7 +2877,7 @@ templates:
 # resolves through MODEL_SPECS / EVAL_CONFIGS; no local TT serving is implied.
 - weights:
     - moonshotai/Kimi-K3
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -2898,11 +2900,11 @@ templates:
 
 - weights:
     - MiniMaxAI/MiniMax-M3
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
-      max_concurrency: 64
+      max_concurrency: 62
       max_context: 1048576  # 1024 * 1024;
       default_impl: true
   status: EXPERIMENTAL
@@ -3190,7 +3192,7 @@ templates:
 
 - weights:
     - zai-org/GLM-5.2
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -3212,7 +3214,7 @@ templates:
 # / EVAL_CONFIGS; no local TT serving is implied.
 - weights:
     - zai-org/GLM-5.3
-  impl: tt_transformers
+  impl: blaze
   inference_engine: MEDIA
   device_model_specs:
     - device: SUPER_CLUSTER
@@ -4752,3 +4754,54 @@ templates:
       kv_cache_usable_tokens: 131072
     max_tokens_all_users_override: 131072
   status: EXPERIMENTAL
+
+
+
+
+# Published TP4 implementation. Qualification is tracked in issue #5209.
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: llama31_8b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072
+      max_tokens_all_users_override: 131072  # Shared across all 32 slots.
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P300x2
+      vllm_args:
+        block_size: 128
+        data_parallel_size: 1
+        revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        tokenizer_revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        seed: 0  # Match the published adapter and frozen performance baseline.
+        max-logprobs: -1
+        async-scheduling: true
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 268435456
+        l1_small_size: 16384
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+      pinned_checkpoint: true
+      checkpoint_index: model.safetensors.index.json
+      model_path_env: LLAMA_MODEL_PATH
+      benchmark_protocol: fixed_workload
+      benchmark_require_complete_metrics: true
+      benchmark_tokenizer_sha256:
+        tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
+        tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424

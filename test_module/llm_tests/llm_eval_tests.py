@@ -21,8 +21,9 @@ from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
+from utils.pinned_artifacts import get_pinned_revision, resolve_tokenizer
 from workflow_module import accept_blocks
-from workflow_module.engine_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode, WorkflowVenvType
 from workflow_module.proc import run_command
 from workflow_module.target_pack import get_target_pack
 
@@ -388,9 +389,23 @@ def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> B
 # --- running one task --------------------------------------------------------
 
 
+def _prepare_eval_tokenizer(ctx, task, output_path: Path):
+    if (
+        task.task_name.startswith("longbench_")
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        and get_pinned_revision(ctx.model_spec)
+    ):
+        return resolve_tokenizer(
+            ctx.model_spec,
+            output_path / f"eval_{ctx.model_spec.model_id}" / "longbench_protocol",
+        )
+    return None
+
+
 def _run_eval_task(
     ctx: MediaContext, task, auth_token: str, *, output_path: Path
 ) -> int:
+    tokenizer = _prepare_eval_tokenizer(ctx, task, output_path)
     cmd = build_eval_command(
         task,
         ctx.model_spec,
@@ -399,6 +414,7 @@ def _run_eval_task(
         ctx.server_port,
         runtime_config=ctx.runtime_config,
         deploy_url=ctx.server_host,
+        tokenizer_path=tokenizer,
     )
     env = dict(os.environ)
     if auth_token:

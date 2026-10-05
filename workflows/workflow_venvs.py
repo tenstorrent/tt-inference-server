@@ -42,7 +42,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
-EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
+EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
@@ -537,9 +537,8 @@ def setup_evals_meta(
     ):
         return True
 
-    # lm-eval 0.4.4 IFEval imports pkg_resources, removed in setuptools 81.
-    # Pin before any cookbook install, and repair cached venvs too
-    # (ported from #5234).
+    # Cookbook's editable install and IFEval need pkg_resources. Repair cached
+    # environments too, before any cookbook import or editable install.
     if (
         run_command(
             [
@@ -589,9 +588,8 @@ def setup_evals_meta(
         setup_succeeded = (
             install_requirements(venv_config, "evals-meta.txt") and setup_succeeded
         )
-    # IFEval scoring needs NLTK Punkt data, and NLTK's own downloader is
-    # refused by the runner proxy. Fail before any evaluation request rather
-    # than after generating every response (ported from #5234).
+    # Fail before sending evaluation requests if sentence scoring cannot run.
+    # Use the venv's standard NLTK data path; do not relax NLTK proxy checks.
     if (
         not setup_succeeded
         or run_command(
@@ -896,6 +894,12 @@ _venv_config_list = [
         # gemma-4 tokenizer loads; keeps vllm (and the bench-serve client) at
         # 0.13.0 for every other model. See llm-vllm-overrides.txt.
         overrides_file="llm-vllm-overrides.txt",
+        extra_dirs=("artifacts",),
+        python_version="3.11",
+    ),
+    VenvConfig(
+        venv_type=WorkflowVenvType.LLM_VLLM_TOKEN_TIMING,
+        requirements_file="llm-vllm-token-timing.txt",
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
