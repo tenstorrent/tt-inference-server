@@ -120,7 +120,9 @@ def test_child_output_is_streamed_line_by_line():
     """Complete lines reach the hook as they arrive, including an unterminated
     last line and one longer than asyncio's default 64 KiB readline limit."""
     long_line = "x" * 200_000
-    script = f"import sys; sys.stdout.write('a\\nb\\n{long_line}\\ntail')"
+    # The child builds the long line: as a literal in the -c argument it would
+    # exceed Linux's 128 KiB per-argument limit (E2BIG).
+    script = "import sys; sys.stdout.write('a\\nb\\n' + 'x' * 200_000 + '\\ntail')"
     test = ToolCallSchemaConformanceTest(TestConfig({}), {})
     lines = []
     test._on_pytest_output_line = lines.append
