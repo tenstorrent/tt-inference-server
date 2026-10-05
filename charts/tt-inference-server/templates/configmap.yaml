@@ -22,6 +22,15 @@ under CACHE_ROOT, so this mirrors run_docker_server.py's media/forge branch.
 {{- if dig "disabled" false $auth }}
 {{- $_ := set $data "NO_AUTH" "1" }}
 {{- end }}
+{{- /*
+The server's FastAPI instrumentator is built with should_respect_env_var, so the
+HTTP-level families (request duration, payload sizes) are only collected when
+ENABLE_METRICS is set. The per-stage and per-device families are always exported;
+this switch only adds the transport view, so it follows the scrape toggle.
+*/}}
+{{- if dig "enabled" false (.Values.podMonitor | default dict) }}
+{{- $_ := set $data "ENABLE_METRICS" "1" }}
+{{- end }}
 {{- end }}
 {{- range $cfg.extraEnv }}
 {{- if .value }}

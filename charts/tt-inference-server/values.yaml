@@ -80,6 +80,22 @@ podMonitor:
   interval: 30s
   path: /metrics
 
+# Grafana dashboard for the resolved engine, shipped as a ConfigMap for the
+# Grafana dashboard sidecar to pick up. Values mirror tt-telemetry's chart so the
+# two are configured the same way. media and forge share one dashboard (the forge
+# image runs the same server); vllm has its own.
+grafanaDashboard:
+  enabled: false
+  # Namespace for the ConfigMap. Empty means the release namespace; set it when
+  # the sidecar only watches Grafana's own namespace.
+  namespace: ""
+  # Labels the sidecar selects on. The default matches tt-telemetry's chart and
+  # the kube-prometheus-stack sidecar default.
+  labels:
+    grafana_dashboard: "1"
+  # Common use: a folder hint for the sidecar (`grafana_folder: <name>`).
+  annotations: {}
+
 # ---------------------------------------------------------------------------
 # Defaults — merged with (and overridden by) per-model config below.
 # ---------------------------------------------------------------------------
