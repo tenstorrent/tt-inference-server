@@ -850,3 +850,22 @@ def test_harness_window_keeps_a_block_of_headroom_below_max_context():
     )
     max_length = int(_command_model_kwargs(command)["max_length"])
     assert max_length == 131072 - 64
+
+
+def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
+    # leaderboard_math_hard is scored as the mean of per-subtask paths. The
+    # group entry itself carries an aggregate exact_match, which the
+    # metric-mismatch auto-detect used to substitute as a bare string --
+    # score_multilevel_keys_mean then asserted and the task scored 0.
+    task = next(
+        t for t in _eval_config_map["meta-llama/Llama-3.2-3B"].tasks
+        if t.task_name == "leaderboard_math_hard"
+    )
+    subtasks = [k[0] for k in task.score.score_func_kwargs["result_keys"]]
+    results = {"leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"}}
+    results.update({name: {"exact_match,none": 0.02} for name in subtasks})
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, ratio, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
+    assert ratio == pytest.approx(2.0 / task.score.published_score)
+    assert check == ReportCheckTypes.PASS
