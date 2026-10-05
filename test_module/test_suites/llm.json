@@ -174,6 +174,30 @@
       ]
     },
     {
+      "_comment": "Experiment: vLLM chat-completions parameter conformance on every super_cluster model, to see which checks the ai-dynamo frontend passes. Gaps found go in model_spec known_issues (SPEC_TESTS, task_name = the failing test function).",
+      "id_pattern": "{model}-{device}-vllm-conformance",
+      "models": [
+        "kimi_k2_6",
+        "kimi_k2_7_code",
+        "kimi_k3",
+        "minimax_m2_7",
+        "minimax_m3",
+        "openai/gpt-oss-120b",
+        "glm_5_2",
+        "glm_5_3"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMParamConformanceTest",
+          "enabled": true,
+          "description": "vLLM chat-completions parameter conformance (n, max_tokens, stop, seeding, logprobs, sampling params, penalties, coherence)"
+        }
+      ]
+    },
+    {
       "devices": [
         "p300x2"
       ],

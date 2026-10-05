@@ -71,7 +71,12 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
-      "moonshotai/Kimi-K2.7-Code"
+      "moonshotai/Kimi-K2.7-Code",
+      "moonshotai/Kimi-K2.6",
+      "moonshotai/Kimi-K3",
+      "MiniMaxAI/MiniMax-M2.7",
+      "zai-org/GLM-5.2",
+      "zai-org/GLM-5.3"
     ]
   },
   "available_markers": {
@@ -241,7 +246,8 @@
     "openai/gpt-oss-120b": {
       "category": "LLM",
       "compatible_devices": [
-        "p300x2"
+        "p300x2",
+        "super_cluster"
       ],
       "id_name": "openai--gpt-oss-120b",
       "weights": [
@@ -620,6 +626,56 @@
       "id_name": "kimi-k2.7-code",
       "weights": [
         "moonshotai/Kimi-K2.7-Code"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "kimi_k2_6": {
+      "id_name": "kimi-k2.6",
+      "weights": [
+        "moonshotai/Kimi-K2.6"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "kimi_k3": {
+      "id_name": "kimi-k3",
+      "weights": [
+        "moonshotai/Kimi-K3"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "minimax_m2_7": {
+      "id_name": "minimax-m2.7",
+      "weights": [
+        "MiniMaxAI/MiniMax-M2.7"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "glm_5_2": {
+      "id_name": "glm-5.2",
+      "weights": [
+        "zai-org/GLM-5.2"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "glm_5_3": {
+      "id_name": "glm-5.3",
+      "weights": [
+        "zai-org/GLM-5.3"
       ],
       "category": "LLM",
       "compatible_devices": [
