@@ -77,7 +77,8 @@
       "HuggingFaceTB/SmolLM2-135M-Instruct",
       "HuggingFaceTB/SmolLM2-360M-Instruct",
       "deepseek-ai/deepseek-math-7b-instruct",
-      "Qwen/Qwen2.5-7B-Instruct"
+      "Qwen/Qwen2.5-7B-Instruct",
+      "Qwen/Qwen2.5-7B-Instruct-1M"
     ]
   },
   "available_markers": {
@@ -800,6 +801,16 @@
       "id_name": "Qwen--Qwen2.5-7B-Instruct",
       "weights": [
         "Qwen/Qwen2.5-7B-Instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct-1M": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct-1M",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
       ]
     }
   },
