@@ -883,6 +883,28 @@ def test_main_passes_passthrough_port_to_trace_capture(
     register.assert_called_once_with("tt-transformers")
 
 
+def test_set_tt_metal_cache_uses_persistent_model_cache(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.delenv("TT_METAL_CACHE", raising=False)
+
+    run_vllm_api_server_module.set_tt_metal_cache(tmp_path)
+
+    expected = tmp_path / "tt_metal_cache"
+    assert expected.is_dir()
+    assert os.environ["TT_METAL_CACHE"] == str(expected)
+
+
+def test_set_tt_metal_cache_preserves_explicit_override(
+    monkeypatch, tmp_path, run_vllm_api_server_module
+):
+    monkeypatch.setenv("TT_METAL_CACHE", "/managed/metal-cache")
+
+    run_vllm_api_server_module.set_tt_metal_cache(tmp_path)
+
+    assert os.environ["TT_METAL_CACHE"] == "/managed/metal-cache"
+
+
 def test_main_admits_quetzal_bundle_before_startup_side_effects(
     monkeypatch, run_vllm_api_server_module
 ):
@@ -922,7 +944,7 @@ def test_main_skips_native_registration_for_quetzal(
         env_vars=_quetzal_provider_env(),
     )
     module = run_vllm_api_server_module
-    monkeypatch.setenv("TT_CACHE_PATH", "/cache")
+    monkeypatch.setenv("TT_CACHE_PATH", str(tmp_path / "cache"))
     weights = _set_quetzal_provider_runtime_env(monkeypatch, tmp_path)
     monkeypatch.setattr(module, "parse_args", lambda: (_quetzal_main_args(), []))
     monkeypatch.setattr(module, "load_model_spec", lambda **_kwargs: spec)

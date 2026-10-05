@@ -207,6 +207,9 @@ class TestRunLocalServer:
         assert env["TT_METAL_HOME"] == str(tt_metal_home)
         assert env["PYTHON_ENV_DIR"] == str(tt_metal_home / "python_env")
         assert env["CACHE_ROOT"] == str(cache_root.resolve())
+        assert env["TT_METAL_CACHE"] == str(
+            Path(env["TT_CACHE_PATH"]) / "tt_metal_cache"
+        )
         assert env["TT_METAL_LOGS_PATH"] == str(cache_root.resolve() / "logs")
         assert env["RUNTIME_MODEL_SPEC_JSON_PATH"] == str(json_fpath.resolve())
         assert env["DISABLE_METAL_OP_TIMEOUT"] == "1"
