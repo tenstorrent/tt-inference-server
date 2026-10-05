@@ -3335,14 +3335,17 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    # Bound a silent streamed request, while allowing the
+                    # scheduler to resume a preempted healthy request.
+                    "idle_timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
@@ -3350,6 +3353,9 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # Three five-hour task bounds leave three hours of workflow
+                # headroom under Shield's 18-hour job cap.
+                wall_clock_timeout_seconds=18000,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -3370,14 +3376,17 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    # Bound a silent streamed request, while allowing the
+                    # scheduler to resume a preempted healthy request.
+                    "idle_timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
@@ -3385,6 +3394,9 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # Three five-hour task bounds leave three hours of workflow
+                # headroom under Shield's 18-hour job cap.
+                wall_clock_timeout_seconds=18000,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
@@ -3451,14 +3463,17 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                max_concurrent=16,
+                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    # Bound a silent streamed request, while allowing the
+                    # scheduler to resume a preempted healthy request.
+                    "idle_timeout": "3600",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-32B#best-practices
                 gen_kwargs={
-                    "stream": "false",
+                    "stream": "true",
                     "max_gen_toks": 32768,
                     "until": [],
                     "do_sample": "true",
@@ -3466,6 +3481,9 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
+                # Three five-hour task bounds leave three hours of workflow
+                # headroom under Shield's 18-hour job cap.
+                wall_clock_timeout_seconds=18000,
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
