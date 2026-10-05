@@ -6193,8 +6193,6 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
             agentic_eval_config=replace(
                 _gemma_terminal.agentic_eval_config,
                 n_concurrent_trials=1,
-                request_telemetry=True,
-                abort_on_client_disconnect=True,
                 agent_kwargs=_gemma_terminal_kwargs,
             ),
         ),

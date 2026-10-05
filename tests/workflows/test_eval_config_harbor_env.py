@@ -72,8 +72,13 @@ def test_gemma4_release_has_exact_subsets_and_explicit_policy():
     assert tb.agent_kwargs["llm_kwargs"]["extra_body"]["repetition_detection"] == guard
     assert not tb.normalize_submission_marker
     assert not tb.owned_command_cleanup
-    for agent in (tb, swe.agentic_eval_config):
-        assert agent.request_telemetry and agent.abort_on_client_disconnect
+    # The audited telemetry proxy is implemented only for local Docker
+    # mini-swe; Terminus must use its native request path.
+    assert not tb.request_telemetry
+    assert not tb.abort_on_client_disconnect
+    swe_agent = swe.agentic_eval_config
+    assert swe_agent.request_telemetry and swe_agent.abort_on_client_disconnect
+    for agent in (tb, swe_agent):
         assert agent.n_attempts == 1
     assert swe.agentic_eval_config.owned_command_cleanup
     catalog = Path(__file__).parents[2] / "workflows/model_specs/dev/llm.yaml"
