@@ -1175,7 +1175,6 @@ templates:
       max_context: 262144  # 256 * 1024 per engine (same budget as P150X8)
       default_impl: true
       env_vars:
-        G4_FORCE_BATCH_PREFILL: "1"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 12 x 256K users per engine (2x the 31B pool: 8 full layers x 8 KV heads vs 10 x 16);
