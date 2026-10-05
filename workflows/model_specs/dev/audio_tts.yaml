@@ -120,6 +120,20 @@ templates:
   status: EXPERIMENTAL
 
 - weights:
+    - propritery/tts-2
+  impl: tt_tts
+  min_disk_gb: 15
+  min_ram_gb: 6
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: QUAD_GALAXY
+      max_concurrency: 16
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
+- weights:
     - microsoft/speecht5_tts
   impl: speecht5_tts
   min_disk_gb: 15
