@@ -487,6 +487,569 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-1B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (24.28); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=17.74,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (3.32).
+                score=EvalTaskScore(
+                    published_score=2.79,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
+                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
+                # No model card / paper MMLU-Pro number exists for this checkpoint.
+                score=EvalTaskScore(
+                    published_score=16.08,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-3B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (27.65); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=20.89,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (11.78).
+                score=EvalTaskScore(
+                    published_score=10.48,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
+                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
+                # No model card / paper MMLU-Pro number exists for this checkpoint.
+                score=EvalTaskScore(
+                    published_score=28.79,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="tiiuae/Falcon3-7B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (34.16); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=27.91,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-7B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (19.41).
+                score=EvalTaskScore(
+                    published_score=17.65,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-7B-Base/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
+                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
+                # No model card / paper MMLU-Pro number exists for this checkpoint.
+                score=EvalTaskScore(
+                    published_score=39.1,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-7B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-7B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (34.46); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=27.91,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (19.18).
+                score=EvalTaskScore(
+                    published_score=16.7,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
+                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
+                # No model card / paper MMLU-Pro number exists for this checkpoint.
+                score=EvalTaskScore(
+                    published_score=36.79,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="TinyLlama/TinyLlama_v1.1",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (20.01); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=14.23,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/TinyLlama/TinyLlama_v1.1/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.21).
+                score=EvalTaskScore(
+                    published_score=1.11,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/TinyLlama/TinyLlama_v1.1/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 10.49, not comparable to generative mmlu_pro.)
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="stabilityai/stablelm-2-1_6b",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (11.57); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=8.87,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/stabilityai/stablelm-2-1_6b/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (0.76).
+                score=EvalTaskScore(
+                    published_score=0.75,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/stabilityai/stablelm-2-1_6b/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
+                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
+                # No model card / paper MMLU-Pro number exists for this checkpoint.
+                score=EvalTaskScore(
+                    published_score=14.64,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/stabilityai/stablelm-2-1_6b/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="microsoft/phi-1_5",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (20.33); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=13.68,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-1_5/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (1.81).
+                score=EvalTaskScore(
+                    published_score=1.69,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-1_5/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 16.91, not comparable to generative mmlu_pro.)
+        ],
+    ),
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.2",
         tasks=[
