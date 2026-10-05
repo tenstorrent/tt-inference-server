@@ -232,7 +232,7 @@ struct EmbeddingImpl {
       }
       const auto t4 = Clock::now();
 
-      TT_LOG_INFO(
+      TT_LOG_DEBUG(
           "[EmbeddingRunner] Batch of {}: tokenize={:.1f}ms forward={:.1f}ms "
           "sync={:.1f}ms extract={:.1f}ms total={:.1f}ms",
           requests.size(), phaseMs(t0, t1), phaseMs(t1, t2), phaseMs(t2, t3),
@@ -286,8 +286,9 @@ struct EmbeddingImpl {
     if (meshDevices > 1) {
       ttnn.attr("set_fabric_config")(
           ttnn.attr("FabricConfig").attr("FABRIC_1D"));
-      TT_LOG_INFO("[EmbeddingRunner] Fabric FABRIC_1D enabled for {}-chip mesh",
-                  meshDevices);
+      TT_LOG_DEBUG(
+          "[EmbeddingRunner] Fabric FABRIC_1D enabled for {}-chip mesh",
+          meshDevices);
     }
     py::dict params;
     params["dispatch_core_config"] =
