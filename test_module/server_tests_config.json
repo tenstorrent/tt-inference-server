@@ -75,7 +75,8 @@
       "deepcogito/cogito-v1-preview-llama-3B",
       "arcee-ai/Arcee-Spark",
       "HuggingFaceTB/SmolLM2-135M-Instruct",
-      "HuggingFaceTB/SmolLM2-360M-Instruct"
+      "HuggingFaceTB/SmolLM2-360M-Instruct",
+      "deepseek-ai/deepseek-math-7b-instruct"
     ]
   },
   "available_markers": {
@@ -778,6 +779,16 @@
       "id_name": "HuggingFaceTB--SmolLM2-360M-Instruct",
       "weights": [
         "HuggingFaceTB/SmolLM2-360M-Instruct"
+      ]
+    },
+    "deepseek-ai/deepseek-math-7b-instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--deepseek-math-7b-instruct",
+      "weights": [
+        "deepseek-ai/deepseek-math-7b-instruct"
       ]
     }
   },
