@@ -2934,14 +2934,17 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
-                max_concurrent=16,
+                # Eight clients avoid the sustained KV-cache saturation and
+                # request preemption observed with 16 clients on p300x2.
+                max_concurrent=8,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                wall_clock_timeout_seconds=28800,
+                wall_clock_timeout_seconds=36000,
                 model_kwargs={
                     "max_length": 65536,
                     # Streamed inactivity budget: a healthy long response may exceed
-                    # 3600 s, while a silent request fails after 15 minutes and is not retried.
-                    "idle_timeout": "900",
+                    # 3600 s; tolerate scheduler preemption while still detecting
+                    # a silent server well before the task deadline.
+                    "idle_timeout": "1800",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 # max_gen_toks restored 12288 -> 32768: fits the P150 max_model_len
