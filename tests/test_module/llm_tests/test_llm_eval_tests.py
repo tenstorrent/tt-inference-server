@@ -993,6 +993,7 @@ def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
                 SimpleNamespace(model_spec=spec), task, tmp_path
             )
 
+
 def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
     # leaderboard_math_hard is scored as the mean of per-subtask paths. The
     # group entry itself carries an aggregate exact_match, which the
