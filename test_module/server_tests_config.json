@@ -76,7 +76,8 @@
       "arcee-ai/Arcee-Spark",
       "HuggingFaceTB/SmolLM2-135M-Instruct",
       "HuggingFaceTB/SmolLM2-360M-Instruct",
-      "deepseek-ai/deepseek-math-7b-instruct"
+      "deepseek-ai/deepseek-math-7b-instruct",
+      "Qwen/Qwen2.5-7B-Instruct"
     ]
   },
   "available_markers": {
@@ -789,6 +790,16 @@
       "id_name": "deepseek-ai--deepseek-math-7b-instruct",
       "weights": [
         "deepseek-ai/deepseek-math-7b-instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct"
       ]
     }
   },
