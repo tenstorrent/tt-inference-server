@@ -86,11 +86,15 @@ templates:
       max_context: 65536
       default_impl: true
       env_vars:
-        VLLM__MAX_NUM_BATCHED_TOKENS: "262144"
+        VLLM__MAX_NUM_BATCHED_TOKENS: "98304"
         VLLM__MAX_MODEL_LENGTH: "8192"
         VLLM__MIN_CONTEXT_LENGTH: "32"
-        VLLM__MAX_NUM_SEQS: "32"
-        MAX_BATCH_SIZE: "32"
+        VLLM__MAX_NUM_SEQS: "12"
+        MAX_BATCH_SIZE: "12"
+        MAX_BATCH_DELAY_TIME_MS: "300"
+        BENCHMARK_MAX_CONCURRENCY: "12"
+        BENCHMARK_NUM_PROMPTS: "120"
+        BENCHMARK_NUM_WARMUPS: "12"
         DEFAULT_THROTTLE_LEVEL: "0"
     - device: T3K
       max_concurrency: 4
