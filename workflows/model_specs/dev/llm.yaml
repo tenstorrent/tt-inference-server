@@ -702,7 +702,7 @@ templates:
         # decode cost of 28-55% for a single resident per engine (28->20 tok/s at 1K, 24->11
         # at 128K) and 10-15% at 2 residents. tt-metal#59304 (active-row core allocation)
         # makes the reduction order independent of the graph and restores the buckets.
-        GEMMA4_DECODE_WARMUP_BATCHES: "32"
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
         # bounded device rings stay off. Traced chunked prefill still carries one chunk
