@@ -47,6 +47,7 @@ def _default_output(version: str) -> Path:
 def cmd_live(args) -> None:
     from scripts.release.create_post_release_pr import (
         build_rows,
+        fetch_job_log,
         fetch_run_jobs,
         resolve_release_scope,
         resolve_token,
@@ -59,6 +60,7 @@ def cmd_live(args) -> None:
     version = rm.strip_v(args.version or DEFAULT_VERSION_FILE.read_text().strip())
 
     jobs = None
+    token = None
     if args.tt_shield_run_id:
         token = resolve_token(args.token)
         if token:
@@ -89,6 +91,11 @@ def cmd_live(args) -> None:
             args.tt_shield_repo,
             args.tt_shield_run_id,
             version,
+            job_log=(
+                (lambda job_id: fetch_job_log(args.tt_shield_repo, job_id, token))
+                if token
+                else None
+            ),
         )
     except (OSError, ValueError, yaml.YAMLError) as exc:
         sys.exit(f"ERROR: {exc}")

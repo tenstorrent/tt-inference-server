@@ -817,6 +817,7 @@ jobs:
           echo "Uploaded $(basename "${ASSET}") as an asset on Release '${TAG}'."
 
       - name: "Upload release manifest as a Release asset"
+        if: env.DRY_RUN != 'true'
         env:
           GH_TOKEN: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}
           TMP_VCANKOVIC_SHIELD_CRANE_PAT: ${{ secrets.TMP_VCANKOVIC_SHIELD_CRANE_PAT }}

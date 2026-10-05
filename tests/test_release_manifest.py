@@ -122,3 +122,54 @@ def test_build_live_manifest_rejects_row_missing_from_prod():
             rows=[{"identity": identity}],
             current_prod={},
         )
+
+
+# ---------------------------------------------------------------------------
+# live CLI wiring
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("token", ["tok", None])
+def test_cmd_live_passes_job_log_only_with_token(monkeypatch, tmp_path, token):
+    """cmd_live links CI jobs like create_post_release_pr: build_rows gets a
+    job_log reader (for runs from before tt-shield's @<impl> job names) only
+    when a token is available."""
+    import argparse
+
+    from scripts.release import build_release_manifest as brm
+    from scripts.release import create_post_release_pr as cprp
+    from scripts.release import release_scope
+
+    seen = {}
+
+    def fake_build_rows(*args, job_log=None):
+        seen["job_log"] = job_log
+        return []
+
+    monkeypatch.setattr(cprp, "resolve_token", lambda explicit: token)
+    monkeypatch.setattr(cprp, "fetch_run_jobs", lambda *a: [])
+    monkeypatch.setattr(cprp, "fetch_job_log", lambda repo, job_id, tok: "log")
+    monkeypatch.setattr(cprp, "resolve_release_scope", lambda *a: [])
+    monkeypatch.setattr(cprp, "build_rows", fake_build_rows)
+    monkeypatch.setattr(release_scope, "load_prod_leaves", lambda *a: {})
+    monkeypatch.setattr(release_scope, "load_prod_leaves_from_ref", lambda *a: {})
+    ci_config = tmp_path / "ci.json"
+    ci_config.write_text("{}")
+
+    brm.cmd_live(
+        argparse.Namespace(
+            version="0.23.0",
+            tt_shield_run_id="1",
+            tt_shield_repo="tenstorrent/tt-shield",
+            token=None,
+            ci_config=ci_config,
+            dev_dir=tmp_path,
+            prod_dir=tmp_path,
+            base_ref="origin/main",
+            output=tmp_path / "manifest.json",
+            generated="2026-10-05",
+        )
+    )
+
+    if token:
+        assert seen["job_log"](42) == "log"
+    else:
+        assert seen["job_log"] is None
