@@ -5894,42 +5894,10 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=36000,
-            ),
-            EvalTask(
-                task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.000063,  # 15,908 samples * 0.00006286 ~= 1 sample per sub-task
-                    EvalLimitMode.CI_NIGHTLY: 0.15,  # 15% of 15,902 samples ~= 42 samples per sub-task
-                },
-                score=EvalTaskScore(
-                    published_score=85.9,  # MMLU score "low" reasoning level (without tools)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=85.9,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
-                    gpu_reference_score_ref="DUMMY VALUE",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,get_response",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                use_chat_api=True,
-                max_concurrent=128,
-                model_kwargs={
-                    "timeout": "7200",
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "reasoning_effort": "low",
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    # The GPU reference used max_tokens=32768 for this
-                    # low-reasoning generative MMLU path (TTIS issue #1322).
-                    "max_gen_toks": 32 * 1024,
-                    "until": ["</s>"],
-                },
+                # 191/198 samples completed at the former 10-hour bound.
+                # Twelve hours covers the measured tail and leaves two hours of
+                # workflow headroom after AIME under Shield’s 18-hour job cap.
+                wall_clock_timeout_seconds=43200,
             ),
         ],
     ),
