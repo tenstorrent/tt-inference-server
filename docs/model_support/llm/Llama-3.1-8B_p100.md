@@ -5,6 +5,8 @@ Supported weights variants for this model implementation are:
 - `Llama-3.1-8B`: [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) **(default)** 
 - `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 
+> **Note:** The default `meta-llama/Llama-3.1-8B` is a **base** (pretrained, not instruction-tuned) model. For conversational/chat use cases, substitute `meta-llama/Llama-3.1-8B-Instruct` — it follows instructions and produces appropriate chat responses out of the box. The base model continues text and is not suited to chat without fine-tuning.
+
 To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
 
 #### Useful links
@@ -36,6 +38,9 @@ This model is supported by [vLLM (tt-metal integration fork)](../../../vllm-tt-m
 ```bash
 docker run \
   --env "HF_TOKEN=$HF_TOKEN" \
+  --env "TRANSFORMERS_OFFLINE=1" \
+  --env "HF_HUB_OFFLINE=1" \
+  --env "HF_DATASETS_OFFLINE=1" \
   --ipc host \
   --publish 8000:8000 \
   --device /dev/tenstorrent \
@@ -45,6 +50,8 @@ docker run \
   --model meta-llama/Llama-3.1-8B \
   --tt-device p100
 ```
+
+The inference container does not have outbound internet access. The `TRANSFORMERS_OFFLINE`, `HF_HUB_OFFLINE`, and `HF_DATASETS_OFFLINE` flags prevent Transformers and vLLM from attempting to reach `huggingface.co` at runtime; ensure model weights are pre-downloaded to the mounted cache/volume before starting the container.
 
 **via run.py command**
 

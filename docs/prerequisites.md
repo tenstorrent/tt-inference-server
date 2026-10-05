@@ -24,6 +24,21 @@ source ~/.tenstorrent-venv/bin/activate
 tt-smi
 ```
 
+### Hugepages: minimum required per model
+
+`tt-installer` (via `tenstorrent-tools`) configures the `tenstorrent-hugepages.service`, which allocates a default number of 1G hugepages calculated from the detected hardware — for a single p150 this default is **4 x 1G**. Some supported models require more hugepages to load than the default, and the service re-applies its value on every reboot, overwriting any manual setting.
+
+For example, **Llama-3.1-8B (-Instruct) on a single p150 requires 12 x 1G hugepages**. With the default of 4, the inference container fails to start with an out-of-memory error that has no obvious cause.
+
+Set an override (persisted across reboots) before launching the model container:
+```bash
+# set the required hugepage count for your model, e.g. 12 for Llama-3.1-8B on p150:
+sudo sh -c 'echo 12 > /opt/tenstorrent/bin/hugepages-override.txt'
+sudo systemctl restart tenstorrent-hugepages.service
+```
+
+The override is honored by `hugepages-setup.sh` (part of `tenstorrent-tools`) and takes precedence over the hardware-calculated default. Check the model's quickstart for its specific requirement.
+
 If you have any difficulties installing system software using tt-installer, please file an issue in https://github.com/tenstorrent/tt-installer/issues with relevant logs.
 
 If running on a TT-LoudBox or TT-QuietBox, you will also need to set up `mesh` topology, see https://github.com/tenstorrent/tt-topology?tab=readme-ov-file#mesh
