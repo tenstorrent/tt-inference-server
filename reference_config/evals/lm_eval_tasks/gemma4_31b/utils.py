@@ -250,3 +250,82 @@ def process_results_hle(doc: dict, results: List[str]) -> Dict[str, int]:
     det = hle_deterministic_match(doc, response)
     judged = _hle_judge(doc, response)
     return {"exact_match": det, "judge_match": det if judged is None else judged}
+
+
+# ----------------------------------------------------------------------------------
+# MMMLU (generative, per locale)
+# ----------------------------------------------------------------------------------
+MMMLU_INSTRUCTION = (
+    "Answer the following multiple choice question. Think it through, then finish with "
+    "the final answer on its own line in the form: Answer: <letter>"
+)
+
+
+MMMLU_PER_LOCALE_DEFAULT = 300
+
+
+def process_mmmlu_shuffle(dataset):
+    """Fixed-seed shuffle, then keep MMMLU_PER_LOCALE questions (default 300) per locale.
+
+    A full generative pass over 196,588 questions is out of reach on one QB2, so the
+    task itself bounds the sample; a further --limit (CI) applies on top of this."""
+    k = int(os.getenv("MMMLU_PER_LOCALE", MMMLU_PER_LOCALE_DEFAULT))
+    shuffled = dataset.shuffle(seed=1234)
+    return shuffled.select(range(min(k, len(shuffled)))) if k > 0 else shuffled
+
+
+def mmmlu_doc_to_text(doc) -> str:
+    return (
+        f"{MMMLU_INSTRUCTION}\n\n{doc['Question'].strip()}\n"
+        f"A. {doc['A']}\nB. {doc['B']}\nC. {doc['C']}\nD. {doc['D']}"
+    )
+
+
+_LETTER_LINE = re.compile(r"(?im)^\s*\**\s*answer\s*\**\s*[:：]\s*\**\s*\(?\s*([A-D])\b")
+_LETTER_BOXED = re.compile(r"\\boxed\{\s*\(?([A-D])\)?\s*\}")
+
+
+def extract_letter(response: str) -> Optional[str]:
+    text = _strip_thinking(response)
+    for pattern in (_LETTER_LINE, _LETTER_BOXED):
+        found = pattern.findall(text)
+        if found:
+            return found[-1].upper()
+    return None
+
+
+def process_results_mmmlu(doc: dict, results: List[str]) -> Dict[str, int]:
+    gold = str(doc["Answer"]).strip().upper()[:1]
+    return {"exact_match": int(extract_letter(results[0] if results else "") == gold)}
+
+
+# ----------------------------------------------------------------------------------
+# LiveCodeBench v6: thin wrappers over the pinned lm-eval fork's livecodebench task so
+# the prompt format and the local test-case execution grader stay identical to it.
+# ----------------------------------------------------------------------------------
+from lm_eval.tasks.livecodebench import utils as _lcb  # noqa: E402
+
+
+def process_lcb_v6(dataset):
+    start = os.getenv("LCB_START_DATE")
+    end = os.getenv("LCB_END_DATE")
+    if not start and not end:
+        return dataset
+    return dataset.filter(
+        lambda doc: (not start or doc["contest_date"][:10] >= start)
+        and (not end or doc["contest_date"][:10] <= end)
+    )
+
+
+def lcb_doc_to_text(doc) -> str:
+    return _lcb.doc_to_text_with_format(doc)
+
+
+def lcb_doc_to_target(doc):
+    return _lcb.doc_to_target(doc)
+
+
+def process_results_lcb(doc: dict, results: List[str]) -> Dict[str, float]:
+    # The fork's grader extracts the last ```python block itself; strip an inline
+    # thinking block first so reasoning text cannot be mistaken for code.
+    return _lcb.process_results(doc, [_strip_thinking(r) for r in results])

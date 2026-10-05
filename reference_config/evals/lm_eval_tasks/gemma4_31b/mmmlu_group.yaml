@@ -1,0 +1,23 @@
+# Group over the 14 MMMLU locales; exact_match is the mean over locales.
+group: gemma4_mmmlu
+task:
+  - gemma4_mmmlu_ar_xy
+  - gemma4_mmmlu_bn_bd
+  - gemma4_mmmlu_de_de
+  - gemma4_mmmlu_es_la
+  - gemma4_mmmlu_fr_fr
+  - gemma4_mmmlu_hi_in
+  - gemma4_mmmlu_id_id
+  - gemma4_mmmlu_it_it
+  - gemma4_mmmlu_ja_jp
+  - gemma4_mmmlu_ko_kr
+  - gemma4_mmmlu_pt_br
+  - gemma4_mmmlu_sw_ke
+  - gemma4_mmmlu_yo_ng
+  - gemma4_mmmlu_zh_cn
+aggregate_metric_list:
+  - metric: exact_match
+    aggregation: mean
+    weight_by_size: true
+metadata:
+  version: 1.0

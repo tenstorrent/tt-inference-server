@@ -1,0 +1,5 @@
+# Generative MMMLU (openai/MMMLU), one locale. See mmmlu_template.yaml.
+include: mmmlu_template.yaml
+task: gemma4_mmmlu_sw_ke
+dataset_name: SW_KE
+task_alias: "MMMLU (Swahili)"

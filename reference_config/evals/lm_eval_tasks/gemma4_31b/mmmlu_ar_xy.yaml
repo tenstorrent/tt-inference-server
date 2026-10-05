@@ -1,0 +1,5 @@
+# Generative MMMLU (openai/MMMLU), one locale. See mmmlu_template.yaml.
+include: mmmlu_template.yaml
+task: gemma4_mmmlu_ar_xy
+dataset_name: AR_XY
+task_alias: "MMMLU (Arabic)"

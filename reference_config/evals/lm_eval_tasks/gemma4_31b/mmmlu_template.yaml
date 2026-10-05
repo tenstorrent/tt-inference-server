@@ -1,0 +1,29 @@
+# MMMLU (openai/MMMLU, 14 human-translated MMLU locales x 14,042 questions), the
+# "MMMLU" row of the google/gemma-4-31B-it model card, as a GENERATIVE zero-shot task:
+# the model reasons (thinking on) and answers with a letter, scored by extraction.
+# The lm-eval fork's own openai-mmmlu task is log-likelihood multiple_choice, which
+# cannot run through the chat endpoint with thinking. 196,588 generative questions are
+# out of reach on one QB2, so docs are shuffled with a fixed seed and lm-eval's --limit
+# (applied PER LOCALE subtask) narrows it further for CI. The task itself keeps a seeded
+# MMMLU_PER_LOCALE sample (default 300 -> 4,200 questions per full run); record the
+# per-locale N with any reported number.
+dataset_path: openai/MMMLU
+test_split: test
+process_docs: !function utils.process_mmmlu_shuffle
+output_type: generate_until
+doc_to_text: !function utils.mmmlu_doc_to_text
+doc_to_target: Answer
+process_results: !function utils.process_results_mmmlu
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 16384
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

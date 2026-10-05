@@ -1,0 +1,5 @@
+# Generative MMMLU (openai/MMMLU), one locale. See mmmlu_template.yaml.
+include: mmmlu_template.yaml
+task: gemma4_mmmlu_bn_bd
+dataset_name: BN_BD
+task_alias: "MMMLU (Bengali)"

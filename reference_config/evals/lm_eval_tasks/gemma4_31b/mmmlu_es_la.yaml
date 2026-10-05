@@ -1,0 +1,5 @@
+# Generative MMMLU (openai/MMMLU), one locale. See mmmlu_template.yaml.
+include: mmmlu_template.yaml
+task: gemma4_mmmlu_es_la
+dataset_name: ES_LA
+task_alias: "MMMLU (Spanish)"

@@ -1,0 +1,31 @@
+# LiveCodeBench v6, the "LiveCodeBench v6" row of the google/gemma-4-31B-it model card.
+# Reuses the pinned lm-eval fork's livecodebench task (prompt format and local test-case
+# execution grader) but restricted to the problems added in release v6
+# (test6.jsonl: 175 problems, contest dates 2025-01-04 .. 2025-04-06). The card does not
+# state its date window; LCB_START_DATE / LCB_END_DATE (YYYY-MM-DD) narrow it further.
+# Code is executed locally at scoring time: TTI already passes --confirm_run_unsafe_code.
+task: gemma4_livecodebench_v6
+dataset_path: json
+dataset_kwargs:
+  data_files:
+    test:
+      - "hf://datasets/livecodebench/code_generation_lite/test6.jsonl"
+output_type: generate_until
+test_split: test
+process_docs: !function utils.process_lcb_v6
+doc_to_text: !function utils.lcb_doc_to_text
+doc_to_target: !function utils.lcb_doc_to_target
+process_results: !function utils.process_results_lcb
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: acc
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

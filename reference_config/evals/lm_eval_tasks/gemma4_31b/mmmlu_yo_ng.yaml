@@ -1,0 +1,5 @@
+# Generative MMMLU (openai/MMMLU), one locale. See mmmlu_template.yaml.
+include: mmmlu_template.yaml
+task: gemma4_mmmlu_yo_ng
+dataset_name: YO_NG
+task_alias: "MMMLU (Yoruba)"

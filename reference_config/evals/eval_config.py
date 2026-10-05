@@ -6464,6 +6464,124 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # IFEval, Table 5 of the Gemma 4 tech report (98.9 for the 31B).
+                # Chat endpoint with thinking on; strict prompt- and
+                # instruction-level accuracy from lm-eval's ifeval task.
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=98.9,
+                    published_score_ref="https://arxiv.org/abs/2607.02770",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 3600,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 16 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # LiveCodeBench v6 (175 problems added in release v6), the model
+                # card's "LiveCodeBench v6" row. The fork's prompt and local
+                # code-execution grader; see lm_eval_tasks/gemma4_31b/
+                # livecodebench_v6.yaml for the date-window caveat.
+                task_name="gemma4_livecodebench_v6",
+                include_path=_GEMMA4_31B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=80.0,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.1,
+                    EvalLimitMode.SMOKE_TEST: 0.02,
+                },
+            ),
+            EvalTask(
+                # MMMLU (openai/MMMLU, 14 locales) as a generative zero-shot
+                # task; the task keeps a seeded 300-question sample per locale
+                # (4,200 per full run, MMMLU_PER_LOCALE to change). Model-card
+                # row "MMMLU"; the fork's log-likelihood openai-mmmlu task
+                # cannot run through the chat endpoint with thinking.
+                task_name="gemma4_mmmlu",
+                include_path=_GEMMA4_31B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=88.4,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 3600,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 16 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # gemma4_mmmlu is a GROUP of 14 locale subtasks; an int limit
+                # applies per locale (3 -> 42 questions on CI).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
                 # Terminal-Bench 2 (89 tasks) through Harbor / terminus-2 with
                 # thinking on. Knobs are the ones validated on the gemma4_31b_qb2
                 # serving stack in tt-agentic-bringup-qb2 #56 (CI runs of

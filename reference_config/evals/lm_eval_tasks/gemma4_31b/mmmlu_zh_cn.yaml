@@ -1,0 +1,5 @@
+# Generative MMMLU (openai/MMMLU), one locale. See mmmlu_template.yaml.
+include: mmmlu_template.yaml
+task: gemma4_mmmlu_zh_cn
+dataset_name: ZH_CN
+task_alias: "MMMLU (Chinese)"
