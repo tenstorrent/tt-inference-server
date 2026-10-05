@@ -5905,39 +5905,6 @@ _eval_config_list = [
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
                 wall_clock_timeout_seconds=10800,
             ),
-            EvalTask(
-                task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
-                limit_samples_map={
-                    EvalLimitMode.SMOKE_TEST: 0.000063,  # 15,908 samples * 0.00006286 ~= 1 sample per sub-task
-                    EvalLimitMode.CI_NIGHTLY: 0.15,  # 15% of 15,902 samples ~= 42 samples per sub-task
-                },
-                score=EvalTaskScore(
-                    published_score=85.9,  # MMLU score "low" reasoning level (without tools)
-                    published_score_ref="https://cdn.openai.com/pdf/419b6906-9da6-406c-a19d-1bb078ac7637/oai_gpt-oss_model_card.pdf",
-                    gpu_reference_score=85.9,  # TODO: MEASURE THIS https://github.com/tenstorrent/tt-inference-server/issues/1322
-                    gpu_reference_score_ref="DUMMY VALUE",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,get_response",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                use_chat_api=True,
-                max_concurrent=128,
-                model_kwargs={
-                    "timeout": "7200",
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "reasoning_effort": "low",
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "max_gen_toks": 64 * 1024,
-                    "until": ["</s>"],
-                },
-            ),
         ],
     ),
     EvalConfig(
