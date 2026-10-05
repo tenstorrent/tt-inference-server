@@ -463,7 +463,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     ),
     # MiniMax-M3 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
     # only. Full (1M) dataset to match the spec's 1048576 max_context, and
-    # concurrency at the spec's max_concurrency of 64.
+    # concurrency at the spec's max_concurrency of 62.
     AgenticTracesConfig(
         model_id="id_tt-transformers_MiniMax-M3_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
@@ -471,7 +471,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126",
-                concurrency=_agentx_concurrency(64),
+                concurrency=_agentx_concurrency(62),
             ),
         ),
     ),
