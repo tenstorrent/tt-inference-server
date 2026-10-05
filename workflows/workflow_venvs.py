@@ -639,8 +639,14 @@ def verify_evals_common_lm_eval(
     """
     del model_spec
     probe = f"""
+import hashlib
 import importlib.metadata
+import io
 import json
+from pathlib import Path
+import subprocess
+import sys
+import zipfile
 
 expected = {EVALS_COMMON_LM_EVAL_COMMIT!r}
 dist = importlib.metadata.distribution("lm-eval")
@@ -649,6 +655,22 @@ actual = record.get("vcs_info", {{}}).get("commit_id")
 print(json.dumps({{"distribution": dist.metadata["Name"], "commit_id": actual}}, sort_keys=True))
 if actual != expected:
     raise SystemExit(f"lm-eval commit mismatch: expected {{expected}}, installed {{actual}}")
+
+# Provision official English Punkt tables before scoring; the NLTK downloader
+# cannot fetch its index through the CI proxy. No scorer/proxy policy changes.
+url = "https://raw.githubusercontent.com/nltk/nltk_data/550b6625bcef1f2abff2ff770a5a0d272c9c6b2a/packages/tokenizers/punkt_tab.zip"
+archive = subprocess.check_output(["curl", "--fail", "--silent", "--show-error", "--location", url])
+expected_sha = "e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106"
+if hashlib.sha256(archive).hexdigest() != expected_sha:
+    raise SystemExit("punkt_tab archive checksum mismatch")
+root = Path(sys.prefix) / "nltk_data" / "tokenizers" / "punkt_tab" / "english"
+root.mkdir(parents=True, exist_ok=True)
+with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+    for name in ("abbrev_types.txt", "collocations.tab", "ortho_context.tab", "sent_starters.txt"):
+        (root / name).write_bytes(bundle.read("punkt_tab/english/" + name))
+import nltk
+assert nltk.word_tokenize("One sentence. Another sentence.") == ["One", "sentence", ".", "Another", "sentence", "."]
+print(json.dumps({{"punkt_tab_sha256": expected_sha, "english_path": str(root)}}))
 """
     return (
         run_command(
