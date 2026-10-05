@@ -451,7 +451,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # only; no SwarmOne scenario is recorded for this model. Same InferenceX
     # pin as Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
+        model_id="id_blaze_gemma-4-31B-it_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
