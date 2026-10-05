@@ -428,9 +428,7 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
-# C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this so
-# they are not labeled as tt_transformers (the tt-metal vLLM path) or gpt_oss
-# (the tt-metal GPT-OSS demo). Selectable via --impl blaze.
+# C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
 blaze_impl = ImplSpec(
     impl_id="blaze",
     impl_name="blaze",
