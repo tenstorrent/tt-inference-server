@@ -1500,14 +1500,10 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# IFM/K2-Horizon-7B TP4 autoport (models/autoports/ifm_k2_horizon_7b) from the
-# tt-model-bringup multigoal pipeline (tenstorrent/skills 129fd5f, GPT-6 Astra) on a
-# 4x p300c QB2. Requires tt-metal branch vkovacevic/k2-horizon-7b-ci and
-# vllm-tt-plugin branch vkovacevic/k2-horizon-7b (model registration, K2 request
-# admission, k2_horizon reasoning parser; vkovacevic/k2-horizon-7b-tool-parser adds
-# the k2_horizon tool-call parser needed for agentic evals). Serving settings mirror the bring-up's
-# stage-10/11 server; bring-up numbers at 4096/128: c1 TTFT 225 ms / 89.8 t/s/u,
-# c32 TTFT 6.5 s / 30.2 t/s/u.
+# IFM/K2-Horizon-7B TP4 (models/demos/k2_horizon_7b_qb2): dedicated implementation from
+# the tt-model-bringup pipeline, 512K context on a 4x p300c QB2. The TT plugin registers
+# TTK2HorizonForCausalLM from the model's vllm_metadata.json via EXTRA_MODELS_DIR; the
+# k2_horizon reasoning and tool-call parsers live in vllm-tt-plugin.
 - weights:
     - IFM/K2-Horizon-7B
   impl: k2_horizon_7b_qb2
@@ -1527,6 +1523,7 @@ templates:
       env_vars:
         MESH_DEVICE: P300x2
         OMP_NUM_THREADS: "8"
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         # The model card's eval sampling (temperature 1.0, top_p 0.95, no top_k)
         # is outside the strict device sampler (top_k <= 32); allow the model's
         # exact host sampler instead of rejecting those requests.
@@ -1543,6 +1540,7 @@ templates:
         no-enable-prefix-caching: true
         async-scheduling: true
         trust-remote-code: true
+        hf-overrides: '{"architectures":["TTK2HorizonForCausalLM"]}'
         # Validated checkpoint (bring-up, CI 36648438691/36834542524). The hub's main moved
         # to a new checkpoint on 2026-10-01; the downloader and vLLM both honor this pin.
         revision: 036114ce8d46c32b24c15423211069abb9c5d25e
@@ -1553,7 +1551,7 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: k2_horizon
         # Normalizes assistant history (few-shot as multi-turn) for the K2 template.
-        middleware: models.autoports.ifm_k2_horizon_7b.tests.benchmark_chat_middleware.K2BenchmarkChatMiddleware
+        middleware: models.demos.k2_horizon_7b_qb2.tests.benchmark_chat_middleware.K2BenchmarkChatMiddleware
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:

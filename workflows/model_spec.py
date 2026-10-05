@@ -448,14 +448,14 @@ blaze_impl = ImplSpec(
     code_path="tt-media-server/cpp_server",
 )
 
-# IFM/K2-Horizon-7B TP4 autoport produced by the tt-model-bringup pipeline. Like
-# other autoports, the code_path lives under models/autoports/ and exists only on a
-# tt-metal branch (vkovacevic/k2-horizon-7b-ci), not on main.
+# IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
+# models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
+# the tt-model-bringup pipeline.
 k2_horizon_7b_qb2_impl = ImplSpec(
     impl_id="k2_horizon_7b_qb2",
     impl_name="k2-horizon-7b-qb2",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/autoports/ifm_k2_horizon_7b",
+    code_path="models/demos/k2_horizon_7b_qb2",
 )
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
