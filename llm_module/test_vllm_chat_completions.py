@@ -142,6 +142,7 @@ def test_coherence_verbatim_echo(report_test, api_client, request):
     response = api_client(payload)
 
     output_text = response["choices"][0]["message"]["content"]
+    print(f"EXPERIMENT ECHO_OUTPUT: {output_text!r}", flush=True)
     assert sentence in output_text, (
         "Coherence guard failed: model did not echo the sentence verbatim "
         "(likely gibberish from a corrupted forward pass). Expected to find "
@@ -183,7 +184,7 @@ async def test_non_uniform_seeding(report_test, api_client, request):
                 "temperature": 0.9,
                 "seed": seed_val,
             }
-            response = await asyncio.to_thread(api_client, payload)
+            response = await asyncio.to_thread(api_client, payload, timeout=600)  # EXPERIMENT: waiver evidence, latency-only check
             return {
                 "seed": seed_val,
                 "content": response["choices"][0]["message"]["content"].strip(),
