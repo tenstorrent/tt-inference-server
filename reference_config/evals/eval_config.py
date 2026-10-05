@@ -6550,46 +6550,6 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
-                # Humanity's Last Exam, the model card's "Scientific Reasoning" row
-                # (18.6, LLM-judged on the full set). Custom task: text-only
-                # multiple-choice subset, scored deterministically from HLE's
-                # "Answer: <letter>" format, so the score is NOT directly comparable
-                # to the card. cais/hle is gated: the CI HF token needs access.
-                task_name="k2_hle_text_mc",
-                include_path=_K2_HORIZON_LM_EVAL_TASKS,
-                score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                use_chat_api=True,
-                model_kwargs={
-                    "max_length": 524288,
-                    "timeout": 14400,
-                },
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 65536,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 40,
-                    EvalLimitMode.SMOKE_TEST: 2,
-                },
-            ),
-            EvalTask(
                 # Terminal-Bench 2.1 is the version the model card reports (39.1).
                 # CI runs the 5-task subset shared by the other QB2 configs.
                 task_name="terminal_bench_2_1",
