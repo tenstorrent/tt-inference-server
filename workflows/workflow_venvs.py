@@ -40,7 +40,8 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 # review before merging changes. Switch to a specific commit once development
 # is stable.
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
-HARBOR_REF = "tt-inference-server"
+HARBOR_REF = "1da0bfd8c71cadbff17413fac984b8e391d2afc2"
+_HARBOR_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "harbor"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
 
@@ -219,6 +220,8 @@ def setup_evals_agentic(
     harbor_dir = venv_config.venv_path / "harbor"
     if not checkout_pinned_repo(harbor_dir, HARBOR_REPO, HARBOR_REF):
         return False
+    if not _apply_harbor_patches(harbor_dir, logger):
+        return False
 
     # Install with the `kubernetes` extra so the Python k8s client comes in: the
     # kubernetes environment needs it, and it is declared as an optional extra,
@@ -312,6 +315,43 @@ def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
         check=False,
     )
     return result.returncode == 0
+
+
+def _harbor_patches() -> list[Path]:
+    """Return carried Harbor patches in deterministic application order."""
+    if not _HARBOR_PATCH_DIR.is_dir():
+        return []
+    return sorted(_HARBOR_PATCH_DIR.glob("*.patch"))
+
+
+def _apply_harbor_patches(repo_dir: Path, logger: logging.Logger) -> bool:
+    """Apply patches to the exact Harbor pin, skipping an applied patch safely."""
+    if not (repo_dir / ".git").exists():
+        logger.error("Harbor patch target is not a checkout: %s", repo_dir)
+        return False
+
+    for patch in _harbor_patches():
+        if _patch_check(repo_dir, patch, "--reverse"):
+            logger.info("Harbor patch %s already applied", patch.name)
+            continue
+        if not _patch_check(repo_dir, patch):
+            logger.error(
+                "Harbor patch %s does not apply at ref %s; drop or refresh it.",
+                patch.name,
+                HARBOR_REF,
+            )
+            return False
+        result = subprocess.run(
+            ["git", "-C", str(repo_dir), "apply", str(patch)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.error("Failed to apply Harbor patch %s: %s", patch, result.stderr)
+            return False
+        logger.info("Applied Harbor patch %s", patch.name)
+    return True
 
 
 def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:

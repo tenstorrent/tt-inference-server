@@ -32,7 +32,7 @@ def _config(**overrides) -> TerminalBenchEvalConfig:
 
 def test_harbor_checkout_uses_runtime_branch():
     assert HARBOR_REPO == "https://github.com/dcvijeticTT/harbor.git"
-    assert HARBOR_REF == "tt-inference-server"
+    assert HARBOR_REF == "1da0bfd8c71cadbff17413fac984b8e391d2afc2"
 
 
 def test_defaults_to_docker_with_no_env(monkeypatch):
