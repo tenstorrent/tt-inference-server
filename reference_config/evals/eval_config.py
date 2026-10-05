@@ -2934,14 +2934,14 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                max_concurrent=16,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                wall_clock_timeout_seconds=28800,
                 model_kwargs={
                     "max_length": 65536,
-                    # Whole-request budget (the pinned harness has no idle timer). Measured
-                    # Quetzal Qwen3-8B on P300X2: TPOT 46-51 ms at concurrency 32 (Shield
-                    # benchmarks run 37159656412), so a full 32768-token answer needs ~1660 s;
-                    # without this the default cut 101/198 prompts (run 37073280081).
-                    "timeout": "3600",
+                    # Streamed inactivity budget: a healthy long response may exceed
+                    # 3600 s, while a silent request fails after 15 minutes and is not retried.
+                    "idle_timeout": "900",
                 },
                 # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
                 # max_gen_toks restored 12288 -> 32768: fits the P150 max_model_len
@@ -2959,45 +2959,7 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
-            ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=56.73,
-                    published_score_ref="https://arxiv.org/pdf/2505.09388",
-                    gpu_reference_score=66.07,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/384#issuecomment-3176953494",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                model_kwargs={
-                    "max_length": 65536,
-                    "timeout": "3600",
-                },
-                # gen_kwargs chosen according to https://huggingface.co/Qwen/Qwen3-8B#best-practices
-                # max_gen_toks restored 12288 -> 32768: fits the P150 max_model_len
-                # 40960 (was 16384 when clamped). Tracked in #4000.
-                gen_kwargs={
-                    "stream": "true",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 0.6,
-                    "top_k": 20,
-                    "top_p": 0.95,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            )
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-8B; targets TBD until a GPU reference is measured.

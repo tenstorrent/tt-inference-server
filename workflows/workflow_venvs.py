@@ -42,7 +42,7 @@ REQUIREMENTS_DIR = get_repo_root_path() / "requirements"
 HARBOR_REPO = "https://github.com/dcvijeticTT/harbor.git"
 HARBOR_REF = "tt-inference-server"
 
-EVALS_COMMON_LM_EVAL_COMMIT = "321e3bb68cb750a58c76606ab57832533302be73"
+EVALS_COMMON_LM_EVAL_COMMIT = "6eb369026384da6c3db7df3cd2423ca9da695f72"
 
 
 def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
