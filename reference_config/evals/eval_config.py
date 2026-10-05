@@ -5739,7 +5739,10 @@ _eval_config_list = [
                             "terminal-bench/cobol-modernization",
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
-                            "terminal-bench/qemu-startup",
+                            # qemu-startup dropped: its verifier cannot run (apt-get 404
+                            # for curl in the task image, so curl/uvx are missing and no test
+                            # executes; reward 0 regardless; run 37249479221).
+                            "terminal-bench/nginx-request-logging",
                         ],
                     },
                 ),
