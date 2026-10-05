@@ -73,7 +73,11 @@
       "MiniMaxAI/MiniMax-M3",
       "moonshotai/Kimi-K2.7-Code",
       "Qwen/Qwen1.5-0.5B-Chat",
-      "ALLaM-AI/ALLaM-7B-Instruct-preview"
+      "ALLaM-AI/ALLaM-7B-Instruct-preview",
+      "deepcogito/cogito-v1-preview-llama-3B",
+      "arcee-ai/Arcee-Spark",
+      "Qwen/Qwen2.5-7B-Instruct",
+      "Qwen/Qwen2.5-7B-Instruct-1M"
     ]
   },
   "available_markers": {
@@ -746,6 +750,56 @@
       "id_name": "ALLaM-AI--ALLaM-7B-Instruct-preview",
       "weights": [
         "ALLaM-AI/ALLaM-7B-Instruct-preview"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-3B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-3B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ]
+    },
+    "arcee-ai/Arcee-Spark": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "arcee-ai--Arcee-Spark",
+      "weights": [
+        "arcee-ai/Arcee-Spark"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct-1M": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct-1M",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
+      ]
+    },
+    "Qwen/Qwen3-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-32B",
+      "weights": [
+        "Qwen/Qwen3-32B"
       ]
     }
   },
