@@ -605,10 +605,15 @@ templates:
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "393216"  # one 256K request + sliding-group charges
+        GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Trace middle-chunk (sp1) path for long-ISL multi-chunk replay.
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+        # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -633,7 +638,9 @@ templates:
         # rounds starved decode under async scheduling. 65536/4096 measured
         # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
         enable_chunked_prefill: true
-        max_num_batched_tokens: 65536
+        # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+        # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
     # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
     # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
@@ -1169,12 +1176,19 @@ templates:
       default_impl: true
       env_vars:
         G4_FORCE_BATCH_PREFILL: "1"
-        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "1"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # 12 x 256K users per engine (2x the 31B pool: 8 full layers x 8 KV heads vs 10 x 16);
+        # bfloat8_b KV as on the 31B Galaxy entry.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "3047424"
+        GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "0"  # eager chunks: no prefill traces under bounded
+        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+        # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -1192,7 +1206,9 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         enable_chunked_prefill: true
-        max_num_batched_tokens: 65536
+        # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+        # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
   status: EXPERIMENTAL
   has_builtin_warmup: true
@@ -1219,9 +1235,16 @@ templates:
         MESH_DEVICE: "P150x4"
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        # 2x the 31B QB2 pool (8 full layers x 8 KV heads vs 10 x 16); bfloat8_b KV as on Galaxy.
+        GEMMA4_MAX_TOKENS_ALL_USERS: "786432"
+        GEMMA4_KV_BFP8: "1"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
+        # bounded device rings stay off; chunked prefill stays untraced on this path.
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 512000000
@@ -1238,7 +1261,9 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         enable_chunked_prefill: true
-        max_num_batched_tokens: 65536
+        # Under hybrid kv-cache groups vLLM charges each sliding group window + in-flight
+        # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
+        max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
   status: COMPLETE
   has_builtin_warmup: true
