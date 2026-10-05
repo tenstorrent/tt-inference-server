@@ -43,4 +43,7 @@ if [ -n "${HF_HOME:-}" ]; then
     fi
 fi
 
-uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"
+# exec: this script is sourced by the container CMD's `bash -c`, which runs as PID 1.
+# Bash as PID 1 neither handles nor forwards SIGTERM, so without exec `docker stop`
+# always times out and SIGKILLs the server (and the device worker with it).
+exec uvicorn --host 0.0.0.0 main:app --lifespan on --port "${SERVICE_PORT:-8000}"

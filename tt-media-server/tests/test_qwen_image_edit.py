@@ -21,7 +21,19 @@ from tt_model_runners.qwen_image_edit_policy import (
     qwen_image_edit_side,
 )
 
-_B64 = base64.b64encode(b"fake-png-bytes").decode()
+
+
+def _png_b64(size=(4, 4)):
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", size, (200, 30, 30)).save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode()
+
+
+_B64 = _png_b64()
 _RUNNER = "tt-qwen-image-edit"
 
 
@@ -82,6 +94,10 @@ class TestPipelineKwargs:
         kw = qwen_image_edit_pipeline_kwargs(self._req(negative_prompt=neg), None)
         assert kw["negative_prompt"] == " "
 
+    def test_null_steps_use_default(self):
+        kw = qwen_image_edit_pipeline_kwargs(self._req(num_inference_steps=None), None)
+        assert kw["num_inference_steps"] == 20
+
     def test_keeps_given_negative_prompt(self):
         kw = qwen_image_edit_pipeline_kwargs(self._req(negative_prompt="blurry"), None)
         assert kw["negative_prompt"] == "blurry"
@@ -130,6 +146,57 @@ class TestEditRequest:
         with pytest.raises(ValidationError):
             ImageEditRequest(prompt="p")
 
+    def test_rejects_undecodable_image(self, qwen_edit_runner):
+        # A clean 422 at validation, not a 500 from the device worker.
+        from domain.image_edit_request import ImageEditRequest
+
+        not_an_image = base64.b64encode(b"this is definitely not an image").decode()
+        with pytest.raises(ValidationError, match="not a decodable image"):
+            ImageEditRequest(prompt="p", image=not_an_image)
+        with pytest.raises(ValidationError, match="not a decodable image"):
+            ImageEditRequest(prompt="p", image="%%% not base64 %%%")
+
+    def test_accepts_data_url_and_stripped_padding(self, qwen_edit_runner):
+        from domain.image_edit_request import ImageEditRequest
+
+        assert ImageEditRequest(prompt="p", image="data:image/png;base64," + _B64)
+        assert ImageEditRequest(prompt="p", image=_B64.rstrip("="))
+
+    def test_rejects_empty_truncated_and_oversized_images(self, qwen_edit_runner):
+        from domain.image_edit_request import ImageEditRequest
+
+        with pytest.raises(ValidationError, match="non-empty"):
+            ImageEditRequest(prompt="p", image="")
+        truncated = base64.b64encode(base64.b64decode(_png_b64((64, 64)))[:60]).decode()
+        with pytest.raises(ValidationError, match="not a decodable image"):
+            ImageEditRequest(prompt="p", image=truncated)
+        with pytest.raises(ValidationError, match="pixels are accepted"):
+            ImageEditRequest(prompt="p", image=_png_b64((4097, 4097)))
+
+    @pytest.mark.parametrize("seed", [-1, 2**63])
+    def test_rejects_out_of_range_seed(self, qwen_edit_runner, seed):
+        from domain.image_edit_request import ImageEditRequest
+
+        with pytest.raises(ValidationError, match="seed must be"):
+            ImageEditRequest(prompt="p", image=_B64, seed=seed)
+        assert ImageEditRequest(prompt="p", image=_B64, seed=2**63 - 1)
+
+    def test_leaves_urls_to_the_api_layer(self, qwen_edit_runner):
+        from domain.image_edit_request import ImageEditRequest
+
+        assert ImageEditRequest(prompt="p", image="https://example.com/cat.jpg")
+
+    def test_other_runners_skip_image_decode_check(self, monkeypatch):
+        import domain.image_edit_request as edit_mod
+        import domain.image_generate_request as gen_mod
+        from domain.image_edit_request import ImageEditRequest
+
+        settings = SimpleNamespace(model_runner="tt-flux-1-kontext")
+        monkeypatch.setattr(edit_mod, "get_settings", lambda: settings)
+        monkeypatch.setattr(gen_mod, "get_settings", lambda: settings)
+        not_an_image = base64.b64encode(b"not an image").decode()
+        assert ImageEditRequest(prompt="p", image=not_an_image)
+
     def test_other_runners_keep_sdxl_default(self, monkeypatch):
         import domain.image_edit_request as edit_mod
         from domain.image_edit_request import ImageEditRequest
@@ -167,6 +234,9 @@ def test_constants_register_qwen_image_edit():
     cfg = ModelConfigs[(ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY)]
     assert cfg["device_mesh_shape"] == (4, 8)
     assert cfg["trace_region_size"] == 130000000
+    # WH Galaxy runs unthrottled: TT_MM_THROTTLE_PERF=5 costs ~15 % per step. A
+    # string, because the worker only applies a truthy throttle level.
+    assert cfg["default_throttle_level"] == "0"
     # 4x8 Galaxies only (WH and BH): tt_dit has no other Qwen-Image-Edit preset.
     keys = {k for k in ModelConfigs if k[0] == ModelRunners.TT_QWEN_IMAGE_EDIT}
     assert keys == {

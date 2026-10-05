@@ -62,15 +62,19 @@ from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
 )
 
+QWEN_IMAGE_EDIT_IMPORT_ERROR = None
 try:
     from models.tt_dit.pipelines.qwenimage_edit.pipeline_qwenimage_edit import (
         QwenImageEditPipeline,
     )
-except ImportError:
+except ImportError as _qwen_image_edit_import_error:
     # Not on tt-metal main yet (branch tvardhineni/qwen3-image-edit-wh). Same
     # containment as Flux1-Kontext above: the other runners stay loadable and
-    # TTQwenImageEditRunner.create_pipeline reports the missing pipeline.
+    # TTQwenImageEditRunner.create_pipeline reports the missing pipeline. The
+    # error is kept: a broken dependency (e.g. diffusers vs huggingface_hub)
+    # raises ImportError here too and must not read as a missing pipeline.
     QwenImageEditPipeline = None
+    QWEN_IMAGE_EDIT_IMPORT_ERROR = repr(_qwen_image_edit_import_error)
 from models.tt_dit.pipelines.stable_diffusion_35_large.pipeline_stable_diffusion_35_large import (
     StableDiffusion3Pipeline,
 )
@@ -139,11 +143,23 @@ class TTDiTRunner(BaseMetalDeviceRunner):
     # on the missing ``image_prompts`` field.
     requires_image_conditioning: bool = False
 
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(
+        self, device_id: str, cpu_threads: str = None, num_torch_threads: int = None
+    ):
+        super().__init__(device_id, cpu_threads, num_torch_threads)
         self.pipeline = None
         # Warmup calls run(); recording it would skew the stage metrics.
         self._warming_up = False
+
+    def close_device(self):
+        super().close_device()
+        # _configure_fabric enabled the fabric for this process; turn it off after
+        # the mesh is closed (same order as tt-metal's mesh_device fixture), so the
+        # ethernet fabric routers do not keep running after the worker exits.
+        try:
+            ttnn.set_fabric_config(ttnn.FabricConfig.DISABLED)
+        except Exception as e:
+            self.logger.warning(f"Device {self.device_id}: Failed to disable fabric: {e}")
 
     def _configure_fabric(self, updated_device_params):
         try:
@@ -532,20 +548,69 @@ class TTQwenImageRunner(TTDiTRunner):
 # ImageEditRequest; mask and strength do not apply.
 class TTQwenImageEditRunner(TTDiTRunner):
     def __init__(self, device_id: str):
-        super().__init__(device_id)
+        # The pipeline runs the 8B Qwen2.5-VL image+text encode on host in this
+        # worker. The base default (OMP 2 / 1 torch thread, sized for runners that
+        # only drive the device) makes that encode ~250 s instead of ~15 s.
+        host_threads = int(
+            os.getenv("QWEN_IMAGE_EDIT_HOST_THREADS", min(32, os.cpu_count() or 1))
+        )
+        super().__init__(
+            device_id, cpu_threads=str(host_threads), num_torch_threads=host_threads
+        )
         self.image_manager = ImageManager("img")
+
+    def _check_host_dependencies(self):
+        # The host Qwen2.5-VL encode is validated with tt-metal's pinned
+        # transformers/torch. An image whose main venv was overridden (e.g. by
+        # tt-vllm-plugin: transformers 4.55, torch 2.7) still runs, but computes
+        # different VL embeddings and different edits. Refuse to start instead.
+        import importlib.metadata
+        import re
+
+        req = Path(os.environ.get("TT_METAL_HOME", ".")) / (
+            "tt_metal/python_env/requirements-dev.txt"
+        )
+        if not req.is_file():
+            self.logger.warning(f"Qwen-Image-Edit: {req} not found; skipping dependency check")
+            return
+        text = req.read_text()
+        mismatches = []
+        for pkg in ("transformers", "torch"):
+            pins = re.findall(rf"^{pkg}\s*==\s*([0-9][0-9.]*)(?:\s*;\s*(.*))?$", text, re.M)
+            pins = [v for v, marker in pins if not marker or os.uname().machine in marker]
+            if not pins:
+                continue
+            installed = importlib.metadata.version(pkg).split("+")[0]
+            if installed != pins[0]:
+                mismatches.append(f"{pkg} {installed} (tt-metal pins {pins[0]})")
+        if mismatches:
+            msg = (
+                "Qwen-Image-Edit: host dependencies differ from tt-metal's pins: "
+                + ", ".join(mismatches)
+                + ". Build the image with --build-arg INSTALL_TT_VLLM_PLUGIN=0."
+            )
+            if os.getenv("QWEN_IMAGE_EDIT_ALLOW_DEP_MISMATCH") == "1":
+                self.logger.warning(msg + " Continuing (QWEN_IMAGE_EDIT_ALLOW_DEP_MISMATCH=1).")
+            else:
+                raise RuntimeError(msg)
 
     def create_pipeline(self):
         if QwenImageEditPipeline is None:
             raise ImportError(
                 "Qwen-Image-Edit requires models.tt_dit.pipelines.qwenimage_edit, "
-                "which this tt-metal build does not provide. Use a tt-metal revision "
-                "that ships the Qwen-Image-Edit pipeline to run this model."
+                "which could not be imported from this tt-metal build "
+                f"({QWEN_IMAGE_EDIT_IMPORT_ERROR}). Use a tt-metal revision that ships "
+                "the Qwen-Image-Edit pipeline, with its dependencies installed."
             )
+        self._check_host_dependencies()
+        kwargs = {}
+        if self._pipeline_supports_2cq():
+            kwargs["use_2cq"] = True
         try:
             return QwenImageEditPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
                 checkpoint_name=self.settings.model_weights_path,
+                **kwargs,
             )
         except Exception as e:
             log_exception_chain(
@@ -556,8 +621,22 @@ class TTQwenImageEditRunner(TTDiTRunner):
             )
             raise
 
+    @staticmethod
+    def _pipeline_supports_2cq() -> bool:
+        # Two command queues (per-step latent write / output read on CQ1, the traced
+        # forward on CQ0) need a tt-metal pipeline that takes use_2cq; older builds
+        # keep the single-queue path.
+        import inspect
+
+        return QwenImageEditPipeline is not None and "use_2cq" in inspect.signature(
+            QwenImageEditPipeline.create_pipeline
+        ).parameters
+
     def get_pipeline_device_params(self):
-        return {"trace_region_size": self.settings.trace_region_size}
+        params = {"trace_region_size": self.settings.trace_region_size}
+        if self._pipeline_supports_2cq():
+            params["num_command_queues"] = 2
+        return params
 
     def run(self, requests: list[ImageGenerateRequest]):
         request = requests[0]

@@ -983,6 +983,11 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 2000,
         "trace_region_size": 130000000,
+
+        # No matmul throttle: the image default (TT_MM_THROTTLE_PERF=5) costs ~15 %
+        # per denoise step (792-813 vs 673-694 ms on WH Galaxy, identical outputs).
+        # A string: the worker applies it only when truthy (int 0 would be skipped).
+        "default_throttle_level": "0",
     },
     # BH Galaxy: same 4x8 TP=8 x SP=4 layout (the base qwenimage BH 4x8 preset matches WH).
     (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.BLACKHOLE_GALAXY): {

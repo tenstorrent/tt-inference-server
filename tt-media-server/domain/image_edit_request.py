@@ -49,6 +49,50 @@ class ImageEditRequest(ImageToImageRequest):
         return data
 
     @model_validator(mode="after")
+    def _qwen_image_edit_valid_inputs(self):
+        # Clean 422s for inputs the worker would fail on: a worker-side failure is
+        # a 500 and counts towards restarting the 32-chip worker. The image check
+        # mirrors ImageManager.base64_to_pil_image and fully decodes the image (so
+        # truncated files fail here too); URLs are left to the API layer, which
+        # downloads and replaces them before enqueue.
+        if get_settings().model_runner != _QWEN_IMAGE_EDIT_RUNNER:
+            return self
+        from tt_model_runners.qwen_image_edit_policy import (
+            QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS,
+        )
+
+        if self.seed is not None and not 0 <= self.seed < 2**63:
+            raise ValueError(f"seed must be in [0, 2**63), got {self.seed}")
+        image = self.image
+        if not image:
+            raise ValueError("image must be a non-empty base64-encoded image")
+        if image[:8].lower().startswith(("http://", "https://")):
+            return self
+        import base64
+        from io import BytesIO
+
+        from PIL import Image
+
+        if image.startswith("data:"):
+            image = image.split(",", 1)[-1]
+        image += "=" * (-len(image) % 4)
+        size = None
+        try:
+            with Image.open(BytesIO(base64.b64decode(image))) as im:
+                if im.width * im.height <= QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS:
+                    im.load()
+                else:
+                    size = im.size
+        except Exception as e:  # binascii.Error, OSError, DecompressionBombError, ...
+            raise ValueError(f"image is not a decodable image: {e}") from e
+        if size is not None:
+            raise ValueError(
+                f"image is {size[0]}x{size[1]}; at most "
+                f"{QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS} pixels are accepted"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _qwen_image_edit_square_canvas(self):
         # Clean 422 for a canvas the pipeline cannot render, instead of a 500
         # from the worker.

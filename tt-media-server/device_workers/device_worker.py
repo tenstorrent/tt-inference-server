@@ -192,6 +192,13 @@ def device_worker(
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
+            # Close the device before exiting: a worker that exits with the mesh
+            # (and fabric) still open leaves its ethernet dispatch/fabric cores
+            # running, and the next process has to force them down at init.
+            try:
+                device_runner.close_device()
+            except Exception as e:
+                logger.error(f"Worker {worker_id} failed to close device: {e}")
             loop.close()
             break
 

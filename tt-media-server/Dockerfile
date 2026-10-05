@@ -177,11 +177,16 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && chmod +x fix_dependencies.sh \
     && ./fix_dependencies.sh"
 
-# Install tt-vllm-plugin
+# Install tt-vllm-plugin. It pins transformers==4.55.0 and torch<2.8 (vllm 0.10.1.1:
+# torch==2.7.1) into the main venv, overriding tt-metal's pins (transformers 5.12.1,
+# torch 2.11.0). Images that serve only tt_dit models (e.g. Qwen-Image-Edit, whose host
+# Qwen2.5-VL encode is validated on tt-metal's transformers) build with
+# --build-arg INSTALL_TT_VLLM_PLUGIN=0; only the vLLM runners import vllm.
+ARG INSTALL_TT_VLLM_PLUGIN=1
 COPY "tt-vllm-plugin" "${TT_METAL_HOME}/tt-vllm-plugin"
-RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+RUN if [ "${INSTALL_TT_VLLM_PLUGIN}" = "1" ]; then /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
-    && uv pip install ."
+    && uv pip install ."; else echo "Skipping tt-vllm-plugin (INSTALL_TT_VLLM_PLUGIN=${INSTALL_TT_VLLM_PLUGIN})"; fi
 
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10

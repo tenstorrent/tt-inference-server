@@ -26,6 +26,11 @@ QWEN_IMAGE_EDIT_DEFAULT_TRUE_CFG_SCALE = 4.0
 QWEN_IMAGE_EDIT_DEFAULT_NEGATIVE_PROMPT = " "
 
 
+# Largest input image accepted (pixels). Every input is letterboxed to the square
+# canvas, so a larger image only costs host decode time and memory.
+QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS = 4096 * 4096
+QWEN_IMAGE_EDIT_DEFAULT_STEPS = 20
+
 def qwen_image_edit_side(width, height) -> int:
     """Canvas side for a request's optional width/height.
 
@@ -58,7 +63,8 @@ def qwen_image_edit_pipeline_kwargs(request, image) -> dict:
         "image": image,
         "prompt": request.prompt,
         "negative_prompt": negative_prompt,
-        "num_inference_steps": request.num_inference_steps,
+        "num_inference_steps": request.num_inference_steps
+        or QWEN_IMAGE_EDIT_DEFAULT_STEPS,
         "true_cfg_scale": float(guidance_scale),
         "side": qwen_image_edit_side(
             getattr(request, "width", None), getattr(request, "height", None)

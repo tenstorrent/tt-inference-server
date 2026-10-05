@@ -291,6 +291,8 @@ templates:
 # CFG-parallel (two 4x4 submeshes, TP=4 x SP=4); BH Galaxy untested. Served on
 # /v1/images/edits only. Needs a tt-metal build with models/tt_dit/pipelines/qwenimage_edit
 # (branch sdawle/tvardhineni/qwen3-image-edit-wh).
+# Build the media-server image with --build-arg INSTALL_TT_VLLM_PLUGIN=0: tt-vllm-plugin pins
+# transformers 4.55 / torch 2.7 over tt-metal's pins, and the runner refuses to start on that.
 # Disk/RAM are estimates, not measured: the ~58GB diffusers repo plus a
 # transformer-sized tt_dit cache; the host loads the full diffusers pipeline.
 - weights:

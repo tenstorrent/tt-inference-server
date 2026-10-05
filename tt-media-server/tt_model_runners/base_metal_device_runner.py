@@ -8,8 +8,10 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 
 class BaseMetalDeviceRunner(BaseDeviceRunner):
-    def __init__(self, device_id: str):
-        super().__init__(device_id)
+    def __init__(
+        self, device_id: str, cpu_threads: str = None, num_torch_threads: int = None
+    ):
+        super().__init__(device_id, cpu_threads, num_torch_threads)
 
     def get_pipeline_device_params(self):
         return None
