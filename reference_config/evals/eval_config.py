@@ -486,6 +486,13 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+# Custom lm-eval task definitions for the google/gemma-4-31B-it model-card evals that
+# the pinned lm-eval fork does not ship (AIME 2026, BIG-Bench Extra Hard, HLE text-only).
+# Absolute, so it resolves independently of the venv that include_path is joined with.
+_GEMMA4_31B_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "gemma4_31b"
+)
+
 _eval_config_list = [
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.2",
@@ -6340,6 +6347,120 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 3,
                     EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                # AIME 2026 (MathArena, 30 problems), the model card's "AIME 2026
+                # no tools" row. avg@4 (repeats in the task YAML); the harness
+                # seed is kept out of gen_kwargs so the 4 samples differ.
+                task_name="gemma4_aime_2026",
+                include_path=_GEMMA4_31B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=89.2,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                propagate_seed_to_gen_kwargs=False,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 1.0,
+                    EvalLimitMode.SMOKE_TEST: 0.1,
+                },
+            ),
+            EvalTask(
+                # BIG-Bench Extra Hard (4,520 questions, 23 tasks), the model
+                # card's "BigBench Extra Hard" row. Official bbeh/evaluate.py
+                # scorer; micro accuracy here, per-task harmonic mean via
+                # lm_eval_tasks/gemma4_31b/bbeh_summary.py on the samples.
+                task_name="gemma4_bbeh",
+                include_path=_GEMMA4_31B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=74.4,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 100,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+            ),
+            EvalTask(
+                # Humanity's Last Exam, text-only questions, the model card's
+                # "HLE no tools" row. exact_match is the deterministic lower
+                # bound; judge_match follows the official LLM-judge protocol
+                # when HLE_JUDGE_MODEL (+ endpoint/key) is set in the env.
+                task_name="gemma4_hle_text",
+                include_path=_GEMMA4_31B_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=19.5,
+                    published_score_ref="https://huggingface.co/google/gemma-4-31B-it#benchmark-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["judge_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
             EvalTask(

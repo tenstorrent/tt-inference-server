@@ -1,0 +1,32 @@
+# AIME 2026 (MathArena), the "AIME 2026 no tools" row of the google/gemma-4-31B-it
+# model card. 30 problems (AIME I + II) with integer answers, graded by the lm-eval
+# fork's r1_evals math equivalence checker (same scorer as r1_aime24 / r1_math500).
+# Scored as avg@4: 4 sampled answers per problem, averaged, as MathArena reports AIME.
+task: gemma4_aime_2026
+dataset_path: MathArena/aime_2026
+test_split: train
+output_type: generate_until
+# MathArena's instruction for answer-extracted math problems.
+doc_to_text: "{{problem}}\n\nPlease reason step by step, and put your final answer within \\boxed{}."
+doc_to_target: "{{answer}}"
+process_results: !function utils.process_results_math_avg
+repeats: 4
+# Keep all 4 sampled answers; lm-eval's default filter would keep only the first.
+filter_list:
+  - name: none
+    filter:
+      - function: take_first_k
+        k: 4
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 65536
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

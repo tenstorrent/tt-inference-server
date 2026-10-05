@@ -1,0 +1,28 @@
+# BIG-Bench Extra Hard (google-deepmind/bbeh), the "BigBench Extra Hard" row of the
+# google/gemma-4-31B-it model card. Full set: 4,520 questions over 23 tasks, zero-shot.
+# Each input already ends with the task's own answer-format instruction; we append the
+# official repo's expected final-answer line ("The answer is: ...") so the official
+# extractor (bbeh/evaluate.py, ported verbatim in utils.py) can find the answer after
+# the model's reasoning. exact_match here is the micro accuracy over all questions;
+# the BBEH paper's headline is the harmonic mean over the 23 per-task accuracies,
+# which bbeh_summary.py computes from the saved samples.
+task: gemma4_bbeh
+dataset_path: BBEH/bbeh
+test_split: train
+output_type: generate_until
+doc_to_text: !function utils.bbeh_doc_to_text
+doc_to_target: target
+process_results: !function utils.process_results_bbeh
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 32768
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

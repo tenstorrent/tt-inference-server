@@ -1,0 +1,33 @@
+# Humanity's Last Exam, text-only questions (no image), the "HLE no tools" row of the
+# google/gemma-4-31B-it model card. Prompts use HLE's official response format for the
+# question's answer type (multipleChoice / exactMatch). Scoring:
+#   exact_match  deterministic: the "Answer:" letter for multiple choice, a normalized
+#                string match for exact-answer questions (a lower bound on the official
+#                score, which uses an LLM judge);
+#   judge_match  the official LLM-judge protocol (prompt ported from
+#                centerforaisafety/hle), only when HLE_JUDGE_MODEL is set; otherwise it
+#                mirrors exact_match so the metric column always exists.
+task: gemma4_hle_text
+dataset_path: cais/hle
+test_split: test
+process_docs: !function utils.process_hle_text
+output_type: generate_until
+doc_to_text: !function utils.hle_doc_to_text
+doc_to_target: answer
+process_results: !function utils.process_results_hle
+num_fewshot: 0
+generation_kwargs:
+  until: []
+  do_sample: true
+  temperature: 1.0
+  top_p: 0.95
+  max_gen_toks: 65536
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+  - metric: judge_match
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

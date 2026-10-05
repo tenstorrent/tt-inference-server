@@ -20,3 +20,7 @@ protobuf
 pyjwt
 pillow
 datasets==3.1.0
+# OpenAI client + o200k tokenizer for the MRCR runner
+# (reference_config/evals/lm_eval_tasks/gemma4_31b/mrcr_runner.py).
+openai
+tiktoken

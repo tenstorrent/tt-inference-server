@@ -1,0 +1,5 @@
+# BBEH Mini: the official 460-question subset (20 per task) of gemma4_bbeh, for
+# quick runs. Same prompt and scorer as gemma4_bbeh.
+include: bbeh.yaml
+task: gemma4_bbeh_mini
+process_docs: !function utils.process_bbeh_mini
