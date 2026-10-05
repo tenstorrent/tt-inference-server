@@ -6697,6 +6697,14 @@ _eval_config_list = [
                             "matplotlib__matplotlib-25332",
                             "sympy__sympy-13551",
                             "scikit-learn__scikit-learn-14629",
+                            # +5 instances (oracle-validated on the gemma QB2 exploratory
+                            # set) from repos the shared list does not cover: the shared 5
+                            # all resolve with the #66 decode fix (run 37249479221).
+                            "astropy__astropy-14598",
+                            "matplotlib__matplotlib-25122",
+                            "pydata__xarray-4075",
+                            "pytest-dev__pytest-7571",
+                            "sphinx-doc__sphinx-8265",
                         ],
                     },
                 ),
