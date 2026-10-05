@@ -992,3 +992,30 @@ def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
             mod._prepare_eval_tokenizer(
                 SimpleNamespace(model_spec=spec), task, tmp_path
             )
+
+def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
+    # leaderboard_math_hard is scored as the mean of per-subtask paths. The
+    # group entry itself carries an aggregate exact_match, which the
+    # metric-mismatch auto-detect used to substitute as a bare string --
+    # score_multilevel_keys_mean then asserted and the task scored 0.
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = ["leaderboard_math_algebra_hard", "leaderboard_math_geometry_hard"]
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
+    )
+    results = {"leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"}}
+    results.update({name: {"exact_match,none": 0.02} for name in subtasks})
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, ratio, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
+    assert ratio == pytest.approx(2.0 / task.score.published_score)
+    assert check == ReportCheckTypes.PASS

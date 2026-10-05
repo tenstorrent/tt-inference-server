@@ -160,6 +160,18 @@ def _target_keys(task, results: dict) -> List[str]:
     return sorted(k for k in results if k.startswith(prefix))
 
 
+def _multilevel_key_resolves(results: dict, keys: tuple) -> bool:
+    """A tuple result key (score_multilevel_keys_mean) is a path walked from
+    the top-level results, e.g. ("leaderboard_math_algebra_hard",
+    "exact_match,none") -- not a key of the group's own entry."""
+    node = results
+    for key in keys:
+        if not isinstance(node, dict) or key not in node:
+            return False
+        node = node[key]
+    return True
+
+
 def _score_one(
     task, results: dict, t_key: str, ref: dict, n_total=None
 ) -> Tuple[float, Union[float, str], Union[float, str], ReportCheckTypes]:
@@ -177,7 +189,10 @@ def _score_one(
     kwargs["task_name"] = t_key
     configured_keys = kwargs.get("result_keys", [])
     actual_data = results.get(t_key, {})
-    key_found = any(k in actual_data for k in configured_keys)
+    key_found = any(
+        _multilevel_key_resolves(results, k) if isinstance(k, tuple) else k in actual_data
+        for k in configured_keys
+    )
     if not key_found:
         valid_candidates = [
             k
