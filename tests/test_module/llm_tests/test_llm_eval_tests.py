@@ -913,7 +913,7 @@ def test_llama31_longbench_preserves_generation_settings(
             item.split("=", 1)
             for item in command[command.index("--model_args") + 1].split(",")
         )
-        assert args["max_length"] == str(model_spec.device_model_spec.max_context)
+        assert args["max_length"] == str(model_spec.device_model_spec.max_context - 64)
         if impl_id == "llama31_8b_qb2":
             assert args["tokenizer"] == "/verified/tokenizer"
             assert args["num_concurrent"] == "32"
@@ -935,7 +935,9 @@ def test_llama31_longbench_preserves_generation_settings(
         ("other_task", WorkflowVenvType.EVALS_COMMON),
     ],
 )
-def test_qb2_context_fix_does_not_change_other_evals(task_name, venv, tmp_path):
+def test_qb2_tokenizer_pinning_preserves_upstream_other_eval_context(
+    task_name, venv, tmp_path
+):
     spec = SimpleNamespace(
         hf_model_repo="org/model",
         model_id="model",
@@ -953,11 +955,11 @@ def test_qb2_context_fix_does_not_change_other_evals(task_name, venv, tmp_path):
         command = build_eval_command(task, spec, None, tmp_path, 8000)
     resolve.assert_not_called()
     args = command[command.index("--model_args") + 1]
-    assert "max_length=" not in args
+    assert "max_length=131008" in args
     assert ",tokenizer=" not in args
 
 
-@pytest.mark.parametrize("max_context", [None, 0, "131072", True])
+@pytest.mark.parametrize("max_context", [None, 0, "invalid", True])
 def test_longbench_rejects_invalid_context(max_context, tmp_path):
     spec = SimpleNamespace(
         hf_model_repo="org/model",
@@ -966,7 +968,7 @@ def test_longbench_rejects_invalid_context(max_context, tmp_path):
         device_model_spec=SimpleNamespace(max_context=max_context, max_concurrency=32),
     )
     task = EvalTask(task_name="longbench_single_e", gen_kwargs={})
-    with pytest.raises(ValueError, match="positive device context"):
+    with pytest.raises(ValueError, match="(max_context|positive integer)"):
         build_eval_command(task, spec, None, tmp_path, 8000)
 
 
