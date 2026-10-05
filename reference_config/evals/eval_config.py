@@ -6717,6 +6717,183 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 5,
                 },
             ),
+            EvalTask(
+                # tau3-bench airline domain through Harbor's tau3 adapter: the
+                # updated tau2-bench airline tasks (50), half-duplex text mode,
+                # official tau2 reward. Model-card row "Tau2 - airline" (tech
+                # report Table 5) is the original tau2-bench split, so compare
+                # with that caveat. As for tau3_bench_banking, the served model
+                # is also the simulated user and the NL-assertion verifier
+                # (official protocol uses an external frontier model for both).
+                task_name="tau3_bench_airline",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=75.0,
+                    published_score_ref="https://arxiv.org/abs/2607.02770",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-airline-*"],
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=50,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/google/gemma-4-31B-it",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/google/gemma-4-31B-it",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-airline-task-0",
+                            "sierra-research/tau3-bench__tau3-airline-task-1",
+                            "sierra-research/tau3-bench__tau3-airline-task-2",
+                            "sierra-research/tau3-bench__tau3-airline-task-3",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                # tau3-bench retail domain through Harbor's tau3 adapter: the
+                # updated tau2-bench retail tasks (114), half-duplex text mode,
+                # official tau2 reward. Model-card row "Tau2 - retail" (tech
+                # report Table 5) is the original tau2-bench split, so compare
+                # with that caveat. As for tau3_bench_banking, the served model
+                # is also the simulated user and the NL-assertion verifier
+                # (official protocol uses an external frontier model for both).
+                task_name="tau3_bench_retail",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=86.4,
+                    published_score_ref="https://arxiv.org/abs/2607.02770",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-retail-*"],
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=114,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/google/gemma-4-31B-it",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/google/gemma-4-31B-it",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-retail-task-0",
+                            "sierra-research/tau3-bench__tau3-retail-task-1",
+                            "sierra-research/tau3-bench__tau3-retail-task-2",
+                            "sierra-research/tau3-bench__tau3-retail-task-3",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                # tau3-bench telecom domain through Harbor's tau3 adapter: the
+                # updated tau2-bench telecom tasks (114), half-duplex text mode,
+                # official tau2 reward. Model-card row "Tau2 - telecom" (tech
+                # report Table 5) is the original tau2-bench split, so compare
+                # with that caveat. As for tau3_bench_banking, the served model
+                # is also the simulated user and the NL-assertion verifier
+                # (official protocol uses an external frontier model for both).
+                task_name="tau3_bench_telecom",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=69.3,
+                    published_score_ref="https://arxiv.org/abs/2607.02770",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-telecom-*"],
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=114,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/google/gemma-4-31B-it",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/google/gemma-4-31B-it",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-telecom-task-0",
+                            "sierra-research/tau3-bench__tau3-telecom-task-1",
+                            "sierra-research/tau3-bench__tau3-telecom-task-2",
+                            "sierra-research/tau3-bench__tau3-telecom-task-3",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
         ],
     ),
     EvalConfig(
