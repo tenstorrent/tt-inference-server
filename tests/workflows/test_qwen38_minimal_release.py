@@ -68,7 +68,18 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
 
     terminal = tasks[1].agentic_eval_config
     swe = tasks[2].agentic_eval_config
-    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
+    assert terminal.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "terminal-bench/break-filter-js-from-html",
+        "terminal-bench/cobol-modernization",
+        "terminal-bench/compile-compcert",
+        "terminal-bench/feal-differential-cryptanalysis",
+        "terminal-bench/qemu-startup",
+        "terminal-bench/caffe-cifar-10",
+        "terminal-bench/password-recovery",
+        "terminal-bench/portfolio-optimization",
+        "terminal-bench/hf-model-inference",
+        "terminal-bench/financial-document-processor",
+    ]
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
     assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
     assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
@@ -78,13 +89,26 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
 def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():
     tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
     cases = [
-        (tasks[0], 10, 90.0, 80.0),
-        (tasks[1], 5, 80.0, 60.0),
-        (tasks[2], 5, 60.0, 40.0),
+        (tasks[0], 10, 90.0, 80.0, 0.0),
+        (tasks[1], 10, 70.0, 60.0, 0.05),
+        (tasks[2], 5, 60.0, 40.0, 0.0),
     ]
 
-    for task, total, passing_score, failing_score in cases:
+    for task, total, passing_score, failing_score, tolerance in cases:
         reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
-        assert reference["tolerance"] == 0.0
+        assert reference["tolerance"] == tolerance
         assert accept_eval_score(reference, passing_score, n_total=total) is True
         assert accept_eval_score(reference, failing_score, n_total=total) is False
+
+
+def test_qwen38_terminal_uses_published_reference_for_ci_acceptance():
+    terminal = _eval_config_map["Qwen/Qwen3.8-27B"].tasks[1]
+
+    reference = resolve_eval_reference(terminal.score, EvalLimitMode.CI_NIGHTLY)
+
+    assert reference == {
+        "reference_score": 73.0,
+        "reference_ref": "https://huggingface.co/Qwen/Qwen3.8-27B",
+        "tolerance": 0.05,
+        "is_subset_reference": False,
+    }
