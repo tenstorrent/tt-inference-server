@@ -432,8 +432,11 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         return []
 
     if ctx.remote_server:
+        # ctx.base_url applies --service-port when --server-url carries no
+        # explicit port; the raw server_url would probe port 80 and hang in
+        # wait_for_healthy until the tensor_cache_timeout.
         server = RemoteOpenAIController(
-            base_url=ctx.server_url,
+            base_url=ctx.base_url,
             auth_token=auth_token,
         )
     else:
