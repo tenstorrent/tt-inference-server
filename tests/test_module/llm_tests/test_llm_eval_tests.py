@@ -145,7 +145,7 @@ class TestEvalCommand:
         assert command[command.index("--seed") + 1] == "42"
         assert command[1].endswith("llm_module/lm_eval_no_server_seed.py")
 
-    @pytest.mark.parametrize("name", ["mmlu_pro", "ifeval"])
+    @pytest.mark.parametrize("name", ["gpqa_diamond_cot_zeroshot"])
     def test_granite_nested_generation_kwargs_are_typed_json(self, name):
         task = next(
             task
@@ -156,13 +156,13 @@ class TestEvalCommand:
         raw = command[command.index("--gen_kwargs") + 1]
         parsed = json.loads(raw)
         assert parsed == {
-            "max_gen_toks": 4096,
+            "max_gen_toks": 32768,
             "temperature": 1.0,
             "top_p": 0.95,
             "do_sample": True,
             "stream": False,
             "until": [],
-            "chat_template_kwargs": {"enable_thinking": True, "low_effort": True},
+            "chat_template_kwargs": {"enable_thinking": True, "low_effort": False},
             "seed": 42,
         }
         assert "--limit" not in command and "--samples" not in command
