@@ -6108,13 +6108,18 @@ _eval_config_list = [
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
-                            "extra_body": {"top_k": 20},
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {
+                                    "reasoning_effort": "medium"
+                                },
+                            },
                         },
                     },
                     task_names_map={

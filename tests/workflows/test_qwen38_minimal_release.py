@@ -72,6 +72,19 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
     assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
     assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
+    assert terminal.agent_kwargs["model_info"]["max_output_tokens"] == 16 * 1024
+    assert terminal.agent_kwargs["llm_kwargs"]["max_tokens"] == 16 * 1024
+    assert terminal.agent_kwargs["llm_kwargs"]["extra_body"] == {
+        "top_k": 20,
+        "chat_template_kwargs": {"reasoning_effort": "medium"},
+    }
+    # The Terminal-Bench experiment did not validate these settings for SWE.
+    assert swe.agent_kwargs["max_tokens"] == 32 * 1024
+    assert swe.agent_kwargs["config"]["model"]["model_kwargs"] == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "extra_body": {"top_k": 20},
+    }
     assert swe.llm_timeout_sec == 60 * 60
 
 
