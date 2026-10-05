@@ -312,6 +312,17 @@ def build_eval_command(
     # build gen_kwargs string
     gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
     gen_kwargs_str = ",".join(gen_kwargs_list)
+    if any(isinstance(value, dict) for value in effective_gen_kwargs.values()):
+        # The pinned harness treats arguments containing braces as JSON.
+        # Preserve the scalar types its key=value parser otherwise produces.
+        json_kwargs = dict(effective_gen_kwargs)
+        for key, value in json_kwargs.items():
+            if isinstance(value, str):
+                try:
+                    json_kwargs[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+        gen_kwargs_str = json.dumps(json_kwargs)
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}

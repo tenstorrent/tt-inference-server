@@ -145,6 +145,29 @@ class TestEvalCommand:
         assert command[command.index("--seed") + 1] == "42"
         assert command[1].endswith("llm_module/lm_eval_no_server_seed.py")
 
+    @pytest.mark.parametrize("name", ["mmlu_pro", "ifeval"])
+    def test_granite_nested_generation_kwargs_are_typed_json(self, name):
+        task = next(
+            task
+            for task in _eval_config_map["ibm-granite/granite-4.2-30b"].tasks
+            if task.task_name == name
+        )
+        command = _build_eval_test_command(task)
+        raw = command[command.index("--gen_kwargs") + 1]
+        parsed = json.loads(raw)
+        assert parsed == {
+            "max_gen_toks": 4096,
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "do_sample": True,
+            "stream": False,
+            "until": [],
+            "chat_template_kwargs": {"enable_thinking": True, "low_effort": True},
+            "seed": 42,
+        }
+        assert "--limit" not in command and "--samples" not in command
+        assert task.gen_kwargs["do_sample"] == "true"
+
     def test_eval_task_forwards_seed_by_default(self):
         task = EvalTask(
             task_name="seeded_sampling",
