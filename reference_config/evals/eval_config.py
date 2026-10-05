@@ -2148,13 +2148,15 @@ _eval_config_list = [
                 model_kwargs={
                     "max_length": 128 * 1024,
                     # Per-request HTTP timeout (lm-eval default 1800s). A full
-                    # 32K-token reasoning trace takes ~47 min on T3K at 8
-                    # concurrent users (~11.5 tok/s/user).
+                    # 48K-token reasoning trace takes ~57 min on T3K at 8
+                    # concurrent users (~70 ms per output token).
                     "timeout": 7200,
                 },
                 gen_kwargs={
                     "stream": "true",
-                    "max_gen_toks": 32 * 1024,
+                    # At 32K, answers still thinking at the cap are mostly
+                    # scored wrong.
+                    "max_gen_toks": 48 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
