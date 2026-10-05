@@ -1543,6 +1543,10 @@ templates:
         no-enable-prefix-caching: true
         async-scheduling: true
         trust-remote-code: true
+        # Validated checkpoint (bring-up, CI 36648438691/36834542524). The hub's main moved
+        # to a new checkpoint on 2026-10-01; the downloader and vLLM both honor this pin.
+        revision: 036114ce8d46c32b24c15423211069abb9c5d25e
+        tokenizer_revision: 036114ce8d46c32b24c15423211069abb9c5d25e
         reasoning-parser: k2_horizon
         # Agentic evals send tools with tool_choice=auto. k2_horizon is registered by
         # vllm-tt-plugin (backport of upstream vLLM #55063; v0.26.0 has none).
