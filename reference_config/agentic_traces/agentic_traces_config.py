@@ -465,7 +465,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # only. Full (1M) dataset to match the spec's 1048576 max_context, and
     # concurrency at the spec's max_concurrency of 62.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_MiniMax-M3_super_cluster",
+        model_id="id_blaze_MiniMax-M3_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
