@@ -60,6 +60,19 @@ def test_gemma4_release_preserves_established_capacity_capped_matrix(monkeypatch
         (128, 128, 1, 8),
         (128, 128, 32, 256),
     ]
+    functional = rows[0].targets["functional"]
+    complete = rows[0].targets["complete"]
+    target = rows[0].targets["target"]
+    assert (functional.ttft_ms, functional.tput_user, functional.tput) == pytest.approx(
+        (240, 22.4, 22.4)
+    )
+    assert (complete.ttft_ms, complete.tput_user, complete.tput) == pytest.approx(
+        (48, 112, 112)
+    )
+    assert (target.ttft_ms, target.tput_user, target.tput) == pytest.approx(
+        (24, 224, 224)
+    )
+    assert not rows[1].targets
     assert [(p.isl, p.max_concurrency) for p in rows[-7:]] == [
         (16384, 1),
         (16384, 15),

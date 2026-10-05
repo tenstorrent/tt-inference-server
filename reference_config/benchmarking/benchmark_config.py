@@ -592,23 +592,40 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # Gemma release coverage uses the established Qwen-style shape sweep,
     # at C1 and the capacity-capped maximum concurrency for each shape.
     if model_spec.impl.impl_id == "gemma4_autoport":
+        sweep_params = [
+            params
+            for isl, osl in BENCHMARK_ISL_OSL_PAIRS
+            for params in _expand_text_sweep_params(
+                isl=isl,
+                osl=osl,
+                max_context=max_context,
+                max_tokens_all_users=max_tokens_all_users,
+                model_max_concurrency=model_max_concurrency,
+            )
+        ]
+        references_by_shape = {
+            (params.isl, params.osl, params.max_concurrency): params
+            for params in perf_reference
+        }
+        sweep_params = [
+            replace(
+                params,
+                targets=dict(
+                    references_by_shape[
+                        (params.isl, params.osl, params.max_concurrency)
+                    ].targets
+                ),
+            )
+            if (params.isl, params.osl, params.max_concurrency)
+            in references_by_shape
+            else params
+            for params in sweep_params
+        ]
         return BenchmarkConfig(
             model_id=model_spec.model_id,
             tasks=[
                 BenchmarkTask(
-                    param_map={
-                        device: [
-                            params
-                            for isl, osl in BENCHMARK_ISL_OSL_PAIRS
-                            for params in _expand_text_sweep_params(
-                                isl=isl,
-                                osl=osl,
-                                max_context=max_context,
-                                max_tokens_all_users=max_tokens_all_users,
-                                model_max_concurrency=model_max_concurrency,
-                            )
-                        ]
-                    },
+                    param_map={device: sweep_params},
                     workflow_venv_type=vllm_benchmark_venv,
                 )
             ],
