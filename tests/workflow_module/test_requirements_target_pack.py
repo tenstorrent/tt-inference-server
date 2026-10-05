@@ -816,7 +816,7 @@ def test_target_pack_delegates_unspecified_content(pack):
 
 # --- agentic traces: template fallback for off-catalog models ----------------
 
-_KIMI_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+_KIMI_TEMPLATE_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 
 
 def _synthesized_spec():
