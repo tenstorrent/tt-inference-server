@@ -51,7 +51,12 @@ continues that trace with a single Sentry transaction per server role:
 otherwise. A request without a (valid) `traceparent` publishes nothing — the
 server never starts a trace of its own. On the decode → prefill ZMQ hop the
 decode transaction's traceparent rides inside `PrefillRequestMessage`, so
-both halves of a disaggregated request appear in one trace.
+both halves of a disaggregated request appear in one trace. Under Dynamo
+routing (frontend → prefill, then frontend → decode) the frontend issues the
+decode hop under a fresh trace context, so the prefill server embeds its
+transaction's traceparent in `tt_prefill_result` and the decode server
+continues that trace instead of the header one — both halves still share the
+client's trace.
 
 Configuration: env vars override the compiled-in defaults from
 `include/config/defaults.hpp` (see `tt::config::sentry*` in
@@ -63,6 +68,7 @@ Configuration: env vars override the compiled-in defaults from
 | `SENTRY_ENVIRONMENT` | Sentry environment tag | `development` |
 | `SENTRY_RELEASE` | Release override | server version |
 | `SENTRY_DEBUG` | `1` logs SDK activity to stderr | off |
+| `SENTRY_SERVER_NAME` | `server_name` tag override (the OS hostname is a random container ID under Docker) | `POD_NAME`, else OS hostname |
 
 There is no sample-rate setting: the server never starts a root trace, so the
 sampling decision carried in the upstream `traceparent` always applies.

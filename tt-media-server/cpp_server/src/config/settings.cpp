@@ -1271,6 +1271,10 @@ std::string sentryRelease() {
 
 bool sentryDebug() { return envBool("SENTRY_DEBUG", defaults::SENTRY_DEBUG); }
 
+std::string sentryServerName() {
+  return envString("SENTRY_SERVER_NAME", defaults::SENTRY_SERVER_NAME);
+}
+
 /**
  * Mooncake KV Migration configuration.
  */

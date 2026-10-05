@@ -3,6 +3,7 @@
 
 #include "dynamo/prefill_result_mapping.hpp"
 
+#include <string>
 #include <utility>
 
 #include "utils/id_generator.hpp"
@@ -25,6 +26,38 @@ std::optional<int> optionalInt(const Json::Value& value) {
   if (value.isInt()) return value.asInt();
   if (value.isUInt()) return static_cast<int>(value.asUInt());
   return std::nullopt;
+}
+
+/// Locate the `tt_prefill_result` object the frontend forwards to the decode
+/// worker; Dynamo's nesting has varied across versions, so probe the known
+/// locations.
+const Json::Value* findTtPrefillResult(const Json::Value& dynRaw) {
+  const Json::Value* ttResult = nullptr;
+  auto tryParams = [&ttResult](const Json::Value& params) {
+    if (ttResult != nullptr || !params.isObject()) return;
+    if (params.isMember("tt_prefill_result") &&
+        params["tt_prefill_result"].isObject()) {
+      ttResult = &params["tt_prefill_result"];
+    }
+  };
+
+  if (dynRaw.isMember("prefill_result") &&
+      dynRaw["prefill_result"].isObject()) {
+    const auto& prefillResult = dynRaw["prefill_result"];
+    tryParams(prefillResult["disaggregated_params"]);
+    tryParams(prefillResult);
+  }
+  tryParams(dynRaw["disaggregated_params"]);
+  if (dynRaw.isMember("extra_args") && dynRaw["extra_args"].isObject()) {
+    const auto& extraArgs = dynRaw["extra_args"];
+    tryParams(extraArgs["disaggregated_params"]);
+    if (extraArgs.isMember("prefill_result") &&
+        extraArgs["prefill_result"].isObject()) {
+      tryParams(extraArgs["prefill_result"]["disaggregated_params"]);
+      tryParams(extraArgs["prefill_result"]);
+    }
+  }
+  return ttResult;
 }
 
 }  // namespace
@@ -66,32 +99,7 @@ Json::Value prefillResultToJson(
 
 std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
     const Json::Value& dynRaw) {
-  const Json::Value* ttResult = nullptr;
-  auto tryParams = [&ttResult](const Json::Value& params) {
-    if (ttResult != nullptr || !params.isObject()) return;
-    if (params.isMember("tt_prefill_result") &&
-        params["tt_prefill_result"].isObject()) {
-      ttResult = &params["tt_prefill_result"];
-    }
-  };
-
-  if (dynRaw.isMember("prefill_result") &&
-      dynRaw["prefill_result"].isObject()) {
-    const auto& prefillResult = dynRaw["prefill_result"];
-    tryParams(prefillResult["disaggregated_params"]);
-    tryParams(prefillResult);
-  }
-  tryParams(dynRaw["disaggregated_params"]);
-  if (dynRaw.isMember("extra_args") && dynRaw["extra_args"].isObject()) {
-    const auto& extraArgs = dynRaw["extra_args"];
-    tryParams(extraArgs["disaggregated_params"]);
-    if (extraArgs.isMember("prefill_result") &&
-        extraArgs["prefill_result"].isObject()) {
-      tryParams(extraArgs["prefill_result"]["disaggregated_params"]);
-      tryParams(extraArgs["prefill_result"]);
-    }
-  }
-
+  const Json::Value* ttResult = findTtPrefillResult(dynRaw);
   if (ttResult == nullptr) return std::nullopt;
 
   auto message = std::optional<tt::sockets::PrefillResultMessage>(
@@ -122,6 +130,13 @@ std::optional<tt::sockets::PrefillResultMessage> prefillResultFromJson(
   }
   result.sessionId = ttResult->get("session_id", "").asString();
   return message;
+}
+
+std::string prefillResultTraceparent(const Json::Value& dynRaw) {
+  const Json::Value* ttResult = findTtPrefillResult(dynRaw);
+  if (ttResult == nullptr) return {};
+  const Json::Value& value = (*ttResult)["traceparent"];
+  return value.isString() ? value.asString() : std::string{};
 }
 
 }  // namespace tt::dynamo

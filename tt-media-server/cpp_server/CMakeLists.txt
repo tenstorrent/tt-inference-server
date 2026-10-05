@@ -1100,6 +1100,19 @@ target_include_directories(dynamo_protocol_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(prefill_result_mapping_test
+    tests/unit/dynamo/prefill_result_mapping_test.cpp
+    src/dynamo/prefill_result_mapping.cpp
+)
+target_link_libraries(prefill_result_mapping_test PRIVATE
+    JsonCpp::JsonCpp
+    cereal::cereal
+    GTest::gtest_main)
+target_include_directories(prefill_result_mapping_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${cereal_SOURCE_DIR}/include
+)
+
 add_executable(kube_discovery_test
     tests/unit/dynamo/kube_discovery_test.cpp
     src/dynamo/kube_client.cpp
@@ -1569,6 +1582,7 @@ set_tests_properties(MainIntegrationTest PrefillIntegrationTest DisaggregatedE2E
 )
 gtest_discover_tests(transport_test)
 gtest_discover_tests(dynamo_protocol_test)
+gtest_discover_tests(prefill_result_mapping_test)
 gtest_discover_tests(kube_discovery_test)
 gtest_discover_tests(worker_health_server_test)
 gtest_discover_tests(kv_table_adapter_test)

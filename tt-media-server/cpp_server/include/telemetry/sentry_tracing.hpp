@@ -15,14 +15,17 @@
  * without an upstream trace publishes nothing to Sentry. The frontend does
  * not forward `sentry-trace`/`baggage`, so those are deliberately not
  * handled. Transaction::traceparent() emits the header value for the next
- * hop (the disaggregated decode -> prefill ZMQ leg).
+ * hop: the disaggregated decode -> prefill ZMQ leg (PrefillRequestMessage),
+ * or the Dynamo-routed prefill -> decode handoff (embedded in
+ * tt_prefill_result, which the frontend forwards verbatim).
  *
  * Configuration comes from tt::config (env vars with compiled-in defaults
  * from config/defaults.hpp): SENTRY_DSN (default: the shared
  * tt-inference-server project; export it empty to disable tracing),
- * SENTRY_ENVIRONMENT, SENTRY_RELEASE and SENTRY_DEBUG. There is no sample
- * rate setting: the server never starts a root trace, so the sampling
- * decision inherited from traceparent always applies.
+ * SENTRY_ENVIRONMENT, SENTRY_RELEASE, SENTRY_DEBUG and SENTRY_SERVER_NAME
+ * (server_name tag override; default POD_NAME, else the OS hostname). There
+ * is no sample rate setting: the server never starts a root trace, so the
+ * sampling decision inherited from traceparent always applies.
  */
 
 #include <cstdint>
