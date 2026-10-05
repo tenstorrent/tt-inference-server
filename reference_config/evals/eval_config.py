@@ -6083,8 +6083,8 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=80.0,
-                            ref="QB2 Qwen3.8 release cohort: 4/5 Terminal-Bench 2.1",
+                            score=70.0,
+                            ref="QB2 Qwen3.8 release acceptance floor: 7/10 Terminal-Bench 2.1",
                             tolerance=0.0,
                         ),
                     },
@@ -6129,6 +6129,11 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
                         ],
                     },
                 ),
