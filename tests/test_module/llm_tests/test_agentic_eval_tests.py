@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from pathlib import Path
@@ -621,6 +621,42 @@ class TestHarborHarness:
             "image_mode": "prebuilt",
             "node_selector": {"tt-pool": "shield"},
         }
+
+    def test_local_dataset_replaces_the_registry_name(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.dataset = "sierra-research/tau3-bench"
+        task.agentic_eval_config.task_names = [
+            "sierra-research/tau3-bench__tau3-banking_knowledge-*"
+        ]
+        task.agentic_eval_config.exclude_task_names = [
+            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002"
+        ]
+        cfg = replace(
+            build_harbor_config(
+                task,
+                _server(),
+                DriverContext(output_dir=tmp_path, device="N150"),
+                n_tasks=97,
+            ),
+            dataset_path=tmp_path / "tasks" / "tau3-bench",
+        )
+
+        with patch("llm_module.agentic.harbor.run_with_progress") as run_cmd:
+            run_cmd.return_value = 17
+
+            assert run_harbor(cfg) == 17
+
+        assert "--config" in run_cmd.call_args.args[0]
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        assert json.loads(config_path.read_text())["datasets"] == [
+            {
+                "path": str(tmp_path / "tasks" / "tau3-bench"),
+                "n_tasks": 97,
+                "task_names": ["tau3-banking_knowledge-*"],
+                "exclude_task_names": ["tau3-banking_knowledge-task-002"],
+            }
+        ]
 
     def test_harbor_timeout_is_passed_to_the_watchdog(self, tmp_path):
         # ``harbor_timeout_sec`` is forwarded to the progress watchdog as the
