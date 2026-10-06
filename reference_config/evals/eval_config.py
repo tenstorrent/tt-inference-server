@@ -2211,7 +2211,7 @@ _eval_config_list = [
                     published_score=61.4,  # 61.4% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2340,7 +2340,7 @@ _eval_config_list = [
                     published_score=91.1,  # 91.1% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3005,7 +3005,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3041,7 +3041,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3082,7 +3082,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3117,7 +3117,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3158,7 +3158,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3192,7 +3192,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3232,7 +3232,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3266,7 +3266,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3305,7 +3305,7 @@ _eval_config_list = [
                     published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
                     gpu_reference_score=80.00,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     # CI subset (--ci-mode -> ci-nightly limit 0.5 = 15 of 30
                     # docs). The full set scores 76.67% and PASSES against the
                     # 80.00 full-set reference (0.958 >= 0.95); the subset
@@ -3361,7 +3361,7 @@ _eval_config_list = [
                     published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=96.10,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3396,7 +3396,7 @@ _eval_config_list = [
                     published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=66.80,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     # Widened from the 0.05 default because this check is not
                     # apples-to-apples: a ~40-question stochastic subset score is
                     # being graded against a FULL-DATASET published number.
@@ -3526,7 +3526,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3544,7 +3544,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3577,7 +3577,7 @@ _eval_config_list = [
                     published_score=45.96,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3600,7 +3600,7 @@ _eval_config_list = [
                     published_score=88.41,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4018,7 +4018,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4035,7 +4035,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -4068,7 +4068,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4085,7 +4085,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4110,7 +4110,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4127,7 +4127,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -4160,7 +4160,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4177,7 +4177,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4682,7 +4682,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4699,7 +4699,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4714,7 +4714,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4729,7 +4729,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4744,7 +4744,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4759,7 +4759,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4774,7 +4774,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["score,none"],
@@ -4798,7 +4798,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4827,7 +4827,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5357,7 +5357,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5381,7 +5381,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5410,7 +5410,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5434,7 +5434,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6303,7 +6303,7 @@ _eval_config_list = [
                     published_score=85.2,
                     published_score_ref="https://huggingface.co/google/gemma-4-31B",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6566,7 +6566,7 @@ _eval_config_list = [
                     published_score=77.2,
                     published_score_ref="https://huggingface.co/google/gemma-4-12B-it",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
