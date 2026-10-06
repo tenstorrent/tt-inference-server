@@ -465,6 +465,31 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.4.0-e95ffa5-48eba14
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: wormhole_b0
+              - name: MESH_DEVICE
+                value: TG
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MM_THROTTLE_PERF
+                value: '5'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
       t3k:
         defaultImpl: tt_transformers
         impls:

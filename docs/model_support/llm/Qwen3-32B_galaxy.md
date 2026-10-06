@@ -53,6 +53,12 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | vLLM Commit | `be7d805` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.21.0-bc4c4df-be7d805` |
 
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|---|
+| [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) | `tt-transformers` | 128 | 131072 | `e95ffa5` | `48eba14` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.4.0-e95ffa5-48eba14` |
+
 ---
 
 ## GALAXY_T3K Configuration
