@@ -534,18 +534,33 @@ class TestHarborHarness:
         task.agentic_eval_config.environment_import_path = (
             "llm_module.agentic.qemu_environment:QemuArchiveDockerEnvironment"
         )
-        task.agentic_eval_config.dataset = "terminal-bench/terminal-bench-2-1@sha256:frozen"
-        cfg = build_harbor_config(
-            task, _server(), DriverContext(output_dir=tmp_path, device="N150"), n_tasks=1
+        task.agentic_eval_config.dataset = (
+            "terminal-bench/terminal-bench-2-1@sha256:frozen"
         )
-        with patch("llm_module.agentic.harbor.run_with_progress", return_value=17) as run_cmd:
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        with patch(
+            "llm_module.agentic.harbor.run_with_progress", return_value=17
+        ) as run_cmd:
             assert run_harbor(cfg) == 17
-        data = json.loads((cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json").read_text())
-        assert data["environment"]["import_path"] == task.agentic_eval_config.environment_import_path
+        data = json.loads(
+            (cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json").read_text()
+        )
+        assert (
+            data["environment"]["import_path"]
+            == task.agentic_eval_config.environment_import_path
+        )
         assert data["datasets"][0]["name"] == "terminal-bench/terminal-bench-2-1"
         assert data["datasets"][0]["ref"] == "sha256:frozen"
         project_root = str(Path(harbor.__file__).resolve().parents[2])
-        assert run_cmd.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == project_root
+        assert (
+            run_cmd.call_args.kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0]
+            == project_root
+        )
 
     def test_nonzero_return_code_does_not_require_result_file(self, tmp_path):
         task = _harbor_task()

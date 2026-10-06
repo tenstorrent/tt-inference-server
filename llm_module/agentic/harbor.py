@@ -291,8 +291,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        bool(config.environment_import_path) or
-        _mini_swe_needs_host_gateway(config)
+        bool(config.environment_import_path)
+        or _mini_swe_needs_host_gateway(config)
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None

@@ -573,7 +573,9 @@ _eval_config_list = [
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
                     environment_import_path=(
                         "llm_module.agentic.qemu_environment:QemuArchiveDockerEnvironment"
-                        if name == "terminal_bench_2_1" and _harbor_env_type() == "docker" else None
+                        if name == "terminal_bench_2_1"
+                        and _harbor_env_type() == "docker"
+                        else None
                     ),
                 ),
                 limit_samples_map={
@@ -588,7 +590,10 @@ _eval_config_list = [
                     "terminus-2",
                     29.24,
                     20.0,
-                    {"temperature": 1.0, "llm_kwargs": {"top_p": 0.95, "timeout": 3600}},
+                    {
+                        "temperature": 1.0,
+                        "llm_kwargs": {"top_p": 0.95, "timeout": 3600},
+                    },
                     [
                         "terminal-bench/break-filter-js-from-html",
                         "terminal-bench/cobol-modernization",

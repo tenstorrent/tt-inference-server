@@ -10,7 +10,9 @@ class QemuArchiveDockerEnvironment(DockerEnvironment):
     async def start(self, force_build: bool):
         if self.environment_name == "qemu-startup":
             if self.task_env_config.docker_image != "alexgshaw/qemu-startup:20251031":
-                raise RuntimeError("QEMU dependency repair requires the validated task image")
+                raise RuntimeError(
+                    "QEMU dependency repair requires the validated task image"
+                )
         await super().start(force_build)
         if self.environment_name != "qemu-startup":
             return

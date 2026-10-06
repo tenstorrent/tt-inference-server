@@ -16,15 +16,26 @@ def environment(name, image="alexgshaw/qemu-startup:20251031", return_code=0):
     env = object.__new__(QemuArchiveDockerEnvironment)
     env.environment_name = name
     env.task_env_config = SimpleNamespace(docker_image=image)
-    env.exec = AsyncMock(return_value=SimpleNamespace(return_code=return_code, stderr="failure"))
+    env.exec = AsyncMock(
+        return_value=SimpleNamespace(return_code=return_code, stderr="failure")
+    )
     return env
 
 
-@pytest.mark.parametrize("name", [
-    "break-filter-js-from-html", "cobol-modernization", "compile-compcert",
-    "feal-differential-cryptanalysis", "caffe-cifar-10", "password-recovery",
-    "portfolio-optimization", "hf-model-inference", "financial-document-processor",
-])
+@pytest.mark.parametrize(
+    "name",
+    [
+        "break-filter-js-from-html",
+        "cobol-modernization",
+        "compile-compcert",
+        "feal-differential-cryptanalysis",
+        "caffe-cifar-10",
+        "password-recovery",
+        "portfolio-optimization",
+        "hf-model-inference",
+        "financial-document-processor",
+    ],
+)
 def test_other_tasks_do_not_execute_repair(monkeypatch, name):
     start = AsyncMock()
     monkeypatch.setattr(DockerEnvironment, "start", start)
