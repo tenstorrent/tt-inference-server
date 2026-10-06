@@ -287,3 +287,26 @@ def test_harbor_timeout_sec_parsed_as_float(monkeypatch):
     monkeypatch.setenv("HARBOR_TIMEOUT_SEC", "7200")
 
     assert _config().harbor_timeout_sec == 7200.0
+
+
+@pytest.mark.parametrize("backend", ["docker", "kubernetes"])
+def test_granite_qemu_repair_preserves_selected_backend(monkeypatch, backend):
+    import subprocess
+
+    monkeypatch.setenv("HARBOR_ENV_TYPE", backend)
+    subprocess.run(
+        [sys.executable, "-c", """
+from reference_config.evals.eval_config import _eval_config_list
+import os
+catalog = next(c for c in _eval_config_list if c.hf_model_repo == 'ibm-granite/granite-4.2-30b')
+for task in catalog.tasks:
+    cfg = task.agentic_eval_config
+    if cfg is None:
+        continue
+    assert cfg.environment_type == os.environ['HARBOR_ENV_TYPE']
+    expected = 'llm_module.agentic.qemu_environment:QemuArchiveDockerEnvironment' if task.task_name == 'terminal_bench_2_1' and cfg.environment_type == 'docker' else None
+    assert cfg.environment_import_path == expected
+"""],
+        check=True,
+        cwd=Path(__file__).resolve().parents[2],
+    )

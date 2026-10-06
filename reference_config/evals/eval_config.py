@@ -272,6 +272,7 @@ class HarborEvalConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
+    environment_import_path: Optional[str] = None
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
     timeout_multiplier: Optional[float] = None
@@ -570,6 +571,10 @@ _eval_config_list = [
                     llm_timeout_sec=60 * 60,
                     agent_kwargs=kwargs,
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
+                    environment_import_path=(
+                        "llm_module.agentic.qemu_environment:QemuArchiveDockerEnvironment"
+                        if name == "terminal_bench_2_1" and _harbor_env_type() == "docker" else None
+                    ),
                 ),
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 10,
@@ -579,11 +584,11 @@ _eval_config_list = [
             for name, dataset, agent, target, ci_target, kwargs, names in [
                 (
                     "terminal_bench_2_1",
-                    "terminal-bench/terminal-bench-2-1",
+                    "terminal-bench/terminal-bench-2-1@sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
                     "terminus-2",
                     29.24,
                     20.0,
-                    {"temperature": 1.0, "llm_kwargs": {"top_p": 0.95}},
+                    {"temperature": 1.0, "llm_kwargs": {"top_p": 0.95, "timeout": 3600}},
                     [
                         "terminal-bench/break-filter-js-from-html",
                         "terminal-bench/cobol-modernization",
