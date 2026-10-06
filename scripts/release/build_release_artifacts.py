@@ -86,6 +86,7 @@ import sys
 import tempfile
 import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -242,14 +243,14 @@ def gh_json_lines(endpoint: str, jq: str) -> list[dict]:
 def list_artifacts(repo: str, run_id: str) -> list[dict]:
     return gh_json_lines(
         f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100",
-        ".artifacts[] | {id, name, size_in_bytes, expired}",
+        ".artifacts[] | {id, name, size_in_bytes, expired, created_at}",
     )
 
 
 def list_jobs(repo: str, run_id: str) -> list[dict]:
     return gh_json_lines(
-        f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100",
-        ".jobs[] | {id, name}",
+        f"repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100",
+        ".jobs[] | {id, name, status, conclusion, started_at, completed_at}",
     )
 
 
@@ -312,6 +313,64 @@ def device_from_jobs(
             if device:
                 return device
     return None
+
+
+def artifacts_from_successful_job(
+    artifacts: list[dict],
+    jobs: list[dict],
+    model: str,
+    device: str,
+    kinds: dict[str, str],
+) -> list[dict]:
+    """Disambiguate retry bundles using the latest job execution's upload window.
+
+    The latest-jobs API includes successful jobs inherited by a failed-job
+    rerun. Their original execution timestamps still identify their artifacts.
+    An artifact ID or upload order alone does not prove a successful attempt.
+    Missing timing, multiple matching jobs, or multiple uploads stay ambiguous.
+    Exact runtime identity must already have been verified by the caller.
+    """
+    selected = []
+    for artifact in artifacts:
+        name = artifact["name"]
+        kind = kinds[name]
+        runner = runner_of(name, model, kind)
+        impl = impl_of(name)
+        impls = [impl]
+        if impl and not has_leaf_job_names([job.get("name", "") for job in jobs]):
+            impls.append(None)
+        matching_jobs = [
+            job
+            for job in jobs
+            if any(
+                device_from_ci_job_name(
+                    job.get("name", ""), kind, model, runner, candidate
+                )
+                == device
+                for candidate in impls
+            )
+        ]
+        if len(matching_jobs) != 1:
+            continue
+        job = matching_jobs[0]
+        if job.get("status") != "completed" or job.get("conclusion") != "success":
+            continue
+        try:
+            created, started, completed = (
+                datetime.fromisoformat(value.replace("Z", "+00:00"))
+                for value in (
+                    artifact.get("created_at"),
+                    job.get("started_at"),
+                    job.get("completed_at"),
+                )
+            )
+            if not all(t.tzinfo is not None for t in (created, started, completed)):
+                continue
+            if started <= created <= completed:
+                selected.append(artifact)
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return selected
 
 
 def token_in_names(names: list[str], device: str) -> bool:
@@ -485,6 +544,12 @@ def resolve_model(
                 rejected.append(f"{artifact['name']!r}: {exc}")
             else:
                 matching.append(artifact)
+        if len(matching) > 1:
+            successful = artifacts_from_successful_job(
+                matching, jobs, model, d, kind_of
+            )
+            if len(successful) == 1:
+                matching = successful
         if len(matching) != 1:
             details = "; ".join(rejected) or "none"
             sys.exit(
