@@ -701,6 +701,13 @@ class RequirementsTargetPack(TargetPack):
                 continue
             params.extend(self._scenario_params(scenario, device, model_spec))
 
+        # Points with a hard (must) target run last, so the informational
+        # sweep stays contiguous ahead of them and reports as one table. Each
+        # group keeps the document's own order.
+        params = [p for p in params if p.priority != PRIORITY_MUST] + [
+            p for p in params if p.priority == PRIORITY_MUST
+        ]
+
         task = BenchmarkTask(
             param_map={device: params},
             workflow_venv_type=select_vllm_benchmark_venv(model_spec),
