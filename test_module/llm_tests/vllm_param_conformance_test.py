@@ -165,7 +165,10 @@ class VLLMParamConformanceTest(BaseTest):
         return json.loads(report_path.read_text())
 
     def _extra_pytest_args(self) -> List[str]:
-        return []
+        chat_template_kwargs = self.config.get("chat_template_kwargs")
+        if not chat_template_kwargs:
+            return []
+        return ["--chat-template-kwargs", json.dumps(chat_template_kwargs)]
 
     def _record_pytest_output(
         self, return_code: Optional[int], stdout: Optional[bytes]
