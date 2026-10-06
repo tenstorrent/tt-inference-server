@@ -13,12 +13,8 @@
 namespace tt::services {
 
 /**
- * Service for handling embedding requests.
- *
- * Uses a multiprocess scheduler with EmbeddingRunner workers.
- * The request path is asynchronous only (submitRequestAsync): the request is
- * queued and the caller returns immediately; the worker dispatch thread
- * invokes the completion callback with the response.
+ * Embedding request pipeline over forked worker processes. Async-only:
+ * submitRequestAsync queues the request and a dispatch thread completes it.
  */
 class EmbeddingService : public RequestPipeline<domain::EmbeddingRequest> {
  public:
@@ -32,13 +28,9 @@ class EmbeddingService : public RequestPipeline<domain::EmbeddingRequest> {
   void stop() override;
   bool isModelReady() const override;
 
-  /**
-   * Enqueue the request and return immediately; a worker dispatch thread
-   * invokes onComplete (exactly once) with the response, from that dispatch
-   * thread. The queue-capacity check runs synchronously here, so
-   * QueueFullException propagates to the caller (mapped to HTTP 429) and is
-   * never reported through onComplete.
-   */
+  /** Enqueue and return; onComplete fires exactly once from a dispatch
+   * thread. The queue-capacity check runs synchronously, so
+   * QueueFullException (HTTP 429) propagates to the caller. */
   void submitRequestAsync(
       domain::EmbeddingRequest request,
       std::function<void(domain::EmbeddingResponse&&)> onComplete);
@@ -46,9 +38,7 @@ class EmbeddingService : public RequestPipeline<domain::EmbeddingRequest> {
  protected:
   size_t currentQueueSize() const override;
 
-  /** Real per-worker liveness/readiness for /health and /tt-liveness; without
-   * this the health endpoints report an empty worker list and external
-   * harnesses see "0/0 workers ready". */
+  /** Per-worker liveness/readiness for the health endpoints. */
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
 
  private:

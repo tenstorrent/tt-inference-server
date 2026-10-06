@@ -26,14 +26,8 @@ namespace tt::services::embedding_detail {
 
 namespace {
 
-/**
- * Export everything the runner reads from the environment, BEFORE it is
- * built: TT_VISIBLE_DEVICES scopes the worker to its chips, the thread caps
- * keep 32 workers from oversubscribing the host cores, and TT_METAL_CACHE
- * gives each worker a private kernel-cache directory (mirroring the Python
- * server's setup_runner_environment — sharing one directory makes concurrent
- * JIT compilation race). Also logs the full worker configuration.
- */
+// Must run before the runner is built. TT_METAL_CACHE is per-worker:
+// concurrent JIT compilation in a shared directory races.
 void exportWorkerEnvironment(int workerId,
                              const tt::config::EmbeddingConfig& cfg,
                              const std::string& visibleDevices) {
@@ -57,6 +51,16 @@ void exportWorkerEnvironment(int workerId,
     const std::string metalCache =
         std::string(metalHome) + "/built/" + deviceSuffix;
     setenv("TT_METAL_CACHE", metalCache.c_str(), 1);
+
+    if (chdir(metalHome) == 0) {
+      TT_LOG_INFO("[Worker {}] Working directory set to TT_METAL_HOME: {}",
+                  workerId, metalHome);
+    } else {
+      TT_LOG_ERROR(
+          "[Worker {}] chdir to TT_METAL_HOME '{}' failed; kernels with "
+          "tt-metal-relative include paths will not compile",
+          workerId, metalHome);
+    }
   }
 
   const char* metalCacheEnv = std::getenv("TT_METAL_CACHE");
@@ -71,7 +75,6 @@ void exportWorkerEnvironment(int workerId,
       throttleEnv ? throttleEnv : "(unset)");
 }
 
-/** Build the runner for this worker's devices, or exit the child process. */
 std::unique_ptr<runners::IEmbeddingRunner> buildRunnerOrDie(
     int workerId, const tt::config::EmbeddingConfig& cfg,
     const std::string& visibleDevices) {
@@ -86,8 +89,6 @@ std::unique_ptr<runners::IEmbeddingRunner> buildRunnerOrDie(
   }
 }
 
-/** Parse one length-prefixed JSON payload (object or array) into a request
- * batch; nullopt on malformed JSON. */
 std::optional<std::vector<domain::EmbeddingRequest>> parseBatch(
     const std::string& requestJson, int workerId) {
   Json::Value reqJson;
@@ -117,8 +118,7 @@ std::optional<std::vector<domain::EmbeddingRequest>> parseBatch(
   return batch;
 }
 
-/** Serve loop: read a batch, run it, write the encoded responses. Returns
- * when the request pipe reports EOF (parent closed it — shutdown). */
+// Returns when the request pipe reports EOF (parent closed it — shutdown).
 void serveLoop(runners::IEmbeddingRunner& runner, int workerId, int readFd,
                int writeFd) {
   while (true) {
@@ -156,8 +156,6 @@ void serveLoop(runners::IEmbeddingRunner& runner, int workerId, int readFd,
     _exit(1);
   }
 
-  // Tell the parent we can serve; until this arrives the parent keeps the
-  // worker marked not-ready and won't dispatch to it.
   if (!pipeWrite(writeFd, WORKER_READY_SENTINEL,
                  sizeof(WORKER_READY_SENTINEL) - 1)) {
     TT_LOG_ERROR("[Worker {}] Failed to send ready signal", workerId);

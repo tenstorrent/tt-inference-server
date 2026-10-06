@@ -10,9 +10,9 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig
 from vllm.logger import init_logger
-from vllm.multimodal.inputs import MultiModalKwargs
+from vllm.multimodal.inputs import MultiModalKwargsItems as MultiModalKwargs
 from vllm.sequence import IntermediateTensors
-from vllm.utils import LayerBlockType, cdiv
+from vllm.utils.math_utils import cdiv
 from vllm.v1.kv_cache_interface import AttentionSpec, KVCacheConfig
 from vllm.v1.outputs import (
     EMPTY_MODEL_RUNNER_OUTPUT,
@@ -28,6 +28,10 @@ from tt_vllm_plugin.worker.tt_model_runner import (
     TTSamplingParams,
     sample_tokens,
 )
+from tt_vllm_plugin.worker.tt_worker import (
+    effective_data_parallel,
+    get_inprocess_data_parallel,
+)
 
 from vllm.tasks import GenerationTask, PoolingTask, SupportedTask
 from vllm.model_executor.models.interfaces_base import (
@@ -41,6 +45,91 @@ if TYPE_CHECKING:
 import numpy as np
 
 logger = init_logger("vllm.tt_vllm_plugin.v1.worker.tt_model_runner")
+
+
+def _seed_generator(seed: Optional[int]) -> Optional[torch.Generator]:
+    """Per-request RNG for ``SamplingParams.seed``, or None if unseeded.
+
+    A CPU generator because TT sampling runs on the host (see
+    ``sample_on_device_mode``); the device sampler has its own seed path that
+    this does not touch. The generator lives on the request's
+    ``CachedRequestState`` so its stream advances across decode steps and
+    follows the request through the batch-slot moves ``condense`` makes.
+    """
+    if seed is None:
+        return None
+    return torch.Generator().manual_seed(seed)
+
+
+def compute_sampled_logprobs(
+    logits: torch.Tensor,
+    sampled_ids: torch.Tensor,
+    num_logprobs: int,
+) -> LogprobsTensors:
+    """Log-softmax logprobs for the sampled tokens, plus the top ``num_logprobs``.
+
+    ``logits`` must be the model's RAW logits, i.e. before the temperature /
+    top-k / top-p warping ``sample_tokens`` applies. Those knobs shape which
+    token gets *drawn*; they are deliberately not applied to the value the token
+    is *scored* under. Async-RL importance sampling divides this behavior
+    logprob by one the trainer recomputes from its own raw logits, so the two
+    sides must share a basis or the ratio is biased.
+
+    Column 0 of the returned tensors is always the sampled token, matching the
+    vLLM convention that the sampled token precedes the top-k alternatives.
+    """
+    logprobs = torch.log_softmax(logits.float(), dim=-1)
+    sampled = sampled_ids.view(-1, 1).long()
+    sampled_logprobs = logprobs.gather(-1, sampled)
+
+    # Match vLLM: one-based ranks, counting ties as equally likely.
+    ranks = (logprobs >= sampled_logprobs).sum(dim=-1).to(torch.int32)
+
+    if num_logprobs > 0:
+        k = min(num_logprobs, logprobs.shape[-1])
+        topk_logprobs, topk_ids = torch.topk(logprobs, k, dim=-1)
+        token_ids = torch.cat([sampled.to(torch.int32), topk_ids.to(torch.int32)], -1)
+        values = torch.cat([sampled_logprobs, topk_logprobs], dim=-1)
+    else:
+        token_ids = sampled.to(torch.int32)
+        values = sampled_logprobs
+
+    return LogprobsTensors(
+        logprob_token_ids=token_ids,
+        logprobs=values,
+        selected_token_ranks=ranks,
+    )
+
+
+def empty_logprobs(num_rows: int, width: int) -> LogprobsTensors:
+    """Zeroed logprob tensors to scatter per-replica results into."""
+    return LogprobsTensors(
+        logprob_token_ids=torch.zeros((num_rows, width), dtype=torch.int32),
+        logprobs=torch.zeros((num_rows, width), dtype=torch.float32),
+        selected_token_ranks=torch.zeros(num_rows, dtype=torch.int32),
+    )
+
+
+def scatter_logprobs(
+    dst: LogprobsTensors, src: LogprobsTensors, rows: "list[int] | torch.Tensor"
+) -> None:
+    """Copy every row of ``src`` into the ``rows`` positions of ``dst``."""
+    dst.logprob_token_ids[rows] = src.logprob_token_ids
+    dst.logprobs[rows] = src.logprobs
+    dst.selected_token_ranks[rows] = src.selected_token_ranks
+
+
+def slice_logprobs(
+    logprobs: Optional[LogprobsTensors], start: int, end: int
+) -> Optional[LogprobsTensors]:
+    """Row-slice logprob tensors, propagating None."""
+    if logprobs is None:
+        return None
+    return LogprobsTensors(
+        logprob_token_ids=logprobs.logprob_token_ids[start:end],
+        logprobs=logprobs.logprobs[start:end],
+        selected_token_ranks=logprobs.selected_token_ranks[start:end],
+    )
 
 
 class TTModelRunner:
@@ -76,6 +165,10 @@ class TTModelRunner:
         # Whether to sample on device
         self.sample_on_device_mode = TTPlatform.sample_on_device_mode
 
+        # One-shot latch so the unsupported-seeding warning does not repeat
+        # every decode step.
+        self._warned_dp_seed = False
+
         logger.info(
             "TTModelRunner: trace_mode=%s, sample_on_device_mode=%s",
             self.trace_mode,
@@ -90,6 +183,32 @@ class TTModelRunner:
         # that have been scheduled before, only the diff is received from
         # the scheduler output.
         self.requests: dict[str, CachedRequestState] = {}
+
+        # ---- In-process (submesh) data-parallel ------------------------------
+        # When enabled (override_tt_config["tt_data_parallel"] > 1), a single
+        # EngineCore process owns all N submesh replicas and one scheduler; each
+        # step's batch is fanned out across the replicas here in the runner.
+        # Every other mode leaves _tt_dp == 1 and takes the unchanged code path.
+        self._tt_dp = get_inprocess_data_parallel(vllm_config)
+        if self._tt_dp > 1:
+            assert self.parallel_config.data_parallel_size == 1, (
+                "in-process submesh DP requires vLLM data_parallel_size == 1"
+            )
+            assert self.scheduler_config.max_num_seqs % self._tt_dp == 0, (
+                f"max_num_seqs ({self.scheduler_config.max_num_seqs}) must be a "
+                f"multiple of tt_data_parallel ({self._tt_dp}) so each submesh "
+                "replica gets an equal per-replica batch width."
+            )
+            # Stable request -> submesh replica pinning. Assigned once when a
+            # request first appears and held for its lifetime so its paged KV
+            # (written on replica m during prefill) is always read back on the
+            # same replica, independent of vLLM slot condensation.
+            self._req_to_mesh: dict[str, int] = {}
+        # Per-replica batch width. Equal to max_num_seqs when in-process DP is
+        # off, so decode padding / stride references below are byte-identical
+        # for the single-device and vLLM process-DP paths.
+        self._per_mesh_max_seqs = self.scheduler_config.max_num_seqs // self._tt_dp
+        self._decode_batch_width = self._per_mesh_max_seqs
 
     def load_model(self) -> None:
         logger.info("Loading TT model...")
@@ -151,7 +270,9 @@ class TTModelRunner:
         # min(number of devices, number of KV heads).
         # TODO: move this into model.allocate_kv_cache.
         model_config = self.model_config
-        data_parallel = self.parallel_config.data_parallel_size
+        # Effective replica count so per-submesh device count / KV shape is
+        # correct for both process DP and in-process submesh DP.
+        data_parallel = effective_data_parallel(self.vllm_config)
         num_devices = self.device_config.num_devices // data_parallel
         total_kv_heads = kv_cache_spec.num_kv_heads
         num_kv_heads = total_kv_heads // min(num_devices, total_kv_heads)
@@ -164,7 +285,7 @@ class TTModelRunner:
         )
         dtype = kv_cache_spec.dtype
         num_layers = model_config.get_num_layers_by_block_type(
-            self.parallel_config, LayerBlockType.attention
+            self.parallel_config, "attention"
         )
 
         # Allocate KV cache tensors.
@@ -194,13 +315,12 @@ class TTModelRunner:
             if req_index is not None:
                 removed_req_indices.append(req_index)
 
-        # Free the cached encoder outputs.
-        for req_id, input_id in scheduler_output.free_encoder_input_ids:
-            encoder_outputs = self.encoder_cache.get(req_id)
-            if encoder_outputs is not None:
-                encoder_outputs.pop(input_id, None)
-                if not encoder_outputs:
-                    self.encoder_cache.pop(req_id, None)
+        # Free the cached encoder outputs. Upstream switched the encoder
+        # cache to a flat mm_hash -> output map
+        # (SchedulerOutput.free_encoder_mm_hashes); TT is text-only so this
+        # is effectively a no-op, but must use the new field/key.
+        for mm_hash in scheduler_output.free_encoder_mm_hashes:
+            self.encoder_cache.pop(mm_hash, None)
 
         # Remove the unscheduled requests from the persistent batch.
         # NOTE(woosuk): The unscheduled requests are either preempted requests
@@ -236,13 +356,12 @@ class TTModelRunner:
                 prompt_token_ids=new_req_data.prompt_token_ids,
                 sampling_params=sampling_params,
                 pooling_params=None,
-                generator=None,
+                generator=_seed_generator(sampling_params.seed),
                 block_ids=new_req_data.block_ids,
                 num_computed_tokens=new_req_data.num_computed_tokens,
                 output_token_ids=[],
                 lora_request=new_req_data.lora_request,
-                mm_kwargs=getattr(new_req_data, "mm_kwargs", []),
-                mm_positions=getattr(new_req_data, "mm_positions", []),
+                mm_features=getattr(new_req_data, "mm_features", []),
             )
 
             req_ids_to_add.append(req_id)
@@ -253,17 +372,19 @@ class TTModelRunner:
             req_state = self.requests[req_id]
             num_computed_tokens = req_data.num_computed_tokens[i]
             new_block_ids = req_data.new_block_ids[i]
-            resumed_from_preemption = req_data.resumed_from_preemption[i]
+            resumed_from_preemption = req_id in req_data.resumed_req_ids
 
             # Update the cached states.
             req_state.num_computed_tokens = num_computed_tokens
             if not resumed_from_preemption:
-                # Append the new blocks to the existing block IDs.
-                for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
-                    block_ids.extend(new_ids)
+                if new_block_ids is not None:
+                    # Append the new blocks to the existing block IDs.
+                    for block_ids, new_ids in zip(req_state.block_ids, new_block_ids):
+                        block_ids.extend(new_ids)
             else:
                 # The request is resumed from preemption.
                 # Replace the existing block IDs with the new ones.
+                assert new_block_ids is not None
                 req_state.block_ids = new_block_ids
 
             req_index = self.input_batch.req_id_to_index.get(req_id)
@@ -276,7 +397,8 @@ class TTModelRunner:
 
             # Update the persistent batch.
             self.input_batch.num_computed_tokens_cpu[req_index] = num_computed_tokens
-            self.input_batch.block_table.append_row(new_block_ids, req_index)
+            if new_block_ids is not None:
+                self.input_batch.block_table.append_row(new_block_ids, req_index)
 
         # Add the new or resumed requests to the persistent batch.
         # The smaller empty indices are filled first.
@@ -295,15 +417,6 @@ class TTModelRunner:
         if removed_req_indices:
             self.input_batch.condense(removed_req_indices)
 
-    def _validate_mm_input(self, mm_input: MultiModalKwargs) -> None:
-        """Validate multi-modal input supports only single images."""
-        if list(mm_input.modalities) != ["image"]:
-            raise NotImplementedError("Only images are supported for now")
-        assert mm_input.get_item_count("image") == 1, (
-            "Request can contain multiple inputs, \
-            but each input can contain only one image!"
-        )
-
     def _gather_multi_modal_inputs(self, scheduler_output) -> dict:
         """
         Gather and batch multi-modal inputs from scheduled requests.
@@ -312,9 +425,9 @@ class TTModelRunner:
         Creates a list of pixel values for each request.
         Example:
         [
-          None, # for requests without mm_inputs
-          [pixel_values_1], # with single mm_input
-          [pixel_values_2, pixel_values_3, ...], # with multiple mm_inputs
+          None, # for requests without mm_features
+          [pixel_values_1], # with a single image feature
+          [pixel_values_2, pixel_values_3, ...], # with multiple image features
         ]
         """
 
@@ -324,14 +437,24 @@ class TTModelRunner:
             req_id = new_req_data.req_id
             req_state = self.requests[req_id]
 
-            if not req_state.mm_inputs:
+            if not req_state.mm_features:
                 multi_modal_kwargs["pixel_values"].append(None)
                 continue
 
             pv_array = []
-            for mm_input in req_state.mm_inputs:
-                self._validate_mm_input(mm_input)
-                pv_array.append(mm_input["pixel_values"])
+            for feature in req_state.mm_features:
+                if feature.modality != "image":
+                    raise NotImplementedError("Only images are supported for now")
+                if feature.data is None:
+                    raise RuntimeError(
+                        f"Multimodal feature {feature.identifier} has no input data"
+                    )
+                feature_data = feature.data.get_data()
+                if "pixel_values" not in feature_data:
+                    raise NotImplementedError(
+                        "Only image inputs with pixel_values are supported for now"
+                    )
+                pv_array.append(feature_data["pixel_values"])
 
             multi_modal_kwargs["pixel_values"].append(pv_array)
 
@@ -550,6 +673,7 @@ class TTModelRunner:
             sampling_metadata=sampling_metadata,
             multi_modal_kwargs=multi_modal_kwargs,
             cross_block_tables=None,  # Not yet supported in V1
+            sampling_batch_indices=[list(range(num_reqs))],
         )
 
     def build_model_input(
@@ -587,7 +711,7 @@ class TTModelRunner:
         """
 
         if model_input is None:
-            max_batch = int(self.scheduler_config.max_num_seqs)
+            max_batch = int(self._decode_batch_width)
             tokens = torch.zeros((max_batch, 1), dtype=torch.int32)
             positions = torch.full((max_batch,), -1, dtype=torch.int32)
             block_tables = torch.zeros(
@@ -647,7 +771,11 @@ class TTModelRunner:
         }
 
     def concat_dp_model_inputs(
-        self, inputs, is_decode: bool, max_blocks_decode_batch: Optional[int]
+        self,
+        inputs,
+        is_decode: bool,
+        max_blocks_decode_batch: Optional[int],
+        sampling_batch_indices: Optional[list[list[int]]] = None,
     ) -> "TTModelInput":
         """
         Concatenate a DP-sized set of inputs into a single TTModelInput.
@@ -688,7 +816,7 @@ class TTModelRunner:
             assert max_blocks_decode_batch is not None, (
                 "max_blocks_decode_batch must be provided for decode"
             )
-            B = int(self.scheduler_config.max_num_seqs)
+            B = int(self._decode_batch_width)
             W = max_blocks_decode_batch
             for int_inputs, float_inputs in zip(
                 inputs["int_inputs"], inputs["float_inputs"]
@@ -795,6 +923,7 @@ class TTModelRunner:
             sampling_metadata=sampling_metadata,
             multi_modal_kwargs=multi_modal_kwargs,
             cross_block_tables=None,  # Not yet supported in V1
+            sampling_batch_indices=sampling_batch_indices,
         )
         return merged
 
@@ -807,23 +936,290 @@ class TTModelRunner:
         """Execution path for non-DP case.
         Execute the model with the given scheduler output."""
 
+        # In-process submesh DP: one scheduler, N on-device replicas fed here.
+        if self._tt_dp > 1:
+            return self._execute_model_inprocess_dp(scheduler_output)
+
         # Update cached state and prepare model inputs
         model_input = self.build_model_input(scheduler_output)
         if model_input is None:
             return EMPTY_MODEL_RUNNER_OUTPUT
 
         # Only 1 DP rank here
-        sampled_token_ids = self.execute_with_model_input(model_input)[0]
-        output = self.generate_runner_output(sampled_token_ids)
+        sampled_per_dp, logprobs_per_dp = self.execute_with_model_input(model_input)
+        output = self.generate_runner_output(sampled_per_dp[0], logprobs_per_dp[0])
         return output
+
+    def _execute_model_inprocess_dp(
+        self, scheduler_output: "SchedulerOutput"
+    ) -> ModelRunnerOutput:
+        # 1. Finished and preempted requests no longer own valid KV on their
+        #    replica. Keep pins for running requests merely skipped this step.
+        released_req_ids = scheduler_output.finished_req_ids | (
+            getattr(scheduler_output, "preempted_req_ids", None) or set()
+        )
+        for req_id in released_req_ids:
+            self._req_to_mesh.pop(req_id, None)
+
+        # 2. Standard single-batch state update (unchanged vLLM bookkeeping).
+        self._update_states(scheduler_output)
+        if not scheduler_output.total_num_scheduled_tokens:
+            return EMPTY_MODEL_RUNNER_OUTPUT
+
+        input_batch = self.input_batch
+        num_reqs = input_batch.num_reqs
+        if num_reqs == 0:
+            return EMPTY_MODEL_RUNNER_OUTPUT
+
+        # 3. Group active slots by replica, classifying each as prefill or
+        #    decode. Each request is pinned to the least-loaded replica on first
+        #    sight (by req_id, stable across slot condensation) so its paged KV
+        #    is always read back on the replica it was written to.
+        scheduled_new_req_ids = {
+            req.req_id for req in scheduler_output.scheduled_new_reqs
+        }
+        prefill_idx_per_mesh: list[list[int]] = [[] for _ in range(self._tt_dp)]
+        decode_idx_per_mesh: list[list[int]] = [[] for _ in range(self._tt_dp)]
+        active_load = [0] * self._tt_dp
+        for mesh in self._req_to_mesh.values():
+            active_load[mesh] += 1
+        for req_idx in range(num_reqs):
+            req_id = input_batch.req_ids[req_idx]
+            mesh = self._req_to_mesh.get(req_id)
+            if mesh is None:
+                mesh = min(range(self._tt_dp), key=lambda m: active_load[m])
+                self._req_to_mesh[req_id] = mesh
+                active_load[mesh] += 1
+            assert active_load[mesh] <= self._per_mesh_max_seqs, (
+                f"replica {mesh} has {active_load[mesh]} active requests "
+                f"(> per-replica width {self._per_mesh_max_seqs}); concurrency "
+                "exceeded N*width or preemption skewed the pinning."
+            )
+            num_scheduled = scheduler_output.num_scheduled_tokens[req_id]
+            num_computed = input_batch.num_computed_tokens_cpu[req_idx]
+            is_full_hit = (
+                req_id in scheduled_new_req_ids
+                and num_scheduled == 1
+                and num_computed >= input_batch.num_prompt_tokens[req_idx] - 1
+            )
+            is_prefill = (req_id in scheduled_new_req_ids) and not is_full_hit
+            if is_prefill:
+                prefill_idx_per_mesh[mesh].append(req_idx)
+            else:
+                decode_idx_per_mesh[mesh].append(req_idx)
+
+        # Full page-table for the active batch, sliced to the constant width
+        # used everywhere else (required for ttnn tracing).
+        block_tables_full = input_batch.block_table[0].get_cpu_tensor()[
+            :num_reqs, : self.max_num_blocks_per_req
+        ]
+
+        combined = torch.zeros((num_reqs, 1), dtype=torch.int32)
+        combined_logprobs: Optional[LogprobsTensors] = None
+        logprob_rows_filled = 0
+
+        def absorb_logprobs(logprobs_per_mesh, idx_per_mesh) -> None:
+            """Scatter each replica's logprobs back into batch order."""
+            nonlocal combined_logprobs, logprob_rows_filled
+            for mesh, idxs in enumerate(idx_per_mesh):
+                lp = logprobs_per_mesh[mesh]
+                if lp is None or not idxs:
+                    continue
+                if combined_logprobs is None:
+                    combined_logprobs = empty_logprobs(num_reqs, lp.logprobs.shape[-1])
+                scatter_logprobs(combined_logprobs, lp, idxs)
+                logprob_rows_filled += len(idxs)
+
+        # 4a. PREFILL pass (replica-parallel over meshes with prefill work).
+        if any(prefill_idx_per_mesh):
+            prefill_inputs = [
+                self._build_mesh_prefill_input(input_batch, block_tables_full, idxs)
+                for idxs in prefill_idx_per_mesh
+            ]
+            merged = self.concat_dp_model_inputs(
+                prefill_inputs,
+                is_decode=False,
+                max_blocks_decode_batch=None,
+                sampling_batch_indices=prefill_idx_per_mesh,
+            )
+            sampled_per_mesh, logprobs_per_mesh = self.execute_with_model_input(merged)
+            for mesh, idxs in enumerate(prefill_idx_per_mesh):
+                sampled = sampled_per_mesh[mesh]
+                for local_j, req_idx in enumerate(idxs):
+                    combined[req_idx] = sampled[local_j]
+            absorb_logprobs(logprobs_per_mesh, prefill_idx_per_mesh)
+
+        # 4b. DECODE pass (replica-parallel over meshes with decode work).
+        if any(decode_idx_per_mesh):
+            max_blocks = self.max_num_blocks_per_req
+            int_inputs = []
+            float_inputs = []
+            for idxs in decode_idx_per_mesh:
+                mi = self._build_mesh_decode_input(input_batch, block_tables_full, idxs)
+                gathered = self.build_dp_decode_gather_input(mi, max_blocks)
+                int_inputs.append(gathered["int_inputs"])
+                float_inputs.append(gathered["float_inputs"])
+            gather = {
+                "int_inputs": torch.stack(int_inputs),
+                "float_inputs": torch.stack(float_inputs),
+            }
+            merged = self.concat_dp_model_inputs(
+                gather,
+                is_decode=True,
+                max_blocks_decode_batch=max_blocks,
+                sampling_batch_indices=decode_idx_per_mesh,
+            )
+            sampled_per_mesh, logprobs_per_mesh = self.execute_with_model_input(merged)
+            for mesh, idxs in enumerate(decode_idx_per_mesh):
+                sampled = sampled_per_mesh[mesh]
+                for local_j, req_idx in enumerate(idxs):
+                    combined[req_idx] = sampled[local_j]
+            absorb_logprobs(logprobs_per_mesh, decode_idx_per_mesh)
+
+        # Every request lands in exactly one of the two passes, so a short count
+        # means some replica sampled on device and produced no host logits. Emit
+        # nothing rather than a half-populated tensor.
+        if combined_logprobs is not None and logprob_rows_filled != num_reqs:
+            combined_logprobs = None
+
+        # 5. Standard single-batch output emission.
+        return self.generate_runner_output(combined, combined_logprobs)
+
+    def _mesh_sampling_params(self, input_batch, idxs: list[int]) -> TTSamplingParams:
+        """Require uniform temperature, top-k and top-p within a replica."""
+        i0 = idxs[0]
+        assert all(
+            input_batch.sampling.temperature_cpu[i]
+            == input_batch.sampling.temperature_cpu[i0]
+            and input_batch.sampling.top_k_cpu[i] == input_batch.sampling.top_k_cpu[i0]
+            and input_batch.sampling.top_p_cpu[i] == input_batch.sampling.top_p_cpu[i0]
+            for i in idxs
+        ), "Sampling params must be the same for all selected slots within a replica"
+        return TTSamplingParams(
+            temperature=input_batch.sampling.temperature_cpu[i0],
+            top_k=input_batch.sampling.top_k_cpu[i0],
+            top_p=input_batch.sampling.top_p_cpu[i0],
+        )
+
+    def _row_generators(self, batch_indices):
+        """Per-row RNGs for a block of logits, aligned to ``batch_indices``.
+
+        ``batch_indices`` are persistent-batch slots in logits-row order. The
+        RNG is looked up by request id rather than held per slot, so a request
+        keeps its own stream when ``condense`` moves it to a different slot.
+
+        Returns None when no row is seeded, which keeps the sampler on its
+        batched draw. Also returns None under process data parallelism: the
+        merged batch spans every process's requests but ``self.input_batch``
+        only holds this rank's. In-process TT submesh DP keeps explicit slot
+        mappings and therefore supports per-request seeds.
+        """
+        process_dp = self.parallel_config.data_parallel_size
+        if process_dp > 1:
+            if not self._warned_dp_seed:
+                self._warned_dp_seed = True
+                logger.warning(
+                    "Ignoring sampling seeds: per-request seeding is not "
+                    "supported with data parallelism (dp=%d).",
+                    process_dp,
+                )
+            return None
+
+        req_ids = self.input_batch.req_ids
+        generators = []
+        any_seeded = False
+        for idx in batch_indices:
+            req_id = req_ids[idx] if idx < len(req_ids) else None
+            state = self.requests.get(req_id) if req_id is not None else None
+            generator = state.generator if state is not None else None
+            any_seeded |= generator is not None
+            generators.append(generator)
+        return generators if any_seeded else None
+
+    def _build_mesh_prefill_input(
+        self, input_batch, block_tables_full: torch.Tensor, idxs: list[int]
+    ) -> Optional[TTModelInput]:
+        """Pure-prefill TTModelInput for the given replica slots (variable width,
+        packed contiguously). Mirrors the pure-prefill branch of
+        _prepare_model_inputs. Returns None if the replica has no prefill."""
+        if not idxs:
+            return None
+        idx_t = torch.tensor(idxs, dtype=torch.long)
+        max_prompt_tokens = int(max(input_batch.num_prompt_tokens[i] for i in idxs))
+        input_tokens = input_batch.token_ids_cpu_tensor[idx_t, :max_prompt_tokens]
+        prompt_lens = input_batch.num_prompt_tokens[idxs]
+        block_tables = block_tables_full[idx_t]
+        return TTModelInput(
+            input_tokens=input_tokens,
+            input_positions=0,
+            prompt_lens=prompt_lens,
+            seq_groups=None,
+            block_tables=block_tables,
+            unpadded_batch_size=len(idxs),
+            perform_device_sampling=None,
+            tt_sampling_params=self._mesh_sampling_params(input_batch, idxs),
+            compat_sampling_used=False,
+            sampling_metadata=None,
+            multi_modal_kwargs={},
+            cross_block_tables=None,
+            sampling_batch_indices=[list(idxs)],
+        )
+
+    def _build_mesh_decode_input(
+        self, input_batch, block_tables_full: torch.Tensor, idxs: list[int]
+    ) -> Optional[TTModelInput]:
+        """Pure-decode TTModelInput for the given replica slots, padded to the
+        per-replica width. Mirrors the pure-decode branch of
+        _prepare_model_inputs. Returns None if the replica has no decode."""
+        if not idxs:
+            return None
+        idx_t = torch.tensor(idxs, dtype=torch.long)
+        positions = input_batch.num_tokens[idxs] - 1
+        positions_t = torch.from_numpy(positions).to(torch.int32)
+        input_tokens = input_batch.token_ids_cpu_tensor[idx_t, positions_t].view(-1, 1)
+        block_tables = block_tables_full[idx_t]
+
+        # Pad to the fixed per-replica width (TT models require a fixed batch).
+        pad = self._per_mesh_max_seqs - len(idxs)
+        if pad > 0:
+            input_tokens = torch.cat(
+                [input_tokens, torch.zeros(pad, 1, dtype=torch.int32)]
+            )
+            positions_t = torch.cat(
+                [positions_t, torch.ones(pad, dtype=torch.int32) * -1]
+            )
+            block_tables = torch.cat(
+                [
+                    block_tables,
+                    torch.zeros(pad, block_tables.shape[1], dtype=block_tables.dtype),
+                ]
+            )
+        return TTModelInput(
+            input_tokens=input_tokens,
+            input_positions=positions_t,
+            prompt_lens=None,
+            seq_groups=None,
+            block_tables=block_tables,
+            unpadded_batch_size=len(idxs),
+            perform_device_sampling=None,
+            tt_sampling_params=self._mesh_sampling_params(input_batch, idxs),
+            compat_sampling_used=False,
+            sampling_metadata=None,
+            multi_modal_kwargs={},
+            cross_block_tables=None,
+            sampling_batch_indices=[list(idxs)],
+        )
 
     def execute_with_model_input(
         self,
         model_input: TTModelInput,
-    ) -> list[torch.Tensor]:
+    ) -> tuple[list[torch.Tensor], list[Optional[LogprobsTensors]]]:
         """
         Execute with a prebuilt input, supporting mixed batches.
-        Returns per-DP sampled ids without mutating internal state.
+        Returns per-DP sampled ids plus per-DP sampled-token logprobs, without
+        mutating internal state. A logprobs entry is None when the batch asked
+        for none, or when sampling ran on device and the host never sees the
+        logits to score against.
         In DP case, called by DP rank 0 to run merged batch.
         Note: currently does not support chunked prefill.
         """
@@ -831,11 +1227,25 @@ class TTModelRunner:
         if not isinstance(batch_size_per_dp, list):
             batch_size_per_dp = [batch_size_per_dp]
         if not any(bs > 0 for bs in batch_size_per_dp):
-            return [torch.tensor([], dtype=torch.int32)] * len(batch_size_per_dp)
+            num_dp = len(batch_size_per_dp)
+            return [torch.tensor([], dtype=torch.int32)] * num_dp, [None] * num_dp
+
+        # One uniform width for the batch (see InputBatch.max_num_logprobs).
+        # None short-circuits every logprob computation below, so a run that
+        # requests no logprobs behaves exactly as it did before.
+        num_logprobs = self.input_batch.max_num_logprobs
 
         sampling_params_per_dp = model_input.tt_sampling_params
         if not isinstance(sampling_params_per_dp, list):
             sampling_params_per_dp = [sampling_params_per_dp]
+        if model_input.sampling_batch_indices is None:
+            flat_sampling_batch_indices = list(range(model_input.input_tokens.shape[0]))
+        else:
+            flat_sampling_batch_indices = [
+                idx
+                for rank_indices in model_input.sampling_batch_indices
+                for idx in rank_indices
+            ]
 
         # Check if batch is mixed
         # Mixed batch: prompt_lens is a list with both positive (prefill) and -1 (decode) values
@@ -882,7 +1292,7 @@ class TTModelRunner:
             # Handle empty_slots for DP if needed
             if len(batch_size_per_dp) > 1:
                 # Calculate empty_slots for prefill requests only
-                stride = int(self.scheduler_config.max_num_seqs)
+                stride = int(self._decode_batch_width)
                 empty_slots = []
                 # For mixed batches, we need to map prefill indices to global indices
                 # This is complex with DP, so we'll pass all slots for now
@@ -893,6 +1303,11 @@ class TTModelRunner:
                 prefill_kwargs["empty_slots"] = empty_slots
 
             prefill_output = self.model.prefill_forward(**prefill_kwargs)
+
+            # prefill_output may be a tuple of (logits, logprobs); v1 currently
+            # doesn't handle logprobs from TT models, so keep only the logits.
+            if isinstance(prefill_output, tuple):
+                prefill_output = prefill_output[0]
 
             # Process decode requests
             num_decode = len(decode_indices)
@@ -905,7 +1320,7 @@ class TTModelRunner:
 
             # Pad decode batch to max_num_reqs if needed (TT models require fixed batch size)
             # TODO: Remove once TT models can support arbitrary batch sizes.
-            max_num_reqs = self.scheduler_config.max_num_seqs
+            max_num_reqs = self._decode_batch_width
             if num_decode < max_num_reqs:
                 batch_pad = max_num_reqs - num_decode
                 # Pad tokens with zeros (shape should be [batch_pad, 1] to match decode_tokens)
@@ -953,12 +1368,18 @@ class TTModelRunner:
             enc_dec_kwargs: dict[str, Any] = {}
             decode_output = self.model.decode_forward(**decode_kwargs, **enc_dec_kwargs)
 
+            # decode_output may be a tuple of (logits, logprobs); v1 currently
+            # doesn't handle logprobs from TT models, so keep only the logits.
+            if isinstance(decode_output, tuple):
+                decode_output = decode_output[0]
+
             # Combine outputs in original batch order
             # Prefill outputs: shape [num_prefill, seq_len, vocab_size] or [num_prefill] if sampled
             # Decode outputs: shape [num_decode, vocab_size] or [num_decode] if sampled
             total_batch_size = model_input.input_tokens.shape[0]
 
             # Handle prefill output based on sample_on_device_mode
+            prefill_logprobs = None
             if self.sample_on_device_mode == "all":
                 # Already sampled tokens
                 prefill_sampled = prefill_output.view(-1, 1).to(torch.int32)
@@ -974,10 +1395,23 @@ class TTModelRunner:
                         "Sampling params required for prefill in mixed batch"
                     )
                 prefill_sampled = (
-                    sample_tokens(prefill_logits, prefill_sp)
+                    sample_tokens(
+                        prefill_logits,
+                        prefill_sp,
+                        generators=self._row_generators(
+                            [
+                                flat_sampling_batch_indices[i]
+                                for i in prefill_indices.tolist()
+                            ]
+                        ),
+                    )
                     .view(-1, 1)
                     .to(torch.int32)
                 )
+                if num_logprobs is not None:
+                    prefill_logprobs = compute_sampled_logprobs(
+                        prefill_logits, prefill_sampled, num_logprobs
+                    )
 
             # Handle decode output based on sample_on_device_mode and actual shape
             # Only use the first num_decode outputs (ignore padding)
@@ -988,6 +1422,7 @@ class TTModelRunner:
                 decode_output_actual.dim() == 2 and decode_output_actual.shape[-1] == 1
             )
 
+            decode_logprobs = None
             if (
                 self.sample_on_device_mode == "all"
                 or self.sample_on_device_mode == "decode_only"
@@ -1017,27 +1452,58 @@ class TTModelRunner:
                         "Sampling params required for decode in mixed batch"
                     )
                 decode_sampled = (
-                    sample_tokens(decode_logits, decode_sp).view(-1, 1).to(torch.int32)
+                    sample_tokens(
+                        decode_logits,
+                        decode_sp,
+                        generators=self._row_generators(
+                            [
+                                flat_sampling_batch_indices[i]
+                                for i in decode_indices.tolist()
+                            ]
+                        ),
+                    )
+                    .view(-1, 1)
+                    .to(torch.int32)
                 )
+                if num_logprobs is not None:
+                    decode_logprobs = compute_sampled_logprobs(
+                        decode_logits, decode_sampled, num_logprobs
+                    )
 
             # Combine in original order
             combined_output = torch.zeros((total_batch_size, 1), dtype=torch.int32)
             combined_output[prefill_indices] = prefill_sampled
             combined_output[decode_indices] = decode_sampled
 
+            # Same scatter for logprobs. Only assembled when both halves produced
+            # them; if either sampled on device there is no consistent set to
+            # emit for the batch, so fall back to None.
+            combined_logprobs = None
+            if prefill_logprobs is not None and decode_logprobs is not None:
+                combined_logprobs = empty_logprobs(
+                    total_batch_size, prefill_logprobs.logprobs.shape[-1]
+                )
+                scatter_logprobs(combined_logprobs, prefill_logprobs, prefill_indices)
+                scatter_logprobs(combined_logprobs, decode_logprobs, decode_indices)
+
             # Split by DP rank for return format
             # Batch is organized by DP rank: first batch_size_per_dp[0] requests are DP rank 0, etc.
             sampled_token_ids_per_dp = []
+            logprobs_per_dp: list[Optional[LogprobsTensors]] = []
             start_idx = 0
             for dp_rank, sz in enumerate(batch_size_per_dp):
                 if sz <= 0:
                     sampled_token_ids_per_dp.append(torch.tensor([], dtype=torch.int32))
+                    logprobs_per_dp.append(None)
                 else:
                     end_idx = start_idx + sz
                     sampled_token_ids_per_dp.append(combined_output[start_idx:end_idx])
+                    logprobs_per_dp.append(
+                        slice_logprobs(combined_logprobs, start_idx, end_idx)
+                    )
                     start_idx = end_idx
 
-            return sampled_token_ids_per_dp
+            return sampled_token_ids_per_dp, logprobs_per_dp
 
         else:
             # Pure batch: use existing logic
@@ -1055,7 +1521,7 @@ class TTModelRunner:
                 if len(batch_size_per_dp) > 1:
                     # TODO: the model should only require DP ranks, but passing
                     # "global" user ids instead for backwards compatibility.
-                    stride = int(self.scheduler_config.max_num_seqs)
+                    stride = int(self._decode_batch_width)
                     empty_slots = []
                     for dp_rank, sz in enumerate(batch_size_per_dp):
                         for i in range(int(sz)):
@@ -1096,32 +1562,52 @@ class TTModelRunner:
                 tt_out = tt_out[0]
 
             sampled_token_ids_per_dp: list[torch.Tensor] = []
-            start = 0
+            logprobs_per_dp: list[Optional[LogprobsTensors]] = []
+            # Decode ranks occupy fixed-width segments (rank r -> rows
+            # [r*width, ...)) so address them positionally, robust to empty
+            # ranks (sz==0). Prefill rows are packed contiguously.
+            prefill_start = 0
             for dp_rank, sz in enumerate(batch_size_per_dp):
                 if sz <= 0:
                     sampled_token_ids_per_dp.append(torch.tensor([], dtype=torch.int32))
+                    logprobs_per_dp.append(None)
                     continue
+                if is_decode:
+                    seg_start = dp_rank * self._decode_batch_width
+                else:
+                    seg_start = prefill_start
+                    prefill_start += sz
+                rank_logprobs = None
                 if not self.sample_on_device_mode or (
                     self.sample_on_device_mode == "decode_only" and not is_decode
                 ):
-                    logits = tt_out[start : start + sz, -1, :]
+                    logits = tt_out[seg_start : seg_start + sz, -1, :]
+                    if model_input.sampling_batch_indices is None:
+                        rank_batch_indices = range(seg_start, seg_start + sz)
+                    else:
+                        rank_batch_indices = model_input.sampling_batch_indices[dp_rank]
+                        assert len(rank_batch_indices) == sz
                     next_token_ids = sample_tokens(
-                        logits, sampling_params_per_dp[dp_rank]
+                        logits,
+                        sampling_params_per_dp[dp_rank],
+                        generators=self._row_generators(rank_batch_indices),
                     )
+                    if num_logprobs is not None:
+                        rank_logprobs = compute_sampled_logprobs(
+                            logits, next_token_ids, num_logprobs
+                        )
                 else:
-                    next_token_ids = tt_out[start : start + sz]
+                    next_token_ids = tt_out[seg_start : seg_start + sz]
                 sampled_token_ids_per_dp.append(next_token_ids.view(sz, 1))
+                logprobs_per_dp.append(rank_logprobs)
 
-                if is_decode:
-                    # Fixed stride segments per DP rank for decode
-                    start += self.scheduler_config.max_num_seqs
-                else:
-                    # Prefill packed contiguously
-                    start += sz
+            return sampled_token_ids_per_dp, logprobs_per_dp
 
-            return sampled_token_ids_per_dp
-
-    def generate_runner_output(self, sampled_token_ids: torch.Tensor):
+    def generate_runner_output(
+        self,
+        sampled_token_ids: torch.Tensor,
+        logprobs: Optional[LogprobsTensors] = None,
+    ):
         # Cache the sampled tokens in the model runner, so that the scheduler
         # doesn't need to send them back.
         assert sampled_token_ids.shape[0] == self.input_batch.num_reqs, (
@@ -1153,14 +1639,14 @@ class TTModelRunner:
         for req_id in self.input_batch.req_ids[: self.input_batch.num_reqs]:
             prompt_logprobs_dict[req_id] = None
 
-        # Note: currently does not support speculative decoding, log probs,
-        # or pooling.
+        # Note: currently does not support speculative decoding, prompt logprobs,
+        # or pooling. Sampled-token logprobs are supported for host-side sampling
+        # (ModelRunnerOutput carries them as lists, hence tolists()).
         return ModelRunnerOutput(
             req_ids=self.input_batch.req_ids,
             req_id_to_index=self.input_batch.req_id_to_index,
             sampled_token_ids=sampled_token_ids.tolist(),
-            spec_token_ids=None,
-            logprobs=None,
+            logprobs=logprobs.tolists() if logprobs is not None else None,
             prompt_logprobs_dict=prompt_logprobs_dict,
             pooler_output=[],
         )

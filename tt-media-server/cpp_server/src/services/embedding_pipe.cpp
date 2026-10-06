@@ -36,7 +36,8 @@ std::vector<uint8_t> pipeReadBinary(int fd) {
 std::string pipeReadString(int fd) {
   uint32_t len = 0;
   ssize_t n = read(fd, &len, sizeof(len));
-  if (n <= 0) return {};
+  if (n != sizeof(len) || len > tt::config::defaults::EMBEDDING_MAX_PIPE_BYTES)
+    return {};
 
   std::string data(len, '\0');
   size_t total = 0;

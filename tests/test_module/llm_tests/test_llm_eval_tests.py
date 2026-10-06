@@ -9,6 +9,7 @@ orchestration, and the ``EvalsWorkflow`` LLM override.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -23,6 +24,13 @@ from test_module.llm_tests import llm_eval_tests as mod
 from workflows.workflow_types import EvalLimitMode, WorkflowVenvType
 
 _MOD = "test_module.llm_tests.llm_eval_tests"
+
+
+def tmp_output_path():
+    import tempfile
+    from pathlib import Path
+
+    return Path(tempfile.mkdtemp())
 
 
 # --- fixtures ----------------------------------------------------------------
@@ -81,13 +89,24 @@ def _diffusiongemma_eval_task(task_name):
     return next(task for task in tasks if task.task_name == task_name)
 
 
-def _build_eval_test_command(task):
+def _llama_1b_eval_task(task_name):
+    tasks = _eval_config_map["meta-llama/Llama-3.2-1B-Instruct"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
+def _build_eval_test_command(
+    task,
+    *,
+    hf_model_repo="google/diffusiongemma-26B-A4B-it",
+    model_id="diffusiongemma-26B-A4B-it",
+    max_context=262144,
+):
     model_spec = SimpleNamespace(
-        model_id="diffusiongemma-26B-A4B-it",
-        model_name="diffusiongemma-26B-A4B-it",
-        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        model_id=model_id,
+        model_name=model_id,
+        hf_model_repo=hf_model_repo,
         device_model_spec=SimpleNamespace(
-            max_context=262144,
+            max_context=max_context,
             max_concurrency=1,
             eval_max_retries=0,
         ),
@@ -100,10 +119,97 @@ def _command_gen_kwargs(command):
     return dict(item.split("=", 1) for item in raw.split(","))
 
 
+def _command_model_kwargs(command):
+    raw = command[command.index("--model_args") + 1]
+    return dict(item.split("=", 1) for item in raw.split(","))
+
+
 # --- eval command and model-specific request contracts -----------------------
 
 
 class TestEvalCommand:
+    @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
+    @pytest.mark.parametrize("value", [0, -1, True, 1.5])
+    def test_invalid_execution_policy(self, field, value):
+        with pytest.raises(ValueError, match=field):
+            EvalTask(task_name="aime25", **{field: value})
+
+    def test_task_attempt_budget_overrides_device_default(self):
+        # max_attempts is a TOTAL attempt count including the first, which is
+        # what docs/eval_execution_budgets.md promises. lm-eval's max_retries
+        # counts only the retries after the first attempt, so the total must be
+        # converted rather than passed through.
+        task = EvalTask(task_name="aime25", max_attempts=1)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+        assert "max_retries=0" in model_args
+
+    def test_attempt_budget_is_a_total_not_a_retry_count(self):
+        task = EvalTask(task_name="aime25", max_attempts=3)
+        command = _build_eval_test_command(task)
+        model_args = command[command.index("--model_args") + 1]
+        assert "max_retries=2" in model_args
+
+    def test_text_harness_context_comes_from_selected_device_spec(self):
+        command = _build_eval_test_command(
+            EvalTask(task_name="long_context", min_context_required=16384),
+            max_context=32768,
+        )
+
+        assert _command_model_kwargs(command)["max_length"] == str(32768 - 64)
+
+    @pytest.mark.parametrize(
+        "task,max_context,error",
+        [
+            (
+                EvalTask(task_name="undersized", min_context_required=16384),
+                8192,
+                "device max_context=8192",
+            ),
+        ],
+    )
+    def test_text_harness_rejects_context_contract_mismatch(
+        self, task, max_context, error
+    ):
+        with pytest.raises(ValueError, match=error):
+            _build_eval_test_command(task, max_context=max_context)
+
+    def test_task_max_length_above_device_context_is_bound_to_the_device(self):
+        task = EvalTask(task_name="oversized", model_kwargs={"max_length": 65536})
+
+        command = _build_eval_test_command(task, max_context=40960)
+
+        assert _command_model_kwargs(command)["max_length"] == str(40960 - 64)
+        assert task.model_kwargs["max_length"] == 65536
+
+    def test_explicit_task_max_length_may_be_below_device_minimum(self):
+        task = EvalTask(
+            task_name="task_specific_truncation",
+            min_context_required=16384,
+            model_kwargs={"max_length": 8192},
+        )
+
+        command = _build_eval_test_command(task, max_context=32768)
+
+        assert _command_model_kwargs(command)["max_length"] == "8192"
+
+    def test_text_harness_requires_a_declared_device_context(self):
+        with pytest.raises(ValueError, match="requires device_model_spec.max_context"):
+            _build_eval_test_command(EvalTask(task_name="unbounded"), max_context=None)
+
+    def test_output_clamp_uses_explicit_harness_context_without_mutating_task(self):
+        task = EvalTask(
+            task_name="bounded_generation",
+            model_kwargs={"max_length": 4096},
+            gen_kwargs={"max_gen_toks": 8192},
+        )
+
+        command = _build_eval_test_command(task, max_context=32768)
+
+        assert _command_gen_kwargs(command)["max_gen_toks"] == "3072"
+        assert task.model_kwargs == {"max_length": 4096}
+        assert task.gen_kwargs == {"max_gen_toks": 8192}
+
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
         command = _build_eval_test_command(task)
@@ -204,6 +310,31 @@ class TestDiffusionGemmaEvalContract:
         assert config.agent_timeout_sec == 45 * 60
         assert config.agent_kwargs["model_info"]["max_output_tokens"] == 4 * 1024
         assert config.agent_kwargs["llm_kwargs"]["max_tokens"] == 4 * 1024
+
+
+class TestLlama1BLongBenchEvalContract:
+    @pytest.mark.parametrize("task_name", ["longbench_code_e", "longbench_fewshot_e"])
+    def test_code_and_fewshot_match_raw_completion_reference(self, task_name):
+        task = _llama_1b_eval_task(task_name)
+        command = _build_eval_test_command(
+            task,
+            hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
+            model_id="Llama-3.2-1B-Instruct",
+            max_context=32768,
+        )
+
+        assert task.use_chat_api is False
+        assert task.apply_chat_template is False
+        assert "--apply_chat_template" not in command
+        assert "/v1/completions" in command[command.index("--model_args") + 1]
+        # One paged-KV block below max_context: prompt + max_tokens stays inside.
+        assert _command_model_kwargs(command)["max_length"] == str(32768 - 64)
+        assert _command_gen_kwargs(command) == {
+            "stream": "False",
+            "temperature": "0",
+            "max_gen_toks": "512",
+            "seed": "42",
+        }
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------
@@ -359,18 +490,136 @@ class TestResultLoading:
     def test_merge_strips_alias_and_dedupes(self, tmp_path):
         self._write(tmp_path / "results_1.json", "gpqa", 0.9)
         self._write(tmp_path / "results_2.json", "mmlu", 0.7)
-        results = mod.merge_eval_results(
+        results, counts = mod.load_eval_results(
             [str(tmp_path / "results_1.json"), str(tmp_path / "results_2.json")]
         )
         assert set(results) == {"gpqa", "mmlu"}
         assert results["gpqa"]["acc,none"] == 0.9
         assert "alias" not in results["gpqa"]
+        assert counts == {}
+
+    @pytest.mark.parametrize("new_count", [10, None])
+    def test_latest_metrics_and_count_come_from_the_same_file(
+        self, tmp_path, new_count
+    ):
+        old = tmp_path / "results_old.json"
+        new = tmp_path / "results_new.json"
+        for path, metric, count, modified in (
+            (old, 0.5, 100, 1),
+            (new, 0.9, new_count, 2),
+        ):
+            self._write(path, "gpqa", metric)
+            data = json.loads(path.read_text())
+            if count is not None:
+                data["n-samples"] = {"gpqa": {"effective": count}}
+            path.write_text(json.dumps(data))
+            os.utime(path, (modified, modified))
+
+        with patch.object(mod.json, "load", wraps=json.load) as read:
+            results, counts = mod.load_eval_results([str(old), str(new)])
+
+        assert read.call_count == 2
+        assert results == {"gpqa": {"acc,none": 0.9}}
+        assert counts == ({"gpqa": new_count} if new_count is not None else {})
 
 
 # --- orchestration -----------------------------------------------------------
 
 
 class TestRunLLMEval:
+    @pytest.mark.parametrize(
+        "bad_result",
+        [
+            "{",
+            "{}",
+            "[]",
+            '{"results": []}',
+            '{"results": {"gpqa": null}}',
+            json.dumps(
+                {
+                    "results": {"gpqa": {"acc,none": 0.9}},
+                    "configs": {"gpqa": {"task": "wrong-task", "dataset_path": "d"}},
+                }
+            ),
+            '{"results": {}, "n-samples": [1]}',
+        ],
+        ids=[
+            "truncated",
+            "empty",
+            "list",
+            "bad-results",
+            "bad-metrics",
+            "task-mismatch",
+            "bad-counts",
+        ],
+    )
+    def test_bad_result_does_not_reuse_old_scores_or_stop_later_tasks(
+        self, tmp_path, bad_result, caplog
+    ):
+        from workflow_module import BlockAccumulator
+
+        ctx = _ctx()
+        ctx.model_spec.model_id = "test-llm"
+        ctx.output_path = str(tmp_path)
+        tasks = [_task(name, _score(reference=90.0)) for name in ("gpqa", "mmlu")]
+        result_dir = tmp_path / "eval_test-llm" / "org__test-llm"
+        result_dir.mkdir(parents=True)
+        old_result = result_dir / "results_old.json"
+        old_result.write_text(
+            json.dumps(
+                {
+                    "results": {"gpqa": {"acc,none": 0.95}},
+                    "configs": {"gpqa": {"task": "gpqa", "dataset_path": "d"}},
+                }
+            )
+        )
+        accumulator = BlockAccumulator()
+        ran = []
+        attempt_dirs = []
+
+        def run_task(_ctx, task, _token, *, output_path):
+            ran.append(task.task_name)
+            attempt_dirs.append(output_path)
+            result_dir = output_path / "eval_test-llm" / "org__test-llm"
+            result_dir.mkdir(parents=True)
+            if task.task_name == "gpqa":
+                (result_dir / "results_gpqa.json").write_text(bad_result)
+                return 1
+            # The failed task must already be recorded before the next starts.
+            assert len(accumulator.blocks) == 1
+            assert accumulator.blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+            (result_dir / "results_mmlu.json").write_text(
+                json.dumps(
+                    {
+                        "results": {"mmlu": {"acc,none": 0.95}},
+                        "configs": {"mmlu": {"task": "mmlu", "dataset_path": "d"}},
+                        "n-samples": {"mmlu": {"effective": 10}},
+                    }
+                )
+            )
+            return 0
+
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=tasks), patch(
+            f"{_MOD}.HttpServerController", return_value=server
+        ), patch(f"{_MOD}._run_eval_task", side_effect=run_task), patch(
+            f"{_MOD}.accept_blocks", side_effect=accumulator.accept
+        ):
+            blocks = mod.run_llm_eval(ctx)
+
+        assert ran == ["gpqa", "mmlu"]
+        assert len(set(attempt_dirs)) == 2
+        assert old_result.exists()
+        assert blocks == accumulator.blocks
+        assert blocks[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "no eval results parsed (rc=1)" in blocks[0].data["error"]
+        assert blocks[1].data["accuracy_check"] == ReportCheckTypes.PASS
+        assert blocks[1].data["score"] == 95.0
+        assert "mean_seconds_per_task" in blocks[1].data
+        assert "results_gpqa.json" in caplog.text
+
     def _run(self, tasks, *, healthy=True, blocks=None, run_rc=0, results=None):
         server = MagicMock()
         server.wait_for_healthy.return_value = healthy
@@ -379,11 +628,11 @@ class TestRunLLMEval:
             f"{_MOD}.HttpServerController", return_value=server
         ), patch(f"{_MOD}._run_eval_task", return_value=run_rc) as run_task, patch(
             f"{_MOD}.discover_eval_results", return_value=["f.json"]
-        ), patch(f"{_MOD}.merge_eval_results", return_value=results or {}), patch(
+        ), patch(f"{_MOD}.load_eval_results", return_value=(results or {}, {})), patch(
             f"{_MOD}.blocks_for_task", return_value=blocks if blocks is not None else []
-        ) as score_task, patch(f"{_MOD}.collect_sample_counts", return_value={}), patch(
-            f"{_MOD}.accept_blocks"
-        ) as accept, patch(f"{_MOD}.block_id", return_value=""):
+        ) as score_task, patch(f"{_MOD}.accept_blocks") as accept, patch(
+            f"{_MOD}.block_id", return_value=""
+        ):
             out = mod.run_llm_eval(_ctx())
         return out, run_task, score_task, accept
 
@@ -416,8 +665,18 @@ class TestRunLLMEval:
         )
         assert len(out) == 1
         assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
-        assert "no eval results parsed" in out[0].data["error"]
+        # main settled on this wording for a non-deadline subprocess failure
+        # (see test_bad_result_does_not_reuse_old_scores_or_stop_later_tasks);
+        # this PR only adds the rc=124 deadline case on top of it.
+        assert "no eval results parsed (rc=1)" in out[0].data["error"]
         run_task.assert_called_once()
+
+    def test_deadline_cannot_score_partial_results_as_pass(self):
+        out, _, score_task, _ = self._run([_task()], blocks=[MagicMock()], run_rc=124)
+        score_task.assert_not_called()
+        assert out[0].data["subprocess_rc"] == 124
+        assert out[0].data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert "incomplete" in out[0].data["error"]
 
     def test_min_context_skip(self):
         # Task needs more context than the device provides: not run, but now a
@@ -429,6 +688,63 @@ class TestRunLLMEval:
         assert len(out) == 1
         assert out[0].data["status"] == TestStatus.SKIP.value
         assert "requires max_context >= 200000" in out[0].data["reason"]
+
+    def _run_killed_on_second_task(self, tasks, blocks_by_task):
+        """Run ``tasks``; the second ``_run_eval_task`` call is a GitHub cancel."""
+        server = MagicMock()
+        server.wait_for_healthy.return_value = True
+        server.get_health.return_value = SimpleNamespace(status_code=200)
+        run_calls = []
+
+        def run_eval_task(_ctx, task, _token, *, output_path):
+            run_calls.append(task.task_name)
+            if len(run_calls) == 2:
+                raise KeyboardInterrupt  # SIGINT from a GitHub cancel
+            return 0
+
+        with patch(f"{_MOD}.get_llm_eval_tasks", return_value=tasks), patch(
+            f"{_MOD}.HttpServerController", return_value=server
+        ), patch(f"{_MOD}._run_eval_task", side_effect=run_eval_task), patch(
+            f"{_MOD}.discover_eval_results", return_value=["f.json"]
+        ), patch(f"{_MOD}.load_eval_results", return_value=({}, {})), patch(
+            f"{_MOD}.blocks_for_task",
+            side_effect=lambda _ctx, task, *_a, **_k: blocks_by_task[task.task_name],
+        ), patch(f"{_MOD}.accept_blocks") as accept, patch(
+            f"{_MOD}.block_id", return_value=""
+        ), pytest.raises(KeyboardInterrupt):
+            mod.run_llm_eval(_ctx())
+        return accept
+
+    def test_each_task_is_scored_and_accepted_before_the_next_one_runs(self):
+        """Accepting checkpoints the report, so a cancel during task N must find
+        tasks 1..N-1 already scored and accepted -- not waiting on a post-loop
+        parse that never happens."""
+        gpqa = MagicMock()
+        accept = self._run_killed_on_second_task(
+            [_task("gpqa"), _task("mmlu")], {"gpqa": [gpqa], "mmlu": [MagicMock()]}
+        )
+        accept.assert_called_once()
+        assert accept.call_args.args[0] == [gpqa]
+
+    def test_skipped_task_is_accepted_as_it_is_skipped(self):
+        accept = self._run_killed_on_second_task(
+            [
+                _task("longctx", min_context_required=200000),
+                _task("gpqa"),
+                _task("mmlu"),
+            ],
+            {"gpqa": [MagicMock()], "mmlu": [MagicMock()]},
+        )
+        accepted = [b for call in accept.call_args_list for b in call.args[0]]
+        assert accepted[0].data["status"] == TestStatus.SKIP.value
+
+    def test_skip_block_keeps_its_place_in_task_order(self):
+        # blocks_for_task is mocked to [], so ran tasks become FAIL blocks; the
+        # SKIP for "b" must sit between "a" and "c", in config order.
+        out, _run_task, _score_task, _accept = self._run(
+            [_task("a"), _task("b", min_context_required=200000), _task("c")]
+        )
+        assert [blk.data.get("status") for blk in out][1] == TestStatus.SKIP.value
 
 
 # --- EvalsWorkflow override --------------------------------------------------
@@ -462,6 +778,12 @@ class TestEvalsWorkflowLLMOverride:
         assert outcomes[0].exit_code == 0
         assert outcomes[0].block_kind is None
 
+    def test_incomplete_subprocess_is_nonzero_workflow(self):
+        wf = self._wf("llm")
+        block = SimpleNamespace(kind="evals", data={"subprocess_rc": 124})
+        with patch(f"{_MOD}.run_llm_eval", return_value=[block]):
+            assert wf.run_tasks()[0].exit_code == 1
+
     def test_llm_raises_fails_task(self):
         wf = self._wf("llm")
         with patch(f"{_MOD}.run_llm_eval", side_effect=RuntimeError("boom")):
@@ -477,3 +799,196 @@ class TestEvalsWorkflowLLMOverride:
         run.assert_not_called()
         dispatch.assert_called_once()
         assert outcomes == ["media-outcome"]
+
+
+class TestDeadlineReachesRunCommand:
+    """Regression guard: a declared deadline must reach proc.run_command.
+
+    wall_clock_timeout_seconds was previously declared, validated, documented
+    and unit-tested for validation only, yet never passed to run_command -- so
+    the bounded path in proc.py was unreachable and the field had no effect.
+    """
+
+    def _invoke(self, task):
+        seen = {}
+
+        def fake_run_command(**kwargs):
+            seen.update(kwargs)
+            return 0
+
+        with patch(f"{_MOD}.build_eval_command", return_value=["echo", "x"]), patch(
+            f"{_MOD}.run_command", side_effect=fake_run_command
+        ):
+            rc = mod._run_eval_task(_ctx(), task, "", output_path=tmp_output_path())
+        return rc, seen
+
+    def test_declared_deadline_is_passed_through(self):
+        rc, seen = self._invoke(
+            EvalTask(task_name="aime25", wall_clock_timeout_seconds=3600)
+        )
+        assert rc == 0
+        assert seen.get("timeout_seconds") == 3600
+
+    def test_absent_deadline_leaves_execution_unbounded(self):
+        rc, seen = self._invoke(EvalTask(task_name="aime25"))
+        assert rc == 0
+        # Passing timeout_seconds=None would still select the bounded POSIX
+        # path, so unbounded callers must omit the argument entirely.
+        assert "timeout_seconds" not in seen
+
+
+def test_harness_window_keeps_a_block_of_headroom_below_max_context():
+    """A long prompt must land strictly inside the served context.
+
+    lm-eval truncates to max_length - 1 - max_gen_toks, so max_length ==
+    max_context puts prompt + max_tokens at max_context - 1 (the aime25 empty-
+    response boundary on TT). The window keeps one paged-KV block of slack.
+    """
+    command = _build_eval_test_command(
+        EvalTask(task_name="long_context", min_context_required=16384),
+        max_context=131072,
+    )
+    max_length = int(_command_model_kwargs(command)["max_length"])
+    assert max_length == 131072 - 64
+
+
+@pytest.mark.parametrize("impl_id", ["tt_transformers", "llama31_8b_qb2"])
+def test_llama31_longbench_preserves_generation_settings(
+    impl_id, tmp_path, monkeypatch
+):
+    from llm_module.eval_configs import get_llm_eval_tasks
+    from workflows.model_spec import load_templates_from_yaml
+    from workflows.utils import get_repo_root_path
+    from workflows.workflow_types import DeviceTypes
+
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    model_spec = next(
+        spec
+        for template in templates
+        if template.impl.impl_id == impl_id
+        for spec in template.expand_to_specs()
+        if spec.hf_model_repo == "meta-llama/Llama-3.1-8B-Instruct"
+        and spec.device_type == DeviceTypes.P300X2
+    )
+    tokenizer_calls = []
+
+    def pinned_tokenizer(spec, output):
+        tokenizer_calls.append((spec, output))
+        return "/verified/tokenizer"
+
+    monkeypatch.setattr(f"{_MOD}.resolve_tokenizer", pinned_tokenizer)
+    tasks = get_llm_eval_tasks(model_spec)
+    longbench = {t.task_name: t for t in tasks if t.task_name.startswith("longbench_")}
+    references = {
+        "longbench_code_e": 48.12,
+        "longbench_fewshot_e": 63.34,
+        "longbench_multi_e": 20.84,
+        "longbench_single_e": 22.22,
+        "longbench_summarization_e": 26.09,
+        "longbench_synthetic_e": 14.86,
+    }
+    assert set(longbench) == set(references)
+    for name, task in longbench.items():
+        tokenizer = mod._prepare_eval_tokenizer(
+            SimpleNamespace(model_spec=model_spec), task, tmp_path
+        )
+        command = build_eval_command(
+            task,
+            model_spec,
+            DeviceTypes.P300X2,
+            tmp_path,
+            8000,
+            tokenizer_path=tokenizer,
+        )
+        assert "--apply_chat_template" not in command
+        assert "--limit" not in command
+        assert command[command.index("--model") + 1] == "local-completions"
+        assert (
+            "base_url=http://127.0.0.1:8000/v1/completions"
+            in command[command.index("--model_args") + 1]
+        )
+        args = dict(
+            item.split("=", 1)
+            for item in command[command.index("--model_args") + 1].split(",")
+        )
+        assert args["max_length"] == str(model_spec.device_model_spec.max_context - 64)
+        if impl_id == "llama31_8b_qb2":
+            assert args["tokenizer"] == "/verified/tokenizer"
+            assert args["num_concurrent"] == "32"
+            assert "max_length" not in task.model_kwargs  # Do not change shared tasks.
+        else:
+            assert "tokenizer" not in args
+        gen_kwargs = _command_gen_kwargs(command)
+        assert gen_kwargs["temperature"] == "0"
+        assert gen_kwargs["max_gen_toks"] == "512"
+        assert task.score.gpu_reference_score == references[name]
+        assert task.score.tolerance == 0.05
+    assert len(tokenizer_calls) == (6 if impl_id == "llama31_8b_qb2" else 0)
+
+
+@pytest.mark.parametrize(
+    "task_name,venv",
+    [
+        ("meta_ifeval", WorkflowVenvType.EVALS_META),
+        ("other_task", WorkflowVenvType.EVALS_COMMON),
+    ],
+)
+def test_qb2_tokenizer_pinning_preserves_upstream_other_eval_context(
+    task_name, venv, tmp_path
+):
+    spec = SimpleNamespace(
+        hf_model_repo="org/model",
+        model_id="model",
+        impl=SimpleNamespace(impl_id="llama31_8b_qb2"),
+        device_model_spec=SimpleNamespace(max_context=131072, max_concurrency=32),
+    )
+    task = EvalTask(task_name=task_name, workflow_venv_type=venv, include_path=None)
+    with patch(f"{_MOD}.resolve_tokenizer") as resolve:
+        assert (
+            mod._prepare_eval_tokenizer(
+                SimpleNamespace(model_spec=spec), task, tmp_path
+            )
+            is None
+        )
+        command = build_eval_command(task, spec, None, tmp_path, 8000)
+    resolve.assert_not_called()
+    args = command[command.index("--model_args") + 1]
+    assert "max_length=131008" in args
+    assert ",tokenizer=" not in args
+
+
+@pytest.mark.parametrize("max_context", [None, 0, "invalid", True])
+def test_longbench_rejects_invalid_context(max_context, tmp_path):
+    spec = SimpleNamespace(
+        hf_model_repo="org/model",
+        model_id="model",
+        impl=SimpleNamespace(impl_id="llama31_8b_qb2"),
+        device_model_spec=SimpleNamespace(max_context=max_context, max_concurrency=32),
+    )
+    task = EvalTask(task_name="longbench_single_e", gen_kwargs={})
+    with pytest.raises(ValueError, match="(max_context|positive integer)"):
+        build_eval_command(task, spec, None, tmp_path, 8000)
+
+
+def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
+    spec = SimpleNamespace(
+        hf_model_repo="org/model",
+        model_id="model",
+        impl=SimpleNamespace(impl_id="llama31_8b_qb2"),
+        device_model_spec=SimpleNamespace(
+            max_context=131072,
+            max_concurrency=32,
+            vllm_args={"revision": "a" * 40, "tokenizer_revision": "a" * 40},
+        ),
+    )
+    task = EvalTask(task_name="longbench_single_e")
+    with patch(
+        f"{_MOD}.resolve_tokenizer",
+        side_effect=ValueError("Tokenizer files differ"),
+    ):
+        with pytest.raises(ValueError, match="Tokenizer files differ"):
+            mod._prepare_eval_tokenizer(
+                SimpleNamespace(model_spec=spec), task, tmp_path
+            )

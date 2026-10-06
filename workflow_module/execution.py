@@ -26,6 +26,7 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    spec_tasks_explained_by_waivers,
     task_failure_blockers,
 )
 from test_module.task_types import MediaTaskType
@@ -250,7 +251,13 @@ class WorkflowExecution(ABC):
         )
         try:
             self.prepare()
-            task_outcomes = self.run_tasks()
+            # Checkpoint on every accept: a cancel never reaches the report
+            # phase below, so what the tasks produced must already be on disk.
+            previous_hook = self.accumulator.set_on_accept(self.checkpoint)
+            try:
+                task_outcomes = self.run_tasks()
+            finally:
+                self.accumulator.set_on_accept(previous_hook)
         except Exception as e:
             self.logger.exception(
                 "Workflow %s aborted during task phase: %s", self.name, e
@@ -287,7 +294,17 @@ class WorkflowExecution(ABC):
                 error=str(e),
             )
 
-        failed_tasks = [outcome for outcome in task_outcomes if not outcome.succeeded]
+        # A task whose non-zero exit only reflects known_issues-waived failures
+        # (see spec_tasks_explained_by_waivers) is not a failed task.
+        waived_tasks = getattr(self, "_waived_task_types", set())
+        failed_tasks = [
+            outcome
+            for outcome in task_outcomes
+            if not outcome.succeeded
+            and not (
+                outcome.block_kind is not None and outcome.task_type in waived_tasks
+            )
+        ]
         return_code = 0 if accepted and not failed_tasks else 1
         if failed_tasks:
             self.logger.error(
@@ -358,8 +375,17 @@ class WorkflowExecution(ABC):
         accepted, blockers, categories = acceptance_criteria_check(
             schema, known_issues=self._known_issues(), model_status=model_status
         )
+        waived_tasks = spec_tasks_explained_by_waivers(
+            categories, schema, known_issues=self._known_issues()
+        )
+        # run() reads this so the workflow exit agrees with the verdict.
+        self._waived_task_types = waived_tasks
         crash_blockers = task_failure_blockers(
-            (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
+            (
+                (o.task_type, o.exit_code, o.block_kind is not None)
+                for o in task_outcomes
+            ),
+            waived_tasks=waived_tasks,
         )
         if crash_blockers:
             blockers = {**blockers, **crash_blockers}
@@ -446,6 +472,20 @@ class WorkflowExecution(ABC):
         self.logger.info("Wrote markdown: %s", result.markdown_path)
         self.logger.info("Wrote json:     %s", result.json_path)
         return result
+
+    def checkpoint(self) -> bool:
+        """Write a partial report for the Blocks accepted so far.
+
+        Same paths and metadata as :meth:`generate_report`, marked
+        ``report_partial``; the end-of-run report overwrites it.
+        """
+        from .checkpoint import checkpoint_report
+
+        return checkpoint_report(
+            Path(self.ctx.output_path).parent,
+            accumulator=self.accumulator,
+            prepare=self.inject_metadata,
+        )
 
 
 __all__ = [

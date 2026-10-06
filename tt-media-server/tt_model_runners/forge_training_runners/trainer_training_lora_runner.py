@@ -220,7 +220,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 checkpoint_path="",
             ),
             framework="pytorch",
-            seed=0,
+            seed=request.seed,
             deterministic=False,
             use_tt=True,
             mesh_shape=None,
