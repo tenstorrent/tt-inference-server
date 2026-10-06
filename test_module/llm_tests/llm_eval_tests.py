@@ -21,8 +21,9 @@ from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
+from utils.pinned_artifacts import get_pinned_revision, resolve_tokenizer
 from workflow_module import accept_blocks
-from workflow_module.engine_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode, WorkflowVenvType
 from workflow_module.proc import run_command
 from workflow_module.target_pack import get_target_pack
 
@@ -35,6 +36,10 @@ logger = logging.getLogger(__name__)
 # value comes from DeviceModelSpec.tensor_cache_timeout (first-compile/warmup for
 # large forge LLMs can exceed 1200s); bump it per model in the model spec.
 _DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
+
+
+# `timeout` convention: a process killed at its deadline exits 124.
+_DEADLINE_RC = 124
 
 
 def _limit_mode(ctx: MediaContext):
@@ -358,9 +363,23 @@ def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> B
 # --- running one task --------------------------------------------------------
 
 
+def _prepare_eval_tokenizer(ctx, task, output_path: Path):
+    if (
+        task.task_name.startswith("longbench_")
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        and get_pinned_revision(ctx.model_spec)
+    ):
+        return resolve_tokenizer(
+            ctx.model_spec,
+            output_path / f"eval_{ctx.model_spec.model_id}" / "longbench_protocol",
+        )
+    return None
+
+
 def _run_eval_task(
     ctx: MediaContext, task, auth_token: str, *, output_path: Path
 ) -> int:
+    tokenizer = _prepare_eval_tokenizer(ctx, task, output_path)
     cmd = build_eval_command(
         task,
         ctx.model_spec,
@@ -369,6 +388,7 @@ def _run_eval_task(
         ctx.server_port,
         runtime_config=ctx.runtime_config,
         deploy_url=ctx.server_host,
+        tokenizer_path=tokenizer,
     )
     env = dict(os.environ)
     if auth_token:
@@ -392,7 +412,23 @@ def _run_eval_task(
             "task=%s will preserve reasoning_content in sample logs.", task.task_name
         )
     logger.info("Running eval task=%s", task.task_name)
-    return run_command(command=cmd, logger=logger, env=env)
+    # Bound the whole subprocess tree when the task declares a deadline.
+    # Without passing this through, wall_clock_timeout_seconds is validated and
+    # documented but never reaches proc.run_command, so the bounded path is
+    # unreachable and the field has no effect at all.
+    timeout_seconds = getattr(task, "wall_clock_timeout_seconds", None)
+    if timeout_seconds is None:
+        return run_command(command=cmd, logger=logger, env=env)
+    logger.info(
+        "task=%s bounded at %ss wall clock; exceeding it yields rc=%d and an "
+        "incomplete task, never a score.",
+        task.task_name,
+        timeout_seconds,
+        _DEADLINE_RC,
+    )
+    return run_command(
+        command=cmd, logger=logger, env=env, timeout_seconds=timeout_seconds
+    )
 
 
 def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
@@ -474,9 +510,26 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         started_at = time.perf_counter()
         rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
         elapsed_seconds = time.perf_counter() - started_at
-        task_blocks = _score_task(
-            ctx, task, output_path=output_path, rc=rc, elapsed_seconds=elapsed_seconds
-        )
+        if rc == _DEADLINE_RC:
+            # A task killed at its deadline is incomplete, not a score. Never
+            # let it reach the scorer: whatever partial result files landed on
+            # disk would otherwise be graded as if the run had finished.
+            failure = _fail_block(
+                ctx,
+                task,
+                f"execution deadline exceeded; incomplete (rc={rc}); "
+                "partial files preserved",
+            )
+            failure.data["subprocess_rc"] = rc
+            task_blocks = [failure]
+        else:
+            task_blocks = _score_task(
+                ctx,
+                task,
+                output_path=output_path,
+                rc=rc,
+                elapsed_seconds=elapsed_seconds,
+            )
         _accept(task_blocks, envelope)
         blocks.extend(task_blocks)
 

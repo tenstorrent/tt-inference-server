@@ -335,3 +335,29 @@ class TestAcceptanceIntegration:
         # the should-priority goodput failure is waived, not a blocker
         assert not any("goodput" in key for key in blockers)
         assert category.failed == 1
+
+
+@pytest.mark.parametrize("invalid", [None, float("nan"), float("inf"), -1.0, 0.0, "50"])
+@pytest.mark.parametrize(
+    "raw_key,field",
+    [
+        ("mean_ttft_ms", "ttft"),
+        ("tput_user", "tput_user"),
+        ("tps_output_throughput", "tput"),
+    ],
+)
+def test_partial_report_cannot_pass_with_a_missing_or_invalid_required_metric(
+    invalid, raw_key, field
+):
+    targets = {
+        "target": PerformanceTarget(
+            ttft_ms=100.0, tput_user=100.0, tput=100.0, tolerance=0.05
+        )
+    }
+    record = _record(ttft=50.0, tpot=None, tput=125.0, tput_user=125.0)
+    record[raw_key] = invalid
+    checks, verdict = build_target_checks(
+        targets, record, require_complete_metrics=True
+    )
+    assert checks["target"][f"{field}_check"] == ReportCheckTypes.FAIL
+    assert verdict == ReportCheckTypes.FAIL

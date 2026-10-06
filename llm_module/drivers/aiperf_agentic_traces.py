@@ -277,6 +277,10 @@ def build_aiperf_cmd(
         str(artifact_dir),
         "--public-dataset",
         run.public_dataset,
+        # Fixed count: processors auto-scaled after the dataset is configured
+        # never receive DatasetConfiguredNotification and abort mid-run.
+        "--record-processor-service-count",
+        "8",
     ]
     # Consumes multiple values after one flag, matching AIPerf's
     # ``consume_multiple`` parameter style.
@@ -293,7 +297,6 @@ def build_aiperf_cmd(
         cmd.extend(["--goodput", goodput.strip()])
     if run.streaming:
         cmd.append("--streaming")
-        cmd.extend(["--prefill-concurrency", str(run.concurrency)])
     if run.use_server_token_count:
         cmd.append("--use-server-token-count")
     if not run.gpu_telemetry:
@@ -301,6 +304,10 @@ def build_aiperf_cmd(
         cmd.append("--no-gpu-telemetry")
     if run.tokenizer_trust_remote_code:
         cmd.append("--tokenizer-trust-remote-code")
+    if run.trace_idle_gap_cap_seconds is not None:
+        cmd.extend(
+            ["--trace-idle-gap-cap-seconds", f"{run.trace_idle_gap_cap_seconds:g}"]
+        )
     if auth_token:
         cmd.extend(["--api-key", auth_token])
     return cmd
@@ -823,6 +830,7 @@ def _build_payload(
         "failed_request_threshold": run.failed_request_threshold,
         "trajectory_start_min_ratio": run.trajectory_start_min_ratio,
         "trajectory_start_max_ratio": run.trajectory_start_max_ratio,
+        "trace_idle_gap_cap_seconds": run.trace_idle_gap_cap_seconds,
         "artifact_dir": str(artifact_dir),
         "metadata": dict(run.metadata or {}),
         **metrics,

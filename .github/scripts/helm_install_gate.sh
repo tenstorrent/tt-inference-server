@@ -21,7 +21,7 @@
 set -euo pipefail
 
 CHART="${CHART:-charts/tt-inference-server}"
-MODEL="${MODEL:-gemma-3-1b-it}"     # small single-board model — the shape is what matters, not the weights
+MODEL="${MODEL:-Llama-3.2-1B-Instruct}"  # small single-board model — the shape is what matters, not the weights
 DEVICE="${DEVICE:-n150}"            # 1 board => DRA count 1
 DEVICE_CLASS="${DEVICE_CLASS:-tenstorrent.com}"
 # Pinned so the gate can't drift when upstream retags. Only the PodMonitor CRD

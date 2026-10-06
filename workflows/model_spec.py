@@ -98,7 +98,9 @@ model_performance_reference = read_performance_reference_json()
 
 
 def get_perf_reference_map(
-    hf_model_repo: str, perf_targets_map: Dict[str, float]
+    hf_model_repo: str,
+    perf_targets_map: Dict[str, float],
+    impl_id: Optional[str] = None,
 ) -> Dict[DeviceTypes, List[BenchmarkTaskParams]]:
     perf_reference_map: Dict[DeviceTypes, List[BenchmarkTaskParams]] = {}
     model_data = model_performance_reference.get(hf_model_repo, {})
@@ -109,6 +111,10 @@ def get_perf_reference_map(
         params_list: List[BenchmarkTaskParams] = []
 
         for bench in benchmarks:
+            # Measured references can differ between implementations of one
+            # checkpoint. Unscoped entries retain their shared legacy behavior.
+            if bench.get("impl") is not None and bench["impl"] != impl_id:
+                continue
             # Parse performance targets under the "reference" key.
             target_dict = {}
             targets = bench.get("targets", {})
@@ -273,6 +279,12 @@ llama3_70b_galaxy_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/llama3_70b_galaxy",
 )
+llama31_8b_qb2_impl = ImplSpec(
+    impl_id="llama31_8b_qb2",
+    impl_name="llama31-8b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/llama31_8b_qb2",
+)
 qwen3_32b_galaxy_impl = ImplSpec(
     impl_id="qwen3_32b_galaxy",
     impl_name="qwen3-32b-galaxy",
@@ -428,6 +440,13 @@ qwen38_27b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/qwen38_27b_qb2",
 )
+# C++ Blaze media server. Remote SUPER_CLUSTER catalog entries use this.
+blaze_impl = ImplSpec(
+    impl_id="blaze",
+    impl_name="blaze",
+    repo_url="https://github.com/tenstorrent/tt-inference-server",
+    code_path="tt-media-server/cpp_server",
+)
 
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
@@ -437,6 +456,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
+    "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
@@ -450,6 +470,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
+    "blaze": blaze_impl,
 }
 
 
@@ -1074,8 +1095,11 @@ class ModelSpecTemplate:
     supported_modalities: List[str] = field(default_factory=lambda: ["text"])
     repacked: int = 0
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
+    # Dev entries may select an already-reviewed image only by immutable OCI
+    # digest. Tags and source/build release pins remain prod-only.
+    docker_image: Optional[str] = None
     # True when the catalog explicitly pinned the image via `version` or
-    # `docker_image` (prod templates always do; dev never does). When neither is
+    # `docker_image`. When neither is
     # set, no docker tag is synthesized, so these specs are excluded from
     # IMAGE_PINNED_MODEL_SPECS (the list the helm chart generator consumes).
     # Set by _build_template from YAML key presence; defaults True for directly
@@ -1134,7 +1158,7 @@ class ModelSpecTemplate:
 
         for weight in self.weights:
             template_reference_map = get_perf_reference_map(
-                weight, self.perf_targets_map
+                weight, self.perf_targets_map, impl_id=self.impl.impl_id
             )
             for device_model_spec in self.device_model_specs:
                 device_type = device_model_spec.device
@@ -1158,6 +1182,7 @@ class ModelSpecTemplate:
                             **self.perf_targets_map,
                             **device_model_spec.perf_targets_map,
                         },
+                        impl_id=self.impl.impl_id,
                     )
                 else:
                     perf_reference_map = template_reference_map
@@ -1222,7 +1247,6 @@ class ProdModelSpecTemplate(ModelSpecTemplate):
     tt_metal_commit: str
     version: str
     vllm_commit: Optional[str] = None
-    docker_image: Optional[str] = None
 
 
 # Catalog data lives in workflows/model_specs/catalog.yaml.
@@ -1276,6 +1300,14 @@ def _build_template(data: Dict, env: str = "prod") -> "ModelSpecTemplate":
     with the offending weights for a readable, catalog-scoped message.
     """
     kwargs = dict(data)
+    if env != "prod" and (docker_image := data.get("docker_image")) is not None:
+        if (
+            not isinstance(docker_image, str)
+            or re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", docker_image) is None
+        ):
+            raise ValueError(
+                "dev docker_image must be an immutable OCI repo@sha256 digest"
+            )
     impl_id = kwargs["impl"]
     if impl_id not in _IMPL_REGISTRY:
         raise ValueError(
