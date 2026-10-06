@@ -7533,7 +7533,7 @@
                     }
                 },
                 "_comment": [
-                    "Measured 2026-10-06 on bh-glx-exp-b03u14, DP=4 x TP=8, prefix caching on, decode graphs 1,4,8,32 with GEMMA4_ROPE_PERUSER_B1=1 and GEMMA4_SDPA_MAX_CORES_PER_HEAD=3 (reproducible seeding; tt-metal#59300). Single-user rows at 64K/128K carry the pinned-split cost."
+                    "Measured 2026-10-06 on bh-glx-exp-b03u14, DP=4 x TP=8, prefix caching on, decode graphs 1,4,8,32 with one RoPE path (GEMMA4_ROPE_PERUSER_B1=1) and the decode SDPA split pinned (GEMMA4_SDPA_MAX_CORES_PER_HEAD=3) so seeded requests reproduce across graphs (tt-metal#59300). The pin lowers a lone user's 64K and 128K decode; 2+ users per engine are unchanged."
                 ]
             },
             {
