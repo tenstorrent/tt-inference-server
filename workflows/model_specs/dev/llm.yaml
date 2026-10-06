@@ -694,13 +694,19 @@ templates:
         GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
         GEMMA4_KV_BFP8: "1"
         # Decode graphs for 1, 4, 8 and 32 residents: the fastest set measured (2-8 residents per
-        # engine decode up to 2x faster than in the 32-row graph alone). Known limitation until
-        # tt-metal#59300 lands a reduction order fixed by the KV chunks: the decode SDPA splits its
-        # cores per padded row, so the same seeded request completes differently depending on
-        # which graph (and, with active-row allocation, how many other rows) it decoded with;
-        # spec test_non_uniform_seeding fails at DP=4 (5 unique among 16 same-seed requests).
-        # A single "32" graph passes the case at a 28-55% single-resident decode cost (2026-10-05).
+        # engine decode up to 2x faster than in the 32-row graph alone). Seeded requests must
+        # reproduce whichever graph they decode in (spec test_non_uniform_seeding at DP=4), so two
+        # things are held identical across the graphs (tt-metal#59300, measured 2026-10-06 22/22):
+        #  - RoPE: the batch-1 graph used a different op than the wider graphs (PCC 0.99999, not
+        #    bitwise); GEMMA4_ROPE_PERUSER_B1 keeps every graph on the elementwise form.
+        #  - Decode SDPA core split: the op splits its cores per padded row, so each graph reduced
+        #    a row in a different order; GEMMA4_SDPA_MAX_CORES_PER_HEAD pins the split to the
+        #    widest graph's value (3 on 110 cores, one kv head per device). Cost: a lone user's
+        #    decode is -29% at 64K and -43% at 128K prompts (none at <=4K, 8 users unchanged);
+        #    a reduction order fixed by the KV chunks (kernel follow-up) removes that cost.
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
         # Prefix caching needs vLLM-managed sliding KV (hybrid kv-cache groups), so the
         # bounded device rings stay off. Traced chunked prefill still carries one chunk
@@ -1182,6 +1188,8 @@ templates:
       default_impl: true
       env_vars:
         GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"  # as on the 31B Galaxy entry (see its comment on seeding)
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"  # 110 cores / 32 rows, one kv head per device at TP=8
         GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
         # 12 x 256K users per engine (2x the 31B pool: 8 full layers x 8 KV heads vs 10 x 16);
