@@ -315,4 +315,14 @@ download_tokenizer \
     "json" \
     "true"
 
+# BGE large v1.5 (public embedding model). The server itself never tokenizes
+# in embedding mode (the runner receives raw text); this tokenizer is cached
+# for the CI bench client (vllm bench serve) so the embedding mock benchmark
+# doesn't hit HuggingFace rate limits at run time.
+download_tokenizer \
+    "BAAI/bge-large-en-v1.5" \
+    "https://huggingface.co/BAAI/bge-large-en-v1.5/resolve/main" \
+    "false" \
+    '{"model_type":"bert","architectures":["BertModel"]}'
+
 echo ""

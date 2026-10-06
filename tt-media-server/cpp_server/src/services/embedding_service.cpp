@@ -11,10 +11,13 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <sstream>
 #include <thread>
+#include <vector>
 
 #include "config/defaults.hpp"
 #include "config/settings.hpp"
@@ -306,6 +309,8 @@ struct EmbeddingService::Impl {
     // All consumers are gone; anything still queued would leave its HTTP
     // client hanging forever, so answer every request with an error now.
     drainQueue("Server shutting down");
+    // One line for the whole run; the bench job parses it to verify batching.
+    dispatchSummary.logSummary();
     {
       std::lock_guard lock(workersMutex);
       workers.clear();
@@ -328,6 +333,85 @@ struct EmbeddingService::Impl {
       drained.pop();
     }
   }
+
+  /**
+   * Host-path observability: per-phase timings and batch-size counts
+   * aggregated across every dispatch thread, reported as ONE summary line at
+   * shutdown. Per-batch lines stay DEBUG (DispatchStats below): with
+   * microsecond batches, INFO-per-batch logging would distort the
+   * measurement itself. The bench job parses the summary to assert that full
+   * batches dominated under load.
+   */
+  struct DispatchSummary {
+    // Phase sample vectors, one entry per dispatched batch (milliseconds).
+    struct Phase {
+      const char* name;
+      std::vector<double> samplesMs;
+    };
+
+    std::mutex mutex;
+    Phase phases[5] = {{"queue_wait", {}},
+                       {"batch_collect", {}},
+                       {"batch_json_encode", {}},
+                       {"pipe_round_trip", {}},
+                       {"completion", {}}};
+    std::map<size_t, uint64_t> batchSizeCounts;
+
+    void record(size_t batchSize, double queueWaitMs, double collectMs,
+                double encodeMs, double pipeMs, double completeMs) {
+      std::lock_guard lock(mutex);
+      phases[0].samplesMs.push_back(queueWaitMs);
+      phases[1].samplesMs.push_back(collectMs);
+      phases[2].samplesMs.push_back(encodeMs);
+      phases[3].samplesMs.push_back(pipeMs);
+      phases[4].samplesMs.push_back(completeMs);
+      batchSizeCounts[batchSize] += 1;
+    }
+
+    static double meanOf(const std::vector<double>& v) {
+      if (v.empty()) return 0.0;
+      double sum = 0.0;
+      for (double x : v) sum += x;
+      return sum / static_cast<double>(v.size());
+    }
+
+    static double p99Of(std::vector<double> v) {
+      if (v.empty()) return 0.0;
+      std::sort(v.begin(), v.end());
+      const size_t idx =
+          (v.size() * 99 + 99) / 100 == 0 ? 0 : (v.size() * 99 + 99) / 100 - 1;
+      return v[std::min(idx, v.size() - 1)];
+    }
+
+    /** One line, parseable: phases as name=mean/p99 ms, then the batch-size
+     * histogram sorted by size descending (e.g. "batches: 580x8 15x6"). */
+    void logSummary() {
+      std::lock_guard lock(mutex);
+      if (batchSizeCounts.empty()) return;
+
+      std::ostringstream line;
+      uint64_t batches = 0;
+      uint64_t requests = 0;
+      for (const auto& [size, count] : batchSizeCounts) {
+        batches += count;
+        requests += count * size;
+      }
+      line << "[EmbeddingService] Dispatch summary: batches=" << batches
+           << " requests=" << requests;
+      for (auto& phase : phases) {
+        line << " " << phase.name << "_ms=" << meanOf(phase.samplesMs) << "/"
+             << p99Of(phase.samplesMs) << "(mean/p99)";
+      }
+      line << " batches:";
+      for (auto it = batchSizeCounts.rbegin(); it != batchSizeCounts.rend();
+           ++it) {
+        line << " " << it->second << "x" << it->first;
+      }
+      TT_LOG_INFO("{}", line.str());
+    }
+  };
+
+  DispatchSummary dispatchSummary;
 
   /** Rolling dispatch-loop statistics; logs a summary every 10 batches. */
   struct DispatchStats {
@@ -433,14 +517,20 @@ struct EmbeddingService::Impl {
         continue;
       }
 
+      // Queue wait: how long the OLDEST request in the batch sat enqueued.
+      const double queueWaitMs = std::chrono::duration<double, std::milli>(
+                                     queueEnd - batch.front()->enqueueTime)
+                                     .count();
+      const double collectMs =
+          std::chrono::duration<double, std::milli>(queueEnd - queueStart)
+              .count();
+
       const auto dispatchStart = std::chrono::steady_clock::now();
-      dispatchBatchToWorker(*worker, batch);
+      dispatchBatchToWorker(*worker, batch, queueWaitMs, collectMs);
       const auto dispatchEnd = std::chrono::steady_clock::now();
 
       stats.record(
-          workerIdx, batch.size(),
-          std::chrono::duration<double, std::milli>(queueEnd - queueStart)
-              .count(),
+          workerIdx, batch.size(), collectMs,
           std::chrono::duration<double, std::milli>(dispatchEnd - dispatchStart)
               .count());
     }
@@ -463,21 +553,29 @@ struct EmbeddingService::Impl {
   }
 
   /** Send one batch to the worker, wait for its response and complete every
-   * request in the batch — with its embedding, or with an error. */
+   * request in the batch — with its embedding, or with an error. The happy
+   * path records per-phase timings into dispatchSummary; failure paths skip
+   * recording (the summary characterizes the serving path, not errors). */
   void dispatchBatchToWorker(
       WorkerProcess& worker,
-      std::vector<std::shared_ptr<PendingRequest>>& batch) {
+      std::vector<std::shared_ptr<PendingRequest>>& batch, double queueWaitMs,
+      double collectMs) {
     if (!worker.isReady.load() || !worker.checkAlive()) {
       failBatch(batch, "Worker not available");
       return;
     }
 
-    if (!worker.sendRequest(encodeBatchJson(batch))) {
+    const auto encodeStart = std::chrono::steady_clock::now();
+    const std::string batchJson = encodeBatchJson(batch);
+    const auto encodeEnd = std::chrono::steady_clock::now();
+
+    if (!worker.sendRequest(batchJson)) {
       failBatch(batch, "Worker pipe broken");
       return;
     }
 
     auto responseBuf = worker.receiveResponse();
+    const auto pipeEnd = std::chrono::steady_clock::now();
     if (responseBuf.empty()) {
       failBatch(batch, "Failed to read response from worker");
       return;
@@ -493,6 +591,15 @@ struct EmbeddingService::Impl {
         completeWithError(*pending, "Response not found for task_id");
       }
     }
+    const auto completeEnd = std::chrono::steady_clock::now();
+
+    dispatchSummary.record(
+        batch.size(), queueWaitMs, collectMs,
+        std::chrono::duration<double, std::milli>(encodeEnd - encodeStart)
+            .count(),
+        std::chrono::duration<double, std::milli>(pipeEnd - encodeEnd).count(),
+        std::chrono::duration<double, std::milli>(completeEnd - pipeEnd)
+            .count());
   }
 
   static void failBatch(std::vector<std::shared_ptr<PendingRequest>>& batch,

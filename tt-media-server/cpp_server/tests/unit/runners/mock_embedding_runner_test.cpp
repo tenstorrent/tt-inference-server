@@ -181,3 +181,56 @@ TEST(MockEmbeddingRunnerTest, EmptyBatchYieldsEmptyResponses) {
   MockEmbeddingRunner runner(makeConfig());
   EXPECT_TRUE(runner.run({}).empty());
 }
+
+namespace {
+
+// RAII setter for the fault-injection env var.
+struct ScopedEnv {
+  const char* name;
+  ScopedEnv(const char* n, const char* value) : name(n) {
+    setenv(name, value, 1);
+  }
+  ~ScopedEnv() { unsetenv(name); }
+};
+
+}  // namespace
+
+// EMBEDDING_MOCK_FAIL_WARMUP=all fails warmup for every worker id.
+TEST(MockEmbeddingRunnerTest, WarmupFailsWhenInjectedForAll) {
+  ScopedEnv env(tt::runners::EMBEDDING_MOCK_FAIL_WARMUP_ENV, "all");
+  auto cfg = makeConfig();
+  cfg.worker_id = 5;
+
+  EXPECT_FALSE(MockEmbeddingRunner(cfg).warmup());
+}
+
+// A comma-separated id list fails exactly the named workers.
+TEST(MockEmbeddingRunnerTest, WarmupFailsOnlyForListedWorkerIds) {
+  ScopedEnv env(tt::runners::EMBEDDING_MOCK_FAIL_WARMUP_ENV, "0,2");
+
+  auto cfg = makeConfig();
+  cfg.worker_id = 0;
+  EXPECT_FALSE(MockEmbeddingRunner(cfg).warmup());
+  cfg.worker_id = 1;
+  EXPECT_TRUE(MockEmbeddingRunner(cfg).warmup());
+  cfg.worker_id = 2;
+  EXPECT_FALSE(MockEmbeddingRunner(cfg).warmup());
+}
+
+// Without the env var warmup keeps succeeding (no accidental injection).
+TEST(MockEmbeddingRunnerTest, WarmupSucceedsWithoutInjection) {
+  auto cfg = makeConfig();
+  cfg.worker_id = 0;
+  EXPECT_TRUE(MockEmbeddingRunner(cfg).warmup());
+}
+
+// The poison prompt kills the process mid-batch without answering; gtest
+// death test forks, so the abort is observed from outside.
+TEST(MockEmbeddingRunnerTest, PoisonPromptKillsProcess) {
+  MockEmbeddingRunner runner(makeConfig());
+  const std::vector<EmbeddingRequest> batch{
+      makeRequest(1, "ok"),
+      makeRequest(2, tt::runners::EMBEDDING_MOCK_CRASH_PROMPT)};
+
+  EXPECT_EXIT(runner.run(batch), ::testing::ExitedWithCode(134), "");
+}
