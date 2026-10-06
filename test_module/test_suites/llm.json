@@ -26,7 +26,12 @@
       "test_cases": [
         {
           "enabled": true,
-          "template": "VLLMParamConformanceTest"
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
         }
       ]
     },
