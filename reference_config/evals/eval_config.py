@@ -6506,7 +6506,7 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     # Official Gemma 4 model card / HF README (12B Unified).
                     # gpu_reference left unset until an H100 full-set / CI-subset
-                    # measurement lands (CI_NIGHTLY is ~10 samples).
+                    # measurement lands (CI_NIGHTLY is doc_ids 0-39, 40 samples).
                     published_score=78.8,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
                     gpu_reference_score=None,
@@ -6548,9 +6548,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # Match gemma-4-31B-it: CI_NIGHTLY 0.05 (~10 samples).
+                # Match gemma-4-31B-it: CI_NIGHTLY 0.2 = doc_ids 0-39 (40 samples; one
+                # question is 2.5 points). 0.05 was 10 samples, a 10-point step.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
