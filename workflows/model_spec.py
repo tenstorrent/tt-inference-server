@@ -424,6 +424,18 @@ gemma4_dflash_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4",
 )
+# Same drafter and model code as gemma4_dflash, but served on the plugin's
+# speculative CONTRACT: vLLM owns the draft scheduling through
+# speculative_config and the plugin verifies and accepts, so every step
+# streams rather than emitting a GEMMA4_DFLASH_SERVE_BLOCK-token block. A
+# separate impl so a run report names the rail that produced it, and so the
+# two can be benchmarked against each other without editing the spec.
+gemma4_dflash_contract_impl = ImplSpec(
+    impl_id="gemma4_dflash_contract",
+    impl_name="gemma4-dflash-contract",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
 # Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765. Unlike the
 # two profiles above this is a separate code path (models/demos/gemma4_31b_qb2,
 # architectures TTGemma4QB2ForCausalLM), not another speculative profile over
@@ -448,11 +460,24 @@ blaze_impl = ImplSpec(
     code_path="tt-media-server/cpp_server",
 )
 
+# ONE-INSTANCE Galaxy rail (tt-metal PR #58394): a single engine over the full
+# (8,4) mesh with one weight copy (GEMMA4_GALAXY_FRACTURE) and CP prefill.
+# A separate impl so run reports name the rail and it can be benchmarked
+# against the DP=4 rails without editing their entries.
+gemma4_galaxy_one_impl = ImplSpec(
+    impl_id="gemma4_galaxy_one",
+    impl_name="gemma4-galaxy-one",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
     "gemma4_mtp": gemma4_mtp_impl,
     "gemma4_dflash": gemma4_dflash_impl,
+    "gemma4_dflash_contract": gemma4_dflash_contract_impl,
+    "gemma4_galaxy_one": gemma4_galaxy_one_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
