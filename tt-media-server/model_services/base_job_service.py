@@ -59,11 +59,11 @@ class BaseJobService(BaseService):
     ) -> Optional[Any]:
         return self._job_manager.get_job_result_path(job_id, org_id=org_id)
 
-    def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> bool:
+    def cancel_job(self, job_id: str, org_id: Optional[str] = None) -> Optional[dict]:
         return self._job_manager.cancel_job(job_id, org_id=org_id)
 
-    def delete_job(self, job_id: str, org_id: Optional[str] = None) -> bool:
-        return self._job_manager.delete_job(job_id, org_id=org_id)
+    async def delete_job(self, job_id: str, org_id: Optional[str] = None) -> bool:
+        return await self._job_manager.delete_job(job_id, org_id=org_id)
 
     def get_job_metrics(self, job_id: str, org_id: Optional[str] = None) -> list:
         return self._job_manager.get_job_metrics(job_id, org_id=org_id)

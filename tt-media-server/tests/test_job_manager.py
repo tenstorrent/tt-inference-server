@@ -5,14 +5,17 @@
 import asyncio
 import os
 import tempfile
+import threading
 import time
 from multiprocessing import Event
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, call, patch
 
 import pytest
 from config.constants import JobTypes
 from domain.adapter_merge_request import AdapterMergeRequest
 from domain.base_request import BaseRequest
+from domain.worker_replacement import WorkerReplacementOutcome
 from utils.job_manager import (
     Job,
     JobManager,
@@ -999,6 +1002,50 @@ class TestJobManager:
             assert job_manager.db.get_job_by_id("job-queued")["status"] == "cancelled"
 
     @pytest.mark.asyncio
+    async def test_cancel_queued_job_rechecks_assignment_after_publishing_cancel(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=None)
+
+        class ClaimWhenCancelled:
+            def __init__(self):
+                self.cancelled = False
+
+            def is_set(self):
+                return self.cancelled
+
+            def set(self):
+                if not self.cancelled:
+                    worker_assignment.identity = ("worker-0", 123)
+                    self.cancelled = True
+
+        async def queued_training(req):
+            await asyncio.sleep(10)
+
+        mark_worker_retiring = Mock()
+        replace_worker = Mock()
+        await job_manager.create_job(
+            job_id="queued-cancel-claim-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=queued_training,
+            start_event=Event(),
+            cancel_event=ClaimWhenCancelled(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=mark_worker_retiring,
+            replace_worker=replace_worker,
+        )
+
+        result = job_manager.cancel_job("queued-cancel-claim-race")
+
+        assert result["status"] == JobStatus.CANCELLING
+        with job_manager._jobs_lock:
+            assert not job_manager._jobs["queued-cancel-claim-race"]._task.done()
+        mark_worker_retiring.assert_not_called()
+        replace_worker.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_cancel_task_sets_cancel_event(self, job_manager, mock_request):
         """When a training job's task receives CancelledError, _cleanup_job in the handler sets cancel_event."""
         start_event = Event()
@@ -1102,7 +1149,7 @@ class TestJobManager:
         with job_manager._jobs_lock:
             job_manager._jobs[video_job.id] = video_job
 
-        assert job_manager.delete_job(video_job.id) is True
+        assert await job_manager.delete_job(video_job.id) is True
         assert job_manager.get_job_metadata(video_job.id) is None
 
     @pytest.mark.asyncio
@@ -1117,7 +1164,7 @@ class TestJobManager:
         with job_manager._jobs_lock:
             job_manager._jobs[job.id] = job
 
-        assert job_manager.delete_job(job.id, org_id="org-b") is False
+        assert await job_manager.delete_job(job.id, org_id="org-b") is False
 
     @pytest.mark.asyncio
     async def test_manual_delete_rejects_training_result_outside_root(
@@ -1140,7 +1187,7 @@ class TestJobManager:
         await asyncio.sleep(0.1)
 
         with pytest.raises(ValueError, match="Refusing to delete result outside"):
-            job_manager.delete_job("job-delete-failure")
+            await job_manager.delete_job("job-delete-failure")
 
         assert job_manager.get_job_metadata("job-delete-failure") is not None
         assert result_dir.exists()
@@ -1230,7 +1277,7 @@ class TestJobManager:
             "utils.job_manager.merged_models_root",
             return_value=str(merged_models_dir),
         ):
-            assert job_manager.delete_job("merge-job-delete") is True
+            assert await job_manager.delete_job("merge-job-delete") is True
         assert job_manager.get_job_metadata("merge-job-delete") is None
         assert not result_dir.exists()
 
@@ -1257,7 +1304,7 @@ class TestJobManager:
         await asyncio.sleep(0.1)
 
         with patch("utils.job_manager.adapters_root", return_value=str(adapters_dir)):
-            assert job_manager.delete_job("job-delete")
+            assert await job_manager.delete_job("job-delete")
 
         assert not result_dir.exists()
         assert job_manager.get_job_metadata("job-delete") is None
@@ -1315,7 +1362,7 @@ class TestJobManager:
             "utils.job_manager.merged_models_root",
             return_value=str(merged_models_dir),
         ):
-            assert job_manager.delete_job("training-job") is True
+            assert await job_manager.delete_job("training-job") is True
 
         assert job_manager.get_job_metadata("training-job") is None
         assert job_manager.get_job_metadata("merge-job") is None
@@ -1348,7 +1395,7 @@ class TestJobManager:
             job_manager._jobs[merge_job.id] = merge_job
 
         with pytest.raises(ValueError, match="'merge-job' is in_progress"):
-            job_manager.delete_job("training-job")
+            await job_manager.delete_job("training-job")
 
         assert job_manager.get_job_metadata("training-job") is not None
         assert job_manager.get_job_metadata("merge-job") is not None
@@ -1378,7 +1425,7 @@ class TestJobManager:
             job_manager._jobs[merge_job.id] = merge_job
 
         with pytest.raises(ValueError, match="different organization"):
-            job_manager.delete_job("training-job", org_id="org-a")
+            await job_manager.delete_job("training-job", org_id="org-a")
 
         assert job_manager.get_job_metadata("training-job") is not None
         assert job_manager.get_job_metadata("merge-job") is not None
@@ -1418,7 +1465,7 @@ class TestJobManager:
             "_delete_job_and_result",
             side_effect=[None, OSError("filesystem unavailable")],
         ), pytest.raises(OSError, match="filesystem unavailable"):
-            job_manager.delete_job("training-job")
+            await job_manager.delete_job("training-job")
 
         assert job_manager.get_job_metadata("merge-a") is None
         assert job_manager.get_job_metadata("merge-b") is not None
@@ -1447,7 +1494,7 @@ class TestJobManager:
             job_manager._jobs[training_job.id] = training_job
             job_manager._jobs[merge_job.id] = merge_job
 
-        assert job_manager.delete_job("merge-job") is True
+        assert await job_manager.delete_job("merge-job") is True
 
         assert (
             job_manager.get_job_metadata("training-job")["adapter_merge_job_ids"] == []
@@ -1482,16 +1529,36 @@ class TestJobManager:
             "delete_job",
             side_effect=RuntimeError("db unavailable"),
         ), pytest.raises(RuntimeError, match="db unavailable"):
-            job_manager.delete_job("job-delete-db-failure")
+            await job_manager.delete_job("job-delete-db-failure")
 
         assert not result_dir.exists()
         assert job_manager.get_job_metadata("job-delete-db-failure") is not None
         assert job_manager.db.get_job_by_id("job-delete-db-failure") is not None
 
     @pytest.mark.asyncio
-    async def test_manual_delete_rejects_active_job(self, job_manager, mock_request):
+    async def test_force_delete_waits_for_worker_replacement_before_deleting(
+        self, job_manager, mock_request, tmp_path
+    ):
+        adapters_dir = tmp_path / "adapters"
+        result_dir = adapters_dir / "job-active-delete"
+        result_dir.mkdir(parents=True)
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        replacement_started = threading.Event()
+        allow_replacement = threading.Event()
+        replacement_attempts = 0
+
+        def replace_worker(_worker_id, _worker_pid, _worker_assignment):
+            nonlocal replacement_attempts
+            replacement_attempts += 1
+            if replacement_attempts == 1:
+                return WorkerReplacementOutcome.RETRY_REQUIRED
+            replacement_started.set()
+            allow_replacement.wait(timeout=1)
+            return WorkerReplacementOutcome.REPLACED
+
         async def task_func(req):
             await asyncio.sleep(10)
+            return str(result_dir)
 
         await job_manager.create_job(
             job_id="job-active-delete",
@@ -1499,11 +1566,146 @@ class TestJobManager:
             model="test-model",
             request=mock_request,
             task_function=task_func,
+            result_path=str(result_dir),
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            replace_worker=replace_worker,
         )
         await asyncio.sleep(0.1)
 
-        with pytest.raises(ValueError, match="Only terminal jobs"):
-            job_manager.delete_job("job-active-delete")
+        with patch("utils.job_manager.adapters_root", return_value=str(adapters_dir)):
+            delete_task = asyncio.create_task(
+                job_manager.delete_job("job-active-delete")
+            )
+            assert await asyncio.to_thread(replacement_started.wait, 1)
+
+            assert result_dir.exists()
+            assert job_manager.get_job_metadata("job-active-delete") is not None
+
+            allow_replacement.set()
+            assert await delete_task is True
+
+        assert replacement_attempts == 2
+        assert not result_dir.exists()
+        assert job_manager.get_job_metadata("job-active-delete") is None
+
+    @pytest.mark.asyncio
+    async def test_force_delete_rechecks_assignment_published_during_cancellation(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=None)
+        mark_worker_retiring = Mock(return_value=True)
+        replace_worker = Mock(return_value=WorkerReplacementOutcome.REPLACED)
+
+        class ClaimBeforeCancellation:
+            def __init__(self):
+                self.cancelled = False
+
+            def is_set(self):
+                return self.cancelled
+
+            def set(self):
+                worker_assignment.identity = ("worker-0", 123)
+                self.cancelled = True
+
+        async def queued_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="force-delete-pickup-race",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=queued_training,
+            start_event=Event(),
+            cancel_event=ClaimBeforeCancellation(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=mark_worker_retiring,
+            replace_worker=replace_worker,
+        )
+
+        assert await job_manager.delete_job("force-delete-pickup-race") is True
+
+        mark_worker_retiring.assert_called_once_with("worker-0", 123)
+        replace_worker.assert_called_once_with("worker-0", 123, worker_assignment)
+        assert job_manager.get_job_metadata("force-delete-pickup-race") is None
+
+    @pytest.mark.asyncio
+    async def test_force_delete_failure_keeps_job_and_results(
+        self, job_manager, mock_request, tmp_path
+    ):
+        adapters_dir = tmp_path / "adapters"
+        result_dir = adapters_dir / "force-delete-failure"
+        result_dir.mkdir(parents=True)
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+
+        async def active_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="force-delete-failure",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=active_training,
+            result_path=str(result_dir),
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=Mock(return_value=True),
+            replace_worker=Mock(side_effect=RuntimeError("replacement failed")),
+        )
+        await asyncio.sleep(0.1)
+
+        with patch(
+            "utils.job_manager.adapters_root", return_value=str(adapters_dir)
+        ), pytest.raises(ValueError, match="Could not force-delete"):
+            await job_manager.delete_job("force-delete-failure")
+
+        assert result_dir.exists()
+        assert (
+            job_manager.get_job_metadata("force-delete-failure")["status"]
+            == JobStatus.CANCELLING
+        )
+
+    @pytest.mark.asyncio
+    async def test_force_delete_fences_updated_worker_identity(
+        self, job_manager, mock_request
+    ):
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        mark_worker_retiring = Mock(return_value=True)
+        replacement_calls = []
+
+        def replace_worker(worker_id, worker_pid, _worker_assignment):
+            replacement_calls.append((worker_id, worker_pid))
+            if len(replacement_calls) == 1:
+                worker_assignment.identity = ("worker-1", 456)
+                return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+            return WorkerReplacementOutcome.REPLACED
+
+        async def active_training(req):
+            await asyncio.sleep(10)
+
+        await job_manager.create_job(
+            job_id="force-delete-updated-worker",
+            job_type=JobTypes.TRAINING,
+            model="test-model",
+            request=mock_request,
+            task_function=active_training,
+            cancel_event=Event(),
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=mark_worker_retiring,
+            replace_worker=replace_worker,
+        )
+        await asyncio.sleep(0.1)
+
+        assert await job_manager.delete_job("force-delete-updated-worker") is True
+
+        assert replacement_calls == [("worker-0", 123), ("worker-1", 456)]
+        assert mark_worker_retiring.call_args_list == [
+            call("worker-0", 123),
+            call("worker-1", 456),
+        ]
 
     @pytest.mark.asyncio
     async def test_cleanup_stuck_jobs(self, job_manager, mock_request):
@@ -1813,6 +2015,9 @@ class TestJobManager:
 
         start_event = Event()
         cancel_event = Event()
+        worker_assignment = SimpleNamespace(identity=("worker-0", 123))
+        mark_worker_retiring = Mock()
+        replace_worker = Mock()
 
         async def cooperative_task(req):
             start_event.set()
@@ -1830,12 +2035,17 @@ class TestJobManager:
             result_path="models_save/result.pt",
             start_event=start_event,
             cancel_event=cancel_event,
+            worker_assignment=worker_assignment,
+            mark_worker_retiring=mark_worker_retiring,
+            replace_worker=replace_worker,
         )
 
         await asyncio.sleep(0.3)
 
         job_metadata1 = job_manager.get_job_metadata("job-coop")
         assert job_metadata1["status"] == "in_progress"
+        with job_manager._jobs_lock:
+            job_task = job_manager._jobs["job-coop"]._task
 
         job_metadata2 = job_manager.cancel_job("job-coop")
         assert job_metadata2["status"] == "cancelling"
@@ -1846,12 +2056,15 @@ class TestJobManager:
 
         # _cleanup_job should set the event, NOT cancel the task
         assert cancel_event.is_set()
+        mark_worker_retiring.assert_not_called()
+        replace_worker.assert_not_called()
 
         await asyncio.sleep(0.5)
 
         job_metadata3 = job_manager.get_job_metadata("job-coop")
         assert job_metadata3["status"] == "cancelled"
         assert job_metadata3["completed_at"] is not None
+        await asyncio.gather(job_task, return_exceptions=True)
 
         if job_manager.db:
             db_job3 = job_manager.db.get_job_by_id("job-coop")
