@@ -61,7 +61,9 @@ def _tts_api():
 
 
 class Qwen3TTSConstants:
-    L1_SMALL_SIZE = 32768
+    # The native-conv1d decoder (TT_QWEN3_DECODE_CONV=conv1d) needs 131072 for its
+    # sharding config buffers; the default matmul decoder fits in 32768.
+    L1_SMALL_SIZE = int(os.environ.get("TT_QWEN3_L1_SMALL_SIZE", "32768"))
     TRACE_REGION_SIZE = 512_000_000
     NUM_COMMAND_QUEUES = 2
     MAX_NEW_TOKENS = 256
@@ -85,20 +87,22 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         # Decode the speech tokenizer on device by default. Set
         # TT_QWEN3_DEVICE_DECODE=0 to fall back to the CPU decode_icl_audio.
         #
-        # WARNING: the device path currently produces CORRUPT audio in serving, and
-        # it fails silently rather than erroring. The decoder itself is correct
-        # (+19.05 dB SNR vs the CPU reference under this exact device config, ~20x
-        # faster than CPU at the server's 1-thread budget), but it cannot yet share
-        # a chip with the talker: once the talker's traces have EXECUTED the decode
-        # is corrupted. Same input, same weights, same device, one process -- the
-        # decoder measures +19.05 dB immediately before the first run_inference and
-        # -21.25 dB immediately after, output pinned at full scale. End to end that
-        # is WER 95% vs 2.96% on CPU.
+        # The decoder shares the chip with the traced talker, so it is built and
+        # warmed before the talker's traces are captured (see _initialize_models).
         #
-        # Use TT_QWEN3_DECODE_COMPARE=1 to log device-vs-CPU SNR per request, and
-        # TT_QWEN3_DEVICE_DECODE=0 for anything that needs correct audio. See
-        # HANDOFF.md.
+        # TT_QWEN3_DEVICE_DECODE_MODE:
+        #   continue (default) -- decode_icl_audio with the conv back-end on device:
+        #       the host runs the exact front-end from a cached per-voice reference
+        #       state, and the device decodes 12 context + the generated frames.
+        #   full -- decode_audio_device: the whole decoder on device over
+        #       cat(ref, generated), then the reference's audio is cut off.
+        # TT_QWEN3_DECODE_COMPARE=1 logs device-vs-CPU SNR per request.
         self._use_device_decode = os.environ.get("TT_QWEN3_DEVICE_DECODE", "1") == "1"
+        self._decode_continue = (
+            os.environ.get("TT_QWEN3_DEVICE_DECODE_MODE", "continue") == "continue"
+        )
+        # voice_id -> (ref_codes, prepare_icl_decoder_state(ref_codes)), host only.
+        self._ref_states = {}
         self.config = None
         self.voice_prompts: Optional[VoicePromptManager] = None
         self._post_warmup_rng_state = None
@@ -210,7 +214,9 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
 
         api = _tts_api()
         if self.ttnn_device is None:
-            raise RuntimeError("ttnn_device not initialized; set_device() must run first")
+            raise RuntimeError(
+                "ttnn_device not initialized; set_device() must run first"
+            )
 
         if self.main_weights is None or self.decoder_weights is None:
             self.main_weights, self.decoder_weights = self._load_qwen_weights()
@@ -244,22 +250,27 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         )
         self.config.hidden_size = talker_config.hidden_size
 
-        self.logger.info(
-            f"Device {self.device_id}: Capturing TTS server context (traces)..."
-        )
-        self.ctx = api.init_server_context(
-            self.ttnn_device, self.model, self.config, self.main_weights
-        )
-
+        # Host-only (reference codes come from the CPU encoder / refcache), so it can
+        # run before anything touches the device.
         self.voice_prompts = VoicePromptManager()
         self.voice_prompts.preload()
-        self.voice_prompts.precompute_speaker_embeddings(self.model)
-        self.logger.info(
-            f"Device {self.device_id}: Voice prompts ready: "
-            f"{self.voice_prompts.list_available()}"
-        )
+        for voice_id in self.voice_prompts.list_available():
+            self._ref_state_for(
+                api, voice_id, self.voice_prompts.get(voice_id).ref_codes
+            )
 
         if self._use_device_decode:
+            # The decoder MUST be built and warmed BEFORE init_server_context captures
+            # the talker/CP/ECAPA traces. A trace replays its captured ops at the
+            # addresses its intermediates had during capture; those buffers are freed
+            # afterwards, so anything allocated while a trace exists can land on them
+            # and is overwritten every time the trace executes (tt-metal warns:
+            # "Allocating device buffers is unsafe due to the existence of an active
+            # trace"). Built after capture, the decoder scored +19 dB before the first
+            # request and -21 dB after it. Every persistent decoder tensor (weights,
+            # prepared conv weights, RoPE tables) is created by the warmup below, and
+            # the frozen cache guarantees no request allocates a new one.
+            #
             # Built after the voice prompts so the warmed buckets can cover the
             # reference too: decode_audio_device decodes cat([ref_codes, codes]), so
             # sizing buckets off the generated count alone leaves live requests
@@ -270,7 +281,9 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             for voice_id in self.voice_prompts.list_available():
                 prompt = self.voice_prompts.get(voice_id)
                 if prompt is not None:
-                    preset_ref_frames = max(preset_ref_frames, int(prompt.ref_codes.shape[0]))
+                    preset_ref_frames = max(
+                        preset_ref_frames, int(prompt.ref_codes.shape[0])
+                    )
             max_ref_frames = max(
                 preset_ref_frames,
                 int(
@@ -284,22 +297,39 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
                 f"(ref<={max_ref_frames} + gen<={max_new} frames)..."
             )
             self.device_decoder, warm_buckets = api.prepare_device_decoder(
-                self.ttnn_device, self.decoder_weights, max_ref_frames, max_new
+                self.ttnn_device,
+                self.decoder_weights,
+                max_ref_frames,
+                max_new,
+                icl_continue=self._decode_continue,
             )
             self.logger.info(
-                f"Device {self.device_id}: On-device speech decoder ready; "
+                f"Device {self.device_id}: On-device speech decoder ready "
+                f"({'continue' if self._decode_continue else 'full'} mode); "
                 f"warmed and froze buckets {warm_buckets}"
             )
             if os.environ.get("TT_QWEN3_DECODE_COMPARE", "0") == "1":
-                # Correctness check BEFORE any run_inference. The decoder scores
-                # +19 dB standalone but -21 dB after a live request, and the talker
-                # is not the only difference: the speaker encoder has also run,
-                # traces and KV caches are allocated, this is a framework
-                # MeshDevice in a forked worker, and the weights come from
-                # api.load_weights rather than safetensors. If this check is
-                # already bad, the cause is the server environment, not the
-                # talker's traced execution.
-                self._check_decoder_against_cpu("pre-inference")
+                self._check_decoder_against_cpu("pre-capture")
+
+        self.logger.info(
+            f"Device {self.device_id}: Capturing TTS server context (traces)..."
+        )
+        self.ctx = api.init_server_context(
+            self.ttnn_device, self.model, self.config, self.main_weights
+        )
+
+        self.voice_prompts.precompute_speaker_embeddings(self.model)
+        self.logger.info(
+            f"Device {self.device_id}: Voice prompts ready: "
+            f"{self.voice_prompts.list_available()}"
+        )
+        if (
+            self._use_device_decode
+            and os.environ.get("TT_QWEN3_DECODE_COMPARE", "0") == "1"
+        ):
+            # The [decode-compare] lines of the warm-up requests then show whether the
+            # decoder survives the talker's traced execution.
+            self._check_decoder_against_cpu("post-capture")
 
         self._post_warmup_rng_state = torch.get_rng_state()
 
@@ -307,9 +337,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         # init_server_context captures load traces only. First live /v1/audio/speech
         # still JIT-compiles ICL + decode for that language/length (~12s per worker).
         for text in ("テスト", "Hello, this is a test."):
-            self.logger.info(
-                f"Device {self.device_id}: Warm-up synth text={text!r}"
-            )
+            self.logger.info(f"Device {self.device_id}: Warm-up synth text={text!r}")
             self._synthesize(TextToSpeechRequest(text=text, response_format="wav"))
 
     @log_execution_time(
@@ -374,40 +402,81 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             ref_codes, audio_data, self.tokenizer, ref_text, target_text
         )
 
+    def _ref_state_for(self, api, voice_id: str, ref_codes: torch.Tensor):
+        """Cached decoder front-end state for a preset voice; None for ad-hoc clones."""
+        cached = self._ref_states.get(voice_id)
+        if cached is not None and torch.equal(cached[0], ref_codes):
+            return cached[1]
+        if voice_id == "<adhoc>":
+            return None
+        state = api.prepare_icl_decoder_state(ref_codes, self.decoder_weights)
+        self._ref_states[voice_id] = (ref_codes, state)
+        return state
+
+    def _device_decode(self, api, ref_codes, codes, ref_state=None) -> torch.Tensor:
+        """Device decode of generated ``codes`` (reference as context), generated audio only."""
+        if self._decode_continue:
+            return api.decode_icl_audio(
+                ref_codes,
+                codes,
+                self.decoder_weights,
+                ref_state=ref_state,
+                device_decoder=self.device_decoder,
+            )
+        return api.decode_audio_device(ref_codes, codes, self.device_decoder)
+
     def _check_decoder_against_cpu(self, label: str) -> None:
-        """Score the device decoder against the CPU reference on the built-in prompt."""
+        """Score the device decoder against the CPU reference on the built-in prompt.
+
+        Splits the default voice's reference codes into a 20-frame "reference" and a
+        "generated" continuation and decodes them through the serving path, so it only
+        touches warmed buckets in either mode.
+        """
         import math
 
         try:
-            from models.demos.qwen3_tts.reference.functional import (
-                SpeechTokenizerDecoderConfig,
-                speech_tokenizer_decoder_forward,
+            prompt = (
+                self.voice_prompts.get(DEFAULT_VOICE_ID) if self.voice_prompts else None
             )
-
-            prompt = self.voice_prompts.get(DEFAULT_VOICE_ID) if self.voice_prompts else None
             if prompt is None:
-                self.logger.warning(f"[decoder-check:{label}] no default voice prompt, skipped")
-                return
-            token_ids = prompt.ref_codes.clamp(max=2047).T.unsqueeze(0)
-
-            dev = self.device_decoder.forward(token_ids.clone()).squeeze().detach().cpu().float().flatten()
-            with torch.no_grad():
-                cpu = speech_tokenizer_decoder_forward(
-                    token_ids.clone(), self.decoder_weights, SpeechTokenizerDecoderConfig()
+                self.logger.warning(
+                    f"[decoder-check:{label}] no default voice prompt, skipped"
                 )
-            cpu = cpu.squeeze().float().flatten()
+                return
+            api = _tts_api()
+            ref, gen = prompt.ref_codes[:20], prompt.ref_codes[20:]
+            dev = (
+                self._device_decode(api, ref, gen)
+                .squeeze()
+                .detach()
+                .cpu()
+                .float()
+                .flatten()
+            )
+            cpu = (
+                api.decode_icl_audio(ref, gen, self.decoder_weights)
+                .squeeze()
+                .float()
+                .flatten()
+            )
 
             n = min(dev.numel(), cpu.numel())
             noise = (cpu[:n] - dev[:n]).pow(2).mean().item()
             sig = cpu[:n].pow(2).mean().item()
-            snr = 10.0 * math.log10(sig / noise) if noise > 0 and sig > 0 else float("nan")
+            snr = (
+                10.0 * math.log10(sig / noise)
+                if noise > 0 and sig > 0
+                else float("nan")
+            )
             self.logger.info(
                 f"[decoder-check:{label}] snr={snr:.2f}dB "
                 f"dev_rms={dev.pow(2).mean().sqrt().item():.5f} cpu_rms={cpu.pow(2).mean().sqrt().item():.5f} "
-                f"frames={prompt.ref_codes.shape[0]} (standalone scores +19.05 dB on this input)"
+                f"frames={gen.shape[0]}"
             )
         except Exception as e:  # noqa: BLE001
-            self.logger.warning(f"[decoder-check:{label}] failed: {type(e).__name__}: {e}")
+            self.logger.warning(
+                f"[decoder-check:{label}] failed: {type(e).__name__}: {e}"
+            )
 
     def _compare_decodes(self, api, ref_codes, codes, device_audio) -> None:
         """Diagnostic: device vs CPU decode of the SAME codes, with an offset search.
@@ -445,7 +514,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
 
             spf = 1920
             lags = [f * spf for f in range(-4, 5)]  # +/- 4 codec frames
-            scored = sorted(((snr_at(l), l) for l in lags), reverse=True)
+            scored = sorted(((snr_at(lag), lag) for lag in lags), reverse=True)
             best_snr, best_lag = scored[0]
 
             self.logger.info(
@@ -456,33 +525,9 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
                 f"best_lag={best_lag} samples ({best_lag / spf:.0f} frames)"
             )
 
-            # Control: decode the REFERENCE codes -- the exact input the standalone
-            # parity harness scores at 18-19 dB. If this is also wrong here, then
-            # sharing the device with the talker corrupts the decode. If it is
-            # right, the bug is specific to generated codes.
-            import torch as _t
-
-            from models.demos.qwen3_tts.reference.functional import (
-                SpeechTokenizerDecoderConfig,
-                speech_tokenizer_decoder_forward,
-            )
-
-            ctrl_dev = self.device_decoder.forward(ref_codes.clamp(max=2047).T.unsqueeze(0))
-            with _t.no_grad():
-                ctrl_cpu = speech_tokenizer_decoder_forward(
-                    ref_codes.clamp(max=2047).T.unsqueeze(0), self.decoder_weights, SpeechTokenizerDecoderConfig()
-                )
-            cd = ctrl_dev.squeeze().detach().cpu().float().flatten()
-            cc = ctrl_cpu.squeeze().detach().cpu().float().flatten()
-            n = min(cd.numel(), cc.numel())
-            noise = (cc[:n] - cd[:n]).pow(2).mean().item()
-            sig = cc[:n].pow(2).mean().item()
-            ctrl_snr = 10.0 * math.log10(sig / noise) if noise > 0 and sig > 0 else float("nan")
-            self.logger.info(
-                f"[decode-compare] CONTROL ref-codes-only: snr={ctrl_snr:.2f}dB "
-                f"dev_rms={cd.pow(2).mean().sqrt().item():.5f} cpu_rms={cc.pow(2).mean().sqrt().item():.5f} "
-                f"(standalone harness gets 18-19 dB on this same input)"
-            )
+            # Control: a fixed real-speech input through the same path. Bad here too
+            # means the decoder itself is broken on this device, not these codes.
+            self._check_decoder_against_cpu("control")
         except Exception as e:  # noqa: BLE001
             self.logger.warning(f"[decode-compare] failed: {type(e).__name__}: {e}")
 
@@ -553,12 +598,15 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         # the TT device (length-flat ~0.3-0.45s warm) instead of the CPU path that
         # scaled with frame count and inflated TTFT. Both return generated speech
         # only. CPU path kept as a fallback via TT_QWEN3_DEVICE_DECODE=0.
+        ref_state = self._ref_state_for(api, voice_id, ref_codes)
         if self._use_device_decode and self.device_decoder is not None:
-            audio = api.decode_audio_device(ref_codes, codes, self.device_decoder)
+            audio = self._device_decode(api, ref_codes, codes, ref_state)
             if os.environ.get("TT_QWEN3_DECODE_COMPARE", "0") == "1":
                 self._compare_decodes(api, ref_codes, codes, audio)
         else:
-            audio = api.decode_icl_audio(ref_codes, codes, self.decoder_weights)
+            audio = api.decode_icl_audio(
+                ref_codes, codes, self.decoder_weights, ref_state=ref_state
+            )
         audio_np = audio.squeeze().detach().cpu().float().numpy()
         duration_s = float(len(audio_np)) / SAMPLE_RATE_HZ
 
