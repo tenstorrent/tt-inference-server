@@ -46,17 +46,18 @@ def test_bucket_known_aspect_ratios_pass_through():
 def test_bucket_normalises_the_way_the_platform_does():
     """Forms the server accepts as 16:9 must not be labelled "other".
 
-    minimax_h3_parse_aspect_ratio does strip() then maps x and / onto : before
-    validating, so "16x9", "16/9" and " 16:9 " are all admitted and served as
-    16:9. Matching the raw string would file every one of them under "other" —
-    the bucket that is supposed to mean "the caller asked for a shape we do not
-    serve" — turning a real product signal into noise.
+    minimax_h3_parse_aspect_ratio strips, maps x and / onto :, and int()s each
+    part, so "16x9", " 16 : 9 " and "016:9" are all served as 16:9. Matching the
+    raw string would file them under "other", the bucket meant for shapes we do
+    not serve.
     """
-    for raw in ("16x9", "16/9", " 16:9 ", "16:9", " 9x16"):
+    for raw in ("16x9", "16/9", " 16:9 ", "16:9", " 9x16", "16 : 9", "016:9"):
         got = bucket_aspect_ratio(raw)
         assert got != ASPECT_RATIO_OTHER, f"{raw!r} -> other, but the server serves it"
     assert bucket_aspect_ratio("16x9") == "16:9"
     assert bucket_aspect_ratio(" 9/16 ") == "9:16"
+    assert bucket_aspect_ratio("16 : 9") == "16:9"
+    assert bucket_aspect_ratio("016:9") == "16:9"
 
 
 def test_bucket_unset_is_distinct_from_other():
@@ -94,6 +95,9 @@ def test_bucket_is_bounded_for_arbitrary_input():
         "1080P",
         "9" * 4096,
         "16:9; DROP TABLE x",
+        # isdigit() passes these but int() raises; must bucket, not raise.
+        "16:²",
+        "9" * 5000 + ":9",
         123,
         object(),
         ["16:9"],

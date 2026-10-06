@@ -3,7 +3,7 @@
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
 import numpy as np
-from config.settings import get_settings
+from config.settings import settings
 from domain.image_generate_request import ImageGenerateRequest
 from model_services.base_service import BaseService
 from model_services.cpu_workload_handler import CpuWorkloadHandler
@@ -40,7 +40,7 @@ class ImageService(BaseService):
         # request is fanned out into one request per image below, so recording
         # further down would count one client request several times and
         # misreport both the arrival rate and the batch-size distribution.
-        observe_image_request(request, get_settings().model_runner)
+        observe_image_request(request, settings.model_runner)
         if request.number_of_images > 1:
             # Create segments list for parallel processing
             request._segments = list(range(request.number_of_images))

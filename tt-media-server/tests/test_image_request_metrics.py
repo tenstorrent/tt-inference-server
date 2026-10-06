@@ -116,10 +116,41 @@ def test_observe_records_requested_resolution():
     observe_image_request(_t2i(width=1024, height=1024), model)
 
     labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
-    (count,) = (sample("tt_media_server_image_requested_megapixels_count", **labels),)
-    assert count == 1
-    got = sample("tt_media_server_image_requested_megapixels_sum", **labels)
-    assert abs(got - 1024 * 1024 / 1_000_000) < 1e-9, got
+    assert sample("tt_media_server_image_requested_megapixels_count", **labels) == 1
+    assert (
+        sample("tt_media_server_image_requested_megapixels_sum", **labels) == 1.048576
+    )
+
+
+def test_resolution_buckets_align_with_served_resolutions():
+    """Each served resolution lands in its own bucket, not the next one up.
+
+    1024x1024 is 1.048576 MP, so a round 1.0 bound would miss it. Only the
+    per-bucket counts can detect this; _sum/_count cannot.
+    """
+    model = "test-shape-buckets"
+    labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
+
+    def bucket_count(le: str) -> float:
+        return sample(
+            "tt_media_server_image_requested_megapixels_bucket", le=le, **labels
+        )
+
+    expected_bucket = {
+        (256, 256): "0.065536",
+        (512, 512): "0.262144",
+        (768, 1024): "0.786432",
+        (1024, 1024): "1.048576",
+        (1024, 1536): "1.572864",
+        (1536, 1536): "2.359296",
+    }
+    for (width, height), le in expected_bucket.items():
+        before = bucket_count(le) or 0
+        observe_image_request(_t2i(width=width, height=height), model)
+        assert bucket_count(le) == before + 1, f"{width}x{height} missed le={le}"
+
+    # Cumulative buckets: the bound just below 1024x1024 must not have counted it.
+    assert bucket_count("0.786432") == 3  # 256x256, 512x512, 768x1024 only
 
 
 def test_observe_skips_unset_resolution():
@@ -167,32 +198,35 @@ def test_observe_separates_conditioning_paths():
 def test_observe_never_raises_on_a_malformed_request():
     """A telemetry fault must not fail a generation.
 
-    Passing an object that is not a request at all exercises the guard: the
-    call must return normally and record nothing.
+    A non-request must not raise. It is counted as a t2i arrival (the
+    conditioning fallback); the shape histograms record nothing.
     """
 
     class NotARequest:
         pass
 
-    observe_image_request(NotARequest(), "test-shape-malformed")
+    model = "test-shape-malformed"
+    observe_image_request(NotARequest(), model)
+
+    labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
+    assert sample("tt_media_server_image_requests_by_shape_total", **labels) == 1
+    for histogram in ("steps", "guidance_scale", "images", "megapixels"):
+        assert sample(
+            f"tt_media_server_image_requested_{histogram}_count", **labels
+        ) in (0, None), f"{histogram} recorded for a non-request"
 
 
-def test_observe_skips_absent_optional_fields():
-    """Unset optional fields are omitted, not observed as zero.
+def test_observe_skips_defaulted_steps_and_guidance():
+    """A request that omits steps and guidance records neither.
 
-    guidance_scale is not defined on the base request class. Recording 0 for a
-    field the caller never set would pull the distribution toward a value no
-    model would honour — guidance_scale is validated to >= 1.0.
+    Pydantic fills num_inference_steps=20 and guidance_scale=5.0, so neither is
+    ever None; only fields present in the body are observed.
     """
-
-    class MinimalRequest(ImageGenerateRequest):
-        pass
-
-    model = "test-shape-absent"
-    req = MinimalRequest(prompt="p")
-    object.__setattr__(req, "__dict__", dict(req.__dict__))
-    req.__dict__["guidance_scale"] = None
-    req.__dict__["num_inference_steps"] = None
+    model = "test-shape-defaults"
+    req = _t2i()
+    assert req.num_inference_steps == 20 and req.guidance_scale == 5.0, (
+        "precondition: defaults must be filled for this test to mean anything"
+    )
 
     observe_image_request(req, model)
 
@@ -203,3 +237,15 @@ def test_observe_skips_absent_optional_fields():
         0,
         None,
     )
+
+
+def test_observe_records_explicitly_sent_default_values():
+    """The gate is on presence in the body, not on differing from the default."""
+    model = "test-shape-explicit-default"
+    observe_image_request(_t2i(num_inference_steps=20, guidance_scale=5.0), model)
+
+    labels = {"model_type": model, "conditioning": CONDITIONING_TEXT_TO_IMAGE}
+    assert sample("tt_media_server_image_requested_steps_count", **labels) == 1
+    assert sample("tt_media_server_image_requested_steps_sum", **labels) == 20
+    assert sample("tt_media_server_image_requested_guidance_scale_count", **labels) == 1
+    assert sample("tt_media_server_image_requested_guidance_scale_sum", **labels) == 5.0

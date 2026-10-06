@@ -60,22 +60,26 @@ _STEP_BUCKETS = (4, 8, 12, 16, 20, 25, 30, 40, 50, 64, 100, float("inf"))
 # number_of_images is validated to 1..4.
 _BATCH_BUCKETS = (1, 2, 3, 4, 8, float("inf"))
 
-# width/height are validated to 256..1536 each, so a request spans roughly
-# 0.065 MP (256x256) to 2.36 MP (1536x1536). The ladder covers that with room
-# above, so raising the cap degrades to coarse rather than clipping into +Inf.
-_MEGAPIXEL_BUCKETS = (
-    0.0625,
-    0.125,
-    0.25,
-    0.5,
-    0.786,
-    1.0,
-    1.5,
-    2.36,
-    4.0,
-    8.0,
-    float("inf"),
+# Bucket bounds are the served resolutions in megapixels, computed with the
+# same expression as the observation so each lands exactly on its bound. Round
+# numbers do not work: 1024x1024 is 1.048576 MP, and with `value <= le` a 1.0
+# bound would push it into the next bucket. width/height are validated to
+# 256..1536; the ladder runs past that so raising the cap degrades to coarse
+# rather than clipping into +Inf.
+_PIXELS_PER_MEGAPIXEL = 1_000_000
+_BUCKET_RESOLUTIONS = (
+    (256, 256),
+    (256, 512),
+    (512, 512),
+    (512, 1024),
+    (768, 1024),
+    (1024, 1024),
+    (1024, 1536),
+    (1536, 1536),
 )
+_MEGAPIXEL_BUCKETS = tuple(
+    width * height / _PIXELS_PER_MEGAPIXEL for width, height in _BUCKET_RESOLUTIONS
+) + (4.0, 8.0, float("inf"))
 
 # guidance_scale is validated to 1.0..20.0. Values cluster low, so the ladder
 # is denser there; the tail past 20 exists only to make an out-of-range request
@@ -125,7 +129,7 @@ requested_images = Histogram(
 
 requested_megapixels = Histogram(
     "tt_media_server_image_requested_megapixels",
-    "Requested output resolution per image request, in megapixels (width x height)",
+    "Requested output resolution per image request, in megapixels (width x height / 1e6)",
     _LABELS,
     buckets=_MEGAPIXEL_BUCKETS,
 )
@@ -157,10 +161,12 @@ def conditioning_of(request: ImageGenerateRequest) -> str:
 def observe_image_request(request: ImageGenerateRequest, model_type: str) -> None:
     """Record the shape of one incoming image request.
 
-    Never raises: a telemetry fault must not fail a generation. Optional fields
-    are skipped rather than recorded as zero — ``guidance_scale`` is unset on
-    the base request class, and observing 0 for it would pull the distribution
-    toward a value no caller chose and no model would honour.
+    Never raises: a telemetry fault must not fail a generation.
+
+    Steps and guidance are observed only when present in the request body
+    (``model_fields_set``). Pydantic fills ``num_inference_steps=20`` and
+    ``guidance_scale=5.0`` on every request, and most runners ignore both, so
+    observing the defaults would record values nobody asked for.
     """
     try:
         conditioning = conditioning_of(request)
@@ -168,12 +174,14 @@ def observe_image_request(request: ImageGenerateRequest, model_type: str) -> Non
 
         requests_by_shape_total.labels(*labels).inc()
 
+        explicit = getattr(request, "model_fields_set", frozenset())
+
         steps = getattr(request, "num_inference_steps", None)
-        if steps:
+        if "num_inference_steps" in explicit and steps:
             requested_steps.labels(*labels).observe(steps)
 
         guidance = getattr(request, "guidance_scale", None)
-        if guidance is not None:
+        if "guidance_scale" in explicit and guidance is not None:
             requested_guidance_scale.labels(*labels).observe(guidance)
 
         count = getattr(request, "number_of_images", None)
@@ -189,7 +197,9 @@ def observe_image_request(request: ImageGenerateRequest, model_type: str) -> Non
         width = getattr(request, "width", None)
         height = getattr(request, "height", None)
         if width and height:
-            requested_megapixels.labels(*labels).observe(width * height / 1_000_000)
+            requested_megapixels.labels(*labels).observe(
+                width * height / _PIXELS_PER_MEGAPIXEL
+            )
 
     except Exception as e:  # pragma: no cover - defensive
         logger.warning(f"image request metrics: failed to record request shape: {e}")

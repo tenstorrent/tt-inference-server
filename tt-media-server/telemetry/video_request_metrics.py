@@ -25,9 +25,6 @@ logger = TTLogger()
 
 _LABELS = ["model_type", "request_type"]
 
-# duration_seconds is validated to 1..60 on VideoGenerateRequest. The ladder
-# runs to 80 so raising that cap degrades the histogram to coarse rather than
-# clipping every longer clip into +Inf.
 # duration_seconds is validated to 1..60. MiniMax-H3, the one runner that
 # constrains it further, serves the integers 4..15 (MINIMAX_H3_DURATIONS_S), so
 # the ladder resolves every one of those individually — a coarser ladder would
@@ -97,19 +94,24 @@ requested_duration = Histogram(
 def bucket_aspect_ratio(raw: object) -> str:
     """Map a caller-supplied aspect ratio onto a bounded label value.
 
-    Normalises the way the platform does before comparing. MiniMax-H3's
-    ``minimax_h3_parse_aspect_ratio`` accepts ``"16x9"``, ``"16/9"`` and
-    ``" 16:9 "`` as 16:9 — it does ``strip()`` then maps ``x`` and ``/`` onto
-    ``:`` before validating. Matching the raw string here would label every one
-    of those "other" while the server happily serves them as 16:9, which
-    manufactures false entries in exactly the bucket whose job is to flag
-    shapes we do not support.
+    Parses like ``minimax_h3_parse_aspect_ratio`` (strip, ``x``/``/`` to ``:``,
+    ``int()`` each part) so everything the server serves as 16:9 — ``"16x9"``,
+    ``" 16 : 9 "``, ``"016:9"`` — is counted as 16:9 rather than as "other".
+
+    Never raises: ``isdigit()`` admits strings ``int()`` rejects (``"²"``, over
+    4300 digits); those bucket as "other".
     """
     if raw is None or raw == "":
         return ASPECT_RATIO_UNSET
     if not isinstance(raw, str):
         return ASPECT_RATIO_OTHER
-    normalised = raw.strip().replace("x", ":").replace("/", ":")
+    parts = raw.strip().replace("x", ":").replace("/", ":").split(":")
+    if len(parts) != 2 or not all(part.strip().isdigit() for part in parts):
+        return ASPECT_RATIO_OTHER
+    try:
+        normalised = f"{int(parts[0])}:{int(parts[1])}"
+    except ValueError:
+        return ASPECT_RATIO_OTHER
     if normalised in _KNOWN_ASPECT_RATIOS:
         return normalised
     return ASPECT_RATIO_OTHER
