@@ -6053,13 +6053,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=90.0,
-                            ref="QB2 Qwen3.8 release cohort: 9/10 GPQA",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
@@ -6093,9 +6086,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=73.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    gpu_reference_score=73.0,
-                    gpu_reference_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    tolerance=0.05,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -6153,13 +6143,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=61.7,
                     published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=60.0,
-                            ref="QB2 Qwen3.8 release cohort: 3/5 SWE-bench Verified",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
