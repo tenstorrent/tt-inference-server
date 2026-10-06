@@ -501,7 +501,18 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=66.41,
                     published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
-                    # Published GPQA protocol is not fully specified; no matched GPU baseline.
+                    # This API stores acceptance references in the GPU-reference
+                    # field; this target is published, not a matched GPU control.
+                    gpu_reference_score=66.41,
+                    gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,flexible-extract"],
@@ -540,6 +551,13 @@ _eval_config_list = [
                     gpu_reference_score=target,
                     gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
                     tolerance=0.0,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=ci_target,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
                 ),
@@ -558,12 +576,13 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 10,
                 },
             )
-            for name, dataset, agent, target, kwargs, names in [
+            for name, dataset, agent, target, ci_target, kwargs, names in [
                 (
                     "terminal_bench_2_1",
                     "terminal-bench/terminal-bench-2-1",
                     "terminus-2",
                     29.24,
+                    20.0,
                     {"temperature": 1.0, "llm_kwargs": {"top_p": 0.95}},
                     [
                         "terminal-bench/break-filter-js-from-html",
@@ -583,6 +602,7 @@ _eval_config_list = [
                     "swebench-verified",
                     "mini-swe-agent",
                     57.0,
+                    50.0,
                     {
                         "version": MINI_SWE_AGENT_VERSION,
                         "config": {

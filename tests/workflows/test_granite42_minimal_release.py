@@ -60,18 +60,58 @@ def test_granite_ten_case_evals_preserve_generation_and_published_targets():
     }
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
     assert gpqa.score.published_score == 66.41
-    reference = resolve_eval_reference(gpqa.score, EvalLimitMode.CI_NIGHTLY)
-    assert accept_eval_score(reference, 0.0, n_total=10) is None
-    for task, passing, failing in ((terminal, 30.0, 20.0), (swe, 60.0, 50.0)):
+    for task, passing, failing in (
+        (gpqa, 60.0, 50.0),
+        (terminal, 20.0, 10.0),
+        (swe, 50.0, 40.0),
+    ):
+        assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+        reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
+        assert reference["tolerance"] == 0.0
+        assert reference["is_subset_reference"] is True
+        assert "not measured subset GPU control" in reference["reference_ref"]
+        assert accept_eval_score(reference, passing, n_total=10) is True
+        assert accept_eval_score(reference, failing, n_total=10) is False
+        full_reference = resolve_eval_reference(task.score, None)
+        assert full_reference["reference_score"] == task.score.published_score
+        assert full_reference["is_subset_reference"] is False
+    for task in (terminal, swe):
         config = task.agentic_eval_config
         names = config.task_names_map[EvalLimitMode.CI_NIGHTLY]
         assert len(names) == len(set(names)) == 10
         assert config.n_concurrent_trials == 10
         assert config.agent_timeout_sec == 7200
         assert config.llm_timeout_sec == 3600
-        reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
-        assert reference["tolerance"] == 0.0
-        assert reference["is_subset_reference"] is False
-        assert "not a matched subset GPU control" in reference["reference_ref"]
-        assert accept_eval_score(reference, passing, n_total=10) is True
-        assert accept_eval_score(reference, failing, n_total=10) is False
+
+
+def test_granite_ci_commands_select_ten_cases_at_concurrency_ten():
+    from types import SimpleNamespace
+
+    from llm_module.drivers.agentic import resolve_n_tasks, resolve_task_names
+    from llm_module.eval_command import build_eval_command
+
+    runtime = SimpleNamespace(limit_samples_mode="ci_nightly")
+    gpqa, terminal, swe = _eval_config_map[MODEL].tasks
+    spec = SimpleNamespace(
+        model_id="granite-4.2-30b",
+        model_name="granite-4.2-30b",
+        hf_model_repo=MODEL,
+        device_model_spec=SimpleNamespace(
+            max_context=131072,
+            max_concurrency=16,
+            eval_max_retries=0,
+        ),
+    )
+    command = build_eval_command(
+        gpqa,
+        spec,
+        "p300x2",
+        "/tmp/granite-evals",
+        8000,
+        runtime_config=runtime,
+    )
+    assert command[command.index("--limit") + 1] == "10"
+    assert "num_concurrent=10" in command[command.index("--model_args") + 1]
+    for task in (terminal, swe):
+        assert resolve_n_tasks(task, runtime) == 10
+        assert len(resolve_task_names(task, runtime)) == 10
