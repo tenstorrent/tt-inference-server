@@ -596,7 +596,7 @@ templates:
       # ISL≥128k + bounded → chunk 2048 (coherency). Serve 256k with that path.
       # Scheduler tokens must match the resolved metal chunk (2048 here).
       max_context: 262144  # 256 * 1024
-      default_impl: false
+      default_impl: true  # validated tt-transformers entry (32 users, 256K); the gemma4_31b_qb2 class below needs an unmerged tt-metal branch
       env_vars:
         # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
         # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
@@ -874,7 +874,7 @@ templates:
     - device: P300X2
       max_concurrency: 1
       max_context: 262144
-      default_impl: true
+      default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
