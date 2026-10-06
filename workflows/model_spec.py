@@ -350,7 +350,9 @@ deepseek_v41_flash_impl = ImplSpec(
     impl_id="deepseek_v41_flash",
     impl_name="deepseek-v41-flash",
     repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="<FILL IN>",  # [TBD — Partner] path to the contributed tt-metal impl
+    # the V4.1 implementation of branch mvasilijevic/deepseek-v41-prefill with the
+    #  carried patches; tt/v41/generator_vllm.py is the served entry point
+    code_path="models/demos/deepseek_v3_d_p",
 )
 whisper_impl = ImplSpec(
     impl_id="whisper",
@@ -467,7 +469,8 @@ class DeviceModelSpec:
     device: DeviceTypes
     max_concurrency: int
     max_context: int
-    # Explicit device KV-pool token budget for benchmark concurrency; set only when the pool is decoupled from max_context*max_num_seqs (does NOT affect max_context). None => derived from max_context.
+    # Explicit device KV-pool token budget for benchmark concurrency; set only when the pool is decoupled from
+    # max_context*max_num_seqs (does NOT affect max_context). None => derived from max_context.
     max_tokens_all_users_override: Optional[int] = None
     perf_targets_map: Dict[str, float] = field(default_factory=dict)
     default_impl: bool = False
@@ -603,7 +606,8 @@ class ModelSpec:
     cli_args: Dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
-        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline; TORCHDYNAMO_DISABLE=1 breaks warmup.
+        # Skipped for forge/media: Forge vLLM relies on torch.compile/dynamo for its compilation pipeline;
+        # TORCHDYNAMO_DISABLE=1 breaks warmup.
         if self.inference_engine in (
             InferenceEngine.FORGE.value,
             InferenceEngine.MEDIA.value,
