@@ -974,8 +974,9 @@ ModelConfigs = {
         "max_batch_size": 1,
     },
     # Qwen-Image-Edit: one image on all 32 WH chips (CFG-parallel: two 4x4 submeshes,
-    # TP=4 x SP=4 each). ~43 s per 50-step edit at 1024^2; a new prompt length
-    # re-captures the denoise trace, so leave headroom over the warm time.
+    # TP=4 x SP=4 each). A 50-step edit at 1024^2 takes ~43 s when the denoise trace
+    # is reused and ~52 s when a new prompt length re-captures it (WH Galaxy), so
+    # leave headroom over the warm time.
     (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
@@ -989,7 +990,7 @@ ModelConfigs = {
         # A string: the worker applies it only when truthy (int 0 would be skipped).
         "default_throttle_level": "0",
     },
-    # BH Galaxy: same 4x8 TP=8 x SP=4 layout (the base qwenimage BH 4x8 preset matches WH).
+    # BH Galaxy: same 4x8 CFG-parallel layout as WH (untested on BH).
     (ModelRunners.TT_QWEN_IMAGE_EDIT, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,

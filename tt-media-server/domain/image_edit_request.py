@@ -53,8 +53,9 @@ class ImageEditRequest(ImageToImageRequest):
         # Clean 422s for inputs the worker would fail on: a worker-side failure is
         # a 500 and counts towards restarting the 32-chip worker. The image check
         # mirrors ImageManager.base64_to_pil_image and fully decodes the image (so
-        # truncated files fail here too); URLs are left to the API layer, which
-        # downloads and replaces them before enqueue.
+        # truncated files fail here too). URLs are rejected: /v1/images/edits does
+        # not download media (only the video endpoints do), so a URL would reach
+        # the worker's decoder and fail there.
         if get_settings().model_runner != _QWEN_IMAGE_EDIT_RUNNER:
             return self
         from tt_model_runners.qwen_image_edit_policy import (
@@ -67,7 +68,10 @@ class ImageEditRequest(ImageToImageRequest):
         if not image:
             raise ValueError("image must be a non-empty base64-encoded image")
         if image[:8].lower().startswith(("http://", "https://")):
-            return self
+            raise ValueError(
+                "image must be a base64-encoded image; URLs are not supported on "
+                "/v1/images/edits"
+            )
         import base64
         from io import BytesIO
 

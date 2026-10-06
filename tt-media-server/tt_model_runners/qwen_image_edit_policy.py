@@ -5,7 +5,8 @@
 """Qwen-Image-Edit serving policy for this deployment.
 
 Which canvas sizes the media-server accepts and which defaults it fills in for
-the tt_dit ``QwenImageEditPipeline`` (WH Galaxy, TP=8 x SP=4). Kept free of
+the tt_dit ``QwenImageEditPipeline`` (WH Galaxy 4x8, CFG-parallel: two 4x4
+submeshes, TP=4 x SP=4 each). Kept free of
 ttnn/torch imports so the request model and the unit tests can use it.
 """
 

@@ -181,10 +181,13 @@ class TestEditRequest:
             ImageEditRequest(prompt="p", image=_B64, seed=seed)
         assert ImageEditRequest(prompt="p", image=_B64, seed=2**63 - 1)
 
-    def test_leaves_urls_to_the_api_layer(self, qwen_edit_runner):
+    @pytest.mark.parametrize("url", ["https://example.com/cat.jpg", "HTTP://x/y.png"])
+    def test_rejects_urls(self, qwen_edit_runner, url):
+        # /v1/images/edits does not download media; a URL would fail in the worker.
         from domain.image_edit_request import ImageEditRequest
 
-        assert ImageEditRequest(prompt="p", image="https://example.com/cat.jpg")
+        with pytest.raises(ValidationError, match="URLs are not supported"):
+            ImageEditRequest(prompt="p", image=url)
 
     def test_other_runners_skip_image_decode_check(self, monkeypatch):
         import domain.image_edit_request as edit_mod

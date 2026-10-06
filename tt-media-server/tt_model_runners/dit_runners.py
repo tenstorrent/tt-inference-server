@@ -606,6 +606,17 @@ class TTQwenImageEditRunner(TTDiTRunner):
         kwargs = {}
         if self._pipeline_supports_2cq():
             kwargs["use_2cq"] = True
+        import torch
+
+        # The effective settings, which the image environment alone does not show
+        # (the worker overrides TT_MM_THROTTLE_PERF from the model config).
+        self.logger.info(
+            f"Device {self.device_id}: Qwen-Image-Edit settings: "
+            f"TT_MM_THROTTLE_PERF={os.environ.get('TT_MM_THROTTLE_PERF', '<unset>')}, "
+            f"num_command_queues={self.get_pipeline_device_params().get('num_command_queues', 1)}, "
+            f"use_2cq={kwargs.get('use_2cq', False)}, "
+            f"host threads OMP={os.environ.get('OMP_NUM_THREADS')} torch={torch.get_num_threads()}"
+        )
         try:
             return QwenImageEditPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
