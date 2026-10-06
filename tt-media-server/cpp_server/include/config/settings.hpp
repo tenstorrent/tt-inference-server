@@ -488,6 +488,11 @@ std::string sentryRelease();
  * defaults::SENTRY_DEBUG. */
 bool sentryDebug();
 
+/** server_name tag on every transaction; overrides the OS hostname (a random
+ * container ID under Docker). From SENTRY_SERVER_NAME; empty falls back to
+ * POD_NAME, then gethostname(). Default: defaults::SENTRY_SERVER_NAME. */
+std::string sentryServerName();
+
 // ---------------------------------------------------------------------------
 // Mooncake KV Migration configuration.
 // ---------------------------------------------------------------------------
