@@ -428,6 +428,8 @@ class WorkflowExecution(ABC):
         return spec.get("status") if spec else None
 
     def inject_metadata(self, schema: ReportSchema) -> None:
+        from .target_pack import get_target_pack
+
         meta = schema.metadata
         meta["workflow"] = self.name
         meta["report_partial"] = False
@@ -440,6 +442,7 @@ class WorkflowExecution(ABC):
         if m.runtime_model_spec_json is not None:
             meta["runtime_model_spec_json"] = m.runtime_model_spec_json
         self._inject_model_spec_metadata(meta)
+        meta.update(get_target_pack().extra_report_metadata())
 
     def _inject_model_spec_metadata(self, meta: dict) -> None:
         """Populate identity/provenance fields from the runtime model spec.

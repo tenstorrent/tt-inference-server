@@ -230,6 +230,18 @@ def test_merged_schema_concatenates_sections_and_claims_release(tmp_path):
     assert schema.metadata["report_id"]
 
 
+def test_merged_schema_keeps_the_requirements_document(tmp_path):
+    document = {"schema_version": "2.8.0", "id": "doc-1", "revision": 4}
+    report = _report("evals")
+    report["metadata"]["requirements_document"] = document
+    _write(tmp_path, "a", "report_evals_0_100.json", report)
+
+    sources, _ = load_test_reports(discover_test_reports(tmp_path))
+    schema = build_merged_schema(sources, model="google/gemma-4-31B-it")
+
+    assert schema.metadata["requirements_document"] == document
+
+
 def test_model_status_comes_from_the_sources(tmp_path):
     _write(
         tmp_path, "a", "report_evals_0_100.json", _report(model_status="EXPERIMENTAL")

@@ -814,6 +814,32 @@ def test_target_pack_delegates_unspecified_content(pack):
     )
 
 
+def test_report_metadata_identifies_the_document(pack):
+    assert pack.extra_report_metadata() == {
+        "requirements_document": {
+            "schema_version": "2.1.0",
+            "id": "acme-llm-serving",
+            "revision": 1,
+        }
+    }
+
+
+def test_report_metadata_reads_a_validation_plan_export():
+    plan = load_requirements(_FIXTURE.with_name("wiring-plan-qwen3-32b.json"))
+    pack = RequirementsTargetPack(plan, TenstorrentTargetPack())
+    assert pack.extra_report_metadata() == {
+        "requirements_document": {
+            "schema_version": "2.8.0",
+            "id": "23fe5fdb-9ebb-4148-837a-5ea1823f5245",
+            "revision": 4,
+        }
+    }
+
+
+def test_catalog_pack_adds_no_report_metadata():
+    assert TenstorrentTargetPack().extra_report_metadata() == {}
+
+
 # --- agentic traces: template fallback for off-catalog models ----------------
 
 _KIMI_TEMPLATE_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"

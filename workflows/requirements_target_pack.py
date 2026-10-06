@@ -957,6 +957,16 @@ class RequirementsTargetPack(TargetPack):
     def extra_spec_metadata_fields(self):
         return self._delegate.extra_spec_metadata_fields()
 
+    def extra_report_metadata(self):
+        # Which document, and which revision of it, the run validated against.
+        return {
+            "requirements_document": {
+                "schema_version": self._doc.schema_version,
+                "id": self._doc.id,
+                "revision": self._doc.meta.get("revision"),
+            }
+        }
+
 
 def _repoint_sampling(node: Any, params: Mapping[str, Any], found: set) -> Any:
     """``node`` with ``params`` replaced wherever the config already carries them.
