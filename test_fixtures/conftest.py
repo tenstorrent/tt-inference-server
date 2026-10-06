@@ -27,6 +27,7 @@ def _default_endpoint_url() -> str:
 
 # 1. Add command-line options for endpoint and metadata
 def pytest_addoption(parser):
+    parser.addoption("--capture-api-responses", action="store_true", default=False)
     parser.addoption(
         "--output-path",
         type=str,
@@ -131,6 +132,11 @@ def api_client(endpoint_url, request):
         headers["Authorization"] = f"Bearer {authorization}"
 
     model_name = request.config.getoption("--model-name", default=None)
+    capture_responses = request.config.getoption(
+        "--capture-api-responses", default=False
+    )
+    if capture_responses:
+        request.node.api_responses = []
 
     def _make_request(
         json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
@@ -149,7 +155,13 @@ def api_client(endpoint_url, request):
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
             if stream:
                 return response
-            return response.json()
+            body = response.json()
+            if capture_responses:
+                # Public conformance payloads only; never retain URL or auth headers.
+                request.node.api_responses.append(
+                    {"request": json.loads(json.dumps(json_payload)), "response": body}
+                )
+            return body
         except requests.exceptions.HTTPError as e:
             try:
                 error_json = e.response.json()
@@ -218,6 +230,10 @@ def report_test(results_report, request):
             tb = f"\nTraceback:\n{report.longrepr}"
 
     message = tb.strip() if tb else ""
+    if report.failed and getattr(request.node, "api_responses", None):
+        results_report.setdefault("failed_api_responses", {})[request.node.nodeid] = (
+            request.node.api_responses
+        )
 
     # --- Add the test outcome to the report ---
 
