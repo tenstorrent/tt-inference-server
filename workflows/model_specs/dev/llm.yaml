@@ -4178,3 +4178,39 @@ templates:
       benchmark_tokenizer_sha256:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
         tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
+
+- weights:
+    - ibm-granite/granite-4.2-30b
+  impl: granite42_30b_qb2
+  inference_engine: VLLM
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 16
+      max_context: 131072
+      max_tokens_all_users_override: 131072
+      default_impl: true
+      env_vars:
+        HF_MODEL: ibm-granite/granite-4.2-30b
+        MESH_DEVICE: P300x2
+        EXTRA_MODELS_DIR: "../../tt-metal/models/demos"
+      vllm_args:
+        hf-overrides: '{"architectures":["TTGraniteForCausalLM"]}'
+        revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        tokenizer_revision: 9e668ce1c538387ef24d3644e9b0606647762636
+        block_size: 32
+        max_num_seqs: 16
+        no-enable-prefix-caching: true
+        enable_auto_tool_choice: true
+        tool_call_parser: qwen3_xml
+        reasoning_parser: granite_thinking_parser
+        reasoning_parser_plugin: ../../tt-metal/models/demos/granite42_30b_qb2/tt/granite_thinking_parser.py
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        trace_region_size: 134217728
+        sample_on_device_mode: all
+  metadata:
+    ibm-granite/granite-4.2-30b:
+      reasoning_parser_name: granite_thinking_parser
+      tool_call_parser_name: qwen3_xml

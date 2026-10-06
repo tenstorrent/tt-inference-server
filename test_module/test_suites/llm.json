@@ -21,7 +21,8 @@
         "p300x2"
       ],
       "models": [
-        "Qwen/Qwen3.8-27B"
+        "Qwen/Qwen3.8-27B",
+        "ibm-granite/granite-4.2-30b"
       ],
       "test_cases": [
         {

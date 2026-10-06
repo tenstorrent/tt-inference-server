@@ -362,6 +362,16 @@
                 }
             }
         },
+        "ibm-granite/granite-4.2-30b": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                }
+            }
+        },
         "Qwen/Qwen3.8-27B": {
             "inference_engine": "vLLM",
             "ci": {
