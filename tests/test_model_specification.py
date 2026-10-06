@@ -684,7 +684,9 @@ class TestSystemIntegration:
         lookups = []
         monkeypatch.setattr(
             "workflows.model_spec.get_perf_reference_map",
-            lambda model_name, targets: lookups.append(model_name) or {},
+            lambda model_name, targets, impl_id=None: (
+                lookups.append((model_name, impl_id)) or {}
+            ),
         )
         template = self._template(
             self._impl("impl-a"),
@@ -694,7 +696,10 @@ class TestSystemIntegration:
 
         template.expand_to_specs()
 
-        assert lookups == ["org/model-base", "org/model-instruct"]
+        assert lookups == [
+            ("org/model-base", "impl-a"),
+            ("org/model-instruct", "impl-a"),
+        ]
 
     def _template_with_device_targets(self, device_targets, template_targets=None):
         """A two-device template where only the second device overrides its tiers."""
@@ -732,7 +737,7 @@ class TestSystemIntegration:
         calls = []
         monkeypatch.setattr(
             "workflows.model_spec.get_perf_reference_map",
-            lambda model_name, targets: calls.append(dict(targets)) or {},
+            lambda model_name, targets, impl_id=None: calls.append(dict(targets)) or {},
         )
 
         self._template_with_device_targets({"complete": 0.30}).expand_to_specs()
@@ -749,7 +754,7 @@ class TestSystemIntegration:
         calls = []
         monkeypatch.setattr(
             "workflows.model_spec.get_perf_reference_map",
-            lambda model_name, targets: calls.append(dict(targets)) or {},
+            lambda model_name, targets, impl_id=None: calls.append(dict(targets)) or {},
         )
 
         self._template_with_device_targets({}).expand_to_specs()
