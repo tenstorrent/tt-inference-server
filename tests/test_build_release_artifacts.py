@@ -426,3 +426,133 @@ def test_bundle_names_change_only_where_a_device_ships_two_impls():
         bundle_name(model, "p300x2", "llama31-8b-qb2", shared=True)
         == f"{base}_p300x2_llama31-8b-qb2.zip"
     )
+
+
+def _retry_artifacts_and_job():
+    name = "workflow_logs_release_Qwen__Qwen3-32B_runner_default"
+    artifacts = [
+        {"id": 1, "name": name, "created_at": "2026-10-06T11:20:41Z"},
+        {"id": 2, "name": name, "created_at": "2026-10-06T11:28:52Z"},
+        {"id": 3, "name": name, "created_at": "2026-10-06T17:07:59Z"},
+    ]
+    job = {
+        "name": "run-release-Qwen/Qwen3-32B-runner-galaxy",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-10-06T13:58:05Z",
+        "completed_at": "2026-10-06T17:08:13Z",
+    }
+    return artifacts, job
+
+
+def test_retry_resolution_uses_successful_job_execution_window(tmp_path, monkeypatch):
+    artifacts, job = _retry_artifacts_and_job()
+    bundle = _bundle(tmp_path)
+    monkeypatch.setattr(
+        "scripts.release.build_release_artifacts.download_artifact",
+        lambda repo, artifact, tmp, cache: bundle,
+    )
+    # Identical runtime identity and artifact name from failed/cancelled attempts
+    # must not hide the bundle uploaded by the successful retry.
+    chosen = resolve_model(
+        "Qwen/Qwen3-32B",
+        ["galaxy"],
+        artifacts,
+        [job],
+        "org/repo",
+        tmp_path,
+        {},
+        {("Qwen/Qwen3-32B", "galaxy", None): IDENTITY},
+        impl=None,
+    )
+    assert chosen == {"galaxy": artifacts[2]}
+
+    # An additional upload in the successful window is still ambiguous.
+    artifacts[1]["created_at"] = "2026-10-06T17:07:58Z"
+    with pytest.raises(SystemExit, match="found 3"):
+        resolve_model(
+            "Qwen/Qwen3-32B",
+            ["galaxy"],
+            artifacts,
+            [job],
+            "org/repo",
+            tmp_path,
+            {},
+            {("Qwen/Qwen3-32B", "galaxy", None): IDENTITY},
+            impl=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"conclusion": "failure"},
+        {"conclusion": "cancelled"},
+        {"status": "in_progress"},
+        {"started_at": None},
+        {"completed_at": "bad timestamp"},
+        {"started_at": "2026-10-06T18:00:00Z"},
+        {"completed_at": "2026-10-06T17:08:13"},
+        {"name": "run-release-Qwen/Qwen3-32B-other-galaxy"},
+        {"name": "run-release-Qwen/Qwen3-32B-runner-n150"},
+    ],
+)
+def test_retry_selection_requires_matching_success_and_valid_timing(changes):
+    from scripts.release.build_release_artifacts import artifacts_from_successful_job
+
+    artifacts, job = _retry_artifacts_and_job()
+    job.update(changes)
+    kinds = {artifacts[0]["name"]: "release"}
+    assert (
+        artifacts_from_successful_job(
+            artifacts, [job], "Qwen/Qwen3-32B", "galaxy", kinds
+        )
+        == []
+    )
+
+
+def test_retry_selection_preserves_inherited_success_and_rejects_missing_metadata():
+    from scripts.release.build_release_artifacts import artifacts_from_successful_job
+
+    artifacts, job = _retry_artifacts_and_job()
+    kinds = {artifacts[0]["name"]: "release"}
+    # GitHub may report run_attempt=3 for the successful execution inherited
+    # from attempt 2. Use execution timestamps, not the attempt number.
+    job["run_attempt"] = 3
+    assert artifacts_from_successful_job(
+        artifacts, [job], "Qwen/Qwen3-32B", "galaxy", kinds
+    ) == [artifacts[2]]
+    assert (
+        artifacts_from_successful_job(
+            artifacts, [job, dict(job)], "Qwen/Qwen3-32B", "galaxy", kinds
+        )
+        == []
+    )
+    for value in (None, "invalid", "2026-10-06T17:07:59"):
+        artifacts[2]["created_at"] = value
+        assert (
+            artifacts_from_successful_job(
+                artifacts, [job], "Qwen/Qwen3-32B", "galaxy", kinds
+            )
+            == []
+        )
+
+
+def test_retry_selection_keeps_explicit_impl_separate_from_default():
+    from scripts.release.build_release_artifacts import artifacts_from_successful_job
+
+    artifacts, job = _retry_artifacts_and_job()
+    for artifact in artifacts:
+        artifact["name"] = artifact["name"].removesuffix("_default") + "_custom"
+    explicit_job = dict(job, name="run-release-Qwen/Qwen3-32B@custom@-runner-galaxy")
+    kinds = {artifacts[0]["name"]: "release"}
+    assert artifacts_from_successful_job(
+        artifacts, [job, explicit_job], "Qwen/Qwen3-32B", "galaxy", kinds
+    ) == [artifacts[2]]
+    explicit_job["conclusion"] = "failure"
+    assert (
+        artifacts_from_successful_job(
+            artifacts, [job, explicit_job], "Qwen/Qwen3-32B", "galaxy", kinds
+        )
+        == []
+    )
