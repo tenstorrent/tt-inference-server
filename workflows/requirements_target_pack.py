@@ -64,6 +64,9 @@ _EVAL_NAME_TO_TASK = {
     "tau3-banking benchmark": ("tau3_bench_banking",),
     "tau3-banking": ("tau3_bench_banking",),
     "tau3-bench banking": ("tau3_bench_banking",),
+    "longbench-v2": ("longbench2_generate",),
+    "longbench v2": ("longbench2_generate",),
+    "longbench2": ("longbench2_generate",),
 }
 
 # Scenario scalar-target metric -> PerformanceTarget attribute. Only these
