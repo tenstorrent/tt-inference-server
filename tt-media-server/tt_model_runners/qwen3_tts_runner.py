@@ -331,6 +331,11 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             # decoder survives the talker's traced execution.
             self._check_decoder_against_cpu("post-capture")
 
+        # Every request restarts from this RNG state, so one eval run is one fixed draw
+        # per prompt. TT_QWEN3_SEED picks a different (still reproducible) draw, to tell a
+        # quality regression from one unlucky sample.
+        if os.environ.get("TT_QWEN3_SEED"):
+            torch.manual_seed(int(os.environ["TT_QWEN3_SEED"]))
         self._post_warmup_rng_state = torch.get_rng_state()
 
     def _warmup_inference(self) -> None:
