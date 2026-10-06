@@ -801,7 +801,7 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=80,
+                max_concurrent=40,  # pdg-g53-a9 GPQA run
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
