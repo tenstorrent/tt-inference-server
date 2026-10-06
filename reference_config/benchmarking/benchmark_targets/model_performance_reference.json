@@ -8692,22 +8692,18 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 51.18,
-                        "tput": 49.7
+                        "tput_user": 43.64,
+                        "tput": 42.6
                     },
                     "measured": {
-                        "ttft_ms": 95.8,
-                        "tput_user": 51.18,
-                        "tput": 49.7,
+                        "ttft_ms": 94.4,
+                        "tput_user": 43.64,
+                        "tput": 42.6,
                         "tolerance": 0.2
                     }
                 },
                 "_comment": [
-                    "BLACKHOLE_GALAXY at data_parallel_size=4 (four (1,8) column engines), tt-transformers, hybrid kv-cache groups +",
-                    "vLLM prefix caching, bfloat8_b KV, pool 3047424 tok/engine, scheduler budget 16384. One harness sweep on",
-                    "2026-10-05 (bh-glx-exp-b03u14); 24/24 points served, 0 fatals. 'measured' gates the target tier (tolerance 0.20,",
-                    "single run); 'theoretical' is set to the measured level so the functional and complete tiers grade. ttft_ms is",
-                    "the mean, queue-inclusive at concurrency >1."
+                    "Measured 2026-10-06 on bh-glx-exp-b03u14, DP=4 x TP=8, prefix caching on, bfloat8_b KV, pool 2,883,584 tokens per engine, decode graphs 1,4,8,32 with one RoPE path (GEMMA4_ROPE_PERUSER_B1=1) and the decode SDPA split pinned (GEMMA4_SDPA_MAX_CORES_PER_HEAD=3) so seeded requests reproduce across graphs (tt-metal#59300). 24/24 points served, 0 faults."
                 ]
             },
             {
@@ -8722,13 +8718,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 28.56,
-                        "tput": 2898.0
+                        "tput_user": 28.96,
+                        "tput": 2883.1
                     },
                     "measured": {
-                        "ttft_ms": 1185.9,
-                        "tput_user": 28.56,
-                        "tput": 2898.0,
+                        "ttft_ms": 1265.4,
+                        "tput_user": 28.96,
+                        "tput": 2883.1,
                         "tolerance": 0.2
                     }
                 }
@@ -8745,13 +8741,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 50.51,
-                        "tput": 50.3
+                        "tput_user": 42.87,
+                        "tput": 42.7
                     },
                     "measured": {
-                        "ttft_ms": 91.4,
-                        "tput_user": 50.51,
-                        "tput": 50.3,
+                        "ttft_ms": 94.8,
+                        "tput_user": 42.87,
+                        "tput": 42.7,
                         "tolerance": 0.2
                     }
                 }
@@ -8768,13 +8764,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 32.81,
-                        "tput": 4009.5
+                        "tput_user": 31.74,
+                        "tput": 3879.5
                     },
                     "measured": {
-                        "ttft_ms": 1475.9,
-                        "tput_user": 32.81,
-                        "tput": 4009.5,
+                        "ttft_ms": 1201.6,
+                        "tput_user": 31.74,
+                        "tput": 3879.5,
                         "tolerance": 0.2
                     }
                 }
@@ -8791,13 +8787,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 49.21,
-                        "tput": 46.1
+                        "tput_user": 41.82,
+                        "tput": 39.7
                     },
                     "measured": {
-                        "ttft_ms": 197.4,
-                        "tput_user": 49.21,
-                        "tput": 46.1,
+                        "ttft_ms": 190.3,
+                        "tput_user": 41.82,
+                        "tput": 39.7,
                         "tolerance": 0.2
                     }
                 }
@@ -8814,13 +8810,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 22.99,
-                        "tput": 1833.5
+                        "tput_user": 22.49,
+                        "tput": 1809.1
                     },
                     "measured": {
-                        "ttft_ms": 3379.2,
-                        "tput_user": 22.99,
-                        "tput": 1833.5,
+                        "ttft_ms": 3350.5,
+                        "tput_user": 22.49,
+                        "tput": 1809.1,
                         "tolerance": 0.2
                     }
                 }
@@ -8837,13 +8833,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 49.16,
-                        "tput": 44.1
+                        "tput_user": 41.42,
+                        "tput": 37.2
                     },
                     "measured": {
-                        "ttft_ms": 317.9,
-                        "tput_user": 49.16,
-                        "tput": 44.1,
+                        "ttft_ms": 375.2,
+                        "tput_user": 41.42,
+                        "tput": 37.2,
                         "tolerance": 0.2
                     }
                 }
@@ -8860,13 +8856,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 14.9,
-                        "tput": 1082.4
+                        "tput_user": 14.92,
+                        "tput": 1138.1
                     },
                     "measured": {
-                        "ttft_ms": 5973.5,
-                        "tput_user": 14.9,
-                        "tput": 1082.4,
+                        "ttft_ms": 5771.0,
+                        "tput_user": 14.92,
+                        "tput": 1138.1,
                         "tolerance": 0.2
                     }
                 }
@@ -8883,13 +8879,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 49.02,
-                        "tput": 35.3
+                        "tput_user": 40.71,
+                        "tput": 32.6
                     },
                     "measured": {
-                        "ttft_ms": 1033.7,
-                        "tput_user": 49.02,
-                        "tput": 35.3,
+                        "ttft_ms": 804.4,
+                        "tput_user": 40.71,
+                        "tput": 32.6,
                         "tolerance": 0.2
                     }
                 }
@@ -8906,13 +8902,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 7.58,
-                        "tput": 578.5
+                        "tput_user": 8.13,
+                        "tput": 646.6
                     },
                     "measured": {
-                        "ttft_ms": 10369.4,
-                        "tput_user": 7.58,
-                        "tput": 578.5,
+                        "ttft_ms": 9130.8,
+                        "tput_user": 8.13,
+                        "tput": 646.6,
                         "tolerance": 0.2
                     }
                 }
@@ -8929,13 +8925,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 48.77,
-                        "tput": 28.1
+                        "tput_user": 38.78,
+                        "tput": 27.3
                     },
                     "measured": {
-                        "ttft_ms": 1952.8,
-                        "tput_user": 48.77,
-                        "tput": 28.1,
+                        "ttft_ms": 1420.9,
+                        "tput_user": 38.78,
+                        "tput": 27.3,
                         "tolerance": 0.2
                     }
                 }
@@ -8952,13 +8948,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 4.46,
-                        "tput": 317.0
+                        "tput_user": 4.69,
+                        "tput": 358.5
                     },
                     "measured": {
-                        "ttft_ms": 19018.6,
-                        "tput_user": 4.46,
-                        "tput": 317.0,
+                        "ttft_ms": 16745.5,
+                        "tput_user": 4.69,
+                        "tput": 358.5,
                         "tolerance": 0.2
                     }
                 }
@@ -8975,13 +8971,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 48.71,
-                        "tput": 47.9
+                        "tput_user": 38.61,
+                        "tput": 38.1
                     },
                     "measured": {
-                        "ttft_ms": 355.4,
-                        "tput_user": 48.71,
-                        "tput": 47.9,
+                        "ttft_ms": 376.1,
+                        "tput_user": 38.61,
+                        "tput": 38.1,
                         "tolerance": 0.2
                     }
                 }
@@ -8998,13 +8994,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 19.37,
-                        "tput": 1751.4
+                        "tput_user": 19.09,
+                        "tput": 1713.0
                     },
                     "measured": {
-                        "ttft_ms": 11806.7,
-                        "tput_user": 19.37,
-                        "tput": 1751.4,
+                        "ttft_ms": 11688.9,
+                        "tput_user": 19.09,
+                        "tput": 1713.0,
                         "tolerance": 0.2
                     }
                 }
@@ -9021,13 +9017,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 48.54,
-                        "tput": 46.5
+                        "tput_user": 38.89,
+                        "tput": 38.0
                     },
                     "measured": {
-                        "ttft_ms": 968.2,
-                        "tput_user": 48.54,
-                        "tput": 46.5,
+                        "ttft_ms": 611.4,
+                        "tput_user": 38.89,
+                        "tput": 38.0,
                         "tolerance": 0.2
                     }
                 }
@@ -9044,13 +9040,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 17.76,
-                        "tput": 1329.9
+                        "tput_user": 17.95,
+                        "tput": 1192.9
                     },
                     "measured": {
-                        "ttft_ms": 13701.7,
-                        "tput_user": 17.76,
-                        "tput": 1329.9,
+                        "ttft_ms": 13193.7,
+                        "tput_user": 17.95,
+                        "tput": 1192.9,
                         "tolerance": 0.2
                     }
                 }
@@ -9067,13 +9063,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 48.14,
-                        "tput": 28.9
+                        "tput_user": 36.13,
+                        "tput": 24.8
                     },
                     "measured": {
-                        "ttft_ms": 1794.9,
-                        "tput_user": 48.14,
-                        "tput": 28.9,
+                        "ttft_ms": 1650.7,
+                        "tput_user": 36.13,
+                        "tput": 24.8,
                         "tolerance": 0.2
                     }
                 }
@@ -9090,13 +9086,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 4.33,
-                        "tput": 175.7
+                        "tput_user": 4.31,
+                        "tput": 178.9
                     },
                     "measured": {
-                        "ttft_ms": 14769.1,
-                        "tput_user": 4.33,
-                        "tput": 175.7,
+                        "ttft_ms": 14530.9,
+                        "tput_user": 4.31,
+                        "tput": 178.9,
                         "tolerance": 0.2
                     }
                 }
@@ -9113,13 +9109,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 46.92,
-                        "tput": 13.4
+                        "tput_user": 32.47,
+                        "tput": 17.2
                     },
                     "measured": {
-                        "ttft_ms": 6855.9,
-                        "tput_user": 46.92,
-                        "tput": 13.4,
+                        "ttft_ms": 3511.3,
+                        "tput_user": 32.47,
+                        "tput": 17.2,
                         "tolerance": 0.2
                     }
                 }
@@ -9136,13 +9132,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 6.78,
-                        "tput": 71.6
+                        "tput_user": 7.27,
+                        "tput": 81.7
                     },
                     "measured": {
-                        "ttft_ms": 31518.8,
-                        "tput_user": 6.78,
-                        "tput": 71.6,
+                        "ttft_ms": 29596.6,
+                        "tput_user": 7.27,
+                        "tput": 81.7,
                         "tolerance": 0.2
                     }
                 }
@@ -9159,13 +9155,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 44.06,
-                        "tput": 11.8
+                        "tput_user": 25.17,
+                        "tput": 9.9
                     },
                     "measured": {
-                        "ttft_ms": 7960.7,
-                        "tput_user": 44.06,
-                        "tput": 11.8,
+                        "ttft_ms": 7890.4,
+                        "tput_user": 25.17,
+                        "tput": 9.9,
                         "tolerance": 0.2
                     }
                 }
@@ -9183,12 +9179,12 @@
                 "targets": {
                     "theoretical": {
                         "tput_user": 11.58,
-                        "tput": 32.4
+                        "tput": 32.7
                     },
                     "measured": {
-                        "ttft_ms": 45151.4,
+                        "ttft_ms": 35899.1,
                         "tput_user": 11.58,
-                        "tput": 32.4,
+                        "tput": 32.7,
                         "tolerance": 0.2
                     }
                 }
@@ -9205,13 +9201,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 39.64,
-                        "tput": 5.3
+                        "tput_user": 18.77,
+                        "tput": 3.7
                     },
                     "measured": {
-                        "ttft_ms": 20869.3,
-                        "tput_user": 39.64,
-                        "tput": 5.3,
+                        "ttft_ms": 27865.1,
+                        "tput_user": 18.77,
+                        "tput": 3.7,
                         "tolerance": 0.2
                     }
                 }
@@ -9228,13 +9224,13 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 10.41,
-                        "tput": 11.4
+                        "tput_user": 8.57,
+                        "tput": 11.6
                     },
                     "measured": {
-                        "ttft_ms": 52089.9,
-                        "tput_user": 10.41,
-                        "tput": 11.4,
+                        "ttft_ms": 42783.9,
+                        "tput_user": 8.57,
+                        "tput": 11.6,
                         "tolerance": 0.2
                     }
                 }
