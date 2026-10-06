@@ -65,13 +65,18 @@
       "Qwen/Qwen3.8-27B",
       "microsoft/phi-1",
       "Qwen/Qwen2.5-14B-Instruct-1M",
-      "meta-llama/Llama-3.1-8B-Instruct",
       "HuggingFaceTB/SmolLM2-1.7B-Instruct",
       "meta-llama/Llama-3.2-3B-Instruct",
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
-      "moonshotai/Kimi-K2.7-Code"
+      "moonshotai/Kimi-K2.7-Code",
+      "Qwen/Qwen1.5-0.5B-Chat",
+      "ALLaM-AI/ALLaM-7B-Instruct-preview",
+      "deepcogito/cogito-v1-preview-llama-3B",
+      "arcee-ai/Arcee-Spark",
+      "Qwen/Qwen2.5-7B-Instruct",
+      "Qwen/Qwen2.5-7B-Instruct-1M"
     ]
   },
   "available_markers": {
@@ -724,6 +729,76 @@
       "id_name": "Qwen--Qwen3-1.7B",
       "weights": [
         "Qwen/Qwen3-1.7B"
+      ]
+    },
+    "Qwen/Qwen1.5-0.5B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen1.5-0.5B-Chat",
+      "weights": [
+        "Qwen/Qwen1.5-0.5B-Chat"
+      ]
+    },
+    "ALLaM-AI/ALLaM-7B-Instruct-preview": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "ALLaM-AI--ALLaM-7B-Instruct-preview",
+      "weights": [
+        "ALLaM-AI/ALLaM-7B-Instruct-preview"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-3B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-3B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ]
+    },
+    "arcee-ai/Arcee-Spark": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "arcee-ai--Arcee-Spark",
+      "weights": [
+        "arcee-ai/Arcee-Spark"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct-1M": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct-1M",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
+      ]
+    },
+    "Qwen/Qwen3-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-32B",
+      "weights": [
+        "Qwen/Qwen3-32B"
       ]
     }
   },

@@ -245,7 +245,7 @@ def _write_harbor_adapters_pth(
     if site_packages is None:
         logger.error(
             "Could not locate site-packages under %s to write harbor-adapters.pth",
-            venv_config.venv_path,
+            venv_config.venv_python,
         )
         return False
     pth_file = site_packages / "harbor-adapters.pth"
@@ -691,6 +691,41 @@ if actual != expected:
     )
 
 
+def setup_evals_common(
+    venv_config: VenvConfig,
+    model_spec: ModelSpec,
+) -> bool:
+    """Verify the pinned harness, then stage the NLTK Punkt data IFEval scores with.
+
+    ifeval / leaderboard_ifeval run in this venv, and NLTK's own downloader is
+    refused by the runner proxy ("Security Violation" loading punkt_tab), so
+    scoring failed after every response had been generated. Same staging step
+    setup_evals_meta runs (ported from #5234).
+    """
+    if not verify_evals_common_lm_eval(venv_config, model_spec):
+        return False
+    # Best effort: most EVALS_COMMON tasks never touch NLTK, so a failed fetch
+    # (e.g. no network) must not fail venv setup for them. ifeval then fails
+    # at scoring exactly as it did before this staging step existed.
+    staged = (
+        run_command(
+            [
+                str(venv_config.venv_python),
+                str(get_repo_root_path() / "scripts" / "setup_nltk_data.py"),
+            ],
+            logger=logger,
+        )
+        == 0
+    )
+    if not staged:
+        logger.warning(
+            "Could not stage NLTK Punkt data in %s; ifeval/leaderboard_ifeval "
+            "scoring will fail, other evals are unaffected.",
+            venv_config.venv_python,
+        )
+    return True
+
+
 # Pinned vLLM tags for the benchmark client venvs. Each must match the vllm==
 # pin in its requirements file (structured-output scripts are fetched from
 # vllm-project/vllm@v<pin>/benchmarks at setup time):
@@ -819,7 +854,7 @@ _venv_config_list = [
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_COMMON,
         requirements_file="evals-common.txt",
-        setup_function=verify_evals_common_lm_eval,
+        setup_function=setup_evals_common,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.EVALS_VISION,
