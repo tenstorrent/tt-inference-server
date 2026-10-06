@@ -754,7 +754,7 @@ _eval_config_list = [
             # multiple_choice/loglikelihood and cannot run on chat-only servers.
             EvalTask(
                 task_name="longbench2_generate",
-                max_concurrent=80,
+                max_concurrent=20,  # pdg-g53-a9 LongBench2 run
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 score=EvalTaskScore(
