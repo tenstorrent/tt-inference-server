@@ -390,7 +390,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # and the first ~5 min of profiling ran cold (aiperf b60d3a9a fixes it).
     # Keep every model on the same pin so numbers stay comparable.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_Kimi-K2.7-Code_super_cluster",
+        model_id="id_blaze_Kimi-K2.7-Code_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
@@ -426,7 +426,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # no SwarmOne scenario is recorded for this model. Same InferenceX pin as
     # Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_GLM-5.2_super_cluster",
+        model_id="id_blaze_GLM-5.2_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
@@ -437,7 +437,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
         ),
     ),
     AgenticTracesConfig(
-        model_id="id_tt-transformers_GLM-5.3_super_cluster",
+        model_id="id_blaze_GLM-5.3_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
@@ -451,13 +451,27 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # only; no SwarmOne scenario is recorded for this model. Same InferenceX
     # pin as Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
-        model_id="id_tt-transformers_gemma-4-31B-it_super_cluster",
+        model_id="id_blaze_gemma-4-31B-it_super_cluster",
         inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
                 public_dataset="semianalysis_cc_traces_weka_062126_256k",
                 concurrency=_agentx_concurrency(8),
+            ),
+        ),
+    ),
+    # MiniMax-M3 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
+    # only. Full (1M) dataset to match the spec's 1048576 max_context, and
+    # concurrency at the spec's max_concurrency of 62.
+    AgenticTracesConfig(
+        model_id="id_blaze_MiniMax-M3_super_cluster",
+        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        runs=(
+            AgenticTracesRunSpec(
+                trace_source=TraceSource.INFERENCEX_AGENTX,
+                public_dataset="semianalysis_cc_traces_weka_062126",
+                concurrency=_agentx_concurrency(62),
             ),
         ),
     ),
@@ -491,7 +505,7 @@ _REQUIREMENTS_SYNTHESIZED_IMPL_ID = "requirements_synthesized"
 # currently the only onboarded one. Its default sweep is the
 # InferenceX Weka replay (SwarmOne is opt-in, so no swo-bench license is
 # needed); the InferenceX pin and mode settings carry over unchanged.
-_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+_REQUIREMENTS_TEMPLATE_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 
 
 def _borrows_template(model_spec) -> bool:

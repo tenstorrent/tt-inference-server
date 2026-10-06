@@ -79,6 +79,22 @@
                             ]
                         }
                     }
+                },
+                {
+                    "inference_engine": "vLLM",
+                    "impl": "llama31-8b-qb2",
+                    "ci": {
+                        "nightly": {
+                            "devices": [
+                                "P300X2"
+                            ]
+                        },
+                        "release": {
+                            "devices": [
+                                "P300X2"
+                            ]
+                        }
+                    }
                 }
             ]
         },
@@ -147,7 +163,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "P300X2"
                     ]
                 },
@@ -178,16 +193,6 @@
                         "weekly": {
                             "devices": [
                                 "T3K"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "inference_engine": "FORGE",
-                    "ci": {
-                        "nightly": {
-                            "devices": [
-                                "BH_GALAXY"
                             ]
                         }
                     }
@@ -448,7 +453,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "P300X2",
                         "T3K"
                     ]
@@ -720,7 +724,6 @@
                         "nightly": {
                             "devices": [
                                 "GALAXY",
-                                "BH_GALAXY",
                                 "N150",
                                 "N300",
                                 "P300X2"
@@ -793,7 +796,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "N150",
                         "P150"
                     ]

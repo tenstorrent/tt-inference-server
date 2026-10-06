@@ -89,13 +89,24 @@ def _diffusiongemma_eval_task(task_name):
     return next(task for task in tasks if task.task_name == task_name)
 
 
-def _build_eval_test_command(task):
+def _llama_1b_eval_task(task_name):
+    tasks = _eval_config_map["meta-llama/Llama-3.2-1B-Instruct"].tasks
+    return next(task for task in tasks if task.task_name == task_name)
+
+
+def _build_eval_test_command(
+    task,
+    *,
+    hf_model_repo="google/diffusiongemma-26B-A4B-it",
+    model_id="diffusiongemma-26B-A4B-it",
+    max_context=262144,
+):
     model_spec = SimpleNamespace(
-        model_id="diffusiongemma-26B-A4B-it",
-        model_name="diffusiongemma-26B-A4B-it",
-        hf_model_repo="google/diffusiongemma-26B-A4B-it",
+        model_id=model_id,
+        model_name=model_id,
+        hf_model_repo=hf_model_repo,
         device_model_spec=SimpleNamespace(
-            max_context=262144,
+            max_context=max_context,
             max_concurrency=1,
             eval_max_retries=0,
         ),
@@ -105,6 +116,11 @@ def _build_eval_test_command(task):
 
 def _command_gen_kwargs(command):
     raw = command[command.index("--gen_kwargs") + 1]
+    return dict(item.split("=", 1) for item in raw.split(","))
+
+
+def _command_model_kwargs(command):
+    raw = command[command.index("--model_args") + 1]
     return dict(item.split("=", 1) for item in raw.split(","))
 
 
@@ -133,6 +149,66 @@ class TestEvalCommand:
         command = _build_eval_test_command(task)
         model_args = command[command.index("--model_args") + 1]
         assert "max_retries=2" in model_args
+
+    def test_text_harness_context_comes_from_selected_device_spec(self):
+        command = _build_eval_test_command(
+            EvalTask(task_name="long_context", min_context_required=16384),
+            max_context=32768,
+        )
+
+        assert _command_model_kwargs(command)["max_length"] == str(32768 - 64)
+
+    @pytest.mark.parametrize(
+        "task,max_context,error",
+        [
+            (
+                EvalTask(task_name="undersized", min_context_required=16384),
+                8192,
+                "device max_context=8192",
+            ),
+        ],
+    )
+    def test_text_harness_rejects_context_contract_mismatch(
+        self, task, max_context, error
+    ):
+        with pytest.raises(ValueError, match=error):
+            _build_eval_test_command(task, max_context=max_context)
+
+    def test_task_max_length_above_device_context_is_bound_to_the_device(self):
+        task = EvalTask(task_name="oversized", model_kwargs={"max_length": 65536})
+
+        command = _build_eval_test_command(task, max_context=40960)
+
+        assert _command_model_kwargs(command)["max_length"] == str(40960 - 64)
+        assert task.model_kwargs["max_length"] == 65536
+
+    def test_explicit_task_max_length_may_be_below_device_minimum(self):
+        task = EvalTask(
+            task_name="task_specific_truncation",
+            min_context_required=16384,
+            model_kwargs={"max_length": 8192},
+        )
+
+        command = _build_eval_test_command(task, max_context=32768)
+
+        assert _command_model_kwargs(command)["max_length"] == "8192"
+
+    def test_text_harness_requires_a_declared_device_context(self):
+        with pytest.raises(ValueError, match="requires device_model_spec.max_context"):
+            _build_eval_test_command(EvalTask(task_name="unbounded"), max_context=None)
+
+    def test_output_clamp_uses_explicit_harness_context_without_mutating_task(self):
+        task = EvalTask(
+            task_name="bounded_generation",
+            model_kwargs={"max_length": 4096},
+            gen_kwargs={"max_gen_toks": 8192},
+        )
+
+        command = _build_eval_test_command(task, max_context=32768)
+
+        assert _command_gen_kwargs(command)["max_gen_toks"] == "3072"
+        assert task.model_kwargs == {"max_length": 4096}
+        assert task.gen_kwargs == {"max_gen_toks": 8192}
 
     def test_diffusiongemma_keeps_harness_seed_out_of_server_requests(self):
         task = _diffusiongemma_eval_task("gpqa_diamond_cot_zeroshot")
@@ -234,6 +310,31 @@ class TestDiffusionGemmaEvalContract:
         assert config.agent_timeout_sec == 45 * 60
         assert config.agent_kwargs["model_info"]["max_output_tokens"] == 4 * 1024
         assert config.agent_kwargs["llm_kwargs"]["max_tokens"] == 4 * 1024
+
+
+class TestLlama1BLongBenchEvalContract:
+    @pytest.mark.parametrize("task_name", ["longbench_code_e", "longbench_fewshot_e"])
+    def test_code_and_fewshot_match_raw_completion_reference(self, task_name):
+        task = _llama_1b_eval_task(task_name)
+        command = _build_eval_test_command(
+            task,
+            hf_model_repo="meta-llama/Llama-3.2-1B-Instruct",
+            model_id="Llama-3.2-1B-Instruct",
+            max_context=32768,
+        )
+
+        assert task.use_chat_api is False
+        assert task.apply_chat_template is False
+        assert "--apply_chat_template" not in command
+        assert "/v1/completions" in command[command.index("--model_args") + 1]
+        # One paged-KV block below max_context: prompt + max_tokens stays inside.
+        assert _command_model_kwargs(command)["max_length"] == str(32768 - 64)
+        assert _command_gen_kwargs(command) == {
+            "stream": "False",
+            "temperature": "0",
+            "max_gen_toks": "512",
+            "seed": "42",
+        }
 
 
 # --- scoring -> Block (the copied logic) -------------------------------------
@@ -734,3 +835,160 @@ class TestDeadlineReachesRunCommand:
         # Passing timeout_seconds=None would still select the bounded POSIX
         # path, so unbounded callers must omit the argument entirely.
         assert "timeout_seconds" not in seen
+
+
+def test_harness_window_keeps_a_block_of_headroom_below_max_context():
+    """A long prompt must land strictly inside the served context.
+
+    lm-eval truncates to max_length - 1 - max_gen_toks, so max_length ==
+    max_context puts prompt + max_tokens at max_context - 1 (the aime25 empty-
+    response boundary on TT). The window keeps one paged-KV block of slack.
+    """
+    command = _build_eval_test_command(
+        EvalTask(task_name="long_context", min_context_required=16384),
+        max_context=131072,
+    )
+    max_length = int(_command_model_kwargs(command)["max_length"])
+    assert max_length == 131072 - 64
+
+
+@pytest.mark.parametrize("impl_id", ["tt_transformers", "llama31_8b_qb2"])
+def test_llama31_longbench_preserves_generation_settings(
+    impl_id, tmp_path, monkeypatch
+):
+    from llm_module.eval_configs import get_llm_eval_tasks
+    from workflows.model_spec import load_templates_from_yaml
+    from workflows.utils import get_repo_root_path
+    from workflows.workflow_types import DeviceTypes
+
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    model_spec = next(
+        spec
+        for template in templates
+        if template.impl.impl_id == impl_id
+        for spec in template.expand_to_specs()
+        if spec.hf_model_repo == "meta-llama/Llama-3.1-8B-Instruct"
+        and spec.device_type == DeviceTypes.P300X2
+    )
+    tokenizer_calls = []
+
+    def pinned_tokenizer(spec, output):
+        tokenizer_calls.append((spec, output))
+        return "/verified/tokenizer"
+
+    monkeypatch.setattr(f"{_MOD}.resolve_tokenizer", pinned_tokenizer)
+    tasks = get_llm_eval_tasks(model_spec)
+    longbench = {t.task_name: t for t in tasks if t.task_name.startswith("longbench_")}
+    references = {
+        "longbench_code_e": 48.12,
+        "longbench_fewshot_e": 63.34,
+        "longbench_multi_e": 20.84,
+        "longbench_single_e": 22.22,
+        "longbench_summarization_e": 26.09,
+        "longbench_synthetic_e": 14.86,
+    }
+    assert set(longbench) == set(references)
+    for name, task in longbench.items():
+        tokenizer = mod._prepare_eval_tokenizer(
+            SimpleNamespace(model_spec=model_spec), task, tmp_path
+        )
+        command = build_eval_command(
+            task,
+            model_spec,
+            DeviceTypes.P300X2,
+            tmp_path,
+            8000,
+            tokenizer_path=tokenizer,
+        )
+        assert "--apply_chat_template" not in command
+        assert "--limit" not in command
+        assert command[command.index("--model") + 1] == "local-completions"
+        assert (
+            "base_url=http://127.0.0.1:8000/v1/completions"
+            in command[command.index("--model_args") + 1]
+        )
+        args = dict(
+            item.split("=", 1)
+            for item in command[command.index("--model_args") + 1].split(",")
+        )
+        assert args["max_length"] == str(model_spec.device_model_spec.max_context - 64)
+        if impl_id == "llama31_8b_qb2":
+            assert args["tokenizer"] == "/verified/tokenizer"
+            assert args["num_concurrent"] == "32"
+            assert "max_length" not in task.model_kwargs  # Do not change shared tasks.
+        else:
+            assert "tokenizer" not in args
+        gen_kwargs = _command_gen_kwargs(command)
+        assert gen_kwargs["temperature"] == "0"
+        assert gen_kwargs["max_gen_toks"] == "512"
+        assert task.score.gpu_reference_score == references[name]
+        assert task.score.tolerance == 0.05
+    assert len(tokenizer_calls) == (6 if impl_id == "llama31_8b_qb2" else 0)
+
+
+@pytest.mark.parametrize(
+    "task_name,venv",
+    [
+        ("meta_ifeval", WorkflowVenvType.EVALS_META),
+        ("other_task", WorkflowVenvType.EVALS_COMMON),
+    ],
+)
+def test_qb2_tokenizer_pinning_preserves_upstream_other_eval_context(
+    task_name, venv, tmp_path
+):
+    spec = SimpleNamespace(
+        hf_model_repo="org/model",
+        model_id="model",
+        impl=SimpleNamespace(impl_id="llama31_8b_qb2"),
+        device_model_spec=SimpleNamespace(max_context=131072, max_concurrency=32),
+    )
+    task = EvalTask(task_name=task_name, workflow_venv_type=venv, include_path=None)
+    with patch(f"{_MOD}.resolve_tokenizer") as resolve:
+        assert (
+            mod._prepare_eval_tokenizer(
+                SimpleNamespace(model_spec=spec), task, tmp_path
+            )
+            is None
+        )
+        command = build_eval_command(task, spec, None, tmp_path, 8000)
+    resolve.assert_not_called()
+    args = command[command.index("--model_args") + 1]
+    assert "max_length=131008" in args
+    assert ",tokenizer=" not in args
+
+
+@pytest.mark.parametrize("max_context", [None, 0, "invalid", True])
+def test_longbench_rejects_invalid_context(max_context, tmp_path):
+    spec = SimpleNamespace(
+        hf_model_repo="org/model",
+        model_id="model",
+        impl=SimpleNamespace(impl_id="llama31_8b_qb2"),
+        device_model_spec=SimpleNamespace(max_context=max_context, max_concurrency=32),
+    )
+    task = EvalTask(task_name="longbench_single_e", gen_kwargs={})
+    with pytest.raises(ValueError, match="(max_context|positive integer)"):
+        build_eval_command(task, spec, None, tmp_path, 8000)
+
+
+def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
+    spec = SimpleNamespace(
+        hf_model_repo="org/model",
+        model_id="model",
+        impl=SimpleNamespace(impl_id="llama31_8b_qb2"),
+        device_model_spec=SimpleNamespace(
+            max_context=131072,
+            max_concurrency=32,
+            vllm_args={"revision": "a" * 40, "tokenizer_revision": "a" * 40},
+        ),
+    )
+    task = EvalTask(task_name="longbench_single_e")
+    with patch(
+        f"{_MOD}.resolve_tokenizer",
+        side_effect=ValueError("Tokenizer files differ"),
+    ):
+        with pytest.raises(ValueError, match="Tokenizer files differ"):
+            mod._prepare_eval_tokenizer(
+                SimpleNamespace(model_spec=spec), task, tmp_path
+            )

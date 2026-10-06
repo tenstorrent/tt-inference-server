@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+# Frozen measured-reference client; do not apply the shared Transformers 5 override.
+-r llm-vllm.txt
+transformers==4.57.6

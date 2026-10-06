@@ -141,7 +141,7 @@ class VLLMParamConformanceTest(BaseTest):
             stderr=asyncio.subprocess.STDOUT,
         )
         try:
-            stdout, _ = await process.communicate()
+            stdout = await self._stream_pytest_output(process)
         finally:
             if process.returncode is None:
                 process.kill()
@@ -163,6 +163,29 @@ class VLLMParamConformanceTest(BaseTest):
             )
 
         return json.loads(report_path.read_text())
+
+    async def _stream_pytest_output(self, process) -> bytes:
+        """Read the child's output as it arrives, passing each complete line to
+        ``_on_pytest_output_line``; return all of it. Chunked reads, not
+        ``readline()``, so an over-long line cannot hit the stream's limit."""
+        chunks: List[bytes] = []
+        pending = b""
+        while True:
+            chunk = await process.stdout.read(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            *lines, pending = (pending + chunk).split(b"\n")
+            for line in lines:
+                self._on_pytest_output_line(line.decode(errors="replace"))
+        if pending:
+            self._on_pytest_output_line(pending.decode(errors="replace"))
+        await process.wait()
+        return b"".join(chunks)
+
+    def _on_pytest_output_line(self, line: str) -> None:
+        """Called live for each line of child output (all of it is still
+        recorded by ``_record_pytest_output`` once the child exits)."""
 
     def _extra_pytest_args(self) -> List[str]:
         return self._thinking_off_args()
