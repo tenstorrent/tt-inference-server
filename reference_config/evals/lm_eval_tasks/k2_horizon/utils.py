@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """Task helpers for the K2-Horizon model-card evals (HMMT Feb 2026, HLE text-only MC)."""
 
 import re
