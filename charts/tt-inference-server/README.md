@@ -323,6 +323,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `gemma-3-1b-it` | n150 |
 | `gemma-3-27b-it` | galaxy, p300x2, t3k |
 | `gemma-3-4b-it` | n150, n300, p150, t3k |
+| `gemma-4-12B-it` | p300x2 |
 | `gemma-4-31B-it` | p300x2 |
 | `gpt-oss-120b` | galaxy, p300x2, t3k |
 | `gpt-oss-20b` | galaxy, t3k |
