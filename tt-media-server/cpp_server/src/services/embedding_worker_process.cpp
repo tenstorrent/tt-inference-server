@@ -52,7 +52,15 @@ bool WorkerProcess::spawn(
   }
 
   if (child == 0) {
-    // Child: close parent ends, run child main.
+    // Child: fork-without-exec inherits the server's signal handlers. The
+    // parent's SIGTERM handler only sets a shutdown flag nobody checks here,
+    // and (with SA_RESTART semantics) the worker's blocking pipe read would
+    // resume — so terminate()'s SIGTERM would never kill the worker and the
+    // parent would hang in waitpid forever. Restore the default disposition
+    // so SIGTERM/SIGINT actually terminate the worker.
+    signal(SIGTERM, SIG_DFL);
+    signal(SIGINT, SIG_DFL);
+    // Close parent ends, run child main.
     reqWrite.reset();
     respRead.reset();
     childMain(reqRead.release(), respWrite.release());
