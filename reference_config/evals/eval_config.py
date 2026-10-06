@@ -1690,6 +1690,11 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # MiniMax's recommended top_p, as in the other M2.7 tasks;
+                        # the adapter's build_llm_args() sets only temperature.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
@@ -1938,6 +1943,11 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # MiniMax's recommended top_p, as in the other M3 tasks;
+                        # the adapter's build_llm_args() sets only temperature.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
