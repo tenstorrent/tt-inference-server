@@ -1190,6 +1190,14 @@ target_link_libraries(qwen3_tts_config_test PRIVATE llm_runner_lib GTest::gtest_
 add_executable(qwen3_tts_settings_test tests/unit/config/qwen3_tts_settings_test.cpp)
 target_link_libraries(qwen3_tts_settings_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+# Qwen3-TTS request fields, release validation and the preprocessor's Qwen3 path.
+add_executable(qwen3_tts_request_test
+    tests/unit/services/qwen3_tts_request_test.cpp
+    src/services/qwen3_tts_request_validator.cpp
+    src/services/tts_request_preprocessor.cpp
+)
+target_link_libraries(qwen3_tts_request_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
 target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
 target_include_directories(voice_sample_cache_test PRIVATE
@@ -1339,6 +1347,7 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/services/image_service.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
+    src/services/qwen3_tts_request_validator.cpp
     src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
     src/runtime/worker/worker_manager.cpp
@@ -1446,6 +1455,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/services/image_service.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
+    src/services/qwen3_tts_request_validator.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
@@ -1605,6 +1615,7 @@ gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(tts_prompt_compiler_test)
 gtest_discover_tests(qwen3_tts_config_test)
 gtest_discover_tests(qwen3_tts_settings_test)
+gtest_discover_tests(qwen3_tts_request_test)
 gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
@@ -1959,6 +1970,7 @@ set(SOURCES
     src/services/image_service.cpp
     src/services/tts_service.cpp
     src/services/tts_request_preprocessor.cpp
+    src/services/qwen3_tts_request_validator.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
     src/utils/audio_codec.cpp
