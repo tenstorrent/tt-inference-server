@@ -7,6 +7,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -530,11 +531,9 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=target,
                     published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
-                    # User explicitly selects the published full-set value as
-                    # the release target. This is NOT a matched GPU measurement
-                    # on these five cases; retain that distinction in reports.
+                    # Recovery-only single case is ungraded; retain original five-case targets in its audit.
                     gpu_reference_score=target,
-                    gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    gpu_reference_score_ref="Recovery-only single case; no aggregate target",
                     tolerance=0.0,
                     score_func=score_task_single_key,
                     score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
@@ -542,37 +541,22 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset,
                     agent=agent,
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=1,
                     n_attempts=1,
-                    # Same two-hour trial budget used by other SWE releases;
-                    # both five-trial groups execute in parallel within a type.
+                    # Isolated QEMU dependency recovery; retain original agent budget.
                     agent_timeout_sec=2 * 60 * 60,
                     agent_kwargs=kwargs,
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
+                    extra_docker_compose=[str(Path(__file__).resolve().parent / "qemu_recovery/compose.yaml")],
                 ),
-                limit_samples_map={EvalLimitMode.CI_NIGHTLY: 5, EvalLimitMode.SMOKE_TEST: 5},
+                limit_samples_map={EvalLimitMode.CI_NIGHTLY: 1, EvalLimitMode.SMOKE_TEST: 1},
             )
             for name, dataset, agent, target, kwargs, names in [
                 (
-                    "terminal_bench_2_1", "terminal-bench/terminal-bench-2-1", "terminus-2", 29.24,
+                    "terminal_bench_2_1", "terminal-bench/terminal-bench-2-1@sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a", "terminus-2", None,
                     {"temperature": 1.0, "llm_kwargs": {"top_p": 0.95}},
                     [
-                        "terminal-bench/break-filter-js-from-html",
-                        "terminal-bench/cobol-modernization",
-                        "terminal-bench/compile-compcert",
-                        "terminal-bench/feal-differential-cryptanalysis",
                         "terminal-bench/qemu-startup",
-                    ],
-                ),
-                (
-                    "swe_bench_verified", "swebench-verified", "mini-swe-agent", 57.0,
-                    {"version": MINI_SWE_AGENT_VERSION, "config": {"model": {"model_kwargs": {"temperature": 1.0, "top_p": 0.95}}}},
-                    [
-                        "django__django-11299",
-                        "astropy__astropy-14096",
-                        "matplotlib__matplotlib-25332",
-                        "sympy__sympy-13551",
-                        "scikit-learn__scikit-learn-14629",
                     ],
                 ),
             ]

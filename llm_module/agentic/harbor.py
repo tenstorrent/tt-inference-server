@@ -203,7 +203,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    dataset_name, separator, dataset_ref = config.dataset.partition("@")
+    dataset_config: dict[str, Any] = {"name": dataset_name}
+    if separator:
+        dataset_config["ref"] = dataset_ref
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:

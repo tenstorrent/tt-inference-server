@@ -1,0 +1,8 @@
+services:
+  main:
+    # Restore the archived Bullseye security packages; keep signature checks.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - sed -i -e s,http://,https://,g -e s,deb.debian.org/debian-security,archive.debian.org/debian-security,g /etc/apt/sources.list; exec "$$@"
+      - qemu-apt-setup
