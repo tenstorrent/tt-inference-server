@@ -1938,6 +1938,12 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature, so
+                        # without this the agent samples at the server default
+                        # top_p=1.0. MiniMax recommends temperature 1.0 / top_p 0.95,
+                        # matching the M3 GPQA, LongBench and terminal-bench entries.
+                        # Must stay a JSON *string* (see the Kimi tau3 entry).
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
