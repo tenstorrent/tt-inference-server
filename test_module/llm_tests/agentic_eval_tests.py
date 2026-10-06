@@ -257,9 +257,12 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
         blocks.append(driver.parse(outcome.raw, device=driver_context.device))
         accept_blocks([blocks[-1]], envelope=envelope)
         logger.info(
-            "Task %s done: accuracy=%s",
+            "Task %s done: score=%s",
             task.task_name,
-            blocks[-1].data.get("accuracy"),
+            # _build_evals_data stores the normalized value under "score";
+            # there is no "accuracy" key, so the old read logged None on every
+            # run and sent two of us chasing a scoring bug that never existed.
+            blocks[-1].data.get("score"),
         )
 
     return blocks
