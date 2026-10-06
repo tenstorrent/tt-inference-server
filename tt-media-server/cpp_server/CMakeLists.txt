@@ -486,6 +486,7 @@ set(LLM_RUNNER_LIB_SOURCES
     src/utils/logger.cpp
     src/utils/conversation_hasher.cpp
     src/config/settings.cpp
+    src/config/qwen3_tts.cpp
     src/utils/tokenizers/tokenizer.cpp
     src/utils/tokenizers/deepseek_tokenizer.cpp
     src/utils/tokenizers/llama_tokenizer.cpp
@@ -1182,6 +1183,13 @@ target_link_libraries(tokenizer_test PRIVATE llm_runner_lib GTest::gtest_main)
 add_executable(tts_prompt_compiler_test tests/unit/model/tts_prompt_compiler_test.cpp)
 target_link_libraries(tts_prompt_compiler_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+# Qwen3-TTS: release resolution and settings (llm_runner_lib holds both).
+add_executable(qwen3_tts_config_test tests/unit/config/qwen3_tts_config_test.cpp)
+target_link_libraries(qwen3_tts_config_test PRIVATE llm_runner_lib GTest::gtest_main)
+
+add_executable(qwen3_tts_settings_test tests/unit/config/qwen3_tts_settings_test.cpp)
+target_link_libraries(qwen3_tts_settings_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
 target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
 target_include_directories(voice_sample_cache_test PRIVATE
@@ -1595,6 +1603,8 @@ gtest_discover_tests(sequence_test)
 gtest_discover_tests(lockfree_queue_test)
 gtest_discover_tests(tokenizer_test)
 gtest_discover_tests(tts_prompt_compiler_test)
+gtest_discover_tests(qwen3_tts_config_test)
+gtest_discover_tests(qwen3_tts_settings_test)
 gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)

@@ -452,6 +452,10 @@ BlazeConfig blazeConfig();
 ImageConfig imageEngineConfig();
 
 /** Build TtsConfig from environment variables and runtime settings.
+ * MODEL_RUNNER_TYPE=tt_qwen3_tts adds the Qwen3-TTS release (from
+ * TTS_QWEN3_RELEASE / TTS_QWEN3_MODEL_SIZE, else the checkpoint named by
+ * QWEN3_TTS_CKPT / HF_MODEL), fixes both sample rates at 24 kHz, skips the
+ * TTS-2 tokenizer and defaults TTS_MAX_USERS to the worker count.
  * Implemented in src/config/settings.cpp. */
 TtsConfig ttsEngineConfig();
 
