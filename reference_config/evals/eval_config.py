@@ -6510,6 +6510,21 @@ _eval_config_list = [
                     published_score=78.8,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
                     gpu_reference_score=None,
+                    # No H100 measurement for this model yet (#4090). The ci-nightly subset is
+                    # doc_ids 0-39, the same 40 questions the 31B runs; they score below the set
+                    # average on every model measured (31B: H100 80.0 on the subset vs 83.33 on the
+                    # full set, TT 77.5). A 40-sample estimate of a 78.8 rate has a standard
+                    # deviation of 6.5 points, so the default 5% band is tighter than the noise of
+                    # the measurement itself. Until a subset reference exists, gate the subset
+                    # against the published full-set score at 10%: 29/40 (72.5) measured on the
+                    # Galaxy 2026-10-06 passes (threshold floor(40 * 0.788 * 0.9) = 28), 27/40 fails.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=78.8,
+                            ref="published full-set score standing in for the ci-nightly subset reference (no H100 run yet, #4090)",
+                            tolerance=0.10,
+                        ),
+                    },
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
