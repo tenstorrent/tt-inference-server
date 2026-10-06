@@ -85,6 +85,11 @@ INFRA_TASK_TYPES = frozenset({"health", "infra", "unit", "stability", "integrati
 
 TASK_BLOCKER_PREFIX = "task"
 
+# A spec block whose data sets NON_BLOCKING_KEY true is informational: a FAIL
+# is waived with NON_BLOCKING_REASON_KEY as the reason (an ERROR still blocks).
+NON_BLOCKING_KEY = "non_blocking"
+NON_BLOCKING_REASON_KEY = "non_blocking_reason"
+
 
 @dataclass(frozen=True)
 class CategoryResult:
@@ -623,7 +628,13 @@ def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optiona
     workflow_type SPEC_TESTS waives exactly the test case its ``task_name``
     names (e.g. ``test_penalties``); one with no ``task_name`` waives the
     workflow. A single unwaived failing case keeps the block a blocker.
+
+    A block that declares itself non-blocking (``NON_BLOCKING_KEY``, set from
+    its suite ``test_config``) is waived whatever failed.
     """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    if data.get(NON_BLOCKING_KEY) is True:
+        return str(data.get(NON_BLOCKING_REASON_KEY) or "non-blocking test")
     whole = _find_waiver(known_issues, "SPEC_TESTS", None)
     if whole is not None:
         return whole

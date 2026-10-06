@@ -4,8 +4,8 @@ How to run the vLLM parameter-conformance tests for development and debugging.
 
 These are the LLM/VLM API parameter tests that run as part of `--workflow spec_tests`
 (routed to the workflow engine). The suites live in `llm_module`:
-`llm_module/test_vllm_chat_completions.py` and
-`test_vllm_responses.py`. Models are mapped to suites in
+`llm_module/test_vllm_chat_completions.py`,
+`test_vllm_responses.py` and `test_tool_call_json_schema.py`. Models are mapped to suites in
 `test_module/test_suites/llm.json`.
 
 ### step 1: first create the venv by running the workflow
@@ -53,3 +53,21 @@ The supported pytest options (`--endpoint-url`, `--model-name`, `--task-name`,
 
 You will see outputs where you specify `--output-path`, e.g.
 `$TT_INFERENCE_SERVER_REPO_ROOT/workflow_logs/reports_output/spec_tests/test_my_output_path/parameter_report_vllm_chat_completions.json`
+
+### Tool-call schema suite
+`test_tool_call_json_schema.py` (run by `ToolCallSchemaConformanceTest`) takes
+its settings as `--schema-*` options, also declared in `llm_module/conftest.py`.
+It needs `jsonschema` in the venv.
+
+```bash
+PYTHONPATH="$PWD" \
+pytest llm_module/test_tool_call_json_schema.py -q --tb=line \
+  --endpoint-url http://127.0.0.1:8000/v1/chat/completions \
+  --model-name MiniMaxAI/MiniMax-M3 \
+  --task-name tool_call_json_schema \
+  --output-path ./workflow_logs/reports_output/spec_tests/tool_call_schema \
+  --schema-tool-choice auto --schema-exclude-ref
+```
+
+Per-case results go to `parameter_report_tool_call_json_schema.json` in the
+output path; `--schema-max-cases N` runs a quick subset.

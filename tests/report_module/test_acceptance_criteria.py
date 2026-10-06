@@ -987,6 +987,54 @@ def test_a_failing_infra_spec_block_is_not_excused_by_a_waiver_elsewhere():
     assert "task:spec_tests" in task_failure_blockers([("spec_tests", 1, True)], waived)
 
 
+def _non_blocking_block(status: str = "fail") -> Block:
+    return Block(
+        kind="spec_tests",
+        title="Tool Call Json Schema (tool_choice=required, non-blocking)",
+        task_type="functional",
+        data={
+            "success": False,
+            "status": status,
+            "non_blocking": True,
+            "non_blocking_reason": "informational run",
+        },
+    )
+
+
+def test_a_non_blocking_spec_block_is_waived_without_known_issues():
+    schema = _schema(_non_blocking_block())
+    accepted, blockers, cats = acceptance_criteria_check(schema)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    assert by_name[CATEGORY_SPEC_TESTS].status == STATUS_PASS
+    (reason,) = by_name[CATEGORY_SPEC_TESTS].waived.values()
+    assert "informational run" in reason
+    # run_spec_tests exits 1 for it; that exit is explained, not a crash.
+    waived = spec_tasks_explained_by_waivers(cats, schema)
+    assert waived == {"spec_tests"}
+    assert task_failure_blockers([("spec_tests", 1, True)], waived) == {}
+
+
+def test_a_non_blocking_spec_block_still_blocks_on_error():
+    accepted, _, _ = acceptance_criteria_check(_schema(_non_blocking_block("error")))
+    assert accepted is False
+
+
+def test_a_non_blocking_block_does_not_excuse_a_blocking_one():
+    schema = _schema(
+        _non_blocking_block(),
+        Block(
+            kind="spec_tests",
+            title="Tool Call Json Schema (tool_choice=auto)",
+            task_type="functional",
+            data={"success": False, "status": "fail"},
+        ),
+    )
+    accepted, _, cats = acceptance_criteria_check(schema)
+    assert accepted is False
+    assert spec_tasks_explained_by_waivers(cats, schema) == set()
+
+
 def test_a_skipped_case_does_not_need_a_waiver():
     schema = _schema(
         _conformance(("test_penalties", "❌ FAIL"), ("test_logprobs", "⚠️ SKIP"))
