@@ -374,11 +374,20 @@ jobs:
       # that most requests ride in full batches — if batching collapsed to
       # singles the pipeline overhead per request would regress silently even
       # while latency thresholds still pass.
-      - name: Check batching engaged (Dispatch summary)
+      - name: Custom pipelining analysis
         run: |
           python3 - cpp_server_embedding_mock.log <<'EOF'
+          import os
           import re
           import sys
+
+          PHASE_LABELS = {
+              "queue_wait": "Queue wait (request sat in queue)",
+              "batch_collect": "Batch collect (forming the batch)",
+              "batch_json_encode": "JSON encode (batch -> worker payload)",
+              "pipe_round_trip": "Pipe round trip (IPC + worker compute)",
+              "completion": "Completion (decode + callbacks)",
+          }
 
           log = open(sys.argv[1], encoding="utf-8", errors="replace").read()
           lines = re.findall(r"Dispatch summary:.*", log)
@@ -387,18 +396,66 @@ jobs:
                     "(server did not shut down gracefully?)")
               sys.exit(1)
           summary = lines[-1]
-          print(summary)
-          histogram = re.findall(r"(\d+)x(\d+)", summary.split("batches:")[-1])
+
+          phases = re.findall(r"(\w+)_ms=([0-9.]+)/([0-9.]+)\(mean/p99\)",
+                              summary)
+          histogram = [(int(n), int(s)) for n, s in
+                       re.findall(r"(\d+)x(\d+)", summary.split("batches:")[-1])]
           if not histogram:
               print("::error::Dispatch summary has no batch histogram")
               sys.exit(1)
-          total = sum(int(n) * int(size) for n, size in histogram)
-          max_size = max(int(size) for _, size in histogram)
-          in_full = sum(int(n) * int(size) for n, size in histogram
-                        if int(size) == max_size)
-          share = in_full / total
-          print(f"max batch size seen: {max_size}; "
-                f"requests in max-size batches: {in_full}/{total} ({share:.1%})")
+
+          batches = sum(n for n, _ in histogram)
+          requests = sum(n * s for n, s in histogram)
+          max_size = max(s for _, s in histogram)
+          in_full = sum(n * s for n, s in histogram if s == max_size)
+          share = in_full / requests
+
+          # ── Step log: aligned tables ─────────────────────────────────
+          print(f"Raw summary line:\n  {summary}\n")
+          print(f"Batches dispatched: {batches}   Requests served: {requests}\n")
+          print(f"{'Dispatch phase':<42}{'Mean (ms)':>12}{'P99 (ms)':>12}")
+          print("-" * 66)
+          for name, mean, p99 in phases:
+              label = PHASE_LABELS.get(name, name)
+              print(f"{label:<42}{float(mean):>12.3f}{float(p99):>12.3f}")
+          print()
+          print(f"{'Batch size':<14}{'Batches':>10}{'Requests':>10}{'Share':>10}")
+          print("-" * 44)
+          for n, s in sorted(histogram, key=lambda x: -x[1]):
+              print(f"{s:<14}{n:>10}{n * s:>10}{n * s / requests:>10.1%}")
+          print()
+          verdict_full = (f"{in_full}/{requests} requests ({share:.1%}) rode in "
+                          f"max-size ({max_size}) batches")
+          print(verdict_full)
+
+          # ── GitHub run summary: markdown tables ──────────────────────
+          ok = max_size >= 8 and share >= 0.5
+          md = ["## Custom pipelining analysis (embedding_mock, server-side)",
+                "",
+                f"Batches dispatched: **{batches}** — requests served: "
+                f"**{requests}**",
+                "",
+                "| Dispatch phase | Mean (ms) | P99 (ms) |",
+                "|---|---:|---:|"]
+          for name, mean, p99 in phases:
+              md.append(f"| {PHASE_LABELS.get(name, name)} "
+                        f"| {float(mean):.3f} | {float(p99):.3f} |")
+          md += ["",
+                 "| Batch size | Batches | Requests | Share |",
+                 "|---:|---:|---:|---:|"]
+          for n, s in sorted(histogram, key=lambda x: -x[1]):
+              md.append(f"| {s} | {n} | {n * s} | {n * s / requests:.1%} |")
+          md += ["",
+                 ("✅ " if ok else "❌ ") + verdict_full +
+                 " (gate: max batch == 8 and share >= 50%)",
+                 ""]
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write("\n".join(md) + "\n")
+
+          # ── Gate ─────────────────────────────────────────────────────
           if max_size < 8:
               print(f"::error::Largest batch was {max_size}, expected the "
                     "configured max of 8 — batching is not filling up")
