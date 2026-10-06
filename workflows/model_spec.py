@@ -434,6 +434,12 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+gemma4_autoport_impl = ImplSpec(
+    impl_id="gemma4_autoport",
+    impl_name="gemma4-autoport",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/google_gemma_4_26b_a4b_it",
+)
 qwen38_27b_qb2_impl = ImplSpec(
     impl_id="qwen38_27b_qb2",
     impl_name="qwen38-27b-qb2",
@@ -454,6 +460,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_mtp": gemma4_mtp_impl,
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "gemma4_autoport": gemma4_autoport_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,

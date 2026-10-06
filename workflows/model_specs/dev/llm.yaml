@@ -2646,6 +2646,47 @@ templates:
 # =============================================================================
 - weights:
     - google/gemma-4-26B-A4B-it
+  impl: gemma4_autoport
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: "P300x2"
+        OMP_NUM_THREADS: "8"
+        GEMMA4_AUTOPORT_ALLOW_HOST_SAMPLING: "1"
+        TT_MODEL_CLASS_OVERRIDES: "TTAutoportGemma4ForCausalLM=models.autoports.google_gemma_4_26b_a4b_it.tt.generator_vllm:AutoportGemma4ForCausalLM"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1000000000
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        enable_model_warmup: false
+      vllm_args:
+        revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        hf-overrides: '{"architectures":["TTAutoportGemma4ForCausalLM"]}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        block_size: 32
+        max_num_seqs: 32
+        max_model_len: 262144
+        max_num_batched_tokens: 262144
+        no-enable-chunked-prefill: true
+        no-enable-prefix-caching: true
+        async-scheduling: true
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      tool_call_parser_name: gemma4
+
+- weights:
+    - google/gemma-4-26B-A4B-it
   impl: tt_transformers
   inference_engine: VLLM
   device_model_specs:
