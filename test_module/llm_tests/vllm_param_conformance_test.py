@@ -188,7 +188,25 @@ class VLLMParamConformanceTest(BaseTest):
         recorded by ``_record_pytest_output`` once the child exits)."""
 
     def _extra_pytest_args(self) -> List[str]:
-        return []
+        return self._chat_template_kwargs_args()
+
+    def _chat_template_kwargs_args(self) -> List[str]:
+        """``--chat-template-kwargs`` from the test case's ``chat_template_kwargs``.
+
+        The suite's checks read ``message.content``, so a model whose template
+        opens a thought channel by default needs it switched off per request
+        (the switch is model-specific: ``enable_thinking``, ``thinking``, ...).
+        The test case states the kwargs verbatim; request-level
+        ``chat_template_kwargs`` win over the server default.
+        """
+        raw = self.config.get("chat_template_kwargs")
+        if raw is None or raw == "" or raw == {}:
+            return []
+        if isinstance(raw, str):
+            raw = json.loads(raw)
+        if not isinstance(raw, dict):
+            raise ValueError(f"chat_template_kwargs must be a JSON object, got {raw!r}")
+        return ["--chat-template-kwargs", json.dumps(raw)]
 
     def _record_pytest_output(
         self, return_code: Optional[int], stdout: Optional[bytes]

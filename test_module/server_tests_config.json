@@ -80,7 +80,9 @@
       "Qwen/Qwen2.5-7B-Instruct",
       "Qwen/Qwen2.5-7B-Instruct-1M",
       "MiniMaxAI/MiniMax-M3",
-      "moonshotai/Kimi-K2.7-Code"
+      "moonshotai/Kimi-K2.7-Code",
+      "google/gemma-4-31B-it",
+      "google/gemma-4-12B-it"
     ]
   },
   "available_markers": {
@@ -530,6 +532,30 @@
       "category": "LLM",
       "compatible_devices": [
         "p300x2"
+      ]
+    },
+    "gemma4_31b": {
+      "id_name": "gemma-4-31b-it",
+      "weights": [
+        "google/gemma-4-31B-it"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2",
+        "p150x8",
+        "blackhole_galaxy"
+      ]
+    },
+    "gemma4_12b": {
+      "id_name": "gemma-4-12b-it",
+      "weights": [
+        "google/gemma-4-12B-it"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2",
+        "p150x8",
+        "blackhole_galaxy"
       ]
     },
     "gpt_oss_20b": {

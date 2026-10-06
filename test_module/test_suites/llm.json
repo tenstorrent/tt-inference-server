@@ -63,6 +63,30 @@
     },
     {
       "models": [
+        "gemma4_31b",
+        "gemma4_12b"
+      ],
+      "devices": [
+        "p300x2",
+        "p150x8",
+        "blackhole_galaxy"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMParamConformanceTest",
+          "enabled": true,
+          "description": "vLLM chat/completions parameter conformance (thinking off per request)",
+          "_comment": "The checks read message.content; the Gemma 4 template's thought channel (enable_thinking) would consume the small token budgets. The kwargs are passed verbatim as --chat-template-kwargs, so a model with a different switch states its own.",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "models": [
         "gpt_oss_20b"
       ],
       "devices": [
