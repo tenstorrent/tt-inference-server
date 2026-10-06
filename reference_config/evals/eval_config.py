@@ -6114,9 +6114,7 @@ _eval_config_list = [
                             "timeout": 60 * 60,
                             "extra_body": {
                                 "top_k": 20,
-                                "chat_template_kwargs": {
-                                    "reasoning_effort": "medium"
-                                },
+                                "chat_template_kwargs": {"reasoning_effort": "medium"},
                             },
                         },
                     },
