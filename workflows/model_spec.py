@@ -434,6 +434,14 @@ gemma4_31b_qb2_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4_31b_qb2",
 )
+# Dedicated Gemma 4 26B A4B TP4 implementation. It remains opt-in so the
+# canonical Gemma profile and every other model keep their existing defaults.
+gemma4_26b_a4b_qb2_impl = ImplSpec(
+    impl_id="gemma4_26b_a4b_qb2",
+    impl_name="gemma4-26b-a4b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/gemma4_26b_a4b_qb2",
+)
 qwen38_27b_qb2_impl = ImplSpec(
     impl_id="qwen38_27b_qb2",
     impl_name="qwen38-27b-qb2",
@@ -454,6 +462,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_mtp": gemma4_mtp_impl,
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
+    "gemma4_26b_a4b_qb2": gemma4_26b_a4b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,

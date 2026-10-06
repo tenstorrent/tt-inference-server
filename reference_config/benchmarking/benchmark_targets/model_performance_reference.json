@@ -7081,6 +7081,28 @@
             }
         ]
     },
+    "google/gemma-4-26B-A4B-it": {
+        "p300x2": [
+            {
+                "_comment": "Calculated QB2 top-performance estimate, not a measurement. Assumes about 3.8B active MoE parameters per token, BFP8 expert weights, BF16 dense weights, ideal four-chip scaling, full bandwidth utilization, and first-token decode included. The approximately 25.2B total parameters affect residency, not per-token compute. Pure roofline is about 17 ms TTFT and 320 T/S/U; the stored target applies a 70% practical derating, yielding about 24 ms TTFT and 224 T/S/U.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 24,
+                        "tput_user": 224,
+                        "tput": 224
+                    }
+                }
+            }
+        ]
+    },
     "gemma-4-12B-it": {
         "p300x2": [
             {

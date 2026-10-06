@@ -6421,6 +6421,14 @@ _eval_config_list = [
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    mode_reference_scores={
+                        # Release acceptance: at least 8 of the fixed 10-item
+                        # CI cohort must pass.
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=80.0,
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6436,8 +6444,12 @@ _eval_config_list = [
                 # would render with the default enable_thinking=false and
                 # suppress native reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
+                # Serialize long-thinking requests to bound per-request
+                # resource use during the release cohort.
+                max_concurrent=1,
                 model_kwargs={
                     "max_length": 131072,
+                    "timeout": 7200,
                 },
                 # Thinking-mode sampling (Gemma 4 model card / HF README):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -6453,7 +6465,9 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    # Keep release CI bounded to the validated 10-question
+                    # subset rather than a fraction of the evolving dataset.
+                    EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -6465,6 +6479,13 @@ _eval_config_list = [
                     published_score_ref="https://arxiv.org/abs/2607.02770",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    mode_reference_scores={
+                        # Release acceptance: at least 1 of the fixed 5 tasks.
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -6474,7 +6495,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=None,
                     override_cpus=32,
@@ -6518,6 +6539,13 @@ _eval_config_list = [
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
+                    mode_reference_scores={
+                        # Release acceptance: at least 1 of the fixed 5 issues.
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=20.0,
+                            tolerance=0.0,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -6527,7 +6555,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
