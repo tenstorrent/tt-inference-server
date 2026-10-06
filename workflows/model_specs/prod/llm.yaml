@@ -2934,5 +2934,125 @@ templates:
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+- weights:
+    - meta-llama/Llama-3.1-8B-Instruct
+  impl: llama31_8b_qb2
+  inference_engine: VLLM
+  version: "0.24.0"
+  tt_metal_commit: "29f93c9"
+  vllm_commit: "3506696"
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 131072
+      max_tokens_all_users_override: 131072    # Shared across all 32 slots.
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: P300x2
+      vllm_args:
+        block_size: 128
+        data_parallel_size: 1
+        revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        tokenizer_revision: 0e9e39f249a16976918f6564b8830bc894c89659
+        seed: 0    # Match the published adapter and frozen performance baseline.
+        max-logprobs: -1
+        async-scheduling: true
+        no-enable-prefix-caching: true
+        no-enable-chunked-prefill: true
+      override_tt_config:
+        sample_on_device_mode: all
+        trace_region_size: 268435456
+        l1_small_size: 16384
+  system_requirements:
+    firmware:
+      specifier: ">=19.2.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.5.0"
+      mode: STRICT
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  metadata:
+    meta-llama/Llama-3.1-8B-Instruct:
+      tool_call_parser_name: llama3_json
+      pinned_checkpoint: true
+      checkpoint_index: model.safetensors.index.json
+      model_path_env: LLAMA_MODEL_PATH
+      benchmark_protocol: fixed_workload
+      benchmark_require_complete_metrics: true
+      benchmark_tokenizer_sha256:
+        tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
+        tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
+- weights:
+    - google/gemma-4-12B-it
+  impl: tt_transformers
+    # Dev specs omit tt_metal_commit/vllm_commit (base ModelSpecTemplate rejects
+    # them; only prod specs carry commits). The image is supplied at runtime via
+    # --override-docker-image; the prod gemma4 specs pin the build commits.
+  inference_engine: VLLM
+  version: "0.24.0"
+  tt_metal_commit: "29f93c9"
+  vllm_commit: "3506696"
+  device_model_specs:
+    - device: P300X2    # QB2 (2x P300, 4-chip TP mesh)
+      max_concurrency: 32
+        # Metal policy (generator_trace 12B/_QB2): unbounded through 128k; auto
+        # bounded + multi-chunk (4096) at 256k (unbounded 256k OOM). Match demo.
+      max_context: 262144    # 256 * 1024
+      default_impl: true
+      env_vars:
+          # QB2's 4 Blackhole chips are driven as a P150x4 (1,4) mesh — matches the
+          # passing vLLM nightly [BH-QB-2] Gemma4 entry. The custom p300_x2 descriptor
+          # laid the TP collectives over the wrong fabric links and corrupted decode
+          # logits; the default p150_x4 descriptor (selected from MESH_DEVICE) is correct.
+        MESH_DEVICE: "P150x4"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+          # B=32 decode traces (match 31B QB2 headroom).
+        trace_region_size: 512000000
+        l1_small_size: 24576    # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
+        sample_on_device_mode: decode_only
+      vllm_args:
+          # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        async_scheduling: true
+          # Sampling params (temp=1.0 / top_k=64 / top_p=0.95) load from the
+          # model's HF generation_config.json; evals override per-request. No
+          # override_generation_config here -- it would just restate the HF default.
+          # Activate the gemma4 tool_call_parser so tool_choice:"auto" clients
+          # (mini-swe-agent / SWE-Bench) work on a flag-free release run. vLLM
+          # requires --tool-call-parser alongside --enable-auto-tool-choice, so it
+          # is passed explicitly here; the gemma4 parser is registered by the
+          # vllm-tt-plugin entry point (tenstorrent/vllm #431).
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+          # Enable gemma-4 thinking server-side so the r1_gpqa_diamond /
+          # terminal-bench-2 / swe-bench-verified evals (methodology matched to
+          # tenstorrent/tt-inference-server#4331) get the reasoning channel the
+          # chat template otherwise suppresses (gemma-4 scores ~10pts lower w/o it).
+          # --reasoning-parser separates the thought channel into reasoning_content.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+          # Token-chunked prefill (tenstorrent/vllm#448). Match metal 4096.
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 65536
+        long_prefill_token_threshold: 4096
+      # LoudBox: metal isl_sweep unbounded through 256k PASS for 12B; multi-chunk
+      # prefill (4096) matches demo policy (no auto-bound until >256k).
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-12B-it:
+      reasoning_parser_name: gemma4
+        # tool parser ships in vllm-tt-plugin as of tenstorrent/vllm #431; activated
+        # by enable-auto-tool-choice in vllm_args above.
+      tool_call_parser_name: gemma4
+
 
 

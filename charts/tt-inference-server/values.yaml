@@ -3047,6 +3047,27 @@ models:
                 value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
+          llama31_8b_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.24.0-29f93c9-3506696
+            resources:
+              requests:
+                memory: 20Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: P300x2
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
       p300:
         defaultImpl: tt_transformers
         impls:
@@ -7021,6 +7042,45 @@ models:
                 value: '0'
               - name: VLLM_RPC_TIMEOUT
                 value: '1800000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  gemma-4-12B-it:
+    vllm:
+      p300x2:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.24.0-29f93c9-3506696
+            resources:
+              requests:
+                memory: 30Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GEMMA4_CCL_TOPOLOGY
+                value: linear
+              - name: GEMMA4_CHUNKED_PREFILL_TRACE
+                value: '1'
+              - name: GEMMA4_MAX_TOKENS_ALL_USERS
+                value: '262144'
+              - name: GEMMA4_PAGE_BLOCK_SIZE
+                value: '64'
+              - name: GEMMA4_VLLM_SINGLE_CHUNK
+                value: '0'
+              - name: MESH_DEVICE
+                value: P150x4
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
               - name: VLLM_TARGET_DEVICE
                 value: tt
     defaultEngine: vllm
