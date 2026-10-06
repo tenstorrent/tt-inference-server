@@ -37,6 +37,9 @@ struct TtsIpcTask {
   std::vector<uint32_t> promptTokens;
   std::vector<int16_t> voiceWavPcm;
   domain::tts::TtsGenerationParams generation;
+  std::optional<std::string> speaker;
+  std::optional<std::string> language;
+  std::optional<std::string> referenceText;
 
   static constexpr uint32_t FLAG_DONE = 1;
 
@@ -56,6 +59,9 @@ struct TtsIpcTask {
     ipcTask.promptTokens = task.promptTokens;
     ipcTask.voiceWavPcm = task.voiceWavPcm;
     ipcTask.generation = task.generation;
+    ipcTask.speaker = task.speaker;
+    ipcTask.language = task.language;
+    ipcTask.referenceText = task.referenceText;
     return ipcTask;
   }
 
@@ -67,6 +73,9 @@ struct TtsIpcTask {
     task.promptTokens = promptTokens;
     task.voiceWavPcm = voiceWavPcm;
     task.generation = generation;
+    task.speaker = speaker;
+    task.language = language;
+    task.referenceText = referenceText;
     return task;
   }
 
@@ -85,6 +94,9 @@ struct TtsIpcTask {
     os.write(reinterpret_cast<const char*>(&generation.ignoreEos),
              sizeof(generation.ignoreEos));
     ser::writeVector(os, generation.stopTokenIds);
+    ser::writeOptionalString(os, speaker);
+    ser::writeOptionalString(os, language);
+    ser::writeOptionalString(os, referenceText);
   }
 
   static TtsIpcTask deserialize(std::istream& is) {
@@ -102,6 +114,9 @@ struct TtsIpcTask {
     is.read(reinterpret_cast<char*>(&task.generation.ignoreEos),
             sizeof(task.generation.ignoreEos));
     task.generation.stopTokenIds = ser::readVector<uint32_t>(is);
+    task.speaker = ser::readOptionalString(is);
+    task.language = ser::readOptionalString(is);
+    task.referenceText = ser::readOptionalString(is);
     return task;
   }
 };

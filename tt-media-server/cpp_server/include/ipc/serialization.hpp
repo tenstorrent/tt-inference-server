@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <istream>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -25,6 +26,24 @@ inline std::string readString(std::istream& is) {
     is.read(value.data(), static_cast<std::streamsize>(size));
   }
   return value;
+}
+
+inline void writeOptionalString(std::ostream& os,
+                                const std::optional<std::string>& value) {
+  const bool present = value.has_value();
+  os.write(reinterpret_cast<const char*>(&present), sizeof(present));
+  if (present) {
+    writeString(os, *value);
+  }
+}
+
+inline std::optional<std::string> readOptionalString(std::istream& is) {
+  bool present = false;
+  is.read(reinterpret_cast<char*>(&present), sizeof(present));
+  if (!present) {
+    return std::nullopt;
+  }
+  return readString(is);
 }
 
 template <typename T>
