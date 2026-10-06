@@ -4178,3 +4178,65 @@ templates:
       benchmark_tokenizer_sha256:
         tokenizer.json: 79e3e522635f3171300913bb421464a87de6222182a0570b9b2ccba2a964b2b4
         tokenizer_config.json: 177c7b61e616fecb84c17ce0591acb92c6c4d60e9ac5ababfb940ff23bbcd424
+
+# Aleph-Alpha/Kolibri-1 (78B MoE, 3.46B active) TP4 autoport
+# (models/autoports/aleph_alpha_kolibri_1_bf16) from the tt-model-bringup multigoal
+# pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on a 4x p300c QB2. Requires
+# tt-metal branch vkovacevic/kolibri-1-ci and vllm-tt-plugin branch
+# vkovacevic/kolibri-1-parsers (model + HF config registration, kolibri1 reasoning and
+# tool parsers). Serving settings mirror the bring-up's stage-10/11 server. The
+# checkpoint is the vendor's BF16 copy; the main repo is block-FP8. Bring-up numbers
+# at 4096/128: c1 TTFT 2.16 s / 59.7 t/s/u; c32 is not yet usable (1.85 t/s/u, see
+# tt-agentic-bringup-qb2#75). Tracking: tt-agentic-bringup-qb2#73.
+- weights:
+    - Aleph-Alpha/Kolibri-1-BF16
+  impl: kolibri_1_qb2
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      # Native trained context (owner decision, tt-agentic-bringup-qb2#78); the
+      # model-card 1M extension is not served.
+      max_context: 262144
+      default_impl: true
+      env_vars:
+        MESH_DEVICE: P300x2
+        OMP_NUM_THREADS: "8"
+        # The device sampler covers top_k 1..32 (max_device_top_k). The model card's
+        # eval sampling (top_k 128) needs the host path, which the adapter only
+        # allows when this is set; without it such a request kills the engine.
+        KOLIBRI_VLLM_HOST_COMPAT: "1"
+      override_tt_config:
+        # The adapter refuses host sampling unless KOLIBRI_VLLM_HOST_COMPAT=1 is set.
+        sample_on_device_mode: all
+        trace_mode: all
+        trace_region_size: 200000000
+        fabric_config: FABRIC_1D
+        decode_interleave_enabled: true
+        decode_interleave_prefill_steps: 1
+        decode_interleave_decode_steps: 1
+      vllm_args:
+        block_size: "32"
+        max_num_seqs: "32"
+        max-logprobs: "-1"
+        no-enable-prefix-caching: true
+        # Chunked prefill with the bring-up's 512-token budget; the model's paged
+        # sliding-window cache requires block_size 32.
+        enable-chunked-prefill: true
+        max_num_batched_tokens: "512"
+        dtype: bfloat16
+        # Requests that omit top_k need a default inside the device sampler's range.
+        override_generation_config: '{"top_k": 32}'
+        reasoning-parser: kolibri1
+        enable-auto-tool-choice: true
+        tool-call-parser: kolibri1
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    Aleph-Alpha/Kolibri-1-BF16:
+      reasoning_parser_name: kolibri1
