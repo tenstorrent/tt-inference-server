@@ -489,14 +489,14 @@ class EvalConfig:
 
 
 _eval_config_list = [
-    # Granite release: GPQA first10; fixed five-case agentic CI subsets.
+    # Granite release: GPQA first10; fixed ten-case agentic CI subsets.
     EvalConfig(
         hf_model_repo="ibm-granite/granite-4.2-30b",
         tasks=[
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=16,
+                max_concurrent=10,
                 use_chat_api=True,
                 num_fewshot=0,
                 seed=42,
@@ -532,7 +532,7 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
                     # User explicitly selects the published full-set value as
                     # the release target. This is NOT a matched GPU measurement
-                    # on these five cases; retain that distinction in reports.
+                    # on these ten cases; retain that distinction in reports.
                     gpu_reference_score=target,
                     gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
                     tolerance=0.0,
@@ -542,15 +542,18 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset,
                     agent=agent,
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=10,
                     n_attempts=1,
                     # Same two-hour trial budget used by other SWE releases;
-                    # both five-trial groups execute in parallel within a type.
+                    # both ten-trial groups execute in parallel within a type.
                     agent_timeout_sec=2 * 60 * 60,
+                    # A 32K response at observed batched decode rates can
+                    # exceed600s; keep the2h total agent budget unchanged.
+                    llm_timeout_sec=60 * 60,
                     agent_kwargs=kwargs,
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
                 ),
-                limit_samples_map={EvalLimitMode.CI_NIGHTLY: 5, EvalLimitMode.SMOKE_TEST: 5},
+                limit_samples_map={EvalLimitMode.CI_NIGHTLY: 10, EvalLimitMode.SMOKE_TEST: 10},
             )
             for name, dataset, agent, target, kwargs, names in [
                 (
@@ -562,6 +565,11 @@ _eval_config_list = [
                         "terminal-bench/compile-compcert",
                         "terminal-bench/feal-differential-cryptanalysis",
                         "terminal-bench/qemu-startup",
+                        "terminal-bench/caffe-cifar-10",
+                        "terminal-bench/password-recovery",
+                        "terminal-bench/portfolio-optimization",
+                        "terminal-bench/hf-model-inference",
+                        "terminal-bench/financial-document-processor",
                     ],
                 ),
                 (
@@ -573,6 +581,11 @@ _eval_config_list = [
                         "matplotlib__matplotlib-25332",
                         "sympy__sympy-13551",
                         "scikit-learn__scikit-learn-14629",
+                        "django__django-15098",
+                        "sphinx-doc__sphinx-8593",
+                        "sympy__sympy-13852",
+                        "pydata__xarray-3095",
+                        "django__django-15695",
                     ],
                 ),
             ]
