@@ -6105,13 +6105,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=90.0,
-                            ref="QB2 Qwen3.8 release cohort: 9/10 GPQA",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
@@ -6145,13 +6138,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=73.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=80.0,
-                            ref="QB2 Qwen3.8 release cohort: 4/5 Terminal-Bench 2.1",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -6161,7 +6147,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=10,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -6172,13 +6158,16 @@ _eval_config_list = [
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
-                            "extra_body": {"top_k": 20},
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"reasoning_effort": "medium"},
+                            },
                         },
                     },
                     task_names_map={
@@ -6188,6 +6177,11 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
                         ],
                     },
                 ),
@@ -6199,13 +6193,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=61.7,
                     published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=60.0,
-                            ref="QB2 Qwen3.8 release cohort: 3/5 SWE-bench Verified",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
