@@ -3674,8 +3674,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=64.0,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 15: Qwen3-14B (Thinking), GPQA-Diamond)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3714,9 +3714,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
+                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=61.03,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 5: Qwen3-14B-Base, MMLU-Pro 5-shot CoT)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3756,8 +3758,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=55.9,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 17: Qwen3-4B (Thinking), GPQA-Diamond)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3795,9 +3797,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
+                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=50.58,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 7: Qwen3-4B-Base, MMLU-Pro 5-shot CoT)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3837,8 +3841,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=40.1,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 19: Qwen3-1.7B (Thinking), GPQA-Diamond)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3875,9 +3879,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
+                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=36.76,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 8: Qwen3-1.7B-Base, MMLU-Pro 5-shot CoT)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3916,8 +3922,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=27.9,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 19: Qwen3-0.6B (Thinking), GPQA-Diamond)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -3954,9 +3960,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
+                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=24.74,
+                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 8: Qwen3-0.6B-Base, MMLU-Pro 5-shot CoT)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -4214,9 +4222,10 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
+                # The card reports prompt- and instruction-level strict separately; the scored key is prompt-level.
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=38.08,
+                    published_score_ref="https://huggingface.co/ALLaM-AI/ALLaM-7B-Instruct-preview (English Benchmarks table, ALLaM-7B-Instruct-preview row: IFEval (prompt strict) 0 Shot)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -4236,9 +4245,10 @@ _eval_config_list = [
                 # Shield run 37310746376); score the plain few-shot prompt instead.
                 apply_chat_template=False,
                 num_fewshot=5,
+                # The card does not state whether its 5-shot MMLU-Pro is generative CoT, as TTIS mmlu_pro is.
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=30.4,
+                    published_score_ref="https://huggingface.co/ALLaM-AI/ALLaM-7B-Instruct-preview (English Benchmarks table, ALLaM-7B-Instruct-preview row: MMLU Pro 5 Shot)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,
@@ -4705,6 +4715,8 @@ _eval_config_list = [
     ),
     # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; targets TBD until a GPU reference is measured.
     # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; targets TBD until a GPU reference is measured.
+    # All tasks NA: no Open LLM Leaderboard v2 entry exists for this checkpoint, and neither the model card nor the
+    # DeepSeekMath paper (arXiv 2402.03300) reports IFEval, MATH Lvl 5, GPQA-Diamond or MMLU-Pro.
     EvalConfig(
         hf_model_repo="deepseek-ai/deepseek-math-7b-instruct",
         tasks=[
@@ -4819,9 +4831,12 @@ _eval_config_list = [
             EvalTask(
                 task_name="leaderboard_math_hard",
                 num_fewshot=4,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot, chat template applied. published_score is the unweighted mean
+                # of the 7 subtask exact_match values in the cited JSON, matching score_multilevel_keys_mean; the
+                # leaderboard's displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (53.02).
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=50.72,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-14B-Instruct-1M/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_multilevel_keys_mean,
@@ -4852,6 +4867,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="gpqa_diamond_generative_n_shot",
                 num_fewshot=5,
+                # NA: the report's GPQA (39.9) does not state the subset or prompt setting, and the leaderboard's
+                # GPQA is 0-shot loglikelihood multiple-choice; neither matches 5-shot generative GPQA-Diamond.
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4869,9 +4886,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # The report does not state the MMLU-Pro prompt setting; TTIS mmlu_pro is 5-shot generative CoT.
+                # (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 48.50.)
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=63.3,
+                    published_score_ref="https://arxiv.org/abs/2501.15383 (Qwen2.5-1M Technical Report, Table 6: Qwen2.5-14B-1M, MMLU-Pro)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_task_single_key,

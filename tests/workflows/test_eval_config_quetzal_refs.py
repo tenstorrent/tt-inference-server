@@ -75,7 +75,28 @@ EXPECTED = {
         "mbpp_instruct": 49.4,
         "humaneval_instruct": 65.2,
     },
+    "Qwen/Qwen3-0.6B": {"r1_gpqa_diamond": 27.9, "mmlu_pro": 24.74},
+    "Qwen/Qwen3-1.7B": {"r1_gpqa_diamond": 40.1, "mmlu_pro": 36.76},
+    "Qwen/Qwen3-4B": {"r1_gpqa_diamond": 55.9, "mmlu_pro": 50.58},
+    "Qwen/Qwen3-14B": {"r1_gpqa_diamond": 64.0, "mmlu_pro": 61.03},
+    "Qwen/Qwen2.5-14B-Instruct-1M": {
+        "leaderboard_ifeval": 84.3,
+        "leaderboard_math_hard": 50.72,
+        "gpqa_diamond_generative_n_shot": None,
+        "mmlu_pro": 63.3,
+    },
+    "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
 }
+
+# No authoritative source exists for any task, so every task stays NA.
+ALL_NA = ["deepseek-ai/deepseek-math-7b-instruct"]
+
+
+@pytest.mark.parametrize("repo", ALL_NA)
+def test_unsourced_configs_stay_na(repo):
+    for task in _eval_config_map[repo].tasks:
+        assert task.score.published_score is None
+        assert task.score.published_score_ref is None
 
 
 @pytest.mark.parametrize("repo", sorted(EXPECTED))
