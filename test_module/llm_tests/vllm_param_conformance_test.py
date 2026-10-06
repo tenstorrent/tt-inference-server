@@ -100,6 +100,11 @@ class VLLMParamConformanceTest(BaseTest):
             "detailed_test_results": self._build_detailed_results(results),
             "success": self._all_passed(results),
             **(
+                {"coherence_api_responses": report_data["coherence_api_responses"]}
+                if report_data.get("coherence_api_responses")
+                else {}
+            ),
+            **(
                 {"failed_api_responses": report_data["failed_api_responses"]}
                 if report_data.get("failed_api_responses")
                 else {}

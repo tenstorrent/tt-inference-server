@@ -235,6 +235,13 @@ def report_test(results_report, request):
             request.node.api_responses
         )
 
+    if (
+        report.passed
+        and request.node.originalname == "test_coherence_verbatim_echo"
+        and getattr(request.node, "api_responses", None)
+    ):
+        results_report["coherence_api_responses"] = request.node.api_responses
+
     # --- Add the test outcome to the report ---
 
     # Use the base function name (e.g., "test_n") as the group key
