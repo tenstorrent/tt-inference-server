@@ -1,0 +1,117 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
+
+from llm_module.benchmark_configs import get_llm_configs
+from reference_config.evals.eval_config import (
+    _eval_config_map,
+    accept_eval_score,
+    resolve_eval_reference,
+)
+from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
+from workflows.utils import get_repo_root_path
+from workflows.workflow_types import EvalLimitMode, ModelStatusTypes
+
+
+MODEL = "ibm-granite/granite-4.2-30b"
+
+
+def test_granite_release_resolves_demo_and_preserves_capacity_and_benchmarks():
+    templates = load_templates_from_yaml(
+        get_repo_root_path() / "workflows/model_specs/dev/llm.yaml"
+    )
+    template = next(t for t in templates if t.weights == [MODEL])
+    spec = resolve_model_spec(
+        template.expand_to_specs(),
+        model=MODEL,
+        device="p300x2",
+        impl="granite42-30b-qb2",
+        catalog_name="Shield",
+    )
+    device = spec.device_model_spec
+    assert spec.status == ModelStatusTypes.FUNCTIONAL
+    assert spec.impl.code_path == "models/demos/granite42_30b_qb2"
+    assert device.max_concurrency == 16
+    assert device.max_context == device.max_tokens_all_users == 131072
+    assert device.env_vars["EXTRA_MODELS_DIR"] == "../../tt-metal/models/demos"
+    assert "TT_MODEL_CLASS_OVERRIDES" not in device.env_vars
+    assert "GRANITE_VLLM_HOST_COMPAT" not in device.env_vars
+    assert device.vllm_args["revision"] == "9e668ce1c538387ef24d3644e9b0606647762636"
+    assert device.vllm_args["tokenizer_revision"] == device.vllm_args["revision"]
+    configs = get_llm_configs(spec, spec.device_type)
+    assert {(4096, 128, c) for c in (1, 8, 16)} <= {
+        (c.isl, c.osl, c.max_concurrency) for c in configs
+    }
+    assert max(c.isl for c in configs) >= 65536
+    assert [(c.isl, c.osl, c.max_concurrency) for c in configs if c.targets] == [
+        (128, 128, 1)
+    ]
+
+
+def test_granite_ten_case_evals_preserve_generation_and_published_targets():
+    gpqa, terminal, swe = _eval_config_map[MODEL].tasks
+    assert gpqa.max_concurrent == 10
+    assert gpqa.seed == 42
+    assert gpqa.gen_kwargs["max_gen_toks"] == 32768
+    assert gpqa.gen_kwargs["temperature"] == 1.0
+    assert gpqa.gen_kwargs["top_p"] == 0.95
+    assert gpqa.gen_kwargs["chat_template_kwargs"] == {
+        "enable_thinking": True,
+        "low_effort": False,
+    }
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert gpqa.score.published_score == 66.41
+    for task, passing, failing in (
+        (gpqa, 60.0, 50.0),
+        (terminal, 20.0, 10.0),
+        (swe, 50.0, 40.0),
+    ):
+        assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+        reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
+        assert reference["tolerance"] == 0.0
+        assert reference["is_subset_reference"] is True
+        assert "not measured subset GPU control" in reference["reference_ref"]
+        assert accept_eval_score(reference, passing, n_total=10) is True
+        assert accept_eval_score(reference, failing, n_total=10) is False
+        full_reference = resolve_eval_reference(task.score, None)
+        assert full_reference["reference_score"] == task.score.published_score
+        assert full_reference["is_subset_reference"] is False
+    for task in (terminal, swe):
+        config = task.agentic_eval_config
+        names = config.task_names_map[EvalLimitMode.CI_NIGHTLY]
+        assert len(names) == len(set(names)) == 10
+        assert config.n_concurrent_trials == 10
+        assert config.agent_timeout_sec == 7200
+        assert config.llm_timeout_sec == 3600
+
+
+def test_granite_ci_commands_select_ten_cases_at_concurrency_ten():
+    from types import SimpleNamespace
+
+    from llm_module.drivers.agentic import resolve_n_tasks, resolve_task_names
+    from llm_module.eval_command import build_eval_command
+
+    runtime = SimpleNamespace(limit_samples_mode="ci_nightly")
+    gpqa, terminal, swe = _eval_config_map[MODEL].tasks
+    spec = SimpleNamespace(
+        model_id="granite-4.2-30b",
+        model_name="granite-4.2-30b",
+        hf_model_repo=MODEL,
+        device_model_spec=SimpleNamespace(
+            max_context=131072,
+            max_concurrency=16,
+            eval_max_retries=0,
+        ),
+    )
+    command = build_eval_command(
+        gpqa,
+        spec,
+        "p300x2",
+        "/tmp/granite-evals",
+        8000,
+        runtime_config=runtime,
+    )
+    assert command[command.index("--limit") + 1] == "10"
+    assert "num_concurrent=10" in command[command.index("--model_args") + 1]
+    for task in (terminal, swe):
+        assert resolve_n_tasks(task, runtime) == 10
+        assert len(resolve_task_names(task, runtime)) == 10

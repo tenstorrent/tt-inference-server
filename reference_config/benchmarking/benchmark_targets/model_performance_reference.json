@@ -1,4 +1,59 @@
 {
+    "ibm-granite/granite-4.2-30b": {
+        "p300x2": [
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 24,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 4096,
+                "osl": 128,
+                "max_concurrency": 16,
+                "num_prompts": 48,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "_comment": "User-specified release targets for ISL/OSL128, concurrency1.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 68,
+                        "tput_user": 65,
+                        "tput": 65
+                    }
+                }
+            }
+        ]
+    },
     "google/gemma-4-31b-it": {
         "p300x2": [
             {

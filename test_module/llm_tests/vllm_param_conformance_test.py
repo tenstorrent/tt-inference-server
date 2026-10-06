@@ -99,6 +99,16 @@ class VLLMParamConformanceTest(BaseTest):
             "parameter_conformance_summary": self._build_conformance_summary(results),
             "detailed_test_results": self._build_detailed_results(results),
             "success": self._all_passed(results),
+            **(
+                {"coherence_api_responses": report_data["coherence_api_responses"]}
+                if report_data.get("coherence_api_responses")
+                else {}
+            ),
+            **(
+                {"failed_api_responses": report_data["failed_api_responses"]}
+                if report_data.get("failed_api_responses")
+                else {}
+            ),
         }
 
     async def _run_pytest_suite(
@@ -188,6 +198,9 @@ class VLLMParamConformanceTest(BaseTest):
         recorded by ``_record_pytest_output`` once the child exits)."""
 
     def _extra_pytest_args(self) -> List[str]:
+        # Capture only the public, non-streaming chat conformance suite.
+        if self.KIND == "vllm_chat_completions":
+            return ["--capture-api-responses"]
         return []
 
     def _record_pytest_output(

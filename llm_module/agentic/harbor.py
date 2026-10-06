@@ -64,6 +64,7 @@ class HarborRunConfig:
     override_memory_mb: Optional[int]
     timeout_multiplier: Optional[float]
     agent_timeout_sec: Optional[float]
+    environment_import_path: Optional[str] = None
     agent_setup_timeout_multiplier: Optional[float] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
@@ -202,7 +203,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    dataset_name, separator, dataset_ref = config.dataset.partition("@")
+    dataset_config: dict[str, Any] = {"name": dataset_name}
+    if separator:
+        dataset_config["ref"] = dataset_ref
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:
@@ -211,6 +215,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         dataset_config["exclude_task_names"] = config.exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
+    if config.environment_import_path:
+        environment_config["import_path"] = config.environment_import_path
     if _mini_swe_needs_host_gateway(config):
         overlay_path = (
             config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
@@ -285,7 +291,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
-        _mini_swe_needs_host_gateway(config)
+        bool(config.environment_import_path)
+        or _mini_swe_needs_host_gateway(config)
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
@@ -389,6 +396,11 @@ def run(config: HarborRunConfig) -> int:
     # Host-executed agents use this endpoint directly. Container-executed
     # mini-swe receives its translated endpoint through the agent config.
     process_env = os.environ.copy()
+    if config.environment_import_path:
+        project_root = str(Path(__file__).resolve().parents[2])
+        process_env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (project_root, process_env.get("PYTHONPATH", "")) if part
+        )
     endpoint = _get_agent_endpoint(config)
     process_env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     rc = run_with_progress(

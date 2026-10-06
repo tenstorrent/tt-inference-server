@@ -272,6 +272,7 @@ class HarborEvalConfig:
     exclude_task_names: List[str] = field(default_factory=list)
     agent_kwargs: Dict[str, Any] = field(default_factory=dict)
     environment_type: str = field(default_factory=_harbor_env_type)
+    environment_import_path: Optional[str] = None
     override_cpus: Optional[int] = None
     override_memory_mb: Optional[int] = None
     timeout_multiplier: Optional[float] = None
@@ -487,6 +488,155 @@ class EvalConfig:
 
 
 _eval_config_list = [
+    # Granite release: GPQA first10; fixed ten-case agentic CI subsets.
+    EvalConfig(
+        hf_model_repo="ibm-granite/granite-4.2-30b",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=10,
+                use_chat_api=True,
+                num_fewshot=0,
+                seed=42,
+                score=EvalTaskScore(
+                    published_score=66.41,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    # This API stores acceptance references in the GPU-reference
+                    # field; this target is published, not a matched GPU control.
+                    gpu_reference_score=66.41,
+                    gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=60.0,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,flexible-extract"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={"max_length": 131072, "timeout": 3600},
+                gen_kwargs={
+                    "max_gen_toks": 32768,
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "do_sample": "true",
+                    "stream": "false",
+                    "until": [],
+                    "chat_template_kwargs": {
+                        "enable_thinking": True,
+                        "low_effort": False,
+                    },
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+            ),
+        ]
+        + [
+            EvalTask(
+                task_name=name,
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=target,
+                    published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    # User explicitly selects the published full-set value as
+                    # the release target. This is NOT a matched GPU measurement
+                    # on these ten cases; retain that distinction in reports.
+                    gpu_reference_score=target,
+                    gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
+                    tolerance=0.0,
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=ci_target,
+                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            tolerance=0.0,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset=dataset,
+                    agent=agent,
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    agent_timeout_sec=2 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs=kwargs,
+                    task_names_map={EvalLimitMode.CI_NIGHTLY: names},
+                    environment_import_path=(
+                        "llm_module.agentic.qemu_environment:QemuArchiveDockerEnvironment"
+                        if name == "terminal_bench_2_1"
+                        and _harbor_env_type() == "docker"
+                        else None
+                    ),
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
+                },
+            )
+            for name, dataset, agent, target, ci_target, kwargs, names in [
+                (
+                    "terminal_bench_2_1",
+                    "terminal-bench/terminal-bench-2-1@sha256:7d7bdc1cbedad549fc1140404bd4dc45e5fd0ea7c4186773687d177ad3a0699a",
+                    "terminus-2",
+                    29.24,
+                    20.0,
+                    {
+                        "temperature": 1.0,
+                        "llm_kwargs": {"top_p": 0.95, "timeout": 3600},
+                    },
+                    [
+                        "terminal-bench/break-filter-js-from-html",
+                        "terminal-bench/cobol-modernization",
+                        "terminal-bench/compile-compcert",
+                        "terminal-bench/feal-differential-cryptanalysis",
+                        "terminal-bench/qemu-startup",
+                        "terminal-bench/caffe-cifar-10",
+                        "terminal-bench/password-recovery",
+                        "terminal-bench/portfolio-optimization",
+                        "terminal-bench/hf-model-inference",
+                        "terminal-bench/financial-document-processor",
+                    ],
+                ),
+                (
+                    "swe_bench_verified",
+                    "swebench-verified",
+                    "mini-swe-agent",
+                    57.0,
+                    50.0,
+                    {
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
+                            }
+                        },
+                    },
+                    [
+                        "django__django-11299",
+                        "astropy__astropy-14096",
+                        "matplotlib__matplotlib-25332",
+                        "sympy__sympy-13551",
+                        "scikit-learn__scikit-learn-14629",
+                        "django__django-15098",
+                        "sphinx-doc__sphinx-8593",
+                        "sympy__sympy-13852",
+                        "pydata__xarray-3095",
+                        "django__django-15695",
+                    ],
+                ),
+            ]
+        ],
+    ),
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.2",
         tasks=[

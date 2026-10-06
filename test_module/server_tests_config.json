@@ -63,6 +63,7 @@
       "EleutherAI/pythia-70m",
       "microsoft/phi-1_5",
       "Qwen/Qwen3.8-27B",
+      "ibm-granite/granite-4.2-30b",
       "microsoft/phi-1",
       "Qwen/Qwen2.5-14B-Instruct-1M",
       "meta-llama/Llama-3.1-8B-Instruct",
@@ -644,6 +645,16 @@
       "id_name": "microsoft--phi-1_5",
       "weights": [
         "microsoft/phi-1_5"
+      ]
+    },
+    "ibm-granite/granite-4.2-30b": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "ibm-granite--granite-4.2-30b",
+      "weights": [
+        "ibm-granite/granite-4.2-30b"
       ]
     },
     "Qwen/Qwen3.8-27B": {
