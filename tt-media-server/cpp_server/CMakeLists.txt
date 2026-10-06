@@ -1198,6 +1198,14 @@ add_executable(qwen3_tts_request_test
 )
 target_link_libraries(qwen3_tts_request_test PRIVATE llm_runner_lib GTest::gtest_main)
 
+# TTS IPC wire: Qwen3 task fields, PCM16 audio chunks, chunking, WAV bytes.
+add_executable(tts_audio_ipc_test
+    tests/unit/ipc/tts_audio_ipc_test.cpp
+    src/utils/audio_codec.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
+)
+target_link_libraries(tts_audio_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
+
 add_executable(voice_sample_cache_test tests/unit/utils/voice_sample_cache_test.cpp)
 target_link_libraries(voice_sample_cache_test PRIVATE xxhash_lib GTest::gtest_main)
 target_include_directories(voice_sample_cache_test PRIVATE
@@ -1367,6 +1375,8 @@ set(SERVICE_TEST_COMMON_SOURCES
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1448,6 +1458,8 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
@@ -1616,6 +1628,7 @@ gtest_discover_tests(tts_prompt_compiler_test)
 gtest_discover_tests(qwen3_tts_config_test)
 gtest_discover_tests(qwen3_tts_settings_test)
 gtest_discover_tests(qwen3_tts_request_test)
+gtest_discover_tests(tts_audio_ipc_test)
 gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
@@ -1963,6 +1976,8 @@ set(SOURCES
     src/runtime/runners/image_ipc_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_runner.cpp
     src/runtime/runners/blaze_runner/blaze_tts_scheduler_factory.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
     src/runtime/runners/sdxl/sdxl_generate_runner.cpp
     src/runtime/runners/sdxl/sdxl_image_to_image_runner.cpp
     src/runtime/runners/sdxl/sdxl_edit_runner.cpp
