@@ -99,9 +99,9 @@ def main() -> int:
         failures.append(
             f"mean_ttft_ms {mean_ttft_ms} exceeds threshold {max_mean_ttft_ms}ms"
         )
-    if max_mean_e2el_ms is not None and as_number(
-        mean_e2el_ms, float("inf")
-    ) > float(max_mean_e2el_ms):
+    if max_mean_e2el_ms is not None and as_number(mean_e2el_ms, float("inf")) > float(
+        max_mean_e2el_ms
+    ):
         failures.append(
             f"mean_e2el_ms {mean_e2el_ms} exceeds threshold {max_mean_e2el_ms}ms"
         )
