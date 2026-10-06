@@ -129,6 +129,10 @@ struct TtsAudioChunkMessage {
   uint16_t channels = 0;
   std::vector<uint16_t> samplesBf16;
   std::string error;
+  // PCM16 samples, for runners whose decoder already produces them
+  // (Qwen3-TTS). Mutually exclusive with samplesBf16; the parent writes them to
+  // the client unconverted.
+  std::vector<int16_t> samplesPcm16;
 
   // Worker-side conditioning durations for this task, in microseconds. Carried
   // on the terminal message only, because that is the one message per request
@@ -157,6 +161,7 @@ struct TtsAudioChunkMessage {
     message.sampleRateHz = chunk.sampleRateHz;
     message.channels = chunk.channels;
     message.samplesBf16 = chunk.samplesBf16;
+    message.samplesPcm16 = chunk.samplesPcm16;
     return message;
   }
 
@@ -205,6 +210,7 @@ struct TtsAudioChunkMessage {
     chunk.samplesBf16 = samplesBf16;
     chunk.sampleRateHz = sampleRateHz;
     chunk.channels = channels;
+    chunk.samplesPcm16 = samplesPcm16;
     return chunk;
   }
 
@@ -221,6 +227,7 @@ struct TtsAudioChunkMessage {
              sizeof(voiceEncodeUs));
     os.write(reinterpret_cast<const char*>(&promptCompileUs),
              sizeof(promptCompileUs));
+    ser::writeVector(os, samplesPcm16);
   }
 
   static TtsAudioChunkMessage deserialize(std::istream& is) {
@@ -239,6 +246,7 @@ struct TtsAudioChunkMessage {
             sizeof(message.voiceEncodeUs));
     is.read(reinterpret_cast<char*>(&message.promptCompileUs),
             sizeof(message.promptCompileUs));
+    message.samplesPcm16 = ser::readVector<int16_t>(is);
     return message;
   }
 };

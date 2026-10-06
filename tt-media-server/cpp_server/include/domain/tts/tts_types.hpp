@@ -115,13 +115,16 @@ struct TtsTask {
   std::optional<std::string> referenceText;
 };
 
-/** Audio produced by the decoder for one streamed chunk. */
+/** Audio produced by the decoder for one streamed chunk. Exactly one of the
+ *  two sample vectors is filled: BF16 bit patterns (TTS-2) or PCM16 samples
+ *  (Qwen3-TTS), which go to the client as they are. */
 struct TtsAudioChunk {
   uint32_t task_id = 0;
   uint32_t chunkIndex = 0;
   std::vector<uint16_t> samplesBf16;
   uint32_t sampleRateHz = 0;
   uint16_t channels = 0;
+  std::vector<int16_t> samplesPcm16;
 };
 
 enum class TtsFinishReason {
