@@ -60,3 +60,23 @@ def test_glm53_longbench2_runs_20_concurrent_requests():
         if t.task_name == "longbench2_generate"
     ]
     assert task.max_concurrent == 20
+
+
+def test_glm53_swe_bench_verified_runs_all_tasks_at_60_concurrent_trials():
+    from reference_config.evals.eval_config import EVAL_CONFIGS
+    from workflows.workflow_types import WorkflowVenvType
+
+    if "zai-org/GLM-5.3" not in EVAL_CONFIGS:
+        pytest.skip("GLM-5.3 eval config not loaded")
+    (task,) = [
+        t
+        for t in EVAL_CONFIGS["zai-org/GLM-5.3"].tasks
+        if t.task_name == "swe_bench_verified"
+    ]
+    assert task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC
+    cfg = task.agentic_eval_config
+    assert (cfg.dataset, cfg.agent) == ("swebench-verified", "mini-swe-agent")
+    assert cfg.n_concurrent_trials == 60
+    assert cfg.n_tasks is None  # the whole dataset
+    # GLM-5.2's GPU reference does not apply to GLM-5.3.
+    assert task.score.gpu_reference_score is None
