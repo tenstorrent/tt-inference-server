@@ -4204,13 +4204,12 @@ templates:
         no-enable-prefix-caching: true
         enable_auto_tool_choice: true
         tool_call_parser: qwen3_xml
-        reasoning_parser: granite_thinking_parser
-        reasoning_parser_plugin: ../../tt-metal/models/demos/granite42_30b_qb2/tt/granite_thinking_parser.py
+        reasoning_parser: qwen3
       override_tt_config:
         fabric_config: FABRIC_1D_RING
         trace_region_size: 134217728
         sample_on_device_mode: all
   metadata:
     ibm-granite/granite-4.2-30b:
-      reasoning_parser_name: granite_thinking_parser
+      reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_xml
