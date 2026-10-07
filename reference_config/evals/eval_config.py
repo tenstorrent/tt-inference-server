@@ -592,7 +592,16 @@ _eval_config_list = [
                     20.0,
                     {
                         "temperature": 1.0,
-                        "llm_kwargs": {"top_p": 0.95, "timeout": 3600},
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "timeout": 3600,
+                            "extra_body": {
+                                "chat_template_kwargs": {
+                                    "enable_thinking": False,
+                                    "low_effort": False,
+                                }
+                            },
+                        },
                     },
                     [
                         "terminal-bench/break-filter-js-from-html",
