@@ -68,6 +68,20 @@ def test_overrides_leave_qualitative_runs_alone():
     assert _throughput(runs) == [("1k", 8)]
 
 
+def test_max_concurrency_caps_preset_sweep():
+    assert _throughput(build_runs("ci", max_concurrency=8)) == [("32k", 1), ("32k", 8)]
+    assert _throughput(build_runs("ci", max_concurrency=128)) == [
+        ("32k", 1),
+        ("32k", 16),
+        ("32k", 64),
+    ]
+
+
+def test_explicit_concurrencies_ignore_max_concurrency():
+    runs = build_runs("ci", concurrencies="16,64", max_concurrency=8)
+    assert _throughput(runs) == [("32k", 16), ("32k", 64)]
+
+
 def test_parse_unset_returns_none():
     assert parse_isls(None) is None
     assert parse_isls("") is None

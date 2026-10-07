@@ -197,6 +197,7 @@ def build_runs(
     *,
     isls: Optional[str] = None,
     concurrencies: Optional[str] = None,
+    max_concurrency: Optional[int] = None,
 ) -> List[SpecDecodeRun]:
     """Return the spec-decode sweep for ``preset``.
 
@@ -210,16 +211,26 @@ def build_runs(
     ``--spec-decode-isls`` / ``--spec-decode-concurrencies``) replace the
     preset's throughput ISLs / concurrencies; qualitative runs are
     unaffected.
+
+    ``max_concurrency`` (the server's user slots) caps the preset's
+    concurrencies when ``concurrencies`` is unset: points above it become
+    ``max_concurrency`` itself, so an 8-slot server sweeps 1/8 instead of
+    measuring rejected requests at 16/64.
     """
     if preset not in _PRESETS:
         raise ValueError(
             f"Unknown spec-decode preset: {preset}. Available: {sorted(_PRESETS)}"
         )
     base = _PRESETS[preset]
+    selected = parse_concurrencies(concurrencies)
+    if selected is None:
+        selected = base.throughput_concurrencies
+        if max_concurrency:
+            selected = tuple(sorted({min(c, max_concurrency) for c in selected}))
     return _Preset(
         base.qualitative_categories,
         parse_isls(isls) or base.throughput_isls,
-        parse_concurrencies(concurrencies) or base.throughput_concurrencies,
+        selected,
     ).runs()
 
 

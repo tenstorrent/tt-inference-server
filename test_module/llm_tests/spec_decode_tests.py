@@ -117,7 +117,15 @@ def run_spec_decode(
         :func:`workflow_module.accept_blocks` so the unified report
         generator picks them up.
     """
-    runs = build_spec_decode_runs(preset, isls=isls, concurrencies=concurrencies)
+    # Concurrency above the server's user slots measures rejected requests,
+    # not throughput, so the preset's sweep is capped at the spec's slots.
+    device_spec = getattr(ctx.model_spec, "device_model_spec", None)
+    runs = build_spec_decode_runs(
+        preset,
+        isls=isls,
+        concurrencies=concurrencies,
+        max_concurrency=getattr(device_spec, "max_concurrency", None),
+    )
     if not runs:
         logger.error("Spec-decode sweep is empty (preset=%s); nothing to run.", preset)
         return []
