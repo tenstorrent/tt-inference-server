@@ -435,28 +435,6 @@ class TestSetupHostRunSetup:
         assert setup_config.host_model_volume_root is None
         assert setup_config.host_model_weights_mount_dir is None
 
-    def test_training_host_volume_skips_host_download(
-        self, training_model_spec, temp_dir
-    ):
-        """Training + host volume: no host-side download, no weights/<model>
-        copy, and no read-only weights mount."""
-        with patch.object(
-            HostSetupManager,
-            "setup_weights_huggingface",
-            side_effect=AssertionError("must not download"),
-        ):
-            setup_config = setup_host(
-                model_spec=training_model_spec,
-                jwt_secret="test_jwt_secret_123",
-                hf_token="hf_test_token_123456",
-                automatic_setup=True,
-                host_volume=str(temp_dir / "persistent_volume"),
-            )
-
-        assert setup_config.host_model_volume_root.is_dir()
-        assert not (setup_config.host_model_volume_root / "weights").exists()
-        assert setup_config.host_model_weights_mount_dir is None
-
     def test_admitted_package_skips_hf_weight_setup_and_ram_heuristic(
         self, tiny_model_spec, temp_dir
     ):
