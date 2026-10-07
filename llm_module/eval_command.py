@@ -46,6 +46,13 @@ def _clamp_max_gen_toks(
     except (TypeError, ValueError):
         return gen_kwargs
     ceiling = max(_MIN_OUTPUT_TOKENS, device_max_context - _MAX_GEN_TOKS_PROMPT_RESERVE)
+    # EVAL_MAX_GEN_TOKS lowers the ceiling further. vLLM rejects a request whose
+    # prompt exceeds max_model_len - max_tokens, so on a server with a small
+    # max_context the 1024-token prompt reserve is not enough for few-shot
+    # prompts; an unofficial reduced run sets this to leave room for them.
+    override = os.getenv("EVAL_MAX_GEN_TOKS")
+    if override:
+        ceiling = min(ceiling, max(_MIN_OUTPUT_TOKENS, int(override)))
     if requested <= ceiling:
         return gen_kwargs
     out = dict(gen_kwargs)
@@ -156,19 +163,30 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
             task.task_name,
         )
         return None
-    if not isinstance(indices, (list, tuple)) or not all(
-        isinstance(i, int) and not isinstance(i, bool) and i >= 0 for i in indices
-    ):
-        raise ValueError(
-            f"--eval-samples entry for task '{task.task_name}' must be a list of "
-            f"non-negative integers; got {indices!r}"
-        )
+    # lm-eval keys --samples by leaf task name. For a group task (mmlu_pro is
+    # 14 subtasks) the group's own entry selects nothing, so forward the
+    # entries for its subtasks (`<task>_<subtask>`) as well; a subtask without
+    # an entry runs in full.
+    selected = {
+        name: ids
+        for name, ids in mapping.items()
+        if name == task.task_name or name.startswith(f"{task.task_name}_")
+    }
+    for name, ids in selected.items():
+        if not isinstance(ids, (list, tuple)) or not all(
+            isinstance(i, int) and not isinstance(i, bool) and i >= 0 for i in ids
+        ):
+            raise ValueError(
+                f"--eval-samples entry for task '{name}' must be a list of "
+                f"non-negative integers; got {ids!r}"
+            )
     logger.info(
-        "Filtering task %s to %d doc_id(s) via --samples",
+        "Filtering task %s to %d doc_id(s) via --samples (%d entries)",
         task.task_name,
-        len(indices),
+        sum(len(ids) for ids in selected.values()),
+        len(selected),
     )
-    return json.dumps({task.task_name: list(indices)})
+    return json.dumps({name: list(ids) for name, ids in selected.items()})
 
 
 def build_eval_command(
