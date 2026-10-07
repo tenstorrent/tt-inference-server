@@ -32,21 +32,11 @@ from telemetry.telemetry_client import TelemetryEvent
 from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from utils.decorators import log_execution_time
 from utils.logger import log_exception_chain
+from utils.qwen3_tts_voices import KNOWN_LANGUAGES
 from utils.voice_prompts import DEFAULT_VOICE_ID, VoicePromptManager
 
 _DEFAULT_HF_ID = SupportedModels.QWEN3_TTS_1_7B.value
-_KNOWN_LANGUAGES = (
-    "english",
-    "chinese",
-    "german",
-    "italian",
-    "portuguese",
-    "spanish",
-    "japanese",
-    "korean",
-    "french",
-    "russian",
-)
+_KNOWN_LANGUAGES = KNOWN_LANGUAGES
 SAMPLE_RATE_HZ = 24000
 
 
@@ -388,7 +378,7 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             return ref_codes, clone_text, audio_data, "<adhoc>"
 
         voice_id = request.speaker_id or DEFAULT_VOICE_ID
-        if voice_id in _KNOWN_LANGUAGES:
+        if voice_id.strip().lower() in _KNOWN_LANGUAGES:
             voice_id = DEFAULT_VOICE_ID
         prompt = self.voice_prompts.get(voice_id) if self.voice_prompts else None
         if prompt is None:

@@ -205,7 +205,7 @@ class TestResolveVoice:
         jim = SimpleNamespace(ref_codes="c", ref_text="t", audio_data="a")
         r = self._runner_with_prompts({qr.DEFAULT_VOICE_ID: jim})
         with patch.object(qr, "_tts_api", return_value=MagicMock()):
-            for sid in (None, "english", "japanese"):
+            for sid in (None, "english", "japanese", " German "):
                 out = r._resolve_voice(TextToSpeechRequest(text="hi", speaker_id=sid))
                 assert out[3] == qr.DEFAULT_VOICE_ID
 
@@ -288,3 +288,72 @@ class TestRunGuards:
         with patch.object(qr, "_tts_api", return_value=MagicMock()):
             with pytest.raises(RuntimeError, match="warmup"):
                 _bare_runner()._synthesize(TextToSpeechRequest(text="hi"))
+
+
+class TestRequestValidation:
+    """utils.qwen3_tts_voices.request_error and the service's 400 (before any worker)."""
+
+    from utils.qwen3_tts_voices import request_error as _err
+
+    def err(self, **kw):
+        return type(self)._err(TextToSpeechRequest(text="hi", **kw))
+
+    @pytest.mark.parametrize("sid", [None, "jim", "english", "Japanese", " German "])
+    def test_valid_speakers(self, sid):
+        with patch.dict(os.environ, {}):
+            os.environ.pop("QWEN3_TTS_REF_AUDIO", None)
+            assert self.err(speaker_id=sid) is None
+
+    def test_unknown_speaker(self):
+        msg = self.err(speaker_id="nobody")
+        assert "Unknown speaker_id='nobody'" in msg and "jim" in msg
+
+    def test_custom_voice_needs_env(self):
+        with patch.dict(os.environ, {}):
+            os.environ.pop("QWEN3_TTS_REF_AUDIO", None)
+            assert self.err(speaker_id="custom") is not None
+        with patch.dict(os.environ, {"QWEN3_TTS_REF_AUDIO": "/x.wav"}):
+            assert self.err(speaker_id="custom") is None
+
+    def test_clone_needs_both_fields(self):
+        audio = base64.b64encode(b"RIFF").decode()
+        assert "together" in self.err(voice_clone_audio=audio)
+        assert "together" in self.err(voice_clone_text="words")
+        assert "together" in self.err(voice_clone_audio=audio, voice_clone_text="  ")
+        assert self.err(voice_clone_audio=audio, voice_clone_text="words") is None
+
+    def test_clone_bad_base64(self):
+        msg = self.err(voice_clone_audio="not base64!!", voice_clone_text="words")
+        assert "base64" in msg
+
+    def test_clone_overrides_speaker_check(self):
+        audio = base64.b64encode(b"RIFF").decode()
+        assert (
+            self.err(voice_clone_audio=audio, voice_clone_text="w", speaker_id="x")
+            is None
+        )
+
+    def _service_pre_process(self, runner, **kw):
+        from fastapi import HTTPException
+        from model_services import text_to_speech_service as tss
+
+        svc = tss.TextToSpeechService.__new__(tss.TextToSpeechService)
+        req = TextToSpeechRequest(text="hi", **kw)
+        with patch.object(tss.settings, "model_runner", runner):
+            try:
+                return asyncio.run(svc.pre_process(req)), None
+            except HTTPException as e:
+                return None, e
+
+    def test_service_rejects_unknown_voice_with_400(self):
+        out, exc = self._service_pre_process("tt-qwen3-tts", speaker_id="nobody")
+        assert out is None and exc.status_code == 400
+        assert "nobody" in exc.detail
+
+    def test_service_passes_valid_request(self):
+        out, exc = self._service_pre_process("tt-qwen3-tts", speaker_id="jim")
+        assert exc is None and out.speaker_id == "jim"
+
+    def test_service_leaves_other_runners_alone(self):
+        out, exc = self._service_pre_process("tt-speecht5-tts", speaker_id="nobody")
+        assert exc is None and out.speaker_id == "nobody"

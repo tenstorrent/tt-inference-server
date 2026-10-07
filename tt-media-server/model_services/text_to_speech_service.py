@@ -6,13 +6,20 @@ import base64
 import shutil
 from typing import Any, Optional
 
-from config.constants import AUDIO_RESPONSE_FORMATS, FFMPEG_REQUIRED_FORMATS
+from config.constants import (
+    AUDIO_RESPONSE_FORMATS,
+    FFMPEG_REQUIRED_FORMATS,
+    ModelRunners,
+)
+from config.settings import settings
 from domain.text_to_speech_request import TextToSpeechRequest
 from domain.text_to_speech_response import TextToSpeechResponse
 from model_services.base_service import BaseService
+from fastapi import HTTPException
 from model_services.cpu_workload_handler import CpuWorkloadHandler
 from utils.decorators import log_execution_time
 from utils.ffmpeg_utils import encode_wav_to
+from utils.qwen3_tts_voices import request_error as qwen3_tts_request_error
 
 FFMPEG_REQUIRED_MSG = (
     "response_format={fmt} requires ffmpeg but ffmpeg is not in PATH. "
@@ -51,6 +58,15 @@ class TextToSpeechService(BaseService):
             worker_context_setup=None,
             warmup_task_data=(minimal_wav_base64, "wav"),
         )
+
+    async def pre_process(self, request: TextToSpeechRequest) -> TextToSpeechRequest:
+        # Reject what the worker would reject (unknown voice, half a voice clone) here,
+        # so the client gets a 400 instead of a 500 from a worker slot.
+        if settings.model_runner == ModelRunners.TT_QWEN3_TTS.value:
+            error = qwen3_tts_request_error(request)
+            if error:
+                raise HTTPException(status_code=400, detail=error)
+        return await super().pre_process(request)
 
     async def _set_result_to_wav(self, result: TextToSpeechResponse) -> None:
         """Encode result.audio to WAV and set result.output_bytes and result.format."""
