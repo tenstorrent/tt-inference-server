@@ -544,6 +544,10 @@ class DeviceModelSpec:
     # num_calls = num_batches * max_concurrency.
     # Uniform default of 3 across all image models; override per model in the YAML spec
     image_benchmark_num_batches: int = 3
+    # Bytes per weight parameter as served on this device, for the informational
+    # "% of DRAM Floor" benchmark column (report_module.roofline). None => the
+    # bfp8 default (1.0625); set e.g. 2.0 for bf16 weights or 0.5625 for bfp4.
+    weight_bytes_per_param: Optional[float] = None
 
     def __post_init__(self):
         self.validate_data()

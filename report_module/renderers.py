@@ -75,6 +75,17 @@ BENCHMARK_TIER_NOTE = (
     "when any single tier meets all of its checks."
 )
 
+DRAM_FLOOR_COLUMN = "pct_of_dram_floor"
+
+DRAM_FLOOR_NOTE = (
+    "Note: The % of DRAM Floor column is informational and is not graded. It "
+    "is the decode DRAM-bandwidth floor as a percentage of the measured mean "
+    "TPOT: floor_ms = param_count × bytes_per_param ÷ tensor-parallel chips ÷ "
+    "per-chip DRAM bandwidth (bfp8 weights at 1.0625 B/param; 288 GB/s per "
+    "Wormhole chip, 512 GB/s per Blackhole chip). 100% means decode runs at "
+    "the bandwidth floor; lower is further from it."
+)
+
 UNGRADED_SWEEP_NOTE = (
     "Note: No perf targets are configured for these sweep points, so these "
     "rows are reported for information only and are not graded."
@@ -438,7 +449,8 @@ def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
     keeps ``status="na"`` either way, since that is what stops acceptance from
     reading "no targets configured" as "benchmarks passed".
     """
-    ungraded = _ungraded_columns(_extract_records(block))
+    records = _extract_records(block)
+    ungraded = _ungraded_columns(records)
     table = render_generic_table(block, metadata, extra_hidden=ungraded)
     if not table:
         return ""
@@ -447,6 +459,8 @@ def render_benchmarks(block: Block, metadata: Mapping[str, Any]) -> str:
         notes.append(BENCHMARK_TIER_NOTE)
     if ungraded:
         notes.append(UNGRADED_SWEEP_NOTE)
+    if not _column_is_empty(DRAM_FLOOR_COLUMN, records):
+        notes.append(DRAM_FLOOR_NOTE)
     return "\n\n".join([table, *notes])
 
 

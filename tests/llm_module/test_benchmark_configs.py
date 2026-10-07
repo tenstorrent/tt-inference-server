@@ -349,3 +349,21 @@ def test_unknown_benchmark_protocol_fails_before_running():
     spec.metadata["benchmark_protocol"] = "fixed_worklaod"
     with pytest.raises(ValueError, match="Unknown benchmark protocol"):
         get_llm_configs(spec, spec.device_type)
+
+
+def test_every_sweep_point_carries_the_dram_floor():
+    """The informational "% of DRAM Floor" column needs the floor on the
+    sweep point: ``get_llm_configs`` computes it once from the spec and stamps
+    it on every config (``None`` when the device or param count is unknown)."""
+    from report_module.roofline import dram_floor_ms_for_spec
+
+    spec = next(
+        s
+        for s in MODEL_SPECS.values()
+        if s.model_type == ModelType.LLM and s.param_count
+    )
+    configs = get_llm_configs(spec, spec.device_type)
+    assert configs
+    expected = dram_floor_ms_for_spec(spec, spec.device_type)
+    assert expected is not None and expected > 0
+    assert {c.dram_floor_ms for c in configs} == {expected}

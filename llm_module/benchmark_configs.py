@@ -11,6 +11,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import List, Optional
 
+from report_module.roofline import dram_floor_ms_for_spec
+
 from .config import LLMRunConfig, ServerConnection
 from .benchmark_protocol import fixed_workload_repetitions, uses_fixed_workload
 
@@ -92,6 +94,8 @@ def get_llm_configs(
     }
 
     output_block_size = int(metadata.get("output_block_size", 1) or 1)
+    # Informational decode roofline; one floor per (model, device) sweep.
+    floor_ms = dram_floor_ms_for_spec(model_spec, device)
     configs: List[LLMRunConfig] = []
     seen = set()
     for params in text_params:
@@ -124,6 +128,7 @@ def get_llm_configs(
                 priority=priority_by_shape.get(shape),
                 target_priorities=target_priorities_by_shape.get(shape),
                 goodput=goodput_by_shape.get(shape),
+                dram_floor_ms=floor_ms,
             )
         )
 

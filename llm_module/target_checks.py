@@ -16,6 +16,7 @@ import logging
 import math
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+from report_module.roofline import pct_of_dram_floor
 from report_module.schema import Block
 from workflow_module.engine_types import ReportCheckTypes
 
@@ -181,6 +182,12 @@ def apply_target_checks(block: Block, config: Any) -> Block:
             attr_to_field.get(attr, attr): prio
             for attr, prio in target_priorities.items()
         }
+    # Informational decode roofline column, placed just before the verdict so
+    # the table reads ... TPOT ... % of DRAM Floor | Target Check. None (shown
+    # as "N/A") when the floor is unknown; never consulted by the grading.
+    data["pct_of_dram_floor"] = pct_of_dram_floor(
+        getattr(config, "dram_floor_ms", None), block.data.get("mean_tpot_ms")
+    )
     if not targets:
         logger.warning(
             "No perf targets for sweep point isl=%s osl=%s max_concurrency=%s; "

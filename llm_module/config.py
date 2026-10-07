@@ -58,6 +58,10 @@ class LLMRunConfig:
     # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
     # own vocabulary. None = not measured.
     goodput: Optional[GoodputSlo] = field(default=None, compare=False)
+    # Decode DRAM-bandwidth floor (ms) for this model on this device, computed
+    # once per sweep from the ModelSpec (report_module.roofline). Informational:
+    # it only stamps the ``pct_of_dram_floor`` column, never a target check.
+    dram_floor_ms: Optional[float] = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

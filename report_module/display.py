@@ -112,6 +112,8 @@ DISPLAY_NAMES: Dict[str, str] = {
     "ratio_to_published": "Ratio to Published",
     "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
+    # Informational decode roofline (report_module.roofline); never graded.
+    "pct_of_dram_floor": "% of DRAM Floor",
     # Benchmarks report a performance-target verdict, not an accuracy check.
     "target_check": "Target Check",
     # Liveness / infra
@@ -168,6 +170,7 @@ DECIMAL_PLACES: Dict[str, int] = {
     "p99_ttft": 1,
     "mean_tpot_ms": 1,
     "std_tpot_ms": 1,
+    "pct_of_dram_floor": 1,
     "mean_itl_ms": 1,
     "mean_e2el_ms": 1,
     "mean_tps": 2,
@@ -216,6 +219,7 @@ EXPLANATIONS: Dict[str, str] = {
     "num_requests": "total number of requests (sample size, N)",
     "mean_ttft_ms": "Time To First Token (ms)",
     "mean_tpot_ms": "Time Per Output Token (ms)",
+    "pct_of_dram_floor": "Decode DRAM-bandwidth floor as a percentage of measured TPOT (100% = at the floor)",
     "mean_tps": "Throughput per user (TPS)",
     "tps_decode_throughput": "Throughput for output tokens, across all users (TPS)",
     "tps_input_throughput": "Throughput for input (prefill) tokens, across all users (TPS)",
