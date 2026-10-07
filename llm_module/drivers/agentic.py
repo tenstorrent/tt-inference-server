@@ -199,7 +199,7 @@ def build_harbor_config(
         model_name=_openai_model_name(cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
-        n_concurrent_trials=cfg.n_concurrent_trials,
+        n_concurrent_trials=resolve_n_concurrent_trials(cfg),
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
         agent_kwargs=cfg.agent_kwargs,
@@ -237,6 +237,27 @@ def build_harbor_config(
 # whose trials were lost to a server restart. Highest precedence; an empty value
 # is ignored.
 TASK_NAMES_ENV = "TT_AGENTIC_TASK_NAMES"
+# Positive integer overriding every agentic task's n_concurrent_trials, e.g. to
+# leave device-state headroom on a server whose slots leak (vllm-tt-plugin).
+N_CONCURRENT_ENV = "TT_AGENTIC_N_CONCURRENT"
+
+
+def _n_concurrent_override() -> Optional[int]:
+    raw = os.getenv(N_CONCURRENT_ENV, "").strip()
+    if not raw:
+        return None
+    value = int(raw)
+    if value < 1:
+        raise ValueError(f"{N_CONCURRENT_ENV} must be a positive integer, got {raw!r}")
+    return value
+
+
+def resolve_n_concurrent_trials(cfg: Any) -> int:
+    override = _n_concurrent_override()
+    if override is not None:
+        logger.info("%s overrides n_concurrent_trials %s -> %s", N_CONCURRENT_ENV, cfg.n_concurrent_trials, override)
+        return override
+    return cfg.n_concurrent_trials
 
 
 def _task_names_override() -> List[str]:

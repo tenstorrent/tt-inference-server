@@ -31,3 +31,23 @@ def test_blank_env_is_ignored(monkeypatch):
 def test_no_agentic_config(monkeypatch):
     monkeypatch.setenv(TASK_NAMES_ENV, "x")
     assert resolve_task_names(SimpleNamespace(agentic_eval_config=None)) == []
+
+
+from llm_module.drivers.agentic import N_CONCURRENT_ENV, resolve_n_concurrent_trials
+
+
+def test_n_concurrent_default(monkeypatch):
+    monkeypatch.delenv(N_CONCURRENT_ENV, raising=False)
+    assert resolve_n_concurrent_trials(SimpleNamespace(n_concurrent_trials=16)) == 16
+
+
+def test_n_concurrent_override(monkeypatch):
+    monkeypatch.setenv(N_CONCURRENT_ENV, "8")
+    assert resolve_n_concurrent_trials(SimpleNamespace(n_concurrent_trials=16)) == 8
+
+
+def test_n_concurrent_invalid(monkeypatch):
+    import pytest
+    monkeypatch.setenv(N_CONCURRENT_ENV, "0")
+    with pytest.raises(ValueError):
+        resolve_n_concurrent_trials(SimpleNamespace(n_concurrent_trials=16))
