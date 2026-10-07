@@ -2122,7 +2122,7 @@ templates:
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 128  # 4 mesh rows x 32 users per row
-      max_context: 65536  # 64 * 1024; 128k / 256k not validated
+      max_context: 33280  # 260 * 128: B=128 + fp8 pool at 64k OOMs in the build (prefill_sparse PrefillKV); the default sweep needs <= 32768 + 128
       default_impl: true
       tensor_cache_timeout: 7200.0
       env_vars:
@@ -2144,7 +2144,7 @@ templates:
         tokenizer: /mnt/tt-data/ssinghal/deepseek-v41-flash
         chat_template: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
         max_num_seqs: "128"
-        max_model_len: "65536"
+        max_model_len: "33280"
         no-enable-prefix-caching: true
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
       override_tt_config:
