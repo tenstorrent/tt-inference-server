@@ -567,7 +567,11 @@ _eval_config_list = [
                     agent=agent,
                     n_concurrent_trials=2,
                     n_attempts=1,
-                    agent_timeout_sec=2 * 60 * 60,
+                    # Bound long Terminal tails uniformly across the fixed
+                    # subset; non-timeout pilot tasks finished within 36m.
+                    agent_timeout_sec=(
+                        45 * 60 if name == "terminal_bench_2_1" else 2 * 60 * 60
+                    ),
                     llm_timeout_sec=60 * 60,
                     agent_kwargs=kwargs,
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
