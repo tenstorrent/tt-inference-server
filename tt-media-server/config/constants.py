@@ -454,6 +454,9 @@ class DeviceTypes(Enum):
     P150X8 = "p150x8"  # BH LoudBox - 8x P150 (2,4 mesh)
     P300X2 = "p300x2"  # BH QuietBox GE - 2x P300 cards (2,2 mesh)
     BLACKHOLE_GALAXY = "bh-galaxy"
+    # Four Blackhole Galaxies as one (4, 32) mesh, launched with tt-run (see
+    # multihost/). Each rank sees its own host's 32 chips.
+    GALAXY_QUAD = "galaxy_quad"
 
 
 class QueueType(Enum):
@@ -1271,6 +1274,103 @@ ModelConfigs = {
         # LTX 1080p ~6s AV generation (153 frames @ 25 fps) plus first-request
         # trace capture during warmup; give it a generous ceiling.
         "request_processing_timeout_seconds": 7200,
+    },
+    # Galaxy quad: the 4x8 Galaxy configs above with the full (4, 32) mesh. One
+    # device-id group -> one worker on rank 0; tt-run assigns each rank's chips.
+    (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_T2V_PRODIA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_PRODIA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_ANISORA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_DISTILL, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_LORA, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V_LIGHTNING, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MOCHI_1, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
         "device_mesh_shape": (1, 1),

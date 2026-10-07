@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     use_async_video: bool = (
         True  # If False, video is generated synchronously and returned directly
     )
+    # Encode video results to MP4 on a background thread in the device worker,
+    # so the device starts the next request while ffmpeg runs.
+    video_async_encode: bool = False
     # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None

@@ -15,6 +15,7 @@ from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
 from fastapi import HTTPException
+from multihost import is_multihost_launch
 from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
@@ -67,6 +68,9 @@ class Scheduler:
         return self.worker_count
 
     def _setup_initial_variables(self):
+        # Rank 0 of a multi-host (tt-run) launch: a restarted worker can't
+        # rejoin the other ranks, so worker failures end the whole job.
+        self.is_multihost = is_multihost_launch()
         self.is_ready = False
         self.listener_running = True
         self.device_warmup_listener_running = True
@@ -158,6 +162,24 @@ class Scheduler:
 
         # Start workers and wait for completion
         await self._start_workers_in_sequence()
+
+        if self.is_multihost:
+            # worker_health_monitor only starts once a worker is ready; this
+            # covers a worker that dies (e.g. crashes) during startup.
+            self.multihost_startup_watch_ref = asyncio.create_task(
+                self._multihost_startup_watch()
+            )
+
+    async def _multihost_startup_watch(self):
+        while not self.is_ready and self.monitor_running:
+            dead = [
+                worker_id
+                for worker_id, info in self.worker_info.items()
+                if not info["process"].is_alive()
+            ]
+            if dead:
+                self._exit_multihost_job(f"worker(s) {dead} died during startup")
+            await asyncio.sleep(1.0)
 
     async def _start_workers_in_sequence(self):
         """Start workers one by one with a delay to avoid overload"""
@@ -339,6 +361,12 @@ class Scheduler:
                 if result_key is None:
                     self.listener_running = False
                     break
+
+                if self.is_multihost and result_key == -1:
+                    # Worker init failed; the other ranks wait for it forever.
+                    self._exit_multihost_job(
+                        f"worker {worker_id} failed to start: {error}"
+                    )
 
                 self.worker_info[worker_id]["error_count"] += 1
 
@@ -571,10 +599,13 @@ class Scheduler:
                         )
                         dead_workers.append(worker_id)
 
-                # check for any workers that have too many errors
+                # check for any workers that have too many errors. Not in
+                # multi-host mode: request errors (e.g. an invalid aspect
+                # ratio) count too, and there a restart means ending the job.
                 for worker_id, info in self.worker_info.items():
                     if (
-                        info.get("error_count", 0)
+                        not self.is_multihost
+                        and info.get("error_count", 0)
                         > self.settings.max_worker_restart_count
                     ):
                         dead_workers.append(worker_id)
@@ -585,6 +616,9 @@ class Scheduler:
                 self.logger.info(
                     f"Worker health check: {len(dead_workers)} dead workers found"
                 )
+
+                if self.is_multihost and dead_workers:
+                    self._exit_multihost_job(f"worker(s) {dead_workers} died")
 
                 # Restart dead workers (one failure must not block restarting others)
                 for worker_id in dead_workers:
@@ -618,6 +652,23 @@ class Scheduler:
                 await asyncio.sleep(1.0)
 
         self.logger.info("Worker health monitor stopped")
+
+    def _exit_multihost_job(self, reason: str) -> None:
+        """Stop this rank with a non-zero code so tt-run stops every rank.
+
+        The job is then relaunched cleanly; the ranks can't be re-synchronised
+        in place.
+        """
+        self.logger.error(f"Multi-host job cannot continue: {reason}. Exiting.")
+        for info in self.worker_info.values():
+            try:
+                process = info["process"]
+                if process.is_alive():
+                    process.kill()
+                    process.join(timeout=5.0)
+            except Exception as e:
+                self.logger.error(f"Failed to kill worker during exit: {e}")
+        os._exit(1)
 
     async def deep_restart_workers(self):
         """Restart all workers"""

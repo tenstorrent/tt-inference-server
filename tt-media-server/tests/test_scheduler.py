@@ -53,6 +53,7 @@ def create_mock_queue():
     queue.full = Mock(return_value=False)
     queue.close = Mock()
     queue.join_thread = Mock()
+    queue.name = "mock_result_queue"
     return queue
 
 
@@ -793,6 +794,116 @@ class TestSchedulerErrorListener:
         item = await result_queue.get()
         assert isinstance(item, Exception)
         assert "boom" in str(item)
+
+
+class _JobExited(BaseException):
+    """Stands in for os._exit: ``_exit_multihost_job`` never returns."""
+
+
+class TestSchedulerMultihost:
+    """Rank 0 of a tt-run launch exits instead of restarting a worker."""
+
+    @pytest.fixture
+    def scheduler(self, monkeypatch):
+        monkeypatch.setenv("OMPI_COMM_WORLD_SIZE", "4")
+        mock_logger.reset_mock()
+        multihost_settings = Mock()
+        multihost_settings.device_ids = "(0)"
+        multihost_settings.max_queue_size = 10
+        multihost_settings.max_batch_size = 1
+        multihost_settings.use_queue_per_worker = False
+        multihost_settings.use_dynamic_batcher = False
+        multihost_settings.queue_for_multiprocessing = "default"
+        multihost_settings.max_worker_restart_count = 3
+        with patch(
+            "model_services.scheduler.get_settings", return_value=multihost_settings
+        ), patch("model_services.scheduler.TTLogger", return_value=mock_logger):
+            scheduler = Scheduler()
+        assert scheduler.is_multihost
+        return scheduler
+
+    def _worker(self, alive: bool):
+        process = Mock(spec=Process)
+        process.is_alive = Mock(return_value=alive)
+        return {"process": process, "restart_count": 0, "error_count": 0}
+
+    def test_single_host_is_not_multihost(self, monkeypatch):
+        monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
+        from multihost import is_multihost_launch
+
+        assert not is_multihost_launch()
+
+    @pytest.mark.asyncio
+    async def test_init_failure_exits(self, scheduler):
+        scheduler.worker_info["0"] = self._worker(alive=False)
+        scheduler.error_queue.get = Mock(
+            side_effect=[("0", -1, "mesh open failed"), ("0", None, None)]
+        )
+        with patch.object(scheduler, "_exit_multihost_job") as exit_job:
+            await scheduler.error_listener()
+        exit_job.assert_called_once()
+        assert "mesh open failed" in exit_job.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_request_error_does_not_exit(self, scheduler):
+        scheduler.worker_info["0"] = self._worker(alive=True)
+        scheduler.error_queue.get = Mock(
+            side_effect=[("0", "task-1", "bad prompt"), ("0", None, None)]
+        )
+        with patch.object(scheduler, "_exit_multihost_job") as exit_job:
+            await scheduler.error_listener()
+        exit_job.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_dead_worker_exits_instead_of_restarting(self, scheduler):
+        scheduler.worker_info["0"] = self._worker(alive=False)
+        scheduler.is_ready = True
+
+        with patch.object(
+            scheduler, "_exit_multihost_job", side_effect=_JobExited
+        ) as exit_job, patch.object(scheduler, "restart_worker") as restart:
+            with pytest.raises(_JobExited):
+                await asyncio.wait_for(scheduler.worker_health_monitor(), timeout=1.0)
+        exit_job.assert_called_once()
+        restart.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_request_errors_do_not_end_the_job(self, scheduler):
+        worker = self._worker(alive=True)
+        worker["error_count"] = 100
+        scheduler.worker_info["0"] = worker
+        scheduler.is_ready = True
+
+        async def stop(_seconds):
+            scheduler.monitor_running = False
+
+        with patch.object(scheduler, "_exit_multihost_job") as exit_job, patch.object(
+            scheduler, "restart_worker"
+        ) as restart, patch("model_services.scheduler.asyncio.sleep", side_effect=stop):
+            await asyncio.wait_for(scheduler.worker_health_monitor(), timeout=1.0)
+        exit_job.assert_not_called()
+        restart.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_worker_death_during_startup_exits(self, scheduler):
+        scheduler.worker_info["0"] = self._worker(alive=False)
+
+        with patch.object(
+            scheduler, "_exit_multihost_job", side_effect=_JobExited
+        ) as exit_job:
+            with pytest.raises(_JobExited):
+                await asyncio.wait_for(
+                    scheduler._multihost_startup_watch(), timeout=1.0
+                )
+        exit_job.assert_called_once()
+
+    def test_exit_kills_workers_and_exits_non_zero(self, scheduler):
+        worker = self._worker(alive=True)
+        scheduler.worker_info["0"] = worker
+        with patch("model_services.scheduler.os._exit") as os_exit:
+            scheduler._exit_multihost_job("test")
+        worker["process"].kill.assert_called_once()
+        os_exit.assert_called_once_with(1)
 
 
 if __name__ == "__main__":

@@ -9,11 +9,19 @@
 # device/cpu workers will silently stop being collected.
 import telemetry.multiprocess_setup  # noqa: F401  (import for side effect)
 
+import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from multihost import (
+    is_follower_rank,
+    is_multihost_launch,
+    launch_rank,
+    stop_when_launcher_exits,
+)
 from open_ai_api import api_router
 
 from open_ai_api.deprecation import DeprecatedPathMiddleware
@@ -24,10 +32,36 @@ from utils.job_manager import get_job_manager
 env = os.getenv("ENVIRONMENT", "production")
 
 
+async def _run_follower_rank() -> None:
+    """Ranks 1..N-1 of a multi-host (tt-run) launch: follow rank 0, then exit.
+
+    Runs before uvicorn opens the port, so these ranks never serve HTTP. The
+    follower runs in a worker thread so the main thread can still handle
+    SIGTERM while the follower is blocked waiting on rank 0.
+    """
+    from multihost.follower import (
+        MultiHostLockstepFollower,
+        install_exit_signal_handlers,
+    )
+
+    install_exit_signal_handlers()
+    exit_code = await asyncio.to_thread(MultiHostLockstepFollower(launch_rank()).run)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(exit_code)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if is_follower_rank():
+        await _run_follower_rank()
+    launcher_watch = None
+    if is_multihost_launch():
+        launcher_watch = asyncio.create_task(stop_when_launcher_exits())
     service_resolver().start_workers()
     yield
+    if launcher_watch is not None:
+        launcher_watch.cancel()
     await get_job_manager().shutdown()
     service_resolver().stop_workers()
 
