@@ -2110,7 +2110,7 @@ templates:
 #   - DSV41_POOL_DTYPE=fp8: fp8_e4m3 paged KV pool, needed for batch 128 at long ISL.
 #   - DSV41_ENGRAM_RAM=1: Engram tables (2 x 95 GB) held in host RAM (Engram stays on).
 #   - DSV41_LAYERS=0-39: full model (e.g. 0-3 for a smoke run).
-#   - DSV41_SPEC (spec decode) must stay unset (the adapter refuses it).
+#   - DSV41_SPEC=0: plain decode (the adapter refuses spec decode).
 #   - Greedy on device; temperature > 0 falls back to host sampling on logits (slow).
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash
@@ -2129,17 +2129,18 @@ templates:
         HF_MODEL: deepseek-ai/DeepSeek-V4.1-Flash
         MESH_DEVICE: "(4, 8)"
         DSV41_LAYERS: "0-39"
+        DSV41_SPEC: "0"  # vLLM path = plain decode (the adapter refuses spec)
         DSV41_ENGRAM_RAM: "1"
         DSV41_POOL_DTYPE: fp8
         DSV41_TRACE_REGION: "1600000000"
         DSV41_CKPT: /mnt/tt-data/ssinghal/deepseek-v41-flash  # local HF checkpoint dir
         DSV41_WEIGHT_CACHE: /mnt/tt-data/ssinghal/dsv4-weight-cache
-        EXTRA_MODELS_DIR: "../../tt-metal/models/demos/blackhole"
+        EXTRA_MODELS_DIR: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
-        hf_config_path: "../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config"
+        hf_config_path: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole/deepseek_v41_flash/vllm_config
         tokenizer: /mnt/tt-data/ssinghal/deepseek-v41-flash
-        chat_template: "../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja"
+        chat_template: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
         max_num_seqs: "128"
         max_model_len: "65536"
         no-enable-prefix-caching: true
