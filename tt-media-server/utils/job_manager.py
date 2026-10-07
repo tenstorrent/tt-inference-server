@@ -819,7 +819,7 @@ class JobManager:
                 if current_identity is None:
                     return
 
-                if not outcome.requires_retry():
+                if outcome != WorkerReplacementOutcome.RETRY_REQUIRED:
                     if current_identity != expected_identity:
                         retry_count = 0
                         continue

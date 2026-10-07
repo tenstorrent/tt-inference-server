@@ -298,7 +298,7 @@ class Scheduler:
         self._clear_expected_worker_assignment(
             worker_assignment, (worker_id, expected_pid)
         )
-        return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+        return WorkerReplacementOutcome.WORKER_MISMATCH
 
     def mark_worker_retiring(self, worker_id: str, expected_pid: int) -> bool:
         """Stop an expected worker from dequeuing more work."""
@@ -328,7 +328,7 @@ class Scheduler:
                 self._clear_expected_worker_assignment(
                     worker_assignment, expected_identity
                 )
-                return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+                return WorkerReplacementOutcome.WORKER_MISMATCH
             if (
                 worker_info.get("retirement_event") is None
                 or worker_info.get("claim_lock") is None
@@ -352,7 +352,7 @@ class Scheduler:
                     self._clear_expected_worker_assignment(
                         worker_assignment, expected_identity
                     )
-                    return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+                    return WorkerReplacementOutcome.WORKER_MISMATCH
                 if worker_assignment.identity != expected_identity:
                     retirement_event.clear()
                     return WorkerReplacementOutcome.ASSIGNMENT_RELEASED

@@ -1680,7 +1680,7 @@ class TestJobManager:
             replacement_calls.append((worker_id, worker_pid))
             if len(replacement_calls) == 1:
                 worker_assignment.identity = ("worker-1", 456)
-                return WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+                return WorkerReplacementOutcome.WORKER_MISMATCH
             return WorkerReplacementOutcome.REPLACED
 
         async def active_training(req):

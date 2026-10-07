@@ -386,7 +386,7 @@ class TestScheduler:
 
         outcome = scheduler.replace_worker("0", 123, assignment)
 
-        assert outcome == WorkerReplacementOutcome.WORKER_ALREADY_REPLACED
+        assert outcome == WorkerReplacementOutcome.WORKER_MISMATCH
         assert assignment.identity is None
         current_process.terminate.assert_not_called()
 

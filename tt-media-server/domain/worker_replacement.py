@@ -8,8 +8,5 @@ from enum import Enum
 class WorkerReplacementOutcome(str, Enum):
     REPLACED = "replaced"
     ASSIGNMENT_RELEASED = "assignment_released"
-    WORKER_ALREADY_REPLACED = "worker_already_replaced"
+    WORKER_MISMATCH = "worker_mismatch"
     RETRY_REQUIRED = "retry_required"
-
-    def requires_retry(self) -> bool:
-        return self is WorkerReplacementOutcome.RETRY_REQUIRED
