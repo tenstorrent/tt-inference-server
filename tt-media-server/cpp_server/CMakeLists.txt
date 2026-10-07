@@ -1215,6 +1215,45 @@ target_include_directories(embedding_codec_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
+add_executable(embedding_pipe_test
+    tests/unit/services/embedding_pipe_test.cpp
+    src/services/embedding_pipe.cpp
+)
+target_link_libraries(embedding_pipe_test PRIVATE GTest::gtest_main)
+target_include_directories(embedding_pipe_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(embedding_json_test tests/unit/domain/embedding_json_test.cpp)
+target_link_libraries(embedding_json_test PRIVATE
+    JsonCpp::JsonCpp
+    GTest::gtest_main
+)
+target_include_directories(embedding_json_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(embedding_worker_process_test
+    tests/unit/services/embedding_worker_process_test.cpp
+    src/services/embedding_worker_process.cpp
+    src/services/embedding_pipe.cpp
+)
+target_link_libraries(embedding_worker_process_test PRIVATE
+    llm_runner_lib GTest::gtest_main)
+target_include_directories(embedding_worker_process_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+add_executable(mock_embedding_runner_test
+    tests/unit/runners/mock_embedding_runner_test.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+)
+target_link_libraries(mock_embedding_runner_test PRIVATE
+    llm_runner_lib GTest::gtest_main)
+target_include_directories(mock_embedding_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 add_executable(media_payload_ipc_test tests/integration/sessions/media_payload_ipc_test.cpp)
 target_link_libraries(media_payload_ipc_test PRIVATE llm_runner_lib GTest::gtest_main)
 target_include_directories(media_payload_ipc_test PRIVATE
@@ -1392,6 +1431,28 @@ target_link_libraries(tts_service_test PRIVATE
 target_include_directories(tts_service_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${prometheus-cpp_SOURCE_DIR}/core/include
+)
+
+# Embedding service integration test: real EmbeddingService forking 32 mock
+# workers (galaxy shape). Custom main() pins the env before config caching, so
+# no gtest_main. embedding_runner.cpp comes along because the runner factory
+# references it, which pulls in pybind11::embed at link time.
+add_executable(embedding_service_test
+    tests/integration/services/embedding_service_test.cpp
+    src/services/embedding_service.cpp
+    src/services/embedding_pipe.cpp
+    src/services/embedding_worker_process.cpp
+    src/services/embedding_worker_main.cpp
+    src/runtime/runners/embedding_runner.cpp
+    src/runtime/runners/mock_embedding_runner.cpp
+    src/runtime/runners/embedding_runner_factory.cpp
+)
+target_link_libraries(embedding_service_test PRIVATE
+    llm_runner_lib
+    pybind11::embed
+    GTest::gtest)
+target_include_directories(embedding_service_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Common server-stack sources shared by every integration-test executable.
@@ -1614,10 +1675,21 @@ set_tests_properties(TtsServiceMetricsTest PROPERTIES
     TIMEOUT 120
     RESOURCE_LOCK integration_server
 )
+# embedding_service_test forks 32 worker processes per service instance, so it
+# gets one ctest entry (single process) and shares the integration lock.
+add_test(NAME EmbeddingServiceIntegrationTest COMMAND embedding_service_test)
+set_tests_properties(EmbeddingServiceIntegrationTest PROPERTIES
+    TIMEOUT 300
+    RESOURCE_LOCK integration_server
+)
 gtest_discover_tests(model_service_registry_test)
 gtest_discover_tests(health_controller_test)
 gtest_discover_tests(image_generate_request_test)
 gtest_discover_tests(embedding_codec_test)
+gtest_discover_tests(embedding_pipe_test)
+gtest_discover_tests(embedding_json_test)
+gtest_discover_tests(mock_embedding_runner_test)
+gtest_discover_tests(embedding_worker_process_test PROPERTIES TIMEOUT 30)
 gtest_discover_tests(media_payload_ipc_test)
 
 add_executable(apply_delta_prompt_test tests/unit/model/apply_delta_prompt_test.cpp)

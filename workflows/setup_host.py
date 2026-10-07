@@ -31,7 +31,7 @@ from workflows.utils import (
     resolve_hf_snapshot_dir,
 )
 from workflows.validate_setup import _try_fix_path_permissions_for_uid
-from workflows.workflow_types import ModelSource, WorkflowVenvType
+from workflows.workflow_types import ModelSource, ModelType, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
@@ -417,6 +417,12 @@ class HostSetupManager:
                     Path(self.setup_config.host_weights_dir)
                 )
             if self.setup_config.host_model_volume_root:
+                if self.model_spec.model_type == ModelType.TRAINING:
+                    logger.info(
+                        "Training weights will be downloaded by the server into "
+                        "its HF cache on first use"
+                    )
+                    return True
                 host_weights_dir = (
                     self.setup_config.host_model_volume_root
                     / "weights"

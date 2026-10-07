@@ -257,11 +257,13 @@ class JobManager:
             raise HTTPException(
                 status_code=HTTP_429_TOO_MANY_REQUESTS,
                 detail=TASK_QUEUE_FULL_DETAIL,
+                headers={"Retry-After": "60"},
             )
         if len(self._jobs) >= self._settings.max_jobs:
             raise HTTPException(
                 status_code=HTTP_503_SERVICE_UNAVAILABLE,
                 detail=MAX_JOBS_REACHED_DETAIL,
+                headers={"Retry-After": "60"},
             )
 
     def _get_job_if_authorized(

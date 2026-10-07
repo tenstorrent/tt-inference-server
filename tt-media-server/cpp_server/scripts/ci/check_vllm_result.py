@@ -73,12 +73,15 @@ def main() -> int:
     failed = int(as_number(result.get("failed"), 0))
     mean_tpot_ms = result.get("mean_tpot_ms")
     mean_ttft_ms = result.get("mean_ttft_ms")
+    # Non-streaming scenarios (embeddings) report end-to-end latency only.
+    mean_e2el_ms = result.get("mean_e2el_ms")
 
     failures: list[str] = []
     min_completed = int(scenario.get("min_completed", 0))
     max_failed = int(scenario.get("max_failed", 0))
     max_mean_tpot_ms = scenario.get("max_mean_tpot_ms")
     max_mean_ttft_ms = scenario.get("max_mean_ttft_ms")
+    max_mean_e2el_ms = scenario.get("max_mean_e2el_ms")
 
     if completed < min_completed:
         failures.append(f"completed {completed} is below minimum {min_completed}")
@@ -95,6 +98,12 @@ def main() -> int:
     ):
         failures.append(
             f"mean_ttft_ms {mean_ttft_ms} exceeds threshold {max_mean_ttft_ms}ms"
+        )
+    if max_mean_e2el_ms is not None and as_number(mean_e2el_ms, float("inf")) > float(
+        max_mean_e2el_ms
+    ):
+        failures.append(
+            f"mean_e2el_ms {mean_e2el_ms} exceeds threshold {max_mean_e2el_ms}ms"
         )
 
     percentile_thresholds = scenario.get("percentile_thresholds", {})
@@ -117,6 +126,11 @@ def main() -> int:
         f"| **mean_tpot_ms** | {format_value(mean_tpot_ms)} | <= {format_value(max_mean_tpot_ms)}ms |",
         f"| **mean_ttft_ms** | {format_value(mean_ttft_ms)} | <= {format_value(max_mean_ttft_ms)}ms |",
     ]
+    if max_mean_e2el_ms is not None or mean_e2el_ms is not None:
+        lines.append(
+            f"| **mean_e2el_ms** | {format_value(mean_e2el_ms)} "
+            f"| <= {format_value(max_mean_e2el_ms)}ms |"
+        )
     for metric, threshold in percentile_thresholds.items():
         lines.append(
             f"| **{metric}** | {format_value(result.get(metric))} | <= {threshold}ms |"

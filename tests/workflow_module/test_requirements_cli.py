@@ -73,12 +73,13 @@ def test_requirements_mode_defaults_device_when_no_hardware(monkeypatch, tmp_pat
     # to the requirements default (the endpoint is chosen by --server-url, not
     # the device).
     doc = {
-        "schemaVersion": "2.1.0",
+        "schemaVersion": "3.1.0",
         "id": "no-hw",
         "model": {"name": "acme/tiny-llm", "contextLength": 4096},
         "deployment": {"maxConcurrencyPerInstance": 8},
-        "accuracyEvals": [],
-        "scenarios": [],
+        "stages": [
+            {"key": "stage-1", "name": "Stage 1", "progress": {"status": "not_started"}}
+        ],
     }
     path = tmp_path / "no-hw.json"
     path.write_text(json.dumps(doc))
@@ -112,12 +113,20 @@ def test_non_requirements_mode_still_gates_unknown_model(monkeypatch):
 def test_unknown_accuracy_eval_fails_at_parse_time(monkeypatch, tmp_path):
     """A mistyped eval name is a CLI usage error, not a mid-run crash."""
     doc = {
-        "schemaVersion": "2.1.0",
+        "schemaVersion": "3.1.0",
         "id": "bad-eval",
         "model": {"name": "acme/tiny-llm", "contextLength": 4096},
         "deployment": {"maxConcurrencyPerInstance": 8},
-        "accuracyEvals": [{"name": "GPQA Diamnd"}],  # typo
-        "scenarios": [],
+        "stages": [
+            {
+                **{
+                    "key": "stage-1",
+                    "name": "Stage 1",
+                    "progress": {"status": "not_started"},
+                },
+                "accuracyEvals": [{"name": "GPQA Diamnd"}],
+            }
+        ],
     }
     path = tmp_path / "bad-eval.json"
     path.write_text(json.dumps(doc))

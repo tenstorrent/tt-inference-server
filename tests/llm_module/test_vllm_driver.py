@@ -40,7 +40,7 @@ def test_remote_console_uses_base_url_and_skips_ready_check():
     assert cmd[cmd.index("--ready-check-timeout-sec") + 1] == "0"
     assert "--host" not in cmd
     assert "--port" not in cmd
-    assert "--extra-body" not in cmd
+    assert set(json.loads(cmd[cmd.index("--extra-body") + 1])) == {"cache_salt"}
     header_values = cmd[cmd.index("--header") + 1 :]
     assert "Accept-Encoding=identity" in header_values
     assert "Authorization=Bearer sk-test" in header_values
@@ -63,9 +63,9 @@ def test_local_server_uses_host_port_and_truncation():
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
     assert cmd[cmd.index("--port") + 1] == "8000"
     assert "--base-url" not in cmd
-    assert json.loads(cmd[cmd.index("--extra-body") + 1]) == {
-        "truncate_prompt_tokens": 128
-    }
+    body = json.loads(cmd[cmd.index("--extra-body") + 1])
+    assert body["truncate_prompt_tokens"] == 128
+    assert body["cache_salt"].startswith("bench-")
     assert "--trust-remote-code" not in cmd
     header_values = cmd[cmd.index("--header") + 1 :]
     assert header_values == ["Accept-Encoding=identity"]
@@ -195,10 +195,9 @@ def test_token_timing_uses_fixed_output_and_request_seed():
         result_filename=_result_path(),
     )
     assert "--ignore-eos" in cmd
-    assert json.loads(cmd[cmd.index("--extra-body") + 1]) == {
-        "seed": 42,
-        "truncate_prompt_tokens": 128,
-    }
+    body = json.loads(cmd[cmd.index("--extra-body") + 1])
+    assert body["seed"] == 42 and body["truncate_prompt_tokens"] == 128
+    assert body["cache_salt"].startswith("bench-")
 
 
 def test_token_timing_runs_adapter_with_the_selected_client_interpreter(
@@ -268,3 +267,60 @@ def test_partial_success_cannot_pass_fixed_workload(monkeypatch, tmp_path):
     )
     assert result.return_code != 0
     assert json.loads(result.raw_path.read_text()) == raw
+
+
+def _local_server():
+    return ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/gemma-4-12B-it",
+        auth_token=None,
+        is_remote=False,
+    )
+
+
+def _argv(config):
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=config,
+        server=_local_server(),
+        result_filename=_result_path(),
+    )
+    return cmd
+
+
+def _seed(cmd):
+    return cmd[cmd.index("--seed") + 1]
+
+
+def _salt(cmd):
+    return json.loads(cmd[cmd.index("--extra-body") + 1])["cache_salt"]
+
+
+class TestBenchmarkCacheSalt:
+    """Benchmarks measure prefill with the prefix cache effectively off for
+    their own requests, while the serving entry keeps prefix caching on."""
+
+    def test_every_request_carries_a_salt_scoped_to_point_and_invocation(self):
+        a = _salt(_argv(_config(isl=4096)))
+        b = _salt(_argv(_config(isl=4096)))
+        assert a.startswith("bench-isl4096-osl128-c1-")
+        assert b.startswith("bench-isl4096-osl128-c1-")
+        assert a != b  # a repeat run against a live server must not hit its own blocks
+
+    def test_points_never_share_a_salt(self):
+        points = [(2048, 128, 1), (4096, 128, 1), (4096, 128, 32)]
+        salts = {
+            _salt(_argv(_config(isl=i, osl=o, max_concurrency=c))) for i, o, c in points
+        }
+        assert len(salts) == 3
+
+    def test_explicit_salt_pins_it(self):
+        assert _salt(_argv(_config(cache_salt="pinned"))) == "pinned"
+
+    def test_prompts_are_unchanged(self):
+        # Prompt generation keeps vLLM's default seed so results stay comparable
+        # with the measured targets; only the cache keys are isolated.
+        assert "--seed" not in _argv(_config())
+        custom = _argv(_config(custom_dataset_path=Path("/tmp/prompts.jsonl")))
+        assert _salt(custom).startswith("bench-")
