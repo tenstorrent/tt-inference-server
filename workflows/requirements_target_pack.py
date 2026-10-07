@@ -28,6 +28,7 @@ import logging
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from llm_module.agentic_traces.sweep_export import SOFT_METRICS_KEY
 from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
 from workflow_module.model_catalog import ModelSpecProvider
 from workflow_module.requirements_schema import (
@@ -37,6 +38,8 @@ from workflow_module.requirements_schema import (
     RequirementsDoc,
     Scenario,
     Slo,
+    input_throughput_tps,
+    stated_target,
 )
 from workflow_module.target_pack import TargetPack
 
@@ -81,8 +84,10 @@ _REFERENCE_KEY_TO_ATTR = {
     "e2elMs": "e2el_ms",
     "decodeThroughputTps": "tput",
     "totalThroughputTps": "tput_total",
+    "inputThroughputTps": "tput_input",
     "goodputPct": "goodput",
 }
+_INPUT_THROUGHPUT_KEY = "inputThroughputTps"
 
 # The requirements schema declares no benchmark tolerance, so every
 # requirements-driven target — per-point reference or scenario-level gate —
@@ -758,15 +763,21 @@ class RequirementsTargetPack(TargetPack):
             tier_kwargs: dict = {}
             target_priorities: dict = {}
 
-            # The point's own reference measurements gate it (must): they are
-            # the document's statement of what the reference stack achieves at
-            # exactly this (ISL, OSL, concurrency).
+            # The point's own reference measurements gate it: they are the
+            # document's statement of what the reference stack achieves at
+            # exactly this (ISL, OSL, concurrency). A soft column is reported
+            # but never blocks; a blank one is no target at all.
             for key, attr in _REFERENCE_KEY_TO_ATTR.items():
-                value = (point.reference or {}).get(key)
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                if key == _INPUT_THROUGHPUT_KEY:
+                    value = input_throughput_tps(point.reference or {}, isl=point.isl)
+                else:
+                    value = stated_target(point.reference or {}, key)
+                if value is None:
                     continue
-                tier_kwargs[attr] = float(value)
-                target_priorities[attr] = PRIORITY_MUST
+                tier_kwargs[attr] = value
+                target_priorities[attr] = (
+                    PRIORITY_SHOULD if key in scenario.soft_metrics else PRIORITY_MUST
+                )
 
             # A scenario-level gate attached here overrides the point's
             # reference value for the same metric (the target is contractual;
@@ -856,9 +867,20 @@ class RequirementsTargetPack(TargetPack):
         """
         points: Dict[int, Dict[str, Any]] = {}
         for workload in self._doc.agentic_workloads:
+            # The workload's soft list rides on each point, for the grader.
+            soft = (
+                {SOFT_METRICS_KEY: sorted(workload.soft_metrics)}
+                if workload.soft_metrics
+                else {}
+            )
             for point in workload.sweep:
-                if point.concurrency > 0:
-                    points.setdefault(point.concurrency, dict(point.reference))
+                if point.concurrency <= 0:
+                    continue
+                expected = {**point.reference, **soft}
+                derived = input_throughput_tps(point.reference)
+                if derived is not None:
+                    expected[_INPUT_THROUGHPUT_KEY] = derived
+                points.setdefault(point.concurrency, expected)
         return [points[c] for c in sorted(points)]
 
     def _agentic_concurrencies(self) -> List[int]:
@@ -1161,8 +1183,8 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
         best_val = None
         if key is not None:
             for i, point in enumerate(scenario.sweep):
-                ref = (point.reference or {}).get(key)
-                if isinstance(ref, bool) or not isinstance(ref, (int, float)):
+                ref = stated_target(point.reference or {}, key)
+                if ref is None:
                     continue
                 if best_val is None or (
                     ref < best_val if lower_is_better else ref > best_val
@@ -1241,8 +1263,7 @@ def _scenario_targets_goodput(scenario: Scenario) -> bool:
     if any(st.metric == "request_goodput" for st in scenario.scalar_targets):
         return True
     return any(
-        isinstance((p.reference or {}).get("goodputPct"), (int, float))
-        and not isinstance((p.reference or {}).get("goodputPct"), bool)
+        stated_target(p.reference or {}, "goodputPct") is not None
         for p in scenario.sweep
     )
 

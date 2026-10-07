@@ -4,8 +4,9 @@
 
 """Engine-owned loader for the LLM-serving requirements document.
 
-A requirements document (``schemaVersion`` 2.x, e.g. ``acme-llm-serving.json``)
-is the vendor-neutral input that drives a validation run: which accuracy evals
+A requirements document (``schemaVersion`` 3.1 or later within major 3, e.g.
+``acme-llm-serving.json``) is the vendor-neutral input that drives a validation
+run: which accuracy evals
 to run and the reference scores that gate them, which benchmark sweep points to
 execute and the scalar targets / SLOs to compare against, plus enough model and
 deployment metadata to run a model that is not in the built-in catalog.
@@ -16,9 +17,10 @@ Tenstorrent adapter (``workflows/requirements_target_pack.py``) maps these onto
 ``reference_config`` types via the :class:`~workflow_module.target_pack.TargetPack`
 seam.
 
-Parsing is deliberately tolerant: unknown keys are ignored (so newer minor
-revisions of the schema still load), but an unsupported ``schemaVersion`` major
-is a hard error since the shapes below are version-specific.
+Two shapes load: the canonical document (identity at the root, requirements on
+its ``stages[]``) and its validation-plan export (identity under ``document``,
+operating points in ``items[]``). Unknown keys are ignored, so newer 3.x minors
+still load; anything older than 3.1 is a hard error.
 """
 
 from __future__ import annotations
@@ -31,9 +33,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
 
 logger = logging.getLogger(__name__)
 
-# Major version of ``schemaVersion`` this loader understands. A document whose
-# major differs is rejected rather than silently mis-parsed.
-SUPPORTED_SCHEMA_MAJOR = 2
+# Oldest ``schemaVersion`` this loader reads, and the major it stays within.
+# 3.1 is where input throughput became an always-hard requirement.
+MIN_SCHEMA_VERSION = (3, 1)
 
 # Scenario ``kind`` discriminator. A canonical document keeps every workload in
 # ``scenarios[]`` and tells them apart by this field; the agentic one is split
@@ -46,7 +48,9 @@ DEFAULT_SCENARIO_KIND = "text"
 # failures are informational (see report_module/acceptance_criteria.py).
 PRIORITY_MUST = "must"
 PRIORITY_SHOULD = "should"
-_VALID_PRIORITIES = frozenset({PRIORITY_MUST, PRIORITY_SHOULD})
+# llm-gauntlet's third priority: advisory, like ``should``.
+PRIORITY_NICE_TO_HAVE = "nice_to_have"
+_VALID_PRIORITIES = frozenset({PRIORITY_MUST, PRIORITY_SHOULD, PRIORITY_NICE_TO_HAVE})
 
 
 class RequirementsError(ValueError):
@@ -63,7 +67,47 @@ def _normalize_priority(value: Any, *, where: str) -> str:
             f"{where}: priority must be one of {sorted(_VALID_PRIORITIES)}, "
             f"got {value!r}"
         )
-    return priority
+    return PRIORITY_SHOULD if priority == PRIORITY_NICE_TO_HAVE else priority
+
+
+def stated_target(row: Mapping[str, Any], key: str) -> Optional[float]:
+    """``row[key]`` as a target, or None when it states none.
+
+    Only a positive number is a target: llm-gauntlet writes a blank (soft) column
+    as 0, and no latency, rate or percentage target is ever 0.
+    """
+    value = row.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value)
+
+
+def input_throughput_tps(
+    row: Mapping[str, Any], *, isl: Optional[int] = None
+) -> Optional[float]:
+    """A row's input-throughput target, read the way llm-gauntlet reads it.
+
+    The stated ``inputThroughputTps``, else derived: ``ISL x RPS`` for a
+    fixed-length row (pass ``isl``), ``total - output`` for an agentic row.
+    """
+    if row.get("inputThroughputTps") is not None:
+        return stated_target(row, "inputThroughputTps")
+    if isl is not None:
+        rps = stated_target(row, "reqThroughputRps")
+        return isl * rps if rps is not None else None
+    total = stated_target(row, "totalThroughputTps")
+    output = stated_target(row, "decodeThroughputTps")
+    if total is None or output is None or total <= output:
+        return None
+    return total - output
+
+
+def _soft_metrics(data: Mapping[str, Any]) -> frozenset:
+    """A scenario's ``softMetrics``: columns reported but never asserted."""
+    raw = data.get("softMetrics")
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        return frozenset()
+    return frozenset(str(key) for key in raw)
 
 
 @dataclass(frozen=True)
@@ -295,10 +339,11 @@ class Scenario:
     scalar_targets: List[ScalarTarget] = field(default_factory=list)
     slo: Optional[Slo] = None
     sweep: List[SweepPoint] = field(default_factory=list)
+    soft_metrics: frozenset = frozenset()
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "Scenario":
-        scenario_id = data.get("id") or data.get("name")
+        scenario_id = data.get("id")
         if not scenario_id:
             raise RequirementsError("scenarios[]: missing required 'id'")
         return cls(
@@ -312,6 +357,7 @@ class Scenario:
             ],
             slo=Slo.from_dict(data.get("slo")),
             sweep=[SweepPoint.from_dict(p) for p in data.get("sweep", [])],
+            soft_metrics=_soft_metrics(data),
         )
 
 
@@ -351,9 +397,6 @@ class AgenticWorkload:
     The agentic counterpart to :class:`Scenario`. It sweeps concurrency alone
     rather than (ISL, OSL, concurrency), because the prompt sizes come from the
     replayed traces instead of the document.
-
-    Accepts either spelling: a canonical ``scenarios[]`` entry with
-    ``kind: agentic``, or a ``workloads[]`` entry from a validation-plan export.
     """
 
     id: str
@@ -362,12 +405,13 @@ class AgenticWorkload:
     sweep: List[AgenticSweepPoint] = field(default_factory=list)
     max_concurrency: Optional[int] = None
     traces: List[Mapping[str, Any]] = field(default_factory=list)
+    soft_metrics: frozenset = frozenset()
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any]) -> "AgenticWorkload":
-        workload_id = data.get("id") or data.get("name")
+        workload_id = data.get("id")
         if not workload_id:
-            raise RequirementsError("agentic workload: missing required 'id' or 'name'")
+            raise RequirementsError("agentic workload: missing required 'id'")
         agentic = data.get("agenticWorkload")
         traces = agentic.get("traces", []) if isinstance(agentic, Mapping) else []
         return cls(
@@ -379,6 +423,7 @@ class AgenticWorkload:
             ],
             max_concurrency=_as_optional_int(data.get("maxConcurrency")),
             traces=[dict(t) for t in traces if isinstance(t, Mapping)],
+            soft_metrics=_soft_metrics(data),
         )
 
 
@@ -429,20 +474,55 @@ def _scenario_kind(entry: Mapping[str, Any]) -> str:
     return str(entry.get("kind", DEFAULT_SCENARIO_KIND))
 
 
+def _lift_single_stage(
+    data: Mapping[str, Any],
+) -> "tuple[Mapping[str, Any], Mapping[str, Any]]":
+    """The document's one delivery stage, with its requirements lifted to the root.
+
+    Returns the document and the stage's deployment override (``{}`` if none).
+    A canonical stage carries its own ``scenarios``/``accuracyEvals``; a
+    validation-plan stage carries none (its points are in ``items``) and states
+    the effective deployment. One run validates one stage, so several are
+    rejected rather than merged.
+    """
+    stages = data.get("stages")
+    if (
+        not isinstance(stages, Sequence)
+        or isinstance(stages, (str, bytes))
+        or not stages
+    ):
+        raise RequirementsError("requirements: missing required 'stages'")
+    if len(stages) > 1:
+        keys = ", ".join(
+            str(s.get("key") or s.get("name")) for s in stages if isinstance(s, Mapping)
+        )
+        raise RequirementsError(
+            f"requirements: {len(stages)} delivery stages ({keys}); a run "
+            "validates a single-stage document"
+        )
+    stage = stages[0] if isinstance(stages[0], Mapping) else {}
+    lifted = dict(data)
+    for key in ("scenarios", "accuracyEvals"):
+        if key in stage:
+            lifted[key] = stage[key]
+    deployment = stage.get("deployment")
+    return lifted, deployment if isinstance(deployment, Mapping) else {}
+
+
 def _fold_validation_plan(data: Mapping[str, Any]) -> Mapping[str, Any]:
     """Fold a validation-plan export back into the canonical document shape.
 
-    Regroups the flat ``items[]`` list (one entry per operating point) back
-    into ``scenarios``/``workloads`` by ``scenarioId``. Each item's ``targets``
-    *is* the sweep row, so this is a regroup, not a field translation. A
-    document with no ``items`` is returned untouched.
+    Each ``workloads[]`` entry becomes a scenario. A fixed-length workload has
+    its sweep stripped; its rows are the ``targets`` of its ``operating_point``
+    items, with the item's resolved ``slo``. An agentic workload keeps its
+    ``agenticSweep`` inline. Eval specs come from the ``accuracy_eval`` items.
+    A document with no ``items`` is the canonical shape, returned untouched.
     """
     items = data.get("items")
     if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
         return data
 
     sweeps: Dict[str, List[Mapping[str, Any]]] = {}
-    agentic_sweeps: Dict[str, List[Mapping[str, Any]]] = {}
     evals: List[Mapping[str, Any]] = []
     for item in items:
         if not isinstance(item, Mapping):
@@ -458,60 +538,16 @@ def _fold_validation_plan(data: Mapping[str, Any]) -> Mapping[str, Any]:
             if item.get("slo"):
                 row["slo"] = item["slo"]
             sweeps.setdefault(str(item.get("scenarioId", "")), []).append(row)
-        elif kind == "agentic_operating_point" and isinstance(targets, Mapping):
-            # An agentic item has no sibling ``slo``: the row's own SLOs ride
-            # inside ``targets`` (AgenticOperatingPointItem declares no slo
-            # field), so the row is already complete.
-            agentic_sweeps.setdefault(str(item.get("scenarioId", "")), []).append(
-                dict(targets)
-            )
 
-    scenarios: List[Mapping[str, Any]] = [
-        dict(s) for s in data.get("scenarios", []) if isinstance(s, Mapping)
-    ]
+    scenarios: List[Mapping[str, Any]] = []
     for workload in data.get("workloads", []):
         if not isinstance(workload, Mapping):
             continue
         entry = dict(workload)
-        key = str(entry.get("id", ""))
-        # Only fill what the export stripped: a workload that kept its sweep
-        # inline (some exports do) is authoritative and left alone.
-        if _scenario_kind(entry) == AGENTIC_KIND:
-            if not entry.get("agenticSweep") and key in agentic_sweeps:
-                entry["agenticSweep"] = agentic_sweeps[key]
-        elif not entry.get("sweep") and key in sweeps:
-            entry["sweep"] = sweeps[key]
-        scenarios.append(entry)
-
-    folded = dict(data)
-    folded["scenarios"] = scenarios
-    # Every workload is now represented in ``scenarios``; dropping the list it
-    # came from keeps the agentic dedupe from seeing each one twice.
-    folded.pop("workloads", None)
-    if evals:
-        existing = [e for e in data.get("accuracyEvals", []) if isinstance(e, Mapping)]
-        folded["accuracyEvals"] = existing + evals
-    return folded
-
-
-def _agentic_workloads(
-    scenarios: Sequence[Mapping[str, Any]],
-    workloads: Sequence[Mapping[str, Any]],
-) -> List[AgenticWorkload]:
-    """Agentic workloads from both document spellings, ``scenarios[]`` winning.
-
-    Deduplicated by id: a document carrying both spellings of the same workload
-    would otherwise replay every concurrency twice, and one trace replay costs
-    at least ``AGENTIC_TRACES_MIN_PROFILE_SECONDS`` (900s) of profiling.
-    ``scenarios[]`` is read first, so the canonical spelling wins.
-    """
-    found: Dict[str, AgenticWorkload] = {}
-    for entry in (*scenarios, *workloads):
         if _scenario_kind(entry) != AGENTIC_KIND:
-            continue
-        workload = AgenticWorkload.from_dict(entry)
-        found.setdefault(workload.id, workload)
-    return list(found.values())
+            entry["sweep"] = sweeps.get(str(entry.get("id", "")), [])
+        scenarios.append(entry)
+    return {**data, "scenarios": scenarios, "accuracyEvals": evals}
 
 
 @dataclass(frozen=True)
@@ -531,26 +567,31 @@ class RequirementsDoc:
     def from_dict(cls, data: Mapping[str, Any]) -> "RequirementsDoc":
         schema_version = str(data.get("schemaVersion", ""))
         _check_schema_version(schema_version)
+        data, stage_deployment = _lift_single_stage(data)
         # A validation-plan export carries its sweeps and eval specs in a flat
         # top-level "items" list rather than on the workloads; fold them back
         # so both it and the canonical document load identically.
         data = _fold_validation_plan(data)
-        # Later 2.x revisions wrap identity (model, deployment, meta) in a
-        # "document" envelope and carry the agentic sweep in a sibling
-        # "workloads" list; earlier ones put identity at the top level. Read
-        # identity from whichever is present so both shapes load.
+        # The validation plan wraps identity (model, deployment, meta) in a
+        # "document" envelope; the canonical document keeps it at the root.
         envelope = data.get("document")
         identity = envelope if isinstance(envelope, Mapping) else data
         model_data = identity.get("model")
         if not isinstance(model_data, Mapping):
             raise RequirementsError("requirements: missing required 'model' object")
+        if not identity.get("id"):
+            raise RequirementsError("requirements: missing required 'id'")
         raw_scenarios = [s for s in data.get("scenarios", []) if isinstance(s, Mapping)]
-        raw_workloads = [w for w in data.get("workloads", []) if isinstance(w, Mapping)]
+        # A stage's deployment is a partial override: set keys win, unset inherit.
+        deployment = {
+            **(identity.get("deployment") or {}),
+            **{k: v for k, v in stage_deployment.items() if v is not None},
+        }
         return cls(
-            id=str(identity.get("id") or model_data.get("name") or "requirements"),
+            id=str(identity["id"]),
             schema_version=schema_version,
             model=ModelInfo.from_dict(model_data),
-            deployment=Deployment.from_dict(identity.get("deployment")),
+            deployment=Deployment.from_dict(deployment),
             accuracy_evals=[
                 AccuracyEval.from_dict(e) for e in data.get("accuracyEvals", [])
             ],
@@ -561,7 +602,11 @@ class RequirementsDoc:
                 for s in raw_scenarios
                 if _scenario_kind(s) != AGENTIC_KIND
             ],
-            agentic_workloads=_agentic_workloads(raw_scenarios, raw_workloads),
+            agentic_workloads=[
+                AgenticWorkload.from_dict(s)
+                for s in raw_scenarios
+                if _scenario_kind(s) == AGENTIC_KIND
+            ],
             meta=dict(identity.get("meta", {})),
         )
 
@@ -605,30 +650,16 @@ def load_requirements(path: Union[str, Path]) -> RequirementsDoc:
             f"Requirements document must be a JSON object, got {type(data).__name__}"
         )
     doc = RequirementsDoc.from_dict(data)
-    # Report where the agentic workloads came from: a document whose agentic
-    # scenario silently went unread is exactly the failure this loader used to
-    # have, and a bare count made it invisible.
-    agentic_in_scenarios = sum(
-        1
-        for s in data.get("scenarios", [])
-        if isinstance(s, Mapping) and _scenario_kind(s) == AGENTIC_KIND
-    )
     logger.info(
-        "Loaded requirements id=%s model=%s hardware=%s "
-        "(%d evals, %d benchmark scenarios, %d agentic workloads; "
-        "%d declared in scenarios[], %d in workloads[])",
+        "Loaded requirements id=%s revision=%s model=%s hardware=%s "
+        "(%d evals, %d benchmark scenarios, %d agentic workloads)",
         doc.id,
+        doc.meta.get("revision"),
         doc.model.name,
         doc.deployment.hardware,
         len(doc.accuracy_evals),
         len(doc.scenarios),
         len(doc.agentic_workloads),
-        agentic_in_scenarios,
-        sum(
-            1
-            for w in data.get("workloads", [])
-            if isinstance(w, Mapping) and _scenario_kind(w) == AGENTIC_KIND
-        ),
     )
     return doc
 
@@ -636,17 +667,18 @@ def load_requirements(path: Union[str, Path]) -> RequirementsDoc:
 def _check_schema_version(schema_version: str) -> None:
     if not schema_version:
         raise RequirementsError("requirements: missing required 'schemaVersion'")
-    major_str = schema_version.split(".", 1)[0]
     try:
-        major = int(major_str)
+        major, minor = (int(part) for part in schema_version.split(".")[:2])
     except ValueError as e:
         raise RequirementsError(
             f"requirements: unparseable schemaVersion {schema_version!r}"
         ) from e
-    if major != SUPPORTED_SCHEMA_MAJOR:
+    min_major, min_minor = MIN_SCHEMA_VERSION
+    if major != min_major or minor < min_minor:
         raise RequirementsError(
             f"Unsupported schemaVersion {schema_version!r}: this loader supports "
-            f"major version {SUPPORTED_SCHEMA_MAJOR}.x"
+            f"{min_major}.{min_minor} and later {min_major}.x; re-export the "
+            "document from llm-gauntlet"
         )
 
 
@@ -672,12 +704,14 @@ def _as_optional_int(value: Any) -> Optional[int]:
 
 
 __all__ = [
-    "SUPPORTED_SCHEMA_MAJOR",
+    "MIN_SCHEMA_VERSION",
     "AGENTIC_KIND",
     "DEFAULT_SCENARIO_KIND",
     "PRIORITY_MUST",
     "PRIORITY_SHOULD",
     "RequirementsError",
+    "input_throughput_tps",
+    "stated_target",
     "AccuracyEval",
     "EvalGenKwargs",
     "ScalarTarget",

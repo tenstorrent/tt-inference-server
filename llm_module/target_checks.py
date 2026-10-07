@@ -33,6 +33,7 @@ _METRIC_SPECS: Tuple[Tuple[str, str, bool], ...] = (
     ("tpot", "tpot_ms", True),
     ("e2el", "e2el_ms", True),
     ("tput_total", "tput_total", False),
+    ("tput_input", "tput_input", False),
     ("goodput", "goodput", False),
 )
 
@@ -63,6 +64,7 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
         "tpot": tpot,
         "e2el": _as_float(record.get("mean_e2el_ms")),
         "tput_total": _as_float(record.get("tps_total_throughput")),
+        "tput_input": _as_float(record.get("tps_input_throughput")),
         "goodput": _as_float(record.get("goodput_pct")),
     }
 
