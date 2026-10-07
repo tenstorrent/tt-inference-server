@@ -6671,6 +6671,10 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="terminal_bench_2",
+                # Informational for the release entries: no H100 reference for either task and the
+                # ci-nightly subset is five tasks, which cannot grade an 18% published score;
+                # reported, never a blocker.
+                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=18.0,
@@ -6724,6 +6728,10 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="swe_bench_verified",
+                # Informational for the release entries: no H100 reference for either task and the
+                # ci-nightly subset is five tasks, which cannot grade an 18% published score;
+                # reported, never a blocker.
+                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=None,
