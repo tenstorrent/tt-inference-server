@@ -36,6 +36,7 @@ DISPLAY_FIELDS = (
     "placeholder_prompts",
     "acceptance_rate",
     "mean_accepted_length",
+    "acceptance_source",
     "mean_ttft_ms",
     "p95_ttft_ms",
     "mean_tpot_ms",
@@ -78,6 +79,8 @@ class AIPerfSpecDecodeParser(LLMResultParser):
         }
         for field in DISPLAY_FIELDS:
             record[field] = _value(field)
+        # Where acceptance came from: "metrics" (/metrics counters) or "usage" (per response).
+        record["acceptance_source"] = spec_metrics.get("source")
         # SPEED-Bench placeholder sentences in the dataset aiperf loaded (#5279); None when not counted.
         if raw.get("placeholder_prompts") is not None:
             record["placeholder_prompts"] = (

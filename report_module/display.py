@@ -146,6 +146,7 @@ DISPLAY_NAMES: Dict[str, str] = {
     "placeholder_prompts": "Placeholders in Dataset",
     "acceptance_rate": "Accept Rate",
     "mean_accepted_length": "Mean Acc Len",
+    "acceptance_source": "Acceptance Source",
     "p95_ttft_ms": "P95 TTFT (ms)",
     "p95_tpot_ms": "P95 TPOT (ms)",
     "p95_e2el_ms": "P95 E2EL (ms)",
