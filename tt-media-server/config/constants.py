@@ -1649,8 +1649,8 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
     },
-    # Training runners load by repo id from $HF_HOME/hub themselves; a startup
-    # snapshot_download would only add a second, unused copy (incl. original/).
+    # Training runners download their own weights: from_pretrained(repo_id) fetches into
+    # $HF_HOME/hub on first load, so a startup download would only add an unused copy.
     (ModelRunners.TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
