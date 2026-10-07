@@ -231,10 +231,27 @@ def build_harbor_config(
     )
 
 
+# Comma-separated fnmatch globs that override the configured task selection of
+# every agentic task in the run, e.g. "django__*" to shard SWE-bench Verified by
+# repository or "astropy__astropy-14096,sympy__sympy-13551" to re-run instances
+# whose trials were lost to a server restart. Highest precedence; an empty value
+# is ignored.
+TASK_NAMES_ENV = "TT_AGENTIC_TASK_NAMES"
+
+
+def _task_names_override() -> List[str]:
+    raw = os.getenv(TASK_NAMES_ENV, "")
+    return [t.strip() for t in raw.split(",") if t.strip()]
+
+
 def resolve_task_names(task: Any, runtime_config: Any = None) -> List[str]:
     agentic_config = task.agentic_eval_config
     if agentic_config is None:
         return []
+    override = _task_names_override()
+    if override:
+        logger.info("%s overrides task selection: %s", TASK_NAMES_ENV, override)
+        return override
     limit_mode = _get_limit_mode(runtime_config)
     if limit_mode is not None and limit_mode in agentic_config.task_names_map:
         return agentic_config.task_names_map[limit_mode]
