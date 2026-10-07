@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Spec-decode sweep presets and the ISL / concurrency overrides."""
+"""Spec-decode sweep presets and the ISL / concurrency env overrides."""
 
 import pytest
 
@@ -14,6 +14,12 @@ from llm_module.spec_decode import (
 
 
 _THROUGHPUT_PREFIX = "speed_bench_throughput_"
+
+
+@pytest.fixture(autouse=True)
+def _no_override_env(monkeypatch):
+    monkeypatch.delenv("SPEC_DECODE_ISLS", raising=False)
+    monkeypatch.delenv("SPEC_DECODE_CONCURRENCIES", raising=False)
 
 
 def _throughput(runs):
@@ -66,6 +72,44 @@ def test_overrides_leave_qualitative_runs_alone():
     runs = build_runs("ci", isls="1k", concurrencies="8")
     assert _qualitative(runs) == ["speed_bench_coding"]
     assert _throughput(runs) == [("1k", 8)]
+
+
+def test_env_vars_replace_preset_grid(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_ISLS", "8k,1k")
+    monkeypatch.setenv("SPEC_DECODE_CONCURRENCIES", "32,8")
+    runs = build_runs("ci")
+    assert _qualitative(runs) == ["speed_bench_coding"]
+    assert _throughput(runs) == [("1k", 8), ("1k", 32), ("8k", 8), ("8k", 32)]
+
+
+def test_env_isls_keep_preset_concurrencies(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_ISLS", "2k")
+    assert _throughput(build_runs("ci")) == [("2k", 1), ("2k", 16), ("2k", 64)]
+
+
+def test_empty_env_vars_keep_preset(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_ISLS", "")
+    monkeypatch.setenv("SPEC_DECODE_CONCURRENCIES", "")
+    assert _throughput(build_runs("ci")) == [("32k", 1), ("32k", 16), ("32k", 64)]
+
+
+def test_explicit_args_win_over_env(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_ISLS", "32k")
+    monkeypatch.setenv("SPEC_DECODE_CONCURRENCIES", "64")
+    runs = build_runs("throughput", isls="1k", concurrencies="8")
+    assert _throughput(runs) == [("1k", 8)]
+
+
+def test_invalid_env_var_rejected(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_ISLS", "4k")
+    with pytest.raises(ValueError, match="ISL bucket"):
+        build_runs("full")
+
+
+def test_env_concurrencies_ignore_max_concurrency(monkeypatch):
+    monkeypatch.setenv("SPEC_DECODE_CONCURRENCIES", "16,64")
+    runs = build_runs("ci", max_concurrency=8)
+    assert _throughput(runs) == [("32k", 16), ("32k", 64)]
 
 
 def test_max_concurrency_caps_preset_sweep():

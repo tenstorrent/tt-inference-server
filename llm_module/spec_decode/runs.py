@@ -13,6 +13,7 @@ orchestrator that ties them together is
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -31,7 +32,7 @@ SPEED_BENCH_QUALITATIVE_CATEGORIES: Tuple[str, ...] = (
     "writing",
 )
 
-# The SPEED-Bench throughput subsets; --spec-decode-isls picks from these.
+# The SPEED-Bench throughput subsets; SPEC_DECODE_ISLS picks from these.
 SPEED_BENCH_THROUGHPUT_ISLS: Tuple[str, ...] = ("1k", "2k", "8k", "16k", "32k")
 
 THROUGHPUT_CONCURRENCY_SWEEP: Tuple[int, ...] = (1, 8, 16, 32, 64)
@@ -49,6 +50,11 @@ CI_THROUGHPUT_CONCURRENCIES: Tuple[int, ...] = (1, 16, 64)
 # without replacement, so a count equal to the category size sends each prompt
 # exactly once.
 SPEED_BENCH_QUALITATIVE_NUM_PROMPTS = 80
+
+# Comma-separated env vars that replace the preset's throughput ISLs /
+# concurrencies (e.g. SPEC_DECODE_ISLS=1k,8k SPEC_DECODE_CONCURRENCIES=8,32).
+SPEC_DECODE_ISLS_ENV = "SPEC_DECODE_ISLS"
+SPEC_DECODE_CONCURRENCIES_ENV = "SPEC_DECODE_CONCURRENCIES"
 
 # Cap output tokens on the throughput sweep so a handful of long-decoding
 # prompts can't blow up the runtime. Injected as
@@ -155,7 +161,7 @@ SPEC_DECODE_THROUGHPUT_SWEEP: List[SpecDecodeRun] = SPEC_DECODE_PRESETS["through
 
 
 def parse_isls(isls: Optional[str]) -> Optional[Tuple[str, ...]]:
-    """Parse ``--spec-decode-isls`` (e.g. ``"1k,8k"``) into bucket names.
+    """Parse ``SPEC_DECODE_ISLS`` (e.g. ``"1k,8k"``) into bucket names.
 
     Returns ``None`` when unset so the preset's ISLs apply. Buckets are the
     SPEED-Bench throughput subsets and come back in canonical order.
@@ -173,7 +179,7 @@ def parse_isls(isls: Optional[str]) -> Optional[Tuple[str, ...]]:
 
 
 def parse_concurrencies(concurrencies: Optional[str]) -> Optional[Tuple[int, ...]]:
-    """Parse ``--spec-decode-concurrencies`` (e.g. ``"1,8,32"``) into ints.
+    """Parse ``SPEC_DECODE_CONCURRENCIES`` (e.g. ``"1,8,32"``) into ints.
 
     Returns ``None`` when unset so the preset's concurrencies apply. Any
     positive integer is accepted; values come back sorted and de-duplicated.
@@ -207,9 +213,9 @@ def build_runs(
     1/16/64. ``throughput`` runs the full throughput grid and no
     qualitative categories.
 
-    ``isls`` / ``concurrencies`` (comma-separated, from
-    ``--spec-decode-isls`` / ``--spec-decode-concurrencies``) replace the
-    preset's throughput ISLs / concurrencies; qualitative runs are
+    ``isls`` / ``concurrencies`` (comma-separated; default to the
+    ``SPEC_DECODE_ISLS`` / ``SPEC_DECODE_CONCURRENCIES`` env vars) replace
+    the preset's throughput ISLs / concurrencies; qualitative runs are
     unaffected.
 
     ``max_concurrency`` (the server's user slots) caps the preset's
@@ -221,6 +227,10 @@ def build_runs(
         raise ValueError(
             f"Unknown spec-decode preset: {preset}. Available: {sorted(_PRESETS)}"
         )
+    if isls is None:
+        isls = os.environ.get(SPEC_DECODE_ISLS_ENV)
+    if concurrencies is None:
+        concurrencies = os.environ.get(SPEC_DECODE_CONCURRENCIES_ENV)
     base = _PRESETS[preset]
     selected = parse_concurrencies(concurrencies)
     if selected is None:

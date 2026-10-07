@@ -374,30 +374,9 @@ def parse_args() -> argparse.Namespace:
             "plus speed_bench_throughput_32k at concurrency 1/16/64), "
             "'full' is every SPEED-Bench qualitative category plus the "
             "whole throughput ISL x concurrency grid, 'throughput' is the "
-            "throughput grid alone."
-        ),
-    )
-    parser.add_argument(
-        "--spec-decode-isls",
-        type=str,
-        default=None,
-        help=(
-            "Comma-separated SPEED-Bench throughput ISL buckets to run "
-            "(any of: 1k, 2k, 8k, 16k, 32k), replacing the preset's. "
-            "Qualitative runs are unaffected. When unset, the preset's "
-            "ISLs are used."
-        ),
-    )
-    parser.add_argument(
-        "--spec-decode-concurrencies",
-        type=str,
-        default=None,
-        help=(
-            "Comma-separated max concurrencies for the throughput runs "
-            "(e.g. '1,8,32'), replacing the preset's (full/throughput: "
-            "1,8,16,32,64; ci: 1,16,64). Each run sends "
-            "max(32, 4 x concurrency) requests. Qualitative runs stay at "
-            "concurrency 1."
+            "throughput grid alone. The SPEC_DECODE_ISLS (any of 1k, 2k, "
+            "8k, 16k, 32k) and SPEC_DECODE_CONCURRENCIES (e.g. '1,8,32') "
+            "env vars replace the preset's throughput ISLs / concurrencies."
         ),
     )
     parser.add_argument(
@@ -607,21 +586,11 @@ def parse_args() -> argparse.Namespace:
             "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
         )
-    if (args.spec_decode_isls or args.spec_decode_concurrencies) and not (
-        args.spec_decode
-    ):
-        parser.error(
-            "--spec-decode-isls / --spec-decode-concurrencies require --spec-decode."
-        )
     if args.spec_decode:
         from llm_module.spec_decode.runs import build_runs
 
         try:
-            build_runs(
-                args.spec_decode_preset,
-                isls=args.spec_decode_isls,
-                concurrencies=args.spec_decode_concurrencies,
-            )
+            build_runs(args.spec_decode_preset)
         except ValueError as e:
             parser.error(str(e))
     if args.serving_bench_suites and args.workflow != "serving_bench":

@@ -118,11 +118,6 @@ class SpecDecodeOptions:
     """
 
     preset: str = "full"
-    # Comma-separated throughput ISL buckets / concurrencies that replace the
-    # preset's (--spec-decode-isls / --spec-decode-concurrencies). None keeps
-    # the preset's.
-    isls: Optional[str] = None
-    concurrencies: Optional[str] = None
     warmup_requests: int = 4
     auth_token: str = ""
     # Worker /metrics endpoints holding the vllm:spec_decode_* counters,

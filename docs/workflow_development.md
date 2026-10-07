@@ -369,12 +369,12 @@ throughput sweep at concurrency 1/8/16/32/64.
 | `ci` | `coding` | 32k | 1, 16, 64 |
 | `throughput` | none | 1k, 2k, 8k, 16k, 32k | 1, 8, 16, 32, 64 |
 
-`--spec-decode-isls` (comma-separated, any of `1k,2k,8k,16k,32k`) and
-`--spec-decode-concurrencies` (comma-separated positive integers) replace the
-preset's throughput ISLs / concurrencies; qualitative runs are unaffected.
-Each throughput run sends `max(32, 4 × concurrency)` requests. For example,
-`--spec-decode-preset throughput --spec-decode-isls 1k,8k
---spec-decode-concurrencies 8,32` runs four throughput points and nothing else.
+The `SPEC_DECODE_ISLS` (comma-separated, any of `1k,2k,8k,16k,32k`) and
+`SPEC_DECODE_CONCURRENCIES` (comma-separated positive integers) env vars
+replace the preset's throughput ISLs / concurrencies; qualitative runs are
+unaffected. Each throughput run sends `max(32, 4 × concurrency)` requests. For
+example, `SPEC_DECODE_ISLS=1k,8k SPEC_DECODE_CONCURRENCIES=8,32` with
+`--spec-decode-preset throughput` runs four throughput points and nothing else.
 
 Server-side speculative config is out of scope — it belongs to whoever
 launched the server, before the benchmark starts. Each run scrapes the vLLM
@@ -419,6 +419,7 @@ shared `constraints.txt` pin, hence the separate venv). Use the thin launcher
 re-execs `run_workflows.py` inside it:
 
 ```bash
+[SPEC_DECODE_ISLS=1k,8k] [SPEC_DECODE_CONCURRENCIES=8,32] \
 python launchers/run_spec_decode.py \
     --model meta-llama/Llama-3.1-8B-Instruct \
     --runtime-model-spec-json [spec_decode_runtime_spec.json] \
@@ -426,9 +427,7 @@ python launchers/run_spec_decode.py \
     --device gpu \
     --service-port 8000 \
     --spec-decode \
-    --spec-decode-preset [ci | full | throughput] \
-    [--spec-decode-isls 1k,8k] \
-    [--spec-decode-concurrencies 8,32]
+    --spec-decode-preset [ci | full | throughput]
 ```
 
 Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report

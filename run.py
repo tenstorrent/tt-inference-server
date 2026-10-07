@@ -709,21 +709,9 @@ def parse_arguments():
         choices=["ci", "full", "throughput"],
         default="full",
         help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep; "
-        "'throughput' skips the qualitative categories and runs only the throughput grid.",
-    )
-    spec_decode_group.add_argument(
-        "--spec-decode-isls",
-        type=str,
-        default=None,
-        help="Comma-separated SPEED-Bench throughput ISL buckets (any of: 1k, 2k, 8k, 16k, "
-        "32k), replacing the preset's. Qualitative runs are unaffected.",
-    )
-    spec_decode_group.add_argument(
-        "--spec-decode-concurrencies",
-        type=str,
-        default=None,
-        help="Comma-separated max concurrencies for the throughput runs (e.g. '1,8,32'), "
-        "replacing the preset's (full/throughput: 1,8,16,32,64; ci: 1,16,64).",
+        "'throughput' skips the qualitative categories and runs only the throughput grid. "
+        "SPEC_DECODE_ISLS / SPEC_DECODE_CONCURRENCIES (comma-separated env vars) replace "
+        "the preset's throughput ISLs / concurrencies.",
     )
     spec_decode_group.add_argument(
         "--spec-decode-warmup-requests",
@@ -851,13 +839,6 @@ def parse_arguments():
         parser.error(
             "--spec-decode currently requires --workflow benchmarks or release "
             f"(got --workflow {args.workflow})."
-        )
-
-    if (args.spec_decode_isls or args.spec_decode_concurrencies) and not (
-        args.spec_decode
-    ):
-        parser.error(
-            "--spec-decode-isls / --spec-decode-concurrencies require --spec-decode."
         )
 
     if args.serving_bench_suites and args.workflow != "serving_bench":

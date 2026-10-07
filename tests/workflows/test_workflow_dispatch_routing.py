@@ -591,8 +591,6 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
         ],
         spec_decode=True,
         spec_decode_preset="ci",
-        spec_decode_isls="1k,8k",
-        spec_decode_concurrencies="8,32",
         spec_decode_warmup_requests=2,
         spec_decode_metrics_url=["worker-a:9000"],
     )
@@ -613,8 +611,6 @@ def test_release_forwards_prefix_cache_and_spec_decode_flags(monkeypatch, tmp_pa
     )
     assert "--spec-decode" in argv
     assert argv[argv.index("--spec-decode-preset") + 1] == "ci"
-    assert argv[argv.index("--spec-decode-isls") + 1] == "1k,8k"
-    assert argv[argv.index("--spec-decode-concurrencies") + 1] == "8,32"
     assert argv[argv.index("--spec-decode-warmup-requests") + 1] == "2"
     assert argv[argv.index("--spec-decode-metrics-url") + 1] == "worker-a:9000"
 
@@ -639,39 +635,6 @@ def test_spec_decode_forwards_each_metrics_url_separately(monkeypatch, tmp_path)
         if token == "--spec-decode-metrics-url"
     ]
     assert forwarded == ["worker-a:9000", "worker-b:9000/metrics"]
-
-
-def test_spec_decode_forwards_isls_and_concurrencies(monkeypatch, tmp_path):
-    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
-    rc = _rc(
-        workflow="benchmarks",
-        spec_decode=True,
-        spec_decode_preset="throughput",
-        spec_decode_isls="1k,2k",
-        spec_decode_concurrencies="8,32",
-    )
-    monkeypatch.setattr(
-        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
-    )
-
-    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
-
-    assert argv[argv.index("--spec-decode-preset") + 1] == "throughput"
-    assert argv[argv.index("--spec-decode-isls") + 1] == "1k,2k"
-    assert argv[argv.index("--spec-decode-concurrencies") + 1] == "8,32"
-
-
-def test_spec_decode_omits_unset_overrides(monkeypatch, tmp_path):
-    spec = _spec(ModelType.LLM, name="Kimi-K2.7-Code")
-    rc = _rc(workflow="benchmarks", spec_decode=True)
-    monkeypatch.setattr(
-        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
-    )
-
-    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
-
-    assert "--spec-decode-isls" not in argv
-    assert "--spec-decode-concurrencies" not in argv
 
 
 def test_release_forwards_agentic_traces_flags(monkeypatch, tmp_path):
