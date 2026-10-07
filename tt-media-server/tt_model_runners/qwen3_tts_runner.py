@@ -93,6 +93,9 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         )
         # voice_id -> (ref_codes, prepare_icl_decoder_state(ref_codes)), host only.
         self._ref_states = {}
+        # Host copy of the speaker-encoder weights for ad-hoc voice clones (see
+        # _clone_speaker_embedding).
+        self._se_cpu_weights = None
         self.config = None
         self.voice_prompts: Optional[VoicePromptManager] = None
         self._post_warmup_rng_state = None
@@ -247,6 +250,18 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         # run before anything touches the device.
         self.voice_prompts = VoicePromptManager()
         self.voice_prompts.preload()
+        # Speaker embeddings (ECAPA on device) before anything else claims L1: its convs
+        # use large static circular buffers, and init_server_context's persistent L1
+        # trace inputs reach into that region on an 8x8 N150 grid ("Statically allocated
+        # circular buffers ... clash with L1 buffers"). On the 8x9 Galaxy grid they fit,
+        # which is why only N150 failed. Same rule as the decoder: allocate before capture.
+        self.voice_prompts.precompute_speaker_embeddings(self.model)
+        from models.demos.qwen3_tts.reference import functional as ref
+
+        self._se_cpu_weights = {
+            k: v.float()
+            for k, v in ref.extract_speaker_encoder_weights(self.main_weights).items()
+        }
         for voice_id in self.voice_prompts.list_available():
             self._ref_state_for(
                 api, voice_id, self.voice_prompts.get(voice_id).ref_codes
@@ -311,7 +326,6 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
             self.ttnn_device, self.model, self.config, self.main_weights
         )
 
-        self.voice_prompts.precompute_speaker_embeddings(self.model)
         self.logger.info(
             f"Device {self.device_id}: Voice prompts ready: "
             f"{self.voice_prompts.list_available()}"
@@ -390,6 +404,21 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
                 "Or pass voice_clone_audio + voice_clone_text for ad-hoc cloning."
             )
         return prompt.ref_codes, prompt.ref_text, prompt.audio_data, voice_id
+
+    def _clone_speaker_embedding(self, audio_data: torch.Tensor) -> torch.Tensor:
+        """Speaker embedding for an ad-hoc clone, on the host.
+
+        The device ECAPA cannot run once the server context exists on an 8x8 N150 grid:
+        its static circular buffers overlap the persistent L1 trace inputs (TT_THROW
+        "Statically allocated circular buffers ... clash with L1 buffers"). Preset voices
+        are embedded on device before capture; clones use the exact reference ECAPA.
+        """
+        from models.demos.qwen3_tts.reference import functional as ref
+
+        mel = self.model.speaker_encoder.compute_mel_spectrogram(audio_data)
+        with torch.no_grad():
+            emb = ref.speaker_encoder_forward(mel, self._se_cpu_weights)
+        return emb.reshape(1, -1).float()
 
     def _trim_ref(self, ref_codes, audio_data, ref_text, target_text):
         from models.demos.qwen3_tts.demo.reference_icl_utils import (
@@ -549,6 +578,8 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         )
         if cached is not None and cached.speaker_embedding is not None:
             speaker_embedding = cached.speaker_embedding
+        elif voice_id == "<adhoc>" and self._se_cpu_weights is not None:
+            speaker_embedding = self._clone_speaker_embedding(audio_data)
         else:
             speaker_embedding = self.model.extract_speaker_embedding(audio_data)
 
