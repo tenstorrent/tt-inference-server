@@ -1027,12 +1027,25 @@ class TestEvalRequestOverrides:
         ours, _ = self._wrapper_args(_build_eval_test_command(task))
         assert ours == ["--request-body", '{"top_k": 20}', "--drop-server-seed"]
 
-    def test_capture_reasoning_now_reaches_the_harness(self):
+    def test_capture_reasoning_alone_keeps_the_old_launch_path(self):
+        # Existing entries with capture_reasoning=True must not change
+        # behaviour until they opt into request overrides.
+        command = _build_eval_test_command(
+            EvalTask(
+                task_name="r1_gpqa_diamond", use_chat_api=True, capture_reasoning=True
+            )
+        )
+        assert command[0].endswith("/bin/lm_eval")
+
+    def test_capture_reasoning_rides_along_with_an_override(self):
         task = EvalTask(
-            task_name="r1_gpqa_diamond", use_chat_api=True, capture_reasoning=True
+            task_name="r1_gpqa_diamond",
+            use_chat_api=True,
+            thinking=False,
+            capture_reasoning=True,
         )
         ours, _ = self._wrapper_args(_build_eval_test_command(task))
-        assert ours == ["--preserve-reasoning"]
+        assert ours[-1] == "--preserve-reasoning"
 
     def test_default_task_keeps_the_plain_lm_eval_entry_point(self):
         command = _build_eval_test_command(EvalTask(task_name="plain"))
