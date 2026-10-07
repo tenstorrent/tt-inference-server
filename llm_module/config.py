@@ -58,6 +58,22 @@ class LLMRunConfig:
     # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
     # own vocabulary. None = not measured.
     goodput: Optional[GoodputSlo] = field(default=None, compare=False)
+    # Seed for the benchmark's synthetic (random-dataset) prompts. None derives
+    # a seed from (isl, osl, max_concurrency) so every sweep point gets its
+    # own prompts: vLLM's random dataset builds each prompt as an arithmetic
+    # token run from a seeded offset, so with one shared seed prompt i at a
+    # longer ISL is an extension of prompt i at a shorter ISL and, with prefix
+    # caching on, later points measure cache-assisted TTFTs instead of cold
+    # prefill. A fixed value pins the prompts (repeat runs, comparisons).
+    prompt_seed: Optional[int] = None
+
+    @property
+    def effective_prompt_seed(self) -> int:
+        if self.prompt_seed is not None:
+            return int(self.prompt_seed)
+        return (self.isl * 1_000_003 + self.osl * 1_009 + self.max_concurrency) % (
+            2**31 - 1
+        )
 
 
 @dataclass(frozen=True)

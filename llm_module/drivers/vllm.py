@@ -128,6 +128,12 @@ def build_vllm_bench_serve_argv(
                 str(config.osl),
             ]
         )
+        if not config.token_timing:
+            # Per-point prompts (see LLMRunConfig.prompt_seed): the fixed
+            # default seed lets a point's prompts prefix-match an earlier
+            # point's and measure the prefix cache rather than prefill.
+            # Token-timing runs keep their fixed seed for warmup + repeats.
+            cmd.extend(["--seed", str(config.effective_prompt_seed)])
 
     is_remote_base_url = uses_remote_base_url(
         server.url_with_port,

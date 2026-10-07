@@ -268,3 +268,58 @@ def test_partial_success_cannot_pass_fixed_workload(monkeypatch, tmp_path):
     )
     assert result.return_code != 0
     assert json.loads(result.raw_path.read_text()) == raw
+
+
+def _local_server():
+    return ServerConnection(
+        base_url="http://127.0.0.1",
+        service_port=8000,
+        model="google/gemma-4-12B-it",
+        auth_token=None,
+        is_remote=False,
+    )
+
+
+def _argv(config):
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm",
+        config=config,
+        server=_local_server(),
+        result_filename=_result_path(),
+    )
+    return cmd
+
+
+def _seed(cmd):
+    return cmd[cmd.index("--seed") + 1]
+
+
+class TestPromptSeedPerPoint:
+    def test_each_sweep_point_gets_its_own_prompts(self):
+        # Same seed across points makes prompt i at a longer ISL an extension of
+        # prompt i at a shorter one, so a cached prefix stands in for prefill.
+        seeds = {
+            _seed(_argv(_config(isl=isl, osl=osl, max_concurrency=c)))
+            for isl, osl, c in [
+                (2048, 128, 1),
+                (4096, 128, 1),
+                (4096, 128, 32),
+                (4096, 1024, 1),
+            ]
+        }
+        assert len(seeds) == 4
+
+    def test_seed_is_deterministic_for_a_point(self):
+        assert _seed(_argv(_config(isl=8192))) == _seed(_argv(_config(isl=8192)))
+        assert "--seed" in _argv(_config()) and _argv(_config()).count("--seed") == 1
+
+    def test_explicit_prompt_seed_wins(self):
+        assert _seed(_argv(_config(isl=8192, prompt_seed=7))) == "7"
+
+    def test_token_timing_keeps_its_fixed_seed(self):
+        cmd = _argv(_config(token_timing=True))
+        assert cmd.count("--seed") == 1 and _seed(cmd) == "0"
+
+    def test_custom_dataset_runs_do_not_seed_prompts(self):
+        cmd = _argv(_config(custom_dataset_path=Path("/tmp/prompts.jsonl")))
+        assert "--seed" not in cmd
