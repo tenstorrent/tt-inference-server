@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from llm_module import HttpServerController, RemoteOpenAIController
+from llm_module.request_overrides import resolve_request_body
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
@@ -412,6 +413,16 @@ def _run_eval_task(
             "task=%s will preserve reasoning_content in sample logs.", task.task_name
         )
     logger.info("Running eval task=%s", task.task_name)
+    if (
+        getattr(task, "request_body", None)
+        or getattr(task, "thinking", None) is not None
+    ):
+        logger.info(
+            "Eval task=%s per-request overrides: thinking=%s request_body=%s",
+            task.task_name,
+            task.thinking,
+            resolve_request_body(task),
+        )
     # Bound the whole subprocess tree when the task declares a deadline.
     # Without passing this through, wall_clock_timeout_seconds is validated and
     # documented but never reaches proc.run_command, so the bounded path is

@@ -1183,3 +1183,28 @@ class TestAgenticBridge:
             run_llm_agentic_eval(ctx)
 
         assert accept.call_args.args[0] == [failure_block]
+
+
+class TestAgenticRequestOverrides:
+    def test_thinking_off_becomes_the_agents_extra_body(self):
+        task = _harbor_task(
+            thinking=False, request_body={}, thinking_kwarg="enable_thinking"
+        )
+        task.agentic_eval_config.agent = "terminus-2"
+        task.agentic_eval_config.agent_kwargs = {"parser_name": "json"}
+
+        cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.agent_kwargs == {
+            "parser_name": "json",
+            "llm_call_kwargs": {
+                "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}
+            },
+        }
+        # the shared eval config is never mutated
+        assert task.agentic_eval_config.agent_kwargs == {"parser_name": "json"}
+
+    def test_no_override_leaves_agent_kwargs_untouched(self):
+        task = _harbor_task()
+        cfg = build_harbor_config(task, _server(), _driver_context())
+        assert cfg.agent_kwargs == dict(task.agentic_eval_config.agent_kwargs)

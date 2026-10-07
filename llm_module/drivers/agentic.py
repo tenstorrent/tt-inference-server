@@ -16,6 +16,10 @@ from typing import Any, List, Optional
 from utils.model_naming import slugify_model_id
 from workflow_module.engine_types import EvalLimitMode
 
+from llm_module.request_overrides import (
+    agent_kwargs_with_request_body,
+    resolve_request_body,
+)
 from ..agentic.harbor import HarborRunConfig, run as run_harbor
 from ..config import DriverContext, LLMRunConfig, ServerConnection
 from ..parsers.agentic import AgenticEvalParser
@@ -204,7 +208,9 @@ def build_harbor_config(
         n_concurrent_trials=cfg.n_concurrent_trials,
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
-        agent_kwargs=cfg.agent_kwargs,
+        agent_kwargs=agent_kwargs_with_request_body(
+            cfg.agent, cfg.agent_kwargs, resolve_request_body(task)
+        ),
         n_tasks=n_tasks if n_tasks is not None else cfg.n_tasks,
         override_cpus=cfg.override_cpus,
         override_memory_mb=cfg.override_memory_mb,

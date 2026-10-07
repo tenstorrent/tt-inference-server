@@ -335,6 +335,24 @@ class EvalTask:
     # reaches scoring; the eval launcher gates lm-eval via
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
+    # Per-request body fields merged into every request this task sends, e.g.
+    # {"chat_template_kwargs": {"enable_thinking": False}}. A per-eval override
+    # of the serving entry's server-wide defaults (vLLM applies a request-level
+    # chat_template_kwargs over --default-chat-template-kwargs), so one server
+    # can run thinking-on and thinking-off evals back to back. lm-eval tasks go
+    # through llm_module/lm_eval_request_overrides.py; Harbor tasks get it as
+    # the agent's extra_body (see llm_module/request_overrides.py). Not
+    # supported for lmms-eval (vision/audio) tasks.
+    request_body: Dict[str, Any] = field(default_factory=dict)
+    # Convenience for the common case. None (default) leaves the model in the
+    # serving entry's default thinking mode; True/False force it for this task
+    # only, as chat_template_kwargs[thinking_kwarg]. Needs use_chat_api=True on
+    # lm-eval tasks (the server must render the template for the switch to
+    # exist). Score references must match the mode they were measured in.
+    thinking: Optional[bool] = None
+    # The chat-template switch the model's template reads ("enable_thinking"
+    # for Gemma 4 / Qwen3 / GLM; some templates use "thinking").
+    thinking_kwarg: str = "enable_thinking"
     # Execution policy only; does not reduce samples, context, or output tokens.
     wall_clock_timeout_seconds: Optional[int] = None
     max_attempts: Optional[int] = None
