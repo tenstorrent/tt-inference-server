@@ -28,6 +28,7 @@ class AgenticEvalParser(LLMResultParser):
         score: Any = None,
         result_path: Optional[Path] = None,
         limit_mode: Any = None,
+        priority: str = "must",
     ) -> None:
         self.task_name = task_name
         self.score = score
@@ -35,6 +36,11 @@ class AgenticEvalParser(LLMResultParser):
         # EvalLimitMode (or None). Under --ci-mode the accuracy check compares
         # against the task's CI-subset reference instead of the full-set one.
         self.limit_mode = limit_mode
+        # The EvalTask's priority ("must" blocks acceptance, "should" is
+        # informational). The lm-eval emitter stamps it on every block; the
+        # acceptance check reads it from block data and defaults to "must"
+        # when absent, so it has to travel with the block here too.
+        self.priority = priority
 
     def parse(self, raw: Mapping[str, Any], *, device: str = "") -> Block:
         metrics = extract_harbor_metrics(raw)
@@ -67,6 +73,7 @@ class AgenticEvalParser(LLMResultParser):
                 score=self.score,
                 metrics=metrics,
                 limit_mode=self.limit_mode,
+                priority=self.priority,
             ),
         )
 
@@ -86,6 +93,7 @@ class AgenticEvalParser(LLMResultParser):
                 metrics={},
                 success=False,
                 subprocess_rc=return_code,
+                priority=self.priority,
             ),
         )
 
@@ -99,6 +107,7 @@ def _build_evals_data(
     success: bool = True,
     error: Optional[str] = None,
     subprocess_rc: Optional[int] = None,
+    priority: str = "must",
 ) -> Dict[str, Any]:
     """Shape agentic results like standard lm-eval Blocks for report rendering."""
 
@@ -142,6 +151,7 @@ def _build_evals_data(
         "ratio_to_reference": ratio_ref,
         "accuracy_check": accuracy_check,
         "mean_seconds_per_task": metrics.get("mean_seconds_per_task"),
+        "priority": priority,
     }
     if not success:
         data["success"] = False
