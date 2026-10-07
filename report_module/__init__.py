@@ -8,6 +8,7 @@ from report_module.acceptance_criteria import (
     build_acceptance_export,
     format_acceptance_summary_markdown,
     spec_tasks_explained_by_waivers,
+    stage_results,
     task_failure_blockers,
 )
 from report_module.generator import (
@@ -32,4 +33,5 @@ __all__ = [
     "build_acceptance_export",
     "format_acceptance_summary_markdown",
     "generate_report",
+    "stage_results",
 ]

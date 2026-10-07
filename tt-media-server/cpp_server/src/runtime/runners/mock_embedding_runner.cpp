@@ -3,8 +3,12 @@
 
 #include "runtime/runners/mock_embedding_runner.hpp"
 
+#include <unistd.h>
+
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <sstream>
 #include <string>
 
 #include "utils/logger.hpp"
@@ -60,6 +64,21 @@ std::vector<float> deterministicVector(const std::string& text, size_t dim) {
   return v;
 }
 
+// True when EMBEDDING_MOCK_FAIL_WARMUP names this worker ("all" or a
+// comma-separated id list). Fault injection for warmup-failure tests.
+bool warmupFailureInjected(size_t workerId) {
+  const char* env = std::getenv(EMBEDDING_MOCK_FAIL_WARMUP_ENV);
+  if (!env || !*env) return false;
+  const std::string value(env);
+  if (value == "all") return true;
+  std::istringstream ids(value);
+  std::string token;
+  while (std::getline(ids, token, ',')) {
+    if (!token.empty() && token == std::to_string(workerId)) return true;
+  }
+  return false;
+}
+
 // Rough stand-in for the tokenizer: whitespace-separated words plus the two
 // special tokens a BERT-style model adds, clamped to the model's limit so the
 // truncation behaviour of the real path is visible in the mock too.
@@ -92,6 +111,12 @@ MockEmbeddingRunner::MockEmbeddingRunner(const config::EmbeddingConfig& config)
 }
 
 bool MockEmbeddingRunner::warmup() {
+  if (warmupFailureInjected(config_.worker_id)) {
+    TT_LOG_ERROR(
+        "[MockEmbeddingRunner] Warmup failure injected for worker {} ({})",
+        config_.worker_id, EMBEDDING_MOCK_FAIL_WARMUP_ENV);
+    return false;
+  }
   TT_LOG_INFO("[MockEmbeddingRunner] Warmup complete (nothing to load)");
   return true;
 }
@@ -100,6 +125,17 @@ std::vector<domain::EmbeddingResponse> MockEmbeddingRunner::run(
     const std::vector<domain::EmbeddingRequest>& requests) {
   std::vector<domain::EmbeddingResponse> responses;
   responses.reserve(requests.size());
+
+  // Poison prompt: die mid-batch without answering, like a real crash. The
+  // parent sees EOF on the response pipe and must fail the whole batch.
+  for (const auto& req : requests) {
+    if (req.input == EMBEDDING_MOCK_CRASH_PROMPT) {
+      TT_LOG_ERROR(
+          "[MockEmbeddingRunner] Crash injected by poison prompt (task {})",
+          req.task_id);
+      _exit(134);
+    }
+  }
 
   // Mirror the real runner's failure modes so the mock can catch regressions
   // in the layers above it: an oversized batch and an unknown model name both

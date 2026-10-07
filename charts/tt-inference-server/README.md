@@ -310,6 +310,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Qwen3.6-27B` | p300x2 |
 | `diffusiongemma-26B-A4B-it` | p300x2 |
 | `gemma-3-27b-it` | galaxy |
+| `gemma-4-12B-it` | p300x2 |
 | `gemma-4-31B-it` | p300x2 |
 | `gpt-oss-120b` | galaxy, p300x2, t3k |
 

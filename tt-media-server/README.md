@@ -130,7 +130,8 @@ For development running:
 2. Make sure you're in tt-metal's python env
 3. Clone tt-inference-server repo and switch to dev branch
 4. ```sudo apt update && sudo apt install -y ffmpeg && uv pip install -r requirements.txt``` from tt-media-server
-5. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
+5. ```export ENVIRONMENT=development``` to enable the `/docs`, `/redoc` and `/openapi.json` endpoints (they are disabled by default)
+6. ```uvicorn main:app --lifespan on --port 8000``` (lifespan methods are needed to init device and close the devices)
 
 ## SDXL setup
 
@@ -899,7 +900,7 @@ The TT Inference Server can be configured using environment variables or by modi
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `LOG_LEVEL` | `"INFO"` | Sets the logging level for the application. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `ENVIRONMENT` | `"development"` | Specifies the runtime environment. Used for environment-specific configurations |
+| `ENVIRONMENT` | `"production"` | Specifies the runtime environment. Set to `"development"` to enable the `/docs`, `/redoc` and `/openapi.json` endpoints |
 | `LOG_FILE` | `None` | Optional path to log file. If not set, logs are output to console only |
 
 ## Device Configuration

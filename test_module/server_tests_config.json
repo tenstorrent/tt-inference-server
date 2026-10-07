@@ -69,7 +69,11 @@
       "HuggingFaceTB/SmolLM2-1.7B-Instruct",
       "meta-llama/Llama-3.2-3B-Instruct",
       "Qwen/Qwen3-0.6B",
-      "Qwen/Qwen3-1.7B"
+      "Qwen/Qwen3-1.7B",
+      "MiniMaxAI/MiniMax-M3",
+      "moonshotai/Kimi-K2.7-Code",
+      "google/gemma-4-31B-it",
+      "google/gemma-4-12B-it"
     ]
   },
   "available_markers": {
@@ -521,6 +525,30 @@
         "p300x2"
       ]
     },
+    "gemma4_31b": {
+      "id_name": "gemma-4-31b-it",
+      "weights": [
+        "google/gemma-4-31B-it"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2",
+        "p150x8",
+        "blackhole_galaxy"
+      ]
+    },
+    "gemma4_12b": {
+      "id_name": "gemma-4-12b-it",
+      "weights": [
+        "google/gemma-4-12B-it"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2",
+        "p150x8",
+        "blackhole_galaxy"
+      ]
+    },
     "gpt_oss_20b": {
       "id_name": "gpt-oss-20b",
       "weights": [
@@ -602,6 +630,26 @@
       "category": "LLM",
       "compatible_devices": [
         "blackhole_galaxy"
+      ]
+    },
+    "minimax_m3": {
+      "id_name": "minimax-m3",
+      "weights": [
+        "MiniMaxAI/MiniMax-M3"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "kimi_k2_7_code": {
+      "id_name": "kimi-k2.7-code",
+      "weights": [
+        "moonshotai/Kimi-K2.7-Code"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
       ]
     },
     "EleutherAI/pythia-70m": {
@@ -1179,6 +1227,34 @@
         "retry_delay": 10,
         "break_on_failure": false,
         "mock_mode": false
+      }
+    },
+    "ToolCallSchemaConformanceTest": {
+      "module": "test_module.llm_tests.tool_call_schema_conformance_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 7200,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "pass_rate_threshold": 1.0,
+        "tool_choice": "auto",
+        "think_mode": "none",
+        "thinking": false,
+        "case_selection": "all",
+        "case_retries": 0,
+        "workers": 16,
+        "max_tokens": 2048,
+        "request_timeout": 600,
+        "default_sampling": false,
+        "cache_bypass": false,
+        "exclude_ref_schemas": false,
+        "non_blocking": false
       }
     }
   },
