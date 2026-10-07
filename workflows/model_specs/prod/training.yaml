@@ -10,6 +10,7 @@ templates:
   inference_engine: FORGE
   status: EXPERIMENTAL
   uses_tensor_model_cache: false
+  docker_image: "tt-media-server-forge:local"
   env_vars:
     MODEL_RUNNER: "trainer-training-lora"
     TRAINING_MODEL: "Llama-3.1-8B-Instruct"
