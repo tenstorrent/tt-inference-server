@@ -63,6 +63,7 @@ class AgenticEvalDriver(LLMDriver):
             task_name=task.task_name,
             score=task.score,
             limit_mode=_get_limit_mode(runtime_config),
+            priority=getattr(task, "priority", "must"),
         )
 
     def result_path(self, server: ServerConnection, context: DriverContext) -> Path:
@@ -97,6 +98,7 @@ class AgenticEvalDriver(LLMDriver):
             score=self.task.score,
             result_path=result_path,
             limit_mode=_get_limit_mode(self.runtime_config),
+            priority=getattr(self.task, "priority", "must"),
         )
         return DriverResult(return_code=rc, raw=raw, raw_path=result_path)
 

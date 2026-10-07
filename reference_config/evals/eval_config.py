@@ -6592,9 +6592,13 @@ _eval_config_list = [
                 # would render with the default enable_thinking=false and
                 # suppress native reasoning (see gemma-4-31B-it note above).
                 use_chat_api=True,
-                # KV is ~264k tokens (~1.01x @ 256k). 10 concurrent 32k thinking
-                # gens thrash at ~95% KV / ~2 tok/s and never finish. Run seq=1.
-                max_concurrent=1,
+                # Default concurrency (32), same as the 31B task. This was pinned
+                # to 1 on 2026-09-03 when the 12B KV pool was ~264k tokens and ten
+                # concurrent 32k thinking generations thrashed; the release
+                # entries now report a 638k-token pool on P300X2 (2.44x 256K, more
+                # than the 31B's 574k, which runs this task 32-wide in 12 min),
+                # while seq=1 took 2 h 46 min for the 40-item subset (tt-shield
+                # run 37565081726).
                 model_kwargs={
                     "max_length": 131072,
                     # Same as 31B: under num_concurrent=32, long thinking gens
@@ -6671,6 +6675,10 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="terminal_bench_2",
+                # Informational for the release entries: no H100 reference for either task and the
+                # ci-nightly subset is five tasks, which cannot grade an 18% published score;
+                # reported, never a blocker.
+                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=18.0,
@@ -6724,6 +6732,10 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="swe_bench_verified",
+                # Informational for the release entries: no H100 reference for either task and the
+                # ci-nightly subset is five tasks, which cannot grade an 18% published score;
+                # reported, never a blocker.
+                priority="should",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
                     published_score=None,
