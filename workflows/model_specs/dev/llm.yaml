@@ -2130,6 +2130,8 @@ templates:
         MESH_DEVICE: "(4, 8)"
         DSV41_LAYERS: "0-39"
         DSV41_SPEC: "0"  # vLLM path = plain decode (the adapter refuses spec)
+        MOE_COMPUTE_FP32_ACC: "1"  # same MoE compute env as the tt-metal demo grid
+        MOE_COMPUTE_BFP8_WEIGHTS: "1"
         DSV41_ENGRAM_RAM: "1"
         DSV41_POOL_DTYPE: fp8
         DSV41_TRACE_REGION: "1600000000"
