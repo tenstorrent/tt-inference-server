@@ -1524,10 +1524,6 @@ templates:
         MESH_DEVICE: P300x2
         OMP_NUM_THREADS: "8"
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
-        # The model card's eval sampling (temperature 1.0, top_p 0.95, no top_k)
-        # is outside the strict device sampler (top_k <= 32); allow the model's
-        # exact host sampler instead of rejecting those requests.
-        K2_VLLM_ALLOW_HOST_SAMPLING: "1"
       override_tt_config:
         sample_on_device_mode: all
         trace_mode: all
