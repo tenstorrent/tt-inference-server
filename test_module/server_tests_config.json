@@ -85,7 +85,8 @@
       "google/gemma-4-12B-it",
       "tiiuae/Falcon3-1B-Instruct",
       "tiiuae/Falcon3-3B-Instruct",
-      "tiiuae/Falcon3-10B-Instruct"
+      "tiiuae/Falcon3-10B-Instruct",
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
     ]
   },
   "available_markers": {
@@ -892,6 +893,16 @@
       "id_name": "tiiuae--Falcon3-10B-Instruct",
       "weights": [
         "tiiuae/Falcon3-10B-Instruct"
+      ]
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--DeepSeek-R1-Distill-Llama-8B",
+      "weights": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
       ]
     }
   },
