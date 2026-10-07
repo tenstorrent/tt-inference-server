@@ -164,3 +164,21 @@ def test_agentic_report_keeps_effective_ci_reference_after_consolidation():
     assert "GPU Reference Score" not in markdown
     assert "round the required correct count down" in markdown
     assert "equivalent to the GPU" not in markdown
+
+
+def test_agentic_failure_keeps_ci_reference_and_remains_a_failure():
+    from llm_module.parsers.agentic import AgenticEvalParser
+    from workflow_module.engine_types import ReportCheckTypes
+
+    task = _eval_config_map[MODEL].tasks[2]
+    block = AgenticEvalParser(
+        task_name=task.task_name,
+        score=task.score,
+        limit_mode=EvalLimitMode.CI_NIGHTLY,
+    ).failure_block(return_code=7)
+    assert block.data["gpu_reference_score"] == 50.0
+    assert "not measured subset GPU control" in block.data["gpu_reference_score_ref"]
+    assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+    assert block.data["score"] is None
+    assert block.data["success"] is False
+    assert block.data["subprocess_rc"] == 7

@@ -84,6 +84,7 @@ class AgenticEvalParser(LLMResultParser):
                 task_name=self.task_name,
                 score=self.score,
                 metrics={},
+                limit_mode=self.limit_mode,
                 success=False,
                 subprocess_rc=return_code,
             ),
