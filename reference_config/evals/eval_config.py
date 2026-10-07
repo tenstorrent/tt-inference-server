@@ -525,8 +525,8 @@ _eval_config_list = [
                     "max_gen_toks": 32768,
                     "temperature": 1.0,
                     "top_p": 0.95,
-                    "do_sample": "true",
-                    "stream": "false",
+                    "do_sample": True,
+                    "stream": False,
                     "until": [],
                     "chat_template_kwargs": {
                         "enable_thinking": True,

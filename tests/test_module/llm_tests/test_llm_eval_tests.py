@@ -992,3 +992,24 @@ def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
             mod._prepare_eval_tokenizer(
                 SimpleNamespace(model_spec=spec), task, tmp_path
             )
+
+
+def test_granite_gpqa_nested_generation_args_are_typed_json():
+    task = _eval_config_map["ibm-granite/granite-4.2-30b"].tasks[0]
+    command = _build_eval_test_command(
+        task, hf_model_repo="ibm-granite/granite-4.2-30b", max_context=131072
+    )
+    kwargs = json.loads(command[command.index("--gen_kwargs") + 1])
+    assert kwargs == {
+        "max_gen_toks": 32768,
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "do_sample": True,
+        "stream": False,
+        "until": [],
+        "chat_template_kwargs": {"enable_thinking": True, "low_effort": False},
+        "seed": 42,
+    }
+    assert kwargs["do_sample"] is True
+    assert kwargs["stream"] is False
+    assert "seed" not in task.gen_kwargs

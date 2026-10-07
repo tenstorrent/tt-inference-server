@@ -124,7 +124,7 @@ def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed) -> dict:
     if seed is None or "seed" in gen_kwargs:
         return gen_kwargs
     out = dict(gen_kwargs)
-    out["seed"] = str(seed)
+    out["seed"] = seed
     return out
 
 
@@ -368,9 +368,14 @@ def build_eval_command(
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 
-    # build gen_kwargs string
-    gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
-    gen_kwargs_str = ",".join(gen_kwargs_list)
+    # Nested mappings require a complete JSON object in lm-eval's CLI.
+    # Keep the existing flat key=value format for other harness versions.
+    if any(isinstance(value, dict) for value in effective_gen_kwargs.values()):
+        gen_kwargs_str = json.dumps(effective_gen_kwargs)
+    else:
+        gen_kwargs_str = ",".join(
+            f"{key}={value}" for key, value in effective_gen_kwargs.items()
+        )
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
