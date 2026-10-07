@@ -615,6 +615,7 @@ templates:
         GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768"  # warm the benchmark ISL shapes at boot (one eager prefill each); needs tt-metal arg/gemma4_prefill_warmup_ladder
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
@@ -716,6 +717,7 @@ templates:
         GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768"  # warm the benchmark ISL shapes at boot (one eager prefill each); needs tt-metal arg/gemma4_prefill_warmup_ladder
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
@@ -1193,6 +1195,7 @@ templates:
         GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768"  # warm the benchmark ISL shapes at boot (one eager prefill each); needs tt-metal arg/gemma4_prefill_warmup_ladder
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
@@ -1245,6 +1248,7 @@ templates:
         GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
         GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
         GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768"  # warm the benchmark ISL shapes at boot (one eager prefill each); needs tt-metal arg/gemma4_prefill_warmup_ladder
         GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
