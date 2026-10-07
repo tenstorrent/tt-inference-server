@@ -82,7 +82,10 @@
       "MiniMaxAI/MiniMax-M3",
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
-      "google/gemma-4-12B-it"
+      "google/gemma-4-12B-it",
+      "tiiuae/Falcon3-1B-Instruct",
+      "tiiuae/Falcon3-3B-Instruct",
+      "tiiuae/Falcon3-10B-Instruct"
     ]
   },
   "available_markers": {
@@ -859,6 +862,36 @@
       "id_name": "Qwen--Qwen2.5-7B-Instruct-1M",
       "weights": [
         "Qwen/Qwen2.5-7B-Instruct-1M"
+      ]
+    },
+    "tiiuae/Falcon3-1B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-1B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-1B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-3B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-3B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-3B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-10B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-10B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-10B-Instruct"
       ]
     }
   },

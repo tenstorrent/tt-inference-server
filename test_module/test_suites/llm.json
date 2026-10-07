@@ -620,6 +620,48 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-1B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-3B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-10B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }
