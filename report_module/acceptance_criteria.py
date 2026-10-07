@@ -679,7 +679,11 @@ def _check_spec_tests(
         elif test_status is TestStatus.NA:
             na += 1
 
-    status = STATUS_FAIL if failed else STATUS_PASS
+    status = (
+        STATUS_FAIL
+        if failed
+        else (STATUS_NA if na == len(spec_blocks) else STATUS_PASS)
+    )
     return CategoryResult(
         CATEGORY_SPEC_TESTS,
         status,

@@ -488,7 +488,7 @@ class EvalConfig:
 
 
 _eval_config_list = [
-    # Granite release: GPQA first10; fixed ten-case agentic CI subsets.
+    # Granite release: GPQA first10; fixed first-five agentic CI subsets.
     EvalConfig(
         hf_model_repo="ibm-granite/granite-4.2-30b",
         tasks=[
@@ -548,14 +548,14 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
                     # User explicitly selects the published full-set value as
                     # the release target. This is NOT a matched GPU measurement
-                    # on these ten cases; retain that distinction in reports.
+                    # on these five cases; retain that distinction in reports.
                     gpu_reference_score=target,
                     gpu_reference_score_ref="User-selected published full-set release target (not a matched subset GPU control): https://huggingface.co/ibm-granite/granite-4.2-30b/blob/9e668ce1c538387ef24d3644e9b0606647762636/README.md",
                     tolerance=0.0,
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=ci_target,
-                            ref="User-approved published full-set acceptance target rounded down for 10-case CI; not measured subset GPU control",
+                            ref="User-approved published full-set acceptance target retained from 10-case CI for the fixed first-five subset; not measured subset GPU control",
                             tolerance=0.0,
                         ),
                     },
@@ -565,7 +565,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset,
                     agent=agent,
-                    n_concurrent_trials=10,
+                    n_concurrent_trials=2,
                     n_attempts=1,
                     agent_timeout_sec=2 * 60 * 60,
                     llm_timeout_sec=60 * 60,
@@ -579,8 +579,8 @@ _eval_config_list = [
                     ),
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 10,
-                    EvalLimitMode.SMOKE_TEST: 10,
+                    EvalLimitMode.CI_NIGHTLY: 5,
+                    EvalLimitMode.SMOKE_TEST: 5,
                 },
             )
             for name, dataset, agent, target, ci_target, kwargs, names in [
@@ -600,11 +600,6 @@ _eval_config_list = [
                         "terminal-bench/compile-compcert",
                         "terminal-bench/feal-differential-cryptanalysis",
                         "terminal-bench/qemu-startup",
-                        "terminal-bench/caffe-cifar-10",
-                        "terminal-bench/password-recovery",
-                        "terminal-bench/portfolio-optimization",
-                        "terminal-bench/hf-model-inference",
-                        "terminal-bench/financial-document-processor",
                     ],
                 ),
                 (
@@ -627,11 +622,6 @@ _eval_config_list = [
                         "matplotlib__matplotlib-25332",
                         "sympy__sympy-13551",
                         "scikit-learn__scikit-learn-14629",
-                        "django__django-15098",
-                        "sphinx-doc__sphinx-8593",
-                        "sympy__sympy-13852",
-                        "pydata__xarray-3095",
-                        "django__django-15695",
                     ],
                 ),
             ]

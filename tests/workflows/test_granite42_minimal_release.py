@@ -28,6 +28,7 @@ def test_granite_release_resolves_demo_and_preserves_capacity_and_benchmarks():
         catalog_name="Shield",
     )
     device = spec.device_model_spec
+    assert "not qualified" in spec.metadata["spec_tests_skip_reason"]
     assert spec.status == ModelStatusTypes.FUNCTIONAL
     assert spec.impl.code_path == "models/demos/granite42_30b_qb2"
     assert device.max_concurrency == 16
@@ -47,7 +48,7 @@ def test_granite_release_resolves_demo_and_preserves_capacity_and_benchmarks():
     ]
 
 
-def test_granite_ten_case_evals_preserve_generation_and_published_targets():
+def test_granite_fixed_subset_evals_preserve_generation_and_published_targets():
     gpqa, terminal, swe = _eval_config_map[MODEL].tasks
     assert gpqa.max_concurrent == 10
     assert gpqa.seed == 42
@@ -65,26 +66,34 @@ def test_granite_ten_case_evals_preserve_generation_and_published_targets():
         (terminal, 20.0, 10.0),
         (swe, 50.0, 40.0),
     ):
-        assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+        assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == (
+            10 if task is gpqa else 5
+        )
         reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
         assert reference["tolerance"] == 0.0
         assert reference["is_subset_reference"] is True
         assert "not measured subset GPU control" in reference["reference_ref"]
         assert accept_eval_score(reference, passing, n_total=10) is True
         assert accept_eval_score(reference, failing, n_total=10) is False
+        if task is not gpqa:
+            required = 1 if task is terminal else 2
+            assert accept_eval_score(reference, required * 20.0, n_total=5) is True
+            assert (
+                accept_eval_score(reference, (required - 1) * 20.0, n_total=5) is False
+            )
         full_reference = resolve_eval_reference(task.score, None)
         assert full_reference["reference_score"] == task.score.published_score
         assert full_reference["is_subset_reference"] is False
     for task in (terminal, swe):
         config = task.agentic_eval_config
         names = config.task_names_map[EvalLimitMode.CI_NIGHTLY]
-        assert len(names) == len(set(names)) == 10
-        assert config.n_concurrent_trials == 10
+        assert len(names) == len(set(names)) == 5
+        assert config.n_concurrent_trials == 2
         assert config.agent_timeout_sec == 7200
         assert config.llm_timeout_sec == 3600
 
 
-def test_granite_ci_commands_select_ten_cases_at_concurrency_ten():
+def test_granite_ci_commands_select_fixed_subsets():
     from types import SimpleNamespace
 
     from llm_module.drivers.agentic import resolve_n_tasks, resolve_task_names
@@ -113,5 +122,5 @@ def test_granite_ci_commands_select_ten_cases_at_concurrency_ten():
     assert command[command.index("--limit") + 1] == "10"
     assert "num_concurrent=10" in command[command.index("--model_args") + 1]
     for task in (terminal, swe):
-        assert resolve_n_tasks(task, runtime) == 10
-        assert len(resolve_task_names(task, runtime)) == 10
+        assert resolve_n_tasks(task, runtime) == 5
+        assert len(resolve_task_names(task, runtime)) == 5

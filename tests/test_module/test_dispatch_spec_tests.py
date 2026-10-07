@@ -145,3 +145,24 @@ def test_raising_case_is_rc1(monkeypatch):
     assert block is not None
     assert block.data["status"] == "error"
     assert block.data["error"]["message"] == "kaboom"
+
+
+def test_explicit_model_scope_emits_na_without_resolving_or_running_suites(monkeypatch):
+    ctx = _ctx()
+    ctx.model_spec.metadata = {"spec_tests_skip_reason": "User-selected subset"}
+    emitted = []
+    monkeypatch.setattr(
+        dispatch, "accept_blocks", lambda blocks, **kw: emitted.extend(blocks)
+    )
+
+    def unexpected(_):
+        raise AssertionError("Excluded suites must not be loaded or run")
+
+    monkeypatch.setattr(dispatch, "_resolve_spec_test_suites", unexpected)
+    rc, block = dispatch.run_spec_tests(ctx)
+    assert rc == 0
+    assert emitted == [block]
+    assert block.kind == "spec_tests"
+    assert block.data["status"] == "na"
+    assert block.data["success"] is False
+    assert block.data["reason"] == "User-selected subset"

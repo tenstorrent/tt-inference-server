@@ -485,7 +485,7 @@ def test_spec_na_is_non_blocking():
     accepted, blockers, cats = acceptance_criteria_check(schema)
     cat = {c.name: c for c in cats}[CATEGORY_SPEC_TESTS]
     assert accepted is True and blockers == {}
-    assert cat.na == 1 and cat.failed == 0
+    assert cat.na == 1 and cat.failed == 0 and cat.status == STATUS_NA
 
 
 def test_spec_error_blocks():

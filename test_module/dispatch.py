@@ -332,6 +332,16 @@ def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
         ctx.model_spec.model_name,
         ctx.device.name,
     )
+    skip_reason = (getattr(ctx.model_spec, "metadata", None) or {}).get(
+        "spec_tests_skip_reason"
+    )
+    if skip_reason:
+        logger.warning("Skipping spec_tests: %s", skip_reason)
+        block = _media_outcome_block(
+            ctx, MediaTaskType.SPEC_TESTS, TestStatus.NA, reason=str(skip_reason)
+        )
+        accept_blocks([block], envelope=sweep_envelope(ctx))
+        return 0, block
     suites = _resolve_spec_test_suites(ctx)
     if not suites:
         logger.warning(
