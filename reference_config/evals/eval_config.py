@@ -611,6 +611,17 @@ _eval_config_list = [
                     {
                         "version": MINI_SWE_AGENT_VERSION,
                         "config": {
+                            "environment": {
+                                "env": {
+                                    # Match the prepared SWE-bench environment
+                                    # activated by its verifier. Mini executes
+                                    # non-login shells and does not expand $PATH.
+                                    "PATH": "/opt/miniconda3/envs/testbed/bin:"
+                                    "/root/.local/bin:/opt/miniconda3/bin:"
+                                    "/usr/local/sbin:/usr/local/bin:"
+                                    "/usr/sbin:/usr/bin:/sbin:/bin",
+                                }
+                            },
                             "model": {
                                 "model_kwargs": {
                                     "temperature": 1.0,
