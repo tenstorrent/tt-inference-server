@@ -182,3 +182,20 @@ def test_agentic_failure_keeps_ci_reference_and_remains_a_failure():
     assert block.data["score"] is None
     assert block.data["success"] is False
     assert block.data["subprocess_rc"] == 7
+
+
+def test_granite_direct_swe_candidate_keeps_other_reasoning_policies():
+    gpqa, terminal, swe = _eval_config_map[MODEL].tasks
+    assert gpqa.gen_kwargs["chat_template_kwargs"] == {
+        "enable_thinking": True,
+        "low_effort": False,
+    }
+    assert "extra_body" not in terminal.agentic_eval_config.agent_kwargs["llm_kwargs"]
+    kwargs = swe.agentic_eval_config.agent_kwargs["config"]["model"]["model_kwargs"]
+    assert kwargs == {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "extra_body": {
+            "chat_template_kwargs": {"enable_thinking": False, "low_effort": False}
+        },
+    }
