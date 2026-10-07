@@ -1461,6 +1461,10 @@ templates:
       vllm_args:
         # qwen38_27b_t3k pages its KV cache in fixed 32-token pages.
         block_size: "32"
+        # vLLM keeps prefix caching opt-in for hybrid models: EngineArgs computes its default
+        # as `is_prefix_caching_supported and not is_hybrid`, and the 48 GDN layers make this
+        # model hybrid, so without this the flag is off however the model declares itself.
+        enable_prefix_caching: true
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
