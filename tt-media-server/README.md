@@ -586,6 +586,47 @@ curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
 {"text": "Hello world", "response_format": "verbose_json"}
 ```
 
+## Qwen3-TTS (12Hz 1.7B-Base)
+
+Runner `tt-qwen3-tts` (`tt_model_runners/qwen3_tts_runner.py`), same `POST /v1/audio/speech` endpoint and response
+formats as above. tt-metal code: `models/demos/qwen3_tts` (weights download at a pinned Hugging Face revision; license
+Apache-2.0). Batch 1 per worker.
+
+```bash
+MODEL_RUNNER=tt-qwen3-tts MODEL_WEIGHTS_PATH=Qwen/Qwen3-TTS-12Hz-1.7B-Base DEVICE=n150 ./run_uvicorn.sh
+```
+
+Extra request fields:
+
+| Parameter | Description |
+|---|---|
+| `speaker_id` | Preset voice (default `jim`), or a language name (`english`, `japanese`, ...) to force the language with the default voice. |
+| `voice_clone_audio` + `voice_clone_text` | Ad-hoc voice clone: base64 WAV/MP3/FLAC (up to ~12 s) and its transcript. Both are required. |
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/v1/audio/speech' \
+  -H 'Authorization: Bearer your-secret-key' -H 'Content-Type: application/json' \
+  -d '{"text": "Could we push the meeting back to Thursday?", "speaker_id": "jim"}' --output qwen3.wav
+```
+
+Environment variables (runner):
+
+| Variable | Default | Effect |
+|---|---|---|
+| `QWEN3_TTS_LANGUAGE` | auto | Force a language; otherwise Japanese script selects `japanese`, everything else `english`. |
+| `TT_QWEN3_DEVICE_DECODE` | `1` | Decode audio on the device; `0` falls back to the CPU decoder (slower). |
+| `TT_QWEN3_DEVICE_DECODE_MODE` | `continue` | `continue`: exact CPU front-end + device back-end; `full`: whole decoder on device. |
+| `TT_QWEN3_MAX_NEW_TOKENS` | `256` | Max codec frames per request (12.5 frames per second of audio). |
+| `TT_QWEN3_SEED` | unset | Fixed RNG seed for reproducible sampling. |
+| `TT_QWEN3_DECODE_COMPARE` | `0` | Log device-vs-CPU decode SNR per request (debug; adds latency). |
+
+The device decoder is built and warmed **before** the talker's traces are captured; buffers allocated after a trace
+capture can be overwritten when the trace replays. Prompts are limited to 512 prefill tokens.
+
+Request time, Wormhole N150 config (one Galaxy chip), 1.7B, jim voice, 1 torch thread (server default), 2026-10-07,
+tt-metal `4f23092fc4c`: "Hello." 0.59 s, "Could we push the meeting back to Thursday?" 1.73 s (2.08 s audio),
+Japanese "こんにちは。今日はいい天気ですね。" 1.91 s (2.32 s audio). Benchmark workflow: TTFT ~1.0 s, RTR 1.07-1.13.
+
 # Image search test call
 
 The image search API uses a CNN model to search for similar images. It supports multiple input methods.
