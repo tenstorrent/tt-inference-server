@@ -89,7 +89,7 @@ def test_granite_fixed_subset_evals_preserve_generation_and_published_targets():
         names = config.task_names_map[EvalLimitMode.CI_NIGHTLY]
         assert len(names) == len(set(names)) == 5
         assert config.n_concurrent_trials == 2
-        assert config.agent_timeout_sec == 7200
+        assert config.agent_timeout_sec == (2700 if task is terminal else 7200)
         assert config.llm_timeout_sec == 3600
 
 
@@ -198,6 +198,12 @@ def test_granite_direct_agentic_candidate_keeps_gpqa_reasoning():
         },
     }
     kwargs = swe.agentic_eval_config.agent_kwargs["config"]["model"]["model_kwargs"]
+    assert (
+        swe.agentic_eval_config.agent_kwargs["config"]["environment"]["env"][
+            "PATH"
+        ].split(":")[0]
+        == "/opt/miniconda3/envs/testbed/bin"
+    )
     assert kwargs == {
         "temperature": 1.0,
         "top_p": 0.95,
