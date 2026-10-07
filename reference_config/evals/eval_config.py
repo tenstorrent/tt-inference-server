@@ -367,6 +367,11 @@ class EvalTask:
     # acceptance; "should" failures are informational. Set by requirements-driven
     # runs from the document's per-eval priority; catalog tasks default to must.
     priority: str = "must"
+    # Input modalities the task needs beyond text (e.g. ["image"] for the
+    # lmms-eval vision tasks). None = text only. The eval runner skips a task
+    # whose modalities the serving entry does not support, so one EvalConfig
+    # per HF repo can carry both the text rail's and the VLM rail's tasks.
+    modalities: Optional[List[str]] = None
     # Per-device overrides, keyed by device name (e.g. "GALAXY",
     # "SUPER_CLUSTER"; matched case-insensitively). EvalTask fields follow a
     # three-tier device-variance model:
@@ -6387,6 +6392,132 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                modalities=["image"],
+                # Informational until a GPU reference exists: the Gemma 4 model card
+                # publishes MMMU Pro and MATH-Vision, not this task. ChartQA relaxed accuracy.
+                priority="should",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "relaxed_overall,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<end_of_turn>",
+                },
+                gen_kwargs={
+                    "stop": "<end_of_turn>",
+                    "stream": "False",
+                    "max_new_tokens": "512",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                modalities=["image"],
+                # Informational until a GPU reference exists: the Gemma 4 model card
+                # publishes MMMU Pro and MATH-Vision, not this task. DocVQA ANLS.
+                priority="should",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "anls,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<end_of_turn>",
+                },
+                gen_kwargs={
+                    "stop": "<end_of_turn>",
+                    "stream": "False",
+                    "max_new_tokens": "512",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="mmmu_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                modalities=["image"],
+                # Informational until a GPU reference exists: the Gemma 4 model card
+                # publishes MMMU Pro and MATH-Vision, not this task. MMMU validation accuracy (the card's 76.9 is MMMU Pro).
+                priority="should",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "mmmu_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<end_of_turn>",
+                },
+                gen_kwargs={
+                    "stop": "<end_of_turn>",
+                    "stream": "False",
+                    "max_new_tokens": "512",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],

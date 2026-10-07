@@ -384,3 +384,96 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# =============================================================================
+# Gemma 4 31B text + image (SigLIP tower on device). Same code and settings as
+# the tt_transformers text entry in llm.yaml (QB2 and Blackhole Galaxy release
+# rail); only the serving class differs. The 12B "unified" checkpoint has no
+# vision tower (raw patches are projected by linear layers), so it has no VLM
+# entry here.
+# =============================================================================
+- weights:
+    - google/gemma-4-31B-it
+  model_display_name: gemma-4-31B-it
+  impl: gemma4_vision
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2  # QB2 (2x P300, 4-chip TP mesh); mirrors the llm.yaml text block
+      max_concurrency: 32
+      max_context: 262144  # 256 * 1024
+      env_vars:
+        MESH_DEVICE: "P150x4"
+        # Route every Gemma4 arch name to the multimodal serving class (the plugin
+        # maps them to the text-only class by default).
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "393216"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 512000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        # Thinking off by default: the lmms-eval vision tasks score message.content
+        # within a 512-token budget, which an open thought channel would consume.
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4}'
+        mm-processor-cache-gb: 0
+    - device: BLACKHOLE_GALAXY  # DP=4 x TP=8; mirrors the llm.yaml text block
+      max_concurrency: 128  # 32 x 4 engines
+      max_context: 262144
+      env_vars:
+        TT_MODEL_CLASS_OVERRIDES: "Gemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,Gemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForCausalLM=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4ForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration,TTGemma4UnifiedForConditionalGeneration=models.demos.gemma4.tt.generator_vllm:Gemma4VisionForConditionalGeneration"
+        GEMMA4_CCL_TOPOLOGY: "linear"
+        GEMMA4_PAGE_BLOCK_SIZE: "64"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"
+        GEMMA4_VLLM_SINGLE_CHUNK: "0"
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 960000000
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+      vllm_args:
+        data_parallel_size: 4
+        max_num_seqs: 32
+        async_scheduling: true
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": false}'
+        reasoning-parser: gemma4
+        enable_chunked_prefill: true
+        max_num_batched_tokens: 16384
+        long_prefill_token_threshold: 4096
+        limit-mm-per-prompt: '{"image": 4}'
+        mm-processor-cache-gb: 0
+  model_type: VLM
+  status: EXPERIMENTAL
+  supported_modalities:
+    - text
+    - image
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
