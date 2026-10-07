@@ -592,7 +592,16 @@ _eval_config_list = [
                     20.0,
                     {
                         "temperature": 1.0,
-                        "llm_kwargs": {"top_p": 0.95, "timeout": 3600},
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "timeout": 3600,
+                            "extra_body": {
+                                "chat_template_kwargs": {
+                                    "enable_thinking": True,
+                                    "low_effort": True,
+                                }
+                            },
+                        },
                     },
                     [
                         "terminal-bench/break-filter-js-from-html",
@@ -612,7 +621,16 @@ _eval_config_list = [
                         "version": MINI_SWE_AGENT_VERSION,
                         "config": {
                             "model": {
-                                "model_kwargs": {"temperature": 1.0, "top_p": 0.95}
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True,
+                                            "low_effort": True,
+                                        }
+                                    },
+                                }
                             }
                         },
                     },

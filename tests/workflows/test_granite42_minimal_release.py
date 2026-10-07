@@ -164,3 +164,19 @@ def test_agentic_report_keeps_effective_ci_reference_after_consolidation():
     assert "GPU Reference Score" not in markdown
     assert "round the required correct count down" in markdown
     assert "equivalent to the GPU" not in markdown
+
+
+def test_low_effort_candidate_changes_only_agentic_chat_template_policy():
+    gpqa, terminal, swe = _eval_config_map[MODEL].tasks
+    expected = {"chat_template_kwargs": {"enable_thinking": True, "low_effort": True}}
+    assert (
+        terminal.agentic_eval_config.agent_kwargs["llm_kwargs"]["extra_body"]
+        == expected
+    )
+    assert (
+        swe.agentic_eval_config.agent_kwargs["config"]["model"]["model_kwargs"][
+            "extra_body"
+        ]
+        == expected
+    )
+    assert gpqa.gen_kwargs["chat_template_kwargs"]["low_effort"] is False
