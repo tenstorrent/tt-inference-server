@@ -165,6 +165,18 @@ templates:
       max_concurrency: 32
       max_context: 32768  # 32 * 1024
       default_impl: true
+    - device: GALAXY
+      max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+      vllm_args:
+        data_parallel_size: 4
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 100000000
+        fabric_config: FABRIC_1D_RING
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -189,6 +201,26 @@ templates:
         mm-processor-cache-gb: 0
       override_tt_config:
         trace_region_size: 10000000
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 60000000
+    - device: GALAXY
+      max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+      vllm_args:
+        data_parallel_size: 4
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 100000000
+        fabric_config: FABRIC_1D_RING
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -198,6 +230,47 @@ templates:
   metadata:
     Qwen/Qwen2.5-VL-7B-Instruct:
       tool_call_parser_name: hermes
+
+- weights:
+    - allenai/olmOCR-2-7B-1025
+  impl: tt_transformers
+  inference_engine: VLLM
+  model_type: VLM
+  device_model_specs:
+    - device: N300
+      max_concurrency: 32
+      max_context: 32768  # 32 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 10000000
+    - device: T3K
+      max_concurrency: 32
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      vllm_args:
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 60000000
+    - device: GALAXY
+      max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+      vllm_args:
+        data_parallel_size: 4
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 100000000
+        fabric_config: FABRIC_1D_RING
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  supported_modalities:
+    - text
+    - image
 
 - weights:
     - Qwen/Qwen2.5-VL-32B-Instruct
@@ -211,6 +284,18 @@ templates:
       default_impl: true
       vllm_args:
         mm-processor-cache-gb: 0
+    - device: GALAXY
+      max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+      vllm_args:
+        data_parallel_size: 4
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 100000000
+        fabric_config: FABRIC_1D_RING
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
@@ -235,6 +320,18 @@ templates:
         mm-processor-cache-gb: 0
       override_tt_config:
         trace_region_size: 28467200
+    - device: GALAXY
+      max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
+      max_context: 131072  # 128 * 1024
+      default_impl: true
+      env_vars:
+        TT_MM_THROTTLE_PERF: 5
+      vllm_args:
+        data_parallel_size: 4
+        mm-processor-cache-gb: 0
+      override_tt_config:
+        trace_region_size: 100000000
+        fabric_config: FABRIC_1D_RING
     - device: GPU
       max_concurrency: 32
       max_context: 131072  # 128 * 1024
