@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -36,6 +37,11 @@ def _resolve_auth_token(server: ServerConnection) -> str:
     return (
         server.auth_token or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     )
+
+
+def benchmark_cache_salt(config: LLMRunConfig) -> str:
+    """A prefix-cache salt unique to this sweep point and driver invocation."""
+    return f"bench-isl{config.isl}-osl{config.osl}-c{config.max_concurrency}-{uuid.uuid4().hex[:12]}"
 
 
 def build_vllm_bench_serve_argv(
@@ -128,12 +134,6 @@ def build_vllm_bench_serve_argv(
                 str(config.osl),
             ]
         )
-        if not config.token_timing:
-            # Per-point prompts (see LLMRunConfig.prompt_seed): the fixed
-            # default seed lets a point's prompts prefix-match an earlier
-            # point's and measure the prefix cache rather than prefill.
-            # Token-timing runs keep their fixed seed for warmup + repeats.
-            cmd.extend(["--seed", str(config.effective_prompt_seed)])
 
     is_remote_base_url = uses_remote_base_url(
         server.url_with_port,
@@ -143,6 +143,9 @@ def build_vllm_bench_serve_argv(
         cmd.append("--trust-remote-code")
 
     extra_body = {"seed": 42} if config.token_timing else {}
+    # Benchmarks run with the prefix cache effectively off for their own
+    # requests (see LLMRunConfig.cache_salt); the server keeps its default.
+    extra_body["cache_salt"] = config.cache_salt or benchmark_cache_salt(config)
     if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])

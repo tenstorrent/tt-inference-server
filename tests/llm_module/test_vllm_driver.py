@@ -40,7 +40,7 @@ def test_remote_console_uses_base_url_and_skips_ready_check():
     assert cmd[cmd.index("--ready-check-timeout-sec") + 1] == "0"
     assert "--host" not in cmd
     assert "--port" not in cmd
-    assert "--extra-body" not in cmd
+    assert set(json.loads(cmd[cmd.index("--extra-body") + 1])) == {"cache_salt"}
     header_values = cmd[cmd.index("--header") + 1 :]
     assert "Accept-Encoding=identity" in header_values
     assert "Authorization=Bearer sk-test" in header_values
@@ -63,9 +63,9 @@ def test_local_server_uses_host_port_and_truncation():
     assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
     assert cmd[cmd.index("--port") + 1] == "8000"
     assert "--base-url" not in cmd
-    assert json.loads(cmd[cmd.index("--extra-body") + 1]) == {
-        "truncate_prompt_tokens": 128
-    }
+    body = json.loads(cmd[cmd.index("--extra-body") + 1])
+    assert body["truncate_prompt_tokens"] == 128
+    assert body["cache_salt"].startswith("bench-")
     assert "--trust-remote-code" not in cmd
     header_values = cmd[cmd.index("--header") + 1 :]
     assert header_values == ["Accept-Encoding=identity"]
@@ -195,10 +195,9 @@ def test_token_timing_uses_fixed_output_and_request_seed():
         result_filename=_result_path(),
     )
     assert "--ignore-eos" in cmd
-    assert json.loads(cmd[cmd.index("--extra-body") + 1]) == {
-        "seed": 42,
-        "truncate_prompt_tokens": 128,
-    }
+    body = json.loads(cmd[cmd.index("--extra-body") + 1])
+    assert body["seed"] == 42 and body["truncate_prompt_tokens"] == 128
+    assert body["cache_salt"].startswith("bench-")
 
 
 def test_token_timing_runs_adapter_with_the_selected_client_interpreter(
@@ -294,32 +293,34 @@ def _seed(cmd):
     return cmd[cmd.index("--seed") + 1]
 
 
-class TestPromptSeedPerPoint:
-    def test_each_sweep_point_gets_its_own_prompts(self):
-        # Same seed across points makes prompt i at a longer ISL an extension of
-        # prompt i at a shorter one, so a cached prefix stands in for prefill.
-        seeds = {
-            _seed(_argv(_config(isl=isl, osl=osl, max_concurrency=c)))
-            for isl, osl, c in [
-                (2048, 128, 1),
-                (4096, 128, 1),
-                (4096, 128, 32),
-                (4096, 1024, 1),
-            ]
+def _salt(cmd):
+    return json.loads(cmd[cmd.index("--extra-body") + 1])["cache_salt"]
+
+
+class TestBenchmarkCacheSalt:
+    """Benchmarks measure prefill with the prefix cache effectively off for
+    their own requests, while the serving entry keeps prefix caching on."""
+
+    def test_every_request_carries_a_salt_scoped_to_point_and_invocation(self):
+        a = _salt(_argv(_config(isl=4096)))
+        b = _salt(_argv(_config(isl=4096)))
+        assert a.startswith("bench-isl4096-osl128-c1-")
+        assert b.startswith("bench-isl4096-osl128-c1-")
+        assert a != b  # a repeat run against a live server must not hit its own blocks
+
+    def test_points_never_share_a_salt(self):
+        points = [(2048, 128, 1), (4096, 128, 1), (4096, 128, 32)]
+        salts = {
+            _salt(_argv(_config(isl=i, osl=o, max_concurrency=c))) for i, o, c in points
         }
-        assert len(seeds) == 4
+        assert len(salts) == 3
 
-    def test_seed_is_deterministic_for_a_point(self):
-        assert _seed(_argv(_config(isl=8192))) == _seed(_argv(_config(isl=8192)))
-        assert "--seed" in _argv(_config()) and _argv(_config()).count("--seed") == 1
+    def test_explicit_salt_pins_it(self):
+        assert _salt(_argv(_config(cache_salt="pinned"))) == "pinned"
 
-    def test_explicit_prompt_seed_wins(self):
-        assert _seed(_argv(_config(isl=8192, prompt_seed=7))) == "7"
-
-    def test_token_timing_keeps_its_fixed_seed(self):
-        cmd = _argv(_config(token_timing=True))
-        assert cmd.count("--seed") == 1 and _seed(cmd) == "0"
-
-    def test_custom_dataset_runs_do_not_seed_prompts(self):
-        cmd = _argv(_config(custom_dataset_path=Path("/tmp/prompts.jsonl")))
-        assert "--seed" not in cmd
+    def test_prompts_are_unchanged(self):
+        # Prompt generation keeps vLLM's default seed so results stay comparable
+        # with the measured targets; only the cache keys are isolated.
+        assert "--seed" not in _argv(_config())
+        custom = _argv(_config(custom_dataset_path=Path("/tmp/prompts.jsonl")))
+        assert _salt(custom).startswith("bench-")

@@ -58,22 +58,15 @@ class LLMRunConfig:
     # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
     # own vocabulary. None = not measured.
     goodput: Optional[GoodputSlo] = field(default=None, compare=False)
-    # Seed for the benchmark's synthetic (random-dataset) prompts. None derives
-    # a seed from (isl, osl, max_concurrency) so every sweep point gets its
-    # own prompts: vLLM's random dataset builds each prompt as an arithmetic
-    # token run from a seeded offset, so with one shared seed prompt i at a
-    # longer ISL is an extension of prompt i at a shorter ISL and, with prefix
-    # caching on, later points measure cache-assisted TTFTs instead of cold
-    # prefill. A fixed value pins the prompts (repeat runs, comparisons).
-    prompt_seed: Optional[int] = None
-
-    @property
-    def effective_prompt_seed(self) -> int:
-        if self.prompt_seed is not None:
-            return int(self.prompt_seed)
-        return (self.isl * 1_000_003 + self.osl * 1_009 + self.max_concurrency) % (
-            2**31 - 1
-        )
+    # Per-request prefix-cache isolation. Benchmarks measure prefill, not the
+    # prefix cache, but the serving entries keep prefix caching on, and vLLM's
+    # random dataset makes prompt i at a longer ISL an extension of prompt i at
+    # a shorter ISL (same seed), so later sweep points would otherwise report
+    # cache-assisted TTFTs. vLLM scopes a request's cache keys by its
+    # ``cache_salt``; the driver sends one unique to this sweep point and
+    # driver invocation, so no benchmark request can hit blocks from another
+    # point, an earlier run, or the evals. None = generate; set to pin.
+    cache_salt: Optional[str] = None
 
 
 @dataclass(frozen=True)
