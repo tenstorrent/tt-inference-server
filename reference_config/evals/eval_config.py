@@ -8332,6 +8332,51 @@ _eval_config_list = [
     # 26B-A4B / 12B still carry the 128K (96K+32K) placeholder budgets.
     # =========================================================================
     EvalConfig(
+        hf_model_repo="Qwen/Qwen3.5-27B",
+        tasks=[
+            # Same task and sampling as Qwen/Qwen3.8-27B (same graph). The model
+            # card's Language table reports GPQA Diamond 85.5 for Qwen3.5-27B in
+            # its default thinking mode, and its recommended thinking sampling is
+            # temperature 1.0, top_p 0.95, top_k 20, max_tokens 81920. The same
+            # table reports MMLU-Pro 86.1 and IFEval 95.0; those are not enrolled
+            # here because the card does not state the shot count or harness.
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=85.5,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.5-27B/blob/fc05daec18b0a78c049392ed2e771dde82bdf654/README.md (Benchmark Results > Language, STEM & Reasoning: GPQA Diamond, Qwen3.5-27B column)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=5,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 80 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
         hf_model_repo="google/gemma-4-31B-it",
         tasks=[
             EvalTask(

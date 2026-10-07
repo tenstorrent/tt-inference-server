@@ -86,6 +86,7 @@ EXPECTED = {
         "mmlu_pro": 63.3,
     },
     "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
+    "Qwen/Qwen3.5-27B": {"r1_gpqa_diamond": 85.5},
 }
 
 # No authoritative source exists for any task, so every task stays NA.
