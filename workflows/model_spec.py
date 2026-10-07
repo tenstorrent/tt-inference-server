@@ -432,17 +432,6 @@ gemma4_dflash_contract_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/gemma4",
 )
-# Gemma 4 served as text + image: same models/demos/gemma4 code, selected
-# through TT_MODEL_CLASS_OVERRIDES -> Gemma4VisionForConditionalGeneration in
-# the vlm.yaml entry. A distinct impl id (like qwen36_blackhole_vlm) so the VLM
-# spec gets its own model_id and does not collide with the text spec on the
-# same (model_name, device). Selectable via --impl gemma4-vision.
-gemma4_vision_impl = ImplSpec(
-    impl_id="gemma4_vision",
-    impl_name="gemma4-vision",
-    repo_url="https://github.com/tenstorrent/tt-metal",
-    code_path="models/demos/gemma4",
-)
 # Dedicated Gemma 4 31B QB2 implementation from tt-metal PR #56765. Unlike the
 # two profiles above this is a separate code path (models/demos/gemma4_31b_qb2,
 # architectures TTGemma4QB2ForCausalLM), not another speculative profile over
@@ -474,7 +463,6 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash": gemma4_dflash_impl,
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
-    "gemma4_vision": gemma4_vision_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,

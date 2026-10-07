@@ -6400,7 +6400,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
-                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                # Only entries that declare the image modality run it.
                 modalities=["image"],
                 # Informational until a GPU reference exists: the Gemma 4 model card
                 # publishes MMMU Pro and MATH-Vision, not this task. ChartQA relaxed accuracy.
@@ -6429,7 +6429,11 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<end_of_turn>",
                     "stream": "False",
-                    "max_new_tokens": "512",
+                    # The entry serves with thinking on and lmms-eval's client sends no
+                    # per-request template kwargs, so give the thought channel room to
+                    # close (the client clamps at 4096); content is scored after the
+                    # reasoning parser strips the thought.
+                    "max_new_tokens": "4096",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -6442,7 +6446,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
-                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                # Only entries that declare the image modality run it.
                 modalities=["image"],
                 # Informational until a GPU reference exists: the Gemma 4 model card
                 # publishes MMMU Pro and MATH-Vision, not this task. DocVQA ANLS.
@@ -6471,7 +6475,11 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<end_of_turn>",
                     "stream": "False",
-                    "max_new_tokens": "512",
+                    # The entry serves with thinking on and lmms-eval's client sends no
+                    # per-request template kwargs, so give the thought channel room to
+                    # close (the client clamps at 4096); content is scored after the
+                    # reasoning parser strips the thought.
+                    "max_new_tokens": "4096",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
@@ -6484,7 +6492,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
-                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                # Only entries that declare the image modality run it.
                 modalities=["image"],
                 # Informational until a GPU reference exists: the Gemma 4 model card
                 # publishes MMMU Pro and MATH-Vision, not this task. MMMU validation accuracy (the card's 76.9 is MMMU Pro).
@@ -6513,7 +6521,11 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<end_of_turn>",
                     "stream": "False",
-                    "max_new_tokens": "512",
+                    # The entry serves with thinking on and lmms-eval's client sends no
+                    # per-request template kwargs, so give the thought channel room to
+                    # close (the client clamps at 4096); content is scored after the
+                    # reasoning parser strips the thought.
+                    "max_new_tokens": "4096",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -6922,7 +6934,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
-                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                # Only entries that declare the image modality run it.
                 modalities=["image"],
                 # Informational until a GPU reference exists: the Gemma 4 model card
                 # publishes MMMU Pro and MATH-Vision, not this task. ChartQA relaxed accuracy.
@@ -6951,7 +6963,11 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<end_of_turn>",
                     "stream": "False",
-                    "max_new_tokens": "512",
+                    # The entry serves with thinking on and lmms-eval's client sends no
+                    # per-request template kwargs, so give the thought channel room to
+                    # close (the client clamps at 4096); content is scored after the
+                    # reasoning parser strips the thought.
+                    "max_new_tokens": "4096",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
@@ -6964,7 +6980,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
-                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                # Only entries that declare the image modality run it.
                 modalities=["image"],
                 # Informational until a GPU reference exists: the Gemma 4 model card
                 # publishes MMMU Pro and MATH-Vision, not this task. DocVQA ANLS.
@@ -6993,7 +7009,11 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<end_of_turn>",
                     "stream": "False",
-                    "max_new_tokens": "512",
+                    # The entry serves with thinking on and lmms-eval's client sends no
+                    # per-request template kwargs, so give the thought channel room to
+                    # close (the client clamps at 4096); content is scored after the
+                    # reasoning parser strips the thought.
+                    "max_new_tokens": "4096",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
@@ -7006,7 +7026,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_VISION,
                 apply_chat_template=False,
                 use_chat_api=True,
-                # Vision rail only (impl gemma4_vision); the text entries skip it.
+                # Only entries that declare the image modality run it.
                 modalities=["image"],
                 # Informational until a GPU reference exists: the Gemma 4 model card
                 # publishes MMMU Pro and MATH-Vision, not this task. MMMU validation accuracy (the card's 76.9 is MMMU Pro).
@@ -7035,7 +7055,11 @@ _eval_config_list = [
                 gen_kwargs={
                     "stop": "<end_of_turn>",
                     "stream": "False",
-                    "max_new_tokens": "512",
+                    # The entry serves with thinking on and lmms-eval's client sends no
+                    # per-request template kwargs, so give the thought channel room to
+                    # close (the client clamps at 4096); content is scored after the
+                    # reasoning parser strips the thought.
+                    "max_new_tokens": "4096",
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,
