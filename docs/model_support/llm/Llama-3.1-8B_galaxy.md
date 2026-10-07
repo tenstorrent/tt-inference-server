@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Llama-3.1-8B`: [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) **(default)** 
 - `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 
-To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
+Weight variants use more than one released configuration; see the configuration table below.
 
 #### Useful links
 
@@ -16,10 +16,8 @@ To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
 `Llama-3.1-8B` is also supported on hardware:
 
 - [BH LoudBox](Llama-3.1-8B_p150x8.md)
-- [BH 4xP150](Llama-3.1-8B_p150x4.md)
 - [BH P300](Llama-3.1-8B_p300.md)
 - [BH QuietBox 2](Llama-3.1-8B_p300x2.md)
-- [P100](Llama-3.1-8B_p100.md)
 - [P150](Llama-3.1-8B_p150.md)
 - [WH LoudBox/QuietBox](Llama-3.1-8B_t3k.md)
 - [N150](Llama-3.1-8B_n150.md)
@@ -57,7 +55,7 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
+| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) |
 | Model Status | 🟡 Functional |
 | Max Batch Size | 128 |
 | Max Context Length | 131072 |
@@ -65,6 +63,12 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 | tt-metal Commit | `bac8b34` |
 | vLLM Commit | `7c6685a` |
 | Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.1-bac8b34-7c6685a` |
+
+#### Additional released configurations
+
+| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
+|---|---|---|---|---|---|---|
+| [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) | `tt-transformers` | 128 | 131072 | `bac8b34` | `7c6685a` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.11.0-bac8b34-7c6685a` |
 
 ---
 

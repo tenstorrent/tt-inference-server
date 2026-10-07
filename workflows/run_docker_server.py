@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+from utils.pinned_artifacts import get_pinned_revision
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -560,6 +561,15 @@ def generate_docker_run_command(
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
+        # New Hub caches can link repo blobs to a cache-wide sibling store.
+        # Keep that relative link chain valid inside the read-only mounts.
+        if setup_config.host_model_weights_snapshot_dir and get_pinned_revision(model_spec):
+            shared_blobs = setup_config.host_model_weights_mount_dir.parent / "blobs"
+            if shared_blobs.is_dir():
+                container_shared_blobs = setup_config.container_model_weights_mount_dir.parent / "blobs"
+                docker_command.extend([
+                    "--mount", f"type=bind,src={shared_blobs},dst={container_shared_blobs},readonly"
+                ])
 
     if quetzal_package_mount:
         docker_command.extend([

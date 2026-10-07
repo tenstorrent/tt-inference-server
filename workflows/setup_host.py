@@ -24,6 +24,7 @@ project_root = Path(__file__).resolve().parent.parent
 if project_root not in sys.path:
     sys.path.insert(0, str(project_root))
 
+from utils.pinned_artifacts import get_pinned_revision
 from workflows.model_spec import ModelSpec
 from workflows.utils import (
     get_default_persistent_volume_root,
@@ -34,6 +35,12 @@ from workflows.workflow_types import ModelSource, ModelType, WorkflowVenvType
 from workflows.workflow_venvs import VENV_CONFIGS
 
 logger = logging.getLogger("run_log")
+
+
+def _pinned_snapshot(hub_cache: Path, hf_repo: str, revision: str) -> Path:
+    return (
+        hub_cache / ("models--" + hf_repo.replace("/", "--")) / "snapshots" / revision
+    )
 
 
 def _dir_bytes(path: Path) -> int:
@@ -166,8 +173,17 @@ class SetupConfig:
             self.container_model_weights_mount_dir = (
                 self.container_readonly_model_weights_dir / self.model_spec.model_name
             )
-            snapshot_dir = resolve_hf_snapshot_dir(
-                self.model_spec.hf_weights_repo, Path(self.host_hf_cache)
+            revision = get_pinned_revision(self.model_spec)
+            snapshot_dir = (
+                _pinned_snapshot(
+                    Path(self.host_hf_cache) / "hub",
+                    self.model_spec.hf_weights_repo,
+                    revision,
+                )
+                if revision
+                else resolve_hf_snapshot_dir(
+                    self.model_spec.hf_weights_repo, Path(self.host_hf_cache)
+                )
             )
             if snapshot_dir:
                 self.update_host_model_weights_snapshot_dir(snapshot_dir)
@@ -197,6 +213,32 @@ class SetupConfig:
                 self.update_host_model_weights_mount_dir(Path(model_weights_dir))
         elif self.model_source == ModelSource.NOACTION.value:
             pass
+
+        # Host-volume downloads run as the runner UID. Mount the exact pinned
+        # snapshot read-only so the container UID never needs to create a second
+        # cache under a host-owned weights directory.
+        if (
+            self.host_model_volume_root
+            and not self.host_weights_dir
+            and not self.host_hf_cache
+            and self.model_source == ModelSource.HUGGINGFACE.value
+        ):
+            revision = get_pinned_revision(self.model_spec)
+            if revision:
+                self.container_readonly_model_weights_dir = (
+                    self.containter_user_home / "readonly_weights_mount"
+                )
+                self.container_model_weights_mount_dir = (
+                    self.container_readonly_model_weights_dir
+                    / self.model_spec.model_name
+                )
+                self.update_host_model_weights_snapshot_dir(
+                    _pinned_snapshot(
+                        self.host_model_volume_root / "weights" / "hub",
+                        self.model_spec.hf_weights_repo,
+                        revision,
+                    )
+                )
 
     def _validate_data(self):
         # Validate that model_source is a valid enum value
@@ -306,6 +348,29 @@ class HostSetupManager:
             )
             return False
 
+        index_name = self.model_spec.metadata.get(
+            "checkpoint_index", "model.safetensors.index.json"
+        )
+        require_index = bool(self.model_spec.metadata.get("checkpoint_index"))
+        if get_pinned_revision(self.model_spec) and (
+            require_index or (host_weights_dir / index_name).exists()
+        ):
+            # A matching glob accepts a partial download or a broken symlink.
+            # Require every shard named by the pinned checkpoint's index.
+            try:
+                index = json.loads((host_weights_dir / index_name).read_text())
+                shards = set(index["weight_map"].values())
+                if not shards:
+                    raise ValueError("checkpoint index has no weight shards")
+                for filename in shards | {"config.json", "tokenizer.json"}:
+                    path = host_weights_dir / filename
+                    with path.open("rb") as handle:
+                        if not handle.read(1):
+                            raise ValueError(f"empty checkpoint file: {filename}")
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                logger.warning("Incomplete pinned checkpoint: %s", exc)
+                return False
+
         # Define supported model formats
         model_formats = [
             {
@@ -364,6 +429,14 @@ class HostSetupManager:
 
     def check_setup(self) -> bool:
         if self.setup_config.model_source == ModelSource.HUGGINGFACE.value:
+            if (
+                not self.setup_config.host_weights_dir
+                and self.setup_config.host_model_weights_snapshot_dir
+                and get_pinned_revision(self.model_spec)
+            ):
+                # Always let HF verify/resume the immutable snapshot; a single
+                # downloaded shard must not hide a partial earlier download.
+                return False
             if (
                 not self.setup_config.host_hf_cache
                 and not self.setup_config.host_model_volume_root
@@ -629,6 +702,27 @@ class HostSetupManager:
             f"⛔ 'hf' CLI not found at: {hf_exec}. Check HF_SETUP venv installation."
         )
         hf_repo = self.model_spec.hf_weights_repo
+        revision = get_pinned_revision(self.model_spec)
+        if revision:
+            snapshot_dir = self.setup_config.host_model_weights_snapshot_dir
+            hub_cache = snapshot_dir.parents[2]
+            cmd = [
+                str(hf_exec),
+                "download",
+                hf_repo,
+                "--revision",
+                revision,
+                "--cache-dir",
+                str(hub_cache),
+                "--exclude",
+                "original/**",
+            ]
+            logger.info("Downloading pinned checkpoint: %s", shlex.join(cmd))
+            result = subprocess.run(cmd)
+            if result.returncode != 0 or not self.check_model_weights_dir(snapshot_dir):
+                raise RuntimeError("Pinned checkpoint download failed or is incomplete")
+            logger.info("Using pinned read-only weights: %s", snapshot_dir)
+            return
         if self.setup_config.host_hf_cache:
             os.environ["HOST_HF_HOME"] = self.setup_config.host_hf_cache
             os.environ["HF_HOME"] = self.setup_config.host_hf_cache

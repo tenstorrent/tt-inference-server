@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
 from workflow_module.exabox_merged_report import (
     SMOKE_FLAG,
     _strip_server_url,
@@ -16,6 +17,7 @@ from workflow_module.exabox_merged_report import (
     deduplicate,
     discover_test_reports,
     load_test_reports,
+    main,
     merge_reports,
     mergeable,
     resolve_model_status,
@@ -150,26 +152,6 @@ def test_a_failed_test_is_still_merged():
     """Failing its acceptance check does not make a report less of a
     measurement — the filter is about shape, not outcome."""
     assert mergeable(_report(accuracy_check=3, score=40.0))[0] is True
-
-
-def test_discovery_skips_workflow_logs(tmp_path):
-    """Each artifact re-uploads run.py's own reports_output/ tree under
-    workflow_logs/, holding the same results under a different name. Taking
-    both would duplicate every section."""
-    _write(tmp_path, "report_x-tests_m_t_1", "report_evals_0_1.json", _report())
-    nested = (
-        tmp_path
-        / "report_x-tests_m_t_1"
-        / "workflow_logs"
-        / "reports_output"
-        / "evals"
-        / "data"
-    )
-    nested.mkdir(parents=True)
-    (nested / "report_data_gemma_2026.json").write_text(json.dumps(_report()))
-
-    found = discover_test_reports(tmp_path)
-    assert [p.name for p in found] == ["report_evals_0_1.json"]
 
 
 # --------------------------------------------------------------------------- #
@@ -365,6 +347,62 @@ def test_merge_renders_the_release_shaped_json(tmp_path):
     ]
 
 
+def test_the_job_id_acceptance_report_carries_no_sections(tmp_path):
+    """The data collector ingests report_acceptance_<job_id>.json, and it has
+    already ingested every per-test report. With sections it would store each
+    measurement a second time, so it holds the merged verdict alone; the full
+    merge is merged_report_<job_id>.json, which the collector does not parse."""
+    _write(tmp_path, "a", "report_evals_0_100.json", _report())
+    out = tmp_path / "out"
+
+    assert (
+        main(
+            [
+                "--container-dir",
+                str(tmp_path),
+                "--output-dir",
+                str(out),
+                "--job-id",
+                "12345",
+                "--missing-test",
+                "inference-workflow-benchmarks --dev-mode",
+            ]
+        )
+        == 0
+    )
+
+    copy = json.loads((out / "report_acceptance_12345.json").read_text())
+    merged = json.loads((out / "merged_report_12345.json").read_text())
+
+    assert "sections" not in copy
+    assert merged["sections"]
+    assert copy["metadata"] == merged["metadata"]
+    for key in ACCEPTANCE_EXPORT_KEYS:
+        assert copy[key] == merged[key]
+    # The merged verdict, not any single test's: the missing test fails it.
+    assert copy["acceptance_criteria"] is False
+
+
+def test_the_stats_name_the_acceptance_report_and_the_full_merge(tmp_path, capsys):
+    _write(tmp_path, "a", "report_evals_0_100.json", _report())
+    out = tmp_path / "out"
+    main(["--container-dir", str(tmp_path), "--output-dir", str(out), "--job-id", "7"])
+
+    stats = json.loads(capsys.readouterr().out)
+    assert stats["acceptance_path"] == str(out / "report_acceptance_7.json")
+    assert stats["merged_path"] == str(out / "merged_report_7.json")
+
+
+def test_without_a_job_id_there_is_no_job_id_named_file(tmp_path, capsys):
+    _write(tmp_path, "a", "report_evals_0_100.json", _report())
+    out = tmp_path / "out"
+    main(["--container-dir", str(tmp_path), "--output-dir", str(out)])
+
+    stats = json.loads(capsys.readouterr().out)
+    assert "acceptance_path" not in stats and "merged_path" not in stats
+    assert list(out.glob("*.json")) == []
+
+
 def test_a_checkpointed_report_is_merged_but_blocks_acceptance(tmp_path):
     """A cancelled run's checkpoint is real data, not a finished measurement.
 
@@ -390,3 +428,30 @@ def test_a_finished_report_is_not_flagged_partial(tmp_path):
 
     _, stats = merge_reports(tmp_path, tmp_path / "out")
     assert stats["partial_reports"] == []
+
+
+def test_merged_report_grades_each_stage_across_tests(tmp_path):
+    """Stage tags travel on the blocks, so the merge grades stages it never saw a document for."""
+    accuracy = _report("evals")
+    accuracy["sections"][0]["targets"]["stage"] = {
+        "key": "accuracy",
+        "name": "Accuracy",
+        "position": 1,
+    }
+    performance = _report("agentic", task="swe_bench", accuracy_check=3, score=10.0)
+    performance["sections"][0]["targets"]["stage"] = {
+        "key": "performance",
+        "name": "Performance",
+        "position": 2,
+    }
+    _write(tmp_path, "a", "report_evals_0_100.json", accuracy)
+    _write(tmp_path, "b", "report_agentic_0_200.json", performance)
+
+    result, stats = merge_reports(tmp_path, tmp_path / "out")
+
+    merged = json.loads(Path(result.json_path).read_text())
+    assert [(s["key"], s["status"]) for s in merged["acceptance_stages"]] == [
+        ("accuracy", "PASS"),
+        ("performance", "FAIL"),
+    ]
+    assert stats["accepted"] is False

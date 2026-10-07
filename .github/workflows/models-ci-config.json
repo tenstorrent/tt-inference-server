@@ -72,11 +72,27 @@
                             "devices": [
                                 "P150"
                             ]
+                        }
+                    }
+                },
+                {
+                    "inference_engine": "vLLM",
+                    "impl": "llama31-8b-qb2",
+                    "ci": {
+                        "nightly": {
+                            "devices": [
+                                "P300X2"
+                            ]
                         },
                         "release": {
                             "devices": [
-                                "P150"
-                            ]
+                                "P300X2"
+                            ],
+                            "device-args": {
+                                "P300X2": {
+                                    "throttle-perf": "1"
+                                }
+                            }
                         }
                     }
                 }
@@ -147,7 +163,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "P300X2"
                     ]
                 },
@@ -178,16 +193,6 @@
                         "weekly": {
                             "devices": [
                                 "T3K"
-                            ]
-                        }
-                    }
-                },
-                {
-                    "inference_engine": "FORGE",
-                    "ci": {
-                        "nightly": {
-                            "devices": [
-                                "BH_GALAXY"
                             ]
                         }
                     }
@@ -346,6 +351,16 @@
                 }
             }
         },
+        "Qwen/Qwen3.8-27B": {
+            "inference_engine": "vLLM",
+            "ci": {
+                "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                }
+            }
+        },
         "Qwen/Qwen3-4B": {
             "inference_engine": "FORGE",
             "ci": {
@@ -438,7 +453,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "P300X2",
                         "T3K"
                     ]
@@ -546,12 +560,14 @@
             "ci": {
                 "nightly": {
                     "devices": [
-                        "P300X2"
+                        "P300X2",
+                        "BH_GALAXY"
                     ]
                 },
                 "release": {
                     "devices": [
-                        "P300X2"
+                        "P300X2",
+                        "BH_GALAXY"
                     ]
                 }
             }
@@ -571,7 +587,20 @@
             "ci": {
                 "nightly": {
                     "devices": [
-                        "P300X2"
+                        "P300X2",
+                        "BH_GALAXY"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "P300X2",
+                        "BH_GALAXY"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "P300X2",
+                        "BH_GALAXY"
                     ]
                 }
             }
@@ -582,6 +611,7 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
+                        "BH_GALAXY",
                         "P300X2",
                         "T3K"
                     ]
@@ -700,7 +730,6 @@
                         "nightly": {
                             "devices": [
                                 "GALAXY",
-                                "BH_GALAXY",
                                 "N150",
                                 "N300",
                                 "P300X2"
@@ -773,7 +802,6 @@
                 "nightly": {
                     "devices": [
                         "GALAXY",
-                        "BH_GALAXY",
                         "N150",
                         "P150"
                     ]

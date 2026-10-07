@@ -335,6 +335,9 @@ class EvalTask:
     # reaches scoring; the eval launcher gates lm-eval via
     # LM_EVAL_PRESERVE_REASONING when this is True.
     capture_reasoning: bool = False
+    # Execution policy only; does not reduce samples, context, or output tokens.
+    wall_clock_timeout_seconds: Optional[int] = None
+    max_attempts: Optional[int] = None
     gen_kwargs: Dict[str, str] = field(default_factory=lambda: {"stream": "False"})
     # Keep the harness RNG seed (--seed) while allowing model-owned samplers to
     # opt out of receiving it as an OpenAI request sampling parameter.
@@ -376,6 +379,15 @@ class EvalTask:
     device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
+        for name in ("wall_clock_timeout_seconds", "max_attempts"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value <= 0):
+                raise ValueError(f"{name} must be a positive integer")
+        if (
+            self.max_attempts is not None
+            and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON
+        ):
+            raise ValueError("max_attempts currently requires EVALS_COMMON")
         self.validate_data()
         self._infer_data()
 
@@ -1280,8 +1292,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=69.0,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-4950368694",
+                    gpu_reference_score=76.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4271#issuecomment-5998550273",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1767,10 +1779,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                max_concurrent=64,
+                max_concurrent=62,
                 # The remote Tenstorrent console only exposes /v1/chat/completions
                 # (text /v1/completions returns 404), so use the chat API.
                 use_chat_api=True,
+                capture_reasoning=True,
                 score=EvalTaskScore(
                     published_score=92.9,
                     published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
@@ -1806,6 +1819,45 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                task_name="longbench2_generate",
+                max_concurrent=62,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=61.9,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-5991635102",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 1024 * 1024,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 64 * 1024,
+                    # https://huggingface.co/MiniMaxAI/MiniMax-M3/blob/main/special_tokens_map.json
+                    "until": ["[e~["],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                custom_dataset_kwargs={
+                    "minimum_isl": 256 * 1024,  # 256K
+                    "maximum_isl": 900 * 1000,  # 900K (+64K gen + template < 1M)
+                    "pretrained": "MiniMaxAI/MiniMax-M3",
+                    "tokenizer_num_proc": 32,
+                },
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
                 task_name="terminal_bench_2_1",
                 workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
                 score=EvalTaskScore(
@@ -1822,7 +1874,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=62,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=8,
@@ -1877,7 +1929,7 @@ _eval_config_list = [
                     task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
                     # A single served instance is shared by the agent,
                     # the simulated user, and the Natural Language verifier.
-                    n_concurrent_trials=4,
+                    n_concurrent_trials=31,
                     n_attempts=1,
                     n_tasks=97,
                     override_cpus=4,
@@ -1917,8 +1969,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=80.5,
                     published_score_ref="https://huggingface.co/MiniMaxAI/MiniMax-M3",
-                    gpu_reference_score=65.4,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4324#issuecomment-4830558090",
+                    gpu_reference_score=77.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-5991635102",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -1928,7 +1980,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=8,
+                    n_concurrent_trials=62,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
@@ -2199,7 +2251,7 @@ _eval_config_list = [
                     published_score=61.4,  # 61.4% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2328,7 +2380,7 @@ _eval_config_list = [
                     published_score=91.1,  # 91.1% on 32k tokens
                     published_score_ref="https://arxiv.org/html/2503.19786v1",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2983,6 +3035,84 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-8B; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-14B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # max_length clamped 65536 -> 40960 (Qwen3-14B max context).
+                model_kwargs={
+                    "max_length": 40960,
+                },
+                # gen_kwargs as on Qwen3-8B (https://huggingface.co/Qwen/Qwen3-14B#best-practices).
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # max_length clamped 65536 -> 40960 (Qwen3-14B max context).
+                model_kwargs={
+                    "max_length": 40960,
+                    "timeout": "3600",
+                },
+                # gen_kwargs as on Qwen3-8B (https://huggingface.co/Qwen/Qwen3-14B#best-practices).
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-4B",
         tasks=[
@@ -2992,7 +3122,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3027,7 +3157,7 @@ _eval_config_list = [
                     published_score=None,
                     published_score_ref=None,
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3058,6 +3188,154 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-4B; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-1.7B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen3-4B; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-0.6B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 40960,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-32B",
         tasks=[
@@ -3067,7 +3345,7 @@ _eval_config_list = [
                     published_score=81.40,
                     published_score_ref="https://qwenlm.github.io/blog/qwen3/",
                     gpu_reference_score=80.00,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     # CI subset (--ci-mode -> ci-nightly limit 0.5 = 15 of 30
                     # docs). The full set scores 76.67% and PASSES against the
                     # 80.00 full-set reference (0.958 >= 0.95); the subset
@@ -3123,7 +3401,7 @@ _eval_config_list = [
                     published_score=96.1,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=96.10,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3158,7 +3436,7 @@ _eval_config_list = [
                     published_score=66.80,
                     published_score_ref="https://artificialanalysis.ai/models/comparisons/qwen3-32b-instruct-reasoning-vs-qwen3-4b-instruct",
                     gpu_reference_score=66.80,  # Estimate - needs to be validated
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     # Widened from the 0.05 default because this check is not
                     # apples-to-apples: a ~40-question stochastic subset score is
                     # being graded against a FULL-DATASET published number.
@@ -3278,6 +3556,50 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from mistralai/Mistral-7B-Instruct-v0.3; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="ALLaM-AI/ALLaM-7B-Instruct-preview",
+        tasks=[
+            EvalTask(
+                task_name="ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                            "inst_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
         tasks=[
@@ -3295,7 +3617,7 @@ _eval_config_list = [
                     published_score=45.96,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503#instruction-evals",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3318,7 +3640,7 @@ _eval_config_list = [
                     published_score=88.41,
                     published_score_ref="https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3725,6 +4047,192 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; targets TBD until a GPU reference is measured.
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/deepseek-math-7b-instruct",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-14B-Instruct-1M",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="gpqa_diamond_generative_n_shot",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="meta-llama/Llama-3.3-70B-Instruct",
         tasks=[
@@ -4109,6 +4617,12 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_code_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={
+                    "stream": "False",
+                    "temperature": 0,
+                    "max_gen_toks": 512,
+                },
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4124,6 +4638,12 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_fewshot_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={
+                    "stream": "False",
+                    "temperature": 0,
+                    "max_gen_toks": 512,
+                },
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4196,6 +4716,181 @@ _eval_config_list = [
                     },
                 ),
             ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from meta-llama/Llama-3.2-1B-Instruct; targets TBD until a GPU reference is measured.
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from meta-llama/Llama-3.2-1B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen1.5-0.5B-Chat",
+        tasks=[
+            # NOTE: EVALS_META prepares its dataset from "<hf_model_repo>-evals",
+            # which Meta publishes only for meta-llama checkpoints.
+            EvalTask(
+                task_name="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_code_e",
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_fewshot_e",
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_multi_e",
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_single_e",
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_summarization_e",
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="longbench_synthetic_e",
+                min_context_required=16384,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["score,none"],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+        tasks=[
+            # NOTE: EVALS_META prepares its dataset from "<hf_model_repo>-evals",
+            # which Meta publishes only for meta-llama checkpoints.
+            EvalTask(
+                task_name="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # longbench_*_e tasks dropped: min_context_required=16384 exceeds
+            # this checkpoint's 2048-token context.
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from meta-llama/Llama-3.2-1B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="HuggingFaceTB/SmolLM2-1.7B-Instruct",
+        tasks=[
+            # NOTE: EVALS_META prepares its dataset from "<hf_model_repo>-evals",
+            # which Meta publishes only for meta-llama checkpoints.
+            EvalTask(
+                task_name="meta_gpqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,strict-match",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            # longbench_*_e tasks dropped: min_context_required=16384 exceeds
+            # this checkpoint's 8192-token context.
         ],
     ),
     EvalConfig(
@@ -4285,6 +4980,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_code_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4300,6 +4997,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_fewshot_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4315,6 +5014,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_multi_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4330,6 +5031,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_single_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4345,6 +5048,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_summarization_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4360,6 +5065,8 @@ _eval_config_list = [
             EvalTask(
                 task_name="longbench_synthetic_e",
                 min_context_required=16384,
+                apply_chat_template=False,
+                gen_kwargs={"stream": "False", "temperature": 0, "max_gen_toks": 512},
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
@@ -4700,6 +5407,114 @@ _eval_config_list = [
             #     },
             #     batch_size=16,
             # ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-Coder-32B-Instruct; targets TBD until a GPU reference is measured.
+    # Quetzal (impl=quetzal) row on P300X2; tasks copied from Qwen/Qwen2.5-Coder-32B-Instruct; targets TBD until a GPU reference is measured.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/deepseek-coder-1.3b-instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen2.5-Coder-7B-Instruct",
+        tasks=[
+            EvalTask(
+                task_name="mbpp_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass_at_1,extract_code",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                batch_size=16,
+                gen_kwargs={
+                    "max_gen_toks": "256",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -5067,6 +5882,40 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
+                    # Whole-request budget, NOT an idle timer. The pinned harness builds
+                    # its session as ClientTimeout(total=self.timeout)
+                    # (lm_eval/models/api_models.py:808 -- the only ClientTimeout in the
+                    # package; there is no sock_read/sock_connect knob), so this bounds
+                    # the entire request including reading the full streamed body.
+                    # "stream": "true" does NOT make it reset per chunk.
+                    #
+                    # So this field cannot be repurposed for stall detection: any value
+                    # short enough to notice a dead server also truncates a healthy long
+                    # generation. That job belongs to wall_clock_timeout_seconds below,
+                    # which bounds the TASK rather than the request.
+                    #
+                    # Left at main's value. Worst case here is a break-even question,
+                    # not a measured duration. At max_gen_toks=120*1024 (122,880 tokens)
+                    # a full generation fits inside 14400s only if decode sustains
+                    # 122880/14400 = 8.53 tok/s (117 ms/token); the same arithmetic makes
+                    # 7200 need 17.1 tok/s, the harness default 1800 need 68.3, and 600
+                    # need 204.8. The nearest traced, measured rate for gpt-oss-120b
+                    # itself is 6.0 tok/s steady (~167 ms/token), from the 2026-09-05
+                    # device run in tt-quetzalcoatlus docs/GPT_OSS_120B_DECODE_PERF.md --
+                    # about 5.7h for a full generation. So the break-even for 14400 sits
+                    # ~42% above the fastest rate measured on this model, and every value
+                    # proposed for this field is on the truncating side of it.
+                    #
+                    # Stated as a threshold on purpose: no TPOT has been measured under
+                    # the real eval condition (max_concurrent=32, 122k-token generations),
+                    # and a sustained >=8.53 tok/s there would falsify this. An earlier
+                    # revision of this comment claimed ~405ms/token and ~13.8h; that came
+                    # from a serve with QUETZAL_NO_TRACE=1 forced on (eager, ~7x slower
+                    # than traced) and has been withdrawn.
+                    #
+                    # Making a per-request budget genuinely computable requires clamping
+                    # max_gen_toks to what the device context supports, which is a
+                    # separate change from this PR.
                     "timeout": "14400",
                 },
                 gen_kwargs={
@@ -5082,6 +5931,14 @@ _eval_config_list = [
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
                 },
+                # The actual bound, and the only one here that can detect a hung run
+                # without truncating a generation: it bounds the TASK, not the request.
+                # On deadline the owned POSIX process group is killed and the task
+                # reports rc=124 as incomplete -- never scored as a pass -- so the run
+                # continues to the next task and still produces a report, instead of
+                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
+                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
+                wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -5106,6 +5963,40 @@ _eval_config_list = [
                 capture_reasoning=True,
                 max_concurrent=32,
                 model_kwargs={
+                    # Whole-request budget, NOT an idle timer. The pinned harness builds
+                    # its session as ClientTimeout(total=self.timeout)
+                    # (lm_eval/models/api_models.py:808 -- the only ClientTimeout in the
+                    # package; there is no sock_read/sock_connect knob), so this bounds
+                    # the entire request including reading the full streamed body.
+                    # "stream": "true" does NOT make it reset per chunk.
+                    #
+                    # So this field cannot be repurposed for stall detection: any value
+                    # short enough to notice a dead server also truncates a healthy long
+                    # generation. That job belongs to wall_clock_timeout_seconds below,
+                    # which bounds the TASK rather than the request.
+                    #
+                    # Left at main's value. Worst case here is a break-even question,
+                    # not a measured duration. At max_gen_toks=120*1024 (122,880 tokens)
+                    # a full generation fits inside 14400s only if decode sustains
+                    # 122880/14400 = 8.53 tok/s (117 ms/token); the same arithmetic makes
+                    # 7200 need 17.1 tok/s, the harness default 1800 need 68.3, and 600
+                    # need 204.8. The nearest traced, measured rate for gpt-oss-120b
+                    # itself is 6.0 tok/s steady (~167 ms/token), from the 2026-09-05
+                    # device run in tt-quetzalcoatlus docs/GPT_OSS_120B_DECODE_PERF.md --
+                    # about 5.7h for a full generation. So the break-even for 14400 sits
+                    # ~42% above the fastest rate measured on this model, and every value
+                    # proposed for this field is on the truncating side of it.
+                    #
+                    # Stated as a threshold on purpose: no TPOT has been measured under
+                    # the real eval condition (max_concurrent=32, 122k-token generations),
+                    # and a sustained >=8.53 tok/s there would falsify this. An earlier
+                    # revision of this comment claimed ~405ms/token and ~13.8h; that came
+                    # from a serve with QUETZAL_NO_TRACE=1 forced on (eager, ~7x slower
+                    # than traced) and has been withdrawn.
+                    #
+                    # Making a per-request budget genuinely computable requires clamping
+                    # max_gen_toks to what the device context supports, which is a
+                    # separate change from this PR.
                     "timeout": "14400",
                 },
                 gen_kwargs={
@@ -5115,6 +6006,14 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
                 },
+                # The actual bound, and the only one here that can detect a hung run
+                # without truncating a generation: it bounds the TASK, not the request.
+                # On deadline the owned POSIX process group is killed and the task
+                # reports rc=124 as incomplete -- never scored as a pass -- so the run
+                # continues to the next task and still produces a report, instead of
+                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
+                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
+                wall_clock_timeout_seconds=10800,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
@@ -5206,13 +6105,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=89.2,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=90.0,
-                            ref="QB2 Qwen3.8 release cohort: 9/10 GPQA",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["exact_match,none"],
@@ -5246,13 +6138,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=73.0,
                     published_score_ref="https://huggingface.co/Qwen/Qwen3.8-27B",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=80.0,
-                            ref="QB2 Qwen3.8 release cohort: 4/5 Terminal-Bench 2.1",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -5262,7 +6147,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2-1",
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    n_concurrent_trials=10,
                     n_attempts=1,
                     n_tasks=89,
                     override_cpus=16,
@@ -5273,13 +6158,16 @@ _eval_config_list = [
                         "temperature": 1.0,
                         "model_info": {
                             "max_input_tokens": 160 * 1024,
-                            "max_output_tokens": 80 * 1024,
+                            "max_output_tokens": 16 * 1024,
                         },
                         "llm_kwargs": {
                             "top_p": 0.95,
-                            "max_tokens": 80 * 1024,
+                            "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
-                            "extra_body": {"top_k": 20},
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"reasoning_effort": "medium"},
+                            },
                         },
                     },
                     task_names_map={
@@ -5289,6 +6177,11 @@ _eval_config_list = [
                             "terminal-bench/compile-compcert",
                             "terminal-bench/feal-differential-cryptanalysis",
                             "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
                         ],
                     },
                 ),
@@ -5300,13 +6193,6 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=61.7,
                     published_score_ref="QB2 requirements (SWE-bench Pro reference; provisional for Verified)",
-                    mode_reference_scores={
-                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=60.0,
-                            ref="QB2 Qwen3.8 release cohort: 3/5 SWE-bench Verified",
-                            tolerance=0.0,
-                        ),
-                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -5450,12 +6336,10 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # CI_NIGHTLY 0.05 (~10 samples), not the usual 0.2: reasoning
-                # eval (~48K tokens/sample) served batch-1, so samples run
-                # sequentially and dominate CI runtime. Widen EvalTaskScore
-                # tolerance if the small-N accuracy gate flakes.
+                # ci-nightly ~1 h per dataset: 0.2 = doc_ids 0-39, matching the
+                # calibrated CI_NIGHTLY reference score above. No CI_LONG entry = full set.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
@@ -5470,7 +6354,7 @@ _eval_config_list = [
                     published_score=85.2,
                     published_score_ref="https://huggingface.co/google/gemma-4-31B",
                     gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5497,13 +6381,11 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # mmlu_pro is a GROUP of 14 subject subtasks and lm-eval
-                # applies the limit PER SUBTASK: an int here multiplies by 14.
-                # 3/subtask = ~42 questions per nightly run, 1/subtask = 14 on
-                # smoke. (A first attempt set 40, which became 560 scheduled
-                # samples and a ~99-hour ETA.)
+                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
+                # subtask (an int multiplies by 14, a fraction scales each subtask).
+                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.CI_NIGHTLY: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
@@ -5675,10 +6557,25 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     # Official Gemma 4 model card / HF README (12B Unified).
                     # gpu_reference left unset until an H100 full-set / CI-subset
-                    # measurement lands (CI_NIGHTLY is ~10 samples).
+                    # measurement lands (CI_NIGHTLY is doc_ids 0-39, 40 samples).
                     published_score=78.8,
                     published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
                     gpu_reference_score=None,
+                    # No H100 measurement for this model yet (#4090). The ci-nightly subset is
+                    # doc_ids 0-39, the same 40 questions the 31B runs; they score below the set
+                    # average on every model measured (31B: H100 80.0 on the subset vs 83.33 on the
+                    # full set, TT 77.5). A 40-sample estimate of a 78.8 rate has a standard
+                    # deviation of 6.5 points, so the default 5% band is tighter than the noise of
+                    # the measurement itself. Until a subset reference exists, gate the subset
+                    # against the published full-set score at 10%: 29/40 (72.5) measured on the
+                    # Galaxy 2026-10-06 passes (threshold floor(40 * 0.788 * 0.9) = 28), 27/40 fails.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=78.8,
+                            ref="published full-set score standing in for the ci-nightly subset reference (no H100 run yet, #4090)",
+                            tolerance=0.10,
+                        ),
+                    },
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
                     score_func_kwargs={
@@ -5717,10 +6614,59 @@ _eval_config_list = [
                     "top_k": 20,
                     "top_p": 0.95,
                 },
-                # Match gemma-4-31B-it: CI_NIGHTLY 0.05 (~10 samples).
+                # Match gemma-4-31B-it: CI_NIGHTLY 0.2 = doc_ids 0-39 (40 samples; one
+                # question is 2.5 points). 0.05 was 10 samples, a 10-point step.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Leaderboard MMLU-Pro: 5-shot chain-of-thought, generative,
+                # scored by the task's own answer extractor. Unlike bare
+                # n-shot GPQA, the few-shot examples demonstrate reasoning
+                # before the final answer, so they do not suppress thinking.
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=77.2,
+                    published_score_ref="https://huggingface.co/google/gemma-4-12B-it",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # Match 31B entry: use the
+                # chat endpoint with server-side thinking and non-streaming
+                # responses for this 5-shot MMLU-Pro sweep.
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 49152,
+                    "timeout": "3600",
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    # 11% of the 12B answers were empty at 8192 (thinking never terminated; the 31B
+                    # loses 3.7% the same way), which is the whole gap to the model-card score.
+                    "max_gen_toks": 16384,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
+                # subtask (an int multiplies by 14, a fraction scales each subtask).
+                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.07,
+                    EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
             EvalTask(

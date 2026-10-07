@@ -46,7 +46,7 @@ from llm_module.drivers.swo_bench_agentic_traces import (
 )
 from llm_module.parsers.aiperf_agentic_traces import (
     AIPerfAgenticTracesParser,
-    build_targets_block,
+    build_targets_blocks,
 )
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from reference_config.agentic_traces.agentic_traces_config import (
@@ -62,8 +62,9 @@ from reference_config.agentic_traces.agentic_traces_config import (
 from report_module.schema import Block
 from workflows.workflow_types import AgenticTracesMode
 
-KIMI_MODEL_ID = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
-KIMI_PINNED_REF = "ddeb02eb9c5c89f44e2e4950e741b499d0b8190a"
+KIMI_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
+# InferenceX #2829, the commit SemiAnalysis's B300 GLM agentic sweep landed as.
+KIMI_PINNED_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
 
 
 class _FakeDeviceModelSpec:
@@ -104,6 +105,12 @@ class TestConfigRegistry:
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
             assert config.inferencex_git_ref.strip(), f"{model_id} has no git ref"
             assert config.runs, f"{model_id} has no runs"
+
+    def test_every_agentx_config_shares_one_pin(self):
+        """Numbers are only comparable across models run on the same client."""
+        for model_id, config in AGENTIC_TRACES_CONFIGS.items():
+            if TraceSource.INFERENCEX_AGENTX in config.trace_sources():
+                assert config.inferencex_git_ref == KIMI_PINNED_REF, model_id
 
     def test_registry_is_keyed_by_the_config_model_id(self):
         for model_id, config in AGENTIC_TRACES_CONFIGS.items():
@@ -385,6 +392,10 @@ class TestRunSpecValidation:
         with pytest.raises(ValueError, match="failed_request_threshold"):
             AgenticTracesRunSpec(failed_request_threshold=10)
 
+    def test_non_positive_idle_gap_cap_is_rejected(self):
+        with pytest.raises(ValueError, match="trace_idle_gap_cap_seconds"):
+            AgenticTracesRunSpec(trace_idle_gap_cap_seconds=0)
+
     def test_inverted_trajectory_ratios_are_rejected(self):
         with pytest.raises(ValueError, match="trajectory ratios"):
             AgenticTracesRunSpec(
@@ -472,6 +483,20 @@ class TestAiperfCommand:
             artifact_dir=Path("/tmp/artifacts"),
         )
         assert "--no-gpu-telemetry" not in cmd
+
+    def test_idle_gap_cap_defaults_to_the_inferencex_value(self):
+        cmd = self._cmd()
+        assert cmd[cmd.index("--trace-idle-gap-cap-seconds") + 1] == "300"
+
+    def test_idle_gap_cap_is_omitted_when_disabled(self):
+        """Pins before agentx-v1.0.0 reject the flag outright."""
+        config = AgenticTracesConfig(
+            model_id="id_test",
+            inferencex_git_ref="abc123",
+            runs=(AgenticTracesRunSpec(trace_idle_gap_cap_seconds=None),),
+        )
+        run = build_runs(config, _FakeModelSpec())[0]
+        assert "--trace-idle-gap-cap-seconds" not in self._cmd(run=run)
 
     def test_no_server_metrics_flag_without_explicit_urls(self):
         """AIPerf already derives <url>/metrics; the flag is only for extras."""
@@ -1040,14 +1065,12 @@ class TestBuildTargetsBlock:
         return payload
 
     def test_none_without_expectations(self):
-        block = build_targets_block([self._payload(expected_sweep=None)])
-
-        assert block is None
+        assert build_targets_blocks([self._payload(expected_sweep=None)]) == []
 
     def test_block_shape_and_verdicts(self):
-        block = build_targets_block([self._payload()], device="super_cluster")
+        (block,) = build_targets_blocks([self._payload()], device="super_cluster")
 
-        assert block is not None
+        assert "stage" not in block.targets
         assert block.kind == "agentic_traces_targets"
         assert block.targets["model"] == "moonshotai/Kimi-K2.7-Code"
         assert block.targets["device"] == "super_cluster"
@@ -1065,11 +1088,33 @@ class TestBuildTargetsBlock:
         assert block.data["missing_concurrencies"] == [64]
 
     def test_data_survives_a_json_round_trip(self):
-        block = build_targets_block([self._payload()], device="super_cluster")
+        (block,) = build_targets_blocks([self._payload()], device="super_cluster")
 
         restored = Block.from_dict(json.loads(json.dumps(block.to_dict())))
 
         assert restored.data == block.data
+
+    def test_one_block_per_delivery_stage(self):
+        """A multi-stage document's sweep is graded per stage, each block tagged."""
+        poc = {"key": "poc", "name": "PoC", "position": 1}
+        ga = {"key": "ga", "name": "GA", "position": 2}
+        expected = [
+            {"concurrency": 1, "ttftMeanMs": 800.0, "stage": poc},
+            {"concurrency": 4, "ttftMeanMs": 800.0, "stage": ga},
+        ]
+        payloads = [
+            self._payload(concurrency=1, expected_sweep=expected),
+            self._payload(concurrency=4, expected_sweep=expected),
+        ]
+
+        blocks = build_targets_blocks(payloads, device="super_cluster")
+
+        assert [b.targets["stage"] for b in blocks] == [poc, ga]
+        assert [[p["concurrency"] for p in b.data["points"]] for b in blocks] == [
+            [1],
+            [4],
+        ]
+        assert len({b.id for b in blocks}) == 2
 
     def test_grades_a_partial_sweep(self):
         """A sweep that lost a point still grades the ones that ran."""
@@ -1082,7 +1127,7 @@ class TestBuildTargetsBlock:
             self._payload(concurrency=1, expected_sweep=expected),
             self._payload(concurrency=4, expected_sweep=expected),
         ]
-        block = build_targets_block(payloads)
+        (block,) = build_targets_blocks(payloads)
 
         assert [p["concurrency"] for p in block.data["points"]] == [1, 4]
         assert block.data["missing_concurrencies"] == [64]
@@ -1093,7 +1138,7 @@ class TestBuildTargetsBlock:
             self._payload(concurrency=1),
             self._payload(concurrency=4),
         ]
-        block = build_targets_block(payloads)
+        (block,) = build_targets_blocks(payloads)
 
         assert [p["concurrency"] for p in block.data["points"]] == [1]
 

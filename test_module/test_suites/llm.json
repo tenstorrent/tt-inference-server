@@ -1,89 +1,485 @@
 {
-    "_description": "Test suites for LLM model category",
-    "_category": "LLM",
-    "test_matrices": [
+  "_description": "Test suites for LLM model category",
+  "_category": "LLM",
+  "test_matrices": [
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "openai/gpt-oss-120b"
+      ],
+      "test_cases": [
         {
-            "models": [
-                "qwen3_32b",
-                "llama_3_1_8b",
-                "llama_3_2_1b",
-                "llama_70b_family",
-                "gpt_oss_20b"
-            ],
-            "devices": [
-                "n150",
-                "n300",
-                "t3k",
-                "galaxy",
-                "blackhole_galaxy",
-                "galaxy_t3k",
-                "gpu",
-                "p100",
-                "p150",
-                "p150x4",
-                "p150x8",
-                "p300",
-                "p300x2"
-            ],
-            "test_cases": [
-                {
-                    "template": "VLLMParamConformanceTest",
-                    "enabled": true,
-                    "description": "vLLM chat/completions parameter conformance"
-                }
-            ]
-        },
-        {
-            "models": [
-                "gpt_oss_20b"
-            ],
-            "devices": [
-                "t3k",
-                "galaxy",
-                "galaxy_t3k"
-            ],
-            "test_cases": [
-                {
-                    "template": "VLLMResponsesParamConformanceTest",
-                    "enabled": true,
-                    "description": "vLLM responses parameter conformance"
-                }
-            ]
-        },
-        {
-            "models": [
-                "qwen3_32b"
-            ],
-            "devices": [
-                "galaxy",
-                "blackhole_galaxy",
-                "t3k",
-                "galaxy_t3k",
-                "p150x8",
-                "p300x2"
-            ],
-            "test_cases": [
-                {
-                    "template": "VLLMQwen3StreamingParamConformanceTest",
-                    "enabled": true,
-                    "description": "Qwen3-32B streaming reasoning/tool-call regressions"
-                }
-            ]
-        },
-        {
-            "models": [
-                "diffusiongemma_26b"
-            ],
-            "devices": [
-                "p300x2"
-            ],
-            "test_cases": [
-                {
-                    "template": "VLLMDiffusionGemmaParamConformanceTest",
-                    "enabled": true,
-                    "description": "DiffusionGemma block-serving and request-admission gates"
-                }
-            ]
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
         }
-    ]
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3.8-27B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "models": [
+        "qwen3_32b",
+        "llama_3_1_8b",
+        "llama_3_2_1b",
+        "llama_70b_family",
+        "gpt_oss_20b"
+      ],
+      "devices": [
+        "n150",
+        "n300",
+        "t3k",
+        "galaxy",
+        "blackhole_galaxy",
+        "galaxy_t3k",
+        "gpu",
+        "p100",
+        "p150",
+        "p150x4",
+        "p150x8",
+        "p300",
+        "p300x2"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMParamConformanceTest",
+          "enabled": true,
+          "description": "vLLM chat/completions parameter conformance"
+        }
+      ]
+    },
+    {
+      "models": [
+        "gemma4_31b",
+        "gemma4_12b"
+      ],
+      "devices": [
+        "p300x2",
+        "p150x8",
+        "blackhole_galaxy"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMParamConformanceTest",
+          "enabled": true,
+          "description": "vLLM chat/completions parameter conformance (thinking off per request)",
+          "_comment": "The checks read message.content; the Gemma 4 template's thought channel (enable_thinking) would consume the small token budgets. The kwargs are passed verbatim as --chat-template-kwargs, so a model with a different switch states its own.",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
+        }
+      ]
+    },
+    {
+      "models": [
+        "gpt_oss_20b"
+      ],
+      "devices": [
+        "t3k",
+        "galaxy",
+        "galaxy_t3k"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMResponsesParamConformanceTest",
+          "enabled": true,
+          "description": "vLLM responses parameter conformance"
+        }
+      ]
+    },
+    {
+      "models": [
+        "qwen3_32b"
+      ],
+      "devices": [
+        "galaxy",
+        "blackhole_galaxy",
+        "t3k",
+        "galaxy_t3k",
+        "p150x8",
+        "p300x2"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMQwen3StreamingParamConformanceTest",
+          "enabled": true,
+          "description": "Qwen3-32B streaming reasoning/tool-call regressions"
+        }
+      ]
+    },
+    {
+      "models": [
+        "diffusiongemma_26b"
+      ],
+      "devices": [
+        "p300x2"
+      ],
+      "test_cases": [
+        {
+          "template": "VLLMDiffusionGemmaParamConformanceTest",
+          "enabled": true,
+          "description": "DiffusionGemma block-serving and request-admission gates"
+        }
+      ]
+    },
+    {
+      "models": [
+        "minimax_m3"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate >= 98.08%; $ref schemas excluded, MiniMax parser bug)",
+          "_comment": "exclude_ref_schemas: MiniMax tool calls are XML, so the server converts every text value to the schema's type, but the MiniMax parsers in ai-dynamo 1.3.0 (dynamo-parsers 5.0.0) and vLLM 0.30.0 never follow $ref -> $defs: 3 comes back as \"3\", an array as {\"item\": [...]}. Upstream, GPU vLLM returns the same; drop the exclusion once the parsers resolve $ref.",
+          "_comment_threshold": "pass_rate_threshold = mean - 3 sample std of 10 runs on GPU vLLM ($ref excluded, no retries, 2026-10-05): 99.14% - 3 x 0.35% = 98.08%, i.e. at least 332 of 338.",
+          "test_config": {
+            "exclude_ref_schemas": true
+          },
+          "targets": {
+            "pass_rate_threshold": 0.9808
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking ($ref schemas excluded, MiniMax parser bug)",
+          "_comment": "Second run of the suite with tool_choice required; $ref schemas excluded for the reason given on the case above.",
+          "test_config": {
+            "exclude_ref_schemas": true,
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
+        "kimi_k2_7_code"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate >= 98.79%)",
+          "_comment_threshold": "pass_rate_threshold = mean - 3 sample std of 10 runs on GPU vLLM (all 408 cases, no retries, 2026-10-05): 99.66% - 3 x 0.29% = 98.79%, i.e. at least 404 of 408.",
+          "targets": {
+            "pass_rate_threshold": 0.9879
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking",
+          "test_config": {
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-3B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-7B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-4B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-14B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-7B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "TinyLlama/TinyLlama_v1.1"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "stabilityai/stablelm-2-1_6b"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-1B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "EleutherAI/pythia-70m"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "microsoft/phi-1_5"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "microsoft/phi-1"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-14B-Instruct-1M"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "meta-llama/Llama-3.1-8B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "HuggingFaceTB/SmolLM2-1.7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "meta-llama/Llama-3.2-3B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-0.6B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-1.7B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    }
+  ]
 }

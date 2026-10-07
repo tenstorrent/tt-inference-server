@@ -39,6 +39,8 @@ pyjwt
 # under this venv; the suites use @pytest.mark.asyncio.
 pytest==8.3.5
 pytest-asyncio==1.3.0
+# ToolCallSchemaConformanceTest validates tool-call arguments against JSON Schema.
+jsonschema==4.25.1
 # The conformance suite's conftest imports test_fixtures.conftest ->
 # utils.prompt_client / utils.prompt_generation, which import transformers and
 # jinja2 at module load. jinja2 also arrives transitively via torch; pinned here
