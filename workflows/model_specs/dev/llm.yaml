@@ -427,6 +427,11 @@ templates:
         TT_V41_WEIGHT_CACHE: "/data2/ttnn-cache"
         TT_V41_ENGRAM_MMAP: "1"
         TT_V41_CHUNK: "8192"
+        # Prompt lengths whose prefill is captured per slot at warm-up and
+        # replayed: the four registered c1 points, each
+        # isl plus the 4 tokens the chat template adds. Any other length runs
+        # eagerly; keep this list in step with the points and the template.
+        TT_V41_TRACE_PREFILL_LENGTHS: "1028,2052,4100,8196"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
       override_tt_config:
@@ -442,8 +447,9 @@ templates:
         # the vllm-tt-plugin patches add.
         fabric_config: FABRIC_2D_TORUS_XY
         fabric_router_max_payload_size: 14400
-        # Decode captures: two per request slot.
-        trace_region_size: 1073741824  # 1024 * 1024 * 1024
+        # Decode captures, two per request slot, and the prefill captures of
+        # TT_V41_TRACE_PREFILL_LENGTHS (one per chunk per length per slot).
+        trace_region_size: 2147483648  # 2 * 1024 * 1024 * 1024
       vllm_args:
         # The checkpoint's quantization_config describes its fp8 / fp4 weights,
         # which the TT implementation dequantizes itself; without this vLLM
