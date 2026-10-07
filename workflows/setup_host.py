@@ -55,43 +55,12 @@ def _dir_bytes(path: Path) -> int:
     return total
 
 
-def _run_with_throughput_log(cmd, watch_dir: Path, env=None, interval_s: int = 300):
-    """Run cmd, logging the growth rate of watch_dir every interval_s seconds.
-
-    `hf download` draws progress with \\r, which CI log collectors buffer, so a
-    stalled transfer looks identical to a frozen process. In-flight bytes land in
-    *.incomplete files under watch_dir, so its size tracks real progress.
-    """
-    done = threading.Event()
-
-    def _log_throughput():
-        last_bytes = _dir_bytes(watch_dir)
-        while not done.wait(interval_s):
-            now_bytes = _dir_bytes(watch_dir)
-            logger.info(
-                f"hf download throughput: "
-                f"{(now_bytes - last_bytes) / interval_s / 1e6:.2f} MB/s "
-                f"({now_bytes / 1e9:.1f} GB on disk)"
-            )
-            last_bytes = now_bytes
-
-    reporter = threading.Thread(target=_log_throughput, daemon=True)
-    reporter.start()
-    try:
-        return subprocess.run(cmd, env=env)
-    finally:
-        done.set()
-        reporter.join(timeout=5)
-
-
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
     model_spec: ModelSpec
     host_volume: str = None  # --host-volume: host bind mount dir for cache_root
     host_hf_cache: str = None  # --host-hf-cache: host HF cache dir for readonly weights
-    # --host-volume + TRAINING: the container's $HF_HOME (cache_root/huggingface) on the host
-    host_hf_home: Path = None
     host_weights_dir: str = (
         None  # --host-weights-dir: host dir with pre-downloaded weights
     )
@@ -145,10 +114,6 @@ class SetupConfig:
                 / "tt_metal_cache"
                 / f"cache_{self.model_spec.model_name}"
             )
-            if self.model_spec.model_type == ModelType.TRAINING:
-                # Training runners (and tt-blacksmith) load by repo id via
-                # transformers, which reads $HF_HOME/hub inside the container.
-                self.host_hf_home = self.host_model_volume_root / "huggingface"
 
         if self.host_hf_cache:
             self.host_hf_cache = str(Path(self.host_hf_cache).expanduser().resolve())
@@ -452,17 +417,15 @@ class HostSetupManager:
                     Path(self.setup_config.host_weights_dir)
                 )
             if self.setup_config.host_model_volume_root:
-                if self.setup_config.host_hf_home:
-                    # Only hub/ counts: a pre-existing <hf_home>/models--* copy
-                    # (left by the old media-server startup download) is never
-                    # read by transformers.
-                    snapshot_dir = resolve_hf_snapshot_dir(
-                        self.model_spec.hf_weights_repo,
-                        self.setup_config.host_hf_home / "hub",
+                if self.model_spec.model_type == ModelType.TRAINING:
+                    # Training runners load by repo id, so transformers fetches
+                    # into the container's $HF_HOME/hub on first use; a host copy
+                    # under weights/<model> would never be read.
+                    logger.info(
+                        "Training weights will be downloaded by the server into "
+                        "its HF cache on first use"
                     )
-                    return bool(snapshot_dir) and self.check_model_weights_dir(
-                        snapshot_dir
-                    )
+                    return True
                 host_weights_dir = (
                     self.setup_config.host_model_volume_root
                     / "weights"
@@ -746,25 +709,6 @@ class HostSetupManager:
             )
             return
 
-        if self.setup_config.host_hf_home:
-            hf_home = self.setup_config.host_hf_home
-            # Scoped to the subprocess so later host-side steps keep the user's
-            # own HF cache. HF_HUB_CACHE overrides HF_HOME, so pin it as well.
-            env = {
-                **os.environ,
-                "HF_HOME": str(hf_home),
-                "HF_HUB_CACHE": str(hf_home / "hub"),
-            }
-            env.pop("HUGGINGFACE_HUB_CACHE", None)
-            cmd = [str(hf_exec), "download", hf_repo, "--exclude", "original/**"]
-            logger.info(f"Downloading model to host volume: {hf_repo}")
-            logger.info(f"Command: {shlex.join(cmd)}")
-            result = _run_with_throughput_log(cmd, hf_home / "hub", env=env)
-            assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
-            self._grant_image_user_access(hf_home)
-            logger.info(f"✅ Using weights from training HF cache: {hf_home}")
-            return
-
         host_weights_dir = (
             self.setup_config.host_model_volume_root
             / "weights"
@@ -785,7 +729,30 @@ class HostSetupManager:
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
-        result = _run_with_throughput_log(cmd, host_weights_dir)
+        # `hf download` draws progress with \r, which CI log collectors buffer, so a
+        # stalled transfer looks identical to a frozen process. Log the actual rate
+        # every 5 min instead; in-flight bytes land in
+        # .cache/huggingface/download/*.incomplete under host_weights_dir.
+        done = threading.Event()
+
+        def _log_throughput():
+            last_bytes = _dir_bytes(host_weights_dir)
+            while not done.wait(300):
+                now_bytes = _dir_bytes(host_weights_dir)
+                logger.info(
+                    f"hf download throughput: "
+                    f"{(now_bytes - last_bytes) / 300 / 1e6:.2f} MB/s "
+                    f"({now_bytes / 1e9:.1f} GB on disk)"
+                )
+                last_bytes = now_bytes
+
+        reporter = threading.Thread(target=_log_throughput, daemon=True)
+        reporter.start()
+        try:
+            result = subprocess.run(cmd)
+        finally:
+            done.set()
+            reporter.join(timeout=5)
         if result.returncode != 0 and weights_complete:
             logger.warning(
                 f"Could not reach Hugging Face to verify weights; "
@@ -804,26 +771,10 @@ class HostSetupManager:
         else:
             raise ValueError("⛔ Weights directory does not exist.")
 
-    def _grant_image_user_access(self, root: Path):
-        """Let the container user read the staged weights and write new cache
-        entries (datasets, locks, refs) next to them."""
-        if self.image_user is None:
-            return
-        for path in [root, *root.rglob("*")]:
-            # huggingface_hub rewrites refs/<rev> and reopens lock files in place.
-            rel_parts = path.relative_to(root).parts
-            need_write = path.is_dir() or "refs" in rel_parts or ".locks" in rel_parts
-            _try_fix_path_permissions_for_uid(
-                path, self.image_user, need_write=need_write
-            )
-
     def make_host_dirs(self):
-        hf_home = self.setup_config.host_hf_home
         dirs_to_create = [
             self.setup_config.host_model_volume_root,
             self.setup_config.host_tt_metal_cache_dir,
-            hf_home,
-            hf_home / "hub" if hf_home else None,
         ]
         for dir_path in dirs_to_create:
             if not dir_path:
