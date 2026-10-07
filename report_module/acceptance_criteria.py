@@ -629,6 +629,12 @@ def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optiona
     names (e.g. ``test_penalties``); one with no ``task_name`` waives the
     workflow. A single unwaived failing case keeps the block a blocker.
 
+    A ``task_name`` may instead name ONE parametrization exactly as pytest
+    reports it (e.g. ``test_penalties[presence_penalty-1.2-repeat_trap-messages0]``).
+    It waives a failing test case only when every failing parametrization of
+    that case in ``detailed_test_results`` is named by such a waiver, so any
+    other parametrization of the same function that fails still blocks.
+
     A block that declares itself non-blocking (``NON_BLOCKING_KEY``, set from
     its suite ``test_config``) is waived whatever failed.
     """
@@ -644,10 +650,43 @@ def _spec_waiver(block: Block, known_issues: Optional[Iterable[Any]]) -> Optiona
     reasons = []
     for case in failing:
         reason = _find_waiver(known_issues, "SPEC_TESTS", case)
-        if reason is None:
+        if reason is not None:
+            reasons.append(f"{case}: {reason}")
+            continue
+        params = _spec_failing_parametrizations(block, case)
+        if not params:
             return None
-        reasons.append(f"{case}: {reason}")
+        for param in params:
+            reason = _find_waiver(known_issues, "SPEC_TESTS", param)
+            if reason is None:
+                return None
+            reasons.append(f"{param}: {reason}")
     return "; ".join(reasons)
+
+
+def _spec_failing_parametrizations(block: Block, case: str) -> Optional[List[str]]:
+    """Failing parametrization ids of one test case, or None if unreported.
+
+    VLLMParamConformanceTest reports one ``detailed_test_results`` row per
+    parametrization (``{"test_case", "parametrization", "status", ...}``),
+    ``parametrization`` being pytest's node name. A missing or malformed
+    breakdown returns None, so no parametrization-scoped waiver can match.
+    """
+    data = block.data if isinstance(block.data, Mapping) else {}
+    rows = data.get("detailed_test_results")
+    if not isinstance(rows, list) or not rows:
+        return None
+    failing = []
+    for row in rows:
+        if not isinstance(row, Mapping) or not row.get("test_case"):
+            return None
+        if str(row["test_case"]) != case:
+            continue
+        if "FAIL" in str(row.get("status", "")).upper():
+            if not row.get("parametrization"):
+                return None
+            failing.append(str(row["parametrization"]))
+    return failing or None
 
 
 def _check_spec_tests(
