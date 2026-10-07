@@ -34,7 +34,8 @@ DEFAULT_REQUIREMENTS_DEVICE = "super_cluster"
 
 REQUIREMENTS_HELP = (
     "Path to an LLM-serving requirements document or validation plan "
-    "(schemaVersion 3.1 or later 3.x, with exactly one delivery stage). Drives the "
+    "(schemaVersion 3.1 or later 3.x). Every delivery stage runs and the report "
+    "grades each one separately; the stages must share one deployment. Drives the "
     "run from the document: the accuracy evals "
     "it lists (gated by their reference scores/tolerances), the benchmark sweep "
     "points and their scalar targets/SLOs, and the model + deployment metadata "
