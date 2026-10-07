@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, List, Optional
 from utils.url_helpers import build_base_url
 from workflow_module.engine_types import EvalLimitMode
 from workflow_module.engine_types import WorkflowVenvType
+from llm_module.request_overrides import resolve_request_body
 from workflow_module.venv_provisioner import get_venv_provisioner
 
 if TYPE_CHECKING:
@@ -225,6 +226,54 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
     return json.dumps({task.task_name: list(indices)})
 
 
+def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:
+    """request_body / thinking / capture_reasoning run through the lm-eval
+    request-overrides wrapper, which only the lm-eval adapters support."""
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ]:
+        raise ValueError(
+            f"request_body/thinking/capture_reasoning on {task.task_name} needs "
+            "the lm-eval request-overrides wrapper, which lmms-eval tasks "
+            "cannot use"
+        )
+    if "chat_template_kwargs" in request_body and not task.use_chat_api:
+        raise ValueError(
+            f"{task.task_name}: chat_template_kwargs (thinking={task.thinking!r}) "
+            "only reach the server on the chat API; the completions API renders "
+            "the chat template client-side. Set use_chat_api=True."
+        )
+    thinking = getattr(task, "thinking", None)
+    if thinking is None:
+        return
+    # Warn when the serving entry's own switch is spelled differently: the
+    # override would then not flip what the server flips by default.
+    vllm_args = (
+        getattr(getattr(model_spec, "device_model_spec", None), "vllm_args", None) or {}
+    )
+    raw_defaults = vllm_args.get("default-chat-template-kwargs")
+    if not raw_defaults:
+        return
+    try:
+        defaults = (
+            json.loads(raw_defaults)
+            if isinstance(raw_defaults, str)
+            else dict(raw_defaults)
+        )
+    except (TypeError, ValueError):
+        return
+    if defaults and task.thinking_kwarg not in defaults:
+        logger.warning(
+            "%s: thinking=%s sets chat_template_kwargs[%r], but the serving entry's "
+            "default-chat-template-kwargs uses %s; set thinking_kwarg to match",
+            task.task_name,
+            thinking,
+            task.thinking_kwarg,
+            sorted(defaults),
+        )
+
+
 def build_eval_command(
     task: "EvalTask",
     model_spec,
@@ -342,9 +391,30 @@ def build_eval_command(
         lm_eval_exec = task_venv_path / "bin" / "lm_eval"
 
     lm_eval_prefix = [str(lm_eval_exec)]
+    request_body = resolve_request_body(task)
+    preserve_reasoning = bool(getattr(task, "capture_reasoning", False))
+    if request_body or preserve_reasoning:
+        _check_request_overrides_supported(task, request_body, model_spec)
+        # One wrapper covers every payload patch (body overrides, seed drop,
+        # reasoning capture); the no-server-seed wrapper below stays for tasks
+        # that only need the seed dropped.
+        lm_eval_prefix = [
+            str(task_venv_path / "bin" / "python"),
+            str(Path(__file__).with_name("lm_eval_request_overrides.py")),
+        ]
+        if request_body:
+            lm_eval_prefix += [
+                "--request-body",
+                json.dumps(request_body, sort_keys=True),
+            ]
+        if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+            lm_eval_prefix.append("--drop-server-seed")
+        if preserve_reasoning:
+            lm_eval_prefix.append("--preserve-reasoning")
+        lm_eval_prefix.append("--")
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993
-    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+    elif not getattr(task, "propagate_seed_to_gen_kwargs", True):
         if task.workflow_venv_type in [
             WorkflowVenvType.EVALS_VISION,
             WorkflowVenvType.EVALS_AUDIO,
