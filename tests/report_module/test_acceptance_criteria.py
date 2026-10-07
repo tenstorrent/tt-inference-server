@@ -967,6 +967,52 @@ def test_evals_known_issue_does_not_waive_spec_tests():
     assert accepted is False
 
 
+_REPEAT_TRAP = "test_penalties[presence_penalty-1.2-repeat_trap-messages0]"
+_REPEAT_TRAP_WAIVER = [
+    {"workflow_type": "SPEC_TESTS", "task_name": _REPEAT_TRAP, "reason": "measured"}
+]
+
+
+def _penalties_detail(*failing) -> Block:
+    block = _conformance(("test_logprobs", "✅ PASS"), ("test_penalties", "❌ FAIL"))
+    other = "test_penalties[frequency_penalty-1.2-repeat_trap-messages0]"
+    block.data["detailed_test_results"] = [
+        {"test_case": "test_penalties", "parametrization": p, "status": "❌ FAILED"}
+        for p in failing
+    ] + [
+        {"test_case": "test_penalties", "parametrization": other, "status": "✅ PASSED"},
+        {"test_case": "test_logprobs", "parametrization": "test_logprobs", "status": "✅ PASSED"},
+    ]
+    return block
+
+
+def test_spec_parametrization_waiver_waives_only_that_parametrization():
+    schema = _schema(_penalties_detail(_REPEAT_TRAP))
+    accepted, blockers, cats = acceptance_criteria_check(schema, _REPEAT_TRAP_WAIVER)
+    by_name = {c.name: c for c in cats}
+    assert accepted is True and blockers == {}
+    (reason,) = by_name[CATEGORY_SPEC_TESTS].waived.values()
+    assert f"{_REPEAT_TRAP}: measured" in reason
+    waived = spec_tasks_explained_by_waivers(cats, schema, _REPEAT_TRAP_WAIVER)
+    assert waived == {"spec_tests"}
+
+
+def test_spec_parametrization_waiver_does_not_cover_a_sibling_parametrization():
+    sibling = "test_penalties[presence_penalty-1.2-natural_repetition-messages1]"
+    for failing in ((sibling,), (_REPEAT_TRAP, sibling)):
+        schema = _schema(_penalties_detail(*failing))
+        accepted, blockers, _ = acceptance_criteria_check(schema, _REPEAT_TRAP_WAIVER)
+        assert accepted is False and blockers
+
+
+def test_spec_parametrization_waiver_needs_the_detailed_breakdown():
+    schema = _schema(
+        _conformance(("test_logprobs", "✅ PASS"), ("test_penalties", "❌ FAIL"))
+    )
+    accepted, _, _ = acceptance_criteria_check(schema, _REPEAT_TRAP_WAIVER)
+    assert accepted is False
+
+
 def test_a_spec_task_exit_explained_by_waivers_is_not_a_crash_blocker():
     # run_spec_tests exits 1 for the waived case; acceptance must not re-block it.
     schema = _schema(_conformance(("test_penalties", "❌ FAIL")))
