@@ -64,7 +64,8 @@ PENALTY_PROMPTS = {
 def test_n(report_test, api_client, n_val, request):
     """Tests the 'n' parameter (number of choices)."""
     payload = {"messages": BASE_PROMPT, "n": n_val, "max_tokens": 32}
-    response = api_client(payload)
+    # The first multi-choice request can compile a wider execution shape.
+    response = api_client(payload, timeout=120)
 
     try:
         assert "choices" in response, "choices field is not in response"
