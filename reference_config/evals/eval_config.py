@@ -6682,10 +6682,14 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # 16 of the server's 32 slots; per-user decode drops from
+                    # ~28 to ~18 tok/s versus 5 concurrent, so the wall-clock
+                    # budget is scaled 3 h -> 6 h to keep the step budget
+                    # comparable (label results "6 h/instance").
+                    n_concurrent_trials=16,
                     n_attempts=1,
                     n_tasks=None,
-                    agent_timeout_sec=3 * 60 * 60,
+                    agent_timeout_sec=6 * 60 * 60,
                     llm_timeout_sec=60 * 60,
                     agent_kwargs={
                         "version": MINI_SWE_AGENT_VERSION,
