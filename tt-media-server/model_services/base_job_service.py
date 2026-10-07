@@ -19,12 +19,19 @@ class BaseJobService(BaseService):
     def __init__(self):
         super().__init__()
         self._job_manager = get_job_manager()
-        self._processManager = None
+        # Forked before the port opens, so it inherits no client connections.
+        self._processManager = Manager()
 
     def _createStartEvent(self):
-        if self._processManager is None:
-            self._processManager = Manager()
         return self._processManager.Event()
+
+    def stop_workers(self):
+        result = super().stop_workers()
+        # Not left to atexit: uvicorn exits a SIGTERM shutdown by re-raising it.
+        if self._processManager is not None:
+            self._processManager.shutdown()
+            self._processManager = None
+        return result
 
     async def create_job(
         self,

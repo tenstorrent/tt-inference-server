@@ -203,13 +203,30 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | qwen-image | galaxy, t3k |
 | qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
-| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
-| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
+| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge, galaxy_quad |
+| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2, galaxy_quad |
+| MiniMax-H3 | galaxy, galaxy_quad |
+| MiniMax-H3-FL2VA | galaxy, galaxy_quad |
+| MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
+| MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 
-For example, to run flux.1-dev on t3k
-1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
-2. Set device special env variable e.g ```export DEVICE=t3k```.
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
+## Basic Single Host Deployment
+
+```bash
+MODEL=<MODEL> DEVICE=<DEVICE> uvicorn main:app --lifespan on --port 8000
+```
+
+## Basic Multi-host (tt-run) Deployment
+
+A mesh that spans several hosts (e.g. a 4x32 mesh across four Blackhole Galaxies, "the quad") starts with the same server command as a single host, wrapped in `tt-run`:
+
+```bash
+tt-run --rank-binding <rank_bindings.yaml> \
+       --mpi-args "--host <host0>,<host1>,<host2>,<host3> --rankfile <rankfile> --bind-to none --tag-output" \
+       bash -c "source <env.sh> && source <media-server>/python_env/bin/activate && cd <media-server> && \
+                MODEL=<MODEL> DEVICE=galaxy_quad \
+                uvicorn main:app --host 0.0.0.0 --lifespan on --port 8000"
+```
 
 ## VLLM with TT Plugin Setup
 
@@ -1041,6 +1058,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
+| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (MiniMax-H3, Wan Prodia) hand back raw frames instead |
 | `TT_VIDEO_SHM_INPUT` | `"tt_video_in"` | Name of the shared-memory segment used to send requests to the video runner sub-process |
 | `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
 | `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
