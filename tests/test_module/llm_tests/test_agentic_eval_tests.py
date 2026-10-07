@@ -183,8 +183,14 @@ class TestAgenticParser:
         # "must"; stamping it explicitly keeps agentic blocks aligned with the
         # lm-eval emitter.
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
-        assert parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"] == "must"
-        assert parser.failure_block(return_code=1, device="N150").data["priority"] == "must"
+        assert (
+            parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"]
+            == "must"
+        )
+        assert (
+            parser.failure_block(return_code=1, device="N150").data["priority"]
+            == "must"
+        )
 
     def test_should_priority_travels_on_parsed_and_failure_blocks(self):
         # A catalog task with priority="should" is informational: the agentic
@@ -193,8 +199,14 @@ class TestAgenticParser:
         parser = AgenticEvalParser(
             task_name="terminal_bench_2", score=FakeScore(), priority="should"
         )
-        assert parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"] == "should"
-        assert parser.failure_block(return_code=1, device="N150").data["priority"] == "should"
+        assert (
+            parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"]
+            == "should"
+        )
+        assert (
+            parser.failure_block(return_code=1, device="N150").data["priority"]
+            == "should"
+        )
 
     def test_zero_trial_harbor_result_stays_na(self):
         # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
