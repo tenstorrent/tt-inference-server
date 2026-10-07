@@ -139,6 +139,16 @@ class TestBuildTargetChecks:
         assert checks["target"]["goodput_check"] == ReportCheckTypes.PASS
         assert verdict == ReportCheckTypes.PASS
 
+    def test_grades_input_throughput(self):
+        targets = {"target": PerformanceTarget(tput_input=500.0)}
+        met, _ = build_target_checks(targets, _record(tps_input_throughput=520.0))
+        missed, verdict = build_target_checks(
+            targets, _record(tps_input_throughput=480.0)
+        )
+        assert met["target"]["tput_input_check"] == ReportCheckTypes.PASS
+        assert missed["target"]["tput_input_check"] == ReportCheckTypes.FAIL
+        assert verdict == ReportCheckTypes.FAIL
+
     def test_goodput_below_target_fails(self):
         targets = {"target": PerformanceTarget(goodput=99.0)}
         checks, verdict = build_target_checks(targets, _record(goodput_pct=36.0))
