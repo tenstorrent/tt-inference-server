@@ -14,9 +14,12 @@ import tarfile
 import threading
 import time
 import uuid
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
 
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
@@ -41,6 +44,11 @@ from workflows.workflow_types import (
 )
 
 logger = logging.getLogger("run_log")
+
+_DOCKER_START_TIMEOUT_SECONDS = 30
+_SERVER_READY_POLL_INTERVAL_SECONDS = 5
+_SERVER_HEALTH_REQUEST_TIMEOUT_SECONDS = 5
+_DEFAULT_SERVER_READY_TIMEOUT_SECONDS = 3600
 
 
 def short_uuid():
@@ -605,6 +613,116 @@ def generate_docker_run_command(
     return docker_command, container_name
 
 
+def _read_log_tail(log_file_path: Path, max_lines: int = 100) -> str:
+    """Return the last few container log lines without loading the whole file."""
+    try:
+        with open(log_file_path, errors="replace") as log_file:
+            return "".join(deque(log_file, maxlen=max_lines)).rstrip()
+    except OSError as exc:
+        return f"<unable to read Docker log: {exc}>"
+
+
+def _raise_if_docker_exited(
+    docker_process: subprocess.Popen,
+    container_name: str,
+    docker_log_file_path: Path,
+) -> None:
+    """Fail immediately when the foreground ``docker run`` process has exited."""
+    return_code = docker_process.poll()
+    if return_code is None:
+        return
+
+    log_tail = _read_log_tail(docker_log_file_path)
+    log_details = f"\nLast container log lines:\n{log_tail}" if log_tail else ""
+    raise RuntimeError(
+        f"Docker container {container_name} exited before the inference server "
+        f"became ready (docker run rc={return_code}). "
+        f"Full log: {docker_log_file_path}{log_details}"
+    )
+
+
+def _get_server_ready_timeout(model_spec) -> float:
+    timeout = getattr(
+        getattr(model_spec, "device_model_spec", None),
+        "tensor_cache_timeout",
+        _DEFAULT_SERVER_READY_TIMEOUT_SECONDS,
+    )
+    try:
+        timeout = float(timeout)
+    except (TypeError, ValueError):
+        timeout = _DEFAULT_SERVER_READY_TIMEOUT_SECONDS
+    return timeout if timeout > 0 else _DEFAULT_SERVER_READY_TIMEOUT_SECONDS
+
+
+def _server_health_url(runtime_config, model_spec) -> Tuple[str, bool]:
+    is_media_server = model_spec.inference_engine != InferenceEngine.VLLM.value
+    endpoint = "/tt-liveness" if is_media_server else "/health"
+    return (
+        f"http://127.0.0.1:{runtime_config.service_port}{endpoint}",
+        is_media_server,
+    )
+
+
+def _probe_server_ready(health_url: str, expect_media_payload: bool) -> bool:
+    """Return whether the HTTP server and model are ready to run workflows."""
+    try:
+        with urlopen(
+            health_url, timeout=_SERVER_HEALTH_REQUEST_TIMEOUT_SECONDS
+        ) as response:
+            if response.status != 200:
+                return False
+            if not expect_media_payload:
+                return True
+            data = json.loads(response.read())
+            return data.get("status") == "alive" and bool(data.get("model_ready"))
+    except (HTTPError, URLError, OSError, TimeoutError, ValueError):
+        return False
+
+
+def _wait_for_server_ready(
+    docker_process: subprocess.Popen,
+    container_name: str,
+    runtime_config,
+    model_spec,
+    docker_log_file_path: Path,
+) -> None:
+    """Wait for HTTP readiness while treating container exit as definitive."""
+    timeout = _get_server_ready_timeout(model_spec)
+    health_url, expect_media_payload = _server_health_url(runtime_config, model_spec)
+    start_time = time.monotonic()
+    last_progress_log = start_time
+
+    logger.info(
+        "Waiting up to %ss for inference server readiness at %s ...",
+        timeout,
+        health_url,
+    )
+    while time.monotonic() - start_time < timeout:
+        _raise_if_docker_exited(docker_process, container_name, docker_log_file_path)
+        if _probe_server_ready(health_url, expect_media_payload):
+            logger.info(
+                "✅ Inference server became ready after %.1fs.",
+                time.monotonic() - start_time,
+            )
+            return
+
+        now = time.monotonic()
+        if now - last_progress_log >= 60:
+            logger.info(
+                "Inference server is still starting (waited %.1fs/%ss).",
+                now - start_time,
+                timeout,
+            )
+            last_progress_log = now
+        time.sleep(_SERVER_READY_POLL_INTERVAL_SECONDS)
+
+    _raise_if_docker_exited(docker_process, container_name, docker_log_file_path)
+    raise RuntimeError(
+        f"Inference server in Docker container {container_name} did not become "
+        f"ready within {timeout}s. Full log: {docker_log_file_path}"
+    )
+
+
 def run_docker_command(
     docker_command, container_name, runtime_config, model_spec, docker_log_file_path
 ):
@@ -622,16 +740,16 @@ def run_docker_command(
     """
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
-    _ = subprocess.Popen(
+    docker_process = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
-    TIMEOUT = 30  # seconds
     POLL_INTERVAL = 0.5  # seconds
     start_time = time.time()
     container_id = ""
 
-    while (time.time() - start_time) < TIMEOUT:
+    while (time.time() - start_time) < _DOCKER_START_TIMEOUT_SECONDS:
+        _raise_if_docker_exited(docker_process, container_name, docker_log_file_path)
         container_id = subprocess.check_output(
             ["docker", "ps", "-f", f"name={container_name}", "--format", "{{.ID}}"],
             text=True,
@@ -642,7 +760,8 @@ def run_docker_command(
 
     if not container_id:
         logger.error(
-            f"TIMEOUT={TIMEOUT} seconds has passed. (docker pull has already run)"
+            f"TIMEOUT={_DOCKER_START_TIMEOUT_SECONDS} seconds has passed. "
+            "(docker pull has already run)"
         )
         logger.error(f"Docker container {container_name} failed to start.")
         logger.error(f"Docker image: {model_spec.docker_image}")
@@ -661,6 +780,14 @@ def run_docker_command(
             logger.info("run_docker cleanup finished.")
 
         atexit.register(teardown_docker)
+        if not runtime_config.interactive:
+            _wait_for_server_ready(
+                docker_process,
+                container_name,
+                runtime_config,
+                model_spec,
+                docker_log_file_path,
+            )
     else:
 
         def exit_log_messages():

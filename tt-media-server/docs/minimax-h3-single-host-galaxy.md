@@ -109,7 +109,7 @@ persistent across restarts, or each restart pays that again.
 export TT_METAL_HOME=/path_to/tt-metal
 export MODEL="MiniMax-H3"
 export MODEL_RUNNER=tt-minimax-h3-t2va
-export DEVICE="galaxy"
+export DEVICE="blackhole_galaxy"
 export ARCH_NAME=blackhole
 export MESH_DEVICE="(4, 8)"
 
