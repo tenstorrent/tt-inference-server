@@ -201,6 +201,7 @@ MODEL_SERVICE_RUNNER_MAP = {
     },
     ModelServices.LLM: {
         ModelRunners.TT_LAB_GPT_OSS,
+        ModelRunners.TT_LAB_GEMMA,
         ModelRunners.VLLMForge,
         ModelRunners.VLLMForge_LLAMA_70B,
         ModelRunners.VLLMForge_GEMMA4_31B,

@@ -34,6 +34,8 @@ class ChatCompletionRequest(BaseModel):
     model: str | None = None
     messages: list[ChatMessage]
     max_tokens: int | None = 2048
+    # OpenAI's newer name for max_tokens (sent by `vllm bench serve`); wins when set.
+    max_completion_tokens: int | None = None
     temperature: float | None = None
     top_p: float | None = None
     top_k: int | None = None

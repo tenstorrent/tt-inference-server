@@ -77,7 +77,8 @@ def _build_completion_request(
     return CompletionRequest(
         model=chat_request.model,
         prompt=prompt,
-        max_tokens=chat_request.max_tokens,
+        max_tokens=(chat_request.max_completion_tokens if chat_request.max_completion_tokens is not None
+                    else chat_request.max_tokens),
         temperature=chat_request.temperature,
         top_p=chat_request.top_p,
         top_k=chat_request.top_k,
