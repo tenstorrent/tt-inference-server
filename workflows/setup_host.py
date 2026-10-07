@@ -418,9 +418,8 @@ class HostSetupManager:
                 )
             if self.setup_config.host_model_volume_root:
                 if self.model_spec.model_type == ModelType.TRAINING:
-                    # Training runners load by repo id, so transformers fetches
-                    # into the container's $HF_HOME/hub on first use; a host copy
-                    # under weights/<model> would never be read.
+                    # Runners load by repo id into the container's $HF_HOME/hub;
+                    # a host copy under weights/<model> would never be read.
                     logger.info(
                         "Training weights will be downloaded by the server into "
                         "its HF cache on first use"
