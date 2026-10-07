@@ -644,6 +644,16 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: test_penalties
+        reason: 'test_penalties fails two repeat_trap cases at seed 1234 / temperature 0.1 although every
+          penalty changes the output: repetition_penalty=1.5 raises the unique-word ratio 0.21 -> 0.42
+          (the 446-word robotic story becomes 666 words of prose) but the rule compares the ABSOLUTE
+          most-common-word count (56 -> 79), which grows with length; presence_penalty=1.2 yields a
+          different repetitive story (the prompt asks for one) whose ratio drops 0.211 -> 0.186, past the
+          90%-of-baseline rule. Identical numbers on two tt-shield runs (37495434533, 37560947407); the
+          other 7 cases pass. Same exemption as Llama-3.3-70B P300X2 (#3888). Measured 2026-10-07.'
     # LoudBox (8x P150). Metal policy: unbounded through 64k; auto-bounded at
     # ≥128k (generator_trace). Prefill chunk default 4096; at ≥128k + bounded
     # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
@@ -1267,6 +1277,14 @@ templates:
         # tokens per request; 65536 could not fit one 256K request (56 GiB "needed").
         max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
+      known_issues:
+      - workflow_type: SPEC_TESTS
+        task_name: test_penalties
+        reason: 'test_penalties[repetition_penalty-1.5-natural_repetition] fails the "increase diversity"
+          rule at seed 1234 / temperature 0.1: the penalty changes the bananas paragraph but its unique-word
+          ratio moves 0.757 -> 0.741, inside per-seed noise. Identical on tt-shield run 37518281683 and on
+          a local run of the same stack (2026-10-06); the other 8 cases pass and the P300X2 entry passes
+          all 9. Same exemption as Llama-3.3-70B P300X2 (#3888).'
   status: COMPLETE
   has_builtin_warmup: true
   env_vars:
