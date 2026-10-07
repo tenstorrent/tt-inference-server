@@ -24,7 +24,10 @@ HLE_MC_INSTRUCTION = (
 def process_hle_text_mc(dataset):
     """Keep text-only multiple-choice questions."""
     return dataset.filter(
-        lambda doc: doc.get("answer_type") == "multipleChoice" and not (doc.get("image") or "").strip()
+        lambda doc: (
+            doc.get("answer_type") == "multipleChoice"
+            and not (doc.get("image") or "").strip()
+        )
     )
 
 
@@ -32,7 +35,9 @@ def hle_doc_to_text(doc) -> str:
     return f"{HLE_MC_INSTRUCTION}\n\n{doc['question']}"
 
 
-_ANSWER_LINE = re.compile(r"(?im)^\s*\**\s*answer\s*\**\s*[:：]\s*\**\s*\(?\s*([A-Z])\b")
+_ANSWER_LINE = re.compile(
+    r"(?im)^\s*\**\s*answer\s*\**\s*[:：]\s*\**\s*\(?\s*([A-Z])\b"
+)
 _BOXED = re.compile(r"\\boxed\{\s*\(?([A-Z])\)?\s*\}")
 
 

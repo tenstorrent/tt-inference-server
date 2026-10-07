@@ -722,7 +722,9 @@ def ensure_weights_available(model_spec: dict) -> Path:
     hf_repo = model_spec.get("hf_weights_repo") or model_spec["hf_model_repo"]
     # A spec that pins vLLM to an immutable checkpoint (vllm_args.revision) gets the
     # same checkpoint here, so the served weights do not drift when the hub's main moves.
-    revision = (model_spec.get("device_model_spec") or {}).get("vllm_args", {}).get("revision")
+    revision = (
+        (model_spec.get("device_model_spec") or {}).get("vllm_args", {}).get("revision")
+    )
 
     weights_path.mkdir(parents=True, exist_ok=True)
     at_revision = f" at revision {revision}" if revision else ""
