@@ -1192,6 +1192,28 @@
                         "tput": 27.0
                     }
                 }
+            },
+            {
+                "isl": 3967,
+                "osl": 128,
+                "max_concurrency": 8,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
+            },
+            {
+                "isl": 3967,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 64,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {}
             }
         ]
     },
