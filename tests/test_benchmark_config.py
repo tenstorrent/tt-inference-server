@@ -399,3 +399,56 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
         * spec_max_concurrency
     )
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
+
+
+@pytest.mark.parametrize("model_name", ["GLM-5.2", "GLM-5.3"])
+def test_glm_sweeps_128_to_1m_isl_at_concurrency_1_and_30(monkeypatch, model_name):
+    """GLM runs every standard ISL/OSL pair plus a 1M point, each at 1 and 30 concurrent users."""
+    benchmark_config = _import_benchmark_config(monkeypatch)
+
+    # GLM lives in the dev specs only, so build its SUPER_CLUSTER shape from a prod one:
+    # 1M context, 80 slots (the dev spec), no perf-reference targets.
+    _, base_spec = _make_super_cluster_runtime_spec()
+    glm_spec = replace(
+        base_spec,
+        model_name=model_name,
+        device_model_spec=replace(
+            base_spec.device_model_spec,
+            max_context=1048576,
+            max_concurrency=80,
+            perf_reference=[],
+        ),
+    )
+    config = benchmark_config.get_benchmark_config(glm_spec)
+
+    params = [
+        p for task in config.tasks for p in task.param_map[DeviceTypes.SUPER_CLUSTER]
+    ]
+    # Structured-output runs drive their own concurrency, so they stay out.
+    assert {getattr(p, "task_type", "text") for p in params} == {"text"}
+    expected_pairs = set(
+        benchmark_config.BENCHMARK_ISL_OSL_PAIRS
+        + benchmark_config.SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
+    ) | {(1048576 - 128, 128)}
+    assert min(isl for isl, _ in expected_pairs) == 128
+    assert sorted((p.isl, p.osl, p.max_concurrency) for p in params) == sorted(
+        (isl, osl, c) for isl, osl in expected_pairs for c in (1, 30)
+    )
+    # The SUPER_CLUSTER prompt floor (2x the spec's 80 slots) does not apply.
+    assert all(
+        p.num_prompts
+        == benchmark_config.get_num_prompts(p.isl, p.osl, p.max_concurrency)
+        for p in params
+    )
+
+
+def test_non_glm_super_cluster_sweep_is_unchanged(monkeypatch):
+    benchmark_config = _import_benchmark_config(monkeypatch)
+    _, runtime_spec = _make_super_cluster_runtime_spec()
+    config = benchmark_config.get_benchmark_config(runtime_spec)
+    levels = {
+        p.max_concurrency
+        for p in config.tasks[1].param_map[DeviceTypes.SUPER_CLUSTER]
+        if getattr(p, "task_type", "text") == "text" and p.isl is not None
+    }
+    assert 1 in levels and 30 not in levels

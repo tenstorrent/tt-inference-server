@@ -4,7 +4,7 @@
 
 import os
 from dataclasses import dataclass, replace
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import (
@@ -122,6 +122,22 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
+# Per-model sweep override, prefix-matched against model_spec.model_name. A matched model
+# REPLACES the sweep's concurrency levels: `concurrencies` are the exact levels instead of
+# [1, allowed_max] (levels above the allowed max are dropped). `extra_pairs`, optional, are
+# ISL/OSL pairs appended to the sweep, still subject to isl + osl <= max_context. It also skips the
+# structured-output runs, which drive a concurrency of their own, and clears
+# SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE, so get_num_prompts scales with the level.
+#
+# GLM-5.x: ISL 128 up to the full 1M context, one request alone and 30 concurrent users, for
+# the pdg-g53 P/D deployments, where AgentX at 30 is the highest load shown to run clean.
+MODEL_SWEEP_OVERRIDES = {
+    "GLM-5.": {
+        "concurrencies": (1, 30),
+        # isl + osl == max_context (1,048,576): the largest prompt the engine admits.
+        "extra_pairs": ((1048576 - 128, 128),),  # 1M
+    },
+}
 
 
 # Image resolution pairs for multimodal benchmarks
@@ -160,6 +176,7 @@ def _expand_text_sweep_params(
     max_tokens_all_users: int,
     model_max_concurrency: int,
     min_num_prompts: int = 0,
+    concurrencies: Optional[Sequence[int]] = None,
 ) -> List[BenchmarkTaskParams]:
     if isl + osl > max_context:
         return []
@@ -167,9 +184,14 @@ def _expand_text_sweep_params(
     allowed_max_concurrency = get_benchmark_max_concurrency(
         isl, osl, max_context, max_tokens_all_users, model_max_concurrency
     )
-    concurrencies = [1]
-    if allowed_max_concurrency > 1:
-        concurrencies.append(allowed_max_concurrency)
+    if concurrencies is None:
+        levels = [1]
+        if allowed_max_concurrency > 1:
+            levels.append(allowed_max_concurrency)
+    else:
+        # An explicit level still cannot exceed what the token budget allows; keep 1 so a
+        # model whose allowed max is 1 is measured rather than skipped.
+        levels = [c for c in concurrencies if c <= allowed_max_concurrency] or [1]
 
     return [
         BenchmarkTaskParams(
@@ -183,7 +205,7 @@ def _expand_text_sweep_params(
                 min_num_prompts=min_num_prompts if concurrency > 1 else 0,
             ),
         )
-        for concurrency in concurrencies
+        for concurrency in levels
     ]
 
 
@@ -587,6 +609,20 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
             SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * model_max_concurrency
         )
 
+    override = next(
+        (
+            spec
+            for prefix, spec in MODEL_SWEEP_OVERRIDES.items()
+            if (model_spec.model_name or "").startswith(prefix)
+        ),
+        None,
+    )
+    sweep_concurrencies = None
+    if override is not None:
+        text_isl_osl_pairs += list(override.get("extra_pairs", ()))
+        sweep_concurrencies = tuple(override["concurrencies"])
+        sweep_min_num_prompts = 0
+
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)
 
     # Apply capping to each perf reference entry (including vision tokens for VLM models)
@@ -662,6 +698,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                             max_tokens_all_users=max_tokens_all_users,
                             model_max_concurrency=model_max_concurrency,
                             min_num_prompts=sweep_min_num_prompts,
+                            concurrencies=sweep_concurrencies,
                         )
                     ]
                     + (
@@ -691,7 +728,9 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: llms and vlms, can be extended
-    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    structured_output_eligible = (
+        model_spec.model_type in (ModelType.LLM, ModelType.VLM) and override is None
+    )
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(
