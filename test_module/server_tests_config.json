@@ -86,7 +86,9 @@
       "tiiuae/Falcon3-1B-Instruct",
       "tiiuae/Falcon3-3B-Instruct",
       "tiiuae/Falcon3-10B-Instruct",
-      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+      "deepcogito/cogito-v1-preview-llama-8B",
+      "Qwen/Qwen3-4B-Instruct-2507"
     ]
   },
   "available_markers": {
@@ -903,6 +905,26 @@
       "id_name": "deepseek-ai--DeepSeek-R1-Distill-Llama-8B",
       "weights": [
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-8B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-8B"
+      ]
+    },
+    "Qwen/Qwen3-4B-Instruct-2507": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-4B-Instruct-2507",
+      "weights": [
+        "Qwen/Qwen3-4B-Instruct-2507"
       ]
     }
   },
