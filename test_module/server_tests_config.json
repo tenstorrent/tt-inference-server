@@ -88,7 +88,9 @@
       "tiiuae/Falcon3-10B-Instruct",
       "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
       "deepcogito/cogito-v1-preview-llama-8B",
-      "Qwen/Qwen3-4B-Instruct-2507"
+      "Qwen/Qwen3-4B-Instruct-2507",
+      "upstage/SOLAR-10.7B-Instruct-v1.0",
+      "01-ai/Yi-1.5-9B-Chat"
     ]
   },
   "available_markers": {
@@ -925,6 +927,26 @@
       "id_name": "Qwen--Qwen3-4B-Instruct-2507",
       "weights": [
         "Qwen/Qwen3-4B-Instruct-2507"
+      ]
+    },
+    "upstage/SOLAR-10.7B-Instruct-v1.0": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "upstage--SOLAR-10.7B-Instruct-v1.0",
+      "weights": [
+        "upstage/SOLAR-10.7B-Instruct-v1.0"
+      ]
+    },
+    "01-ai/Yi-1.5-9B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "01-ai--Yi-1.5-9B-Chat",
+      "weights": [
+        "01-ai/Yi-1.5-9B-Chat"
       ]
     }
   },
