@@ -59,14 +59,7 @@ EVALS_KIND = "evals"
 
 BENCHMARKS_KIND = "benchmarks"
 
-EVALS_METHODOLOGY_NOTE = (
-    "Note: The ratio to published scores defines if eval ran roughly correctly, "
-    "as the exact methodology of the model publisher cannot always be reproduced. "
-    "For this reason the accuracy check is based first on being equivalent to the "
-    "GPU reference within a +/- tolerance. If a value GPU reference is not "
-    "available, the accuracy check is based on the direct ratio to the published "
-    "score."
-)
+EVALS_METHODOLOGY_NOTE = FOOTNOTES["evals"]
 
 BENCHMARK_TIER_NOTE = (
     "Note: The Target Check column reflects only the strictest `target` tier. "

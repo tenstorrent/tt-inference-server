@@ -124,3 +124,43 @@ def test_granite_ci_commands_select_fixed_subsets():
     for task in (terminal, swe):
         assert resolve_n_tasks(task, runtime) == 5
         assert len(resolve_task_names(task, runtime)) == 5
+
+
+def test_agentic_report_keeps_effective_ci_reference_after_consolidation():
+    from llm_module.parsers.agentic import AgenticEvalParser
+    from report_module.generator import _consolidate_eval_blocks
+    from report_module.renderers import render_evals
+    from workflow_module.engine_types import ReportCheckTypes
+
+    blocks = []
+    for task, correct, reference in (
+        (_eval_config_map[MODEL].tasks[1], 1, 20.0),
+        (_eval_config_map[MODEL].tasks[2], 2, 50.0),
+    ):
+        raw = {
+            "stats": {
+                "evals": {
+                    task.task_name: {
+                        "metrics": [{"mean": correct / 5}],
+                        "n_trials": 5,
+                    }
+                }
+            }
+        }
+        block = AgenticEvalParser(
+            task_name=task.task_name,
+            score=task.score,
+            limit_mode=EvalLimitMode.CI_NIGHTLY,
+        ).parse(raw)
+        assert block.data["accuracy_check"] == ReportCheckTypes.PASS
+        assert block.data["gpu_reference_score"] == reference
+        assert block.data["ratio_to_reference"] == (correct * 20) / reference
+        assert block.data["n_samples"] == 5
+        blocks.append(block)
+    (merged,) = _consolidate_eval_blocks(blocks)
+    markdown = render_evals(merged, {})
+    assert "not measured subset GPU control" in markdown
+    assert "Reference Source" in markdown
+    assert "GPU Reference Score" not in markdown
+    assert "round the required correct count down" in markdown
+    assert "equivalent to the GPU" not in markdown

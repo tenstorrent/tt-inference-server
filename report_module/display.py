@@ -107,7 +107,8 @@ DISPLAY_NAMES: Dict[str, str] = {
     "tolerance": "Tolerance",
     "published_score": "Published Score",
     "published_score_ref": "Published Score Ref",
-    "gpu_reference_score": "GPU Reference Score",
+    "gpu_reference_score": "Reference Score",
+    "gpu_reference_score_ref": "Reference Source",
     "score": "Score",
     "ratio_to_published": "Ratio to Published",
     "ratio_to_reference": "Ratio to Reference",
@@ -236,12 +237,11 @@ _BENCHMARK_MEAN_NOTE = (
 )
 
 _EVALS_FOOTNOTE = (
-    "Note: The ratio to published scores defines if eval ran roughly "
-    "correctly, as the exact methodology of the model publisher cannot "
-    "always be reproduced. For this reason the accuracy check is based "
-    "first on being equivalent to the GPU reference within a +/- "
-    "tolerance. If a value GPU reference is not available, the accuracy "
-    "check is based on the direct ratio to the published score."
+    "Note: Accuracy checks use the configured task/mode reference and tolerance. "
+    "CI-subset checks with a known sample count round the required correct count "
+    "down. The reference source states whether a value is a measured control or "
+    "a selected acceptance target. Published full-set scores do not establish "
+    "parity on a CI subset."
 )
 
 _SPEC_DECODE_FOOTNOTE = (

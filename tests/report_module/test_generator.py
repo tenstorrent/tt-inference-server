@@ -170,7 +170,7 @@ class TestGenerate:
         md = result.markdown
         assert md.count("### Accuracy Evaluations for m on n300") == 1
         assert "LLM Eval — meta_ifeval" not in md
-        assert "Note: The ratio to published scores" in md
+        assert "Note: Accuracy checks use the configured task/mode reference" in md
         # Both tasks live in the one consolidated table.
         assert "meta_ifeval" in md and "longbench_code_e" in md
 

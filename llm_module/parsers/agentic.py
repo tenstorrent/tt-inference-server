@@ -105,7 +105,13 @@ def _build_evals_data(
     tolerance = getattr(score, "tolerance", None)
     published = getattr(score, "published_score", None)
     published_ref = getattr(score, "published_score_ref", None)
-    reference = getattr(score, "gpu_reference_score", None)
+    ref = (
+        get_target_pack().resolve_eval_reference(score, limit_mode)
+        if score is not None
+        else {}
+    )
+    reference = ref.get("reference_score")
+    tolerance = ref.get("tolerance", tolerance)
 
     accuracy = metrics.get("accuracy")
     normalized_score: Optional[float]
@@ -137,6 +143,9 @@ def _build_evals_data(
         "published_score": published,
         "published_score_ref": published_ref,
         "gpu_reference_score": reference,
+        "gpu_reference_score_ref": ref.get("reference_ref"),
+        "is_subset_reference": ref.get("is_subset_reference", False),
+        "n_samples": metrics.get("n_trials"),
         "score": normalized_score,
         "ratio_to_published": ratio_pub,
         "ratio_to_reference": ratio_ref,
