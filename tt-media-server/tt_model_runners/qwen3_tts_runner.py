@@ -221,8 +221,11 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         if self.main_weights is None or self.decoder_weights is None:
             self.main_weights, self.decoder_weights = self._load_qwen_weights()
 
+        # Same pinned revision as the weights (tt-metal server.HF_REVISIONS); older
+        # tt-metal trees without the pin fall back to the repo's main branch.
+        revision = getattr(api, "hf_revision", lambda _hf_id: None)(self.hf_id)
         self.tokenizer = AutoTokenizer.from_pretrained(
-            self.hf_id, trust_remote_code=True
+            self.hf_id, trust_remote_code=True, revision=revision
         )
 
         from models.demos.qwen3_tts.tt.model_config import talker_config_for_hf_id
