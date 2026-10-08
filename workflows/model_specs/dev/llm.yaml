@@ -421,11 +421,12 @@ templates:
         # The V4.1 implementation's inputs: the pinned checkpoint snapshot (its
         # weights.resolve_checkpoint checks the index blob against the pinned
         # revision), the device weight cache (expert tensors converted once per
-        # mesh shape), the Engram tables mapped from disk instead of resident
-        # (the resident loader needs 246 GB of host RAM), the prefill chunk.
+        # mesh shape), the Engram tables resident in host RAM (246 GB and
+        # about 7 minutes of table reads at start; mapped from disk the
+        # per-request row gather page-faults for 0.3 to 1.4 s), the prefill chunk.
         TT_V41_CHECKPOINT: "/data/huggingface/hub/models--deepseek-ai--DeepSeek-V4.1-Flash/snapshots/dba1be0a40aa45a94ad051997016db3960a90277"
         TT_V41_WEIGHT_CACHE: "/data2/ttnn-cache"
-        TT_V41_ENGRAM_MMAP: "1"
+        TT_V41_ENGRAM_MMAP: "0"
         TT_V41_CHUNK: "8192"
         # Prompt lengths whose prefill is captured per slot at warm-up and
         # replayed: the four registered c1 points, each
