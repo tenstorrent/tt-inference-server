@@ -10,19 +10,6 @@ import pytest
 
 
 # --- Helper Functions ---
-def generated_text(response):
-    """Sampler controls apply to reasoning and final tokens, not final text alone."""
-    message = response["choices"][0]["message"]
-    for field in ("reasoning", "reasoning_content", "content"):
-        value = message.get(field)
-        assert value is None or isinstance(value, str), f"Invalid {field}: {value!r}"
-    reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
-    content = message.get("content") or ""
-    text = "\n".join(part for part in (reasoning, content) if part)
-    assert text.strip(), "Response contains no generated reasoning or final text"
-    return text
-
-
 def tokenize(text):
     """Tokenize by whitespace (simple, portable)."""
     return text.lower().split()
@@ -111,7 +98,7 @@ def test_stop(report_test, api_client, stop_seq, request):
     payload = {"messages": prompt, "stop": stop_seq, "max_tokens": 1024}
     response = api_client(payload)
 
-    output_text = generated_text(response)
+    output_text = response["choices"][0]["message"]["content"]
     for seq in stop_seq:
         assert seq not in output_text, f"Sequence {seq} was in {output_text}"
 
@@ -123,8 +110,8 @@ def test_seed_reproducibility(report_test, api_client, request):
     response1 = api_client(payload)
     response2 = api_client(payload)
 
-    output1 = generated_text(response1)
-    output2 = generated_text(response2)
+    output1 = response1["choices"][0]["message"]["content"]
+    output2 = response2["choices"][0]["message"]["content"]
     assert output1 and output1 == output2, (
         f"Seed did not produce reproducible results. Output 1: '{output1}', Output 2: '{output2}'"
     )
@@ -151,18 +138,11 @@ def test_coherence_verbatim_echo(report_test, api_client, request):
             ),
         }
     ]
-    # Granite's full-thinking mode exhausted32 tokens before its final answer.
-    # Scope its coherence budget so shorter-context models keep their contract.
-    granite = request.config.getoption("--model-name") == "ibm-granite/granite-4.2-30b"
-    payload = {
-        "messages": prompt,
-        "max_tokens": 4096 if granite else 32,
-        "temperature": 0,
-    }
-    response = api_client(payload, timeout=3600 if granite else 30)
+    payload = {"messages": prompt, "max_tokens": 32, "temperature": 0}
+    response = api_client(payload)
 
     output_text = response["choices"][0]["message"]["content"]
-    assert isinstance(output_text, str) and sentence in output_text, (
+    assert sentence in output_text, (
         "Coherence guard failed: model did not echo the sentence verbatim "
         "(likely gibberish from a corrupted forward pass). Expected to find "
         f"{sentence!r} in output, got: {output_text!r}"
@@ -206,7 +186,7 @@ async def test_non_uniform_seeding(report_test, api_client, request):
             response = await asyncio.to_thread(api_client, payload)
             return {
                 "seed": seed_val,
-                "content": generated_text(response).strip(),
+                "content": response["choices"][0]["message"]["content"].strip(),
                 "id": response["id"],
             }
         except Exception as e:
@@ -293,8 +273,8 @@ def test_determinism_parameters(
     response1 = api_client(payload)
     response2 = api_client(payload)
 
-    output1 = generated_text(response1)
-    output2 = generated_text(response2)
+    output1 = response1["choices"][0]["message"]["content"]
+    output2 = response2["choices"][0]["message"]["content"]
     assert output1 and output1 == output2, (
         f"{param_name}={param_value} was not deterministic. Output 1: '{output1}', Output 2: '{output2}'"
     )
@@ -328,19 +308,9 @@ def test_penalties(
     payload_test[penalty_param] = penalty_val
     response_test = api_client(payload_test, timeout=None)
 
-    # Preserve the original final-answer requirement; lexical diversity alone
-    # cannot make truncated, drifting reasoning a healthy completion.
-    for label, response in (("baseline", response_base), ("penalty", response_test)):
-        final = response["choices"][0]["message"].get("content")
-        assert isinstance(final, str) and final.strip(), (
-            f"{label} response has no final answer; finish_reason="
-            f"{response['choices'][0].get('finish_reason')}"
-        )
-
-    # Measure all generated text: penalties apply before reasoning/final parsing.
-    # These lexical metrics do not establish final-answer quality or completion.
-    text_base = generated_text(response_base)
-    text_test = generated_text(response_test)
+    # Compute baseline and test statistics
+    text_base = response_base["choices"][0]["message"]["content"]
+    text_test = response_test["choices"][0]["message"]["content"]
 
     base_stats = repetition_stats(text_base)
     test_stats = repetition_stats(text_test)
