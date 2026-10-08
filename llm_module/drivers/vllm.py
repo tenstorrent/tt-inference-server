@@ -191,11 +191,21 @@ class VLLMBenchDriver(LLMDriver):
             result_filename=result_filename,
         )
 
+        binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)
         if config.token_timing:
-            binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)
             cmd = [
                 str(binary.parent / "python"),
                 str(Path(__file__).parents[1] / "vllm_token_timing.py"),
+                *cmd[1:],
+            ]
+        else:
+            # Every request gets its own prefix-cache salt (LLMRunConfig.cache_salt +
+            # llm_module/vllm_bench_cache_off.py): vllm bench serve sends an untimed
+            # test request with the first prompt, and under one per-invocation salt
+            # the measured prompt 0 would hit the blocks that request just filled.
+            cmd = [
+                str(binary.parent / "python"),
+                str(Path(__file__).parents[1] / "vllm_bench_cache_off.py"),
                 *cmd[1:],
             ]
 

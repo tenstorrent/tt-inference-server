@@ -224,7 +224,11 @@ def test_token_timing_runs_adapter_with_the_selected_client_interpreter(
     assert seen[0][2:4] == ["bench", "serve"]
     assert result.raw["tt_timing_protocol"] == "first-to-last-nonempty-content"
     driver.run(_config(), server, DriverContext(output_dir=tmp_path))
-    assert seen[1][:3] == ["/client-venv/bin/vllm", "bench", "serve"]
+    # Plain benchmarks launch through the per-request cache-salt wrapper (the test
+    # request vllm bench serve sends first must not prime the cache for prompt 0).
+    assert seen[1][0] == "/client-venv/bin/python"
+    assert seen[1][1].endswith("/llm_module/vllm_bench_cache_off.py")
+    assert seen[1][2:4] == ["bench", "serve"]
 
 
 def _valid_raw():
