@@ -180,7 +180,7 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 130,
-                        "tput_user": 40
+                        "tput_user": 36
                     }
                 }
             },
@@ -192,8 +192,8 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 900,
-                        "tput_user": 38,
-                        "tput": 1200
+                        "tput_user": 35,
+                        "tput": 900
                     }
                 }
             }
@@ -222,7 +222,7 @@
                     "theoretical": {
                         "ttft_ms": 700,
                         "tput_user": 30,
-                        "tput": 3800
+                        "tput": 3300
                     }
                 }
             }
@@ -9367,7 +9367,7 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 130,
-                        "tput_user": 40
+                        "tput_user": 36
                     }
                 }
             },
@@ -9379,8 +9379,8 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 900,
-                        "tput_user": 38,
-                        "tput": 1200
+                        "tput_user": 35,
+                        "tput": 900
                     }
                 }
             }
@@ -9409,7 +9409,7 @@
                     "theoretical": {
                         "ttft_ms": 700,
                         "tput_user": 30,
-                        "tput": 3800
+                        "tput": 3300
                     }
                 }
             }
