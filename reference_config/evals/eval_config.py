@@ -6769,10 +6769,10 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-airline-task-0",
-                            "sierra-research/tau3-bench__tau3-airline-task-1",
-                            "sierra-research/tau3-bench__tau3-airline-task-2",
-                            "sierra-research/tau3-bench__tau3-airline-task-3",
+                            "sierra-research/tau3-bench__tau3-airline-0",
+                            "sierra-research/tau3-bench__tau3-airline-1",
+                            "sierra-research/tau3-bench__tau3-airline-2",
+                            "sierra-research/tau3-bench__tau3-airline-3",
                         ],
                     },
                 ),
@@ -6828,10 +6828,10 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-retail-task-0",
-                            "sierra-research/tau3-bench__tau3-retail-task-1",
-                            "sierra-research/tau3-bench__tau3-retail-task-2",
-                            "sierra-research/tau3-bench__tau3-retail-task-3",
+                            "sierra-research/tau3-bench__tau3-retail-0",
+                            "sierra-research/tau3-bench__tau3-retail-1",
+                            "sierra-research/tau3-bench__tau3-retail-2",
+                            "sierra-research/tau3-bench__tau3-retail-3",
                         ],
                     },
                 ),
@@ -6887,10 +6887,10 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
-                            "sierra-research/tau3-bench__tau3-telecom-task-0",
-                            "sierra-research/tau3-bench__tau3-telecom-task-1",
-                            "sierra-research/tau3-bench__tau3-telecom-task-2",
-                            "sierra-research/tau3-bench__tau3-telecom-task-3",
+                            "sierra-research/tau3-bench__tau3-telecom-mms-issue-airplane-mode-on-bad-network-preference-bad-wifi-calling-break-apn-mms-setting-break-app-both-permissions-data-mode-off-data-usage-exceeded-unseat-sim-card-user-abroad-roaming-disabled-off-persona-hard",
+                            "sierra-research/tau3-bench__tau3-telecom-mms-issue-airplane-mode-on-bad-network-preference-bad-wifi-calling-break-apn-mms-setting-break-app-both-permissions-data-mode-off-data-usage-exceeded-unseat-sim-card-user-abroad-roaming-disabled-on-persona-hard",
+                            "sierra-research/tau3-bench__tau3-telecom-mms-issue-airplane-mode-on-bad-network-preference-bad-wifi-calling-break-apn-mms-setting-break-app-both-permissions-unseat-sim-card-user-abroad-roaming-enabled-off-persona-hard",
+                            "sierra-research/tau3-bench__tau3-telecom-mms-issue-airplane-mode-on-bad-network-preference-bad-wifi-calling-break-apn-mms-setting-break-app-sms-permission-data-mode-off-data-usage-exceeded-unseat-sim-card-user-abroad-roaming-disabled-on-persona-none",
                         ],
                     },
                 ),
