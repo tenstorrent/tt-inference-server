@@ -611,31 +611,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=16.08,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -698,31 +678,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=28.79,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -785,31 +745,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=39.1,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-7B-Base/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -818,7 +758,11 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="leaderboard_ifeval",
-                apply_chat_template=False,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('You are Qwen,
+                # created by Alibaba Cloud. You are a helpful assistant.') is injected in both runs.
                 # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
                 # mean of prompt- and instruction-level strict acc (34.46); the TTIS key is prompt-level only.
                 score=EvalTaskScore(
@@ -837,8 +781,12 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="leaderboard_math_hard",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('You are Qwen,
+                # created by Alibaba Cloud. You are a helpful assistant.') is injected in both runs.
                 num_fewshot=4,
-                apply_chat_template=False,
                 # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
                 # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
                 # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (19.18).
@@ -872,31 +820,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=36.79,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -1023,31 +951,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=14.64,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/stabilityai/stablelm-2-1_6b/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -3777,11 +3685,13 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
-                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
-                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-14B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
                 score=EvalTaskScore(
-                    published_score=61.03,
-                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 5: Qwen3-14B-Base, MMLU-Pro 5-shot CoT)",
+                    published_score=None,
+                    published_score_ref=None,
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -3860,11 +3770,13 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
-                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
-                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-4B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
                 score=EvalTaskScore(
-                    published_score=50.58,
-                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 7: Qwen3-4B-Base, MMLU-Pro 5-shot CoT)",
+                    published_score=None,
+                    published_score_ref=None,
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -3942,11 +3854,13 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
-                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
-                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-1.7B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
                 score=EvalTaskScore(
-                    published_score=36.76,
-                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 8: Qwen3-1.7B-Base, MMLU-Pro 5-shot CoT)",
+                    published_score=None,
+                    published_score_ref=None,
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -4023,11 +3937,13 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
-                # Same convention as Qwen/Qwen3-8B: the report's MMLU-Pro is measured 5-shot CoT on the pre-trained
-                # -Base checkpoint (pre-trained evaluation section); the post-trained tables do not report MMLU-Pro.
+                # NA: the Qwen3 Technical Report's MMLU-Pro (5-shot, CoT) is measured on the separate Qwen3-0.6B-Base
+                # checkpoint without a chat template; this row serves the post-trained checkpoint with its chat template
+                # applied, and the post-trained tables do not report MMLU-Pro. Different model and prompts, so no
+                # comparable published number.
                 score=EvalTaskScore(
-                    published_score=24.74,
-                    published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 8: Qwen3-0.6B-Base, MMLU-Pro 5-shot CoT)",
+                    published_score=None,
+                    published_score_ref=None,
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -4285,10 +4201,14 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="ifeval",
-                # The card reports prompt- and instruction-level strict separately; the scored key is prompt-level.
+                apply_chat_template=False,
+                # The card's IFEval (prompt strict) 38.08 is results.ifeval.prompt_level_strict_acc,none in the model
+                # repo's evaluations/en/Allam-7b-instruct-preview/ifeval_0_shot.json: lm-eval 'ifeval' (version 4.0, as
+                # pinned here), 0-shot, run with chat_template=null and system_instruction=null. Score the same
+                # untemplated prompt.
                 score=EvalTaskScore(
                     published_score=38.08,
-                    published_score_ref="https://huggingface.co/ALLaM-AI/ALLaM-7B-Instruct-preview (English Benchmarks table, ALLaM-7B-Instruct-preview row: IFEval (prompt strict) 0 Shot)",
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview/blob/main/evaluations/en/Allam-7b-instruct-preview/ifeval_0_shot.json (results.ifeval.prompt_level_strict_acc,none)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -4308,10 +4228,14 @@ _eval_config_list = [
                 # Shield run 37310746376); score the plain few-shot prompt instead.
                 apply_chat_template=False,
                 num_fewshot=5,
-                # The card does not state whether its 5-shot MMLU-Pro is generative CoT, as TTIS mmlu_pro is.
+                # The card's MMLU Pro 5 Shot 30.4 is results.mmlu_pro.exact_match,custom-extract in the model repo's
+                # evaluations/en/Allam-7b-instruct-preview/mmlu_pro_5_shot.json: lm-eval generative mmlu_pro (CoT, regex
+                # letter extraction), 5-shot, chat_template=null, matching this task. Harness drift: that run used
+                # mmlu_pro group version 2.0 (stop 'Q:', 256 generated tokens); the pinned 3.0 stops at 'Question:' and
+                # allows 2048.
                 score=EvalTaskScore(
                     published_score=30.4,
-                    published_score_ref="https://huggingface.co/ALLaM-AI/ALLaM-7B-Instruct-preview (English Benchmarks table, ALLaM-7B-Instruct-preview row: MMLU Pro 5 Shot)",
+                    published_score_ref="https://huggingface.co/humain-ai/ALLaM-7B-Instruct-preview/blob/main/evaluations/en/Allam-7b-instruct-preview/mmlu_pro_5_shot.json (results.mmlu_pro.exact_match,custom-extract)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
@@ -5415,27 +5339,13 @@ _eval_config_list = [
                     },
                 ),
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                score=EvalTaskScore(
-                    published_score=31.36,
-                    published_score_ref="https://huggingface.co/arcee-ai/Arcee-Spark (Open LLM Leaderboard results on the model card)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro (the model card's 31.36 is the leaderboard's normalized MMLU-PRO, (38.22 - 10) /
+            # 0.9, of the results JSON's leaderboard_mmlu_pro acc,none = 38.22), which the pinned harness scores as
+            # 5-shot log-likelihood multiple choice (acc). TTIS mmlu_pro generates a 5-shot chain of thought and
+            # extracts a letter (exact_match,custom-extract), so the two measure different behaviour and are not
+            # comparable. The matching leaderboard_mmlu_pro task needs prompt log-likelihoods from the server, which
+            # no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2. Published score: Cogito 3B (Standard, non-thinking) MMLU-Pro
@@ -5473,10 +5383,10 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Draft TTIS EvalConfig entries for 12 base (non-chat) checkpoints served by quetzal on P300X2.
-    # Paste inside _eval_config_list in reference_config/evals/eval_config.py.
-    # All tasks use the text completions endpoint (use_chat_api=False) and apply_chat_template=False,
-    # because these are pretrained checkpoints served without a chat template.
+    # Base (pretrained) checkpoints served by quetzal on P300X2. Tasks use the text completions endpoint
+    # (use_chat_api=False). apply_chat_template follows the cited Open LLM Leaderboard v2 run: False where its
+    # results JSON records chat_template=null, True where it records the tokenizer's template (Qwen2.5-Coder-7B,
+    # Qwen2.5-Math-7B).
     # Open LLM Leaderboard v2 (OLL) numbers come from the per-model results JSON (2025-02-13 re-scoring,
     # which is what the leaderboard currently displays), run with the same lm-eval leaderboard_* tasks and n-shot.
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -5539,31 +5449,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=12.03,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -5626,31 +5516,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=24.88,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-3B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON + model card (MMLU-Pro); GPU reference TBD.
@@ -5739,7 +5609,7 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON + model card (MMLU-Pro); GPU reference TBD.
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="tiiuae/Falcon3-10B-Base",
         tasks=[
@@ -5799,31 +5669,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # The card does not name the lm-eval task variant; its value tracks the Open LLM Leaderboard
-                # leaderboard_mmlu_pro (loglikelihood multiple-choice) raw acc of 42.40 for this model, which differs
-                # from TTIS mmlu_pro (generative CoT, exact_match,custom-extract).
-                score=EvalTaskScore(
-                    published_score=42.5,
-                    published_score_ref="https://huggingface.co/tiiuae/Falcon3-10B-Base (Benchmarks table, internal lm-evaluation-harness pipeline: MMLU-PRO (5-shot), raw score)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the model card's MMLU-PRO (5-shot) 42.5 comes from tiiuae's internal
+            # lm-evaluation-harness pipeline (raw scores) without stating the scoring method, and it tracks the Open
+            # LLM Leaderboard v2 log-likelihood leaderboard_mmlu_pro acc for this checkpoint (42.40), not a generative
+            # score. TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter
+            # (exact_match,custom-extract), so no comparable published number is established.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -5886,31 +5736,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=13.07,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -6175,11 +6005,13 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="leaderboard_ifeval",
-                apply_chat_template=False,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('Please reason step
+                # by step, and put your final answer within \boxed{}.') is injected in both runs.
                 # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
                 # mean of prompt- and instruction-level strict acc (24.60); the TTIS key is prompt-level only.
-                # SETTING MISMATCH: the leaderboard evaluated this checkpoint with its chat template applied
-                # (results JSON chat_template != null); this row serves it as a base model without one.
                 score=EvalTaskScore(
                     published_score=19.22,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
@@ -6196,13 +6028,15 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="leaderboard_math_hard",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current tokenizer_config.json),
+                # fewshot_as_multiturn=true and system_instruction=null. The pinned harness defaults fewshot_as_multiturn
+                # to true under --apply_chat_template, and the template's own default system prompt ('Please reason step
+                # by step, and put your final answer within \boxed{}.') is injected in both runs.
                 num_fewshot=4,
-                apply_chat_template=False,
                 # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
                 # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
                 # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (30.51).
-                # SETTING MISMATCH: the leaderboard evaluated this checkpoint with its chat template applied
-                # (results JSON chat_template != null); this row serves it as a base model without one.
                 score=EvalTaskScore(
                     published_score=27.67,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
@@ -6233,37 +6067,14 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                # SETTING MISMATCH: the leaderboard evaluated this checkpoint with its chat template applied
-                # (results JSON chat_template != null); this row serves it as a base model without one.
-                # Runnability: max_position_embeddings is 4096; long 5-shot CoT prompts may hit the context limit.
-                score=EvalTaskScore(
-                    published_score=27.18,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Math-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
-    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON + model card (MMLU-Pro); GPU reference TBD.
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="Qwen/Qwen2-7B",
         tasks=[
@@ -6323,33 +6134,14 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # The Qwen2.5 tech report (arXiv 2412.15115, Table 4) lists Qwen2-7B MMLU-Pro as 40.1; the model card value is used.
-                # Source does not state CoT vs loglikelihood scoring.
-                score=EvalTaskScore(
-                    published_score=40.0,
-                    published_score_ref="https://huggingface.co/Qwen/Qwen2-7B (Qwen2-7B performance table: MMLU-Pro, 5-shot)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the model card's performance table (MMLU-Pro, 5-shot, 40.0) states only the shot
+            # count, not whether MMLU-Pro was scored by log-likelihood or by generating a chain of thought (contrast
+            # the Qwen3 report, which marks its base-model MMLU-Pro '5-shot, CoT'). TTIS mmlu_pro is generative CoT
+            # (exact_match,custom-extract); the Open LLM Leaderboard v2 number for this checkpoint is log-likelihood
+            # leaderboard_mmlu_pro acc (41.83). No comparable published number is established.
         ],
     ),
-    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON + tech report (MMLU-Pro); GPU reference TBD.
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-7B",
         tasks=[
@@ -6409,29 +6201,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # Source does not state CoT vs loglikelihood scoring.
-                score=EvalTaskScore(
-                    published_score=45.0,
-                    published_score_ref="https://arxiv.org/abs/2412.15115 (Qwen2.5 Technical Report, Table 4: Performance of the 7B+ base models, MMLU-pro; 5-shot per Sec. 5.1)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the Qwen2.5 Technical Report, Table 4 (MMLU-pro 45.0; 5-shot per Sec. 5.1) states only
+            # the shot count, not whether MMLU-Pro was scored by log-likelihood or by generating a chain of thought
+            # (contrast the Qwen3 report, which marks its base-model MMLU-Pro '5-shot, CoT'). TTIS mmlu_pro is
+            # generative CoT (exact_match,custom-extract); the Open LLM Leaderboard v2 number for this checkpoint is
+            # log-likelihood leaderboard_mmlu_pro acc (43.65). No comparable published number is established.
         ],
     ),
     EvalConfig(
@@ -6698,30 +6472,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=12.13,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     EvalConfig(
@@ -6845,30 +6600,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                score=EvalTaskScore(
-                    published_score=20.54,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/HuggingFaceTB/SmolLM2-1.7B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from tiiuae/Falcon3-7B-Instruct; GPU reference TBD.
@@ -6876,11 +6612,12 @@ _eval_config_list = [
         hf_model_repo="tiiuae/Falcon3-1B-Instruct",
         tasks=[
             EvalTask(
-                task_name="ifeval",
-                # The scored key is prompt_level_strict_acc (score_task_single_key reads result_keys[0]), so the published
-                # value is the Open LLM Leaderboard v2 prompt-level strict acc for this checkpoint (chat template applied,
-                # 0-shot, same 541 IFEval prompts). The model card's IFEval figures (internal pipeline and the leaderboard's
-                # normalized IFEval) average prompt- and instruction-level accuracy, so they are not comparable to this key.
+                task_name="leaderboard_ifeval",
+                # Same task as the cited Open LLM Leaderboard v2 run (leaderboard_ifeval, 0-shot, chat template applied as
+                # its results JSON records). The scored key is prompt_level_strict_acc (score_task_single_key reads
+                # result_keys[0]). TTIS 'ifeval' would not match: in the pinned harness it is version 4.0 with more
+                # lenient markdown-highlight and JSON-fence checkers than leaderboard_ifeval (3.0). The model card's
+                # IFEval figures average prompt- and instruction-level accuracy, so they are not comparable to this key.
                 score=EvalTaskScore(
                     published_score=50.46,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-1B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
@@ -6930,11 +6667,12 @@ _eval_config_list = [
         hf_model_repo="tiiuae/Falcon3-3B-Instruct",
         tasks=[
             EvalTask(
-                task_name="ifeval",
-                # The scored key is prompt_level_strict_acc (score_task_single_key reads result_keys[0]), so the published
-                # value is the Open LLM Leaderboard v2 prompt-level strict acc for this checkpoint (chat template applied,
-                # 0-shot, same 541 IFEval prompts). The model card's IFEval figures (internal pipeline and the leaderboard's
-                # normalized IFEval) average prompt- and instruction-level accuracy, so they are not comparable to this key.
+                task_name="leaderboard_ifeval",
+                # Same task as the cited Open LLM Leaderboard v2 run (leaderboard_ifeval, 0-shot, chat template applied as
+                # its results JSON records). The scored key is prompt_level_strict_acc (score_task_single_key reads
+                # result_keys[0]). TTIS 'ifeval' would not match: in the pinned harness it is version 4.0 with more
+                # lenient markdown-highlight and JSON-fence checkers than leaderboard_ifeval (3.0). The model card's
+                # IFEval figures average prompt- and instruction-level accuracy, so they are not comparable to this key.
                 score=EvalTaskScore(
                     published_score=65.43,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-3B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
@@ -6984,11 +6722,12 @@ _eval_config_list = [
         hf_model_repo="tiiuae/Falcon3-10B-Instruct",
         tasks=[
             EvalTask(
-                task_name="ifeval",
-                # The scored key is prompt_level_strict_acc (score_task_single_key reads result_keys[0]), so the published
-                # value is the Open LLM Leaderboard v2 prompt-level strict acc for this checkpoint (chat template applied,
-                # 0-shot, same 541 IFEval prompts). The model card's IFEval figures (internal pipeline and the leaderboard's
-                # normalized IFEval) average prompt- and instruction-level accuracy, so they are not comparable to this key.
+                task_name="leaderboard_ifeval",
+                # Same task as the cited Open LLM Leaderboard v2 run (leaderboard_ifeval, 0-shot, chat template applied as
+                # its results JSON records). The scored key is prompt_level_strict_acc (score_task_single_key reads
+                # result_keys[0]). TTIS 'ifeval' would not match: in the pinned harness it is version 4.0 with more
+                # lenient markdown-highlight and JSON-fence checkers than leaderboard_ifeval (3.0). The model card's
+                # IFEval figures average prompt- and instruction-level accuracy, so they are not comparable to this key.
                 score=EvalTaskScore(
                     published_score=74.68,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/tiiuae/Falcon3-10B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
@@ -7226,32 +6965,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                apply_chat_template=False,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                # OLL v2 ran this checkpoint without its chat template (results JSON chat_template is null).
-                score=EvalTaskScore(
-                    published_score=35.91,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Meta-Llama-3-8B-Instruct/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; task copied from deepcogito/cogito-v1-preview-llama-3B. Published score:
@@ -7428,31 +7146,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                # Runnability: max_position_embeddings is 4096; long 5-shot CoT prompts may hit the context limit.
-                score=EvalTaskScore(
-                    published_score=31.38,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; no TTIS sibling, so the tasks follow the other non-Meta chat rows
@@ -7514,31 +7212,11 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            EvalTask(
-                task_name="mmlu_pro",
-                num_fewshot=5,
-                # SETTING MISMATCH: Open LLM Leaderboard v2 leaderboard_mmlu_pro is 5-shot loglikelihood multiple-choice (acc);
-                # TTIS mmlu_pro is 5-shot generative CoT (exact_match,custom-extract). Same n-shot, different scoring.
-                # No model card / paper MMLU-Pro number exists for this checkpoint.
-                # Runnability: max_position_embeddings is 4096; long 5-shot CoT prompts may hit the context limit.
-                score=EvalTaskScore(
-                    published_score=39.75,
-                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-9B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,custom-extract",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
+            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
+            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
+            # prompt log-likelihoods from the server, which no TTIS config exercises today.
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; tasks copied from Qwen/Qwen2.5-7B-Instruct; GPU reference TBD.
@@ -8223,9 +7901,13 @@ _eval_config_list = [
                 task_name="mbpp_instruct",
                 allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                # NA: the Qwen2.5-Coder Technical Report's Table 16 MBPP (83.5) is EvalPlus MBPP: the 378-problem
+                # sanitized subset, prompted 0-shot. TTIS mbpp_instruct runs the full 500-problem MBPP test split 3-shot,
+                # a different problem set and prompt (the same tables put DS-Coder-1.3B-Instruct at 65.3 on EvalPlus MBPP
+                # versus 49.4 on the 500-problem MBPP in the DeepSeek-Coder paper). No comparable published number.
                 score=EvalTaskScore(
-                    published_score=83.5,
-                    published_score_ref="https://arxiv.org/abs/2409.12186 (Qwen2.5-Coder Technical Report, Table 16)",
+                    published_score=None,
+                    published_score_ref=None,
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
