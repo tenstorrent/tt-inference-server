@@ -75,6 +75,15 @@
       "google/gemma-4-31B-it",
       "google/gemma-4-12B-it",
       "zai-org/GLM-5.3"
+      "deepcogito/cogito-v1-preview-llama-3B",
+      "arcee-ai/Arcee-Spark",
+      "Qwen/Qwen2.5-7B-Instruct",
+      "Qwen/Qwen2.5-7B-Instruct-1M",
+      "tiiuae/Falcon3-1B-Instruct",
+      "tiiuae/Falcon3-3B-Instruct",
+      "tiiuae/Falcon3-10B-Instruct",
+      "deepcogito/cogito-v1-preview-llama-8B",
+      "Qwen/Qwen3-4B-Instruct-2507"
     ]
   },
   "available_markers": {
@@ -761,6 +770,96 @@
       "id_name": "Qwen--Qwen3-1.7B",
       "weights": [
         "Qwen/Qwen3-1.7B"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-3B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-3B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ]
+    },
+    "arcee-ai/Arcee-Spark": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "arcee-ai--Arcee-Spark",
+      "weights": [
+        "arcee-ai/Arcee-Spark"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ]
+    },
+    "Qwen/Qwen2.5-7B-Instruct-1M": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-7B-Instruct-1M",
+      "weights": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
+      ]
+    },
+    "tiiuae/Falcon3-1B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-1B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-1B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-3B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-3B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-3B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-10B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-10B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-10B-Instruct"
+      ]
+    },
+    "deepcogito/cogito-v1-preview-llama-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepcogito--cogito-v1-preview-llama-8B",
+      "weights": [
+        "deepcogito/cogito-v1-preview-llama-8B"
+      ]
+    },
+    "Qwen/Qwen3-4B-Instruct-2507": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-4B-Instruct-2507",
+      "weights": [
+        "Qwen/Qwen3-4B-Instruct-2507"
       ]
     }
   },
