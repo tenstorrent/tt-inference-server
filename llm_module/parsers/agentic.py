@@ -56,18 +56,34 @@ class AgenticEvalParser(LLMResultParser):
             targets["job_result_path"] = str(self.result_path)
         _attach_harbor_targets(targets, metrics)
 
+        data = _build_evals_data(
+            task_name=self.task_name,
+            score=self.score,
+            metrics=metrics,
+            limit_mode=self.limit_mode,
+        )
+        expected = raw.get("n_total_trials")
+        scored = metrics.get("n_trials")
+        if isinstance(expected, int) and not isinstance(expected, bool):
+            data["n_expected_trials"] = expected
+            if expected <= 0 or scored != expected:
+                # A missing verifier reward must not shrink the subset floor
+                # (e.g. 20% of four trials rounds down to zero required wins).
+                # Retain the harness score; fail the completeness requirement.
+                data["accuracy_check"] = ReportCheckTypes.FAIL
+                data["success"] = False
+                data["error"] = (
+                    f"Incomplete agentic evaluation: {scored} scored trials "
+                    f"for {expected} expected trials"
+                )
+
         return Block(
             kind=self.kind,
             task_type="llm",
             title=f"LLM Eval — {self.task_name}",
             id=slugify_name_parts(self.task_name, device),
             targets=targets,
-            data=_build_evals_data(
-                task_name=self.task_name,
-                score=self.score,
-                metrics=metrics,
-                limit_mode=self.limit_mode,
-            ),
+            data=data,
         )
 
     def failure_block(self, *, return_code: int, device: str = "") -> Block:

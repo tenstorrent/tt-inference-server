@@ -160,6 +160,57 @@ HARBOR_ZERO_TRIALS_FIXTURE = {
 
 
 class TestAgenticParser:
+    def test_missing_reward_cannot_reduce_subset_floor_to_zero(self):
+        from reference_config.evals.eval_config import _eval_config_map
+
+        task = _eval_config_map["ibm-granite/granite-4.2-30b"].tasks[1]
+        raw = {
+            "n_total_trials": 5,
+            "stats": {
+                "evals": {
+                    "terminal": {
+                        "n_trials": 4,
+                        "metrics": [{"mean": 0.0}],
+                        "n_errors": 1,
+                    }
+                }
+            },
+        }
+        block = AgenticEvalParser(
+            task_name=task.task_name,
+            score=task.score,
+            limit_mode=EvalLimitMode.CI_NIGHTLY,
+        ).parse(raw)
+        assert block.data["score"] == 0.0
+        assert block.data["n_samples"] == 4
+        assert block.data["n_expected_trials"] == 5
+        assert block.data["accuracy_check"] == ReportCheckTypes.FAIL
+        assert block.data["success"] is False
+
+    def test_scored_timeout_keeps_existing_acceptance(self):
+        from reference_config.evals.eval_config import _eval_config_map
+
+        task = _eval_config_map["ibm-granite/granite-4.2-30b"].tasks[1]
+        raw = {
+            "n_total_trials": 5,
+            "stats": {
+                "evals": {
+                    "terminal": {
+                        "n_trials": 5,
+                        "metrics": [{"mean": 0.2}],
+                        "n_errors": 2,
+                    }
+                }
+            },
+        }
+        block = AgenticEvalParser(
+            task_name=task.task_name,
+            score=task.score,
+            limit_mode=EvalLimitMode.CI_NIGHTLY,
+        ).parse(raw)
+        assert block.data["score"] == 20.0
+        assert block.data["accuracy_check"] == ReportCheckTypes.PASS
+
     def test_parse_harbor_result_to_evals_block(self):
         parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
         block = parser.parse(HARBOR_RESULT_FIXTURE, device="N150")
