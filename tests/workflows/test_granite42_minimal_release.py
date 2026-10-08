@@ -32,7 +32,8 @@ def test_granite_release_resolves_demo_and_preserves_capacity_and_benchmarks():
     assert spec.status == ModelStatusTypes.FUNCTIONAL
     assert spec.impl.code_path == "models/demos/granite42_30b_qb2"
     assert device.max_concurrency == 16
-    assert device.max_context == device.max_tokens_all_users == 131072
+    assert device.max_context == 131072
+    assert device.max_tokens_all_users == 327680
     assert device.env_vars["EXTRA_MODELS_DIR"] == "../../tt-metal/models/demos"
     assert "TT_MODEL_CLASS_OVERRIDES" not in device.env_vars
     assert "GRANITE_VLLM_HOST_COMPAT" not in device.env_vars
@@ -67,7 +68,7 @@ def test_granite_fixed_subset_evals_preserve_generation_and_published_targets():
         (swe, 50.0, 40.0),
     ):
         assert task.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == (
-            10 if task is gpqa else 5
+            10 if task in (gpqa, terminal) else 5
         )
         reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
         assert reference["tolerance"] == 0.0
@@ -75,21 +76,19 @@ def test_granite_fixed_subset_evals_preserve_generation_and_published_targets():
         assert "not measured subset GPU control" in reference["reference_ref"]
         assert accept_eval_score(reference, passing, n_total=10) is True
         assert accept_eval_score(reference, failing, n_total=10) is False
-        if task is not gpqa:
-            required = 1 if task is terminal else 2
-            assert accept_eval_score(reference, required * 20.0, n_total=5) is True
-            assert (
-                accept_eval_score(reference, (required - 1) * 20.0, n_total=5) is False
-            )
+        if task is swe:
+            assert accept_eval_score(reference, 40.0, n_total=5) is True
+            assert accept_eval_score(reference, 20.0, n_total=5) is False
         full_reference = resolve_eval_reference(task.score, None)
         assert full_reference["reference_score"] == task.score.published_score
         assert full_reference["is_subset_reference"] is False
     for task in (terminal, swe):
         config = task.agentic_eval_config
         names = config.task_names_map[EvalLimitMode.CI_NIGHTLY]
-        assert len(names) == len(set(names)) == 5
-        assert config.n_concurrent_trials == 2
-        assert config.agent_timeout_sec == (2700 if task is terminal else 7200)
+        expected_cases = 10 if task is terminal else 5
+        assert len(names) == len(set(names)) == expected_cases
+        assert config.n_concurrent_trials == (10 if task is terminal else 2)
+        assert config.agent_timeout_sec == 7200
         assert config.llm_timeout_sec == 3600
 
 
@@ -122,8 +121,9 @@ def test_granite_ci_commands_select_fixed_subsets():
     assert command[command.index("--limit") + 1] == "10"
     assert "num_concurrent=10" in command[command.index("--model_args") + 1]
     for task in (terminal, swe):
-        assert resolve_n_tasks(task, runtime) == 5
-        assert len(resolve_task_names(task, runtime)) == 5
+        expected_cases = 10 if task is terminal else 5
+        assert resolve_n_tasks(task, runtime) == expected_cases
+        assert len(resolve_task_names(task, runtime)) == expected_cases
 
 
 def test_agentic_report_keeps_effective_ci_reference_after_consolidation():
@@ -133,16 +133,16 @@ def test_agentic_report_keeps_effective_ci_reference_after_consolidation():
     from workflow_module.engine_types import ReportCheckTypes
 
     blocks = []
-    for task, correct, reference in (
-        (_eval_config_map[MODEL].tasks[1], 1, 20.0),
-        (_eval_config_map[MODEL].tasks[2], 2, 50.0),
+    for task, correct, n_trials, reference in (
+        (_eval_config_map[MODEL].tasks[1], 2, 10, 20.0),
+        (_eval_config_map[MODEL].tasks[2], 2, 5, 50.0),
     ):
         raw = {
             "stats": {
                 "evals": {
                     task.task_name: {
-                        "metrics": [{"mean": correct / 5}],
-                        "n_trials": 5,
+                        "metrics": [{"mean": correct / n_trials}],
+                        "n_trials": n_trials,
                     }
                 }
             }
@@ -154,8 +154,8 @@ def test_agentic_report_keeps_effective_ci_reference_after_consolidation():
         ).parse(raw)
         assert block.data["accuracy_check"] == ReportCheckTypes.PASS
         assert block.data["gpu_reference_score"] == reference
-        assert block.data["ratio_to_reference"] == (correct * 20) / reference
-        assert block.data["n_samples"] == 5
+        assert block.data["ratio_to_reference"] == (correct * 100 / n_trials) / reference
+        assert block.data["n_samples"] == n_trials
         blocks.append(block)
     (merged,) = _consolidate_eval_blocks(blocks)
     markdown = render_evals(merged, {})

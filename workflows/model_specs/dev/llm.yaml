@@ -4189,7 +4189,7 @@ templates:
     - device: P300X2
       max_concurrency: 16
       max_context: 131072
-      max_tokens_all_users_override: 131072
+      max_tokens_all_users_override: 327680
       default_impl: true
       env_vars:
         HF_MODEL: ibm-granite/granite-4.2-30b
