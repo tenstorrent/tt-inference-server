@@ -572,13 +572,46 @@ class TestHarborHarness:
             "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
         )
         assert "name" not in harbor_config["agents"][0]
-        assert harbor_config["environment"]["env"] == {
-            "TAU2_USER_MODEL": "openai/Qwen/Qwen3.6-27B"
-        }
-        assert harbor_config["verifier"]["env"] == {
-            "TAU2_NL_ASSERTIONS_MODEL": "openai/Qwen/Qwen3.6-27B"
-        }
+        # The tau3 adapter runs its agent in ``main``, the simulated user in the
+        # ``tau3-runtime`` sidecar and the NL verifier in ``main``; with a loopback
+        # server all three must be pointed at the Docker host gateway.
+        gateway = "http://host.docker.internal:8000/v1"
+        env = harbor_config["environment"]["env"]
+        assert env["TAU2_USER_MODEL"] == "openai/Qwen/Qwen3.6-27B"
+        assert env["OPENAI_BASE_URL"] == gateway and env["OPENAI_API_BASE"] == gateway
+        venv = harbor_config["verifier"]["env"]
+        assert venv["TAU2_NL_ASSERTIONS_MODEL"] == "openai/Qwen/Qwen3.6-27B"
+        assert venv["OPENAI_BASE_URL"] == gateway
+        assert harbor_config["agents"][0]["env"]["OPENAI_BASE_URL"] == gateway
+        overlay = json.loads(
+            Path(harbor_config["environment"]["extra_docker_compose"][0]).read_text()
+        )
+        assert set(overlay["services"]) == {"main", "tau3-runtime"}
         run_cmd.assert_called_once()
+
+    def test_tau3_adapter_with_remote_server_keeps_env_unchanged(self, tmp_path):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.environment_env = {"TAU2_USER_MODEL": "openai/m"}
+        task.agentic_eval_config.verifier_env = {"TAU2_NL_ASSERTIONS_MODEL": "openai/m"}
+        remote = ServerConnection(
+            base_url="http://10.0.0.5", service_port=8000, model="Qwen/Qwen3.6-27B"
+        )
+        cfg = build_harbor_config(
+            task, remote, DriverContext(output_dir=tmp_path, device="N150"), n_tasks=1
+        )
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=17):
+            assert run_harbor(cfg) == 17
+        harbor_config = json.loads(
+            (cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json").read_text()
+        )
+        assert harbor_config["environment"]["env"] == {"TAU2_USER_MODEL": "openai/m"}
+        assert harbor_config["verifier"]["env"] == {"TAU2_NL_ASSERTIONS_MODEL": "openai/m"}
+        assert "extra_docker_compose" not in harbor_config["environment"]
+        assert harbor_config["agents"][0]["env"]["OPENAI_BASE_URL"] == "http://10.0.0.5:8000/v1"
 
     def test_environment_kwargs_force_the_config_file_path(self, tmp_path):
         """Cluster knobs have no CLI equivalent, so they must select --config.
