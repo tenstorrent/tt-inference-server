@@ -199,6 +199,7 @@ templates:
       default_impl: true
       vllm_args:
         mm-processor-cache-gb: 0
+        async-scheduling: true
       override_tt_config:
         trace_region_size: 10000000
     - device: T3K
@@ -207,7 +208,9 @@ templates:
       default_impl: true
       vllm_args:
         mm-processor-cache-gb: 0
+        async-scheduling: true
       override_tt_config:
+        sample_on_device_mode: decode_only
         trace_region_size: 60000000
     - device: GALAXY
       max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
@@ -218,7 +221,9 @@ templates:
       vllm_args:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
+        async-scheduling: true
       override_tt_config:
+        sample_on_device_mode: decode_only
         trace_region_size: 100000000
         fabric_config: FABRIC_1D_RING
   status: EXPERIMENTAL
