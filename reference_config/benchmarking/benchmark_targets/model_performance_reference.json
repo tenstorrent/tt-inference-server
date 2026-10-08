@@ -171,6 +171,60 @@
                         "tput_user": 538
                     }
                 }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 130,
+                        "tput_user": 40
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 900,
+                        "tput_user": 38,
+                        "tput": 1200
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 70,
+                        "tput_user": 33
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 700,
+                        "tput_user": 30,
+                        "tput": 3800
+                    }
+                }
             }
         ]
     },
@@ -9298,6 +9352,64 @@
                         "tput_user": 8.57,
                         "tput": 11.6,
                         "tolerance": 0.2
+                    }
+                }
+            }
+        ]
+    },
+    "allenai/olmOCR-2-7B-1025": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 130,
+                        "tput_user": 40
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 900,
+                        "tput_user": 38,
+                        "tput": 1200
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 70,
+                        "tput_user": 33
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 700,
+                        "tput_user": 30,
+                        "tput": 3800
                     }
                 }
             }

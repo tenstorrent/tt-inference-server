@@ -226,7 +226,13 @@ templates:
         sample_on_device_mode: decode_only
         trace_region_size: 100000000
         fabric_config: FABRIC_1D_RING
-  status: EXPERIMENTAL
+  # Benchmark guards: the reference points (benchmark_targets/model_performance_reference.json) are the
+  # decode/TTFT figures measured on this commit; "complete" must hold 75% of them, "functional" 50%.
+  perf_targets_map:
+    functional: 0.5
+    complete: 0.75
+    target: 1.0
+  status: COMPLETE
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   supported_modalities:
@@ -274,7 +280,13 @@ templates:
         sample_on_device_mode: decode_only
         trace_region_size: 100000000
         fabric_config: FABRIC_1D_RING
-  status: EXPERIMENTAL
+  # Benchmark guards: the reference points (benchmark_targets/model_performance_reference.json) are the
+  # decode/TTFT figures measured on this commit; "complete" must hold 75% of them, "functional" 50%.
+  perf_targets_map:
+    functional: 0.5
+    complete: 0.75
+    target: 1.0
+  status: COMPLETE
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   supported_modalities:
