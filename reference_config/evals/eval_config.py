@@ -7206,7 +7206,7 @@ _eval_config_list = [
                     ),
                     model_kwargs={
                         "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
-                        "max_length": 33280,
+                        "max_length": 67584,
                         "timeout": 7200,
                     },
                     gen_kwargs={
@@ -7216,10 +7216,10 @@ _eval_config_list = [
                         "temperature": 0,
                         "stream": "false",
                     },
-                    # only samples that fit the 33280 context: ISL + 2048 gen + template < 33280
+                    # only samples that fit the 67584 context: ISL + 2048 gen + template < 67584
                     custom_dataset_kwargs={
                         "minimum_isl": 0,
-                        "maximum_isl": 30000,
+                        "maximum_isl": 62000,
                         "pretrained": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
                         "tokenizer_num_proc": 16,
                     },
