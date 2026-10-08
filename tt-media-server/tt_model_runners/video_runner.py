@@ -199,9 +199,7 @@ def _create_dit_runner(model_runner: str, rank: int):
     return runner_class("")
 
 
-_SIDE_FILE_KEYS = frozenset(
-    {"image_prompts", "references", "aspect_ratio", "duration"}
-)
+_SIDE_FILE_KEYS = frozenset({"image_prompts", "references", "aspect_ratio", "duration"})
 
 
 def _read_image_prompts_side_file(path: str, task_id: str):

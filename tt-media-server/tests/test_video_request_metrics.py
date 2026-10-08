@@ -42,9 +42,7 @@ class FakeRequest:
 @pytest.fixture(autouse=True)
 def _h3_deployment(monkeypatch):
     """Duration is recorded for MiniMax-H3 only; these tests model an H3 server."""
-    monkeypatch.setattr(
-        "domain.video_generate_request._is_minimax_h3", lambda: True
-    )
+    monkeypatch.setattr("domain.video_generate_request._is_minimax_h3", lambda: True)
 
 
 def test_bucket_known_aspect_ratios_pass_through():
@@ -134,9 +132,7 @@ def test_observe_records_shape():
 
 def test_observe_skips_duration_off_h3(monkeypatch):
     """LTX writes its served duration onto every request; that is not a request."""
-    monkeypatch.setattr(
-        "domain.video_generate_request._is_minimax_h3", lambda: False
-    )
+    monkeypatch.setattr("domain.video_generate_request._is_minimax_h3", lambda: False)
     model = "test-video-shape-ltx"
     observe_video_request(FakeRequest("16:9", 6.12), model, "t2v")
 

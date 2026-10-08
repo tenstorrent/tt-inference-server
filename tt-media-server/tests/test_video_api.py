@@ -1069,6 +1069,8 @@ class TestSnapNumFrames:
     @pytest.mark.parametrize("raw", range(1, 200))
     def test_result_is_always_legal(self, raw):
         assert (snap_num_frames(raw) - 1) % LTX_TEMPORAL_COMPRESSION == 0
+
+
 class TestMiniMaxH3NumInferenceSteps:
     """MiniMax-H3 does not take num_inference_steps as a client field."""
 
@@ -1125,9 +1127,7 @@ class TestMiniMaxH3NumInferenceSteps:
             VideoI2VGenerateRequest(
                 prompt="a fox",
                 num_inference_steps=20,
-                image_prompts=[
-                    ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)
-                ],
+                image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
             )
 
 

@@ -144,7 +144,9 @@ class VideoManager:
             else:
                 processed = self._process_frames_for_export(frames)
             self._run_ffmpeg(
-                self._build_encode_cmd(processed, silent_path, fps, crf, preset, pixel_format),
+                self._build_encode_cmd(
+                    processed, silent_path, fps, crf, preset, pixel_format
+                ),
                 stdin_data=memoryview(processed),
             )
             self._write_wav(audio, sampling_rate, wav_path)

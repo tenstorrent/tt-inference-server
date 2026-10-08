@@ -1082,7 +1082,6 @@ These environment variables are typically set automatically by the worker bootst
 | `TT_SMI_TIMEOUT` | `30` | Timeout in seconds for `tt-smi` calls performed by `DeviceManager` |
 | `TT_SYSTEM_HEALTH_TIMEOUT` | `60` | Timeout in seconds for `Cluster.ReportSystemHealth` based device discovery |
 | `TT_VISIBLE_DEVICES` | _set per worker_ | Set internally by the worker bootstrap to expose a single device id to a worker process |
-| `TT_METAL_CACHE` | _set per worker_ | Set internally to `${TT_METAL_HOME}/built/<device_ids>` so each worker uses a distinct cache directory |
 | `TT_MM_THROTTLE_PERF` | _runner-dependent_ | Set internally based on `DEFAULT_THROTTLE_LEVEL`; some DiT runners disable throttling automatically |
 | `TT_MESH_GRAPH_DESC_PATH` | _runner-dependent_ | Set internally to point at the correct mesh graph descriptor for the current `device_mesh_shape` |
 

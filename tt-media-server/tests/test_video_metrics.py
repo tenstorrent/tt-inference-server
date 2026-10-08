@@ -560,9 +560,7 @@ class TestExecutedVsRequestedSteps:
         )
 
         assert (
-            video_executed_inference_steps(
-                20, ModelRunners.TT_MINIMAX_H3_FASTH3.value
-            )
+            video_executed_inference_steps(20, ModelRunners.TT_MINIMAX_H3_FASTH3.value)
             == MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
         )
         assert (

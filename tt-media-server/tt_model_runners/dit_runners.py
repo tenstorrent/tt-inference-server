@@ -1570,11 +1570,13 @@ class TTWan22I2VLightningRunner(TTDiTRunner):
     def _build_warmup_video_request(self) -> VideoI2VGenerateRequest:
         return _wan22_i2v_warmup_request()
 
+
 MINIMAX_H3_TRACE_REGION_BYTES = 1_175_000_000
 MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY = 65536
 MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY = 32768
 MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY = 8192
 MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY = 4096
+
 
 def _minimax_h3_env_bool(name: str) -> bool | None:
     raw = os.environ.get(name)
@@ -1601,10 +1603,18 @@ def _minimax_h3_device_params(mesh_shape: tuple, *, l1_small_size: int = None) -
     """
     preset = resolve_mesh_preset(mesh_shape)
     router_config = ttnn.FabricRouterConfig()
-    router_config.max_packet_payload_size_bytes = MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY if is_blackhole() else MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY
+    router_config.max_packet_payload_size_bytes = (
+        MINIMAX_H3_MAX_PAYLOAD_BYTES_BH_GALAXY
+        if is_blackhole()
+        else MINIMAX_H3_MAX_PAYLOAD_BYTES_WH_GALAXY
+    )
     ring = preset["topology"] == ttnn.Topology.Ring
     if l1_small_size is None:
-        l1_small_size = MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY if is_blackhole() else MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY
+        l1_small_size = (
+            MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_BH_GALAXY
+            if is_blackhole()
+            else MINIMAX_H3_L1_SMALL_SIZE_DEFAULT_WH_GALAXY
+        )
     params = {
         "fabric_config": (
             ttnn.FabricConfig.FABRIC_1D_RING if ring else ttnn.FabricConfig.FABRIC_1D
@@ -1792,10 +1802,16 @@ class TTMiniMaxH3Runner(TTDiTRunner):
 
         # video_runner set export_in_runner=False: hand the raw a/v to its encoder thread to mux.
         if not self.export_in_runner:
-            return VideoAudioResult(frames, audio, output.sampling_rate, output.fps, pixel_format)
+            return VideoAudioResult(
+                frames, audio, output.sampling_rate, output.fps, pixel_format
+            )
 
         path = VideoManager().export_to_mp4_with_audio(
-            frames, audio, output.sampling_rate, fps=output.fps, pixel_format=pixel_format
+            frames,
+            audio,
+            output.sampling_rate,
+            fps=output.fps,
+            pixel_format=pixel_format,
         )
         # A **list**, one entry per request in the batch -- `base_service.py:40` and
         # `device_worker.py:115` both do `results[0]`. Returning the bare path string is not a type

@@ -16,6 +16,17 @@ refusing.
 """
 
 import io
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from models.tt_dit.pipelines.minimax_h3.policy import (
+        MINIMAX_H3_ASPECT_RATIOS,
+        MINIMAX_H3_DEFAULT_ASPECT_RATIO,
+        MINIMAX_H3_DEFAULT_DURATION_S,
+        MINIMAX_H3_DURATIONS_S,
+        minimax_h3_frames_are_aligned,
+        minimax_h3_parse_aspect_ratio,
+    )
 
 # The serving envelope and its validators are owned by the model's policy module and re-exported
 # lazily: pulling them at import time would drag ``ttnn`` into every consumer, and the server's unit

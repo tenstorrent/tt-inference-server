@@ -69,9 +69,7 @@ def media_url_defaults(monkeypatch):
         "host.example,bucket.s3.amazonaws.com,allowed.example",
         raising=False,
     )
-    monkeypatch.setattr(
-        settings, "media_url_allow_public_hosts", False, raising=False
-    )
+    monkeypatch.setattr(settings, "media_url_allow_public_hosts", False, raising=False)
     monkeypatch.setattr(settings, "media_url_max_bytes", 1024 * 1024, raising=False)
     monkeypatch.setattr(settings, "media_url_timeout_seconds", 5.0, raising=False)
     monkeypatch.setattr(settings, "media_url_max_redirects", 5, raising=False)
