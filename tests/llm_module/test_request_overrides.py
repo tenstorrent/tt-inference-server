@@ -190,3 +190,160 @@ class TestWrapper:
 
         wrapper.patch_api_adapters({}, drop_server_seed=True)
         assert "seed" not in _Chat()._create_payload()
+
+
+class TestWrapperCoversOverridingAdapters:
+    """Review (#5340): the pinned harness's OpenAIChatCompletion defines its own
+    _create_payload, so patching only the two Local* classes let a task with
+    eval_class="openai-chat-completions" keep thinking on silently."""
+
+    def _install_fake(self, monkeypatch, fake):
+        import sys
+
+        monkeypatch.setitem(sys.modules, "lm_eval.models.openai_completions", fake)
+        monkeypatch.setitem(
+            sys.modules, "lm_eval.models", SimpleNamespace(openai_completions=fake)
+        )
+        monkeypatch.setitem(
+            sys.modules,
+            "lm_eval",
+            SimpleNamespace(models=SimpleNamespace(openai_completions=fake)),
+        )
+
+    def test_subclass_with_its_own_payload_builder_is_patched_too(self, monkeypatch):
+        import types
+
+        mod = types.ModuleType("lm_eval.models.openai_completions")
+
+        class LocalChatCompletion:
+            def _create_payload(self, *a, **k):
+                return {"model": "m", "seed": 1}
+
+        class OpenAIChatCompletion(LocalChatCompletion):
+            def _create_payload(self, *a, **k):  # overrides, as in the real harness
+                return {"model": "m", "seed": 1, "openai": True}
+
+        class Inherits(LocalChatCompletion):
+            pass
+
+        for cls in (LocalChatCompletion, OpenAIChatCompletion, Inherits):
+            cls.__module__ = mod.__name__
+            setattr(mod, cls.__name__, cls)
+        self._install_fake(monkeypatch, mod)
+
+        patched = wrapper.patch_api_adapters(
+            {"chat_template_kwargs": {"enable_thinking": False}}, drop_server_seed=True
+        )
+        assert set(patched) == {"LocalChatCompletion", "OpenAIChatCompletion"}
+        for cls in (LocalChatCompletion, OpenAIChatCompletion, Inherits):
+            payload = cls()._create_payload()
+            assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+            assert "seed" not in payload
+        assert OpenAIChatCompletion()._create_payload()["openai"] is True
+        # re-patching replaces the wrap instead of stacking: the seed comes back
+        assert set(wrapper.patch_api_adapters({}, drop_server_seed=False)) == {
+            "LocalChatCompletion",
+            "OpenAIChatCompletion",
+        }
+        assert OpenAIChatCompletion()._create_payload() == {
+            "model": "m",
+            "seed": 1,
+            "openai": True,
+        }
+
+    def test_model_name_parsing(self):
+        assert (
+            wrapper.lm_eval_model_name(
+                ["--tasks", "x", "--model", "local-chat-completions"]
+            )
+            == "local-chat-completions"
+        )
+        assert (
+            wrapper.lm_eval_model_name(["--model=openai-chat-completions"])
+            == "openai-chat-completions"
+        )
+        assert wrapper.lm_eval_model_name(["-m", "hf"]) == "hf"
+        assert wrapper.lm_eval_model_name(["--tasks", "x"]) == "hf"
+
+    def test_unsupported_model_name_is_refused(self):
+        with pytest.raises(SystemExit, match="not supported"):
+            wrapper.require_patched_adapter("hf")
+
+    def test_eval_class_outside_the_patched_adapters_is_rejected_at_config_time(self):
+        from llm_module.eval_command import _check_request_overrides_supported
+
+        task = SimpleNamespace(
+            task_name="t",
+            eval_class="openai_compatible",
+            use_chat_api=True,
+            thinking=None,
+            workflow_venv_type=None,
+        )
+        with pytest.raises(ValueError, match="openai_compatible"):
+            _check_request_overrides_supported(
+                task, {"chat_template_kwargs": {"enable_thinking": False}}, None
+            )
+
+
+try:
+    import lm_eval  # noqa: F401
+except ImportError:  # the unit-test venv does not carry the harness
+    lm_eval = None
+
+
+@pytest.mark.skipif(
+    lm_eval is None, reason="real-adapter check needs the pinned lm-eval"
+)
+class TestRealLmEvalAdapters:
+    """Run the override through the pinned harness's actual payload builders."""
+
+    @pytest.fixture(autouse=True)
+    def _restore(self):
+        from lm_eval.models import openai_completions as oc
+
+        saved = {
+            name: cls.__dict__["_create_payload"]
+            for name, cls in list(vars(oc).items())
+            if isinstance(cls, type) and "_create_payload" in cls.__dict__
+        }
+        yield
+        for name, fn in saved.items():
+            setattr(getattr(oc, name), "_create_payload", fn)
+
+    @staticmethod
+    def _instance(cls):
+        obj = cls.__new__(cls)
+        obj._max_gen_toks = 16
+        obj.model = "m"
+        return obj
+
+    def test_every_supported_adapter_sends_the_override(self):
+        from lm_eval.api.registry import get_model
+        from lm_eval.models import openai_completions as oc
+
+        patched = wrapper.patch_api_adapters(
+            {"chat_template_kwargs": {"enable_thinking": False}}, drop_server_seed=True
+        )
+        assert {
+            "LocalCompletionsAPI",
+            "LocalChatCompletion",
+            "OpenAIChatCompletion",
+        } <= set(patched)
+        for name in wrapper.SUPPORTED_EVAL_CLASSES:
+            wrapper.require_patched_adapter(name)
+            cls = get_model(name)
+            obj = self._instance(cls)
+            messages = [{"role": "user", "content": "hi"}] if "chat" in name else "hi"
+            payload = cls._create_payload(
+                obj,
+                messages,
+                generate=True,
+                gen_kwargs={"max_gen_toks": 8, "temperature": 1.0},
+                seed=42,
+            )
+            assert payload["chat_template_kwargs"] == {"enable_thinking": False}, name
+            assert "seed" not in payload, name
+        assert (
+            oc.OpenAIChatCompletion._create_payload
+            is not oc.LocalChatCompletion._create_payload
+        )
