@@ -616,10 +616,15 @@ class TestHarborHarness:
 
     @staticmethod
     def _fake_venv(root, packages=("websockets",)):
-        """A venv-shaped tree: bin/python plus pure-Python packages in site-packages."""
+        """A venv-shaped tree: bin/python (a symlink to a base interpreter
+        elsewhere, as uv and venv create it) plus pure-Python packages in
+        site-packages."""
+        base = root / "base-python" / "bin" / "python3.12"
+        base.parent.mkdir(parents=True)
+        base.write_text("")
         python = root / "venv" / "bin" / "python"
         python.parent.mkdir(parents=True)
-        python.write_text("")
+        python.symlink_to(base)
         site = root / "venv" / "lib" / "python3.12" / "site-packages"
         for name in packages:
             pkg = site / name
