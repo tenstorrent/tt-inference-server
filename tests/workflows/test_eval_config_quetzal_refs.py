@@ -27,6 +27,9 @@ OLL_RESULTS = "https://huggingface.co/datasets/open-llm-leaderboard/results/blob
 
 # hf_model_repo -> {task_name: published_score or None (task grades NA)}
 EXPECTED = {
+    "Qwen/Qwen3.6-35B-A3B": {
+        "terminal_bench_2": 51.5,
+    },
     "tiiuae/Falcon3-1B-Instruct": {
         "ifeval": 50.46,
         "gpqa_diamond_generative_n_shot": None,
