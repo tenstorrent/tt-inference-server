@@ -857,12 +857,28 @@ def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
     # group entry itself carries an aggregate exact_match, which the
     # metric-mismatch auto-detect used to substitute as a bare string --
     # score_multilevel_keys_mean then asserted and the task scored 0.
-    task = next(
-        t
-        for t in _eval_config_map["meta-llama/Llama-3.2-3B"].tasks
-        if t.task_name == "leaderboard_math_hard"
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = [
+        "leaderboard_math_algebra_hard",
+        "leaderboard_math_counting_and_prob_hard",
+        "leaderboard_math_geometry_hard",
+        "leaderboard_math_intermediate_algebra_hard",
+        "leaderboard_math_num_theory_hard",
+        "leaderboard_math_prealgebra_hard",
+        "leaderboard_math_precalculus_hard",
+    ]
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
     )
-    subtasks = [k[0] for k in task.score.score_func_kwargs["result_keys"]]
     results = {"leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"}}
     results.update({name: {"exact_match,none": 0.02} for name in subtasks})
     ref = {"reference_score": None, "tolerance": 0.05}

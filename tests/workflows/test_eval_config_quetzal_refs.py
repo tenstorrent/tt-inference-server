@@ -31,15 +31,15 @@ EXPECTED = {
         "terminal_bench_2": 51.5,
     },
     "tiiuae/Falcon3-1B-Instruct": {
-        "ifeval": 50.46,
+        "leaderboard_ifeval": 50.46,
         "gpqa_diamond_generative_n_shot": None,
     },
     "tiiuae/Falcon3-3B-Instruct": {
-        "ifeval": 65.43,
+        "leaderboard_ifeval": 65.43,
         "gpqa_diamond_generative_n_shot": None,
     },
     "tiiuae/Falcon3-10B-Instruct": {
-        "ifeval": 74.68,
+        "leaderboard_ifeval": 74.68,
         "gpqa_diamond_generative_n_shot": None,
     },
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": {
@@ -53,19 +53,16 @@ EXPECTED = {
     "meta-llama/Meta-Llama-3-8B-Instruct": {
         "leaderboard_ifeval": 40.85,
         "leaderboard_math_hard": 8.13,
-        "mmlu_pro": 35.91,
     },
     "deepcogito/cogito-v1-preview-llama-8B": {"mmlu_pro": 57.77},
     "Qwen/Qwen3-4B-Instruct-2507": {"r1_gpqa_diamond": 62.0, "mmlu_pro": 69.6},
     "upstage/SOLAR-10.7B-Instruct-v1.0": {
         "leaderboard_ifeval": 40.3,
         "leaderboard_math_hard": 5.22,
-        "mmlu_pro": 31.38,
     },
     "01-ai/Yi-1.5-9B-Chat": {
         "leaderboard_ifeval": 55.08,
         "leaderboard_math_hard": 19.85,
-        "mmlu_pro": 39.75,
     },
     "Qwen/Qwen2.5-32B-Instruct": {
         "leaderboard_ifeval": 79.5,
@@ -76,16 +73,24 @@ EXPECTED = {
     "Qwen/Qwen2.5-Math-7B": {
         "leaderboard_ifeval": 19.22,
         "leaderboard_math_hard": 27.67,
-        "mmlu_pro": 27.18,
+    },
+    "Qwen/Qwen2.5-Coder-7B": {
+        "leaderboard_ifeval": 27.91,
+        "leaderboard_math_hard": 16.7,
+    },
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {
+        "mbpp_instruct": None,
+        "humaneval_instruct": 88.4,
     },
     "deepseek-ai/deepseek-coder-1.3b-instruct": {
         "mbpp_instruct": 49.4,
         "humaneval_instruct": 65.2,
     },
-    "Qwen/Qwen3-0.6B": {"r1_gpqa_diamond": 27.9, "mmlu_pro": 24.74},
-    "Qwen/Qwen3-1.7B": {"r1_gpqa_diamond": 40.1, "mmlu_pro": 36.76},
-    "Qwen/Qwen3-4B": {"r1_gpqa_diamond": 55.9, "mmlu_pro": 50.58},
-    "Qwen/Qwen3-14B": {"r1_gpqa_diamond": 64.0, "mmlu_pro": 61.03},
+    # mmlu_pro NA: the report's MMLU-Pro is the -Base checkpoint, untemplated.
+    "Qwen/Qwen3-0.6B": {"r1_gpqa_diamond": 27.9, "mmlu_pro": None},
+    "Qwen/Qwen3-1.7B": {"r1_gpqa_diamond": 40.1, "mmlu_pro": None},
+    "Qwen/Qwen3-4B": {"r1_gpqa_diamond": 55.9, "mmlu_pro": None},
+    "Qwen/Qwen3-14B": {"r1_gpqa_diamond": 64.0, "mmlu_pro": None},
     "Qwen/Qwen2.5-14B-Instruct-1M": {
         "leaderboard_ifeval": 84.3,
         "leaderboard_math_hard": 50.72,
@@ -95,6 +100,50 @@ EXPECTED = {
     "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
     "Qwen/Qwen3.5-27B": {"r1_gpqa_diamond": 85.5},
 }
+
+# Whether each cited Open LLM Leaderboard v2 run applied a chat template: the
+# results JSON's ``chat_template`` is non-null (True) or null (False). Those runs
+# used fewshot_as_multiturn with the template and no system_instruction, which is
+# what the pinned harness does under --apply_chat_template, so matching this flag
+# reproduces the reference prompts.
+OLL_CHAT_TEMPLATE = {
+    "01-ai/Yi-1.5-9B-Chat": True,
+    "arcee-ai/Arcee-Spark": True,
+    "EleutherAI/pythia-160m": False,
+    "EleutherAI/pythia-1b": False,
+    "EleutherAI/pythia-410m": False,
+    "HuggingFaceTB/SmolLM2-1.7B-Instruct": True,
+    "huggyllama/llama-7b": False,
+    "meta-llama/Llama-3.1-8B": False,
+    "meta-llama/Llama-3.2-1B": False,
+    "meta-llama/Llama-3.2-3B": False,
+    "meta-llama/Meta-Llama-3-8B-Instruct": False,
+    "microsoft/phi-1_5": False,
+    "microsoft/phi-1": False,
+    "Qwen/Qwen1.5-0.5B-Chat": True,
+    "Qwen/Qwen1.5-0.5B": False,
+    "Qwen/Qwen2-7B": False,
+    "Qwen/Qwen2.5-14B-Instruct-1M": True,
+    "Qwen/Qwen2.5-32B-Instruct": True,
+    "Qwen/Qwen2.5-7B": False,
+    "Qwen/Qwen2.5-Coder-7B": True,
+    "Qwen/Qwen2.5-Math-7B": True,
+    "stabilityai/stablelm-2-1_6b": False,
+    "tiiuae/Falcon3-10B-Base": False,
+    "tiiuae/Falcon3-10B-Instruct": True,
+    "tiiuae/Falcon3-1B-Base": False,
+    "tiiuae/Falcon3-1B-Instruct": True,
+    "tiiuae/Falcon3-3B-Base": False,
+    "tiiuae/Falcon3-3B-Instruct": True,
+    "tiiuae/Falcon3-7B-Base": False,
+    "TinyLlama/TinyLlama_v1.1": False,
+    "TinyLlama/TinyLlama-1.1B-Chat-v1.0": False,
+    "upstage/SOLAR-10.7B-Instruct-v1.0": True,
+}
+
+# Leaderboard tasks TTIS runs as-is; a citation of any other leaderboard metric
+# (notably log-likelihood leaderboard_mmlu_pro) has no generative TTIS twin.
+OLL_TASKS = ("leaderboard_ifeval", "leaderboard_math_hard")
 
 # No authoritative source exists for any task, so every task stays NA.
 ALL_NA = ["deepseek-ai/deepseek-math-7b-instruct"]
@@ -137,7 +186,7 @@ def test_leaderboard_scores_use_raw_metric_keys(repo):
         # dataset; only the per-model results JSON holds raw accuracies.
         assert f"{repo}/results_2025-02-13T18-27-04.338360.json" in ref
         keys = score.score_func_kwargs["result_keys"]
-        if task.task_name in ("leaderboard_ifeval", "ifeval"):
+        if task.task_name == "leaderboard_ifeval":
             assert score.score_func is score_task_single_key
             assert keys[0] == "prompt_level_strict_acc,none"
             assert "prompt_level_strict_acc,none" in ref
@@ -145,8 +194,43 @@ def test_leaderboard_scores_use_raw_metric_keys(repo):
             assert score.score_func is score_multilevel_keys_mean
             assert len(keys) == 7
             assert "mean of results.leaderboard_math_*_hard" in ref
-        elif task.task_name == "mmlu_pro":
-            assert keys == ["exact_match,custom-extract"]
-            assert "leaderboard_mmlu_pro.acc,none" in ref
         else:
             pytest.fail(f"{repo}: unexpected OLL-cited task {task.task_name}")
+
+
+def _oll_cited_tasks():
+    for repo, config in sorted(_eval_config_map.items()):
+        for task in config.tasks:
+            if task.score and (task.score.published_score_ref or "").startswith(
+                OLL_RESULTS
+            ):
+                yield repo, task
+
+
+def test_oll_citations_run_the_same_task_and_template():
+    """An OLL-cited score is comparable only if TTIS runs the same leaderboard
+    task with the same chat-template setting the leaderboard recorded."""
+    cited = list(_oll_cited_tasks())
+    assert cited
+    for repo, task in cited:
+        assert task.task_name in OLL_TASKS, (
+            f"{repo}: {task.task_name} cites the leaderboard but is not the "
+            f"leaderboard's own task"
+        )
+        assert repo in OLL_CHAT_TEMPLATE, f"{repo}: record its OLL chat_template"
+        assert task.apply_chat_template is OLL_CHAT_TEMPLATE[repo], (
+            f"{repo}/{task.task_name}: apply_chat_template must match the cited "
+            f"run (chat_template recorded: {OLL_CHAT_TEMPLATE[repo]})"
+        )
+
+
+def test_generative_mmlu_pro_never_cites_loglikelihood_mmlu_pro():
+    """TTIS mmlu_pro is generative CoT; leaderboard_mmlu_pro is log-likelihood."""
+    for repo, config in _eval_config_map.items():
+        for task in config.tasks:
+            if task.task_name != "mmlu_pro" or not task.score:
+                continue
+            ref = task.score.published_score_ref or ""
+            assert "leaderboard_mmlu_pro" not in ref, repo
+            assert "Open LLM Leaderboard" not in ref, repo
+            assert not ref.startswith(OLL_RESULTS), repo

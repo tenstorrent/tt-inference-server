@@ -980,8 +980,16 @@ def _penalties_detail(*failing) -> Block:
         {"test_case": "test_penalties", "parametrization": p, "status": "❌ FAILED"}
         for p in failing
     ] + [
-        {"test_case": "test_penalties", "parametrization": other, "status": "✅ PASSED"},
-        {"test_case": "test_logprobs", "parametrization": "test_logprobs", "status": "✅ PASSED"},
+        {
+            "test_case": "test_penalties",
+            "parametrization": other,
+            "status": "✅ PASSED",
+        },
+        {
+            "test_case": "test_logprobs",
+            "parametrization": "test_logprobs",
+            "status": "✅ PASSED",
+        },
     ]
     return block
 

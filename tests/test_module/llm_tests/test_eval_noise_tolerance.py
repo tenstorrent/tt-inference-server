@@ -180,6 +180,7 @@ def test_unknown_sample_count_falls_back_to_ratio_rule():
         "noise_n": None,
         "noise_se": None,
         "noise_z": None,
+        "scoring_error": False,
     }
 
 
@@ -345,3 +346,38 @@ def test_group_count_is_omitted_when_a_leaf_count_is_missing(tmp_path):
     _, counts = mod.load_eval_results([str(path)])
     assert "mmlu_pro" not in counts
     assert counts["mmlu_pro_law"] == 1101
+
+
+def test_scoring_error_never_passes_by_noise():
+    # score_func raising substitutes 0.0; against a 1.5% reference with a huge
+    # n that would sit within noise, so the rule must be skipped entirely.
+    def boom(*_args, **_kwargs):
+        raise KeyError("missing metric")
+
+    task = _task("leaderboard_ifeval", 1.5, [IFEVAL_KEY], boom)
+    _, _, _, check, evidence = mod._grade_one(
+        task,
+        {"leaderboard_ifeval": {IFEVAL_KEY: 0.0}},
+        "leaderboard_ifeval",
+        FULL_REF,
+        sample_counts={"leaderboard_ifeval": 50},
+    )
+    assert check == ReportCheckTypes.FAIL
+    assert evidence["accuracy_rule"] == mod.RULE_FAIL
+    assert evidence["noise_n"] is None
+    assert evidence["scoring_error"] is True
+
+
+@pytest.mark.parametrize("unit", ["ratio", "tokens", None])
+def test_non_percent_units_get_no_noise_band(unit):
+    task = _task("leaderboard_ifeval", 9.24, [IFEVAL_KEY])
+    task.score.score_func_kwargs["unit"] = unit
+    _, _, _, check, evidence = mod._grade_one(
+        task,
+        {"leaderboard_ifeval": {IFEVAL_KEY: 0.0832}},
+        "leaderboard_ifeval",
+        FULL_REF,
+        sample_counts={"leaderboard_ifeval": IFEVAL_N},
+    )
+    assert check == ReportCheckTypes.FAIL
+    assert evidence["noise_n"] is None

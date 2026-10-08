@@ -81,7 +81,9 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     return sorted(set(files))
 
 
-def _extract_json(json_path: Path) -> tuple[str, dict, int | None, dict]:
+def _extract_json(
+    json_path: Path,
+) -> tuple[str, dict, int | None, dict, dict]:
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, dict):
@@ -412,10 +414,12 @@ def _grade_one(
                 valid_candidates[0],
             )
             kwargs["result_keys"] = [valid_candidates[0]]
+    scoring_failed = False
     try:
         score = task.score.score_func(results, task_name=t_key, kwargs=kwargs)
     except Exception as e:
         logger.warning("  Could not calculate score for %s: %s", t_key, e)
+        scoring_failed = True
         # WER=100 is worst-case; score=0.0 would invert to 100 and wrongly pass.
         score = 100.0 if kwargs.get("unit") == "WER" else 0.0
     if kwargs.get("unit") == "WER":
@@ -447,7 +451,13 @@ def _grade_one(
 
     if sample_counts is None:
         sample_counts = {t_key: n_total} if n_total else {}
-    noise_n = binomial_noise_n(kwargs.get("result_keys"), t_key, sample_counts)
+    # The noise rule needs a real binomial score in percent; a substituted
+    # score from a scoring error must fail on the ratio rule alone.
+    noise_n = (
+        binomial_noise_n(kwargs.get("result_keys"), t_key, sample_counts)
+        if kwargs.get("unit") == "percent" and not scoring_failed
+        else None
+    )
     passed, rule, se = noise_aware_check(ratio_pass, score, graded_against, noise_n)
     accuracy_check = ReportCheckTypes.from_result(passed)
     evidence = {
@@ -455,6 +465,7 @@ def _grade_one(
         "noise_n": noise_n,
         "noise_se": se,
         "noise_z": NOISE_Z if se is not None else None,
+        "scoring_error": scoring_failed,
     }
     return score, ratio_to_published, ratio_to_reference, accuracy_check, evidence
 
