@@ -99,6 +99,7 @@ EXPECTED = {
     },
     "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
     "Qwen/Qwen3.5-27B": {"r1_gpqa_diamond": 85.5},
+    "microsoft/phi-2": {"leaderboard_ifeval": 21.44, "leaderboard_math_hard": 2.62},
 }
 
 # Whether each cited Open LLM Leaderboard v2 run applied a chat template: the
@@ -120,6 +121,7 @@ OLL_CHAT_TEMPLATE = {
     "meta-llama/Meta-Llama-3-8B-Instruct": False,
     "microsoft/phi-1_5": False,
     "microsoft/phi-1": False,
+    "microsoft/phi-2": False,
     "Qwen/Qwen1.5-0.5B-Chat": True,
     "Qwen/Qwen1.5-0.5B": False,
     "Qwen/Qwen2-7B": False,
