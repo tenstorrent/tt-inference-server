@@ -83,16 +83,6 @@
                             "devices": [
                                 "P300X2"
                             ]
-                        },
-                        "release": {
-                            "devices": [
-                                "P300X2"
-                            ],
-                            "device-args": {
-                                "P300X2": {
-                                    "throttle-perf": "1"
-                                }
-                            }
                         }
                     }
                 }
