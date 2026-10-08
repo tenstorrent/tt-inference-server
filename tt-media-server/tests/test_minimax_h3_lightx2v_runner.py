@@ -2,7 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""The LightX2V H3 runners: a Turbo adapter, 5 grid points, and the 768P shift."""
+"""The LightX2V H3 runners: a Turbo adapter, 5 grid points, and the adapter's own shift."""
 
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -16,6 +16,12 @@ LIGHTX2V_RUNNERS = [
     ("TTMiniMaxH3FL2VALightX2VRunner", "TTMiniMaxH3FL2VARunner", "t2va"),
     ("TTMiniMaxH3Ref2VALightX2VRunner", "TTMiniMaxH3Ref2VARunner", "ref2va"),
 ]
+
+# (video, audio) shift each adapter was distilled at, from the lightx2v model card.
+ADAPTER_SHIFTS = {
+    "TTMiniMaxH3FL2VALightX2VRunner": (6.0, 3.0),
+    "TTMiniMaxH3Ref2VALightX2VRunner": (12.0, 3.0),
+}
 
 
 @pytest.fixture
@@ -49,7 +55,7 @@ def test_keeps_the_base_task_and_runs_five_grid_points(name, base, task):
 
 
 @pytest.mark.parametrize(("name", "base", "task"), LIGHTX2V_RUNNERS)
-def test_pipeline_gets_the_adapter_and_768p_shift(
+def test_pipeline_gets_the_adapter_and_its_shift(
     name, base, task, adapter, monkeypatch
 ):
     turbo = Mock()
@@ -62,8 +68,7 @@ def test_pipeline_gets_the_adapter_and_768p_shift(
     kwargs = turbo.create_pipeline.call_args.kwargs
     assert kwargs["task"] == task
     assert kwargs["lora_path"] == adapter
-    assert kwargs["video_shift"] == 6.0
-    assert kwargs["audio_shift"] == 3.0
+    assert (kwargs["video_shift"], kwargs["audio_shift"]) == ADAPTER_SHIFTS[name]
 
 
 @pytest.mark.parametrize(("name", "base", "task"), LIGHTX2V_RUNNERS)
