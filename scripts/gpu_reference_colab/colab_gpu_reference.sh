@@ -33,8 +33,8 @@ SESSION=""
 POLL_MINUTES=5
 VLLM_VERSION=""
 DRY_RUN=0
-NEW_ATTEMPTS=6           # colab new attempts on 503 (no capacity)
-NEW_RETRY_SECONDS=300
+NEW_ATTEMPTS=3           # colab new attempts per GPU type on 503 (no capacity)
+NEW_RETRY_SECONDS=120    # backoff: 120 s, then 240 s
 MODELS=()
 
 usage() {
@@ -44,7 +44,9 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
 Collect GPU reference eval scores for TTIS models on a Google Colab GPU VM.
 
 Options:
-  --gpu GPU            Colab GPU type (default: H100)
+  --gpu GPU[,GPU...]   Colab GPU types in order of preference (default: H100).
+                       Each is tried a few times with backoff while Colab
+                       answers 503 (no capacity), then the next, e.g. H100,A100
   --high-mem           request a high-RAM machine shape
   --ttis-ref REF       TTIS commit the VM checks out (default: HEAD of this
                        checkout; it must already be pushed to origin)
@@ -83,6 +85,11 @@ done
 [[ ${#MODELS[@]} -gt 0 ]] || { usage >&2; die "at least one MODEL (HF repo id) is required"; }
 for m in "${MODELS[@]}"; do
     [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "not an HF repo id: $m"
+done
+IFS=',' read -r -a GPUS <<< "${GPU}"
+[[ ${#GPUS[@]} -gt 0 ]] || die "--gpu needs at least one GPU type"
+for g in "${GPUS[@]}"; do
+    [[ "${g}" =~ ^(T4|L4|G4|H100|A100)$ ]] || die "unsupported --gpu type: ${g} (T4, L4, G4, H100, A100)"
 done
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
 [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --vllm-version"
@@ -186,16 +193,19 @@ OUT_DIR="${OUT_DIR:-${REPO_ROOT}/workflow_logs/gpu_reference_colab/${SESSION}}"
 
 log "models:  ${MODELS[*]}"
 log "ttis:    ${TTIS_SHA} (${TTIS_REF})"
-log "session: ${SESSION} (--gpu ${GPU}$([[ ${HIGH_MEM} -eq 1 ]] && echo ' --high-mem'))"
+log "session: ${SESSION} (--gpu ${GPUS[*]}$([[ ${HIGH_MEM} -eq 1 ]] && echo ' --high-mem'))"
 log "out:     ${OUT_DIR}"
 
 # Models must resolve to a GPU DeviceModelSpec in the dev catalog (the same
 # lookup run.py does on the VM), and gated repos need a token that can read them.
 CHECK_JSON="${LOCAL_TMP}/check.json"
 gpuref check-models "${MODELS[@]}" > "${CHECK_JSON}" || true
-"${PYRUN[@]}" - "${CHECK_JSON}" <<'PY' || die "model preflight failed (see above)"
+FIT_GPUS="${LOCAL_TMP}/fit_gpus"
+"${PYRUN[@]}" - "${CHECK_JSON}" "${FIT_GPUS}" "${GPUS[@]}" <<'PY' || die "model preflight failed (see above)"
 import json, sys
 rows = json.load(open(sys.argv[1]))
+fit_path, gpus = sys.argv[2], sys.argv[3:]
+usable = set(gpus)
 bad = False
 for r in rows:
     if not r.get("ok"):
@@ -212,8 +222,26 @@ for r in rows:
     if r.get("token_can_read") is False:
         print(f"[gpuref]   the HF token cannot read {r['model']}: accept its license at https://huggingface.co/{r['model']}", file=sys.stderr)
         bad = True
+    # bf16 weights + KV for one max_context sequence + overhead must fit each
+    # GPU we might land on (vLLM refuses to start otherwise).
+    mem = r.get("memory")
+    if mem is None:
+        print(f"[gpuref]     memory estimate unavailable; not checking fit", file=sys.stderr)
+        continue
+    print(f"[gpuref]     bf16 weights {mem['weights_gib']} GiB + KV {mem['kv_gib_one_seq']} GiB/seq at max_context "
+          f"(x{r['max_concurrency']} = {mem['kv_gib_all_seqs']} GiB) -> needs ~{mem['need_gib']} GiB", file=sys.stderr)
+    for gpu in gpus:
+        if mem["fits"].get(gpu) is False:
+            print(f"[gpuref]     does not fit {gpu}; dropping {gpu} from the preference list", file=sys.stderr)
+            usable.discard(gpu)
+if not bad and not usable:
+    print("[gpuref]   no GPU in --gpu fits every model", file=sys.stderr)
+    bad = True
+open(fit_path, "w").write(" ".join(g for g in gpus if g in usable))
 sys.exit(1 if bad else 0)
 PY
+read -r -a GPUS < "${FIT_GPUS}" || true   # no trailing newline
+[[ ${#GPUS[@]} -gt 0 ]] || die "no usable GPU type"
 
 HAVE_TOKEN=0
 if [[ -n "${HF_TOKEN:-}" || -s "${HOME}/.cache/huggingface/token" ]]; then
@@ -402,26 +430,44 @@ if [[ "${DRY_RUN}" -eq 0 ]] && printf '%s\n' "${SESSIONS_OUT}" | has_session; th
     STATE="${REMOTE_STATE}"
     log "remote state: ${STATE}"
 else
-    log "creating session '${SESSION}'"
-    new_args=(new -s "${SESSION}" --gpu "${GPU}")
-    if [[ "${HIGH_MEM}" -eq 1 ]]; then new_args+=(--high-mem); fi
-    # A 503 from the assign endpoint means no capacity right now: retry a few
-    # times. Other failures (quota, entitlement) are final.
-    attempt=1
-    until colab_cmd "${new_args[@]}" > "${LOCAL_TMP}/new.out" 2>&1; do
-        tail -3 "${LOCAL_TMP}/new.out" >&2
-        if grep -q "Service Unavailable" "${LOCAL_TMP}/new.out" && (( attempt < NEW_ATTEMPTS )); then
-            log "no ${GPU} capacity (503); retry ${attempt}/$((NEW_ATTEMPTS - 1)) in ${NEW_RETRY_SECONDS}s"
-            attempt=$((attempt + 1))
-            sleep "${NEW_RETRY_SECONDS}"
-            continue
-        fi
-        # Make sure a half-created assignment is not left behind.
-        if colab sessions < /dev/null 2>&1 | has_session; then SESSION_ACTIVE=1; fi
-        die "'colab new' failed (quota, entitlement or capacity; see ${HOME}/.config/colab-cli/colab.log)"
+    # Walk the preference list. A 503 from the assign endpoint means no
+    # capacity right now: retry that type with backoff, then fall through to
+    # the next. Any other failure (quota, entitlement) moves on at once.
+    ALLOCATED_GPU=""
+    for gpu in "${GPUS[@]}"; do
+        new_args=(new -s "${SESSION}" --gpu "${gpu}")
+        if [[ "${HIGH_MEM}" -eq 1 ]]; then new_args+=(--high-mem); fi
+        attempt=1
+        delay="${NEW_RETRY_SECONDS}"
+        while true; do
+            log "creating session '${SESSION}' on ${gpu} (attempt ${attempt}/${NEW_ATTEMPTS})"
+            if colab_cmd "${new_args[@]}" > "${LOCAL_TMP}/new.out" 2>&1; then
+                cat "${LOCAL_TMP}/new.out" >&2
+                ALLOCATED_GPU="${gpu}"
+                break
+            fi
+            tail -3 "${LOCAL_TMP}/new.out" >&2
+            # Make sure a half-created assignment is not left behind.
+            if colab sessions < /dev/null 2>&1 | has_session; then
+                SESSION_ACTIVE=1
+                die "'colab new' failed but '${SESSION}' exists; it will be stopped"
+            fi
+            if grep -q "Service Unavailable" "${LOCAL_TMP}/new.out" && (( attempt < NEW_ATTEMPTS )); then
+                log "no ${gpu} capacity (503); retrying in ${delay}s"
+                sleep "${delay}"
+                attempt=$((attempt + 1))
+                delay=$((delay * 2))
+                continue
+            fi
+            log "${gpu} unavailable; trying the next GPU type"
+            break
+        done
+        [[ -n "${ALLOCATED_GPU}" ]] && break
     done
-    cat "${LOCAL_TMP}/new.out" >&2
+    [[ -n "${ALLOCATED_GPU}" ]] \
+        || die "'colab new' failed on every GPU in --gpu (${GPUS[*]}); see ${HOME}/.config/colab-cli/colab.log"
     SESSION_ACTIVE=1
+    log "allocated ${ALLOCATED_GPU} (the exact GPU model is recorded in each provenance.json)"
 fi
 
 case "${STATE}" in

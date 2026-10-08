@@ -208,6 +208,51 @@ def test_summary_local_layout_newest_report_wins(tmp_path):
     assert {r["score"] for r in rows} == {50.0}
 
 
+def test_summary_reports_gpu_from_provenance(tmp_path):
+    report_dir = tmp_path / "workflow_logs" / "reports_output" / "evals" / "data"
+    report_dir.mkdir(parents=True)
+    shutil.copy(FIXTURE, report_dir / "report_data_x.json")
+    model_dir = tmp_path / "upstage__SOLAR-10.7B-Instruct-v1.0"
+    model_dir.mkdir()
+    (model_dir / "provenance.json").write_text(
+        json.dumps(
+            {
+                "model": "upstage/SOLAR-10.7B-Instruct-v1.0",
+                "gpu": {"name": "NVIDIA A100-SXM4-40GB"},
+            }
+        )
+    )
+    rows = gpuref.summary_rows(tmp_path)
+    assert {r["gpu"] for r in rows} == {"NVIDIA A100-SXM4-40GB"}
+    assert "NVIDIA A100-SXM4-40GB" in gpuref.format_summary(rows)
+
+
+def test_memory_estimate_and_fit():
+    # SOLAR-10.7B: 48 layers, 32 heads, 8 KV heads, hidden 4096 (head_dim 128).
+    config = {
+        "num_hidden_layers": 48,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 8,
+        "hidden_size": 4096,
+    }
+    assert gpuref.kv_bytes_per_token(config) == 2 * 48 * 8 * 128 * 2
+    est = gpuref.memory_estimate(10_731_524_096, config, 4096, 32)
+    assert est["weights_gib"] == pytest.approx(19.99, abs=0.01)
+    assert est["kv_gib_one_seq"] == pytest.approx(0.75, abs=0.01)
+    assert est["kv_gib_all_seqs"] == pytest.approx(24.0, abs=0.01)
+    fits = gpuref.gpu_fits(est["need_gib"])
+    assert fits["H100"] and fits["A100"] and not fits["T4"]
+    # Explicit head_dim wins over hidden_size // heads; MHA defaults kv_heads.
+    assert gpuref.kv_bytes_per_token(
+        {
+            "num_hidden_layers": 2,
+            "num_attention_heads": 4,
+            "hidden_size": 64,
+            "head_dim": 32,
+        }
+    ) == (2 * 2 * 4 * 32 * 2)
+
+
 def test_summary_empty(tmp_path):
     assert gpuref.summary_rows(tmp_path) == []
     assert gpuref.format_summary([]) == "No TTIS eval reports found."

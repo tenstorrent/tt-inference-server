@@ -76,7 +76,7 @@ scripts/gpu_reference_colab/colab_gpu_reference.sh \
 | Option | Default | Meaning |
 |---|---|---|
 | `MODEL...` | (required) | HF repo ids, run one after another on one VM |
-| `--gpu GPU` | `H100` | Colab GPU (`colab new --gpu`: T4, L4, G4, H100, A100) |
+| `--gpu GPU[,GPU...]` | `H100` | Colab GPU types in order of preference (T4, L4, G4, H100, A100), e.g. `H100,A100`; see "GPU choice and capacity" |
 | `--high-mem` | off | request the high-RAM machine shape |
 | `--ttis-ref REF` | `HEAD` | TTIS commit for the VM; resolved locally to a full sha, which must be on an `origin` branch |
 | `--out DIR` | `workflow_logs/gpu_reference_colab/<session>` | local results directory (`workflow_logs/` is git-ignored) |
@@ -86,9 +86,48 @@ scripts/gpu_reference_colab/colab_gpu_reference.sh \
 | `--vllm-version V` | runner pin (`0.13.0`) | override the vLLM pin, only to work around a VM problem |
 | `--dry-run` | off | run the local preflight, then print every `colab` command instead of running it |
 
+For the first three models, `--gpu H100,A100` is a good choice. H100
+capacity on Colab comes and goes.
+
 Run it from a TTIS checkout. The preflight reads that checkout's catalog, and
 the VM reads the `--ttis-ref` commit's catalog. The driver warns if the two
 differ.
+
+## GPU choice and capacity
+
+Colab GPU capacity varies by hour and by account. When it has none, the assign
+call returns `503 Service Unavailable`. `--gpu` takes an ordered preference
+list, and the driver walks it:
+
+- each type gets 3 attempts with 120 s, then 240 s backoff while it keeps
+  answering 503;
+- any other refusal (quota or entitlement) moves on to the next type
+  immediately;
+- the driver gives up only when every listed type has failed.
+
+The type you got is logged, and the exact GPU (`nvidia-smi` name, driver and
+memory) goes into each `provenance.json` and into the `gpu` column of
+`summary.txt`.
+
+The scores are bf16 vLLM references with greedy or seeded decoding and the
+same task configs, so they are valid on either an H100 or an A100. Small
+run-to-run differences come from kernel and batching nondeterminism, not from
+the GPU type. Still, cite the GPU from `provenance.json` with the number.
+
+Before creating a session, the preflight estimates each model's bf16 serving
+memory from the Hub's parameter count and `config.json`: weights, plus the KV
+cache for one `max_context` sequence, plus about 4 GiB of overhead. It checks
+that against 90% of each listed GPU's memory (H100 80 GB, A100 40 GB, L4, T4).
+A type that cannot hold a model is dropped from the list. For the first three
+models: SOLAR-10.7B needs about 25 GiB (weights 20 GiB, KV 0.75 GiB per 4K
+sequence), Llama-3.2-1B about 10 GiB at 128K, and Qwen1.5-0.5B about 8 GiB at
+32K. All of them fit a 40 GB A100. With 32 concurrent sequences, vLLM queues
+whatever the KV pool cannot hold, which costs throughput but not correctness.
+
+If vLLM still refuses `max_context` on the GPU it got, the runner retries once
+at vLLM's own estimated maximum length. It records `max_model_len_cap` in
+`provenance.json` and a note in `status.json`. lm-eval still sizes prompts to
+the spec's `max_context`, so review a capped run before using its numbers.
 
 ## What happens
 
@@ -97,7 +136,8 @@ differ.
    This is the same lookup `run.py --dev-mode --tt-device gpu` does. Then it
    checks HF gating and token access, and checks that `colab` is installed and
    signed in.
-2. **Session.** `colab new -s <session> --gpu H100 [--high-mem]`. If
+2. **Session.** `colab new -s <session> --gpu <type> [--high-mem]`, walking
+   the `--gpu` preference list. If
    `colab sessions` already lists `<session>`, the driver reads the runner state
    on it instead (see "Resume").
 3. **Upload.** A `prepare` snippet creates `/content/gpuref` and
@@ -209,7 +249,8 @@ Rough H100 timings for the first three models, all at TTIS's full task sizes
 Most of the time goes to the MMLU-Pro chain-of-thought generations. Check the
 balance with `colab usage` before and after. While a session runs, its `Usage
 rate:` line shows the H100's compute units per hour. Total cost is about rate x
-wall hours.
+wall hours. A 40 GB A100 measured about 5.3 CU/hr (2026-10-08). An A100 run
+takes noticeably longer than the H100 timings above.
 
 ## Turning results into references
 
@@ -249,7 +290,7 @@ Then check with `--dry-run`.
 | Symptom | Cause / fix |
 |---|---|
 | `the Colab CLI is not signed in` | Run `colab sessions` once in a terminal and finish the sign-in. |
-| `'colab new' failed` / `Allocation refused` | No H100 quota, entitlement or capacity right now. A `503 Service Unavailable` (no capacity) is retried 5 times, 5 min apart; after that, retry later or try `--gpu A100`. Run `colab stop` on any leftover sessions. |
+| `'colab new' failed on every GPU` / `Allocation refused` | No quota, entitlement or capacity for any listed type right now (each type gets 3 attempts on `503 Service Unavailable`). Retry later, or add a type such as `--gpu H100,A100`. Run `colab stop` on any leftover sessions. |
 | `is not on any origin branch` | Push the branch, or pass `--ttis-ref` with a pushed commit. |
 | `no GPU spec: No model spec matches ... device='GPU'` | Add the GPU entry (above). |
 | `needs an HF token` / `cannot read` | Set `HF_TOKEN` or run `hf auth login`, and accept the model's license on the Hub. |

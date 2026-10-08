@@ -107,6 +107,14 @@ stop_server() {
     sleep 5  # let the CUDA context and port go before the next model
 }
 
+# start_server LOG ARGS...: vllm serve in its own process group (SERVER_PID).
+start_server() {
+    local logfile="$1"; shift
+    log "${VENV}/bin/vllm $*"
+    setsid "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    SERVER_PID=$!
+}
+
 # Succeeds once /v1/models lists the served HF repo id.
 server_ready() {
     local model="$1"
@@ -170,7 +178,7 @@ run_model() {
     local model="$1" idx="$2" total="$3"
     local slug="${model//\//__}"
     local mdir="${RESULTS}/${slug}"
-    local started finished evals_rc="" status note=""
+    local started finished evals_rc="" status note="" cap=""
     mkdir -p "${mdir}"
     started="$(now)"
 
@@ -182,10 +190,29 @@ run_model() {
         local -a serve_args=()
         mapfile -t serve_args < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["vllm_serve_args"]))' "${mdir}/serve_plan.json")
         phase "model ${idx}/${total} ${model}: vllm serve"
-        log "${VENV}/bin/vllm ${serve_args[*]}"
-        setsid "${VENV}/bin/vllm" "${serve_args[@]}" > "${mdir}/vllm_server.log" 2>&1 < /dev/null &
-        SERVER_PID=$!
-        if ! wait_for_server "${model}"; then
+        start_server "${mdir}/vllm_server.log" "${serve_args[@]}"
+        local ready=0
+        if wait_for_server "${model}"; then
+            ready=1
+        else
+            # If this GPU cannot hold one max_context sequence, vLLM refuses
+            # and prints its own estimate. Retry once at that length and record
+            # the cap: lm-eval still sizes prompts to max_context, so a capped
+            # run is flagged in status.json and provenance.json for review.
+            cap="$(grep -oE 'estimated maximum model length is [0-9]+' "${mdir}/vllm_server.log" | grep -oE '[0-9]+$' | tail -1)"
+            stop_server
+            if [[ -n "${cap}" ]]; then
+                log "vLLM refused max_context on this GPU; retrying with --max-model-len ${cap}"
+                local i
+                for i in "${!serve_args[@]}"; do
+                    if [[ "${serve_args[$i]}" == "--max-model-len" ]]; then serve_args[i+1]="${cap}"; fi
+                done
+                mv "${mdir}/vllm_server.log" "${mdir}/vllm_server.refused.log"
+                start_server "${mdir}/vllm_server.log" "${serve_args[@]}"
+                if wait_for_server "${model}"; then ready=1; fi
+            fi
+        fi
+        if [[ "${ready}" -eq 0 ]]; then
             status="failed"; note="vLLM did not become ready (vllm_server.log)"
         else
             phase "model ${idx}/${total} ${model}: evals"
@@ -193,6 +220,7 @@ run_model() {
                 > "${mdir}/run_py.log" 2>&1 < /dev/null
             evals_rc=$?
             if [[ "${evals_rc}" -eq 0 ]]; then status="ok"; else status="failed"; note="run.py exited ${evals_rc} (run_py.log)"; fi
+            if [[ -n "${cap}" ]]; then note="${note:+${note}; }max_model_len capped to ${cap} on this GPU (spec max_context not servable)"; fi
         fi
         stop_server
     fi
@@ -204,6 +232,7 @@ run_model() {
         --vllm-python "${VENV}/bin/python" --vllm-bin "${VENV}/bin/vllm" \
         --status "${status}" ${evals_rc:+--evals-rc "${evals_rc}"} \
         --started-at "${started}" --finished-at "${finished}" ${note:+--note "${note}"} \
+        ${cap:+--max-model-len-cap "${cap}"} \
         || log "WARNING: provenance.json not written for ${model}"
 
     python3 - "${RESULTS}/status.json" "${model}" "${status}" "${note}" <<'PY'

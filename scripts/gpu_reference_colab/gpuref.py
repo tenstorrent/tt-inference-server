@@ -195,6 +195,74 @@ def hf_revision_sha(repo: str, revision: Optional[str]) -> Optional[str]:
         return None
 
 
+# Colab GPU memory (GiB) for the fit check; G4 is left out (not characterised).
+GPU_MEMORY_GIB = {"H100": 80.0, "A100": 40.0, "L4": 22.5, "T4": 15.0}
+# vLLM's default --gpu-memory-utilization, and a margin for CUDA context,
+# activations and CUDA graphs on top of weights + KV cache.
+GPU_MEMORY_UTILIZATION = 0.9
+OVERHEAD_GIB = 4.0
+GIB = float(1 << 30)
+
+
+def kv_bytes_per_token(config: Dict[str, Any], dtype_bytes: int = 2) -> int:
+    """bf16 K+V bytes per token for a standard decoder config.json."""
+    layers = int(config["num_hidden_layers"])
+    heads = int(config["num_attention_heads"])
+    kv_heads = int(config.get("num_key_value_heads") or heads)
+    head_dim = int(config.get("head_dim") or int(config["hidden_size"]) // heads)
+    return 2 * layers * kv_heads * head_dim * dtype_bytes
+
+
+def memory_estimate(
+    num_params: int, config: Dict[str, Any], max_context: int, max_concurrency: int
+) -> Dict[str, float]:
+    """bf16 serving memory: weights, KV for one max_context sequence, KV for all.
+
+    vLLM refuses to start only when one max_context sequence does not fit; the
+    full max_concurrency x max_context pool is a throughput concern (vLLM
+    queues/preempts), so `need_gib` uses the one-sequence figure.
+    """
+    weights = num_params * 2 / GIB
+    per_token = kv_bytes_per_token(config)
+    one_seq = per_token * max_context / GIB
+    all_seqs = one_seq * max_concurrency
+    return {
+        "weights_gib": round(weights, 2),
+        "kv_gib_one_seq": round(one_seq, 2),
+        "kv_gib_all_seqs": round(all_seqs, 2),
+        "need_gib": round(weights + one_seq + OVERHEAD_GIB, 2),
+    }
+
+
+def gpu_fits(need_gib: float) -> Dict[str, bool]:
+    return {
+        gpu: need_gib <= mem * GPU_MEMORY_UTILIZATION
+        for gpu, mem in GPU_MEMORY_GIB.items()
+    }
+
+
+def hf_memory_estimate(
+    repo: str,
+    revision: Optional[str],
+    max_context: int,
+    max_concurrency: int,
+    token: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    """memory_estimate from the Hub (parameter count + config.json), or None."""
+    try:
+        info = _hf_get(f"{HF_API}/{repo}/revision/{revision or 'main'}", token=token)
+        num_params = int((info.get("safetensors") or {})["total"])
+        config = _hf_get(
+            f"https://huggingface.co/{repo}/resolve/{revision or 'main'}/config.json",
+            token=token,
+        )
+        estimate = memory_estimate(num_params, config, max_context, max_concurrency)
+    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+        return None
+    estimate["fits"] = gpu_fits(estimate["need_gib"])
+    return estimate
+
+
 def check_models(models: Iterable[str]) -> List[Dict[str, Any]]:
     token = _read_hf_token()
     rows = []
@@ -221,6 +289,13 @@ def check_models(models: Iterable[str]) -> List[Dict[str, Any]]:
         )
         if token is not None and gated is not False:
             row["token_can_read"] = hf_can_read(model, plan["revision"], token)
+        row["memory"] = hf_memory_estimate(
+            model,
+            plan["revision"],
+            plan["max_context"],
+            plan["max_concurrency"],
+            token if gated is not False else None,
+        )
         rows.append(row)
     return rows
 
@@ -319,6 +394,9 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "max_context": plan.get("max_context"),
         "max_concurrency": plan.get("max_concurrency"),
         "vllm_serve_command": [args.vllm_bin] + plan.get("vllm_serve_args", []),
+        # Set only when vLLM refused max_context on this GPU and the runner
+        # retried with vLLM's own estimate; lm-eval still uses max_context.
+        "max_model_len_cap": args.max_model_len_cap,
         "dropped_tt_only_vllm_args": plan.get("dropped_tt_only_vllm_args"),
         "run_py_command": [
             "python3",
@@ -378,18 +456,33 @@ def find_eval_reports(root: Path) -> List[Dict[str, Any]]:
     return [newest[k] for k in sorted(newest)]
 
 
+def gpu_names_by_model(root: Path) -> Dict[str, str]:
+    """model -> GPU name recorded in each provenance.json under root."""
+    names = {}
+    for path in sorted(root.rglob("provenance.json")):
+        payload = _load_json(path)
+        if isinstance(payload, dict) and payload.get("model"):
+            name = (payload.get("gpu") or {}).get("name")
+            if name:
+                names[payload["model"]] = name
+    return names
+
+
 def summary_rows(root: Path) -> List[Dict[str, Any]]:
     rows = []
+    gpus = gpu_names_by_model(root)
     for report in find_eval_reports(root):
         meta = report.get("metadata") or {}
+        model = meta.get("model_repo") or meta.get("model_name")
         for section in report["sections"]:
             if not isinstance(section, dict) or section.get("kind") != "evals":
                 continue
             data = section.get("data") or {}
             rows.append(
                 {
-                    "model": meta.get("model_repo") or meta.get("model_name"),
+                    "model": model,
                     "device": meta.get("device"),
+                    "gpu": gpus.get(model),
                     "task": data.get("task_name"),
                     "score": data.get("score"),
                     "published_score": data.get("published_score"),
@@ -410,11 +503,12 @@ def _fmt(value: Any) -> str:
 def format_summary(rows: List[Dict[str, Any]]) -> str:
     if not rows:
         return "No TTIS eval reports found."
-    header = ["model", "device", "task", "score", "published", "gpu_ref"]
+    header = ["model", "device", "gpu", "task", "score", "published", "gpu_ref"]
     table = [header] + [
         [
             _fmt(r["model"]),
             _fmt(r["device"]),
+            _fmt(r.get("gpu")),
             _fmt(r["task"]),
             _fmt(r["score"]),
             _fmt(r["published_score"]),
@@ -458,6 +552,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     p_prov.add_argument("--started-at", required=True)
     p_prov.add_argument("--finished-at", required=True)
     p_prov.add_argument("--note", default=None)
+    p_prov.add_argument("--max-model-len-cap", type=int, default=None)
 
     p_sum = sub.add_parser("summary")
     p_sum.add_argument("dir")
