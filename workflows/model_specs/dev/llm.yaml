@@ -214,6 +214,13 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
       default_impl: true
+    # Client-only entry for the externally launched tt-d-gen disaggregated
+    # deployment. `--server-url` supplies the endpoint; run.py does not launch
+    # the VLLM engine described by this template.
+    - device: SUPER_CLUSTER
+      max_concurrency: 4
+      max_context: 262144  # matches both tt-d-gen worker configs
+      default_impl: true
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:

@@ -60,8 +60,10 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     ``hf_repo__`` is the repo with ``/`` replaced by ``__`` (mirrors v1's
     per-model-type globs in run_reports.py).
     """
-    repo = model_spec.hf_model_repo.replace("/", "__")
-    base = f"eval_{model_spec.model_id}/{repo}"
+    # lm-eval names the subdirectory after its `model` arg, which a task's
+    # model_kwargs may override with the served name; eval_<model_id> is
+    # already model-specific, so accept any subdirectory.
+    base = f"eval_{model_spec.model_id}/*"
     patterns = [
         f"{output_path}/{base}/results_*.json",
         f"{output_path}/{base}/*_results.json",
