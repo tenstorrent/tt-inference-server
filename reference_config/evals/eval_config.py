@@ -6433,9 +6433,13 @@ _eval_config_list = [
                 # API so the server renders the native template and the
                 # k2_horizon reasoning parser separates thinking from content.
                 task_name="r1_gpqa_diamond",
+                # 77.1 is the "7B before" column of the card's FTPO table, i.e. the
+                # pre-anti-doom-loop checkpoint this spec pins (036114ce), measured by
+                # the publisher with a 256K output budget. CI runs 40 docs at 64K and
+                # one sample, so the row is a lower bound (65-80 across CI runs).
                 score=EvalTaskScore(
-                    published_score=None,
-                    published_score_ref=None,
+                    published_score=77.1,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#anti-doom-loop-training",
                     gpu_reference_score=None,
                     gpu_reference_score_ref=None,
                     score_func=score_task_single_key,
