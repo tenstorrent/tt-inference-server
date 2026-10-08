@@ -2121,7 +2121,7 @@ templates:
     - text
   device_model_specs:
     - device: BLACKHOLE_GALAXY
-      max_concurrency: 128  # 4 mesh rows x 32 users per row
+      max_concurrency: 32  # B=32 build (4 mesh rows x 8 users per row)
       max_context: 33280  # 260 * 128: B=128 + fp8 pool at 64k OOMs in the build (prefill_sparse PrefillKV); the default sweep needs <= 32768 + 128
       default_impl: true
       tensor_cache_timeout: 7200.0
@@ -2137,13 +2137,13 @@ templates:
         DSV41_TRACE_REGION: "1600000000"
         DSV41_CKPT: /mnt/tt-data/ssinghal/deepseek-v41-flash  # local HF checkpoint dir
         DSV41_WEIGHT_CACHE: /mnt/tt-data/ssinghal/dsv4-weight-cache
-        EXTRA_MODELS_DIR: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole
+        EXTRA_MODELS_DIR: /mnt/tt-data/ssinghal/wt/eval_tt/models/demos/blackhole
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
-        hf_config_path: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole/deepseek_v41_flash/vllm_config
+        hf_config_path: /mnt/tt-data/ssinghal/wt/eval_tt/models/demos/blackhole/deepseek_v41_flash/vllm_config
         tokenizer: /mnt/tt-data/ssinghal/deepseek-v41-flash
-        chat_template: /mnt/tt-data/ssinghal/wt/vllm_test/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
-        max_num_seqs: "128"
+        chat_template: /mnt/tt-data/ssinghal/wt/eval_tt/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
+        max_num_seqs: "32"
         max_model_len: "33280"
         no-enable-prefix-caching: true
         hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'

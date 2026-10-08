@@ -7091,6 +7091,145 @@ _eval_config_list = [
             ),
         ],
     ),
+    # DeepSeek-V4.1-Flash on Blackhole Galaxy (B=32 build, max_model_len 33280, plain decode).
+    # The served chat template is NON-THINKING (encoding.py thinking_mode="chat": the
+    # generation prompt ends in </think>), and 33k context cannot hold long reasoning, so
+    # every task runs non-thinking, greedy (device sampling), chat API. Model-card numbers
+    # are not like for like (GPQA: instruct, max reasoning effort; MMLU-Pro/HumanEval/
+    # LongBench-V2: base-model few-shot). DSV41_EVAL_TASKS (comma list) selects tasks.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash",
+        tasks=[
+            t
+            for t in [
+                EvalTask(
+                    task_name="gpqa_diamond_cot_zeroshot",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    num_fewshot=0,
+                    use_chat_api=True,
+                    max_concurrent=32,
+                    score=EvalTaskScore(
+                        published_score=90.9,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["exact_match,flexible-extract"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "max_length": 33280,
+                        "timeout": 3600,
+                    },
+                    gen_kwargs={
+                        "max_gen_toks": 8192,
+                        "until": [],
+                        "do_sample": "false",
+                        "temperature": 0,
+                        "stream": "false",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 64},
+                ),
+                EvalTask(
+                    task_name="mmlu_pro",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    num_fewshot=5,
+                    use_chat_api=True,
+                    max_concurrent=32,
+                    score=EvalTaskScore(
+                        published_score=74.1,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["exact_match,custom-extract"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "max_length": 33280,
+                        "timeout": 3600,
+                    },
+                    gen_kwargs={
+                        "max_gen_toks": 2048,
+                        "until": [],
+                        "do_sample": "false",
+                        "temperature": 0,
+                        "stream": "false",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 128},
+                ),
+                EvalTask(
+                    task_name="humaneval_instruct",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    use_chat_api=True,
+                    allow_code_execution=True,
+                    apply_chat_template=True,
+                    max_concurrent=32,
+                    score=EvalTaskScore(
+                        published_score=79.4,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["pass@1,create_test"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "max_length": 33280,
+                        "timeout": 3600,
+                    },
+                    gen_kwargs={
+                        "max_gen_toks": 1024,
+                        "until": [],
+                        "do_sample": "false",
+                        "temperature": 0,
+                        "stream": "false",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 32},
+                ),
+                EvalTask(
+                    task_name="longbench2_generate",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    use_chat_api=True,
+                    max_concurrent=32,
+                    score=EvalTaskScore(
+                        published_score=45.2,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["exact_match,none"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "max_length": 33280,
+                        "timeout": 7200,
+                    },
+                    gen_kwargs={
+                        "max_gen_toks": 1024,
+                        "until": [],
+                        "do_sample": "false",
+                        "temperature": 0,
+                        "stream": "false",
+                    },
+                    # only samples that fit the 33280 context: ISL + 1024 gen + template < 33280
+                    custom_dataset_kwargs={
+                        "minimum_isl": 0,
+                        "maximum_isl": 31000,
+                        "pretrained": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "tokenizer_num_proc": 16,
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 4, EvalLimitMode.CI_NIGHTLY: 16},
+                ),
+            ]
+            if not os.getenv("DSV41_EVAL_TASKS")
+            or t.task_name in os.getenv("DSV41_EVAL_TASKS").split(",")
+        ],
+    ),
 ]
 
 
