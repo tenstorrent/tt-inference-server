@@ -105,7 +105,12 @@ def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
     )
     run_configs = get_llm_configs(dedicated, dedicated.device_type)
     graded = [config for config in run_configs if config.targets]
+    benchmark_keys = [
+        (config.isl, config.osl, config.max_concurrency) for config in run_configs
+    ]
 
+    assert len(benchmark_keys) == len(set(benchmark_keys)) == 13
+    assert all(config.max_concurrency == 1 for config in run_configs)
     assert any(
         (config.isl, config.osl, config.max_concurrency, config.num_prompts)
         == (261888, 128, 1, 1)

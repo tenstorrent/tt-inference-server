@@ -94,6 +94,10 @@ Points without targets retain one ungraded execution. `benchmark_require_complet
 requires each declared metric to be present. Default/`standard` protocol behavior
 is unchanged. The legacy `benchmark_token_timing: true` flag remains an alias.
 
+Catalogue metadata can also cap the generated sweep concurrency with
+`benchmark_max_concurrency`. This affects only benchmark workloads; it does not
+reduce the model server's advertised `max_concurrency`.
+
 The timing adapter uses private vLLM 0.13.0 helpers and Transformers 4.57.6.
 Revalidate payloads, tokenization and streaming timing before upgrading either
 client dependency; server versions are independent of these client pins.
