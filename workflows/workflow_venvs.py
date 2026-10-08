@@ -10,7 +10,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Sequence, Tuple
 
 from workflows.bootstrap_uv import UV_EXEC
 from workflows.utils import (
@@ -44,8 +44,34 @@ HARBOR_REF = "tt-inference-server"
 
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
+# MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
+# its verify.py and m3_format_check pytest suites run unchanged from this
+# checkout, and test_module/llm_tests/minimax_verifier_grading.py grades their
+# output. Pinned to a commit (upstream main, which includes the
+# `reasoning_content` fix vLLM servers need); bump it together with any change
+# to verify.py's results format or the suites' file names.
+MINIMAX_VERIFIER_REPO = "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
+MINIMAX_VERIFIER_REF = "4e778f7c3da5f0feca02741f5f736c8568760a6f"
+MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
+# The full tree is ~870 MB, mostly official-deployment baselines for every
+# model x 10 loops. The spec test reads only the first loop of each enrolled
+# model, as its ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
+# test_module/test_suites/llm.json). Root files (verify.py, sample.jsonl) are
+# always part of a cone checkout.
+MINIMAX_VERIFIER_SPARSE_PATHS = (
+    "validator",
+    "m3_format_check",
+    "output-dir/MiniMax-M3/loop_01",
+    "output-dir/MiniMax-M2.7/loop_01",
+)
 
-def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
+
+def checkout_pinned_repo(
+    dest: Path,
+    repo: str,
+    ref: str,
+    sparse_paths: Optional[Sequence[str]] = None,
+) -> bool:
     """Materialize *repo* at exactly *ref* in *dest*. Returns success.
 
     Idempotent, and converging rather than incremental: the directory may be
@@ -53,6 +79,10 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     or not a git repository at all. Self-hosted runners keep the venv tree
     between jobs, so a "clone only when missing" shortcut would keep
     installing whatever the previous pin was.
+
+    *sparse_paths* limits the working tree to those directories (cone mode;
+    files at the repo root are always included). The clone is blob-less, so
+    git downloads only the files inside them.
     """
     if not (dest / ".git").is_dir():
         if dest.exists():
@@ -72,6 +102,11 @@ def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     steps = (
         f"git -C {dest} remote set-url origin {repo}",
         f"git -C {dest} fetch --depth 1 origin {ref}",
+        *(
+            (f"git -C {dest} sparse-checkout set --cone {' '.join(sparse_paths)}",)
+            if sparse_paths
+            else ()
+        ),
         f"git -C {dest} checkout --detach --force FETCH_HEAD",
     )
     for step in steps:
@@ -252,6 +287,24 @@ def _write_harbor_adapters_pth(
     pth_file.write_text(f"{harbor_dir}\n")
     logger.info("Wrote %s pointing to %s", pth_file, harbor_dir)
     return True
+
+
+def setup_minimax_verifier(
+    venv_config: VenvConfig,
+    model_spec: "ModelSpec",  # noqa: F821
+) -> bool:
+    """Hook for MINIMAX_VERIFIER: check out MiniMax-Provider-Verifier at its pin.
+
+    Nothing is installed from the checkout: the spec test runs its
+    ``verify.py`` and pytest suites with this venv's python, and the
+    dependencies come from requirements/minimax-verifier.txt.
+    """
+    return checkout_pinned_repo(
+        venv_config.venv_path / MINIMAX_VERIFIER_DIR_NAME,
+        MINIMAX_VERIFIER_REPO,
+        MINIMAX_VERIFIER_REF,
+        sparse_paths=MINIMAX_VERIFIER_SPARSE_PATHS,
+    )
 
 
 def check_docker_available(
@@ -842,6 +895,13 @@ _venv_config_list = [
         requirements_file="evals-agentic.txt",
         python_version="3.12",
         setup_function=setup_evals_agentic,
+    ),
+    # 3.12: the verifier's pyproject requires >=3.12.
+    VenvConfig(
+        venv_type=WorkflowVenvType.MINIMAX_VERIFIER,
+        requirements_file="minimax-verifier.txt",
+        python_version="3.12",
+        setup_function=setup_minimax_verifier,
     ),
     VenvConfig(
         venv_type=WorkflowVenvType.WORKFLOW_RUN_SCRIPT,

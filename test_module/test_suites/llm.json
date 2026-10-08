@@ -169,6 +169,76 @@
             "non_blocking": true,
             "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
           }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
+          "_comment": "The verifier is checked out at the commit pinned in workflows/workflow_venvs.py (MINIMAX_VERIFIER_REF); graded by test_module/llm_tests/minimax_verifier_grading.py. Each metric defaults to the verifier README threshold (calibrated on pass@10 means, graded here on one run); targets.<metric key> overrides it. verify_baseline is the official deployment's results for ToolCalls-Trigger-Similarity and must be in MINIMAX_VERIFIER_SPARSE_PATHS.",
+          "test_config": {
+            "suite": "verify",
+            "verify_baseline": "output-dir/MiniMax-M3/loop_01"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check text: chat-completions contract, non-blocking",
+          "test_config": {
+            "suite": "text",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check stream: SSE protocol and packet-length distribution, non-blocking",
+          "test_config": {
+            "suite": "stream",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check image: image input, non-blocking",
+          "test_config": {
+            "suite": "image",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        },
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier m3_format_check video: video input, non-blocking",
+          "test_config": {
+            "suite": "video",
+            "non_blocking": true,
+            "non_blocking_reason": "MiniMax format-check suites are informational until they pass cleanly"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
+        "minimax_m2_7"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "MiniMaxProviderVerifierTest",
+          "enabled": true,
+          "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
+          "_comment": "The verifier is checked out at the commit pinned in workflows/workflow_venvs.py (MINIMAX_VERIFIER_REF); graded by test_module/llm_tests/minimax_verifier_grading.py. Each metric defaults to the verifier README threshold (calibrated on pass@10 means, graded here on one run); targets.<metric key> overrides it. verify_baseline is the official deployment's results for ToolCalls-Trigger-Similarity and must be in MINIMAX_VERIFIER_SPARSE_PATHS.",
+          "test_config": {
+            "suite": "verify",
+            "verify_baseline": "output-dir/MiniMax-M2.7/loop_01"
+          }
         }
       ]
     },

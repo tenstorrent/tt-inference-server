@@ -71,6 +71,7 @@
       "Qwen/Qwen3-0.6B",
       "Qwen/Qwen3-1.7B",
       "MiniMaxAI/MiniMax-M3",
+      "MiniMaxAI/MiniMax-M2.7",
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
       "google/gemma-4-12B-it",
@@ -645,6 +646,16 @@
       "id_name": "minimax-m3",
       "weights": [
         "MiniMaxAI/MiniMax-M3"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "minimax_m2_7": {
+      "id_name": "minimax-m2.7",
+      "weights": [
+        "MiniMaxAI/MiniMax-M2.7"
       ],
       "category": "LLM",
       "compatible_devices": [
@@ -1353,6 +1364,27 @@
         "default_sampling": false,
         "cache_bypass": false,
         "exclude_ref_schemas": false,
+        "non_blocking": false
+      }
+    },
+    "MiniMaxProviderVerifierTest": {
+      "module": "test_module.llm_tests.minimax_provider_verifier_test",
+      "markers": [
+        "param",
+        "e2e",
+        "slow"
+      ],
+      "test_config": {
+        "timeout": 10800,
+        "retry_attempts": 0,
+        "retry_delay": 10,
+        "break_on_failure": false,
+        "mock_mode": false,
+        "suite": "verify",
+        "workers": 20,
+        "include_slow": true,
+        "verify_loops": 1,
+        "pass_rate_threshold": 1.0,
         "non_blocking": false
       }
     }
