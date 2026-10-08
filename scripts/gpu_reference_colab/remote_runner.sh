@@ -117,9 +117,10 @@ start_server() {
 
 # Succeeds once /v1/models lists the served HF repo id.
 server_ready() {
-    local model="$1"
-    curl -sf "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null \
-        | python3 -c 'import json,sys; ids=[m["id"] for m in json.load(sys.stdin).get("data",[])]; sys.exit(0 if sys.argv[1] in ids else 1)' "${model}"
+    local model="$1" body
+    body="$(curl -sf "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || return 1
+    printf '%s' "${body}" \
+        | python3 -c 'import json,sys; ids=[m["id"] for m in json.load(sys.stdin).get("data",[])]; sys.exit(0 if sys.argv[1] in ids else 1)' "${model}" 2>/dev/null
 }
 
 wait_for_server() {

@@ -332,6 +332,16 @@ except Exception:
     pass
 for line in read("runner.log").splitlines()[-12:]:
     print("GPUREF_LOG| " + line)
+# Latest progress line of the model currently in evals (run.py's tqdm output).
+import glob
+logs = sorted(glob.glob(os.path.join(W, "results", "*", "run_py.log")), key=os.path.getmtime)
+if logs:
+    with open(logs[-1], "rb") as f:
+        f.seek(0, 2)
+        f.seek(max(0, f.tell() - 4096))
+        tail = f.read().decode("utf-8", "replace").replace("\r", "\n").splitlines()
+    if tail:
+        print("GPUREF_EVAL=" + os.path.basename(os.path.dirname(logs[-1])) + ": " + tail[-1][-200:])
 PY
 
 snippet prepare > /dev/null <<PY
@@ -401,7 +411,7 @@ remote_state() {
 }
 
 show_status() {
-    printf '%s\n' "${STATUS_OUT}" | sed -n 's/^GPUREF_PHASE=/  phase: /p; s/^GPUREF_GPU=/  gpu:   /p; s/^GPUREF_LOG| /  | /p' >&2
+    printf '%s\n' "${STATUS_OUT}" | sed -n 's/^GPUREF_PHASE=/  phase: /p; s/^GPUREF_GPU=/  gpu:   /p; s/^GPUREF_EVAL=/  evals: /p; s/^GPUREF_LOG| /  | /p' >&2
 }
 
 upload_token() {
