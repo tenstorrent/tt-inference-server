@@ -11,7 +11,9 @@ from pydantic import Field, field_validator, model_validator
 # Runners whose edit path requires a mask (mask-based inpainting). Other runners
 # (e.g. FLUX.1-Kontext, which edits by instruction only) accept a missing mask.
 _MASK_REQUIRED_RUNNERS = {"tt-sdxl-edit"}
-_QWEN_IMAGE_EDIT_RUNNER = "tt-qwen-image-edit"
+# Both the original Qwen-Image-Edit and the 2511 (Edit-Plus) weights share the same
+# serving policy (true-CFG default, input validation, square canvas).
+_QWEN_IMAGE_EDIT_RUNNERS = {"tt-qwen-image-edit", "tt-qwen-image-edit-2511"}
 
 
 class ImageEditRequest(ImageToImageRequest):
@@ -39,7 +41,7 @@ class ImageEditRequest(ImageToImageRequest):
         if (
             isinstance(data, dict)
             and data.get("guidance_scale") is None
-            and get_settings().model_runner == _QWEN_IMAGE_EDIT_RUNNER
+            and get_settings().model_runner in _QWEN_IMAGE_EDIT_RUNNERS
         ):
             from tt_model_runners.qwen_image_edit_policy import (
                 QWEN_IMAGE_EDIT_DEFAULT_TRUE_CFG_SCALE,
@@ -56,7 +58,7 @@ class ImageEditRequest(ImageToImageRequest):
         # truncated files fail here too). URLs are rejected: /v1/images/edits does
         # not download media (only the video endpoints do), so a URL would reach
         # the worker's decoder and fail there.
-        if get_settings().model_runner != _QWEN_IMAGE_EDIT_RUNNER:
+        if get_settings().model_runner not in _QWEN_IMAGE_EDIT_RUNNERS:
             return self
         from tt_model_runners.qwen_image_edit_policy import (
             QWEN_IMAGE_EDIT_MAX_INPUT_PIXELS,
@@ -100,7 +102,7 @@ class ImageEditRequest(ImageToImageRequest):
     def _qwen_image_edit_square_canvas(self):
         # Clean 422 for a canvas the pipeline cannot render, instead of a 500
         # from the worker.
-        if get_settings().model_runner == _QWEN_IMAGE_EDIT_RUNNER:
+        if get_settings().model_runner in _QWEN_IMAGE_EDIT_RUNNERS:
             from tt_model_runners.qwen_image_edit_policy import qwen_image_edit_side
 
             qwen_image_edit_side(self.width, self.height)

@@ -130,6 +130,7 @@ dit_runner_log_map = {
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.TT_QWEN_IMAGE_EDIT.value: "Qwen-Image-Edit",
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: "Qwen-Image-Edit-2511",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
 }
 

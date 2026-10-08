@@ -316,6 +316,32 @@ templates:
       default_impl: true
   status: EXPERIMENTAL
 
+# Qwen-Image-Edit-2511 (Edit-Plus weights): same serving layout/perf as Qwen-Image-Edit.
+# The tt-metal pipeline auto-selects Edit-Plus multi-image conditioning + zero_cond_t from
+# the 2511 checkpoint name. Needs a tt-metal build with models/tt_dit/pipelines/qwenimage_edit
+# that includes 2511 support (branch tvardhineni/qwen-image-edit-2511-rc).
+# Build the media-server image with --build-arg INSTALL_TT_VLLM_PLUGIN=0 (same as Qwen-Image-Edit).
+- weights:
+    - Qwen/Qwen-Image-Edit-2511
+  model_display_name: Qwen-Image-Edit-2511
+  impl: tt_transformers
+  min_disk_gb: 120
+  min_ram_gb: 96
+  model_type: IMAGE
+  inference_engine: MEDIA
+  env_vars:
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL
+
 - weights:
     - Tongyi-MAI/Z-Image-Turbo
   impl: tt_transformers

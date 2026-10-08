@@ -43,6 +43,10 @@ AVAILABLE_RUNNERS = {
     ModelRunners.TT_QWEN_IMAGE_EDIT: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTQwenImageEditRunner"]
     ).TTQwenImageEditRunner(wid),
+    # 2511 reuses the same runner class; the weights come from the runner's model map.
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511: lambda wid: __import__(
+        "tt_model_runners.dit_runners", fromlist=["TTQwenImageEditRunner"]
+    ).TTQwenImageEditRunner(wid),
     ModelRunners.TT_MOCHI_1: lambda wid: __import__(
         "tt_model_runners.dit_runners", fromlist=["TTMochi1Runner"]
     ).TTMochi1Runner(wid),

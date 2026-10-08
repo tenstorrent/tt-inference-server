@@ -25,6 +25,7 @@ MODEL_RUNNER_TO_REQUEST_MAP = {
     ModelRunners.TT_QWEN_IMAGE.value: BaseImageRequest,
     ModelRunners.TT_QWEN_IMAGE_2512.value: BaseImageRequest,
     ModelRunners.TT_QWEN_IMAGE_EDIT.value: ImageEditRequest,
+    ModelRunners.TT_QWEN_IMAGE_EDIT_2511.value: ImageEditRequest,
 }
 
 V1_MODEL_CREATED_TIMESTAMP = 1700000000
