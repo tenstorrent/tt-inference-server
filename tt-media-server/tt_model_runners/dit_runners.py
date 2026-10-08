@@ -1728,14 +1728,15 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             else MINIMAX_H3_DEFAULT_ASPECT_RATIO
         )
 
-        seconds = getattr(request, "duration_seconds", None)
+        seconds = getattr(request, "duration", None)
         if seconds is None:
             seconds = MINIMAX_H3_DEFAULT_DURATION_S
-        elif seconds not in MINIMAX_H3_DURATIONS_S:
+        elif seconds != int(seconds) or int(seconds) not in MINIMAX_H3_DURATIONS_S:
             raise ValueError(
-                f"duration_seconds must be an integer from {min(MINIMAX_H3_DURATIONS_S)} to "
-                f"{max(MINIMAX_H3_DURATIONS_S)}; got {seconds}"
+                f"duration must be a whole number of seconds from {min(MINIMAX_H3_DURATIONS_S)} "
+                f"to {max(MINIMAX_H3_DURATIONS_S)}; got {seconds:g}"
             )
+        seconds = int(seconds)
 
         num_frames = get_num_frames(seconds)
         if not minimax_h3_frames_are_aligned(num_frames):

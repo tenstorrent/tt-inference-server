@@ -306,6 +306,33 @@ class TestJobManager:
             )
 
     @pytest.mark.asyncio
+    async def test_create_job_echoes_given_request_parameters(
+        self, job_manager, mock_request
+    ):
+        """An explicit request_parameters is what the job stores and echoes.
+
+        The video route passes the client's URL form here after the request
+        object's media has been downloaded to base64.
+        """
+
+        async def task_func(req):
+            return "videos/test-echo.mp4"
+
+        job_data = await job_manager.create_job(
+            job_id="job-echo",
+            job_type=JobTypes.VIDEO,
+            model="test-model",
+            request=mock_request,
+            task_function=task_func,
+            request_parameters={"image": "https://host.example/a.png"},
+        )
+
+        assert job_data["request_parameters"] == {"image": "https://host.example/a.png"}
+        assert job_manager.get_job_metadata("job-echo")["request_parameters"] == {
+            "image": "https://host.example/a.png"
+        }
+
+    @pytest.mark.asyncio
     async def test_create_job_max_limit(self, job_manager, mock_request):
         """Test creating job fails when max limit reached"""
 
@@ -2480,8 +2507,8 @@ class TestJobManager:
 
     @pytest.mark.asyncio
     async def test_delete_job_not_found(self, job_manager):
-        """Deleting an unknown job returns None (-> 404 at the API layer)."""
-        assert job_manager.delete_job("nonexistent") is None
+        """Deleting an unknown job returns False (-> 404 at the API layer)."""
+        assert job_manager.delete_job("nonexistent") is False
 
     @pytest.mark.asyncio
     async def test_delete_completed_job_removes_record_and_file(
@@ -2508,11 +2535,7 @@ class TestJobManager:
             assert job_manager.get_job_metadata("job-del")["status"] == "completed"
             assert os.path.exists(file_path)
 
-            result = job_manager.delete_job("job-del")
-
-            assert result is not None
-            assert result["id"] == "job-del"
-            assert result["status"] == "completed"
+            assert job_manager.delete_job("job-del") is True
             assert job_manager.get_job_metadata("job-del") is None
             assert job_manager.get_all_jobs_metadata() == []
             assert not os.path.exists(file_path)
@@ -2541,17 +2564,14 @@ class TestJobManager:
         await asyncio.sleep(0.2)
         assert job_manager.get_job_metadata("job-failed")["status"] == "failed"
 
-        result = job_manager.delete_job("job-failed")
-
-        assert result["status"] == "failed"
+        assert job_manager.delete_job("job-failed") is True
         assert job_manager.get_job_metadata("job-failed") is None
         if job_manager.db:
             assert job_manager.db.get_job_by_id("job-failed") is None
 
     @pytest.mark.asyncio
     async def test_delete_in_progress_job_is_refused(self, job_manager, mock_request):
-        """An active job is not deleted: 409, and the job is left untouched."""
-        from fastapi import HTTPException
+        """An active job is not deleted (409 at the API layer) and is left untouched."""
 
         async def long_task(req):
             await asyncio.sleep(10)
@@ -2567,19 +2587,16 @@ class TestJobManager:
         await asyncio.sleep(0.1)
         assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(ValueError, match="in_progress"):
             job_manager.delete_job("job-active")
 
-        assert exc_info.value.status_code == 409
-        assert "in_progress" in exc_info.value.detail
         assert job_manager.get_job_metadata("job-active")["status"] == "in_progress"
         if job_manager.db:
             assert job_manager.db.get_job_by_id("job-active") is not None
 
     @pytest.mark.asyncio
     async def test_delete_queued_job_is_refused(self, job_manager, mock_request):
-        """A queued job (start_event never set) is refused with 409 as well."""
-        from fastapi import HTTPException
+        """A queued job (start_event never set) is refused as well."""
 
         async def long_task(req):
             await asyncio.sleep(10)
@@ -2596,10 +2613,9 @@ class TestJobManager:
         await asyncio.sleep(0.1)
         assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
 
-        with pytest.raises(HTTPException) as exc_info:
+        with pytest.raises(ValueError, match="queued"):
             job_manager.delete_job("job-queued")
 
-        assert exc_info.value.status_code == 409
         assert job_manager.get_job_metadata("job-queued")["status"] == "queued"
 
     @pytest.mark.asyncio
@@ -2623,15 +2639,13 @@ class TestJobManager:
         await asyncio.sleep(0.1)  # let the CancelledError propagate
         assert job_manager.get_job_metadata("job-cd")["status"] == "cancelled"
 
-        result = job_manager.delete_job("job-cd")
-
-        assert result["status"] == "cancelled"
+        assert job_manager.delete_job("job-cd") is True
         assert job_manager.get_job_metadata("job-cd") is None
         if job_manager.db:
             assert job_manager.db.get_job_by_id("job-cd") is None
 
     @pytest.mark.asyncio
-    async def test_delete_job_org_mismatch_returns_none(
+    async def test_delete_job_org_mismatch_returns_false(
         self, job_manager, mock_request
     ):
         """Another org cannot delete the job; the owning org can."""
@@ -2650,9 +2664,9 @@ class TestJobManager:
         await asyncio.sleep(0.2)
         assert job_manager.get_job_metadata("org-del-job")["status"] == "completed"
 
-        assert job_manager.delete_job("org-del-job", org_id="org-other") is None
+        assert job_manager.delete_job("org-del-job", org_id="org-other") is False
         assert job_manager.get_job_metadata("org-del-job") is not None
-        assert job_manager.delete_job("org-del-job", org_id="org-abc") is not None
+        assert job_manager.delete_job("org-del-job", org_id="org-abc") is True
         assert job_manager.get_job_metadata("org-del-job") is None
 
     @pytest.mark.asyncio

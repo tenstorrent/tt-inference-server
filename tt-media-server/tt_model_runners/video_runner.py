@@ -200,7 +200,7 @@ def _create_dit_runner(model_runner: str, rank: int):
 
 
 _SIDE_FILE_KEYS = frozenset(
-    {"image_prompts", "references", "aspect_ratio", "duration_seconds"}
+    {"image_prompts", "references", "aspect_ratio", "duration"}
 )
 
 
@@ -208,9 +208,9 @@ def _read_image_prompts_side_file(path: str, task_id: str):
     """Load the side-file written by ``SPRunner._write_image_side_file``.
 
     I2V: JSON array of ``{"image", "frame_pos"}``, or an object with
-    ``image_prompts`` plus ``aspect_ratio`` / ``duration_seconds``.
+    ``image_prompts`` plus ``aspect_ratio`` / ``duration``.
     Ref2VA: JSON object with ``references`` (and optional aspect/duration).
-    T2VA: JSON object with only ``aspect_ratio`` / ``duration_seconds`` -- the
+    T2VA: JSON object with only ``aspect_ratio`` / ``duration`` -- the
     SHM ``VideoRequest`` has no slot for them, so every task ships them here.
     Returns the parsed value, or ``None`` on failure.
     """
@@ -237,7 +237,7 @@ def _read_image_prompts_side_file(path: str, task_id: str):
 def _side_payload_has_conditioning(payload) -> bool:
     """True when a parsed side-file carries image conditioning (i2v entries or
     ref2va references); False for a payload that only carries request fields
-    such as ``duration_seconds``."""
+    such as ``duration``."""
     if isinstance(payload, dict):
         return bool(payload.get("image_prompts") or payload.get("references"))
     return bool(payload)
@@ -319,7 +319,7 @@ def video_request_to_generate_request(
     """Map SHM VideoRequest (+ optional broadcast side-file payload) to a runner request.
 
     ``image_prompts`` is the parsed side-file: a list of i2v entries, or an
-    object carrying ``aspect_ratio`` / ``duration_seconds`` and, optionally,
+    object carrying ``aspect_ratio`` / ``duration`` and, optionally,
     ``image_prompts`` or ``references``.
 
     Uses the intersection of field names so we never pass SHM-only fields (e.g.
@@ -341,7 +341,7 @@ def video_request_to_generate_request(
     if isinstance(image_prompts, dict):
         # Object payload: request fields the SHM struct cannot carry, plus the
         # conditioning under ``references`` (ref2va) or ``image_prompts`` (i2v).
-        for name in ("aspect_ratio", "duration_seconds"):
+        for name in ("aspect_ratio", "duration"):
             if image_prompts.get(name) is not None:
                 base_kwargs[name] = image_prompts[name]
         if "references" in image_prompts:

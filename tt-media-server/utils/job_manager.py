@@ -193,7 +193,6 @@ class JobManager:
             request_parameters = request.model_dump(mode="json")
         with self._jobs_lock:
             self._enforceAdmissionLimits()
-            request_parameters = request.model_dump(mode="json")
 
             job = Job(
                 id=job_id,

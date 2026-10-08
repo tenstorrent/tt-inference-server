@@ -18,10 +18,12 @@ from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import Field, field_validator, model_validator
 
-# Fields on the shared schema that MiniMax-H3 does not read: LTX's shape fields
-# (H3 sizes clips with ``duration_seconds``), and ``num_inference_steps`` because
-# H3's AdaLN table is precomputed at a fixed step count.
-_H3_UNREAD_FIELDS = frozenset({"fps", "duration", "num_frames", "num_inference_steps"})
+# Fields on the shared schema that MiniMax-H3 does not read: LTX's frame-shape
+# fields, ``num_inference_steps`` because H3's AdaLN table is precomputed at a
+# fixed step count, and ``negative_prompt`` because the H3 pipeline takes none.
+_H3_UNREAD_FIELDS = frozenset(
+    {"fps", "num_frames", "num_inference_steps", "negative_prompt"}
+)
 
 
 class VideoGenerateRequest(BaseRequest):
@@ -45,9 +47,6 @@ class VideoGenerateRequest(BaseRequest):
     # rather than an enum so a per-model validator can reject with a message naming what it does
     # serve -- a 422 from pydantic on a shared field cannot say that.
     aspect_ratio: Optional[str] = Field(default=None, examples=["16:9", "9:16", "1:1"])
-    duration_seconds: Optional[int] = Field(
-        default=None, ge=1, le=60, examples=[5, 10, 15]
-    )
 
     # TODO: Make generic for all video models, and remove model specific logic
     # Unknown fields are refused for MiniMax-H3 rather than ignored. Pydantic's default is to
@@ -67,9 +66,8 @@ class VideoGenerateRequest(BaseRequest):
             known = ", ".join(sorted(readable))
             raise ValueError(
                 f"unknown field(s) for MiniMax-H3: {', '.join(unknown)}. "
-                f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
-                "is `duration_seconds` -- and resolution is selected with `aspect_ratio` or "
-                "`height`/`width`."
+                f"This deployment reads: {known}. Resolution is selected with `aspect_ratio` "
+                "or `height`/`width`."
             )
         return data
 
@@ -89,17 +87,17 @@ class VideoGenerateRequest(BaseRequest):
         return value
 
     # TODO: Make generic for all video models, and remove model specific logic
-    @field_validator("duration_seconds")
+    @field_validator("duration")
     @classmethod
-    def _validate_duration_seconds(cls, value):
+    def _validate_h3_duration(cls, value):
         if value is None or not _is_minimax_h3():
             return value
         from tt_model_runners.minimax_h3_policy import MINIMAX_H3_DURATIONS_S
 
-        if value not in MINIMAX_H3_DURATIONS_S:
+        if value != int(value) or int(value) not in MINIMAX_H3_DURATIONS_S:
             raise ValueError(
-                f"duration_seconds must be an integer from {min(MINIMAX_H3_DURATIONS_S)} to "
-                f"{max(MINIMAX_H3_DURATIONS_S)}; got {value}"
+                f"duration must be a whole number of seconds from {min(MINIMAX_H3_DURATIONS_S)} "
+                f"to {max(MINIMAX_H3_DURATIONS_S)}; got {value:g}"
             )
         return value
 
@@ -125,15 +123,11 @@ class VideoGenerateRequest(BaseRequest):
                 self.num_inference_steps = DEFAULT_VIDEO_INFERENCE_STEPS
             return self
 
-        # Refuse MiniMax-H3's shape selectors rather than silently dropping them.
-        for field, hint in (
-            ("aspect_ratio", "height/width"),
-            ("duration_seconds", "duration or num_frames"),
-        ):
-            if getattr(self, field) is not None:
-                raise ValueError(
-                    f"{field} is not supported by LTX-2.3; use {hint} instead."
-                )
+        # Refuse MiniMax-H3's shape selector rather than silently dropping it.
+        if self.aspect_ratio is not None:
+            raise ValueError(
+                "aspect_ratio is not supported by LTX-2.3; use height/width instead."
+            )
 
         served = ltx_served_shape()
         served_duration = served.num_frames / served.fps
@@ -191,17 +185,6 @@ class VideoGenerateRequest(BaseRequest):
         self.duration = served_duration
         return self
 
-    @model_validator(mode="after")
-    def _fill_h3_served_inference_steps(self):
-        # Job metadata dumps Field defaults. Without this, H3 202s would echo
-        # Wan's 20 even though the mesh runs the warmed AdaLN count.
-        if not _is_minimax_h3_fifty_step():
-            return self
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_NUM_INFERENCE_STEPS
-
-        self.num_inference_steps = MINIMAX_H3_NUM_INFERENCE_STEPS
-        return self
-
 
 # TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
@@ -234,36 +217,6 @@ def _is_minimax_h3() -> bool:
             ModelNames.MINIMAX_H3_FL2VA,
             ModelNames.MINIMAX_H3_REF2VA,
             ModelNames.MINIMAX_H3_FASTH3,
-        }
-    except ValueError:
-        return False
-
-
-def _is_minimax_h3_fifty_step() -> bool:
-    """t2va / fl2va / ref2va (AdaLN at 50). FastH3 is 4 and is not this echo."""
-    from config.constants import ModelNames, ModelRunners
-
-    try:
-        runner = get_settings().model_runner
-    except Exception:  # noqa: BLE001 - settings unavailable (tests, tooling)
-        return False
-
-    if runner in {
-        ModelRunners.TT_MINIMAX_H3_T2VA.value,
-        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
-        ModelRunners.TT_MINIMAX_H3_REF2VA.value,
-    }:
-        return True
-    if runner != ModelRunners.SP_RUNNER.value:
-        return False
-    model_env = os.getenv("MODEL")
-    if not model_env:
-        return False
-    try:
-        return ModelNames(model_env) in {
-            ModelNames.MINIMAX_H3,
-            ModelNames.MINIMAX_H3_FL2VA,
-            ModelNames.MINIMAX_H3_REF2VA,
         }
     except ValueError:
         return False

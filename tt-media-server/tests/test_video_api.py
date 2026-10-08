@@ -19,7 +19,7 @@ from config.constants import (
     ltx_served_shape,
     snap_num_frames,
 )
-from domain.video_generate_request import VideoGenerateRequest
+from domain.video_generate_request import _H3_UNREAD_FIELDS, VideoGenerateRequest
 from domain.video_i2v_generate_request import (
     ImagePromptEntry,
     VideoI2VGenerateRequest,
@@ -1031,17 +1031,15 @@ class TestLTXShapeValidation:
 
     # --- LTX and MiniMax-H3 refuse each other's shape fields ----------------
 
-    @pytest.mark.parametrize(
-        "field,value", [("aspect_ratio", "16:9"), ("duration_seconds", 6)]
-    )
-    def test_ltx_rejects_h3_shape_fields(self, field, value):
+    def test_ltx_rejects_h3_aspect_ratio(self):
         with self._ltx(), pytest.raises(ValidationError, match="not supported"):
-            VideoGenerateRequest(prompt="p", **{field: value})
+            VideoGenerateRequest(prompt="p", aspect_ratio="16:9")
 
     @pytest.mark.parametrize(
-        "field,value", [("duration", 6), ("fps", 24), ("num_frames", 124)]
+        "field,value",
+        [("fps", 24), ("num_frames", 124), ("negative_prompt", "blurry")],
     )
-    def test_h3_rejects_ltx_shape_fields(self, field, value):
+    def test_h3_rejects_unread_fields(self, field, value):
         h3 = patch(
             "domain.video_generate_request.get_settings",
             return_value=MagicMock(model_runner=ModelRunners.TT_MINIMAX_H3_T2VA.value),
@@ -1080,27 +1078,25 @@ class TestMiniMaxH3NumInferenceSteps:
             "tt-minimax-h3-t2va",
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
+            "tt-minimax-h3-fasth3",
         ],
     )
-    @patch("domain.video_generate_request.get_settings")
-    def test_omitted_echoes_served_step_count(self, mock_settings, runner):
-        mock_settings.return_value.model_runner = runner
-        request = VideoGenerateRequest(prompt="a fox")
-        assert request.num_inference_steps == 50
-        assert request.model_dump(mode="json")["num_inference_steps"] == 50
+    @patch("open_ai_api.video.settings.use_async_video", True)
+    async def test_job_echo_omits_unread_fields(self, runner):
+        from open_ai_api.video import _submit_video_request
 
-    @patch("domain.video_generate_request.get_settings")
-    def test_fasth3_omitted_keeps_schema_default(self, mock_settings):
-        mock_settings.return_value.model_runner = "tt-minimax-h3-fasth3"
-        request = VideoGenerateRequest(prompt="a fox")
-        assert request.num_inference_steps == DEFAULT_VIDEO_INFERENCE_STEPS
-
-    @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_ref2va_echoes_served_step_count(self, mock_settings):
-        mock_settings.return_value.model_runner = "sp_runner"
-        with patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"}):
+        mock_service = MagicMock()
+        mock_service.create_job = AsyncMock(return_value={"id": "job_1"})
+        with patch(
+            "domain.video_generate_request.get_settings",
+            return_value=MagicMock(model_runner=runner),
+        ):
             request = VideoGenerateRequest(prompt="a fox")
-        assert request.num_inference_steps == 50
+            await _submit_video_request(request, mock_service)
+
+        echoed = mock_service.create_job.await_args.kwargs["request_parameters"]
+        assert not set(echoed) & _H3_UNREAD_FIELDS
+        assert echoed["prompt"] == "a fox"
 
     @pytest.mark.parametrize(
         "runner",
@@ -1139,7 +1135,7 @@ class TestMiniMaxH3DurationAdmission:
     """H3 duration 4-15 must 422 at parse time, including on sp_runner.
 
     A 30s request that reaches the worker is counted as a worker error and
-    can restart the process to death. The shared Field is still 1-60 for Wan.
+    can restart the process to death. Other models keep the shared field's range.
     """
 
     @pytest.fixture(autouse=True)
@@ -1164,8 +1160,20 @@ class TestMiniMaxH3DurationAdmission:
         from pydantic import ValidationError
 
         mock_settings.return_value.model_runner = runner
-        with pytest.raises(ValidationError, match="duration_seconds"):
-            VideoGenerateRequest(prompt="a fox", duration_seconds=30)
+        with pytest.raises(ValidationError, match="duration"):
+            VideoGenerateRequest(prompt="a fox", duration=30)
+
+    @pytest.mark.parametrize(
+        "runner",
+        ["tt-minimax-h3-t2va", "tt-minimax-h3-fasth3"],
+    )
+    @patch("domain.video_generate_request.get_settings")
+    def test_in_process_runner_rejects_fractional_duration(self, mock_settings, runner):
+        from pydantic import ValidationError
+
+        mock_settings.return_value.model_runner = runner
+        with pytest.raises(ValidationError, match="whole number"):
+            VideoGenerateRequest(prompt="a fox", duration=5.5)
 
     @pytest.mark.parametrize(
         "runner",
@@ -1179,8 +1187,8 @@ class TestMiniMaxH3DurationAdmission:
     @patch("domain.video_generate_request.get_settings")
     def test_in_process_runner_accepts_duration_5(self, mock_settings, runner):
         mock_settings.return_value.model_runner = runner
-        request = VideoGenerateRequest(prompt="a fox", duration_seconds=5)
-        assert request.duration_seconds == 5
+        request = VideoGenerateRequest(prompt="a fox", duration=5)
+        assert request.duration == 5
 
     @pytest.mark.parametrize(
         "model",
@@ -1192,22 +1200,22 @@ class TestMiniMaxH3DurationAdmission:
 
         mock_settings.return_value.model_runner = "sp_runner"
         with patch.dict(os.environ, {"MODEL": model}):
-            with pytest.raises(ValidationError, match="duration_seconds"):
-                VideoGenerateRequest(prompt="a fox", duration_seconds=30)
+            with pytest.raises(ValidationError, match="duration"):
+                VideoGenerateRequest(prompt="a fox", duration=30)
 
     @patch("domain.video_generate_request.get_settings")
     def test_sp_runner_without_model_keeps_generic_range(self, mock_settings):
         mock_settings.return_value.model_runner = "sp_runner"
         with patch.dict(os.environ, {}, clear=True):
-            request = VideoGenerateRequest(prompt="a fox", duration_seconds=30)
-        assert request.duration_seconds == 30
+            request = VideoGenerateRequest(prompt="a fox", duration=30)
+        assert request.duration == 30
 
     @patch("domain.video_generate_request.get_settings")
     def test_wan_runner_ignores_stale_h3_model_env(self, mock_settings):
         mock_settings.return_value.model_runner = "tt-wan2.2"
         with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
-            request = VideoGenerateRequest(prompt="a fox", duration_seconds=30)
-        assert request.duration_seconds == 30
+            request = VideoGenerateRequest(prompt="a fox", duration=30)
+        assert request.duration == 30
 
 
 class TestResponseContent:

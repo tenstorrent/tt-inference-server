@@ -197,7 +197,7 @@ class TestWriteImageSideFile:
 
         request = _MockT2VRequest(task_id="ref-1")
         request.aspect_ratio = "16:9"
-        request.duration_seconds = 5
+        request.duration = 5
         request.references = _Refs()
 
         path = SPRunner._write_image_side_file(request, "ref-1")
@@ -206,7 +206,7 @@ class TestWriteImageSideFile:
         with open(path) as f:
             payload = json.load(f)
         assert payload["aspect_ratio"] == "16:9"
-        assert payload["duration_seconds"] == 5
+        assert payload["duration"] == 5
         assert payload["references"]["videos"] == [{"b64": "vid"}]
 
     def test_path_is_under_video_file_dir(self, tmp_video_dir):

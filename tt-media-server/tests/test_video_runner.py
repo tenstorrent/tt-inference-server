@@ -318,7 +318,7 @@ class TestVideoRequestToGenerateRequest:
             req,
             image_prompts={
                 "aspect_ratio": "16:9",
-                "duration_seconds": 5,
+                "duration": 5,
                 "references": {
                     "images": [{"b64": _tiny_png_b64()}],
                     "videos": [],
@@ -328,7 +328,7 @@ class TestVideoRequestToGenerateRequest:
         )
         assert isinstance(gen, VideoRef2VAGenerateRequest)
         assert gen.aspect_ratio == "16:9"
-        assert gen.duration_seconds == 5
+        assert gen.duration == 5
         assert len(gen.references.images) == 1
 
 

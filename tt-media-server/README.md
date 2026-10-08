@@ -652,6 +652,10 @@ The video API supports both **async** (job-based) and **sync** modes, controlled
 - `USE_ASYNC_VIDEO=True` (default): the server creates a job and returns metadata with a `job_id`. Use the `GET /v1/videos/generations/{job_id}` and `/download` endpoints to track progress and retrieve the video.
 - `USE_ASYNC_VIDEO=False`: the server processes synchronously and streams the MP4 back directly in the same request.
 
+## Input and Output Requirements
+
+- [MiniMax H3](docs/minimax-h3-specs.md)
+
 ## Submit text-to-video generation job
 
 ```bash

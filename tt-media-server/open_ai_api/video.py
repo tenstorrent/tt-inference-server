@@ -19,7 +19,11 @@ from config.constants import (
     REF2VA_MODEL_RUNNERS,
 )
 from config.settings import settings
-from domain.video_generate_request import VideoGenerateRequest, _is_minimax_h3
+from domain.video_generate_request import (
+    _H3_UNREAD_FIELDS,
+    VideoGenerateRequest,
+    _is_minimax_h3,
+)
 from domain.video_i2v_generate_request import (
     MAX_BASE64_IMAGE_LEN,
     MAX_IMAGE_BYTES,
@@ -183,7 +187,7 @@ _REF2VA_EXAMPLES = {
         "value": {
             "prompt": "a slow push-in through a quiet room",
             "aspect_ratio": "16:9",
-            "duration_seconds": 5,
+            "duration": 5,
             "seed": 0,
             "references": {
                 "images": [{"b64": _OPENAPI_IMAGE_PLACEHOLDER}],
@@ -546,7 +550,9 @@ async def _submit_video_request(
     _enforce_inline_media_total(request)
     # Echo the request as the client sent it: resolution below swaps URLs for
     # their downloaded base64, which must not be returned on every job poll.
-    client_parameters = request.model_dump(mode="json")
+    client_parameters = request.model_dump(
+        mode="json", exclude=_H3_UNREAD_FIELDS if _is_minimax_h3() else None
+    )
     await _resolve_image_prompt_urls(request)
     await _resolve_media_source_urls(request)
     _enforce_ref2va_clip_durations(request)
