@@ -565,7 +565,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset,
                     agent=agent,
-                    n_concurrent_trials=(10 if name == "terminal_bench_2_1" else 2),
+                    n_concurrent_trials=10,
                     n_attempts=1,
                     agent_timeout_sec=2 * 60 * 60,
                     llm_timeout_sec=60 * 60,
@@ -579,8 +579,8 @@ _eval_config_list = [
                     ),
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: (10 if name == "terminal_bench_2_1" else 5),
-                    EvalLimitMode.SMOKE_TEST: (10 if name == "terminal_bench_2_1" else 5),
+                    EvalLimitMode.CI_NIGHTLY: 10,
+                    EvalLimitMode.SMOKE_TEST: 10,
                 },
             )
             for name, dataset, agent, target, ci_target, kwargs, names in [
@@ -656,6 +656,11 @@ _eval_config_list = [
                         "matplotlib__matplotlib-25332",
                         "sympy__sympy-13551",
                         "scikit-learn__scikit-learn-14629",
+                        "django__django-15098",
+                        "sphinx-doc__sphinx-8593",
+                        "sympy__sympy-13852",
+                        "pydata__xarray-3095",
+                        "django__django-15695",
                     ],
                 ),
             ]

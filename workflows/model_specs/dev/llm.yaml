@@ -4211,6 +4211,6 @@ templates:
         sample_on_device_mode: all
   metadata:
     ibm-granite/granite-4.2-30b:
-      spec_tests_skip_reason: "User-selected release scope: benchmarks, GPQA10, Terminal-Bench5 and SWE-bench Verified5 only; API/spec conformance is not qualified by this release."
+      spec_tests_skip_reason: "User-selected release scope: benchmarks, GPQA10, Terminal-Bench10 and SWE-bench Verified10 only; API/spec conformance is not qualified by this release."
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_xml
