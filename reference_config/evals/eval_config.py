@@ -7034,6 +7034,71 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (exabox wave16); tasks as deepseek-ai/DeepSeek-R1-Distill-Llama-8B,
+    # scores from this checkpoint's Distilled Model Evaluation table; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Qwen-32B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=72.6,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B (Distilled Model Evaluation table, AIME 2024 pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=62.1,
+                    published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-32B (Distilled Model Evaluation table, GPQA Diamond pass@1)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # Whole-request budget for 32768-token answers, as the Qwen3
+                    # configs set it (reference_config/evals/eval_config.py:3611,
+                    # Qwen/Qwen3-8B r1_gpqa_diamond); the harness default 1800 s
+                    # is too short at concurrency 32.
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) candidate on P300X2. meta_ifeval / meta_gpqa_cot (the Llama-3.1-8B-Instruct tasks) need
     # "<hf_model_repo>-evals", which Meta did not publish for Llama 3, so the scored tasks are the Open LLM Leaderboard v2
     # ones, cited to this checkpoint's OLL v2 results JSON; GPU reference TBD.

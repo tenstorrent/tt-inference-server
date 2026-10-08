@@ -43,6 +43,10 @@ EXPECTED = {
         "r1_aime24": 50.4,
         "r1_gpqa_diamond": 49.0,
     },
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-32B": {
+        "r1_aime24": 72.6,
+        "r1_gpqa_diamond": 62.1,
+    },
     "meta-llama/Meta-Llama-3-8B-Instruct": {
         "leaderboard_ifeval": 40.85,
         "leaderboard_math_hard": 8.13,
