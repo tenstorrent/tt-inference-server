@@ -238,6 +238,14 @@ def _check_request_overrides_supported(task, request_body: dict, model_spec) -> 
             "the lm-eval request-overrides wrapper, which lmms-eval tasks "
             "cannot use"
         )
+    from llm_module.lm_eval_request_overrides import SUPPORTED_EVAL_CLASSES
+
+    if task.eval_class not in SUPPORTED_EVAL_CLASSES:
+        raise ValueError(
+            f"request_body/thinking on {task.task_name}: eval_class "
+            f"{task.eval_class!r} is not one of the lm-eval adapters the "
+            f"request-overrides wrapper patches ({', '.join(SUPPORTED_EVAL_CLASSES)})"
+        )
     if "chat_template_kwargs" in request_body and not task.use_chat_api:
         raise ValueError(
             f"{task.task_name}: chat_template_kwargs (thinking={task.thinking!r}) "
