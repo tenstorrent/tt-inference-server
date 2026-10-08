@@ -87,7 +87,8 @@
       "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
       "upstage/SOLAR-10.7B-Instruct-v1.0",
       "meta-llama/Llama-3.2-1B",
-      "Qwen/Qwen1.5-0.5B-Chat"
+      "Qwen/Qwen1.5-0.5B-Chat",
+      "01-ai/Yi-1.5-9B-Chat"
     ]
   },
   "available_markers": {
@@ -904,6 +905,16 @@
       "id_name": "Qwen--Qwen1.5-0.5B-Chat",
       "weights": [
         "Qwen/Qwen1.5-0.5B-Chat"
+      ]
+    },
+    "01-ai/Yi-1.5-9B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "01-ai--Yi-1.5-9B-Chat",
+      "weights": [
+        "01-ai/Yi-1.5-9B-Chat"
       ]
     }
   },
