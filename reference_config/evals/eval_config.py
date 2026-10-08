@@ -6396,9 +6396,13 @@ _eval_config_list = [
                 },
                 # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
                 # subtask (an int multiplies by 14, a fraction scales each subtask).
-                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
+                # ci-nightly ~1 h: 0.07 ~= 842 questions (SE ~1.5 points; the 12B scores
+                # 0.995 of its published number on it). ci-long keeps the same subset: the full
+                # 12,032-question set is 17-28 h per device and the preset exists to run gpqa in
+                # full, which is the task whose 40-question subset cannot judge accuracy.
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.07,
+                    EvalLimitMode.CI_LONG: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
@@ -6500,6 +6504,14 @@ _eval_config_list = [
                             "terminal-bench/hf-model-inference",
                             "terminal-bench/financial-document-processor",
                         ],
+                        # ci-long: full accuracy sets, same CI-sized agentic lists.
+                        EvalLimitMode.CI_LONG: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
                     },
                 ),
                 limit_samples_map={
@@ -6551,6 +6563,14 @@ _eval_config_list = [
                             "sympy__sympy-13551",
                             "scikit-learn__scikit-learn-14629",
                         ],
+                        # ci-long: full accuracy sets, same CI-sized agentic lists.
+                        EvalLimitMode.CI_LONG: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
                     },
                 ),
                 limit_samples_map={
@@ -6577,16 +6597,20 @@ _eval_config_list = [
                     # No H100 measurement for this model yet (#4090). The ci-nightly subset is
                     # doc_ids 0-39, the same 40 questions the 31B runs; they score below the set
                     # average on every model measured (31B: H100 80.0 on the subset vs 83.33 on the
-                    # full set, TT 77.5). A 40-sample estimate of a 78.8 rate has a standard
-                    # deviation of 6.5 points, so the default 5% band is tighter than the noise of
-                    # the measurement itself. Until a subset reference exists, gate the subset
-                    # against the published full-set score at 10%: 29/40 (72.5) measured on the
-                    # Galaxy 2026-10-06 passes (threshold floor(40 * 0.788 * 0.9) = 28), 27/40 fails.
+                    # full set). The TT run is deterministic for a fixed seed: three same-seed runs
+                    # of the release build on 2026-10-08 (one server at concurrency 32, four servers
+                    # at concurrency 50, and the on-dispatch CI run) all scored 26/40 with 39/40
+                    # byte-identical responses; on the full set 194/198 responses were identical
+                    # (147 vs 148 correct, 74.2-74.7 against the published 78.8, ratio 0.94). So the
+                    # subset number is a stable regression reference, not a noisy estimate: gate
+                    # the subset at its measured 65.0 with a 5% band, i.e. floor(40*0.65*0.95) = 24
+                    # of 40, two questions of slack. Accuracy itself is proven on the full set
+                    # (ci-long preset: no CI_LONG limit on this task = all 198 questions).
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
-                            score=78.8,
-                            ref="published full-set score standing in for the ci-nightly subset reference (no H100 run yet, #4090)",
-                            tolerance=0.10,
+                            score=65.0,
+                            ref="TT-measured deterministic seed-42 ci-nightly subset (doc_ids 0-39), release build 2026-10-08: 26/40 in three runs; H100 subset reference pending #4090",
+                            tolerance=0.05,
                         ),
                     },
                     gpu_reference_score_ref=None,
@@ -6680,9 +6704,13 @@ _eval_config_list = [
                 },
                 # mmlu_pro is a group of 14 subtasks; lm-eval applies the limit per
                 # subtask (an int multiplies by 14, a fraction scales each subtask).
-                # ci-nightly ~1 h: 0.07 ~= 842 questions. No CI_LONG entry = full set.
+                # ci-nightly ~1 h: 0.07 ~= 842 questions (SE ~1.5 points; the 12B scores
+                # 0.995 of its published number on it). ci-long keeps the same subset: the full
+                # 12,032-question set is 17-28 h per device and the preset exists to run gpqa in
+                # full, which is the task whose 40-question subset cannot judge accuracy.
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.07,
+                    EvalLimitMode.CI_LONG: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
@@ -6731,6 +6759,14 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                        # ci-long: full accuracy sets, same CI-sized agentic lists.
+                        EvalLimitMode.CI_LONG: [
                             "terminal-bench/caffe-cifar-10",
                             "terminal-bench/password-recovery",
                             "terminal-bench/portfolio-optimization",
@@ -6786,6 +6822,14 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                        # ci-long: full accuracy sets, same CI-sized agentic lists.
+                        EvalLimitMode.CI_LONG: [
                             "django__django-11299",
                             "astropy__astropy-14096",
                             "matplotlib__matplotlib-25332",
