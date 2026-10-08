@@ -83,16 +83,6 @@
                             "devices": [
                                 "P300X2"
                             ]
-                        },
-                        "release": {
-                            "devices": [
-                                "P300X2"
-                            ],
-                            "device-args": {
-                                "P300X2": {
-                                    "throttle-perf": "1"
-                                }
-                            }
                         }
                     }
                 }
@@ -294,6 +284,11 @@
                                 "P300X2"
                             ]
                         },
+                        "release": {
+                            "devices": [
+                                "BH_GALAXY"
+                            ]
+                        },
                         "weekly": {
                             "devices": [
                                 "GALAXY",
@@ -443,6 +438,11 @@
                         "BH_GALAXY",
                         "P300X2",
                         "T3K"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "BH_GALAXY"
                     ]
                 }
             }
@@ -608,6 +608,11 @@
                         "BH_GALAXY",
                         "P300X2",
                         "T3K"
+                    ]
+                },
+                "release": {
+                    "devices": [
+                        "BH_GALAXY"
                     ]
                 }
             }
