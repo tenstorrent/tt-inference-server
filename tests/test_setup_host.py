@@ -1452,3 +1452,116 @@ def test_pinned_unsharded_checkpoint_uses_normal_format_validation(
     for name in ("model.safetensors", "config.json", "tokenizer.json"):
         (tmp_path / name).write_text("present")
     assert manager.check_model_weights_dir(tmp_path)
+
+
+H3_LX2V_ADAPTER = "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors"
+H3_LX2V_METADATA = {
+    "hf_download_excludes": ["FL2VA/*", "Ref2VA/*", "transformer_ref/*"],
+    "hf_required_globs": ["transformer/config.json", "transformer/*.safetensors"],
+    "hf_extra_files": [
+        {
+            "repo": "lightx2v/Minimax-h3-Turbo",
+            "filename": H3_LX2V_ADAPTER,
+            "local_subdir": "lightx2v",
+        }
+    ],
+}
+
+
+class TestSpecDrivenHfDownload:
+    """A spec's metadata narrows the snapshot download, adds single-file downloads from
+    other repos, and gates the completeness check on both."""
+
+    @pytest.fixture
+    def manager(self, tiny_model_spec, temp_dir):
+        import dataclasses
+
+        spec = dataclasses.replace(tiny_model_spec, metadata=H3_LX2V_METADATA)
+        mgr = HostSetupManager(
+            model_spec=spec,
+            hf_token="hf_test_token_123456",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        venv = MagicMock()
+        venv.venv_path = temp_dir / "fake_venv"
+        (venv.venv_path / "bin").mkdir(parents=True, exist_ok=True)
+        (venv.venv_path / "bin" / "hf").write_text("#!/bin/bash")
+        with patch("workflows.setup_host.VENV_CONFIGS") as mock_venv_configs:
+            mock_venv_configs.__getitem__ = MagicMock(return_value=venv)
+            yield mgr
+
+    @staticmethod
+    def _weights_dir(manager):
+        return (
+            manager.setup_config.host_model_volume_root
+            / "weights"
+            / manager.model_spec.model_name
+        )
+
+    @classmethod
+    def _write_complete_snapshot(cls, manager):
+        root = cls._weights_dir(manager)
+        (root / "transformer").mkdir(parents=True)
+        (root / "transformer" / "config.json").write_text("{}")
+        (root / "transformer" / "model-00001.safetensors").write_text("w")
+        (root / "model_index.json").write_text("{}")
+        (root / "lightx2v").mkdir()
+        (root / "lightx2v" / H3_LX2V_ADAPTER).write_text("w")
+        return root
+
+    def test_snapshot_download_adds_metadata_excludes(self, manager):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+        snapshot_cmd = mock_run.call_args_list[0].args[0]
+        excludes = [
+            snapshot_cmd[i + 1]
+            for i, arg in enumerate(snapshot_cmd)
+            if arg == "--exclude"
+        ]
+        assert excludes == ["original/**", "FL2VA/*", "Ref2VA/*", "transformer_ref/*"]
+
+    def test_extra_files_download_into_weights_subdir(self, manager):
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            manager.setup_weights_huggingface()
+        assert mock_run.call_count == 2
+        extra_cmd = mock_run.call_args_list[1].args[0]
+        assert extra_cmd[1:4] == [
+            "download",
+            "lightx2v/Minimax-h3-Turbo",
+            H3_LX2V_ADAPTER,
+        ]
+        assert extra_cmd[extra_cmd.index("--local-dir") + 1] == str(
+            self._weights_dir(manager) / "lightx2v"
+        )
+
+    def test_extra_file_download_failure_raises(self, manager):
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                MagicMock(returncode=0),
+                MagicMock(returncode=1),
+            ]
+            with pytest.raises(AssertionError):
+                manager.setup_weights_huggingface()
+
+    def test_complete_snapshot_passes(self, manager):
+        root = self._write_complete_snapshot(manager)
+        assert manager.check_model_weights_dir(root) is True
+
+    def test_missing_required_glob_is_incomplete(self, manager):
+        root = self._write_complete_snapshot(manager)
+        (root / "transformer" / "config.json").unlink()
+        assert manager.check_model_weights_dir(root) is False
+
+    def test_missing_extra_file_is_incomplete(self, manager):
+        root = self._write_complete_snapshot(manager)
+        (root / "lightx2v" / H3_LX2V_ADAPTER).unlink()
+        assert manager.check_model_weights_dir(root) is False
+
+    def test_interrupted_download_is_incomplete(self, manager):
+        root = self._write_complete_snapshot(manager)
+        partial = root / ".cache" / "huggingface" / "download" / "transformer"
+        partial.mkdir(parents=True)
+        (partial / "abc.incomplete").write_text("")
+        assert manager.check_model_weights_dir(root) is False

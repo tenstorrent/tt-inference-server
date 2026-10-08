@@ -466,8 +466,8 @@ class TestWrapIfMultihost:
 class TestGalaxyQuadDevice:
     """DEVICE=galaxy_quad selects the (4, 32) config, as DEVICE=galaxy selects (4, 8)."""
 
-    def _settings(self, monkeypatch, device):
-        monkeypatch.setenv("MODEL", "MiniMax-H3-FL2VA")
+    def _settings(self, monkeypatch, device, model="MiniMax-H3-FL2VA"):
+        monkeypatch.setenv("MODEL", model)
         monkeypatch.setenv("DEVICE", device)
         for var in (
             "MODEL_RUNNER",
@@ -493,6 +493,16 @@ class TestGalaxyQuadDevice:
 
     def test_galaxy_is_still_4x8(self, monkeypatch):
         assert self._settings(monkeypatch, "galaxy").device_mesh_shape == (4, 8)
+
+    def test_fl2va_lightx2v_on_blackhole_galaxy_is_4x8(self, monkeypatch):
+        # run.py sends DEVICE=blackhole_galaxy for a BLACKHOLE_GALAXY spec.
+        settings = self._settings(
+            monkeypatch, "blackhole_galaxy", model="MiniMax-H3-FL2VA-LightX2V"
+        )
+        assert settings.model_runner == "tt-minimax-h3-fl2va-lightx2v"
+        assert settings.device_mesh_shape == (4, 8)
+        assert settings.max_batch_size == 1
+        assert settings.request_processing_timeout_seconds == 5000
 
     def test_every_quad_config_mirrors_its_4x8_config(self):
         from config.constants import DeviceTypes, ModelConfigs

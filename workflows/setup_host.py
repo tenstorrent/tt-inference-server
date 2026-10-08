@@ -55,6 +55,40 @@ def _dir_bytes(path: Path) -> int:
     return total
 
 
+# Optional keys of a spec's `metadata` that shape a host-volume weight download:
+#   hf_download_excludes: extra `hf download --exclude` globs, on top of `original/**`.
+#   hf_required_globs: globs that must each match under the weights dir before it counts as
+#     complete; the generic format check accepts any one safetensors file.
+#   hf_extra_files: [{repo, filename, local_subdir}] single files from other repos, fetched
+#     into <weights dir>/<local_subdir>/ after the snapshot.
+def _hf_download_exclude_args(model_spec: ModelSpec) -> list:
+    args = []
+    for pattern in [
+        "original/**",
+        *model_spec.metadata.get("hf_download_excludes", []),
+    ]:
+        args.extend(["--exclude", pattern])
+    return args
+
+
+def _missing_spec_files(model_spec: ModelSpec, weights_dir: Path) -> list:
+    """What the spec's metadata requires under weights_dir that is not there, plus any
+    interrupted `hf download` staging file (a resumable download that never finished)."""
+    missing = [
+        pattern
+        for pattern in model_spec.metadata.get("hf_required_globs", [])
+        if not any(weights_dir.glob(pattern))
+    ]
+    for extra in model_spec.metadata.get("hf_extra_files", []):
+        path = weights_dir / extra["local_subdir"] / extra["filename"]
+        if not path.is_file():
+            missing.append(str(path.relative_to(weights_dir)))
+    missing.extend(
+        str(p.relative_to(weights_dir)) for p in weights_dir.rglob("*.incomplete")
+    )
+    return missing
+
+
 @dataclass
 class SetupConfig:
     # Environment configuration parameters
@@ -335,6 +369,14 @@ class HostSetupManager:
             except (OSError, ValueError, KeyError, TypeError) as exc:
                 logger.warning("Incomplete pinned checkpoint: %s", exc)
                 return False
+
+        missing = _missing_spec_files(self.model_spec, host_weights_dir)
+        if missing:
+            logger.warning(
+                f"Incomplete model setup for {self.model_spec.model_name}, "
+                f"missing or partial: {missing}"
+            )
+            return False
 
         # Define supported model formats
         model_formats = [
@@ -674,8 +716,7 @@ class HostSetupManager:
                 revision,
                 "--cache-dir",
                 str(hub_cache),
-                "--exclude",
-                "original/**",
+                *_hf_download_exclude_args(self.model_spec),
             ]
             logger.info("Downloading pinned checkpoint: %s", shlex.join(cmd))
             result = subprocess.run(cmd)
@@ -690,8 +731,7 @@ class HostSetupManager:
                 str(hf_exec),
                 "download",
                 hf_repo,
-                "--exclude",
-                "original/**",
+                *_hf_download_exclude_args(self.model_spec),
             ]
             logger.info(f"Downloading model to host HF cache: {hf_repo}")
             logger.info(f"Command: {shlex.join(cmd)}")
@@ -721,8 +761,7 @@ class HostSetupManager:
             hf_repo,
             "--local-dir",
             str(host_weights_dir),
-            "--exclude",
-            "original/**",
+            *_hf_download_exclude_args(self.model_spec),
         ]
         logger.info(f"Downloading model to host volume: {hf_repo}")
         logger.info(f"Command: {shlex.join(cmd)}")
@@ -757,6 +796,20 @@ class HostSetupManager:
             )
         else:
             assert result.returncode == 0, f"⛔ Error during: {' '.join(cmd)}"
+        for extra in self.model_spec.metadata.get("hf_extra_files", []):
+            extra_cmd = [
+                str(hf_exec),
+                "download",
+                extra["repo"],
+                extra["filename"],
+                "--local-dir",
+                str(host_weights_dir / extra["local_subdir"]),
+            ]
+            logger.info(f"Command: {shlex.join(extra_cmd)}")
+            extra_result = subprocess.run(extra_cmd)
+            assert extra_result.returncode == 0, (
+                f"⛔ Error during: {shlex.join(extra_cmd)}"
+            )
         logger.info(f"✅ Using weights directory: {host_weights_dir}")
 
     def setup_weights_local(self):
