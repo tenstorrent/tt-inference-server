@@ -7100,7 +7100,16 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash",
         tasks=[
-            replace(t, gen_kwargs={**t.gen_kwargs, **json.loads(os.getenv("DSV41_GEN_OVERRIDE", "{}"))})
+            replace(
+                t,
+                gen_kwargs={**t.gen_kwargs, **json.loads(os.getenv("DSV41_GEN_OVERRIDE", "{}"))},
+                # DSV41_MMLU_SUBTASKS="biology,law,..." runs only those mmlu_pro subtasks (split of the 14 over hosts)
+                task_name=(
+                    ",".join("mmlu_pro_" + x for x in os.getenv("DSV41_MMLU_SUBTASKS").split(","))
+                    if t.task_name == "mmlu_pro" and os.getenv("DSV41_MMLU_SUBTASKS")
+                    else t.task_name
+                ),
+            )
             for t in [
                 EvalTask(
                     task_name="gpqa_diamond_cot_zeroshot",
