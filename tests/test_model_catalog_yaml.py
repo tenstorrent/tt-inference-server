@@ -516,3 +516,45 @@ def test_performance_references_are_scoped_to_implementation(monkeypatch):
     assert rates("tt_transformers") == [10.0]
     assert rates(None) == [10.0]
     assert rates("llama31_8b_qb2") == [10.0, 130.0]
+
+
+def test_minimax_h3_fl2va_lightx2v_dev_spec_serves_the_lightx2v_runner():
+    templates = load_templates_from_yaml(MODEL_SPECS_DIR / "dev" / "video.yaml")
+    template = next(
+        t for t in templates if t.weights == ["MiniMaxAI/MiniMax-H3-FL2VA-LightX2V"]
+    )
+    (spec,) = template.expand_to_specs()
+
+    # MODEL in the container is the weights basename; the runner accepts only this name.
+    assert spec.model_name == "MiniMax-H3-FL2VA-LightX2V"
+    assert spec.hf_weights_repo == "MiniMaxAI/MiniMax-H3"
+    assert spec.device_type == DeviceTypes.BLACKHOLE_GALAXY
+    assert spec.device_model_spec.max_concurrency == 1
+
+    env = spec.env_vars
+    assert env["MODEL_RUNNER"] == "tt-minimax-h3-fl2va-lightx2v"
+    assert "MODEL_WEIGHTS_DIR" not in env
+    weights = f"/home/container_app_user/cache_root/weights/{spec.model_name}"
+    assert env["MINIMAX_H3_MODEL_PATH"] == weights
+
+    # The adapter path the runner reads is where setup_host puts the extra file.
+    (adapter,) = spec.metadata["hf_extra_files"]
+    assert adapter["repo"] == "lightx2v/Minimax-h3-Turbo"
+    assert adapter["filename"] == (
+        "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors"
+    )
+    assert env["MINIMAX_H3_LORA_PATH"] == (
+        f"{weights}/{adapter['local_subdir']}/{adapter['filename']}"
+    )
+    # The runner pins steps and shifts to the adapter; an env override would desync them.
+    for pinned in (
+        "MINIMAX_H3_NUM_INFERENCE_STEPS",
+        "MINIMAX_H3_VIDEO_SHIFT",
+        "MINIMAX_H3_AUDIO_SHIFT",
+        "MINIMAX_H3_LORA_STRENGTH",
+    ):
+        assert pinned not in env
+
+    excludes = spec.metadata["hf_download_excludes"]
+    assert {"FL2VA/*", "Ref2VA/*", "transformer_ref/*"} <= set(excludes)
+    assert "transformer/config.json" in spec.metadata["hf_required_globs"]

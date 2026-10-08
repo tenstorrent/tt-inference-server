@@ -26,6 +26,7 @@ from .._test_common import (
     ReportCheckTypes,
     SkipTest,
     VIDEO_GENERATION_ENDPOINT,
+    VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
     _load_fixture_image_base64,
     block_id,
     build_video_generation_payload,
@@ -46,7 +47,34 @@ VIDEO_INFERENCE_STEPS = {
     "genmo/mochi-1-preview": 50,
     "Wan-AI/Wan2.2-T2V-A14B-Diffusers": 40,
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": 40,
+    # Pinned by the runner and refused in the request; labels the rows only.
+    "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
 }
+# MiniMax-H3 rejects num_inference_steps and negative_prompt (422), so its deployments get
+# their own request shape. Keyed by the served model name (the container's MODEL).
+MINIMAX_H3_FL2VA_MODEL_NAMES = frozenset({"MiniMax-H3-FL2VA-LightX2V"})
+MINIMAX_H3_DURATION_SECONDS = 5
+# 16:9; an explicit canvas keeps the clip shape independent of the keyframe's aspect ratio.
+MINIMAX_H3_HEIGHT, MINIMAX_H3_WIDTH = 768, 1344
+# A shape the boot warmup did not cover compiles inside its first request.
+MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
+
+
+def is_minimax_h3_fl2va_model(model_name: str) -> bool:
+    return model_name in MINIMAX_H3_FL2VA_MODEL_NAMES
+
+
+def _minimax_h3_fl2va_payload(prompt: str, image_b64: str) -> dict:
+    return {
+        "prompt": prompt,
+        "duration": MINIMAX_H3_DURATION_SECONDS,
+        "height": MINIMAX_H3_HEIGHT,
+        "width": MINIMAX_H3_WIDTH,
+        "seed": 0,
+        "image_prompts": [{"image": image_b64, "frame_pos": 0}],
+    }
+
+
 VIDEO_JOB_STATUS_COMPLETED = "completed"
 VIDEO_JOB_STATUS_FAILED = "failed"
 VIDEO_JOB_STATUS_CANCELLED = "cancelled"
@@ -134,18 +162,28 @@ def _generate_video(
 ) -> tuple[bool, float, str, str]:
     logger.info(f"🎬 Generating video with prompt: {prompt}")
     model_name = ctx.model_spec.model_name
-    submit_endpoint = get_video_generation_submit_endpoint(model_name)
+    h3_fl2va = is_minimax_h3_fl2va_model(model_name)
+    submit_endpoint = (
+        VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT
+        if h3_fl2va
+        else get_video_generation_submit_endpoint(model_name)
+    )
     headers = {
         "accept": "application/json",
         "Authorization": "Bearer your-secret-key",
         "Content-Type": "application/json",
     }
-    payload = build_video_generation_payload(
-        prompt=prompt,
-        num_inference_steps=num_inference_steps,
-        model_name=model_name,
-        image_b64=image_b64,
-    )
+    if h3_fl2va:
+        payload = _minimax_h3_fl2va_payload(
+            prompt, image_b64 or _load_fixture_image_base64()
+        )
+    else:
+        payload = build_video_generation_payload(
+            prompt=prompt,
+            num_inference_steps=num_inference_steps,
+            model_name=model_name,
+            image_b64=image_b64,
+        )
     # Avoid logging the (large) base64 image prompt for I2V.
     logger.info(f"Payload keys: {sorted(payload)} -> endpoint: {submit_endpoint}")
 
@@ -167,7 +205,16 @@ def _generate_video(
         job_id = job_data.get("id")
         logger.info(f"Video generation job submitted: {job_id}")
 
-        video_path = _poll_video_completion(ctx, job_id, headers)
+        video_path = _poll_video_completion(
+            ctx,
+            job_id,
+            headers,
+            timeout=(
+                MINIMAX_H3_VIDEO_TIMEOUT_SECONDS
+                if h3_fl2va
+                else DEFAULT_VIDEO_TIMEOUT_SECONDS
+            ),
+        )
         elapsed = time.time() - start_time
 
         if video_path:
@@ -191,7 +238,10 @@ def _run_video_generation_benchmark(
     logger.info(f"Inference steps: {inference_steps}")
 
     # For I2V models load the conditioning image once and reuse it across calls.
-    image_b64 = _load_fixture_image_base64() if is_i2v_video_model(model_name) else None
+    needs_image = is_i2v_video_model(model_name) or is_minimax_h3_fl2va_model(
+        ctx.model_spec.model_name
+    )
+    image_b64 = _load_fixture_image_base64() if needs_image else None
 
     status_list: list[VideoGenerationTestStatus] = []
     for i in range(num_calls):
