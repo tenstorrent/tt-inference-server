@@ -572,6 +572,28 @@ class TestExecutedVsRequestedSteps:
             == MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS
         )
 
+    @pytest.mark.parametrize(
+        ("runner", "model"),
+        [
+            ("TT_MINIMAX_H3_FL2VA_LIGHTX2V", "MINIMAX_H3_FL2VA_LIGHTX2V"),
+            ("TT_MINIMAX_H3_REF2VA_LIGHTX2V", "MINIMAX_H3_REF2VA_LIGHTX2V"),
+        ],
+    )
+    def test_helper_forces_lightx2v_to_5(self, runner, model):
+        from config.constants import (
+            ModelNames,
+            ModelRunners,
+            video_executed_inference_steps,
+        )
+
+        assert video_executed_inference_steps(20, ModelRunners[runner].value) == 5
+        assert (
+            video_executed_inference_steps(
+                20, ModelRunners.SP_RUNNER.value, ModelNames[model].value
+            )
+            == 5
+        )
+
     def test_helper_forces_anisora_to_8(self):
         from config.constants import (
             ModelRunners,

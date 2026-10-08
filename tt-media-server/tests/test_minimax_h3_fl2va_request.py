@@ -78,3 +78,26 @@ class TestFL2VAFramePos:
                         ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=40),
                     ],
                 )
+
+
+class TestFL2VALightX2VFramePos:
+    @patch("domain.video_i2v_generate_request.get_settings")
+    def test_in_process_runner_rejects_mid_clip(self, mock_settings):
+        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va-lightx2v"
+        with pytest.raises(ValidationError, match="0 \\(first\\) or -1"):
+            VideoI2VGenerateRequest(
+                prompt="brad pitt",
+                image_prompts=[ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=40)],
+            )
+
+    @patch("domain.video_i2v_generate_request.get_settings")
+    def test_sp_runner_with_lightx2v_model_rejects_mid_clip(self, mock_settings):
+        mock_settings.return_value.model_runner = "sp_runner"
+        with (
+            patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA-LightX2V"}),
+            pytest.raises(ValidationError, match="0 \\(first\\) or -1"),
+        ):
+            VideoI2VGenerateRequest(
+                prompt="brad pitt",
+                image_prompts=[ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=40)],
+            )

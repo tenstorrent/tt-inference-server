@@ -18,6 +18,7 @@ from config.constants import (
     LTX_NUM_FRAMES,
     LTX_WIDTH,
     MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
+    MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
     WAN22_ANISORA_NUM_STEPS,
     WAN22_DISTILL_NUM_STEPS,
     WAN22_LIGHTNING_NUM_STEPS,
@@ -115,6 +116,8 @@ dit_runner_log_map = {
     ModelRunners.TT_MINIMAX_H3_FL2VA.value: "MiniMaxH3-FL2VA",
     ModelRunners.TT_MINIMAX_H3_REF2VA.value: "MiniMaxH3-Ref2VA",
     ModelRunners.TT_MINIMAX_H3_FASTH3.value: "MiniMaxH3-FastH3",
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value: "MiniMaxH3-FL2VA-LightX2V",
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V.value: "MiniMaxH3-Ref2VA-LightX2V",
     ModelRunners.TT_QWEN_IMAGE.value: "Qwen-Image",
     ModelRunners.TT_QWEN_IMAGE_2512.value: "Qwen-Image-2512",
     ModelRunners.SP_RUNNER.value: "SP-Runner",
@@ -1665,7 +1668,7 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     def create_pipeline(self):
         try:
             # No topology arg: the pipeline resolves it from its per-shape preset.
-            return MiniMaxH3Pipeline.create_pipeline(
+            return self._pipeline_factory().create_pipeline(
                 mesh_device=self.ttnn_device,
                 weights_dir=self._weights_dir(),
                 task=self.pipeline_task,
@@ -1819,6 +1822,9 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         # character. Same shape as the Prodia runner's `return [VideoManager().export_to_mp4(...)]`.
         return [path]
 
+    def _pipeline_factory(self):
+        return MiniMaxH3Pipeline
+
     def _create_pipeline_kwargs(self) -> dict:
         """Extra ``create_pipeline(...)`` kwargs beyond mesh/weights/task/trace."""
         return {}
@@ -1959,3 +1965,57 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
         finally:
             os.close(fd)
         return path
+
+
+# The 768P lightx2v Turbo adapters were distilled at video shift 6, not the base checkpoint's 12. A
+# wrong shift still completes, over the wrong sigma grid, so it is pinned with the adapter.
+MINIMAX_H3_LIGHTX2V_VIDEO_SHIFT = 6.0
+MINIMAX_H3_LIGHTX2V_AUDIO_SHIFT = 3.0
+
+
+class _MiniMaxH3LightX2VMixin:
+    """Binds a lightx2v 4-step Turbo adapter onto an H3 runner's transformer.
+
+    The FL2VA and Ref2VA adapters are separate files (Ref2VA's targets ``transformer_ref/``), so one
+    deployment serves one task with the adapter for that task in ``MINIMAX_H3_LORA_PATH``. The
+    adapter's own ``alpha / rank`` is applied by the loader; ``MINIMAX_H3_LORA_STRENGTH`` multiplies
+    it and defaults to 1.0.
+    """
+
+    num_inference_steps = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS
+
+    def _pipeline_factory(self):
+        from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_turbo import (
+            MiniMaxH3TurboPipeline,
+        )
+
+        return MiniMaxH3TurboPipeline
+
+    def _create_pipeline_kwargs(self) -> dict:
+        lora_path = os.environ.get("MINIMAX_H3_LORA_PATH")
+        if not lora_path or not os.path.isfile(lora_path):
+            raise ValueError(
+                f"{type(self).__name__} needs MINIMAX_H3_LORA_PATH set to the lightx2v Turbo "
+                f"adapter's .safetensors file; got {lora_path!r}"
+            )
+        return {
+            "lora_path": lora_path,
+            "video_shift": float(
+                os.environ.get(
+                    "MINIMAX_H3_VIDEO_SHIFT", MINIMAX_H3_LIGHTX2V_VIDEO_SHIFT
+                )
+            ),
+            "audio_shift": float(
+                os.environ.get(
+                    "MINIMAX_H3_AUDIO_SHIFT", MINIMAX_H3_LIGHTX2V_AUDIO_SHIFT
+                )
+            ),
+        }
+
+
+class TTMiniMaxH3FL2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3FL2VARunner):
+    """MiniMax-H3 ``fl2va`` with the lightx2v 4-step Turbo adapter."""
+
+
+class TTMiniMaxH3Ref2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3Ref2VARunner):
+    """MiniMax-H3 ``ref2va`` with the lightx2v 4-step Ref2V Turbo adapter."""

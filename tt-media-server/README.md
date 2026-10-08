@@ -210,6 +210,8 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | MiniMax-H3-FL2VA | galaxy, galaxy_quad |
 | MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
 | MiniMax-H3-FastH3 | galaxy, galaxy_quad |
+| MiniMax-H3-FL2VA-LightX2V | galaxy, galaxy_quad |
+| MiniMax-H3-Ref2VA-LightX2V | galaxy, galaxy_quad |
 
 ## Basic Single Host Deployment
 

@@ -550,6 +550,14 @@ class TestRejectRef2vaOnWrongDeployment:
     def test_in_process_ref2va_runner_is_allowed(self):
         assert self._refuses() is None
 
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-ref2va-lightx2v")
+    def test_in_process_ref2va_lightx2v_runner_is_allowed(self):
+        assert self._refuses() is None
+
+    @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-fl2va-lightx2v")
+    def test_in_process_fl2va_lightx2v_runner_is_refused(self):
+        assert self._refuses() == 422
+
     @patch("open_ai_api.video.settings.model_runner", "tt-minimax-h3-t2va")
     def test_in_process_t2va_runner_is_refused(self):
         assert self._refuses() == 422
@@ -562,6 +570,16 @@ class TestRejectRef2vaOnWrongDeployment:
     @patch("open_ai_api.video.settings.model_runner", "sp_runner")
     def test_sp_frontend_for_a_ref2va_peer_is_allowed(self):
         assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA-LightX2V"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_for_a_ref2va_lightx2v_peer_is_allowed(self):
+        assert self._refuses() is None
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA-LightX2V"})
+    @patch("open_ai_api.video.settings.model_runner", "sp_runner")
+    def test_sp_frontend_naming_fl2va_lightx2v_is_refused(self):
+        assert self._refuses() == 422
 
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3"})
     @patch("open_ai_api.video.settings.model_runner", "sp_runner")
@@ -614,6 +632,10 @@ class TestSpPeerIsKnownNonRef2va:
 
     @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA"})
     def test_ref2va_name_is_not_a_non_ref2va_model(self):
+        assert _sp_peer_is_known_non_ref2va() is False
+
+    @patch.dict(os.environ, {"MODEL": "MiniMax-H3-Ref2VA-LightX2V"})
+    def test_ref2va_lightx2v_name_is_not_a_non_ref2va_model(self):
         assert _sp_peer_is_known_non_ref2va() is False
 
     @patch.dict(os.environ, {"MODEL": "Wan2.2-T2V-A14B-Diffusers"})
@@ -1081,6 +1103,8 @@ class TestMiniMaxH3NumInferenceSteps:
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
             "tt-minimax-h3-fasth3",
+            "tt-minimax-h3-fl2va-lightx2v",
+            "tt-minimax-h3-ref2va-lightx2v",
         ],
     )
     @patch("open_ai_api.video.settings.use_async_video", True)
@@ -1107,6 +1131,8 @@ class TestMiniMaxH3NumInferenceSteps:
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
             "tt-minimax-h3-fasth3",
+            "tt-minimax-h3-fl2va-lightx2v",
+            "tt-minimax-h3-ref2va-lightx2v",
         ],
     )
     @pytest.mark.parametrize("steps", [20, 50])
@@ -1153,6 +1179,8 @@ class TestMiniMaxH3DurationAdmission:
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
             "tt-minimax-h3-fasth3",
+            "tt-minimax-h3-fl2va-lightx2v",
+            "tt-minimax-h3-ref2va-lightx2v",
         ],
     )
     @patch("domain.video_generate_request.get_settings")
@@ -1182,6 +1210,8 @@ class TestMiniMaxH3DurationAdmission:
             "tt-minimax-h3-fl2va",
             "tt-minimax-h3-ref2va",
             "tt-minimax-h3-fasth3",
+            "tt-minimax-h3-fl2va-lightx2v",
+            "tt-minimax-h3-ref2va-lightx2v",
         ],
     )
     @patch("domain.video_generate_request.get_settings")
@@ -1192,7 +1222,14 @@ class TestMiniMaxH3DurationAdmission:
 
     @pytest.mark.parametrize(
         "model",
-        ["MiniMax-H3", "MiniMax-H3-FL2VA", "MiniMax-H3-Ref2VA", "MiniMax-H3-FastH3"],
+        [
+            "MiniMax-H3",
+            "MiniMax-H3-FL2VA",
+            "MiniMax-H3-Ref2VA",
+            "MiniMax-H3-FastH3",
+            "MiniMax-H3-FL2VA-LightX2V",
+            "MiniMax-H3-Ref2VA-LightX2V",
+        ],
     )
     @patch("domain.video_generate_request.get_settings")
     def test_sp_runner_with_h3_model_rejects_duration_30(self, mock_settings, model):
