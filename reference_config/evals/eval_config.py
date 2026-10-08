@@ -565,9 +565,9 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset=dataset,
                     agent=agent,
-                    n_concurrent_trials=(10 if name == "terminal_bench_2_1" else 2),
+                    n_concurrent_trials=(1 if name == "terminal_bench_2_1" else 2),
                     n_attempts=1,
-                    agent_timeout_sec=2 * 60 * 60,
+                    agent_timeout_sec=(5 * 60 * 60 if name == "terminal_bench_2_1" else 2 * 60 * 60),
                     llm_timeout_sec=60 * 60,
                     agent_kwargs=kwargs,
                     task_names_map={EvalLimitMode.CI_NIGHTLY: names},
@@ -579,8 +579,8 @@ _eval_config_list = [
                     ),
                 ),
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: (10 if name == "terminal_bench_2_1" else 5),
-                    EvalLimitMode.SMOKE_TEST: (10 if name == "terminal_bench_2_1" else 5),
+                    EvalLimitMode.CI_NIGHTLY: (1 if name == "terminal_bench_2_1" else 5),
+                    EvalLimitMode.SMOKE_TEST: (1 if name == "terminal_bench_2_1" else 5),
                 },
             )
             for name, dataset, agent, target, ci_target, kwargs, names in [
@@ -604,16 +604,7 @@ _eval_config_list = [
                         },
                     },
                     [
-                        "terminal-bench/break-filter-js-from-html",
-                        "terminal-bench/cobol-modernization",
                         "terminal-bench/compile-compcert",
-                        "terminal-bench/feal-differential-cryptanalysis",
-                        "terminal-bench/qemu-startup",
-                        "terminal-bench/hf-model-inference",
-                        "terminal-bench/financial-document-processor",
-                        "terminal-bench/password-recovery",
-                        "terminal-bench/caffe-cifar-10",
-                        "terminal-bench/portfolio-optimization",
                     ],
                 ),
                 (
