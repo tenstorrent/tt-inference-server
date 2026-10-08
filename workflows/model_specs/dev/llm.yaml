@@ -4182,12 +4182,14 @@ templates:
 # Aleph-Alpha/Kolibri-1 (78B MoE, 3.46B active) TP4 autoport
 # (models/autoports/aleph_alpha_kolibri_1_bf16) from the tt-model-bringup multigoal
 # pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on a 4x p300c QB2. Requires
-# tt-metal branch vkovacevic/kolibri-1-ci and vllm-tt-plugin branch
-# vkovacevic/kolibri-1-parsers (model + HF config registration, kolibri1 reasoning and
-# tool parsers). Serving settings mirror the bring-up's stage-10/11 server. The
-# checkpoint is the vendor's BF16 copy; the main repo is block-FP8. Bring-up numbers
-# at 4096/128: c1 TTFT 2.16 s / 59.7 t/s/u; c32 is not yet usable (1.85 t/s/u, see
-# tt-agentic-bringup-qb2#75). Tracking: tt-agentic-bringup-qb2#73.
+# tt-metal branch vkovacevic/kolibri-1-perf (= the vkovacevic/kolibri-1-ci lean branch
+# plus the env-gated batch-32 MoE speedups from tt-agentic-bringup-qb2#75) and
+# vllm-tt-plugin branch vkovacevic/kolibri-1-parsers (model + HF config registration,
+# kolibri1 reasoning and tool parsers). The checkpoint is the vendor's BF16 copy; the
+# main repo is block-FP8. Measured on the 32-slot server with the #75 settings below
+# (vs the bring-up's dense path / 512-token chunks): c1 128/128 TPOT 57 ms (was 114),
+# c32 128/128 243 tok/s (was 163), c32 4096/128 TTFT 5.6 s / 99 tok/s (was 57 s / 35).
+# Tracking: tt-agentic-bringup-qb2#73.
 - weights:
     - Aleph-Alpha/Kolibri-1-BF16
   impl: kolibri_1_qb2
@@ -4209,6 +4211,18 @@ templates:
         # eval sampling (top_k 128) needs the host path, which the adapter only
         # allows when this is set; without it such a request kills the engine.
         KOLIBRI_VLLM_HOST_COMPAT: "1"
+        # tt-agentic-bringup-qb2#75 MoE speedups (tt-metal vkovacevic/kolibri-1-perf,
+        # all OFF by default in the model code): batched decode (B > 1) goes through
+        # prefill's token-grouped dispatch / fused-SwiGLU / combine expert path instead
+        # of the dense 384-expert sparse matmuls, with an expert-parallel weight layout
+        # (96 full-width experts per chip) that lets the fused SwiGLU use an 8x8 core
+        # grid (TP4 caps it at 4x4). Page-table dedupe uploads each distinct table once
+        # per refresh. Equivalence-checked against the dense path (top-1 identical,
+        # PCC >= 0.998) and validated on the full 32-slot server.
+        KOLIBRI_GROUPED_DECODE: "1"
+        KOLIBRI_EP_EXPERTS: "1"
+        KOLIBRI_EP_GRID: "8,8"
+        KOLIBRI_PAGE_TABLE_DEDUPE: "1"
       override_tt_config:
         # The adapter refuses host sampling unless KOLIBRI_VLLM_HOST_COMPAT=1 is set.
         sample_on_device_mode: all
@@ -4223,10 +4237,13 @@ templates:
         max_num_seqs: "32"
         max-logprobs: "-1"
         no-enable-prefix-caching: true
-        # Chunked prefill with the bring-up's 512-token budget; the model's paged
-        # sliding-window cache requires block_size 32.
+        # Chunked prefill with a 2048-token budget (the model's prefill traces are
+        # bucketed at 32/128/512/2048/8192 tokens, so 1024 would pad into the 2048
+        # bucket). vs the bring-up's 512: c32 4096-token TTFT 42 s -> 5.6 s and
+        # throughput 2x; cost: c32 short-prompt burst p50 TTFT 2.0 -> 2.5 s. The
+        # model's paged sliding-window cache requires block_size 32.
         enable-chunked-prefill: true
-        max_num_batched_tokens: "512"
+        max_num_batched_tokens: "2048"
         dtype: bfloat16
         # Requests that omit top_k need a default inside the device sampler's range.
         override_generation_config: '{"top_k": 32}'

@@ -7231,6 +7231,51 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
+            # Long-generation math sanity check for the batched-decode MoE path
+            # (tt-agentic-bringup-qb2#75). Informational ("should"): 6 problems
+            # nightly cannot resolve the published score, and the model card's
+            # thinking budget is unknown; this just has to produce correct answers
+            # through tens of thousands of decode steps on the grouped/EP path.
+            EvalTask(
+                task_name="aime25",
+                priority="should",
+                score=EvalTaskScore(
+                    # Model card: AIME 2025 (EN) 95.8.
+                    published_score=95.8,
+                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=16,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 7200,
+                },
+                # Model-card sampling; a 64K generation budget because AIME
+                # solutions regularly exceed the 32K that empties GPQA answers.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.97,
+                    "top_k": 128,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 problems * 0.2 = 6
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
+                },
+            ),
         ],
     ),
 ]
