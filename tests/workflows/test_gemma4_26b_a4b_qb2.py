@@ -95,7 +95,7 @@ def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
         assert accept_eval_score(reference, failing_score, n_total=total) is False
 
 
-def test_gemma4_26b_release_grades_only_the_validated_128_128_c1_target():
+def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
     dedicated = resolve_model_spec(
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
@@ -105,6 +105,13 @@ def test_gemma4_26b_release_grades_only_the_validated_128_128_c1_target():
     )
     run_configs = get_llm_configs(dedicated, dedicated.device_type)
     graded = [config for config in run_configs if config.targets]
+
+    assert any(
+        (config.isl, config.osl, config.max_concurrency, config.num_prompts)
+        == (261888, 128, 1, 1)
+        and not config.targets
+        for config in run_configs
+    )
 
     assert [(config.isl, config.osl, config.max_concurrency) for config in graded] == [
         (128, 128, 1)
