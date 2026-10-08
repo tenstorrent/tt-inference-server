@@ -184,7 +184,7 @@ def test_agentic_failure_keeps_ci_reference_and_remains_a_failure():
     assert block.data["subprocess_rc"] == 7
 
 
-def test_granite_direct_agentic_candidate_keeps_gpqa_reasoning():
+def test_granite_bounded_agentic_candidate_keeps_gpqa_reasoning():
     gpqa, terminal, swe = _eval_config_map[MODEL].tasks
     assert gpqa.gen_kwargs["chat_template_kwargs"] == {
         "enable_thinking": True,
@@ -193,8 +193,9 @@ def test_granite_direct_agentic_candidate_keeps_gpqa_reasoning():
     assert terminal.agentic_eval_config.agent_kwargs["llm_kwargs"] == {
         "top_p": 0.95,
         "timeout": 3600,
+        "max_tokens": 8192,
         "extra_body": {
-            "chat_template_kwargs": {"enable_thinking": False, "low_effort": False}
+            "chat_template_kwargs": {"enable_thinking": True, "low_effort": False}
         },
     }
     kwargs = swe.agentic_eval_config.agent_kwargs["config"]["model"]["model_kwargs"]
@@ -207,7 +208,8 @@ def test_granite_direct_agentic_candidate_keeps_gpqa_reasoning():
     assert kwargs == {
         "temperature": 1.0,
         "top_p": 0.95,
+        "max_tokens": 8192,
         "extra_body": {
-            "chat_template_kwargs": {"enable_thinking": False, "low_effort": False}
+            "chat_template_kwargs": {"enable_thinking": True, "low_effort": False}
         },
     }

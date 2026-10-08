@@ -599,9 +599,10 @@ _eval_config_list = [
                         "llm_kwargs": {
                             "top_p": 0.95,
                             "timeout": 3600,
+                            "max_tokens": 8192,
                             "extra_body": {
                                 "chat_template_kwargs": {
-                                    "enable_thinking": False,
+                                    "enable_thinking": True,
                                     "low_effort": False,
                                 }
                             },
@@ -639,9 +640,10 @@ _eval_config_list = [
                                 "model_kwargs": {
                                     "temperature": 1.0,
                                     "top_p": 0.95,
+                                    "max_tokens": 8192,
                                     "extra_body": {
                                         "chat_template_kwargs": {
-                                            "enable_thinking": False,
+                                            "enable_thinking": True,
                                             "low_effort": False,
                                         }
                                     },
