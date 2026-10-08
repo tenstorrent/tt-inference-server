@@ -880,6 +880,7 @@ templates:
     google/gemma-4-26B-A4B-it:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
+      benchmark_max_concurrency: 1
 
 - weights:
     - google/gemma-4-12B-it
