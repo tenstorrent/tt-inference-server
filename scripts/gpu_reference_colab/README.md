@@ -83,6 +83,7 @@ scripts/gpu_reference_colab/colab_gpu_reference.sh \
 | `--keep` | off | leave the session running on exit (no `colab stop`) |
 | `--session NAME` | `gpuref-<sha[:8]>` | Colab session name; re-running with the same name attaches |
 | `--poll-minutes N` | `5` | minutes between status polls |
+| `--min-balance CU` | off | at each poll, stop once `colab usage` shows fewer compute units than this, collecting partial results first |
 | `--vllm-version V` | runner pin (`0.13.0`) | override the vLLM pin, only to work around a VM problem |
 | `--dry-run` | off | run the local preflight, then print every `colab` command instead of running it |
 

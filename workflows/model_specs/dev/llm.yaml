@@ -5017,6 +5017,144 @@ templates:
       tokenizer_revision: 4d14e384a4b037942bb3f3016665157c8bcb70ea
   status: EXPERIMENTAL
 
+# GPU reference entries for Quetzal candidates with no P300X2 row yet (deferred from
+# the wave18 list for lack of a like-for-like reference). Same impl/model_id scheme as
+# above. With no TT row to mirror, max_context = the model's native
+# max_position_embeddings (the convention the Quetzal rows follow), max_concurrency =
+# 32 (every Quetzal row), and the HF revision is pinned to the Hub main sha at the time
+# of measurement. A later P300X2 row must use the same revision and context for the
+# reference to stay like-for-like.
+- weights:
+  - Qwen/Qwen3-4B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 906bfd4b4dc7f14ee4320094d8b41684abff8539
+      tokenizer_revision: 906bfd4b4dc7f14ee4320094d8b41684abff8539
+  status: EXPERIMENTAL
+- weights:
+  - open-thoughts/OpenThinker-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 4ba9dee9b7e6e4796c6bccf6e15c2f5b60843e1e
+      tokenizer_revision: 4ba9dee9b7e6e4796c6bccf6e15c2f5b60843e1e
+  status: EXPERIMENTAL
+- weights:
+  - mistralai/Mistral-7B-Instruct-v0.3
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: c170c708c41dac9275d15a8fff4eca08d52bab71
+      tokenizer_revision: c170c708c41dac9275d15a8fff4eca08d52bab71
+  status: EXPERIMENTAL
+- weights:
+  - NousResearch/Hermes-3-Llama-3.1-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 896ea440e5a9e6070e3d8a2774daf2b481ab425b
+      tokenizer_revision: 896ea440e5a9e6070e3d8a2774daf2b481ab425b
+  status: EXPERIMENTAL
+- weights:
+  - nvidia/Llama-3.1-Nemotron-Nano-8B-v1
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 54641c1611fcff44fa4865626462445e0a153fc7
+      tokenizer_revision: 54641c1611fcff44fa4865626462445e0a153fc7
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-8B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+      tokenizer_revision: 49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3-14B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 0b0bd3732e2c374d483664439ea334928b65f304
+      tokenizer_revision: 0b0bd3732e2c374d483664439ea334928b65f304
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-qwen-14B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: b5a6c9ab8fc8e5bc786ae88f66af479096367566
+      tokenizer_revision: b5a6c9ab8fc8e5bc786ae88f66af479096367566
+  status: EXPERIMENTAL
+- weights:
+  - mistralai/Mistral-Small-24B-Instruct-2501
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 9527884be6e5616bdd54de542f9ae13384489724
+      tokenizer_revision: 9527884be6e5616bdd54de542f9ae13384489724
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-qwen-32B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # native max_position_embeddings
+    default_impl: true
+    vllm_args:
+      revision: 118e6e43c46a51667f544dae9cbe4027f59eb697
+      tokenizer_revision: 118e6e43c46a51667f544dae9cbe4027f59eb697
+  status: EXPERIMENTAL
+
 
 
 # Published TP4 implementation. Qualification is tracked in issue #5209.

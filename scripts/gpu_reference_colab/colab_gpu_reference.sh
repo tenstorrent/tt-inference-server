@@ -33,6 +33,7 @@ SESSION=""
 POLL_MINUTES=5
 VLLM_VERSION=""
 DRY_RUN=0
+MIN_BALANCE=0            # stop (collect partial results) below this many CU; 0 = off
 NEW_ATTEMPTS=3           # colab new attempts per GPU type on 503 (no capacity)
 NEW_RETRY_SECONDS=120    # backoff: 120 s, then 240 s
 MODELS=()
@@ -57,6 +58,8 @@ Options:
                        re-running with the same name attaches to that run
   --poll-minutes N     minutes between status polls (default: 5)
   --vllm-version V     override the vLLM pin in remote_runner.sh
+  --min-balance CU     at each poll, stop the run (collect partial results, stop
+                       the VM) once `colab usage` shows fewer compute units
   --dry-run            print every colab command instead of running it
   -h, --help           show this help
 EOF
@@ -75,6 +78,7 @@ while [[ $# -gt 0 ]]; do
         --session) SESSION="$2"; shift 2 ;;
         --poll-minutes) POLL_MINUTES="$2"; shift 2 ;;
         --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
+        --min-balance) MIN_BALANCE="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
         -h|--help) usage; exit 0 ;;
         -*) usage >&2; die "unknown option: $1" ;;
@@ -91,6 +95,7 @@ IFS=',' read -r -a GPUS <<< "${GPU}"
 for g in "${GPUS[@]}"; do
     [[ "${g}" =~ ^(T4|L4|G4|H100|A100)$ ]] || die "unsupported --gpu type: ${g} (T4, L4, G4, H100, A100)"
 done
+[[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number of compute units"
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
 [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --vllm-version"
 
@@ -393,7 +398,12 @@ snippet pack > /dev/null <<PY
 import os, subprocess
 W = "${REMOTE_DIR}"
 tarball = os.path.join(W, "gpuref-results.tar.gz")
-subprocess.run(["tar", "-czf", tarball, "-C", W, "results"], check=True)
+paths = ["results"]
+# A run stopped early (e.g. --min-balance) has not copied TTIS's workflow_logs yet.
+if not os.path.isdir(os.path.join(W, "results", "workflow_logs")) and os.path.isdir(
+        os.path.join(W, "tt-inference-server", "workflow_logs")):
+    paths.append("tt-inference-server/workflow_logs")
+subprocess.run(["tar", "-czf", tarball, "-C", W] + paths, check=True)
 print("GPUREF_PACKED bytes=%d" % os.path.getsize(tarball))
 PY
 
@@ -535,6 +545,14 @@ while [[ "${STATE}" != "DONE" && "${STATE}" != "FAILED" ]]; do
         log "$(date '+%H:%M:%S') state ${STATE}"
         show_status
         if [[ "${STATE}" == "DIED" ]]; then log "runner died without a marker"; STATE="FAILED"; fi
+        if [[ "${MIN_BALANCE}" != "0" && "${STATE}" == "RUNNING" ]]; then
+            BALANCE="$(colab usage < /dev/null 2>/dev/null | sed -n 's/^Current balance: *\([0-9.]*\).*/\1/p')"
+            log "compute units: ${BALANCE:-unknown} (stop below ${MIN_BALANCE})"
+            if [[ -n "${BALANCE}" ]] && awk -v b="${BALANCE}" -v m="${MIN_BALANCE}" 'BEGIN { exit !(b < m) }'; then
+                log "balance below --min-balance; collecting partial results and stopping"
+                STATE="FAILED"
+            fi
+        fi
     else
         FAILURES=$((FAILURES + 1))
         log "status poll failed (${FAILURES}/6): $(printf '%s' "${STATUS_OUT}" | tail -2)"

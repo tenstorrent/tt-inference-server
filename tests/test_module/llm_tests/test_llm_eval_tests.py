@@ -522,6 +522,64 @@ class TestResultLoading:
         assert results == {"gpqa": {"acc,none": 0.9}}
         assert counts == ({"gpqa": new_count} if new_count is not None else {})
 
+    def test_mmlu_pro_group_count_feeds_the_noise_rule(self, tmp_path):
+        """lm-eval writes n-samples for mmlu_pro's 14 leaf subjects only. Its
+        group exact_match is the size-weighted mean of the leaves (one binomial
+        over every question), so the group's n is the leaf sum, which
+        _entry_sample_counts derives through group_subtasks and the noise rule
+        then uses for the single-key mmlu_pro score."""
+        subjects = {  # the real MMLU-Pro test split sizes (12,032 questions)
+            "biology": 717, "business": 789, "chemistry": 1132,
+            "computer_science": 410, "economics": 844, "engineering": 969,
+            "health": 818, "history": 381, "law": 1101, "math": 1351,
+            "other": 924, "philosophy": 499, "physics": 1299, "psychology": 798,
+        }  # fmt: skip
+        leaves = {f"mmlu_pro_{name}": n for name, n in subjects.items()}
+        correct = {leaf: n // 9 for leaf, n in leaves.items()}
+        group = sum(correct.values()) / sum(leaves.values())
+        results = {
+            "mmlu_pro": {"exact_match,custom-extract": group, "alias": "mmlu_pro"}
+        }
+        results.update(
+            {
+                leaf: {"exact_match,custom-extract": correct[leaf] / n}
+                for leaf, n in leaves.items()
+            }
+        )
+        path = tmp_path / "results_mmlu_pro.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "results": results,
+                    "configs": {
+                        leaf: {"task": leaf, "dataset_path": "TIGER-Lab/MMLU-Pro"}
+                        for leaf in leaves
+                    },
+                    "group_subtasks": {"mmlu_pro": list(leaves)},
+                    "n-samples": {
+                        leaf: {"original": n, "effective": n}
+                        for leaf, n in leaves.items()
+                    },
+                }
+            )
+        )
+
+        _, counts = mod.load_eval_results([str(path)])
+
+        assert counts["mmlu_pro"] == 12032
+        # Size-weighted: the group score is pooled correct / pooled n.
+        assert group == pytest.approx(
+            sum(
+                results[leaf]["exact_match,custom-extract"] * n
+                for leaf, n in leaves.items()
+            )
+            / 12032
+        )
+        assert (
+            mod.binomial_noise_n(["exact_match,custom-extract"], "mmlu_pro", counts)
+            == 12032.0
+        )
+
 
 # --- orchestration -----------------------------------------------------------
 
