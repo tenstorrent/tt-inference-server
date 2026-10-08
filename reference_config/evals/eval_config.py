@@ -2648,6 +2648,16 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=84.0,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # lmms-eval's --limit takes the first N docs and ChartQA's test split lists its 1250
+                    # human-authored items before the 1250 augmented ones, so the ci-nightly 20% subset is
+                    # human-split only; compare it with the GPU run's relaxed_human_split, not the overall score.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=73.84,
+                            ref="relaxed_human_split of the same H100 run, https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -2761,6 +2771,15 @@ _eval_config_list = [
                     published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
                     gpu_reference_score=83.0,
                     gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    # The ci-nightly 20% subset of ChartQA is human-split only (see the Qwen2.5-VL-7B entry);
+                    # the base model's H100 relaxed_human_split stands in as the subset reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=73.84,
+                            ref="relaxed_human_split of the Qwen2.5-VL-7B H100 run, https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["relaxed_overall,none"],
