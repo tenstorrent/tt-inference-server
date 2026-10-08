@@ -207,14 +207,22 @@ def test_gemma4_release_models_define_the_ci_long_preset():
         gpqa = _gemma4_task(model, "r1_gpqa_diamond")
         assert EvalLimitMode.CI_LONG not in gpqa.limit_samples_map
         mmlu = _gemma4_task(model, "mmlu_pro")
-        assert mmlu.limit_samples_map[EvalLimitMode.CI_LONG] == mmlu.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 0.07
+        assert (
+            mmlu.limit_samples_map[EvalLimitMode.CI_LONG]
+            == mmlu.limit_samples_map[EvalLimitMode.CI_NIGHTLY]
+            == 0.07
+        )
         agentic = [t for t in _eval_config_map[model].tasks if t.agentic_eval_config]
         for task in agentic:
             names = task.agentic_eval_config.task_names_map
             assert names[EvalLimitMode.CI_LONG] == names[EvalLimitMode.CI_NIGHTLY]
             assert len(names[EvalLimitMode.CI_LONG]) == 5
     # The 12B entry carries the two informational agentic tasks.
-    assert {t.task_name for t in _eval_config_map["google/gemma-4-12B-it"].tasks if t.agentic_eval_config} == {
+    assert {
+        t.task_name
+        for t in _eval_config_map["google/gemma-4-12B-it"].tasks
+        if t.agentic_eval_config
+    } == {
         "terminal_bench_2",
         "swe_bench_verified",
     }
