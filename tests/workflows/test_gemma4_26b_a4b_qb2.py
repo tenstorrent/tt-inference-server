@@ -52,6 +52,10 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.device_model_spec.vllm_args["hf-overrides"] == (
         '{"architectures":["TTGemma4A4BForCausalLM"]}'
     )
+    assert dedicated.device_model_spec.vllm_args["default-chat-template-kwargs"] == (
+        '{"enable_thinking": true}'
+    )
+    assert dedicated.device_model_spec.vllm_args["reasoning-parser"] == "gemma4"
 
 
 def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
@@ -78,6 +82,7 @@ def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
     assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 1
     assert terminal.n_attempts == swe.n_attempts == 1
+    assert terminal.override_cpus == 16
 
     for task, total, passing_score, failing_score in [
         (gpqa, 10, 80.0, 70.0),

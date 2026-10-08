@@ -863,6 +863,8 @@ templates:
         hf-overrides: '{"architectures":["TTGemma4A4BForCausalLM"]}'
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
         block_size: 32
         max_num_seqs: 32
         max_model_len: 262144
@@ -876,6 +878,7 @@ templates:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
   metadata:
     google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
 
 - weights:
