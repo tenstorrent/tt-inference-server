@@ -6606,11 +6606,14 @@ _eval_config_list = [
                     # of the release build on 2026-10-08 (one server at concurrency 32, four servers
                     # at concurrency 50, and the on-dispatch CI run) all scored 26/40 with 39/40
                     # byte-identical responses; on the full set 194/198 responses were identical
-                    # (147 vs 148 correct, 74.2-74.7 against the published 78.8, ratio 0.94). So the
-                    # subset number is a stable regression reference, not a noisy estimate: gate
-                    # the subset at its measured 65.0 with a 5% band, i.e. floor(40*0.65*0.95) = 24
-                    # of 40, two questions of slack. Accuracy itself is proven on the full set
-                    # (ci-long preset: no CI_LONG limit on this task = all 198 questions).
+                    # (147 vs 148 correct, 74.2-74.7 against the published 78.8, ratio 0.94). The
+                    # final sampler kernel (tt-metal #59759 db2fe08e193, low threshold digit from
+                    # tile element 2) re-rolls the streams and scores 27/40 on the subset and
+                    # 143/198 = 72.2 on the full set (one run each). So the subset number is a
+                    # stable regression reference, not a noisy estimate: gate it at 65.0 with a 5%
+                    # band, i.e. floor(40*0.65*0.95) = 24 of 40, two to three questions of slack.
+                    # Accuracy itself is proven on the full set (ci-long preset: no CI_LONG limit
+                    # on this task = all 198 questions).
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=65.0,
