@@ -74,6 +74,7 @@
       "moonshotai/Kimi-K2.7-Code",
       "google/gemma-4-31B-it",
       "google/gemma-4-12B-it",
+      "zai-org/GLM-5.3"
       "deepcogito/cogito-v1-preview-llama-3B",
       "arcee-ai/Arcee-Spark",
       "Qwen/Qwen2.5-7B-Instruct",
@@ -655,6 +656,16 @@
       "id_name": "kimi-k2.7-code",
       "weights": [
         "moonshotai/Kimi-K2.7-Code"
+      ],
+      "category": "LLM",
+      "compatible_devices": [
+        "super_cluster"
+      ]
+    },
+    "glm_5_3": {
+      "id_name": "glm-5.3",
+      "weights": [
+        "zai-org/GLM-5.3"
       ],
       "category": "LLM",
       "compatible_devices": [
