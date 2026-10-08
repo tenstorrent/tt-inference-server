@@ -1022,6 +1022,72 @@ _eval_config_list = [
             # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 16.91, not comparable to generative mmlu_pro.)
         ],
     ),
+    # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
+    # The leaderboard ran revision ef382358; the pinned 810d3678 differs from it only in README.md and
+    # data_summary_card.md (HF commit history), so the weights, config and tokenizer are the ones scored.
+    EvalConfig(
+        hf_model_repo="microsoft/phi-2",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (27.39); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=21.44,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-2/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (2.95).
+                score=EvalTaskScore(
+                    published_score=2.62,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/microsoft/phi-2/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            # mmlu_pro omitted: 2048-token max context; 5-shot CoT prompts plus the generation budget
+            # do not fit. (Open LLM Leaderboard v2 leaderboard_mmlu_pro loglikelihood acc for reference: 26.28, not comparable to generative mmlu_pro.)
+        ],
+    ),
     EvalConfig(
         hf_model_repo="zai-org/GLM-5.2",
         tasks=[
