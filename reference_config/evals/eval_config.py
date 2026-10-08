@@ -7158,7 +7158,7 @@ _eval_config_list = [
                         "temperature": 0,
                         "stream": "false",
                     },
-                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 128},
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 4}  # per subtask (14 subtasks),
                 ),
                 EvalTask(
                     task_name="humaneval_instruct",
@@ -7210,16 +7210,16 @@ _eval_config_list = [
                         "timeout": 7200,
                     },
                     gen_kwargs={
-                        "max_gen_toks": 1024,
+                        "max_gen_toks": 2048,
                         "until": [],
                         "do_sample": "false",
                         "temperature": 0,
                         "stream": "false",
                     },
-                    # only samples that fit the 33280 context: ISL + 1024 gen + template < 33280
+                    # only samples that fit the 33280 context: ISL + 2048 gen + template < 33280
                     custom_dataset_kwargs={
                         "minimum_isl": 0,
-                        "maximum_isl": 31000,
+                        "maximum_isl": 30000,
                         "pretrained": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
                         "tokenizer_num_proc": 16,
                     },
