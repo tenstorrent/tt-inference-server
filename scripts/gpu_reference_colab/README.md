@@ -249,7 +249,7 @@ Then check with `--dry-run`.
 | Symptom | Cause / fix |
 |---|---|
 | `the Colab CLI is not signed in` | Run `colab sessions` once in a terminal and finish the sign-in. |
-| `'colab new' failed` / `Allocation refused` | No H100 quota, entitlement or capacity right now. Retry later, or try `--gpu A100`. Run `colab stop` on any leftover sessions. |
+| `'colab new' failed` / `Allocation refused` | No H100 quota, entitlement or capacity right now. A `503 Service Unavailable` (no capacity) is retried 5 times, 5 min apart; after that, retry later or try `--gpu A100`. Run `colab stop` on any leftover sessions. |
 | `is not on any origin branch` | Push the branch, or pass `--ttis-ref` with a pushed commit. |
 | `no GPU spec: No model spec matches ... device='GPU'` | Add the GPU entry (above). |
 | `needs an HF token` / `cannot read` | Set `HF_TOKEN` or run `hf auth login`, and accept the model's license on the Hub. |

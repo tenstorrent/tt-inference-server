@@ -33,6 +33,8 @@ SESSION=""
 POLL_MINUTES=5
 VLLM_VERSION=""
 DRY_RUN=0
+NEW_ATTEMPTS=6           # colab new attempts on 503 (no capacity)
+NEW_RETRY_SECONDS=300
 MODELS=()
 
 usage() {
@@ -403,8 +405,23 @@ else
     log "creating session '${SESSION}'"
     new_args=(new -s "${SESSION}" --gpu "${GPU}")
     if [[ "${HIGH_MEM}" -eq 1 ]]; then new_args+=(--high-mem); fi
+    # A 503 from the assign endpoint means no capacity right now: retry a few
+    # times. Other failures (quota, entitlement) are final.
+    attempt=1
+    until colab_cmd "${new_args[@]}" > "${LOCAL_TMP}/new.out" 2>&1; do
+        tail -3 "${LOCAL_TMP}/new.out" >&2
+        if grep -q "Service Unavailable" "${LOCAL_TMP}/new.out" && (( attempt < NEW_ATTEMPTS )); then
+            log "no ${GPU} capacity (503); retry ${attempt}/$((NEW_ATTEMPTS - 1)) in ${NEW_RETRY_SECONDS}s"
+            attempt=$((attempt + 1))
+            sleep "${NEW_RETRY_SECONDS}"
+            continue
+        fi
+        # Make sure a half-created assignment is not left behind.
+        if colab sessions < /dev/null 2>&1 | has_session; then SESSION_ACTIVE=1; fi
+        die "'colab new' failed (quota, entitlement or capacity; see ${HOME}/.config/colab-cli/colab.log)"
+    done
+    cat "${LOCAL_TMP}/new.out" >&2
     SESSION_ACTIVE=1
-    colab_cmd "${new_args[@]}" || die "'colab new' failed (quota, entitlement or capacity; see above)"
 fi
 
 case "${STATE}" in
