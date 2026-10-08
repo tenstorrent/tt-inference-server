@@ -2547,6 +2547,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2582,6 +2583,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2655,6 +2657,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2690,6 +2693,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2764,6 +2768,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2796,6 +2801,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2828,6 +2834,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2860,6 +2867,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2899,6 +2907,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -2934,6 +2943,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3007,6 +3017,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3042,6 +3053,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
