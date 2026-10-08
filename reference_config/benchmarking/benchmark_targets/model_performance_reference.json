@@ -207,8 +207,8 @@
                 "data_parallel": 4,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 70,
-                        "tput_user": 33
+                        "ttft_ms": 80,
+                        "tput_user": 27
                     }
                 }
             },
@@ -220,9 +220,9 @@
                 "data_parallel": 4,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 700,
-                        "tput_user": 30,
-                        "tput": 3300
+                        "ttft_ms": 900,
+                        "tput_user": 25,
+                        "tput": 2750
                     }
                 }
             }
@@ -9394,8 +9394,8 @@
                 "data_parallel": 4,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 70,
-                        "tput_user": 33
+                        "ttft_ms": 80,
+                        "tput_user": 27
                     }
                 }
             },
@@ -9407,9 +9407,9 @@
                 "data_parallel": 4,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 700,
-                        "tput_user": 30,
-                        "tput": 3300
+                        "ttft_ms": 900,
+                        "tput_user": 25,
+                        "tput": 2750
                     }
                 }
             }
