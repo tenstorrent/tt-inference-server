@@ -1967,12 +1967,6 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
         return path
 
 
-# The 768P lightx2v Turbo adapters were distilled at video shift 6, not the base checkpoint's 12. A
-# wrong shift still completes, over the wrong sigma grid, so it is pinned with the adapter.
-MINIMAX_H3_LIGHTX2V_VIDEO_SHIFT = 6.0
-MINIMAX_H3_LIGHTX2V_AUDIO_SHIFT = 3.0
-
-
 class _MiniMaxH3LightX2VMixin:
     """Binds a lightx2v 4-step Turbo adapter onto an H3 runner's transformer.
 
@@ -1980,9 +1974,14 @@ class _MiniMaxH3LightX2VMixin:
     deployment serves one task with the adapter for that task in ``MINIMAX_H3_LORA_PATH``. The
     adapter's own ``alpha / rank`` is applied by the loader; ``MINIMAX_H3_LORA_STRENGTH`` multiplies
     it and defaults to 1.0.
+
+    Each adapter was distilled at its own (video, audio) shift. A wrong shift still completes, over
+    the wrong sigma grid, so the shift is pinned per runner to the adapter it serves.
     """
 
     num_inference_steps = MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS
+    video_shift: float
+    audio_shift: float
 
     def _pipeline_factory(self):
         from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3_turbo import (
@@ -2001,21 +2000,23 @@ class _MiniMaxH3LightX2VMixin:
         return {
             "lora_path": lora_path,
             "video_shift": float(
-                os.environ.get(
-                    "MINIMAX_H3_VIDEO_SHIFT", MINIMAX_H3_LIGHTX2V_VIDEO_SHIFT
-                )
+                os.environ.get("MINIMAX_H3_VIDEO_SHIFT", self.video_shift)
             ),
             "audio_shift": float(
-                os.environ.get(
-                    "MINIMAX_H3_AUDIO_SHIFT", MINIMAX_H3_LIGHTX2V_AUDIO_SHIFT
-                )
+                os.environ.get("MINIMAX_H3_AUDIO_SHIFT", self.audio_shift)
             ),
         }
 
 
 class TTMiniMaxH3FL2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3FL2VARunner):
-    """MiniMax-H3 ``fl2va`` with the lightx2v 4-step Turbo adapter."""
+    """MiniMax-H3 ``fl2va`` with the lightx2v FL2VA Turbo 4-step v1.x 768p adapter."""
+
+    video_shift = 6.0
+    audio_shift = 3.0
 
 
 class TTMiniMaxH3Ref2VALightX2VRunner(_MiniMaxH3LightX2VMixin, TTMiniMaxH3Ref2VARunner):
-    """MiniMax-H3 ``ref2va`` with the lightx2v 4-step Ref2V Turbo adapter."""
+    """MiniMax-H3 ``ref2va`` with the lightx2v Ref2VA Turbo 4-step v0.1 adapter (544p-trained)."""
+
+    video_shift = 12.0
+    audio_shift = 3.0
