@@ -6635,7 +6635,13 @@ _eval_config_list = [
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32 * 1024,
+                    # 124K like the 31B task (strictly below max_length). The 32K cap was a
+                    # leftover from the single-request era: on the full 198-item set it cut
+                    # 7/198 thinking traces (3/198 after tt-metal #59759) and those items
+                    # scored 0; at 124K every trace terminates (147/198 on P300X2,
+                    # 2026-10-08) and the pool (786K tokens on P300X2) holds 32 x 124K
+                    # worst case with queueing rather than thrashing.
+                    "max_gen_toks": 124 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
