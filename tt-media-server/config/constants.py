@@ -34,6 +34,8 @@ class SupportedModels(Enum):
     MINIMAX_H3_FL2VA = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_REF2VA = "MiniMaxAI/MiniMax-H3"
     MINIMAX_H3_FASTH3 = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
+    MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMaxAI/MiniMax-H3"
     DISTIL_WHISPER_LARGE_V3 = "distil-whisper/distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "openai/whisper-large-v3"
     PYANNOTE_SPEAKER_DIARIZATION = "pyannote/speaker-diarization-3.0"
@@ -89,6 +91,8 @@ class ModelNames(Enum):
     MINIMAX_H3_FL2VA = "MiniMax-H3-FL2VA"
     MINIMAX_H3_REF2VA = "MiniMax-H3-Ref2VA"
     MINIMAX_H3_FASTH3 = "MiniMax-H3-FastH3"
+    MINIMAX_H3_FL2VA_LIGHTX2V = "MiniMax-H3-FL2VA-LightX2V"
+    MINIMAX_H3_REF2VA_LIGHTX2V = "MiniMax-H3-Ref2VA-LightX2V"
     DISTIL_WHISPER_LARGE_V3 = "distil-large-v3"
     OPENAI_WHISPER_LARGE_V3 = "whisper-large-v3"
     MICROSOFT_RESNET_50 = "resnet-50"
@@ -146,6 +150,8 @@ class ModelRunners(Enum):
     TT_MINIMAX_H3_FL2VA = "tt-minimax-h3-fl2va"
     TT_MINIMAX_H3_REF2VA = "tt-minimax-h3-ref2va"
     TT_MINIMAX_H3_FASTH3 = "tt-minimax-h3-fasth3"
+    TT_MINIMAX_H3_FL2VA_LIGHTX2V = "tt-minimax-h3-fl2va-lightx2v"
+    TT_MINIMAX_H3_REF2VA_LIGHTX2V = "tt-minimax-h3-ref2va-lightx2v"
     TT_WHISPER = "tt-whisper"
     VLLMForge = "vllm_forge"
     TT_YOLOV4 = "tt-yolov4"
@@ -253,6 +259,8 @@ MODEL_SERVICE_RUNNER_MAP = {
         ModelRunners.TT_MINIMAX_H3_FL2VA,
         ModelRunners.TT_MINIMAX_H3_REF2VA,
         ModelRunners.TT_MINIMAX_H3_FASTH3,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V,
+        ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V,
         ModelRunners.SP_RUNNER,
     },
     ModelServices.TRAINING: {
@@ -293,8 +301,12 @@ I2V_MODEL_NAMES = frozenset(
 
 # MiniMax-H3 ref2va-only deployments: text-only and I2V endpoints must not
 # reach a worker that loaded ``transformer_ref/``.
-REF2VA_MODEL_RUNNERS = frozenset({ModelRunners.TT_MINIMAX_H3_REF2VA})
-REF2VA_MODEL_NAMES = frozenset({ModelNames.MINIMAX_H3_REF2VA})
+REF2VA_MODEL_RUNNERS = frozenset(
+    {ModelRunners.TT_MINIMAX_H3_REF2VA, ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V}
+)
+REF2VA_MODEL_NAMES = frozenset(
+    {ModelNames.MINIMAX_H3_REF2VA, ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V}
+)
 # The MiniMax-H3 tasks that are known NOT to serve Ref2VA. An SP frontend loads
 # no weights, so MODEL is its only signal about the peer's task; only these
 # names prove the peer would drop a ``references`` payload. Any other value —
@@ -305,6 +317,7 @@ NON_REF2VA_H3_MODEL_NAMES = frozenset(
         ModelNames.MINIMAX_H3,
         ModelNames.MINIMAX_H3_FL2VA,
         ModelNames.MINIMAX_H3_FASTH3,
+        ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
     }
 )
 
@@ -315,23 +328,30 @@ DEFAULT_VIDEO_INFERENCE_STEPS = 20
 
 # Pipelines that ignore the client's num_inference_steps. Keep these as the
 # values passed into the runner (dit_runners Distill / Lightning / AniSora /
-# FastH3).
+# FastH3 / LightX2V).
 WAN22_DISTILL_NUM_STEPS = 4
 WAN22_LIGHTNING_NUM_STEPS = 4
 WAN22_ANISORA_NUM_STEPS = 8
 MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS = 4
+# The lightx2v H3 Turbo adapters are distilled for 4 forwards. The H3 pipeline
+# counts sigma grid points, which is one more than the forward count.
+MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS = 5
 
 VIDEO_FORCED_INFERENCE_STEPS_BY_RUNNER = {
     ModelRunners.TT_WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelRunners.TT_WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
     ModelRunners.TT_MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
 VIDEO_FORCED_INFERENCE_STEPS_BY_MODEL = {
     ModelNames.WAN_2_2_I2V_DISTILL: WAN22_DISTILL_NUM_STEPS,
     ModelNames.WAN_2_2_I2V_LIGHTNING: WAN22_LIGHTNING_NUM_STEPS,
     ModelNames.WAN_2_2_I2V_ANISORA: WAN22_ANISORA_NUM_STEPS,
     ModelNames.MINIMAX_H3_FASTH3: MINIMAX_H3_FASTH3_NUM_INFERENCE_STEPS,
+    ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
+    ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V: MINIMAX_H3_LIGHTX2V_NUM_INFERENCE_STEPS,
 }
 
 
@@ -342,7 +362,7 @@ def video_executed_inference_steps(
 ) -> Optional[int]:
     """Return the denoise steps the pipeline actually runs.
 
-    Distill, Lightning, AniSora, and FastH3 ignore ``num_inference_steps``;
+    Distill, Lightning, AniSora, FastH3, and LightX2V ignore ``num_inference_steps``;
     SP_RUNNER serving those weights is identified by ``MODEL``, not by the
     runner name.
     """
@@ -398,6 +418,8 @@ INFERENCE_MODEL_RUNNER_TO_MODEL_NAMES_MAP = {
     ModelRunners.TT_MINIMAX_H3_FL2VA: {ModelNames.MINIMAX_H3_FL2VA},
     ModelRunners.TT_MINIMAX_H3_REF2VA: {ModelNames.MINIMAX_H3_REF2VA},
     ModelRunners.TT_MINIMAX_H3_FASTH3: {ModelNames.MINIMAX_H3_FASTH3},
+    ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V},
+    ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V: {ModelNames.MINIMAX_H3_REF2VA_LIGHTX2V},
     ModelRunners.TT_WHISPER: {
         ModelNames.OPENAI_WHISPER_LARGE_V3,
         ModelNames.DISTIL_WHISPER_LARGE_V3,
@@ -1157,6 +1179,22 @@ ModelConfigs = {
         "download_weights_from_service": False,
         "request_processing_timeout_seconds": 5000,
     },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
     (ModelRunners.TT_WAN_2_2, DeviceTypes.P150X4): {
         "device_mesh_shape": (1, 4),
         "is_galaxy": False,
@@ -1302,6 +1340,22 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_MINIMAX_H3_FASTH3, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V, DeviceTypes.GALAXY_QUAD): {
+        "device_mesh_shape": (4, 32),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "download_weights_from_service": False,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_MINIMAX_H3_REF2VA_LIGHTX2V, DeviceTypes.GALAXY_QUAD): {
         "device_mesh_shape": (4, 32),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,

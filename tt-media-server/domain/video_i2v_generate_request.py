@@ -113,7 +113,10 @@ def _is_minimax_h3_fl2va() -> bool:
         runner = get_settings().model_runner
     except Exception:  # noqa: BLE001
         return False
-    if runner == ModelRunners.TT_MINIMAX_H3_FL2VA.value:
+    if runner in {
+        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
+        ModelRunners.TT_MINIMAX_H3_FL2VA_LIGHTX2V.value,
+    }:
         return True
     if runner != ModelRunners.SP_RUNNER.value:
         return False
@@ -121,6 +124,9 @@ def _is_minimax_h3_fl2va() -> bool:
     if not model_env:
         return False
     try:
-        return ModelNames(model_env) is ModelNames.MINIMAX_H3_FL2VA
+        return ModelNames(model_env) in {
+            ModelNames.MINIMAX_H3_FL2VA,
+            ModelNames.MINIMAX_H3_FL2VA_LIGHTX2V,
+        }
     except ValueError:
         return False
