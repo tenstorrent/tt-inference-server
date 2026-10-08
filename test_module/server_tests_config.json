@@ -83,7 +83,10 @@
       "tiiuae/Falcon3-10B-Instruct",
       "deepcogito/cogito-v1-preview-llama-8B",
       "Qwen/Qwen3-4B-Instruct-2507",
-      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
+      "upstage/SOLAR-10.7B-Instruct-v1.0",
+      "meta-llama/Llama-3.2-1B",
+      "Qwen/Qwen1.5-0.5B-Chat"
     ]
   },
   "available_markers": {
@@ -860,6 +863,36 @@
       "id_name": "deepseek-ai--DeepSeek-R1-Distill-Llama-8B",
       "weights": [
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      ]
+    },
+    "upstage/SOLAR-10.7B-Instruct-v1.0": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "upstage--SOLAR-10.7B-Instruct-v1.0",
+      "weights": [
+        "upstage/SOLAR-10.7B-Instruct-v1.0"
+      ]
+    },
+    "meta-llama/Llama-3.2-1B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "meta-llama--Llama-3.2-1B",
+      "weights": [
+        "meta-llama/Llama-3.2-1B"
+      ]
+    },
+    "Qwen/Qwen1.5-0.5B-Chat": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen1.5-0.5B-Chat",
+      "weights": [
+        "Qwen/Qwen1.5-0.5B-Chat"
       ]
     }
   },
