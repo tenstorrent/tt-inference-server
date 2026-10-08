@@ -5401,8 +5401,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=11.09,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=10.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5422,8 +5422,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=1.16,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=0.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -5453,16 +5453,16 @@ _eval_config_list = [
                 task_name="mmlu_pro",
                 num_fewshot=5,
                 apply_chat_template=False,
-                # Awaiting a GPU reference: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-                # leaderboard_mmlu_pro (5-shot log-likelihood multiple choice, acc), which is not comparable to this
-                # 5-shot generative CoT task (exact_match,custom-extract), so published_score stays None. The like-for-like
-                # bar is a GPU run of this exact task (scripts/gpu_reference_colab/); until gpu_reference_score is filled
-                # the task runs and is graded NA. Settings are the ones the Quetzal Shield run used.
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=11.03,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6447,8 +6447,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=13.12,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=13.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6467,8 +6467,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=0.58,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=1.02,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -6497,16 +6497,16 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
-                # Awaiting a GPU reference: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-                # leaderboard_mmlu_pro (5-shot log-likelihood multiple choice, acc), which is not comparable to this
-                # 5-shot generative CoT task (exact_match,custom-extract), so published_score stays None. The like-for-like
-                # bar is a GPU run of this exact task (scripts/gpu_reference_colab/); until gpu_reference_score is filled
-                # the task runs and is graded NA. Settings are the ones the Quetzal Shield run used.
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=11.04,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7142,8 +7142,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=40.3,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=43.44,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7162,8 +7162,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=5.22,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=3.99,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -7192,18 +7192,18 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
-                # Awaiting a GPU reference: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-                # leaderboard_mmlu_pro (5-shot log-likelihood multiple choice, acc), which is not comparable to this
-                # 5-shot generative CoT task (exact_match,custom-extract), so published_score stays None. The like-for-like
-                # bar is a GPU run of this exact task (scripts/gpu_reference_colab/); until gpu_reference_score is filled
-                # the task runs and is graded NA. Settings are the ones the Quetzal Shield run used.
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
                 # Context: max_position_embeddings is 4096, so long 5-shot CoT prompts are left-truncated; the GPU spec
                 # uses the same 4096 window as the P300X2 row, so truncation matches.
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=13.54,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
