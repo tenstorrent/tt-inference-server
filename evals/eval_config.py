@@ -4067,6 +4067,12 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 131072,
+                    # Local tt-d-gen Dynamo deployment: it serves google/gemma-4,
+                    # and the checkpoint's tokenizer needs no HF token. Later
+                    # model_args keys override run.py's model=<hf repo>. Remove
+                    # both for a vLLM server that serves google/gemma-4-31B-it.
+                    "model": "google/gemma-4",
+                    "tokenizer": "/mnt/models/blaze/google/gemma-4-31B-it",
                 },
                 # Thinking-mode sampling (Qwen3.6 page, general tasks):
                 # temperature=1.0, top_p=0.95, top_k=20.
@@ -4078,11 +4084,16 @@ _eval_config_list = [
                 gen_kwargs={
                     "stream": "false",
                     "max_gen_toks": 124 * 1024,
-                    "until": [],
+                    # Dynamo 400s on an empty stop list. <eos> is the EOS
+                    # token, so generation already ends there.
+                    "until": ["<eos>"],
                     "do_sample": "true",
                     "temperature": 1.0,
                     "top_k": 20,
                     "top_p": 0.95,
+                    # For servers without --default-chat-template-kwargs
+                    # (tt-d-gen Dynamo); harmless where it is set.
+                    "chat_template_kwargs": {"enable_thinking": True},
                 },
                 # CI_NIGHTLY 0.05 (~10 samples), not the usual 0.2: reasoning
                 # eval (~48K tokens/sample) served batch-1, so samples run
@@ -4091,6 +4102,73 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.05,
                     EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # Client-only evaluation of the four-slot tt-d-gen deployment.
+                # --limit-samples-mode ci-nightly runs four easy tasks; no
+                # limit mode runs the full dataset.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=4,
+                    n_attempts=1,
+                    override_cpus=16,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=30 * 60,
+                    # Harbor/LiteLLM needs its provider prefix, while the value
+                    # after "openai/" must exactly match Dynamo /v1/models.
+                    model="openai/google/gemma-4",
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            # 192K + 32K leaves 38K of the deployed 256K
+                            # context for chat-template and protocol overhead.
+                            "max_input_tokens": 192 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "force_timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                                # The Gemma template defaults enable_thinking to false.
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
+                        },
+                    },
+                    # Keep direct task_names empty so the Docker-image bootstrap
+                    # can infer one common Terminal-Bench 2.1 dataset signature
+                    # across all model configs. The runbook selects this fixed
+                    # subset with --limit-samples-mode ci-nightly.
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/prove-plus-comm",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/overfull-hbox",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 4,
+                    EvalLimitMode.SMOKE_TEST: 4,
                 },
             ),
             # terminal_bench_2 / swe_bench_verified commented out for release CI.

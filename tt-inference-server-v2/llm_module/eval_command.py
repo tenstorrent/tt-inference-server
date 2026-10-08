@@ -74,6 +74,20 @@ def _inject_seed_into_gen_kwargs(gen_kwargs: dict, seed) -> dict:
     return out
 
 
+def _coerce_cli_value(value):
+    """Type a string the way lm-eval types a key=val gen_kwargs value."""
+    if not isinstance(value, str):
+        return value
+    if value.lower() in ("true", "false"):
+        return value.lower() == "true"
+    for cast in (int, float):
+        try:
+            return cast(value)
+        except ValueError:
+            pass
+    return value
+
+
 def _get_limit_mode(runtime_config) -> Optional[EvalLimitMode]:
     if runtime_config is None or not getattr(
         runtime_config, "limit_samples_mode", None
@@ -282,8 +296,15 @@ def build_eval_command(
     model_kwargs_str = ",".join(model_kwargs_list)
 
     # build gen_kwargs string
-    gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
-    gen_kwargs_str = ",".join(gen_kwargs_list)
+    if any(isinstance(v, dict) for v in effective_gen_kwargs.values()):
+        # key=val pairs cannot carry nested dicts (e.g. chat_template_kwargs);
+        # lm-eval also accepts one JSON object, but does not coerce its values.
+        gen_kwargs_str = json.dumps(
+            {k: _coerce_cli_value(v) for k, v in effective_gen_kwargs.items()}
+        )
+    else:
+        gen_kwargs_list = [f"{k}={v}" for k, v in effective_gen_kwargs.items()]
+        gen_kwargs_str = ",".join(gen_kwargs_list)
 
     # set output_dir
     # results go to {output_dir_path}/{hf_repo}/results_{timestamp}
