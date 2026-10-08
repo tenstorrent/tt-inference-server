@@ -17,6 +17,7 @@ import copy
 import json
 import logging
 import os
+import shutil
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -40,6 +41,7 @@ _OPENAI_ENDPOINT_ENV = ("OPENAI_BASE_URL", "OPENAI_API_BASE")
 # mini-swe-agent runs inside the task container, where host loopback is not
 # the inference server.
 _DOCKER_HOST_NAME = "host.docker.internal"
+_MAIN_SERVICE = "main"  # the compose service Harbor runs the agent and verifier in
 
 # Harbor's built-in agent name for mini-swe-agent. When this agent is used we
 # bring its generated model config to parity with the standalone SWE-bench
@@ -178,6 +180,81 @@ _IN_CONTAINER_ADAPTERS: dict[str, tuple[str, ...]] = {
 }
 
 
+# The registry's tau3-bench task images clone tau2-bench at an unpinned HEAD
+# and install only its ``[knowledge]`` extra, but ``tau2.utils.llm_utils`` now
+# imports the voice providers, which ``import websockets`` (a ``[voice]``-only
+# dependency). ``/tests/evaluate.py`` therefore dies with ModuleNotFoundError
+# in every verifier and the adapter still writes reward 0.0, so a whole
+# tau3 run scores zero without any error surfacing. Until the adapter pins a
+# working tau2-bench, mount the pure-Python package from the agentic venv into
+# the task container and put it on the verifier's PYTHONPATH.
+# Disable with TT_AGENTIC_VERIFIER_SHIM=0.
+_VERIFIER_SHIM_ENV = "TT_AGENTIC_VERIFIER_SHIM"
+_VERIFIER_SHIM_MOUNT = "/opt/tt-verifier-shim"
+_VERIFIER_SHIM_PACKAGES: dict[str, tuple[str, ...]] = {
+    # import-path marker -> top-level packages the in-container verifier lacks
+    "adapters.tau3-bench": ("websockets",),
+}
+
+
+def _verifier_shim_packages(config: HarborRunConfig) -> tuple[str, ...]:
+    if config.environment_type != "docker":
+        return ()
+    if os.getenv(_VERIFIER_SHIM_ENV, "1").strip().lower() in {"0", "false", "no"}:
+        return ()
+    path = config.agent_import_path or ""
+    for marker, packages in _VERIFIER_SHIM_PACKAGES.items():
+        if marker in path:
+            return packages
+    return ()
+
+
+def _site_package_dir(interpreter: Path, package: str) -> Optional[Path]:
+    """Locate ``package`` in the site-packages of the venv owning ``interpreter``."""
+    venv_root = Path(interpreter).resolve().parent.parent
+    for candidate in sorted(venv_root.glob(f"lib/python3*/site-packages/{package}")):
+        if (candidate / "__init__.py").is_file():
+            return candidate
+    return None
+
+
+def _prepare_verifier_shim(config: HarborRunConfig) -> Optional[Path]:
+    """Copy the missing verifier packages next to the job; returns the shim dir
+    to mount (None when nothing is needed or nothing could be found)."""
+    packages = _verifier_shim_packages(config)
+    if not packages:
+        return None
+    interpreter = config.venv_python or Path(sys.executable)
+    shim_dir = config.jobs_dir / f"{config.task_name}_verifier_shim"
+    copied: list[str] = []
+    for package in packages:
+        source = _site_package_dir(interpreter, package)
+        if source is None:
+            logger.warning(
+                "Verifier shim: %s not found under the venv of %s; the %s "
+                "verifier may fail with ModuleNotFoundError",
+                package,
+                interpreter,
+                config.task_name,
+            )
+            continue
+        target = shim_dir / package
+        if target.exists():
+            shutil.rmtree(target)
+        # Leave out compiled speedups built for the host interpreter; the
+        # packages fall back to pure Python inside the container.
+        shutil.copytree(
+            source, target, ignore=shutil.ignore_patterns("__pycache__", "*.so", "*.pyd")
+        )
+        copied.append(package)
+    if not copied:
+        return None
+    logger.info(
+        "Verifier shim for %s: mounting %s at %s", config.task_name, copied, _VERIFIER_SHIM_MOUNT
+    )
+    return shim_dir
+
+
 def _in_container_adapter_services(config: HarborRunConfig) -> tuple[str, ...]:
     path = config.agent_import_path or ""
     for marker, services in _IN_CONTAINER_ADAPTERS.items():
@@ -273,21 +350,22 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
     gateway_services = _gateway_services(config) if _needs_host_gateway(config) else ()
-    if gateway_services:
+    overlay_services: dict[str, dict[str, Any]] = {}
+    for name in gateway_services:
+        overlay_services.setdefault(name, {})["extra_hosts"] = [
+            f"{_DOCKER_HOST_NAME}:host-gateway"
+        ]
+    shim_dir = _prepare_verifier_shim(config)
+    if shim_dir is not None:
+        overlay_services.setdefault(_MAIN_SERVICE, {})["volumes"] = [
+            f"{shim_dir}:{_VERIFIER_SHIM_MOUNT}:ro"
+        ]
+    if overlay_services:
         overlay_path = (
             config.jobs_dir / f"{config.task_name}_docker_host_gateway_compose.json"
         )
         overlay_path.write_text(
-            json.dumps(
-                {
-                    "services": {
-                        name: {"extra_hosts": [f"{_DOCKER_HOST_NAME}:host-gateway"]}
-                        for name in gateway_services
-                    }
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+            json.dumps({"services": overlay_services}, indent=2), encoding="utf-8"
         )
         environment_config["extra_docker_compose"] = [str(overlay_path)]
     if config.override_cpus is not None:
@@ -314,8 +392,14 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         environment_config["env"] = _with_gateway_endpoint(config.environment_env, config)
 
     verifier_config: dict[str, Any] = {}
-    if config.verifier_env:
-        verifier_config["env"] = _with_gateway_endpoint(config.verifier_env, config)
+    verifier_env = _with_gateway_endpoint(config.verifier_env, config)
+    if shim_dir is not None:
+        existing = verifier_env.get("PYTHONPATH", "").strip()
+        verifier_env["PYTHONPATH"] = (
+            f"{_VERIFIER_SHIM_MOUNT}:{existing}" if existing else _VERIFIER_SHIM_MOUNT
+        )
+    if verifier_env:
+        verifier_config["env"] = verifier_env
 
     harbor_config: dict[str, Any] = {
         "job_name": config.task_name,
@@ -349,6 +433,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _needs_host_gateway(config)
+        or bool(_verifier_shim_packages(config))
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None

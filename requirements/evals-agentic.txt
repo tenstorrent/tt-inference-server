@@ -24,3 +24,10 @@ backoff>=2.0
 # utils.auth_helpers.setup_tests_auth, which imports jwt unconditionally).
 # Pinned via constraints.txt (pyjwt==2.7.0).
 pyjwt
+
+# Mounted into tau3-bench task containers for the verifier (see
+# llm_module.agentic.harbor._VERIFIER_SHIM_PACKAGES): the registry images
+# clone tau2-bench HEAD, whose tau2.utils.llm_utils imports websockets
+# although tau2 lists it only under its [voice] extra. Pure Python, so a
+# copy from this venv works in the container's interpreter.
+websockets>=13,<16

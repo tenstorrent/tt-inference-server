@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from pathlib import Path
@@ -589,7 +589,8 @@ class TestHarborHarness:
         assert set(overlay["services"]) == {"main", "tau3-runtime"}
         run_cmd.assert_called_once()
 
-    def test_tau3_adapter_with_remote_server_keeps_env_unchanged(self, tmp_path):
+    def test_tau3_adapter_with_remote_server_keeps_env_unchanged(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("TT_AGENTIC_VERIFIER_SHIM", "0")
         task = _harbor_task()
         task.agentic_eval_config.agent_timeout_sec = None
         task.agentic_eval_config.agent_import_path = (
@@ -612,6 +613,126 @@ class TestHarborHarness:
         assert harbor_config["verifier"]["env"] == {"TAU2_NL_ASSERTIONS_MODEL": "openai/m"}
         assert "extra_docker_compose" not in harbor_config["environment"]
         assert harbor_config["agents"][0]["env"]["OPENAI_BASE_URL"] == "http://10.0.0.5:8000/v1"
+
+    @staticmethod
+    def _fake_venv(root, packages=("websockets",)):
+        """A venv-shaped tree: bin/python plus pure-Python packages in site-packages."""
+        python = root / "venv" / "bin" / "python"
+        python.parent.mkdir(parents=True)
+        python.write_text("")
+        site = root / "venv" / "lib" / "python3.12" / "site-packages"
+        for name in packages:
+            pkg = site / name
+            pkg.mkdir(parents=True)
+            (pkg / "__init__.py").write_text("__version__ = '15.0.1'\n")
+            (pkg / "speedups.cpython-312-x86_64-linux-gnu.so").write_bytes(b"\x7fELF")
+            (pkg / "__pycache__").mkdir()
+            (pkg / "__pycache__" / "__init__.cpython-312.pyc").write_bytes(b"")
+        return python
+
+    def _tau3_cfg(self, tmp_path, server=None):
+        task = _harbor_task()
+        task.agentic_eval_config.agent_timeout_sec = None
+        task.agentic_eval_config.agent_import_path = (
+            "adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent"
+        )
+        task.agentic_eval_config.verifier_env = {"TAU2_NL_ASSERTIONS_MODEL": "openai/m"}
+        return build_harbor_config(
+            task,
+            server or _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+    def test_tau3_verifier_gets_websockets_shim(self, tmp_path, monkeypatch):
+        """The registry tau3 images lack ``websockets`` (tau2-bench imports it
+        outside its [voice] extra), so every verifier would die and score 0.
+        The driver mounts a copy from the agentic venv and puts it on the
+        verifier's PYTHONPATH -- also for a remote server, where no host
+        gateway rewrite happens."""
+        monkeypatch.delenv("TT_AGENTIC_VERIFIER_SHIM", raising=False)
+        remote = ServerConnection(
+            base_url="http://10.0.0.5", service_port=8000, model="Qwen/Qwen3.6-27B"
+        )
+        cfg = self._tau3_cfg(tmp_path, remote)
+        cfg = replace(cfg, venv_python=self._fake_venv(tmp_path))
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=17):
+            assert run_harbor(cfg) == 17
+        harbor_config = json.loads(
+            (cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json").read_text()
+        )
+        shim_dir = cfg.jobs_dir / f"{cfg.task_name}_verifier_shim"
+        assert (shim_dir / "websockets" / "__init__.py").is_file()
+        # host-built extension modules and bytecode are not shipped
+        assert sorted(p.name for p in (shim_dir / "websockets").iterdir()) == ["__init__.py"]
+        overlay = json.loads(
+            Path(harbor_config["environment"]["extra_docker_compose"][0]).read_text()
+        )
+        assert overlay == {
+            "services": {"main": {"volumes": [f"{shim_dir}:/opt/tt-verifier-shim:ro"]}}
+        }
+        assert harbor_config["verifier"]["env"] == {
+            "TAU2_NL_ASSERTIONS_MODEL": "openai/m",
+            "PYTHONPATH": "/opt/tt-verifier-shim",
+        }
+        # the simulated-user sidecar does not need the shim
+        assert harbor_config["environment"].get("env", {}).get("PYTHONPATH") is None
+
+    def test_tau3_shim_merges_with_host_gateway_overlay(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("TT_AGENTIC_VERIFIER_SHIM", raising=False)
+        cfg = self._tau3_cfg(tmp_path)
+        cfg = replace(cfg, venv_python=self._fake_venv(tmp_path))
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=17):
+            assert run_harbor(cfg) == 17
+        harbor_config = json.loads(
+            (cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json").read_text()
+        )
+        overlay = json.loads(
+            Path(harbor_config["environment"]["extra_docker_compose"][0]).read_text()
+        )
+        shim_dir = cfg.jobs_dir / f"{cfg.task_name}_verifier_shim"
+        assert overlay["services"]["main"] == {
+            "extra_hosts": ["host.docker.internal:host-gateway"],
+            "volumes": [f"{shim_dir}:/opt/tt-verifier-shim:ro"],
+        }
+        assert overlay["services"]["tau3-runtime"] == {
+            "extra_hosts": ["host.docker.internal:host-gateway"]
+        }
+        venv = harbor_config["verifier"]["env"]
+        assert venv["PYTHONPATH"] == "/opt/tt-verifier-shim"
+        assert venv["OPENAI_BASE_URL"] == "http://host.docker.internal:8000/v1"
+
+    def test_tau3_shim_skipped_when_package_missing_or_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("TT_AGENTIC_VERIFIER_SHIM", raising=False)
+        cfg = self._tau3_cfg(tmp_path)
+        cfg = replace(cfg, venv_python=self._fake_venv(tmp_path, packages=()))
+        with patch("llm_module.agentic.harbor.run_with_progress", return_value=17):
+            assert run_harbor(cfg) == 17
+        harbor_config = json.loads(
+            (cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json").read_text()
+        )
+        assert "PYTHONPATH" not in harbor_config["verifier"]["env"]
+        overlay = json.loads(
+            Path(harbor_config["environment"]["extra_docker_compose"][0]).read_text()
+        )
+        assert "volumes" not in overlay["services"]["main"]
+
+        monkeypatch.setenv("TT_AGENTIC_VERIFIER_SHIM", "0")
+        cfg = self._tau3_cfg(tmp_path / "off")
+        cfg = replace(cfg, venv_python=self._fake_venv(tmp_path / "off"))
+        assert harbor._prepare_verifier_shim(cfg) is None
+
+    def test_non_tau3_adapter_gets_no_shim(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("TT_AGENTIC_VERIFIER_SHIM", raising=False)
+        cfg = build_harbor_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        cfg = replace(cfg, venv_python=self._fake_venv(tmp_path))
+        assert harbor._prepare_verifier_shim(cfg) is None
+        assert not (cfg.jobs_dir / f"{cfg.task_name}_verifier_shim").exists()
 
     def test_environment_kwargs_force_the_config_file_path(self, tmp_path):
         """Cluster knobs have no CLI equivalent, so they must select --config.
