@@ -7100,7 +7100,7 @@ _eval_config_list = [
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash",
         tasks=[
-            t
+            replace(t, gen_kwargs={**t.gen_kwargs, **json.loads(os.getenv("DSV41_GEN_OVERRIDE", "{}"))})
             for t in [
                 EvalTask(
                     task_name="gpqa_diamond_cot_zeroshot",
