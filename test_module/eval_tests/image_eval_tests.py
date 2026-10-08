@@ -564,6 +564,7 @@ IMAGE_EVAL_DISPATCH: dict[str, ImageEvalFn] = {
     "tt-motif-image-6b-preview": _run_image_generation_eval_test,
     "tt-z-image-turbo": _run_image_generation_eval_test,
     "tt-qwen-image-edit": _run_instruction_edit_eval,
+    "tt-qwen-image-edit-2511": _run_instruction_edit_eval,
 }
 
 

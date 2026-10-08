@@ -480,6 +480,7 @@ IMAGE_BENCHMARK_DISPATCH: dict[
     "tt-motif-image-6b-preview": _run_motif_image_6b_preview_benchmark,
     "tt-z-image-turbo": _run_z_image_turbo_benchmark,
     "tt-qwen-image-edit": _run_qwen_image_edit_benchmark,
+    "tt-qwen-image-edit-2511": _run_qwen_image_edit_benchmark,
 }
 
 

@@ -9,6 +9,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
+import pytest
+
 from test_module.benchmark_tests import image_benchmark_tests as bench
 from test_module.eval_tests import image_eval_tests as evals
 
@@ -24,10 +26,13 @@ def _ctx(tmp_path):
     )
 
 
-def test_runner_is_dispatched_to_edit_eval_and_benchmark():
-    assert evals.IMAGE_EVAL_DISPATCH[_RUNNER] is evals._run_instruction_edit_eval
+# Edit-only runners: the server registers /v1/images/edits and not /generations, so a
+# runner missing from either table falls back to text-to-image and every request 404s.
+@pytest.mark.parametrize("runner", [_RUNNER, "tt-qwen-image-edit-2511"])
+def test_runner_is_dispatched_to_edit_eval_and_benchmark(runner):
+    assert evals.IMAGE_EVAL_DISPATCH[runner] is evals._run_instruction_edit_eval
     assert (
-        bench.IMAGE_BENCHMARK_DISPATCH[_RUNNER] is bench._run_qwen_image_edit_benchmark
+        bench.IMAGE_BENCHMARK_DISPATCH[runner] is bench._run_qwen_image_edit_benchmark
     )
 
 
@@ -35,6 +40,7 @@ def test_eval_config_exists_for_qwen_image_edit():
     from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 
     assert "Qwen/Qwen-Image-Edit" in ALL_EVAL_CONFIGS
+    assert "Qwen/Qwen-Image-Edit-2511" in ALL_EVAL_CONFIGS
 
 
 def test_edit_eval_sends_each_instruction_and_scores_against_captions(
