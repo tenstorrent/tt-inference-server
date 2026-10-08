@@ -12,4 +12,6 @@ uv pip install torch torchvision torchaudio --index-url https://download.pytorch
 # the CUDA torch wheels we just replaced with CPU-only ones above).
 uv pip install xformers --no-deps
 
-uv pip install diffusers
+# Pinned to tt-metal's version: diffusers>=0.41 needs huggingface_hub>=1.32, but
+# the tt-vllm-plugin install (transformers==4.55.0) later downgrades it to <1.0.
+uv pip install "diffusers==0.38.0"
