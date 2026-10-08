@@ -85,6 +85,30 @@ def test_granite_fixed_subset_evals_preserve_generation_and_published_targets():
         assert config.n_concurrent_trials == 10
         assert config.agent_timeout_sec == 7200
         assert config.llm_timeout_sec == 3600
+    assert terminal.agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "terminal-bench/break-filter-js-from-html",
+        "terminal-bench/cobol-modernization",
+        "terminal-bench/compile-compcert",
+        "terminal-bench/feal-differential-cryptanalysis",
+        "terminal-bench/qemu-startup",
+        "terminal-bench/caffe-cifar-10",
+        "terminal-bench/password-recovery",
+        "terminal-bench/portfolio-optimization",
+        "terminal-bench/hf-model-inference",
+        "terminal-bench/financial-document-processor",
+    ]
+    assert swe.agentic_eval_config.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "django__django-11299",
+        "astropy__astropy-14096",
+        "matplotlib__matplotlib-25332",
+        "sympy__sympy-13551",
+        "scikit-learn__scikit-learn-14629",
+        "django__django-15098",
+        "sphinx-doc__sphinx-8593",
+        "sympy__sympy-13852",
+        "pydata__xarray-3095",
+        "django__django-15695",
+    ]
 
 
 def test_granite_ci_commands_select_fixed_subsets():
