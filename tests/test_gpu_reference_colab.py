@@ -253,6 +253,45 @@ def test_memory_estimate_and_fit():
     ) == (2 * 2 * 4 * 32 * 2)
 
 
+def test_gpu_verdicts_fit_cap_and_no():
+    config = {  # Qwen2.5-32B-like: 64 layers, 40 heads, 8 KV heads, head_dim 128
+        "num_hidden_layers": 64,
+        "num_attention_heads": 40,
+        "num_key_value_heads": 8,
+        "hidden_size": 5120,
+    }
+    est = gpuref.memory_estimate(32_763_876_352, config, 32768, 32)
+    verdicts = gpuref.gpu_verdicts(est, 32768)
+    assert verdicts["A100"] == "no"
+    assert (
+        isinstance(verdicts["H100"], dict) and 2048 <= verdicts["H100"]["cap"] < 32768
+    )
+    small = gpuref.memory_estimate(619_570_176, config, 4096, 32)
+    assert gpuref.gpu_verdicts(small, 4096)["A100"] == "fits"
+    # Weights alone (KV unknown) too big for every GPU: a 70B.
+    weights_only = {
+        "weights_gib": 131.4,
+        "need_gib": 135.4,
+        "kv_bytes_per_token": None,
+    }
+    assert set(gpuref.gpu_verdicts(weights_only, 131072).values()) == {"no"}
+
+
+def test_params_from_config_llama_3_2_1b():
+    config = {
+        "hidden_size": 2048,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 8,
+        "head_dim": 64,
+        "intermediate_size": 8192,
+        "vocab_size": 128256,
+        "num_hidden_layers": 16,
+        "tie_word_embeddings": True,
+    }
+    # Llama-3.2-1B has 1,235,814,400 parameters; norms are the only omission.
+    assert gpuref.params_from_config(config) == pytest.approx(1_235_814_400, rel=1e-3)
+
+
 def test_summary_empty(tmp_path):
     assert gpuref.summary_rows(tmp_path) == []
     assert gpuref.format_summary([]) == "No TTIS eval reports found."

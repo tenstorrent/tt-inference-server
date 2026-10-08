@@ -124,6 +124,31 @@ sequence), Llama-3.2-1B about 10 GiB at 128K, and Qwen1.5-0.5B about 8 GiB at
 32K. All of them fit a 40 GB A100. With 32 concurrent sequences, vLLM queues
 whatever the KV pool cannot hold, which costs throughput but not correctness.
 
+### Which models go on which GPU
+
+References are bf16 only, because quantized references are out of scope. Each
+Colab runtime has one GPU.
+
+| bf16 model size | GPU | Notes |
+|---|---|---|
+| up to ~14B (weights up to ~28 GB) | `--gpu H100,A100` | Fits a 40 GB A100 at typical contexts. The preflight drops A100 if a long `max_context` does not fit there. |
+| ~14B to 32B | `--gpu H100` only | A 40 GB A100 cannot hold the weights. For 27B-32B, 80 GB leaves little KV room, so long contexts may need a `max_model_len` cap (below). |
+| 70B and above | out of scope on Colab | About 140 GB of bf16 weights needs a multi-GPU machine. `remote_runner.sh` is host-agnostic, so it could later be pointed at one over SSH. |
+
+The preflight enforces this table before anything is provisioned. It reads the
+parameter count from the Hub's safetensors metadata, falling back to
+`config.json`. A model whose bf16 weights do not fit the largest GPU in
+`--gpu` is refused with an explanation. A run that mixes small and 27B-32B
+models drops A100 from its list. If no listed GPU can hold every model, split
+the models into separate runs.
+
+For a model that fits H100 only with a cap (for example Qwen2.5-32B at a 32K
+`max_context`, which needs about 73 GiB against 72 GiB usable), the preflight
+prints the expected cap.
+
+`max_num_seqs` is never reduced. vLLM queues the requests its KV pool cannot
+hold, which affects throughput, not results.
+
 If vLLM still refuses `max_context` on the GPU it got, the runner retries once
 at vLLM's own estimated maximum length. It records `max_model_len_cap` in
 `provenance.json` and a note in `status.json`. lm-eval still sizes prompts to

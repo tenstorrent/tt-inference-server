@@ -231,6 +231,7 @@ def memory_estimate(
         "kv_gib_one_seq": round(one_seq, 2),
         "kv_gib_all_seqs": round(all_seqs, 2),
         "need_gib": round(weights + one_seq + OVERHEAD_GIB, 2),
+        "kv_bytes_per_token": per_token,
     }
 
 
@@ -241,6 +242,50 @@ def gpu_fits(need_gib: float) -> Dict[str, bool]:
     }
 
 
+def gpu_verdicts(estimate: Dict[str, Any], max_context: int) -> Dict[str, Any]:
+    """Per Colab GPU: "fits", {"cap": tokens} or "no".
+
+    "fits": bf16 weights + one max_context sequence + overhead fit.
+    {"cap": n}: the weights fit but max_context does not; about n tokens of
+    KV would (the runner then serves at vLLM's own estimate and records it).
+    "no": the bf16 weights plus overhead do not fit at all. Quantized
+    references are out of scope, so such a model cannot run on that GPU.
+    """
+    verdicts: Dict[str, Any] = {}
+    for gpu, mem in GPU_MEMORY_GIB.items():
+        usable = mem * GPU_MEMORY_UTILIZATION
+        if estimate["need_gib"] <= usable:
+            verdicts[gpu] = "fits"
+            continue
+        spare = usable - estimate["weights_gib"] - OVERHEAD_GIB
+        per_token = estimate.get("kv_bytes_per_token")
+        if not per_token:  # KV unknown: only the weights were checked
+            verdicts[gpu] = "no"
+            continue
+        tokens = int(spare * GIB // per_token) if spare > 0 else 0
+        verdicts[gpu] = {"cap": min(tokens, max_context)} if tokens >= 2048 else "no"
+    return verdicts
+
+
+def params_from_config(config: Dict[str, Any]) -> int:
+    """Approximate parameter count of a dense decoder from config.json.
+
+    Fallback when the Hub has no safetensors metadata. Embeddings (+ untied
+    LM head) and, per layer, q/k/v/o projections and a gated MLP; norms and
+    biases are negligible. Not valid for MoE configs.
+    """
+    hidden = int(config["hidden_size"])
+    heads = int(config["num_attention_heads"])
+    kv_heads = int(config.get("num_key_value_heads") or heads)
+    head_dim = int(config.get("head_dim") or hidden // heads)
+    inter = int(config["intermediate_size"])
+    vocab = int(config["vocab_size"])
+    layers = int(config["num_hidden_layers"])
+    embed = vocab * hidden * (1 if config.get("tie_word_embeddings") else 2)
+    attn = 2 * hidden * heads * head_dim + 2 * hidden * kv_heads * head_dim
+    return embed + layers * (attn + 3 * hidden * inter)
+
+
 def hf_memory_estimate(
     repo: str,
     revision: Optional[str],
@@ -248,18 +293,50 @@ def hf_memory_estimate(
     max_concurrency: int,
     token: Optional[str],
 ) -> Optional[Dict[str, Any]]:
-    """memory_estimate from the Hub (parameter count + config.json), or None."""
+    """memory_estimate from the Hub, or None when not even the size is known.
+
+    The parameter count comes from the Hub's safetensors metadata (public even
+    for gated repos), else from config.json. Without a readable config.json
+    (e.g. a gated repo the token cannot read) the KV term is unknown: the
+    estimate then covers the weights only and sets kv_unknown.
+    """
+    base = f"{revision or 'main'}"
+    errors = (urllib.error.URLError, OSError, ValueError, KeyError, TypeError)
+    num_params = config = None
     try:
-        info = _hf_get(f"{HF_API}/{repo}/revision/{revision or 'main'}", token=token)
+        info = _hf_get(f"{HF_API}/{repo}/revision/{base}", token=token)
         num_params = int((info.get("safetensors") or {})["total"])
+    except errors:
+        pass
+    try:
         config = _hf_get(
-            f"https://huggingface.co/{repo}/resolve/{revision or 'main'}/config.json",
-            token=token,
+            f"https://huggingface.co/{repo}/resolve/{base}/config.json", token=token
         )
-        estimate = memory_estimate(num_params, config, max_context, max_concurrency)
-    except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError):
+        if num_params is None:
+            num_params = params_from_config(config)
+    except errors:
+        config = None
+    if num_params is None:
         return None
+    if config is not None:
+        try:
+            estimate = memory_estimate(num_params, config, max_context, max_concurrency)
+            estimate["kv_unknown"] = False
+        except errors:
+            config = None
+    if config is None:
+        weights = round(num_params * 2 / GIB, 2)
+        estimate = {
+            "weights_gib": weights,
+            "kv_gib_one_seq": None,
+            "kv_gib_all_seqs": None,
+            "need_gib": round(weights + OVERHEAD_GIB, 2),
+            "kv_bytes_per_token": None,
+            "kv_unknown": True,
+        }
+    estimate["num_params"] = num_params
     estimate["fits"] = gpu_fits(estimate["need_gib"])
+    estimate["verdicts"] = gpu_verdicts(estimate, max_context)
     return estimate
 
 

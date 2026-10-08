@@ -222,20 +222,50 @@ for r in rows:
     if r.get("token_can_read") is False:
         print(f"[gpuref]   the HF token cannot read {r['model']}: accept its license at https://huggingface.co/{r['model']}", file=sys.stderr)
         bad = True
-    # bf16 weights + KV for one max_context sequence + overhead must fit each
-    # GPU we might land on (vLLM refuses to start otherwise).
+    # Sizing (bf16 only; quantized references are out of scope). Per listed
+    # GPU: "fits" (weights + one max_context sequence), a KV cap (weights fit,
+    # max_context does not), or "no". A model may use the GPUs that fit fully;
+    # only if none does may it use a capped one; if neither, it is refused.
     mem = r.get("memory")
     if mem is None:
-        print(f"[gpuref]     memory estimate unavailable; not checking fit", file=sys.stderr)
+        print(f"[gpuref]     {r['model']}: no parameter count on the Hub; cannot check GPU fit, refusing", file=sys.stderr)
+        bad = True
         continue
-    print(f"[gpuref]     bf16 weights {mem['weights_gib']} GiB + KV {mem['kv_gib_one_seq']} GiB/seq at max_context "
-          f"(x{r['max_concurrency']} = {mem['kv_gib_all_seqs']} GiB) -> needs ~{mem['need_gib']} GiB", file=sys.stderr)
-    for gpu in gpus:
-        if mem["fits"].get(gpu) is False:
-            print(f"[gpuref]     does not fit {gpu}; dropping {gpu} from the preference list", file=sys.stderr)
-            usable.discard(gpu)
+    if mem.get("kv_unknown"):
+        print(f"[gpuref]     bf16 weights {mem['weights_gib']} GiB (config.json unreadable: KV not sized)", file=sys.stderr)
+    else:
+        print(f"[gpuref]     bf16 weights {mem['weights_gib']} GiB + KV {mem['kv_gib_one_seq']} GiB/seq at max_context "
+              f"(x{r['max_concurrency']} = {mem['kv_gib_all_seqs']} GiB) -> needs ~{mem['need_gib']} GiB", file=sys.stderr)
+    verdicts = {g: mem["verdicts"].get(g) for g in gpus}
+    full = {g for g, v in verdicts.items() if v == "fits"}
+    capped = {g for g, v in verdicts.items() if isinstance(v, dict)}
+    for g, v in verdicts.items():
+        if v is None:
+            print(f"[gpuref]     {g}: memory not characterised; not checked", file=sys.stderr)
+        elif isinstance(v, dict):
+            print(f"[gpuref]     {g}: weights fit but max_context {r['max_context']} does not; "
+                  f"~{v['cap']} tokens would (max_model_len cap, recorded in provenance.json)", file=sys.stderr)
+        elif v == "no":
+            print(f"[gpuref]     {g}: bf16 weights do not fit", file=sys.stderr)
+    unknown = {g for g, v in verdicts.items() if v is None}
+    allowed = (full or capped) | unknown
+    if not (full or capped):
+        known = [g for g in gpus if g not in unknown]
+        if known and not unknown:
+            hint = ("add H100 (80 GB) to --gpu" if "H100" not in gpus else
+                    "one Colab runtime has one GPU, so models above ~32B (e.g. 70B) are out of scope "
+                    "here: they need a multi-GPU machine")
+            print(f"[gpuref]   {r['model']}: bf16 weights ({mem['weights_gib']} GiB) do not fit the largest GPU in "
+                  f"--gpu ({', '.join(known)}); {hint}.", file=sys.stderr)
+            bad = True
+            continue
+    for g in gpus:
+        if g not in allowed and g in usable:
+            print(f"[gpuref]     dropping {g} from --gpu for this run (it cannot hold {r['model']} at full max_context"
+                  f"{'' if full else ' or with a cap'})", file=sys.stderr)
+    usable &= allowed
 if not bad and not usable:
-    print("[gpuref]   no GPU in --gpu fits every model", file=sys.stderr)
+    print("[gpuref]   no GPU in --gpu fits every model; split the models into separate runs", file=sys.stderr)
     bad = True
 open(fit_path, "w").write(" ".join(g for g in gpus if g in usable))
 sys.exit(1 if bad else 0)
