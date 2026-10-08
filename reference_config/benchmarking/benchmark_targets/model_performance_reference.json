@@ -7387,45 +7387,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 39.96,
-                        "tput": 36.3
+                        "tput_user": 45.2,
+                        "tput": 44.4
                     },
                     "measured": {
-                        "ttft_ms": 348.4,
-                        "tput_user": 39.96,
-                        "tput": 36.3,
+                        "ttft_ms": 75.8,
+                        "tput_user": 45.2,
+                        "tput": 44.4,
                         "tolerance": 0.2
                     }
                 },
-                "_comment": [
-                    "QB2 (P150x4 mesh), tt-transformers, hybrid kv-cache groups + vLLM prefix caching, bfloat8_b KV, pool 786432,",
-                    "scheduler budget 16384. One harness sweep on 2026-10-05 (emulated QB2 on bh-glx-exp-b03u14 chips 0-3) of the",
-                    "24-point P300X2 matrix; 24/24 served, 22-case conformance suite passing on the same server. 'measured' gates",
-                    "the target tier (tolerance 0.20, single run); 'theoretical' is set to the measured level so the functional and",
-                    "complete tiers grade. ttft_ms is the mean, queue-inclusive at concurrency >1."
-                ]
-            },
-            {
-                "isl": 128,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 32,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 28.49,
-                        "tput": 411.4
-                    },
-                    "measured": {
-                        "ttft_ms": 5491.9,
-                        "tput_user": 28.49,
-                        "tput": 411.4,
-                        "tolerance": 0.2
-                    }
-                }
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 128,
@@ -7438,104 +7410,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 28.38,
-                        "tput": 391.5
+                        "tput_user": 31.61,
+                        "tput": 717.7
                     },
                     "measured": {
-                        "ttft_ms": 5985.2,
-                        "tput_user": 28.38,
-                        "tput": 391.5,
+                        "ttft_ms": 1688.6,
+                        "tput_user": 31.61,
+                        "tput": 717.7,
                         "tolerance": 0.2
                     }
-                }
-            },
-            {
-                "isl": 128,
-                "osl": 1024,
-                "max_concurrency": 1,
-                "num_prompts": 4,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 39.26,
-                        "tput": 38.8
-                    },
-                    "measured": {
-                        "ttft_ms": 312.0,
-                        "tput_user": 39.26,
-                        "tput": 38.8,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 128,
-                "osl": 1024,
-                "max_concurrency": 32,
-                "num_prompts": 128,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 26.98,
-                        "tput": 687.4
-                    },
-                    "measured": {
-                        "ttft_ms": 9749.6,
-                        "tput_user": 26.98,
-                        "tput": 687.4,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 1024,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 4,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 38.56,
-                        "tput": 35.1
-                    },
-                    "measured": {
-                        "ttft_ms": 350.0,
-                        "tput_user": 38.56,
-                        "tput": 35.1,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 1024,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 17.78,
-                        "tput": 280.8
-                    },
-                    "measured": {
-                        "ttft_ms": 7437.0,
-                        "tput_user": 17.78,
-                        "tput": 280.8,
-                        "tolerance": 0.2
-                    }
-                }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 2048,
@@ -7548,82 +7433,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 38.51,
-                        "tput": 33.8
+                        "tput_user": 43.36,
+                        "tput": 39.2
                     },
                     "measured": {
-                        "ttft_ms": 486.5,
-                        "tput_user": 38.51,
-                        "tput": 33.8,
+                        "ttft_ms": 332.3,
+                        "tput_user": 43.36,
+                        "tput": 39.2,
                         "tolerance": 0.2
                     }
-                }
-            },
-            {
-                "isl": 2048,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 11.97,
-                        "tput": 172.4
-                    },
-                    "measured": {
-                        "ttft_ms": 13141.5,
-                        "tput_user": 11.97,
-                        "tput": 172.4,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 4096,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 4,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 38.37,
-                        "tput": 29.7
-                    },
-                    "measured": {
-                        "ttft_ms": 998.5,
-                        "tput_user": 38.37,
-                        "tput": 29.7,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 4096,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 7.15,
-                        "tput": 122.2
-                    },
-                    "measured": {
-                        "ttft_ms": 15741.1,
-                        "tput_user": 7.15,
-                        "tput": 122.2,
-                        "tolerance": 0.2
-                    }
-                }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 8192,
@@ -7636,170 +7456,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 38.15,
-                        "tput": 25.3
+                        "tput_user": 42.9,
+                        "tput": 29.3
                     },
                     "measured": {
-                        "ttft_ms": 1732.9,
-                        "tput_user": 38.15,
-                        "tput": 25.3,
+                        "ttft_ms": 1402.7,
+                        "tput_user": 42.9,
+                        "tput": 29.3,
                         "tolerance": 0.2
                     }
-                }
-            },
-            {
-                "isl": 8192,
-                "osl": 128,
-                "max_concurrency": 31,
-                "num_prompts": 62,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 3.35,
-                        "tput": 61.0
-                    },
-                    "measured": {
-                        "ttft_ms": 27092.1,
-                        "tput_user": 3.35,
-                        "tput": 61.0,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 8192,
-                "osl": 1024,
-                "max_concurrency": 1,
-                "num_prompts": 2,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 38.1,
-                        "tput": 35.8
-                    },
-                    "measured": {
-                        "ttft_ms": 1779.0,
-                        "tput_user": 38.1,
-                        "tput": 35.8,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 8192,
-                "osl": 1024,
-                "max_concurrency": 28,
-                "num_prompts": 56,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 14.14,
-                        "tput": 293.9
-                    },
-                    "measured": {
-                        "ttft_ms": 25113.8,
-                        "tput_user": 14.14,
-                        "tput": 293.9,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 10000,
-                "osl": 1024,
-                "max_concurrency": 1,
-                "num_prompts": 2,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 37.97,
-                        "tput": 35.3
-                    },
-                    "measured": {
-                        "ttft_ms": 2030.3,
-                        "tput_user": 37.97,
-                        "tput": 35.3,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 10000,
-                "osl": 1024,
-                "max_concurrency": 23,
-                "num_prompts": 46,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 14.1,
-                        "tput": 230.0
-                    },
-                    "measured": {
-                        "ttft_ms": 29726.1,
-                        "tput_user": 14.1,
-                        "tput": 230.0,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 16384,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 2,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 37.75,
-                        "tput": 19.0
-                    },
-                    "measured": {
-                        "ttft_ms": 3360.9,
-                        "tput_user": 37.75,
-                        "tput": 19.0,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 16384,
-                "osl": 128,
-                "max_concurrency": 15,
-                "num_prompts": 30,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 3.96,
-                        "tput": 30.0
-                    },
-                    "measured": {
-                        "ttft_ms": 31966.2,
-                        "tput_user": 3.96,
-                        "tput": 30.0,
-                        "tolerance": 0.2
-                    }
-                }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             },
             {
                 "isl": 32768,
@@ -7812,104 +7479,17 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "tput_user": 36.88,
-                        "tput": 12.0
+                        "tput_user": 41.31,
+                        "tput": 13.0
                     },
                     "measured": {
-                        "ttft_ms": 7186.8,
-                        "tput_user": 36.88,
-                        "tput": 12.0,
+                        "ttft_ms": 6736.6,
+                        "tput_user": 41.31,
+                        "tput": 13.0,
                         "tolerance": 0.2
                     }
-                }
-            },
-            {
-                "isl": 32768,
-                "osl": 128,
-                "max_concurrency": 7,
-                "num_prompts": 7,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 6.45,
-                        "tput": 17.2
-                    },
-                    "measured": {
-                        "ttft_ms": 32136.0,
-                        "tput_user": 6.45,
-                        "tput": 17.2,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 65536,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 1,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 35.2,
-                        "tput": 8.9
-                    },
-                    "measured": {
-                        "ttft_ms": 10721.7,
-                        "tput_user": 35.2,
-                        "tput": 8.9,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 65536,
-                "osl": 128,
-                "max_concurrency": 3,
-                "num_prompts": 3,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 9.47,
-                        "tput": 12.8
-                    },
-                    "measured": {
-                        "ttft_ms": 16405.2,
-                        "tput_user": 9.47,
-                        "tput": 12.8,
-                        "tolerance": 0.2
-                    }
-                }
-            },
-            {
-                "isl": 131072,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 1,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "tput_user": 32.34,
-                        "tput": 3.6
-                    },
-                    "measured": {
-                        "ttft_ms": 31691.9,
-                        "tput_user": 32.34,
-                        "tput": 3.6,
-                        "tolerance": 0.2
-                    }
-                }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
             }
         ],
         "blackhole_galaxy": [
