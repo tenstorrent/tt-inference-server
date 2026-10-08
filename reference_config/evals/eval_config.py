@@ -7094,7 +7094,7 @@ _eval_config_list = [
     # DeepSeek-V4.1-Flash on Blackhole Galaxy (B=32 build, max_model_len 33280, plain decode).
     # The served chat template is NON-THINKING (encoding.py thinking_mode="chat": the
     # generation prompt ends in </think>), and 33k context cannot hold long reasoning, so
-    # every task runs non-thinking, greedy (device sampling), chat API. Model-card numbers
+    # every task runs non-thinking, sampled with the card's temperature 1.0 / top_p 0.95 (seed 42), chat API, max_gen_toks = remaining 67584 context. Model-card numbers
     # are not like for like (GPQA: instruct, max reasoning effort; MMLU-Pro/HumanEval/
     # LongBench-V2: base-model few-shot). DSV41_EVAL_TASKS (comma list) selects tasks.
     EvalConfig(
@@ -7119,15 +7119,16 @@ _eval_config_list = [
                     ),
                     model_kwargs={
                         "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
-                        "max_length": 33280,
-                        "timeout": 3600,
+                        "max_length": 67584,
+                        "timeout": 14400,
                     },
                     gen_kwargs={
-                        "max_gen_toks": 8192,
+                        "max_gen_toks": 64500,
                         "until": [],
-                        "do_sample": "false",
-                        "temperature": 0,
-                        "stream": "false",
+                        "do_sample": "true",
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "stream": "true",
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 64},
                 ),
@@ -7148,15 +7149,16 @@ _eval_config_list = [
                     ),
                     model_kwargs={
                         "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
-                        "max_length": 33280,
-                        "timeout": 3600,
+                        "max_length": 67584,
+                        "timeout": 14400,
                     },
                     gen_kwargs={
-                        "max_gen_toks": 2048,
+                        "max_gen_toks": 64500,
                         "until": [],
-                        "do_sample": "false",
-                        "temperature": 0,
-                        "stream": "false",
+                        "do_sample": "true",
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "stream": "true",
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 4}  # per subtask (14 subtasks),
                 ),
@@ -7178,15 +7180,16 @@ _eval_config_list = [
                     ),
                     model_kwargs={
                         "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
-                        "max_length": 33280,
-                        "timeout": 3600,
+                        "max_length": 67584,
+                        "timeout": 14400,
                     },
                     gen_kwargs={
-                        "max_gen_toks": 1024,
+                        "max_gen_toks": 64500,
                         "until": [],
-                        "do_sample": "false",
-                        "temperature": 0,
-                        "stream": "false",
+                        "do_sample": "true",
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "stream": "true",
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 32},
                 ),
@@ -7207,14 +7210,15 @@ _eval_config_list = [
                     model_kwargs={
                         "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
                         "max_length": 67584,
-                        "timeout": 7200,
+                        "timeout": 14400,
                     },
                     gen_kwargs={
-                        "max_gen_toks": 2048,
+                        "max_gen_toks": 4096,
                         "until": [],
-                        "do_sample": "false",
-                        "temperature": 0,
-                        "stream": "false",
+                        "do_sample": "true",
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "stream": "true",
                     },
                     # only samples that fit the 67584 context: ISL + 2048 gen + template < 67584
                     custom_dataset_kwargs={
