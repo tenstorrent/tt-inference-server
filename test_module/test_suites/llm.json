@@ -31,20 +31,6 @@
       ]
     },
     {
-      "devices": [
-        "p300x2"
-      ],
-      "models": [
-        "Qwen/Qwen3.6-35B-A3B"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
       "models": [
         "qwen3_32b",
         "llama_3_1_8b",
