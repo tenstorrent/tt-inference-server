@@ -56,9 +56,11 @@ EXPECTED = {
     },
     "deepcogito/cogito-v1-preview-llama-8B": {"mmlu_pro": 57.77},
     "Qwen/Qwen3-4B-Instruct-2507": {"r1_gpqa_diamond": 62.0, "mmlu_pro": 69.6},
+    # mmlu_pro NA until its GPU reference (scripts/gpu_reference_colab/) lands.
     "upstage/SOLAR-10.7B-Instruct-v1.0": {
         "leaderboard_ifeval": 40.3,
         "leaderboard_math_hard": 5.22,
+        "mmlu_pro": None,
     },
     "01-ai/Yi-1.5-9B-Chat": {
         "leaderboard_ifeval": 55.08,

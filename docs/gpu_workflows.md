@@ -56,6 +56,19 @@ python run.py --workflow release --tt-device gpu --model <Model>
 
 Runs `evals` → `benchmarks` → `tests` → `reports` in sequence, all against the external vLLM. Use this for full release certification once individual workflows verify correctly.
 
+## Collecting GPU references on Google Colab
+
+[`scripts/gpu_reference_colab/`](../scripts/gpu_reference_colab/README.md) automates the bring-your-own-server flow above on a Google Colab GPU VM, using the [Colab CLI](https://github.com/googlecolab/google-colab-cli). For each model, the VM serves the HF repo with pinned upstream vLLM under its repo id and runs `run.py --workflow evals --tt-device gpu --dev-mode` at a pushed TTIS sha. These are full evals with no limits. The VM then sends back the eval reports and a `provenance.json`. The result is a like-for-like `gpu_reference_score`: the same task configs, context window, concurrency and HF revision as the Tenstorrent run.
+
+- **Prerequisites:** a Colab plan with H100 access, `uv`, the model's `- device: GPU` / `default_impl: true` entry in `workflows/model_specs/dev/llm.yaml`, and an HF token (`HF_TOKEN` or `~/.cache/huggingface/token`) for gated repos.
+- **One-time sign-in:** `uv tool install google-colab-cli && colab sessions`, then complete the sign-in.
+- **Run:** `scripts/gpu_reference_colab/colab_gpu_reference.sh upstage/SOLAR-10.7B-Instruct-v1.0 meta-llama/Llama-3.2-1B Qwen/Qwen1.5-0.5B-Chat`. Add `--dry-run` to see every `colab` command first. The script polls a detached runner and stops the VM on exit unless you pass `--keep`, and re-running the same command re-attaches.
+- **Time and cost:** on one H100, about 15-25 min of setup plus roughly 0.5-2.5 h per model. Most of that is MMLU-Pro chain-of-thought generation. Compute units are the H100 rate (`colab usage` while it runs) times wall hours.
+- **Outputs:** `workflow_logs/gpu_reference_colab/<session>/` holds `summary.txt` (per-model, per-task scores), the TTIS eval reports, and `provenance.json`. The provenance file records the GPU, driver, vLLM/torch/transformers, TTIS sha, model revision, exact `vllm serve` args, timestamps and the lm-eval commit.
+- **Using the results:** set the task's `gpu_reference_score` in `reference_config/evals/eval_config.py` to the reported score. Set `gpu_reference_score_ref` to a GitHub issue or PR comment that attaches `provenance.json` and the report JSON, or to the committed provenance file at a fixed sha. Leave the tolerances unchanged.
+
+See the [README](../scripts/gpu_reference_colab/README.md) for the step-by-step flow, resume and stop, the outputs layout and troubleshooting.
+
 ## Troubleshooting
 
 | Error | Cause | Fix |

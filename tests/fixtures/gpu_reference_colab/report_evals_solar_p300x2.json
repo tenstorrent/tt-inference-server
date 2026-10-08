@@ -1,0 +1,168 @@
+{
+    "metadata": {
+        "model_name": "SOLAR-10.7B-Instruct-v1.0",
+        "model_repo": "upstage/SOLAR-10.7B-Instruct-v1.0",
+        "device": "P300X2",
+        "generated_at": "2026-10-08T09:30:20+00:00",
+        "report_id": "upstage__SOLAR-10.7B-Instruct-v1.0_2026-10-08T093020+0000",
+        "workflow": "evals",
+        "report_partial": false,
+        "report_blocks": 3,
+        "server_mode": "docker",
+        "run_command": "python run.py --model upstage/SOLAR-10.7B-Instruct-v1.0 --workflow evals --device p300x2 --docker-server --dev-mode --quetzal-package-root /mnt/models/huggingface/quetzal/nkapre/packages/sha256-f18dacdb4e6d933bf8189319aa7bdb42a366b68f959913d415e85544c7d0266a-3223838e1d9d2bf2dc5f910e23cabfbab49a0911b0151663e945aee401de899f --impl quetzal --override-docker-image ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378 --host-volume /home/ubuntu/actions-runner/_work/tt-shield/tt-shield/tt-inference-server/persistent-volume",
+        "runtime_model_spec_json": "/home/ubuntu/actions-runner/_work/tt-shield/tt-shield/tt-inference-server/workflow_logs/runtime_model_specs/runtime_model_spec_2026-10-08_09-24-53_id_quetzal_SOLAR-10.7B-Instruct-v1.0_p300x2_ZLyvMx2J.json",
+        "model_id": "id_quetzal_SOLAR-10.7B-Instruct-v1.0_p300x2",
+        "inference_engine": "vLLM",
+        "tt_metal_commit": null,
+        "vllm_commit": null,
+        "model_impl": "quetzal"
+    },
+    "sections": [
+        {
+            "kind": "evals",
+            "data": {
+                "task_name": "leaderboard_ifeval",
+                "tolerance": 0.05,
+                "published_score": 40.3,
+                "published_score_ref": "https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                "gpu_reference_score": null,
+                "gpu_reference_score_ref": "TBD",
+                "score": 42.329020332717185,
+                "ratio_to_published": 1.0503478990748683,
+                "ratio_to_reference": "N/A",
+                "accuracy_check": 2,
+                "accuracy_rule": "ratio",
+                "noise_n": 541.0,
+                "noise_se": 2.1088274987758826,
+                "noise_z": 1.96,
+                "priority": "must",
+                "mean_seconds_per_task": 0.7928741697615569
+            },
+            "title": "LLM Eval \u2014 leaderboard_ifeval",
+            "task_type": "llm",
+            "id": "upstage__SOLAR-10.7B-Instruct-v1.0_P300X2",
+            "targets": {
+                "task_name": "leaderboard_ifeval",
+                "tolerance": 0.05,
+                "published_score": 40.3,
+                "published_score_ref": "https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)"
+            }
+        },
+        {
+            "kind": "evals",
+            "data": {
+                "task_name": "leaderboard_math_hard",
+                "tolerance": 0.05,
+                "published_score": 5.22,
+                "published_score_ref": "https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                "gpu_reference_score": null,
+                "gpu_reference_score_ref": "TBD",
+                "score": 5.030083750467746,
+                "ratio_to_published": 0.963617576717959,
+                "ratio_to_reference": "N/A",
+                "accuracy_check": 2,
+                "accuracy_rule": "ratio",
+                "noise_n": 1177.4074967693166,
+                "noise_se": 0.648231610628024,
+                "noise_z": 1.96,
+                "priority": "must",
+                "mean_seconds_per_task": 0.8685238418089131
+            },
+            "title": "LLM Eval \u2014 leaderboard_math_hard",
+            "task_type": "llm",
+            "id": "upstage__SOLAR-10.7B-Instruct-v1.0_P300X2",
+            "targets": {
+                "task_name": "leaderboard_math_hard",
+                "tolerance": 0.05,
+                "published_score": 5.22,
+                "published_score_ref": "https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)"
+            }
+        },
+        {
+            "kind": "evals",
+            "data": {
+                "task_name": "mmlu_pro",
+                "tolerance": 0.05,
+                "published_score": 31.38,
+                "published_score_ref": "https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)",
+                "gpu_reference_score": null,
+                "gpu_reference_score_ref": "TBD",
+                "score": 13.887965425531915,
+                "ratio_to_published": 0.442573786664497,
+                "ratio_to_reference": "N/A",
+                "accuracy_check": 3,
+                "accuracy_rule": "fail",
+                "noise_n": 12032.0,
+                "noise_se": 0.4230414430052923,
+                "noise_z": 1.96,
+                "priority": "must",
+                "mean_seconds_per_task": 0.8022912280821112
+            },
+            "title": "LLM Eval \u2014 mmlu_pro",
+            "task_type": "llm",
+            "id": "upstage__SOLAR-10.7B-Instruct-v1.0_P300X2",
+            "targets": {
+                "task_name": "mmlu_pro",
+                "tolerance": 0.05,
+                "published_score": 31.38,
+                "published_score_ref": "https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_mmlu_pro.acc,none)"
+            }
+        }
+    ],
+    "acceptance_criteria": true,
+    "acceptance_blockers": {},
+    "acceptance_criteria_metadata": {
+        "enforcement_result": "PASS",
+        "model_status": "EXPERIMENTAL",
+        "categories": [
+            {
+                "name": "Benchmarks",
+                "status": "NA",
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "na": 0,
+                "skipped": 0,
+                "blockers": {},
+                "waived": {}
+            },
+            {
+                "name": "Evals",
+                "status": "PASS",
+                "total": 3,
+                "passed": 2,
+                "failed": 0,
+                "na": 0,
+                "skipped": 0,
+                "blockers": {},
+                "waived": {
+                    "evals:LLM Eval \u2014 mmlu_pro": "Accuracy check failed. (informational: model status=EXPERIMENTAL)"
+                }
+            },
+            {
+                "name": "Spec Tests",
+                "status": "NA",
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "na": 0,
+                "skipped": 0,
+                "blockers": {},
+                "waived": {}
+            },
+            {
+                "name": "Agentic Targets",
+                "status": "NA",
+                "total": 0,
+                "passed": 0,
+                "failed": 0,
+                "na": 0,
+                "skipped": 0,
+                "blockers": {},
+                "waived": {}
+            }
+        ]
+    },
+    "acceptance_summary_markdown": "### Acceptance Criteria\n\n- Acceptance status: \u2705 `PASS`\n- Model status: `EXPERIMENTAL`\n- Benchmarks: \ud83d\udfe8 `NA` (no blocks present)\n- Evals: \u2705 `PASS` (2/3 passed, 1 waived)\n- Spec Tests: \ud83d\udfe8 `NA` (no blocks present)\n- Agentic Targets: \ud83d\udfe8 `NA` (no blocks present)\n- All acceptance criteria passed.",
+    "acceptance_stages": []
+}

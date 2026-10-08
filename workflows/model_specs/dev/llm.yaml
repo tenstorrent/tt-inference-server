@@ -4965,6 +4965,58 @@ templates:
   status: EXPERIMENTAL
   docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:313787ed25a05be5654405d02a8136baba0a464283f03761dcc480b1a5410fef
 
+# GPU reference entries for the three Quetzal P300X2 rows above
+# (scripts/gpu_reference_colab/, docs/gpu_workflows.md). They are separate
+# templates, not extra devices inside the generated rows: the Quetzal handover
+# tool's --replace-row rewrites a generated block from its header through
+# `  status: EXPERIMENTAL`, and would silently drop a device added in there.
+# impl is quetzal so the GPU leaf shares the Quetzal row's impl and model_id
+# family (id_quetzal_<model>_gpu); it is the only (repo, GPU, VLLM) leaf for
+# each model, so `run.py --dev-mode --tt-device gpu --model <repo>` resolves it
+# without --impl. Each GPU spec pins the same HF revision as its Quetzal row,
+# and mirrors the row's limits so lm-eval truncates the same way:
+#   max_context     = min(Quetzal row max_context, config.json max_position_embeddings)
+#   max_concurrency = Quetzal row max_concurrency (lm-eval num_concurrent)
+- weights:
+  - upstage/SOLAR-10.7B-Instruct-v1.0
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32  # Quetzal P300X2 row
+    max_context: 4096  # min(row 4096, native max_position_embeddings 4096)
+    default_impl: true
+    vllm_args:
+      revision: 090d405e6fe7b4c7b0b999a67f5c6dee0514a7ad  # same as the Quetzal row
+      tokenizer_revision: 090d405e6fe7b4c7b0b999a67f5c6dee0514a7ad
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-1B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32  # Quetzal P300X2 row
+    max_context: 131072  # min(row 131072, native max_position_embeddings 131072)
+    default_impl: true
+    vllm_args:
+      revision: 4e20de362430cd3b72f300e6b0f18e50e7166e08  # same as the Quetzal row
+      tokenizer_revision: 4e20de362430cd3b72f300e6b0f18e50e7166e08
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen1.5-0.5B-Chat
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32  # Quetzal P300X2 row
+    max_context: 32768  # min(row 32768, native max_position_embeddings 32768)
+    default_impl: true
+    vllm_args:
+      revision: 4d14e384a4b037942bb3f3016665157c8bcb70ea  # same as the Quetzal row
+      tokenizer_revision: 4d14e384a4b037942bb3f3016665157c8bcb70ea
+  status: EXPERIMENTAL
+
 
 
 # Published TP4 implementation. Qualification is tracked in issue #5209.

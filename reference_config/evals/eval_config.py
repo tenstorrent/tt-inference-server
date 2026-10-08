@@ -5449,11 +5449,33 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
-            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
-            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
-            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # Awaiting a GPU reference: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+                # leaderboard_mmlu_pro (5-shot log-likelihood multiple choice, acc), which is not comparable to this
+                # 5-shot generative CoT task (exact_match,custom-extract), so published_score stays None. The like-for-like
+                # bar is a GPU run of this exact task (scripts/gpu_reference_colab/); until gpu_reference_score is filled
+                # the task runs and is graded NA. Settings are the ones the Quetzal Shield run used.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -6472,11 +6494,32 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
-            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
-            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
-            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # Awaiting a GPU reference: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+                # leaderboard_mmlu_pro (5-shot log-likelihood multiple choice, acc), which is not comparable to this
+                # 5-shot generative CoT task (exact_match,custom-extract), so published_score stays None. The like-for-like
+                # bar is a GPU run of this exact task (scripts/gpu_reference_colab/); until gpu_reference_score is filled
+                # the task runs and is graded NA. Settings are the ones the Quetzal Shield run used.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -7146,11 +7189,34 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
-            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
-            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
-            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # Awaiting a GPU reference: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
+                # leaderboard_mmlu_pro (5-shot log-likelihood multiple choice, acc), which is not comparable to this
+                # 5-shot generative CoT task (exact_match,custom-extract), so published_score stays None. The like-for-like
+                # bar is a GPU run of this exact task (scripts/gpu_reference_colab/); until gpu_reference_score is filled
+                # the task runs and is graded NA. Settings are the ones the Quetzal Shield run used.
+                # Context: max_position_embeddings is 4096, so long 5-shot CoT prompts are left-truncated; the GPU spec
+                # uses the same 4096 window as the P300X2 row, so truncation matches.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; no TTIS sibling, so the tasks follow the other non-Meta chat rows
