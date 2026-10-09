@@ -127,6 +127,54 @@ def _command_model_kwargs(command):
 # --- eval command and model-specific request contracts -----------------------
 
 
+def test_fewshot_as_multiturn_none_keeps_the_command_line_unchanged():
+    """An unset fewshot_as_multiturn passes no flag, so every existing config
+    builds exactly the command it built before the field existed."""
+    from dataclasses import replace
+
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5)
+    assert task.fewshot_as_multiturn is None
+    baseline = [str(part) for part in _build_eval_test_command(task)]
+    assert "--fewshot_as_multiturn" not in baseline
+    assert "--apply_chat_template" in baseline
+    explicit_none = replace(task, fewshot_as_multiturn=None)
+    assert [str(part) for part in _build_eval_test_command(explicit_none)] == baseline
+
+
+@pytest.mark.parametrize("value, flag", [(False, "false"), (True, "true")])
+def test_fewshot_as_multiturn_is_passed_when_set(value, flag):
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5, fewshot_as_multiturn=value)
+    command = [str(part) for part in _build_eval_test_command(task)]
+    assert command[command.index("--fewshot_as_multiturn") + 1] == flag
+    baseline = [
+        str(part)
+        for part in _build_eval_test_command(
+            EvalTask(task_name="mmlu_pro", num_fewshot=5)
+        )
+    ]
+    assert [p for p in command if p not in ("--fewshot_as_multiturn", flag)] == baseline
+
+
+def test_mistral_7b_mmlu_pro_runs_single_turn():
+    """Mistral's template rejects consecutive user turns, which mmlu_pro's
+    multiturn few-shot layout produces (its examples carry the answer in the
+    user turn); only that task opts out."""
+    tasks = {
+        t.task_name: t
+        for t in _eval_config_map["mistralai/Mistral-7B-Instruct-v0.3"].tasks
+    }
+    assert tasks["mmlu_pro"].fewshot_as_multiturn is False
+    assert tasks["ifeval"].fewshot_as_multiturn is None
+    others = [
+        (repo, t.task_name)
+        for repo, cfg in _eval_config_map.items()
+        for t in cfg.tasks
+        if getattr(t, "fewshot_as_multiturn", None) is not None
+        and repo != "mistralai/Mistral-7B-Instruct-v0.3"
+    ]
+    assert others == []
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])
@@ -521,6 +569,64 @@ class TestResultLoading:
         assert read.call_count == 2
         assert results == {"gpqa": {"acc,none": 0.9}}
         assert counts == ({"gpqa": new_count} if new_count is not None else {})
+
+    def test_mmlu_pro_group_count_feeds_the_noise_rule(self, tmp_path):
+        """lm-eval writes n-samples for mmlu_pro's 14 leaf subjects only. Its
+        group exact_match is the size-weighted mean of the leaves (one binomial
+        over every question), so the group's n is the leaf sum, which
+        _entry_sample_counts derives through group_subtasks and the noise rule
+        then uses for the single-key mmlu_pro score."""
+        subjects = {  # the real MMLU-Pro test split sizes (12,032 questions)
+            "biology": 717, "business": 789, "chemistry": 1132,
+            "computer_science": 410, "economics": 844, "engineering": 969,
+            "health": 818, "history": 381, "law": 1101, "math": 1351,
+            "other": 924, "philosophy": 499, "physics": 1299, "psychology": 798,
+        }  # fmt: skip
+        leaves = {f"mmlu_pro_{name}": n for name, n in subjects.items()}
+        correct = {leaf: n // 9 for leaf, n in leaves.items()}
+        group = sum(correct.values()) / sum(leaves.values())
+        results = {
+            "mmlu_pro": {"exact_match,custom-extract": group, "alias": "mmlu_pro"}
+        }
+        results.update(
+            {
+                leaf: {"exact_match,custom-extract": correct[leaf] / n}
+                for leaf, n in leaves.items()
+            }
+        )
+        path = tmp_path / "results_mmlu_pro.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "results": results,
+                    "configs": {
+                        leaf: {"task": leaf, "dataset_path": "TIGER-Lab/MMLU-Pro"}
+                        for leaf in leaves
+                    },
+                    "group_subtasks": {"mmlu_pro": list(leaves)},
+                    "n-samples": {
+                        leaf: {"original": n, "effective": n}
+                        for leaf, n in leaves.items()
+                    },
+                }
+            )
+        )
+
+        _, counts = mod.load_eval_results([str(path)])
+
+        assert counts["mmlu_pro"] == 12032
+        # Size-weighted: the group score is pooled correct / pooled n.
+        assert group == pytest.approx(
+            sum(
+                results[leaf]["exact_match,custom-extract"] * n
+                for leaf, n in leaves.items()
+            )
+            / 12032
+        )
+        assert (
+            mod.binomial_noise_n(["exact_match,custom-extract"], "mmlu_pro", counts)
+            == 12032.0
+        )
 
 
 # --- orchestration -----------------------------------------------------------

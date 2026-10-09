@@ -56,6 +56,25 @@ python run.py --workflow release --tt-device gpu --model <Model>
 
 Runs `evals` → `benchmarks` → `tests` → `reports` in sequence, all against the external vLLM. Use this for full release certification once individual workflows verify correctly.
 
+## Collecting GPU references on Google Colab
+
+[`scripts/gpu_reference_colab/`](../scripts/gpu_reference_colab/README.md) automates the bring-your-own-server flow above on a Google Colab GPU VM, using the [Colab CLI](https://github.com/googlecolab/google-colab-cli). For each model, the VM serves the HF repo with pinned upstream vLLM under its repo id and runs `run.py --workflow evals --tt-device gpu --dev-mode` at a pushed TTIS sha. These are full evals with no limits. The VM then sends back the eval reports and a `provenance.json`. The result is a like-for-like `gpu_reference_score`: the same task configs, context window, concurrency and HF revision as the Tenstorrent run.
+
+- **Prerequisites:** a Colab plan with H100 access, `uv`, the model's `- device: GPU` / `default_impl: true` entry in `workflows/model_specs/dev/llm.yaml`, and an HF token (`HF_TOKEN` or `~/.cache/huggingface/token`) for gated repos.
+- **One-time sign-in:** `uv tool install google-colab-cli && colab sessions`, then complete the sign-in.
+- **Run:** `scripts/gpu_reference_colab/colab_gpu_reference.sh --gpu H100,A100 upstage/SOLAR-10.7B-Instruct-v1.0 meta-llama/Llama-3.2-1B Qwen/Qwen1.5-0.5B-Chat`. `--gpu` is an ordered preference list, because Colab GPU capacity varies. The scores are bf16 vLLM references and are valid on either GPU, and the GPU the run got is recorded in `provenance.json`. Add `--dry-run` to see every `colab` command first. The script polls a detached runner and stops the VM on exit unless you pass `--keep`, and re-running the same command re-attaches.
+- **Sweep:** `colab_gpu_reference.sh --sweep [--dry-run] [--emit-patch]` picks its targets from the catalog instead of from a model list. It selects every ungated EvalConfig task, plus every task flagged with `gpu_reference_requested="<why>"`.
+  - **GPU specs:** a missing GPU spec is derived from the model's TT row; `--write-specs` writes it.
+  - **Placement:** each model goes into an A100-capable group or an H100-only group.
+  - **Resume:** finished models are downloaded as they complete, and re-running the same command resumes.
+  - **Outputs:** `sweep_summary.json`, a #5353 block, and a proposed `eval_config.patch` that is never applied automatically.
+- **Model sizes:** references are bf16 on one Colab GPU. Models up to about 14B can use `--gpu H100,A100`, and 27-32B models need `--gpu H100`. 70B is out of scope on Colab because it needs a multi-GPU machine. The preflight refuses a model whose bf16 weights do not fit the largest listed GPU, and it reports any `max_model_len` cap.
+- **Time and cost:** on one H100 (an A100 is slower), about 15-25 min of setup plus roughly 0.5-2.5 h per model. Most of that is MMLU-Pro chain-of-thought generation. Compute units are the H100 rate (`colab usage` while it runs) times wall hours.
+- **Outputs:** `workflow_logs/gpu_reference_colab/<session>/` holds `summary.txt` (per-model, per-task scores), the TTIS eval reports, and `provenance.json`. The provenance file records the GPU, driver, vLLM/torch/transformers, TTIS sha, model revision, exact `vllm serve` args, timestamps and the lm-eval commit.
+- **Using the results:** set the task's `gpu_reference_score` in `reference_config/evals/eval_config.py` to the reported score. Set `gpu_reference_score_ref` to a GitHub issue or PR comment that attaches `provenance.json` and the report JSON, or to the committed provenance file at a fixed sha. Leave the tolerances unchanged.
+
+See the [README](../scripts/gpu_reference_colab/README.md) for the step-by-step flow, resume and stop, the outputs layout and troubleshooting.
+
 ## Troubleshooting
 
 | Error | Cause | Fix |

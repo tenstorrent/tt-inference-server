@@ -328,6 +328,16 @@ class EvalTask:
     seed: int = 42
     use_chat_api: bool = False
     apply_chat_template: bool = True
+    # lm-eval --fewshot_as_multiturn. None keeps the harness default (the
+    # pinned harness turns it on whenever --apply_chat_template is set); set
+    # False/True only where a model's chat template needs the other layout.
+    fewshot_as_multiturn: Optional[bool] = None
+    # Why this task needs a (new) GPU reference from
+    # scripts/gpu_reference_colab/ --sweep, e.g. the published number measures a
+    # different checkpoint or setting. The sweep selects every task that sets it
+    # (even one with a gpu_reference_score) plus every ungated task; recording
+    # the reference clears it. Data only: never read when grading.
+    gpu_reference_requested: Optional[str] = None
     log_samples: bool = True
     # Opt-in: preserve the model's separate reasoning_content trace in the
     # per-sample logs (requires the chat API + a server that returns reasoning
@@ -3600,6 +3610,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_pro",
+                gpu_reference_requested="published 56.73 is the Qwen3-8B-Base checkpoint's MMLU-Pro, not this chat model's",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=56.73,
@@ -4175,11 +4186,19 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # mmlu_pro's few-shot examples put the worked answer inside the user turn, so the harness's default
+                # multiturn layout (on under --apply_chat_template) sends system + six consecutive user messages,
+                # which Mistral's chat template rejects ("conversation roles must alternate"). Single-turn renders
+                # all five examples into one user message. Set before the #5353 GPU reference was measured.
+                fewshot_as_multiturn=False,
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
-                    gpu_reference_score=29.12,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    # Re-measured single-turn on the pinned harness (vLLM 0.13.0 bf16, A100, 12,032 samples). The
+                    # previous 29.12 (#248) predates the harness auto-enabling multiturn few-shot, under which this
+                    # task now errors on Mistral's template (see fewshot_as_multiturn above).
+                    gpu_reference_score=32.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -4679,6 +4698,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_pro",
+                gpu_reference_requested="existing GPU ref 28.09 is about half of a fresh like-for-like GPU measurement (57.39, sweep edf41066)",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,
@@ -5401,8 +5421,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=11.09,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=10.91,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -5422,8 +5442,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=1.16,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/meta-llama/Llama-3.2-1B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=0.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -5449,11 +5469,33 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
-            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
-            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
-            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=11.03,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -6425,8 +6467,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=13.12,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=13.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6445,8 +6487,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=0.58,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen1.5-0.5B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=1.02,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -6472,11 +6514,32 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
-            # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
-            # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
-            # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
-            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
-            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=11.04,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -7099,8 +7162,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=40.3,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=43.44,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7119,6 +7182,693 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=5.22,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/upstage/SOLAR-10.7B-Instruct-v1.0/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
+                    gpu_reference_score=3.99,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                # The only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2 leaderboard_mmlu_pro (5-shot
+                # log-likelihood multiple choice, acc), which is not comparable to this 5-shot generative CoT task
+                # (exact_match,custom-extract), so published_score stays None. The bar is a GPU run of this exact task
+                # (scripts/gpu_reference_colab/, bf16 vLLM 0.13.0 on an A100, full 12,032 samples; issue #5353).
+                # Settings are the ones the Quetzal Shield run used.
+                # Context: max_position_embeddings is 4096, so long 5-shot CoT prompts are left-truncated; the GPU spec
+                # uses the same 4096 window as the P300X2 row, so truncation matches.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=13.54,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
+    # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-4B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=37.71,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=22.69,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=51.08,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
+    # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-8B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=34.94,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.19,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=56.13,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
+    # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 22960 on the A100; no request exceeded 4033 tokens (#5353).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-14B-Base",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=41.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=26.72,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=61.59,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); chat checkpoint
+    # without a TTIS sibling; tasks copied from the non-Meta chat rows (upstage/SOLAR-10.7B-Instruct-v1.0,
+    # chat template applied).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 48896 on the A100; no request exceeded 3894 tokens (#5353).
+    EvalConfig(
+        hf_model_repo="NousResearch/Hermes-3-Llama-3.1-8B",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=57.67,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                num_fewshot=4,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=8.8,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_multilevel_keys_mean,
+                    score_func_kwargs={
+                        "result_keys": [
+                            ("leaderboard_math_algebra_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_counting_and_prob_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_geometry_hard", "exact_match,none"),
+                            (
+                                "leaderboard_math_intermediate_algebra_hard",
+                                "exact_match,none",
+                            ),
+                            ("leaderboard_math_num_theory_hard", "exact_match,none"),
+                            ("leaderboard_math_prealgebra_hard", "exact_match,none"),
+                            ("leaderboard_math_precalculus_hard", "exact_match,none"),
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=41.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); task copied from
+    # deepcogito/cogito-v1-preview-llama-8B.
+    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
+    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    EvalConfig(
+        hf_model_repo="deepcogito/cogito-v1-preview-qwen-14B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); task copied from
+    # deepcogito/cogito-v1-preview-llama-8B.
+    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
+    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    EvalConfig(
+        hf_model_repo="deepcogito/cogito-v1-preview-qwen-32B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 2048,
+                    "until": [],
+                    "do_sample": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); reasoning
+    # checkpoint; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-8B.
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 57408 on the A100; no request exceeded 32942 tokens (#5353).
+    EvalConfig(
+        hf_model_repo="nvidia/Llama-3.1-Nemotron-Nano-8B-v1",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=53.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=51.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); reasoning
+    # checkpoint; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-8B.
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
+    EvalConfig(
+        hf_model_repo="open-thoughts/OpenThinker-7B",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=33.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=44.44,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                gen_kwargs={"stream": "false", "max_gen_toks": "32768"},
+                seed=42,
+            ),
+        ],
+    ),
+    # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); tasks copied
+    # from mistralai/Mistral-Small-3.1-24B-Instruct-2503.
+    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
+    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-24B-Instruct-2501",
+        tasks=[
+            EvalTask(
+                task_name="gpqa_diamond_cot_zeroshot",
+                num_fewshot=0,
+                use_chat_api=True,
+                max_concurrent=8,
+                gen_kwargs={
+                    "max_gen_toks": "1024",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,flexible-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="humaneval_instruct",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                allow_code_execution=True,
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "pass@1,create_test",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                apply_chat_template=True,
+                max_concurrent=8,
+                gen_kwargs={
+                    "max_gen_toks": "512",
+                    "do_sample": "false",
+                    "stream": "false",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2 (wave18); published scores from this checkpoint's Open LLM Leaderboard v2
+    # results JSON; GPU reference TBD.
+    EvalConfig(
+        hf_model_repo="01-ai/Yi-1.5-6B-Chat",
+        tasks=[
+            EvalTask(
+                task_name="leaderboard_ifeval",
+                gpu_reference_requested="Shield run 37890816505 failed math_hard against OLL; verify this OLL reference like-for-like too",
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 prompt_level_strict_acc (0-shot). The leaderboard's displayed "IFEval Raw" is the
+                # mean of prompt- and instruction-level strict acc (51.45); the TTIS key is prompt-level only.
+                score=EvalTaskScore(
+                    published_score=45.47,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-6B-Chat/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "prompt_level_strict_acc,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+            ),
+            EvalTask(
+                task_name="leaderboard_math_hard",
+                gpu_reference_requested="Shield run 37890816505 failed at 0.85 of the OLL reference; verify like-for-like",
+                num_fewshot=4,
+                # Chat template applied, as the cited Open LLM Leaderboard v2 run did: its results JSON records this
+                # checkpoint's tokenizer chat template (identical to the current HF main tokenizer chat template; the
+                # safetensors at the evaluated revision are also identical to main) and system_instruction=null.
+                # It records fewshot_as_multiturn=true, which the pinned harness defaults to under --apply_chat_template.
+                # Open LLM Leaderboard v2 MATH Lvl 5, 4-shot. published_score is the unweighted mean of the 7 subtask
+                # exact_match values in the cited JSON, matching score_multilevel_keys_mean; the leaderboard's
+                # displayed "MATH Lvl 5 Raw" is the sample-weighted group exact_match (16.24).
+                score=EvalTaskScore(
+                    published_score=14.43,
+                    published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/01-ai/Yi-1.5-6B-Chat/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
                     gpu_reference_score=None,
                     gpu_reference_score_ref="TBD",
                     score_func=score_multilevel_keys_mean,
@@ -7149,8 +7899,7 @@ _eval_config_list = [
             # mmlu_pro omitted: the only published MMLU-Pro for this checkpoint is Open LLM Leaderboard v2
             # leaderboard_mmlu_pro, which the pinned harness scores as 5-shot log-likelihood multiple choice (acc).
             # TTIS mmlu_pro generates a 5-shot chain of thought and extracts a letter (exact_match,custom-extract), so
-            # the two measure different behaviour and are not comparable. The matching leaderboard_mmlu_pro task needs
-            # prompt log-likelihoods from the server, which no TTIS config exercises today.
+            # the two measure different behaviour and are not comparable.
         ],
     ),
     # Quetzal (impl=quetzal) candidate on P300X2; no TTIS sibling, so the tasks follow the other non-Meta chat rows
@@ -7765,6 +8514,7 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mbpp_instruct",
+                gpu_reference_requested="published 90.2 is EvalPlus MBPP (378 problems, 0-shot), not TTIS mbpp_instruct",
                 allow_code_execution=True,
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 score=EvalTaskScore(
