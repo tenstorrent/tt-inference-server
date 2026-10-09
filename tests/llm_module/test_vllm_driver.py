@@ -322,9 +322,36 @@ class TestBenchmarkCacheSalt:
     def test_explicit_salt_pins_it(self):
         assert _salt(_argv(_config(cache_salt="pinned"))) == "pinned"
 
-    def test_prompts_are_unchanged(self):
-        # Prompt generation keeps vLLM's default seed so results stay comparable
-        # with the measured targets; only the cache keys are isolated.
-        assert "--seed" not in _argv(_config())
+    def test_custom_dataset_runs_carry_a_salt_too(self):
         custom = _argv(_config(custom_dataset_path=Path("/tmp/prompts.jsonl")))
         assert _salt(custom).startswith("bench-")
+
+
+class TestBenchmarkPromptSeed:
+    """The TT servers ignore cache_salt, so the prompts themselves must not
+    repeat: vLLM's random prompt i at one seed is a prefix of prompt i at a
+    longer ISL, and a repeated point replays it exactly."""
+
+    def _run_all(self, monkeypatch, tmp_path, configs):
+        from llm_module.config import DriverContext
+        from llm_module.drivers import vllm as driver_module
+
+        seen = []
+        monkeypatch.setattr(
+            driver_module, "run_command", lambda cmd, **kw: seen.append(cmd) or 1
+        )
+        driver = driver_module.VLLMBenchDriver(vllm_binary="/venv/bin/vllm")
+        for config in configs:
+            driver.run(config, _local_server(), DriverContext(output_dir=tmp_path))
+        return seen
+
+    def test_every_invocation_gets_its_own_seed(self, monkeypatch, tmp_path):
+        # A sweep over ISLs, the same point twice (warmup + rep), and a
+        # token-timing point: no two invocations may share prompts.
+        configs = [_config(isl=isl) for isl in (32768, 65536, 65536)]
+        configs.append(_config(isl=65536, token_timing=True))
+        seeds = [_seed(cmd) for cmd in self._run_all(monkeypatch, tmp_path, configs)]
+        assert len(set(seeds)) == len(configs)
+
+    def test_token_timing_has_a_single_seed_flag(self):
+        assert _argv(_config(token_timing=True)).count("--seed") == 1
