@@ -26,6 +26,8 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 ARG TT_METAL_COMMIT_SHA_OR_TAG
 ARG TT_METAL_SCM_VERSION=0.0.0+local
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
+# cap on compile parallelism (shared build hosts): cmake/ninja and make
+ARG BUILD_JOBS=16
 ARG CONTAINER_APP_UID=1000
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
@@ -80,7 +82,9 @@ RUN /bin/bash -c "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
     && . ${CARGO_HOME}/env \
     && rustup update"
 
-ENV UV_HTTP_RETRIES=10
+ENV UV_HTTP_RETRIES=10 \
+    CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS} \
+    MAKEFLAGS=-j${BUILD_JOBS}
 
 # tt-metal from the local export. The export has no .git, but setuptools_scm and
 # create_venv.sh expect a repo: a throwaway one exists only for this RUN and is removed.
