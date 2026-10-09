@@ -147,7 +147,12 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
    benchmark point requires each simultaneous request to be around 96K or
    shorter, and the two 80K Terminal request ceilings fit. The archived SWE
    cases peaked at 26,078 prompt tokens, leaving room for those trajectories,
-   though current-main stochastic paths can grow differently.
+   though current-main stochastic paths can grow differently. The largest
+   archived Terminal request lengths (prompt + completion) were 70,989 for
+   CompCert and 62,530 for QEMU. Their sum, 133,519, already exceeds a 128K
+   shared full-attention pool, so 192K is the smallest prepared 64K-step context
+   with headroom for that observed pair; it is not proven optimal until live
+   concurrent KV telemetry confirms it.
    The candidate requires device proof: startup/allocation, high page IDs,
    long prefill/decode, 1- and 2-request quality checks, and an agentic run
    without KV preemption before it can be selected. One host-side budget test
