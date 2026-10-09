@@ -336,6 +336,12 @@ occupancy, and about 20 seconds of near-zero generation around that point;
 two brief trace captures cannot by themselves explain it. This could be a
 transient first-pair/prefill scheduling effect. Repeat before treating 45.19
 tokens/s as representative steady-state C2 throughput at this shape.
+The dedicated generator's `prefill_forward` loops over prompt rows and calls
+`model.prefill_device` once per row. This serial prefill path is a plausible
+reason concurrent long-prompt TTFT grows more than decode TPOT; its device
+cost and scheduler overlap still require profiling. If C4 long-prompt
+results show the same pattern, batched or more overlapped prefill is a better
+next engineering target than merely raising agent concurrency.
 At 65K/128 C2 the server logged
 one waiting request in some samples despite reported KV usage below 60%,
 consistent with admission or logical-token constraints being relevant as
