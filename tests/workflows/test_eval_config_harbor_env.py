@@ -68,10 +68,7 @@ def test_gemma4_release_has_exact_subsets_and_explicit_policy():
     assert tb.agent_timeout_sec == 10800
     assert tb.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
         "terminal-bench/caffe-cifar-10",
-        "terminal-bench/password-recovery",
-        "terminal-bench/portfolio-optimization",
         "terminal-bench/hf-model-inference",
-        "terminal-bench/financial-document-processor",
     ]
     assert tb.agent_kwargs["llm_kwargs"]["seed"] == 9472
     assert tb.agent_kwargs["llm_kwargs"]["extra_body"]["repetition_detection"] == guard

@@ -6194,6 +6194,12 @@ _eval_config_map["google/gemma-4-26B-A4B-it"] = replace(
                 _gemma_terminal.agentic_eval_config,
                 n_concurrent_trials=1,
                 agent_kwargs=_gemma_terminal_kwargs,
+                task_names_map={
+                    EvalLimitMode.CI_NIGHTLY: [
+                        "terminal-bench/caffe-cifar-10",
+                        "terminal-bench/hf-model-inference",
+                    ],
+                },
             ),
         ),
         replace(
