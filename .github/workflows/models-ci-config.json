@@ -566,7 +566,6 @@
                 },
                 "release": {
                     "devices": [
-                        "P300X2",
                         "BH_GALAXY"
                     ]
                 }
