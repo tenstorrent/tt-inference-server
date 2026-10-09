@@ -1002,7 +1002,7 @@ class TestJobManager:
             assert job_manager.db.get_job_by_id("job-queued")["status"] == "cancelled"
 
     @pytest.mark.asyncio
-    async def test_cancel_queued_job_rechecks_assignment_after_publishing_cancel(
+    async def test_cancel_queued_job_finishes_when_worker_rejects_claim(
         self, job_manager, mock_request
     ):
         worker_assignment = SimpleNamespace(identity=None)
@@ -1044,6 +1044,20 @@ class TestJobManager:
             assert not job_manager._jobs["queued-cancel-claim-race"]._task.done()
         mark_worker_retiring.assert_not_called()
         replace_worker.assert_not_called()
+
+        # The worker's second cancellation check rejects the claim, clears its
+        # assignment and never publishes the start event.
+        worker_assignment.identity = None
+        await asyncio.sleep(0.6)
+
+        assert (
+            job_manager.get_job_metadata("queued-cancel-claim-race")["status"]
+            == JobStatus.CANCELLED
+        )
+        with job_manager._jobs_lock:
+            task = job_manager._jobs["queued-cancel-claim-race"]._task
+        if task is not None:
+            await asyncio.gather(task, return_exceptions=True)
 
     @pytest.mark.asyncio
     async def test_cancel_task_sets_cancel_event(self, job_manager, mock_request):

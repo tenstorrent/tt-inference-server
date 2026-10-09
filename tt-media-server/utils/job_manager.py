@@ -548,6 +548,17 @@ class JobManager:
     async def _mark_job_in_progress(self, job: Job):
         if job.start_event:
             while not job.start_event.is_set():
+                if (
+                    job.status == JobStatus.CANCELLING
+                    and job.cancel_event
+                    and job.cancel_event.is_set()
+                    and job.assigned_worker_identity() is None
+                ):
+                    self._logger.info(
+                        f"Job {job.id} was rejected by the worker during cancellation"
+                    )
+                    self._cleanup_job(job, force=True)
+                    return
                 await asyncio.sleep(0.5)
 
         if job.status == JobStatus.QUEUED:
