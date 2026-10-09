@@ -422,6 +422,42 @@ Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-c2-benchmark-kv192/` and
 `/home/mvasiljev/build/gemma-c2-benchmark-kv192-summary.json`.
 
+### C4 throughput and admission sweep
+
+The [C4 benchmark run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963865248)
+used the same Metal-main image, 256K context and dedicated model with
+inference-server `7e6ac75afa416ae28274d8a663809a039ddc3c44`. All 23
+attempted shapes completed with zero request failures. The release acceptance
+gate failed at 128/128 C4: 131.48 output tokens/s versus its 217.65
+`complete` threshold. The one-active-user points on the warmed C4 server
+were a median **1.29% slower** than on the warmed C2 server, so keeping four
+physical rows did not impose a large idle-row decode penalty in this sweep.
+
+| Input/output tokens | C2 active-two output tok/s | C4 active-four output tok/s | C4/C2 |
+| --- | ---: | ---: | ---: |
+| 128/128 | 72.56 | 131.48 | 1.81× |
+| 128/1024 | 72.82 | 142.75 | 1.96× |
+| 8,192/128 | 42.12 | 58.87 | 1.40× |
+| 8,192/1024 | 64.93 | 116.52 | 1.79× |
+| 10,000/1024 | 45.19 | 55.41 | 1.23× |
+| 16,384/128 | 28.44 | 35.21 | 1.24× |
+| 32,768/128 | 16.23 | 18.18 | 1.12× |
+
+The benchmark selector reduced the 65,536/128 point to three concurrent
+requests under the 256K shared context; C3 output was 7.96 tokens/s versus
+C2's 7.70. This is a practical limit on long-prompt C4 scaling. C4 reached
+four running requests, two waiting, and 75.9% peak sampled KV usage. Several
+waiting samples had only 17–38% KV usage, so prefill/scheduler admission is
+again involved; sampled occupancy alone does not establish page exhaustion.
+At 10K/1024 the first four C4 TTFTs were 13.2, 70.2, 70.5 and 80.5 seconds,
+while the next four were 2.6–5.3 seconds. The same cold-first-wave pattern
+appeared at C2 and on both KV sizes, but grows more severe at four requests.
+The mechanism has not been profiled. It argues for measuring and warming the
+expected active-count/prefill signatures before concluding that C4 is safe
+for tight latency deadlines. The raw artifact and numeric summary are under
+`/home/mvasiljev/build/gemma-c4-benchmark-main/` and
+`/home/mvasiljev/build/gemma-c4-benchmark-main-summary.json`.
+
 ## First current-main SWE result (C2, 9 October)
 
 The [C2 fixed-five SWE Verified run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962800664)
