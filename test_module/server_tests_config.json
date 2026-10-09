@@ -96,7 +96,8 @@
       "meta-llama/Llama-3.2-1B",
       "Qwen/Qwen2.5-Math-7B",
       "NousResearch/Hermes-3-Llama-3.2-3B",
-      "01-ai/Yi-1.5-6B-Chat"
+      "01-ai/Yi-1.5-6B-Chat",
+      "meta-llama/Llama-3.1-8B"
     ]
   },
   "available_markers": {
@@ -1013,6 +1014,16 @@
       "id_name": "01-ai--Yi-1.5-6B-Chat",
       "weights": [
         "01-ai/Yi-1.5-6B-Chat"
+      ]
+    },
+    "meta-llama/Llama-3.1-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "meta-llama--Llama-3.1-8B",
+      "weights": [
+        "meta-llama/Llama-3.1-8B"
       ]
     }
   },
