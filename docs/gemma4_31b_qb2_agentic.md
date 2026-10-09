@@ -910,6 +910,12 @@ offset that growth. C8 and C2 ran on the same `120-qb2-p04t05` host, which
 logged the 800 MHz versus 1350 MHz AICLK warning in both runs; C4 used a
 healthy host. C8 still differs in token volume and case paths, so these are
 suite-wall observations, not controlled model-throughput multipliers.
+Output tokens divided by evaluation wall were 20.8, 27.6 and 31.1 tokens/s
+at C2, C4 and C8, respectively. Those mixed-workload rates rise much less
+than the short 128/128 synthetic 72.6, 131.5 and 273.6 tokens/s points:
+frequent prefill, tool turns and case scheduling dilute the decode-batch
+gain. Different generated-token totals prevent treating the ratios as
+isolated model throughput.
 Ten of 267 server samples had waiting requests, the maximum sampled KV was
 67.9%, and no server preemption was logged. There is capacity margin for
 this ten-case SWE trajectory at 256K, though larger or longer cases need
