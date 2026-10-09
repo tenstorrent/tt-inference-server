@@ -757,8 +757,10 @@ class Scheduler:
 
                     if is_retiring:
                         try:
-                            self.replace_worker(
-                                worker_id, expected_pid=expected_process.pid
+                            await asyncio.to_thread(
+                                self.replace_worker,
+                                worker_id,
+                                expected_pid=expected_process.pid,
                             )
                         except Exception as e:
                             self.logger.error(
@@ -769,8 +771,10 @@ class Scheduler:
 
                     if restart_count < self.settings.max_worker_restart_count:
                         try:
-                            self.restart_worker(
-                                worker_id, expected_process=expected_process
+                            await asyncio.to_thread(
+                                self.restart_worker,
+                                worker_id,
+                                expected_process=expected_process,
                             )
                         except Exception as e:
                             self.logger.error(
