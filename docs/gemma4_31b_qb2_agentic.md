@@ -120,12 +120,22 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
   used the implementation ID instead of the required implementation **name**.
   These have no model scores.
 - The corrected [Terminal 2.0 baseline](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37955350355)
-  passes Shield's server-type resolution and is building its current-main
-  image. The SWE baseline will use that image to avoid a second build. Shield
+  built and published Metal-main image
+  `ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.24.0-2c1e1ebdd638886821f35113a5fd0d6335d71608-c62035d-113904451192`.
+  Its fixed-five device test is running. Shield
   invokes `run.py --dev-mode`, which passes the checked-out branch's model spec
   into Docker and mounts its source/config directories; this permits C1/C2/C4
   catalog experiments on the same Metal-main image without silently reusing
   the image's baked C1 catalog. The Metal KV-hook candidate needs a new image.
+
+The same published image is reused by [SWE C1](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962784599)
+(inference-server `fb5b77a4e26af79c455af2893babf1a9928bfc08`),
+[Terminal C2](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962790734)
+and [SWE C2](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962800664)
+(`ebb2cf2870b86df3edd5b6636a1503f1e9426c1d`), and
+[Terminal C4](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962796381)
+(`7e6ac75afa416ae28274d8a663809a039ddc3c44`). Each run uses the
+dedicated `gemma4-31b-qb2` implementation and the fixed-five task list.
 
 ## Candidates and acceptance
 
