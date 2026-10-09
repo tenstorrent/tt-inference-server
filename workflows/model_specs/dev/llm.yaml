@@ -5275,6 +5275,8 @@ templates:
     vllm_args:
       revision: 620fad32de7bdd2293b3d99b39eba2fe63e97438
       tokenizer_revision: 620fad32de7bdd2293b3d99b39eba2fe63e97438
+      # standard attention, as the TT (HF graph) side runs it
+      hf_overrides: {"dual_chunk_attention_config": null}
   status: EXPERIMENTAL
 - weights:
   - Qwen/Qwen2.5-7B-Instruct
@@ -5301,6 +5303,8 @@ templates:
     vllm_args:
       revision: e28526f7bb80e2a9c8af03b831a9af3812f18fba
       tokenizer_revision: e28526f7bb80e2a9c8af03b831a9af3812f18fba
+      # standard attention, as the TT (HF graph) side runs it
+      hf_overrides: {"dual_chunk_attention_config": null}
   status: EXPERIMENTAL
 - weights:
   - Qwen/Qwen2.5-Coder-32B-Instruct

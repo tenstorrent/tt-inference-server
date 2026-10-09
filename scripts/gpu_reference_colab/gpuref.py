@@ -23,6 +23,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -622,13 +623,37 @@ def derive_gpu_spec(model_rows, native_ctx: Optional[int]) -> Optional[Dict[str,
 
 
 def gpu_group(verdicts: Dict[str, Any]) -> Optional[str]:
-    """Run list for a model: "H100,A100" if its bf16 weights fit an A100
-    (fully or with a cap), "H100" if they need 80 GB, None if nothing fits."""
+    """Run list for a model: "A100,H100" if its bf16 weights fit an A100
+    (fully or with a cap) -- an A100 bills ~5.3 CU/hr against ~18 for an H100,
+    and the scores are valid on either -- "H100" if it needs 80 GB, None if
+    nothing fits."""
 
     def fits(gpu):
         return verdicts.get(gpu) == "fits" or isinstance(verdicts.get(gpu), dict)
 
-    return "H100,A100" if fits("A100") else "H100" if fits("H100") else None
+    return "A100,H100" if fits("A100") else "H100" if fits("H100") else None
+
+
+def derive_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
+    """vLLM hf_overrides that keep GPU serving like-for-like with TT. Quetzal
+    lowers the HF transformers graph, whose Qwen2 attention ignores
+    dual_chunk_attention_config (Qwen2.5-*-1M), so the TT side runs standard
+    attention; vLLM 0.13 would switch to dual-chunk attention (and fails to
+    start on FlashAttention). Identical for prompts within the chunk size."""
+    return (
+        {"dual_chunk_attention_config": None}
+        if "dual_chunk_attention_config" in config
+        else {}
+    )
+
+
+def derived_vllm_args(d: Dict[str, Any]) -> Dict[str, Any]:
+    args: Dict[str, Any] = {}
+    if d.get("revision"):
+        args.update(revision=d["revision"], tokenizer_revision=d["revision"])
+    if d.get("hf_overrides"):
+        args["hf_overrides"] = d["hf_overrides"]
+    return args
 
 
 def derived_specs_yaml(derived: Dict[str, Dict[str, Any]]) -> str:
@@ -639,32 +664,46 @@ def derived_specs_yaml(derived: Dict[str, Dict[str, Any]]) -> str:
             f"  device_model_specs:\n  - device: GPU\n    max_concurrency: {d['max_concurrency']}",
             f"    max_context: {d['max_context']}  # {d['source']}\n    default_impl: true",
         ]
-        if d["revision"]:
-            out.append(f"    vllm_args:\n      revision: {d['revision']}")
-            out.append(f"      tokenizer_revision: {d['revision']}")
+        args = derived_vllm_args(d)
+        if args:
+            out.append("    vllm_args:")
+        for key, value in args.items():
+            if key == "hf_overrides":
+                out.append(
+                    "      # standard attention, as the TT (HF graph) side runs it"
+                )
+                value = json.dumps(value)
+            out.append(f"      {key}: {value}")
         out.append("  status: EXPERIMENTAL")
     return "\n".join(out)
 
 
-def write_derived_specs(text: str, derived: Dict[str, Dict[str, Any]]) -> str:
-    """llm.yaml text with the derived entries added to the generated block."""
-    if not derived:
-        return text
+def block_models(text: str) -> List[str]:
+    """Models whose GPU spec lives in the generated block of llm.yaml."""
     if SPEC_BEGIN not in text:
-        return (
-            text.rstrip("\n")
-            + f"\n\n{SPEC_BEGIN}\n{derived_specs_yaml(derived)}\n{SPEC_END}\n"
-        )
-    end = text.index(SPEC_END)
-    return text[:end] + derived_specs_yaml(derived) + "\n" + text[end:]
+        return []
+    block = text[text.index(SPEC_BEGIN) : text.index(SPEC_END)]
+    return re.findall(r"^- weights:\n  - (\S+)", block, re.M)
 
 
-def finished_models(results_root: Path, sha: Optional[str] = None) -> Dict[str, Path]:
-    """model -> newest results dir where it finished ok (at sha, if given)."""
+def write_derived_specs(text: str, derived: Dict[str, Dict[str, Any]]) -> str:
+    """llm.yaml text with the generated block replaced by `derived` (the block
+    is regenerated in full, so a rule change reaches every derived spec)."""
+    block = (
+        f"{SPEC_BEGIN}\n{derived_specs_yaml(derived)}\n{SPEC_END}\n" if derived else ""
+    )
+    if SPEC_BEGIN in text:
+        end = text.index(SPEC_END) + len(SPEC_END) + 1
+        return text[: text.index(SPEC_BEGIN)] + block + text[end:]
+    return text.rstrip("\n") + "\n\n" + block if block else text
+
+
+def finished_models(results_root: Path) -> Dict[str, Any]:
+    """model -> (finished_at, results dir, provenance) of its newest ok run."""
     done: Dict[str, Any] = {}
     for prov_path in results_root.glob("*/results/*/provenance.json"):
         prov = load_json(prov_path) or {}
-        if prov.get("status") != "ok" or (sha and prov.get("ttis_sha") != sha):
+        if prov.get("status") != "ok":
             continue
         model, stamp = prov.get("model"), prov.get("finished_at") or ""
         if model not in done or stamp > done[model][0]:
@@ -672,39 +711,72 @@ def finished_models(results_root: Path, sha: Optional[str] = None) -> Dict[str, 
     return done
 
 
+def run_covers(
+    prov: Dict[str, Any], results_dir: Path, argv: List[str], tasks: List[str]
+) -> bool:
+    """A finished run counts for resume only if it served exactly this plan
+    (same vllm serve args: revision, context, flags) and scored every task."""
+    scored = {
+        r["task"]
+        for r in summary_rows(results_dir.parent)
+        if r["model"] == prov.get("model")
+    }
+    return (prov.get("vllm_serve_command") or [None])[1:] == argv and set(
+        tasks
+    ) <= scored
+
+
 def sweep_plan(sha: str, results_root: Path, refresh: bool = False):
     tasks, rows = catalog_facts()
     targets, skipped = select_targets(tasks, rows, refresh)
+    from workflows.model_spec import DeviceModelSpec, DeviceTypes, get_model_id
+
+    yaml_text = (
+        REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    ).read_text()
+    generated = set(block_models(yaml_text))
     token, derived, groups, placed = hf_token(), {}, {}, {}
-    done = finished_models(results_root, sha)
+    finished = finished_models(results_root)
     for model in sorted({t["model"] for t in targets}):
-        if any(r["device"] == "GPU" for r in rows[model]):
+        has_gpu = any(r["device"] == "GPU" for r in rows[model])
+        if has_gpu and model not in generated:
             plan = serve_plan(load_gpu_spec(model))
-        else:
+        else:  # (re)derive: no GPU spec yet, or one this sweep generated
             rev = next(
                 (r["revision"] for r in rows[model] if r["impl"] == "quetzal"), None
             )
             config = (
                 hf_get(f"{HF}/{model}/resolve/{rev or 'main'}/config.json", token) or {}
             )
-            derived[model] = derive_gpu_spec(
-                rows[model], config.get("max_position_embeddings")
+            d = derive_gpu_spec(rows[model], config.get("max_position_embeddings"))
+            if not d["revision"]:  # pin the Hub's current main
+                d["revision"] = (
+                    hf_get(f"{HF}/api/models/{model}/revision/main", token) or {}
+                ).get("sha")
+            d["hf_overrides"] = derive_overrides(config)
+            derived[model] = d
+            dms = DeviceModelSpec(device=DeviceTypes.GPU, max_concurrency=d["max_concurrency"],
+                                  max_context=d["max_context"], default_impl=True,
+                                  vllm_args=derived_vllm_args(d))  # fmt: skip
+            dms.vllm_args.setdefault("model", model)
+            model_id = get_model_id(
+                d["impl"].replace("_", "-"), model.split("/")[-1], "gpu"
             )
-            if not derived[model]["revision"]:  # pin the Hub's current main
-                main = hf_get(f"{HF}/api/models/{model}/revision/main", token) or {}
-                derived[model]["revision"] = main.get("sha")
-            plan = {
-                k: derived[model][k]
-                for k in ("revision", "max_context", "max_concurrency")
-            }
+            plan = serve_plan(
+                SimpleNamespace(
+                    device_model_spec=dms, hf_model_repo=model, model_id=model_id
+                )
+            )
         facts = model_facts(model, plan, token)
         memory = facts["memory"] or {}
+        model_tasks = [t["task"] for t in targets if t["model"] == model]
+        prior = finished.get(model)
         placed[model] = {
             "group": gpu_group(memory.get("verdicts") or {}),
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
-            "done": model in done,
-        }
+            "done": bool(prior) and run_covers(prior[2], prior[1], plan["vllm_serve_args"], model_tasks),
+        }  # fmt: skip
     kept = []
     for t in targets:
         info = placed[t["model"]]
@@ -715,20 +787,18 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False):
                 )
             )
             continue
-        kept.append(dict(t, **info))
+        kept.append(
+            dict(t, **info, spec="derived" if t["model"] in derived else "existing")
+        )
         if not info["done"]:
-            groups.setdefault(info["group"], [])
-            if t["model"] not in groups[info["group"]]:
-                groups[info["group"]].append(t["model"])
+            group = groups.setdefault(info["group"], [])
+            if t["model"] not in group:
+                group.append(t["model"])
     placeable = {t["model"] for t in kept}
     derived = {m: d for m, d in derived.items() if m in placeable}
-    return {
-        "sha": sha,
-        "targets": kept,
-        "skipped": skipped,
-        "groups": groups,
-        "derived": derived,
-    }
+    stale = write_derived_specs(yaml_text, derived) != yaml_text
+    return {"sha": sha, "targets": kept, "skipped": skipped, "groups": groups,
+            "derived": derived, "specs_stale": stale}  # fmt: skip
 
 
 def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) -> str:
@@ -923,7 +993,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 file=sys.stderr,
             )
         yaml_path = REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
-        if plan["derived"] and args.write_specs:
+        if plan["specs_stale"] and args.write_specs:
             yaml_path.write_text(
                 write_derived_specs(yaml_path.read_text(), plan["derived"])
             )
@@ -932,7 +1002,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
         for group, models in plan["groups"].items():
             print(group + "\t" + " ".join(models))
-        return 2 if plan["derived"] else 0  # 2: specs must be committed first
+        return 2 if plan["specs_stale"] else 0  # 2: commit specs first
     if args.cmd == "sweep":  # report
         plan = load_json(Path(args.plan))
         rows = sweep_results(

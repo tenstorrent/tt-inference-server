@@ -68,19 +68,23 @@ scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --min-balance 4000 --
 
 **GPU specs.** A target model without a GPU spec gets one derived from its TT row: its Quetzal row first, otherwise its default TT rows. It keeps the row's `max_concurrency`, `max_context` is capped at the native `max_position_embeddings`, and the HF revision is pinned.
 
+If the HF config carries `dual_chunk_attention_config` (the Qwen2.5-*-1M models), the spec adds `hf_overrides` that remove it. Quetzal lowers the HF transformers graph, which ignores that setting, so standard attention on the GPU is the like-for-like reference.
+
+The generated block is regenerated in full on every `--write-specs`, so a change to a derivation rule reaches every derived spec.
+
 1. `--write-specs` adds the derived entries to a generated block at the end of `workflows/model_specs/dev/llm.yaml`.
 2. Review that change, commit it and push it. The VM runs the pushed sha.
 
 **Placement and sessions.** The memory preflight places each model:
 
-- on `H100,A100` if its bf16 weights fit a 40 GB A100, even if only with a `max_model_len` cap;
+- on `A100,H100` (A100 first) if its bf16 weights fit a 40 GB A100, even if only with a `max_model_len` cap;
 - on `H100` if it needs 80 GB.
 
 Each group runs in one session, named `gpuref-sweep-{a100,h100}-<sha8>`.
 
 **Resume.** Each finished model is downloaded as soon as it completes. Re-running the same command, which is recorded in `workflow_logs/gpu_reference_colab/RESUME.txt`, does two things:
 
-- skips models that already finished `ok` at that sha;
+- skips models whose latest `ok` run used exactly the same `vllm serve` arguments (revision, context, flags) and scored every target task;
 - re-attaches to a session that is still running.
 
 `--min-balance` is checked before each group and at every poll.
@@ -90,7 +94,9 @@ Each group runs in one session, named `gpuref-sweep-{a100,h100}-<sha8>`.
 - `sweep_plan.json`;
 - `sweep_summary.json`: GPU score, samples, TT score, cap and longest request per task;
 - `sweep_5353.md`: ready to paste into #5353;
-- with `--emit-patch`, a proposed `eval_config.patch`. It sets `gpu_reference_score` and `gpu_reference_score_ref` and clears `gpu_reference_requested`. **It is never applied automatically**: review it, then `git apply` it.
+- with `--emit-patch`, a proposed `eval_config.patch`. It records new references and clears `gpu_reference_requested`.
+  - Where a task already has a GPU reference, the patch replaces it only if the new score differs by more than TTIS's noise rule (1.96 binomial SE at the old score). Otherwise it keeps the old reference and just clears the flag.
+  - **It is never applied automatically**: review it, then `git apply` it.
 
 Only whole models can be run, because `run.py` evaluates every task in a config. Any non-target tasks are measured too, but they are not proposed.
 
@@ -108,7 +114,7 @@ The token never appears on a command line, in a log, or in exec code.
 
 Colab answers `503 Service Unavailable` when it has no capacity. Each `--gpu` type gets 3 attempts with 120 s and 240 s backoff before the driver moves to the next type. Any other refusal moves on at once.
 
-**Cost.** An A100 bills about 5.3 CU/hr; check with `colab usage`. Batch 1 took 2.4 h and 11.6 CU: SOLAR-10.7B, Llama-3.2-1B and Qwen1.5-0.5B on an A100, with most of the time spent on MMLU-Pro CoT.
+**Cost.** An A100 bills about 5.3 CU/hr and an H100 about 18 CU/hr (measured 2026-10-09). The scores are valid on either GPU, so a model whose weights fit an A100 should list A100 first; the sweep places such models on `A100,H100`. Check the rate with `colab usage`. Batch 1 took 2.4 h and 11.6 CU: SOLAR-10.7B, Llama-3.2-1B and Qwen1.5-0.5B on an A100, with most of the time spent on MMLU-Pro CoT.
 
 The scores are bf16 vLLM references and valid on either GPU. The GPU you actually got is recorded in `provenance.json` and in the `gpu` column of the summary.
 

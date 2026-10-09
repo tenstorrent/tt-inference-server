@@ -589,8 +589,8 @@ def test_select_targets_ungated_flagged_and_exclusions():
 
 
 def test_gpu_group_placement():
-    assert gpuref.gpu_group({"A100": "fits", "H100": "fits"}) == "H100,A100"
-    assert gpuref.gpu_group({"A100": {"cap": 20000}, "H100": "fits"}) == "H100,A100"
+    assert gpuref.gpu_group({"A100": "fits", "H100": "fits"}) == "A100,H100"
+    assert gpuref.gpu_group({"A100": {"cap": 20000}, "H100": "fits"}) == "A100,H100"
     assert gpuref.gpu_group({"A100": "no", "H100": {"cap": 21000}}) == "H100"
     assert gpuref.gpu_group({"A100": "no", "H100": "no"}) is None  # 70B: skipped
 
@@ -616,21 +616,66 @@ def test_derive_gpu_spec_prefers_quetzal_row_and_caps_native_context():
     assert gpuref.derive_gpu_spec([_spec_row("GPU")], 4096) is None
 
 
-def test_write_derived_specs_appends_a_loadable_generated_block():
+def test_write_derived_specs_regenerates_a_loadable_block():
     import yaml
 
-    derived = {"org/m": {"impl": "quetzal", "max_context": 4096, "max_concurrency": 32,
-                         "revision": "abc", "source": "quetzal P300X2 row"}}  # fmt: skip
-    text = gpuref.write_derived_specs("templates:\n- weights:\n  - org/x\n", derived)
-    assert gpuref.SPEC_BEGIN in text and gpuref.SPEC_END in text
-    more = gpuref.write_derived_specs(text, {"org/n": dict(derived["org/m"])})
-    assert more.count(gpuref.SPEC_BEGIN) == 1
-    entries = yaml.safe_load(more)["templates"]
-    gpu = {e["weights"][0]: e["device_model_specs"][0] for e in entries[1:]}
-    assert gpu["org/m"] == {"device": "GPU", "max_concurrency": 32, "max_context": 4096,
-                            "default_impl": True,
-                            "vllm_args": {"revision": "abc", "tokenizer_revision": "abc"}}  # fmt: skip
-    assert set(gpu) == {"org/m", "org/n"}
+    base = {"impl": "quetzal", "max_context": 4096, "max_concurrency": 32,
+            "revision": "abc", "source": "quetzal P300X2 row"}  # fmt: skip
+    one_m = dict(base, hf_overrides={"dual_chunk_attention_config": None})
+    text = gpuref.write_derived_specs(
+        "templates:\n- weights:\n  - org/x\n", {"org/m": base}
+    )
+    assert gpuref.block_models(text) == ["org/m"]
+    # Regenerated in full: a rule change reaches every derived spec, once.
+    text = gpuref.write_derived_specs(text, {"org/m": base, "org/one-m": one_m})
+    assert text.count(gpuref.SPEC_BEGIN) == 1
+    assert gpuref.block_models(text) == ["org/m", "org/one-m"]
+    entries = {
+        e["weights"][0]: e["device_model_specs"][0]
+        for e in yaml.safe_load(text)["templates"]
+        if "device_model_specs" in e
+    }
+    assert entries["org/m"] == {"device": "GPU", "max_concurrency": 32, "max_context": 4096,
+                                "default_impl": True,
+                                "vllm_args": {"revision": "abc", "tokenizer_revision": "abc"}}  # fmt: skip
+    assert entries["org/one-m"]["vllm_args"]["hf_overrides"] == {
+        "dual_chunk_attention_config": None
+    }
+    # The overrides reach vllm serve as JSON.
+    flags = gpuref.vllm_flags(entries["org/one-m"]["vllm_args"])
+    assert (
+        flags[flags.index("--hf-overrides") + 1]
+        == '{"dual_chunk_attention_config": null}'
+    )
+
+
+def test_derive_overrides_disables_dual_chunk_attention_only_when_present():
+    assert gpuref.derive_overrides(
+        {"dual_chunk_attention_config": {"chunk_size": 262144}}
+    ) == {"dual_chunk_attention_config": None}
+    assert gpuref.derive_overrides({"max_position_embeddings": 32768}) == {}
+
+
+def test_resume_needs_the_same_serve_args_and_every_task(tmp_path):
+    session = tmp_path / "gpuref-sweep-a100-x"
+    data = session / "workflow_logs" / "reports_output" / "evals" / "data"
+    data.mkdir(parents=True)
+    report = json.loads(FIXTURE.read_text())  # SOLAR: ifeval, math_hard, mmlu_pro
+    (data / "report_data_x.json").write_text(json.dumps(report))
+    model = report["metadata"]["model_repo"]
+    prov = {
+        "model": model,
+        "status": "ok",
+        "vllm_serve_command": ["vllm", "serve", model, "--x", "1"],
+    }
+    results = session / "results"
+    assert gpuref.run_covers(prov, results, ["serve", model, "--x", "1"], ["mmlu_pro"])
+    assert not gpuref.run_covers(
+        prov, results, ["serve", model, "--x", "2"], ["mmlu_pro"]
+    )
+    assert not gpuref.run_covers(
+        prov, results, ["serve", model, "--x", "1"], ["humaneval"]
+    )
 
 
 def test_patch_eval_config_sets_reference_and_clears_request():
