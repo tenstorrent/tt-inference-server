@@ -80,8 +80,9 @@ commits, task lists, or agent policies are kept separate.
 
 The same run's SWE cases resolved Django 11299 (1/5 overall). Astropy 14096,
 Matplotlib 25332, Sympy 13551 and scikit-learn 14629 did not resolve. The
-Mini-SWE-Agent trajectories recorded 32–50 API calls per case, but their
-archived summary lacks per-case wall and token timings.
+Mini-SWE-Agent trajectories recorded 32–50 API calls per case and a maximum
+individual prompt of 26,078 tokens. Extracted output totals ranged from 7,621
+to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
 
 ## Current-main baseline setup
 
@@ -139,7 +140,14 @@ archived summary lacks per-case wall and token timings.
    the same pool as main. The hook requests 355,584 tokens at C2/256K and
    290,048 at C2/192K, including sliding-window and in-flight headroom, before
    the plugin's additional per-request output pages. The 64K/16K Terminal
-   request budgets fit below 192K.
+   request budgets fit below 192K. The inference-server benchmark selector
+   still caps **combined logical** in-flight tokens at the 192K context by
+   default; the hook's extra 93K covers five sliding groups and prefill
+   headroom, not another 93K of full-attention logical context. Thus a C2
+   benchmark point requires each simultaneous request to be around 96K or
+   shorter, and the two 80K Terminal request ceilings fit. The archived SWE
+   cases peaked at 26,078 prompt tokens, leaving room for those trajectories,
+   though current-main stochastic paths can grow differently.
    The candidate requires device proof: startup/allocation, high page IDs,
    long prefill/decode, 1- and 2-request quality checks, and an agentic run
    without KV preemption before it can be selected. One host-side budget test

@@ -173,8 +173,23 @@ def summarize_task(path):
                 trajectories / case_id / f"{case_id}.traj.json" if case_id else None
             )
             info = {}
+            usages = []
             if trajectory and trajectory.exists():
-                info = json.loads(trajectory.read_text()).get("info") or {}
+                trajectory_data = json.loads(trajectory.read_text())
+                info = trajectory_data.get("info") or {}
+                usages = [
+                    usage
+                    for message in trajectory_data.get("messages") or []
+                    if (
+                        usage := (
+                            ((message.get("extra") or {}).get("response") or {}).get(
+                                "usage"
+                            )
+                            or {}
+                        )
+                    ).get("prompt_tokens")
+                    is not None
+                ]
             model_stats = info.get("model_stats") or {}
             cases.append(
                 {
@@ -184,6 +199,18 @@ def summarize_task(path):
                     ).get("reward"),
                     "api_calls": model_stats.get("api_calls"),
                     "exit_status": info.get("exit_status"),
+                    "max_prompt_tokens": max(
+                        (usage["prompt_tokens"] for usage in usages), default=None
+                    ),
+                    "max_total_tokens": max(
+                        (usage.get("total_tokens") or 0 for usage in usages),
+                        default=None,
+                    ),
+                    "output_tokens": sum(
+                        usage.get("completion_tokens") or 0 for usage in usages
+                    )
+                    if usages
+                    else None,
                 }
             )
     result = {
