@@ -13,6 +13,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE fixed five, C4 | 2/5 solved, 29.6 min evaluation | Retained both previously solved cases; 800 MHz AICLK warning on this runner |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
+| C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
 | C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
 | Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C1 and C2/192K pending; paths and token volume differ |
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
@@ -579,6 +580,55 @@ persists across separate jobs on the same host, while a fresh host can still
 pay the cold cost. Raw later-main artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-c4-benchmark-later-main/` and
 `/home/mvasiljev/build/gemma-c4-benchmark-later-main-summary.json`.
+
+### C8 throughput, admission and trace granularity
+
+The [pinned-main C8 benchmark](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37984140248)
+used the same Metal image as C2/C4 and inference-server
+`5f0374c51d6d883767f48af4c63a5027c2883437`, which changes physical
+decode rows and maximum agent trials to eight. It completed **all 23
+synthetic shapes with zero failed requests** and the CI benchmark run
+passed. The 128/128 active-eight point produced **273.57 output tokens/s**,
+above the release `complete` threshold of 217.65; C4 active-four reached
+131.48 on another healthy runner. This establishes useful higher-batch
+synthetic capacity, not an eight-agent quality or suite-wall result.
+
+| Input/output tokens | C4 active-four tok/s | C8 active-eight tok/s | C8/C4 |
+| --- | ---: | ---: | ---: |
+| 128/128 | 131.48 | 273.57 | 2.08× |
+| 128/1024 | 142.75 | 311.22 | 2.18× |
+| 1,024/128 | 120.73 | 226.11 | 1.87× |
+| 4,096/128 | 81.53 | 121.12 | 1.49× |
+| 8,192/128 | 58.87 | 75.82 | 1.29× |
+| 8,192/1024 | 116.52 | 210.43 | 1.81× |
+| 10,000/1024 | 55.41 | 79.08 | 1.43× |
+| 16,384/128 | 35.21 | 40.83 | 1.16× |
+
+At 32K/128, the shared-context selector capped C8 to seven live requests:
+19.46 tokens/s versus C4's four-user 18.18, only a 1.07× gain. At
+65K/128 both variants were capped to three users (8.09 versus 7.96
+tokens/s), and 131K permitted one. This continues the sharp decline in
+batch gains as serial per-row prefill and shared-context admission dominate.
+The C8 server's one-active points were a median **7.0% faster** than C4's
+one-active points across the 12 matched shapes, so there is no observed
+idle-row penalty in this cross-host sweep. C8 ran on `qb2-120-p05t02` and
+C4 on `120-qb2-p05t01`; neither logged an AICLK clamp, but host effects
+remain unmeasured and prevent attributing that single-user difference to
+physical batch size.
+
+C8 reached eight running requests, six waiting requests, and 71.4% peak
+sampled KV use. Waiting appeared in **27/171 samples (15.8%)**, compared
+with C4's 12/159 (7.5%). Several C8 waiting intervals had only 16–36%
+sampled KV use and no preemption was logged, again pointing to prefill or
+scheduler admission rather than a simple page-capacity limit. At 10K/1024
+the first eight TTFTs spanned **13.1–135.3 seconds**; the next eight were
+2.6–6.7 seconds. The larger cold burst makes eight concurrent agents a
+latency risk until expected prefill signatures can be warmed or the stall
+is fixed. One physical-eight trace can serve logical counts one through
+eight without a runtime batch switch, but the current evidence does not
+justify replacing C4 or C2 for long-prompt Terminal jobs. Raw artifacts
+and numeric summary are under `/home/mvasiljev/build/gemma-c8-benchmark-main/`
+and `/home/mvasiljev/build/gemma-c8-benchmark-main-summary.json`.
 
 ## First current-main SWE result (C2, 9 October)
 
