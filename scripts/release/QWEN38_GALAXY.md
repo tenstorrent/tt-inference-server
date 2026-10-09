@@ -98,6 +98,29 @@ The host qualification controller still has bounded startup, evaluation and tota
 runtime timeouts. Kubernetes uses a two-hour startup budget, then normal health
 probes. No device reset or host setup runs during the image build.
 
+## Check an imported OCI image
+
+On Docker's containerd image store, an imported image may use its OCI manifest
+digest as `Id`; the legacy image store uses the config digest. Do not assume the
+config digest is a runnable image reference. Validate the imported object against
+both immutable digests recorded by the build:
+
+```bash
+python scripts/release/verify_local_oci_image.py \
+  --archive /path/to/image.oci.tar \
+  --manifest-digest sha256:ACTUAL_MANIFEST_DIGEST \
+  --config-digest sha256:ACTUAL_CONFIG_DIGEST \
+  --output /path/to/new-identity-receipt.json
+```
+
+This reads pinned metadata blobs and checks their hashes, the manifest-to-config
+link, platform, ordered root filesystem layers, and runtime configuration against
+Docker inspection. It neither imports nor runs the image. Layer payloads are not
+rehashed here; retain the transfer archive checksum and Docker import evidence
+separately. The returned `image_id` is usable for subsequent local checks. It is
+not a registry publication or inference qualification. This check passed on the
+imported native v5 image on Oct 9; its runtime/startup probes remain separate.
+
 ## Helm handoff
 
 Publish the built image to the intended registry, record its **actual digest**,
@@ -132,9 +155,12 @@ reproduce.
 
 ## Preparing an alternate precision policy
 
-The queued BFP8/HiFi2-head experiment requires its own passing G0 receipt and
-full GPQA result. If it qualifies, commit the exact tested runtime and policy to
-a separate model-source revision, then prepare a new bundle:
+The BFP8/HiFi2-head experiment completed 166/198 and did not qualify. A full
+BFP8 decoder experiment is now running after improving the short reference
+comparison. It still requires its own passing G0 receipt and full GPQA result.
+If a policy qualifies, commit the exact tested runtime and policy to a separate
+model-source revision, then prepare a new bundle (this example shows the
+head-only policy; substitute the exact qualified policy):
 
 ```bash
 python scripts/release/prepare_qwen38_galaxy.py \
