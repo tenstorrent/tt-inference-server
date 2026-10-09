@@ -494,6 +494,14 @@ expected active-count/prefill signatures before concluding that C4 is safe
 for tight latency deadlines. The raw artifact and numeric summary are under
 `/home/mvasiljev/build/gemma-c4-benchmark-main/` and
 `/home/mvasiljev/build/gemma-c4-benchmark-main-summary.json`.
+During the cold 10K C4 wave, server samples from 18:34:20 through 18:35:10
+showed two or three running requests, one or two waiting, only 17–23% KV
+usage, and near-zero generation; samples from 18:34:30 through 18:35:10
+also showed zero prompt throughput. The trace warm/capture log immediately
+before this interval lasted about 0.25 seconds, far short of the 50-second
+quiet period. This narrows the likely delay to prefill/device work or
+scheduler admission rather than trace capture or KV capacity, but the logs
+still do not separate compilation from device execution.
 One source-level clue: the vLLM scheduler caps each prefill step at 8,192
 tokens, while the model processes those steps row by row and uses internal
 6,656-token full-attention or 1,024-token sliding chunks. A 10K prompt needs
