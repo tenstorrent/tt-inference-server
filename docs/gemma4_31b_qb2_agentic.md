@@ -334,6 +334,12 @@ well as physical page occupancy. This is not yet proof of the exact cause;
 review the C4 and 192K sweeps and agentic timing before selecting concurrency.
 
 The complete raw benchmark JSON and server log are downloaded locally under
-`/home/mvasiljev/build/gemma-c2-benchmark-main/`. The C4 and C2/192K
+`/home/mvasiljev/build/gemma-c2-benchmark-main/`. To extract numeric points,
+individual TTFTs and peak server KV/waiting observations from this or a
+subsequent benchmark artifact, run
+`python3 scripts/gemma4_benchmark_summary.py ARTIFACT_DIR --output summary.json`.
+This parser omits generated text. For the C2 run it found 23 completed points,
+zero failed requests, peak two running/one waiting request, and peak 59% KV
+usage. The C4 and C2/192K
 sweeps are queued/running respectively. None of these synthetic points
 measures official Terminal or SWE rewards.
