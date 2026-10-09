@@ -222,19 +222,20 @@ is queued for a clean runner.
    shared full-attention pool, so 192K is the smallest prepared 64K-step context
    with headroom for that observed pair; it is not proven optimal until live
    concurrent KV telemetry confirms it.
-   The candidate requires device proof: startup/allocation, high page IDs,
+   The candidate requires startup/allocation, high page IDs,
    long prefill/decode, 1- and 2-request quality checks, and an agentic run
-   without KV preemption before it can be selected. One host-side budget test
-   and Ruff/pre-commit pass; no device claim is made yet. Its
+   without harmful KV preemption before it can be selected. A host-side
+   budget test and Ruff/pre-commit pass. Its
    [benchmark dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37956805379)
    built a separate image from Metal `6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94`
    and inference-server `84c126298977df6f3d90ff2ea1313c7a255ec4c8`:
    `ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.24.0-6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94-c62035d-113909389966`.
-   Hardware benchmark results are still pending. The
+   Hardware benchmark startup and all 23 synthetic request shapes completed;
+   throughput and KV details appear below. The
    [fixed-five Terminal C2/192K job](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37964456985)
    is queued on that image with inference-server
-   `6682a78c8a1009934838f58b3070927973ec7f4f`; cancel it before model
-   work if the preceding KV benchmark fails startup or correctness.
+   `6682a78c8a1009934838f58b3070927973ec7f4f`; it still needs the
+   fixed-case reward and waiting/preemption check.
 3. [C2 thinking-off pilot](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-thinkoff):
    changes only the server's `enable_thinking` default. Granite's fixed-case
    pilot reduced output volume markedly, and Gemma's archived latency fit
@@ -350,7 +351,7 @@ At 65K/128 C2 the server logged
 one waiting request in some samples despite reported KV usage below 60%,
 consistent with admission or logical-token constraints being relevant as
 well as physical page occupancy. This is not yet proof of the exact cause;
-review the C4 and 192K sweeps and agentic timing before selecting concurrency.
+review the C4 sweep and agentic timing before selecting concurrency.
 
 The complete raw benchmark JSON and server log are downloaded locally under
 `/home/mvasiljev/build/gemma-c2-benchmark-main/`. To extract numeric points,
@@ -359,9 +360,38 @@ subsequent benchmark artifact, run
 `python3 scripts/gemma4_benchmark_summary.py ARTIFACT_DIR --output summary.json`.
 This parser omits generated text. For the C2 run it found 23 completed points,
 zero failed requests, peak two running/one waiting request, and peak 59% KV
-usage. The C4 and C2/192K
-sweeps are queued/running respectively. None of these synthetic points
+usage. The C4 sweep is running. None of these synthetic points
 measures official Terminal or SWE rewards.
+
+### C2/192K KV sweep against C2/256K
+
+The [192K benchmark run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37956805379)
+started successfully on the separate Metal KV-hook image and completed the
+same 23 synthetic request shapes with **zero request failures**. The only CI
+failure was the unchanged 128/128 C2 release throughput gate (72.53 versus
+217.65 tokens/s). For all 23 matched points, the median absolute output-rate
+change from 256K was **0.12%**; the largest was 1.77% at 10K/1024 C2.
+
+| Input/output, active requests | 256K output tok/s | 192K output tok/s |
+| --- | ---: | ---: |
+| 128/128, 2 | 72.56 | 72.53 |
+| 8,192/1024, 2 | 64.93 | 64.94 |
+| 10,000/1024, 2 | 45.19 | 45.99 |
+| 32,768/128, 2 | 16.23 | 16.22 |
+| 65,536/128, 2 | 7.70 | 7.71 |
+| 131,072/128, 1 | 2.93 | 2.92 |
+
+Peak sampled KV usage increased from **59.0% to 72.3%** with the smaller
+pool; each sweep had a peak of two running and one waiting request. The
+10K/1024 C2 outlier reproduced almost exactly: the first pair's TTFTs were
+13.1 and 27.5 seconds at 192K versus 13.8 and 29.0 seconds at 256K; the
+second pair was about 2.6 and 3.3 seconds in both. This points to a repeatable
+cold first-pair effect at that shape, unrelated to the 192K change. The
+smaller KV allocation therefore reserves fewer pages without a measured synthetic
+throughput penalty; selection still depends on concurrent Terminal results.
+Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-c2-benchmark-kv192/` and
+`/home/mvasiljev/build/gemma-c2-benchmark-kv192-summary.json`.
 
 ## First current-main SWE result (C2, 9 October)
 
