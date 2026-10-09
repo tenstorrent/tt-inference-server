@@ -132,6 +132,17 @@ def build_vllm_bench_serve_argv(
             ]
         )
 
+    # Sampling of the benchmark requests: ``vllm bench serve`` defaults to greedy (temperature 0.0). TT_BENCH_TEMPERATURE / TT_BENCH_TOP_P / TT_BENCH_TOP_K
+    # make the choice explicit (e.g. TT_BENCH_TEMPERATURE=1.0 TT_BENCH_TOP_P=0.95 for a sampled sweep).
+    for env_name, flag in (
+        ("TT_BENCH_TEMPERATURE", "--temperature"),
+        ("TT_BENCH_TOP_P", "--top-p"),
+        ("TT_BENCH_TOP_K", "--top-k"),
+    ):
+        value = os.environ.get(env_name)
+        if value not in (None, ""):
+            cmd.extend([flag, value])
+
     # vllm bench serve defines --header with nargs="*"; pass all headers on one flag.
     cmd.extend(["--header", *headers])
     return cmd, auth_token

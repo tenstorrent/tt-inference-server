@@ -2095,23 +2095,31 @@ templates:
       reasoning_parser_name: deepseek_r1
       tool_call_parser_name: deepseek_v3
 
-# DeepSeek-V4.1-Flash on Blackhole Galaxy (32x P150, (4,8) mesh). BRING-UP.
+# DeepSeek-V4.1-Flash on Blackhole Galaxy (32x P150, (4,8) mesh).
 # vLLM class: models/demos/blackhole/deepseek_v41_flash/tt/generator_vllm.py
 # (DeepseekV41ForCausalLM), registered by the tt-vllm-plugin as
 # TTDeepseekV41ForCausalLM through the bundle folder's vllm_metadata.json:
 # EXTRA_MODELS_DIR must be the PARENT of that folder (models/demos/blackhole),
-# the plugin scans its sub-folders. On branch ssinghal/dsv4p1-vllm of tt-metal.
+# the plugin scans its sub-folders. tt-metal branch ssinghal/dsv4p1-vllmdev, checked out
+# next to this repo as ../../tt-metal (the standard layout of the other entries).
 # transformers does not know model_type deepseek_v41, so vLLM is given a
 # llama-shaped config shim (hf_config_path) + the checkpoint tokenizer + a chat
 # template equal to the checkpoint's encoding.py (non-thinking chat).
 #
-# Validated in the tt-metal demo (not yet through vLLM end to end): batch 4..128
-# (4 mesh rows x U users per row), ISL up to 64k. 128k / 256k are NOT validated.
-#   - DSV41_POOL_DTYPE=fp8: fp8_e4m3 paged KV pool, needed for batch 128 at long ISL.
+# One server serves plain decode AND speculative decoding (requests with ISL <= 32k speculate,
+# longer ones decode plain on the same server):
+#   - Speculative decoding is switched on by vllm_args.speculative_config (NOT by DSV41_SPEC: the adapter
+#     derives DSV41_SPEC from it and ignores an env value). Example override for a spec server (B=32 -> k=3;
+#     B<=16 -> k=5; the spec runners' DRAM bounds max_model_len, see tt/spec_policy.SPEC_MAX_CTX):
+#       --vllm-override-args '{"speculative_config": "{\"method\": \"custom_class\", \"model\": \"vllm_tt_plugin.model_owned_drafter\", \"num_speculative_tokens\": 3}"}'
+#     Sampled requests speculate too (lossless) when the vllm-tt-plugin branch ssinghal/dsv4p1-plugin-sampled-spec
+#     is installed in the server venv (DSV41_VLLM_SPEC_SAMPLED=0 restores greedy-only speculation).
+#   - DSV41_POOL_DTYPE=fp8: fp8_e4m3 paged KV pool.
 #   - DSV41_ENGRAM_RAM=1: Engram tables (2 x 95 GB) held in host RAM (Engram stays on).
 #   - DSV41_LAYERS=0-39: full model (e.g. 0-3 for a smoke run).
-#   - DSV41_SPEC=0: plain decode (the adapter refuses spec decode).
-#   - Greedy on device; temperature > 0 falls back to host sampling on logits (slow).
+#   - DSV41_CKPT / DSV41_WEIGHT_CACHE: site-specific (local HF checkpoint dir, converted-weight cache).
+#   - Temperature / top-k / top-p sampling is exact (device candidates + partition function).
+#   - A cold build can take longer than the default readiness timeout: set TT_SERVER_READY_TIMEOUT_SECONDS=14400.
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash
   impl: deepseek_v41_flash
@@ -2122,27 +2130,24 @@ templates:
   device_model_specs:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 32  # B=32 build (4 mesh rows x 8 users per row)
-      max_context: 67584  # B=32 build runs 64k + gen (B=128 OOM limit no longer applies)
+      max_context: 67584  # per request (prompt + output) = max_model_len; the B=32 build runs 64k + generation
       default_impl: true
       tensor_cache_timeout: 7200.0
       env_vars:
         HF_MODEL: deepseek-ai/DeepSeek-V4.1-Flash
         MESH_DEVICE: "(4, 8)"
         DSV41_LAYERS: "0-39"
-        DSV41_SPEC: "0"  # vLLM path = plain decode (the adapter refuses spec)
-        MOE_COMPUTE_FP32_ACC: "1"  # same MoE compute env as the tt-metal demo grid
-        MOE_COMPUTE_BFP8_WEIGHTS: "1"
         DSV41_ENGRAM_RAM: "1"
         DSV41_POOL_DTYPE: fp8
         DSV41_TRACE_REGION: "1600000000"
         DSV41_CKPT: /mnt/tt-data/ssinghal/deepseek-v41-flash  # local HF checkpoint dir
         DSV41_WEIGHT_CACHE: /mnt/tt-data/ssinghal/dsv4-weight-cache
-        EXTRA_MODELS_DIR: /mnt/tt-data/ssinghal/wt/eval_tt/models/demos/blackhole
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos/blackhole
       vllm_args:
         block_size: "128"  # the DSV4.1 paged pool uses 128-token pages
-        hf_config_path: /mnt/tt-data/ssinghal/wt/eval_tt/models/demos/blackhole/deepseek_v41_flash/vllm_config
+        hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
         tokenizer: /mnt/tt-data/ssinghal/deepseek-v41-flash
-        chat_template: /mnt/tt-data/ssinghal/wt/eval_tt/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
+        chat_template: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
         max_num_seqs: "32"
         max_model_len: "67584"
         no-enable-prefix-caching: true
