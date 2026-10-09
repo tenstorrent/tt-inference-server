@@ -373,8 +373,8 @@ evaluation wall was **2,006 seconds (33.4 minutes)** and its five case clocks
 sum to 3,623 seconds, or 1.81 active cases on average. It resolved **1/5**,
 the same count as the September fixed-five run, but the solved case changed
 from Django to Matplotlib. The stochastic path means this is not proof of
-score equivalence; compare the pending current-main C1 control and repeat
-before attributing a solved-case change to concurrency.
+score equivalence; repeat before attributing a solved-case change to
+concurrency.
 
 | Fixed SWE case | C2 reward | Case wall (s) | Input / output tokens |
 | --- | ---: | ---: | ---: |
@@ -407,3 +407,35 @@ Once a physical batch size and context are selected, a single
 amortizing startup. Separate jobs remain useful for parallel exploratory
 measurements and independent failure isolation. The Shield partition change
 accepts that combined selector; no combined result exists yet.
+
+### Same-main C1 versus C2 SWE
+
+The [C1 fixed-five SWE control](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962784599)
+also completed five cases with no case errors and resolved **1/5** (Django).
+It used the same Metal-main image, fixed task IDs, sampling and 256K context;
+its inference-server commit `fb5b77a4e26af79c455af2893babf1a9928bfc08`
+has one physical decode row and one concurrent trial. C2 resolved
+Matplotlib instead, so the equal count does not establish per-case quality
+parity. Both CI jobs failed the generic full-set reference gate discussed
+above, not a test execution check.
+
+| Same-main fixed-five SWE | C1 | C2 | C2/C1 or difference |
+| --- | ---: | ---: | ---: |
+| Evaluation wall | 54.94 min | 33.44 min | 1.64× faster observed |
+| Full CI test job | 70.42 min | 49.20 min | 1.43× faster observed |
+| Solved | 1/5 Django | 1/5 Matplotlib | Different case |
+| Total input tokens | 3.122M | 3.358M | +7.6% |
+| Total output tokens | 68,495 | 45,256 | −33.9% |
+| Peak / p95 KV sampled | 31.9% / 28.1% | 35.7% / 33.0% | No sustained pressure |
+| Samples with waiting | 0/330 | 1/201 | No sustained queue |
+| Trace warm-to-capture time | 68.8 s / 220 | 72.7 s / 242 | Small relative to suite |
+
+The observed suite/job speedups are real for these two runs but **are not a
+controlled batching speedup**: at temperature 1.0 C2 generated 23,239 fewer
+tokens, and different code/tool trajectories changed case clocks and solved
+identities. The synthetic same-server 128/128 C1/C2 point isolates a nearly
+2× aggregate short-context throughput effect more cleanly; repeated fixed
+case runs and the pending C4 result are needed for an end-to-end policy.
+The C1 raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c1-main/` and
+`/home/mvasiljev/build/gemma-swe-c1-main-summary.json`.
