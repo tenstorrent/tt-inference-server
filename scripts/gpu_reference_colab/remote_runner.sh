@@ -186,6 +186,8 @@ run_model() {
     if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}") \
             > "${mdir}/serve_plan.json" 2> "${mdir}/serve_plan.err"; then
         status="failed"; note="GPU spec did not resolve (serve_plan.err)"
+    elif ! python3 "${GPUREF}" materialize-hf-config "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
+        status="failed"; note="could not write the edited config.json (serve_plan.err)"
     else
         local -a serve_args=()
         mapfile -t serve_args < <(python3 "${GPUREF}" plan-argv "${mdir}/serve_plan.json")

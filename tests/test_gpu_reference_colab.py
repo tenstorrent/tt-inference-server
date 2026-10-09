@@ -763,3 +763,23 @@ def test_tt_grade_ratio_and_noise_rules():
     )  # ... against the old ref
     assert gpuref.tt_grade(None, 50.0, 0.05, 100) == "NA"
     assert gpuref.tt_grade(50.0, None, 0.05, 100) == "NA"
+
+
+def test_none_override_serves_from_a_config_without_the_key():
+    """vLLM dereferences dual_chunk_attention_config whenever the attribute
+    exists, so removing it means serving from an edited config.json."""
+    from types import SimpleNamespace
+
+    dms = SimpleNamespace(max_context=131072, max_concurrency=32,
+                          vllm_args={"revision": "r", "hf_overrides": {"dual_chunk_attention_config": None}})  # fmt: skip
+    plan = gpuref.serve_plan(
+        SimpleNamespace(device_model_spec=dms, hf_model_repo="org/m-1M", model_id="x")
+    )
+    argv = plan["vllm_serve_args"]
+    assert "--hf-overrides" not in argv
+    assert (
+        argv[argv.index("--hf-config-path") + 1]
+        == "/content/gpuref/hf_configs/org__m-1M"
+    )
+    assert plan["hf_config"]["drop"] == ["dual_chunk_attention_config"]
+    assert argv[argv.index("--max-num-batched-tokens") + 1] == "16384"

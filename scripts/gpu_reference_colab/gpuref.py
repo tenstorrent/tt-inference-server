@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 HF = "https://huggingface.co"
+REMOTE_DIR = "/content/gpuref"  # the VM work dir (snippets/*.py use the same)
 # Flags the runner sets itself (spec limits, bf16, the repo id as model and
 # served name, which run.py's eval client requests).
 EXPLICIT_SERVE_KEYS = {
@@ -99,7 +100,28 @@ def serve_plan(spec, port: int = 8000) -> Dict[str, Any]:
     vllm_args = dict(dms.vllm_args)
     batched = int(vllm_args.get("max_num_batched_tokens") or dms.max_context)
     vllm_args["max_num_batched_tokens"] = str(min(batched, GPU_MAX_BATCHED_TOKENS))
+    # hf_overrides can only set keys, and vLLM 0.13 dereferences
+    # dual_chunk_attention_config whenever the attribute exists (even None). So a
+    # None override means "remove the key": serve from a config.json without it
+    # (--hf-config-path), which the runner writes with materialize-hf-config.
+    overrides = vllm_args.pop("hf_overrides", None) or {}
+    overrides = json.loads(overrides) if isinstance(overrides, str) else dict(overrides)
+    drop = sorted(k for k, v in overrides.items() if v is None)
+    if any(v is not None for v in overrides.values()):
+        vllm_args["hf_overrides"] = {
+            k: v for k, v in overrides.items() if v is not None
+        }
+    hf_config = None
+    if drop:
+        path = f"{REMOTE_DIR}/hf_configs/{repo.replace('/', '__')}"
+        hf_config = {
+            "path": path,
+            "drop": drop,
+            "revision": dms.vllm_args.get("revision"),
+        }
+        argv += ["--hf-config-path", path]
     return {
+        "hf_config": hf_config,
         "model": repo,
         "model_id": spec.model_id,
         "max_context": dms.max_context,
@@ -529,6 +551,8 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # sizes prompts to max_context, hence request_evidence below.
         "max_model_len_cap": args.max_model_len_cap,
         "dropped_tt_only_vllm_args": plan.get("dropped_tt_only_vllm_args"),
+        # Config keys removed for GPU serving (e.g. dual_chunk_attention_config).
+        "hf_config_dropped_keys": (plan.get("hf_config") or {}).get("drop"),
         "run_py_command": [
             "python3",
             "run.py",
@@ -1087,6 +1111,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("request-evidence", model=req, revision={}, samples_root=req, out=req,
         log={"action": "append", "default": []})  # fmt: skip
     add("cap-bound", "evidence", "cap")
+    add("materialize-hf-config", "plan")
     p = sub.add_parser("sweep")
     p.add_argument("action", choices=["plan", "report"])
     p.add_argument("--sha", default=None)
@@ -1203,6 +1228,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         except (ValueError, AttributeError):
             return 1
         return 0 if args.model in ids else 1
+    if args.cmd == "materialize-hf-config":
+        plan = load_json(Path(args.plan)) or {}
+        spec = plan.get("hf_config")
+        if not spec:
+            return 0
+        rev = spec.get("revision") or "main"
+        config = hf_get(f"{HF}/{plan['model']}/resolve/{rev}/config.json", hf_token())
+        if config is None:
+            return 1
+        for key in spec["drop"]:
+            config.pop(key, None)
+        Path(spec["path"]).mkdir(parents=True, exist_ok=True)
+        (Path(spec["path"]) / "config.json").write_text(json.dumps(config, indent=2))
+        return 0
     if args.cmd == "cap-bound":
         return 0 if cap_bound(load_json(Path(args.evidence)), int(args.cap)) else 1
     if args.cmd == "serve-plan":
