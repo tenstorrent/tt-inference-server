@@ -653,3 +653,27 @@ def test_patch_eval_config_sets_reference_and_clears_request():
         "gpu_reference_score=12.35," in new and 'gpu_reference_score_ref="URL",' in new
     )
     assert 'gpu_reference_score_ref="TBD"' in new  # task b untouched
+
+
+def test_reference_verdict_uses_the_noise_rule():
+    assert gpuref.reference_verdict(None, 40.0, 541) == "new"
+    # mmlu_pro-sized n: SE at 66.07 is ~0.43 pts, so 66.5 is within noise.
+    assert gpuref.reference_verdict(66.07, 66.5, 12032) == "keep"
+    assert gpuref.reference_verdict(66.07, 70.0, 12032) == "replace"
+    assert gpuref.reference_verdict(66.07, None, 12032) is None
+
+
+def test_patch_keeps_old_reference_within_noise_but_clears_flag():
+    text = (
+        '    EvalConfig(\n        hf_model_repo="org/m",\n        tasks=[\n'
+        '            EvalTask(\n                task_name="a",\n'
+        '                gpu_reference_requested="why",\n'
+        "                score=EvalTaskScore(\n                    gpu_reference_score=66.07,\n"
+        '                    gpu_reference_score_ref="old",\n'
+    )
+    row = {"model": "org/m", "task": "a", "score": 66.3, "verdict": "keep"}
+    new = gpuref.patch_eval_config(text, [row], "URL")
+    assert "gpu_reference_requested" not in new
+    assert (
+        "gpu_reference_score=66.07," in new and 'gpu_reference_score_ref="old",' in new
+    )

@@ -484,6 +484,16 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "max_context": plan.get("max_context"),
         "max_concurrency": plan.get("max_concurrency"),
         "vllm_serve_command": [args.vllm_bin] + plan.get("vllm_serve_args", []),
+        "max_num_batched_tokens": next(
+            (
+                b
+                for a, b in zip(
+                    plan.get("vllm_serve_args", []), plan.get("vllm_serve_args", [])[1:]
+                )
+                if a == "--max-num-batched-tokens"
+            ),
+            None,
+        ),  # fmt: skip
         # Set only when vLLM refused max_context on this GPU; lm-eval still
         # sizes prompts to max_context, hence request_evidence below.
         "max_model_len_cap": args.max_model_len_cap,
@@ -573,7 +583,12 @@ def select_targets(tasks, rows, refresh: bool = False):
                 reason = "ungated"
             else:
                 continue
-            item = {"model": repo, "task": t["task"], "reason": reason}
+            item = {
+                "model": repo,
+                "task": t["task"],
+                "reason": reason,
+                "old_gpu_ref": t["gpu_ref"],
+            }
             if t["venv"] not in SWEEP_VENVS:
                 skipped.append(
                     dict(item, skip=f"{t['venv']} task, not run by the lm-eval path")
@@ -729,6 +744,9 @@ def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) ->
         nxt = len(block) if nxt < 0 else nxt
         task = block[at:nxt]
         task = re.sub(r"\n\s*gpu_reference_requested=(\"[^\"]*\"|'[^']*'),", "", task)
+        if r.get("verdict") == "keep":  # matches the old reference within noise
+            text = text[:start] + block[:at] + task + block[nxt:] + text[end:]
+            continue
         task = re.sub(
             r"gpu_reference_score=[^,\n]+,",
             f"gpu_reference_score={r['score']:.2f},",
@@ -772,7 +790,14 @@ def sweep_results(
             sub = [
                 v for k, v in evidence.items() if k == t["task"] or k.startswith(prefix)
             ]
+            serve = prov.get("vllm_serve_command") or []
+            chunk = (
+                serve[serve.index("--max-num-batched-tokens") + 1]
+                if "--max-num-batched-tokens" in serve
+                else None
+            )
             row.update(
+                max_num_batched_tokens=chunk,
                 score=scores.get((t["model"], t["task"])),
                 samples=sum(v["samples"] for v in sub) or None,
                 max_request_tokens=max((v["max_tokens"] for v in sub), default=None),
@@ -780,28 +805,53 @@ def sweep_results(
                 ttis_sha=prov.get("ttis_sha"), revision=prov.get("model_revision_sha"),
                 vllm=(prov.get("packages") or {}).get("vllm"), results=str(results_dir),
             )  # fmt: skip
+        row["verdict"] = reference_verdict(
+            row.get("old_gpu_ref"), row["score"], row.get("samples")
+        )
         rows.append(row)
     return rows
+
+
+def reference_verdict(
+    old: Optional[float], new: Optional[float], n: Optional[int]
+) -> Optional[str]:
+    """ "new" (no old reference), "keep" (new within TTIS's noise rule of the old:
+    |new-old| <= 1.96 binomial SE at the old score), or "replace"."""
+    if new is None:
+        return None
+    if old is None:
+        return "new"
+    if n and 0 < old < 100:
+        se = 100 * (old / 100 * (1 - old / 100) / n) ** 0.5
+        if abs(new - old) <= 1.96 * se:
+            return "keep"
+    return "replace"
 
 
 def sweep_markdown(rows: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) -> str:
     """Ready-to-paste #5353 block."""
     out = ["## GPU reference sweep", ""]
     out.append(
-        "| model | task | GPU score | samples | TT score | why selected | GPU | cap (longest request) |"
+        "| model | task | GPU score | samples | TT score | old GPU ref | proposal | why selected "
+        "| GPU | chunk | cap (longest request) |"
     )
-    out.append("|---|---|---|---|---|---|---|---|")
+    out.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    proposal = {"new": "record", "keep": "keep old (within noise); clear flag",
+                "replace": "replace old", None: "not measured"}  # fmt: skip
     for r in rows:
         cap = f"{r['cap']} ({r.get('max_request_tokens')})" if r.get("cap") else "none"
         out.append(
             f"| {r['model']} | {r['task']} | {fmt(r['score'])} | {fmt(r.get('samples'))} | "
-            f"{fmt(r['tt_score'])} | {r['reason']} | {fmt(r.get('gpu'))} | {cap} |"
+            f"{fmt(r['tt_score'])} | {fmt(r.get('old_gpu_ref'))} | {proposal[r.get('verdict')]} | "
+            f"{r['reason']} | {fmt(r.get('gpu'))} | {fmt(r.get('max_num_batched_tokens'))} | {cap} |"
         )
     shas = sorted({r["ttis_sha"] for r in rows if r.get("ttis_sha")})
     out += ["", f"TTIS sha(s): {', '.join(shas) or '-'}; vLLM "
             f"{', '.join(sorted({r['vllm'] for r in rows if r.get('vllm')})) or '-'} bf16; "
             "full sample counts; per-model provenance.json (HF revision, exact vllm serve "
-            "args, request evidence) in each results dir."]  # fmt: skip
+            "args, request evidence) in each results dir. GPU prefill chunk "
+            "(--max-num-batched-tokens) is capped at 16384: it changes scheduling only, "
+            "not results."]  # fmt: skip
     if skipped:
         out += ["", "Skipped:", ""] + [
             f"- {s['model']} {s['task']}: {s['skip']}" for s in skipped
