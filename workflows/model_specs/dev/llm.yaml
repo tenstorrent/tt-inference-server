@@ -188,7 +188,7 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
-        max_num_seqs: 1
+        max_num_seqs: 32
         # Sync default: the async submit/accept split is in place and coherent,
         # but block-output disables the steady-decode overlap (output_tokens set)
         # and dFlash's step is serially dependent, so async gives no gain yet.
@@ -270,7 +270,7 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # spec: prefill anchor host-sampled, decode model-owned
       vllm_args:
-        max_num_seqs: 32
+        max_num_seqs: 1
         # Async ON: MTP gates supports_async_decode on GEMMA4_SPEC_ASYNC (set
         # below); both the env and this flag are required or the platform
         # clears async_scheduling and warns.
@@ -2408,7 +2408,7 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 32
+      max_concurrency: 1
       max_context: 262144
       default_impl: false
       env_vars:
@@ -2433,7 +2433,7 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         block_size: 32
-        max_num_seqs: 32
+        max_num_seqs: 1
         max_model_len: 262144
         max_num_batched_tokens: 262144
         no-enable-chunked-prefill: true

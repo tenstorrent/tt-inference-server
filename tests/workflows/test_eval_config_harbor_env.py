@@ -64,14 +64,11 @@ def test_gemma4_release_has_exact_subsets_and_explicit_policy():
     guard = {"min_pattern_size": 16, "max_pattern_size": 1024, "min_count": 8}
     assert gpqa.api_request_overrides["repetition_detection"] == guard
     tb = terminal.agentic_eval_config
-    assert tb.n_concurrent_trials == 1
+    assert tb.n_concurrent_trials == 2
     assert tb.agent_timeout_sec == 10800
     assert tb.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
         "terminal-bench/caffe-cifar-10",
-        "terminal-bench/password-recovery",
-        "terminal-bench/portfolio-optimization",
         "terminal-bench/hf-model-inference",
-        "terminal-bench/financial-document-processor",
     ]
     assert tb.agent_kwargs["llm_kwargs"]["seed"] == 9472
     assert tb.agent_kwargs["llm_kwargs"]["extra_body"]["repetition_detection"] == guard
