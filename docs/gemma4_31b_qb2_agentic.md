@@ -320,10 +320,13 @@ so C1 here means one active request on its warmed two-row trace, not a
 separate one-row server. Decode per-user TPOT at 128/128 was 26.7 ms for
 both; the nearly doubled short-context aggregate output came from serving
 two users together. Long-prompt C2 advantage shrank, and the 10K/1024 C2
-point was anomalously slow to first token. The server log shows two active
-requests, no waiting requests, low KV occupancy, and about 20 seconds of
-near-zero generation around that point; two brief trace captures cannot by
-themselves explain it. Investigate long-prefill scheduling with a repeat.
+point was anomalously slow to first token. Its four individual TTFTs were
+13.8, 29.0, 2.6 and 3.3 seconds; the first two requests dominate the mean.
+The server log shows two active requests, no waiting requests, low KV
+occupancy, and about 20 seconds of near-zero generation around that point;
+two brief trace captures cannot by themselves explain it. This could be a
+transient first-pair/prefill scheduling effect. Repeat before treating 45.19
+tokens/s as representative steady-state C2 throughput at this shape.
 At 65K/128 C2 the server logged
 one waiting request in some samples despite reported KV usage below 60%,
 consistent with admission or logical-token constraints being relevant as
