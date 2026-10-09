@@ -107,6 +107,31 @@ _CPP_EMBEDDING_DEVICE_IDS = {
 }
 
 
+# Qwen3-TTS on the cpp_server backend (MODEL_SERVICE=tts). Each release
+# (Base clones a clip, CustomVoice uses built-in speakers) is its own model id
+# and deployment; the C++ server derives the release and size from HF_MODEL.
+# See tt-media-server/cpp_server/docs/QWEN3_TTS.md.
+_CPP_TTS_RUNNER_BY_MODEL_NAME = {
+    "Qwen3-TTS-12Hz-1.7B-Base": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-1.7B-CustomVoice": "tt_qwen3_tts",
+}
+
+# device.name.lower() -> DEVICE_IDS (one worker per chip).
+_CPP_TTS_DEVICE_IDS = {
+    "n150": "(0)",
+}
+
+# Qwen3-TTS reseeds sampling before every request, so a deployment returns
+# the same audio for the same request; the TTS evals rely on it to compare
+# a cloned utterance with its baseline at the same seed.
+_CPP_TTS_SEED = "0"
+# Shared-memory queue slots. The server's defaults reserve ~2.5 GB of
+# /dev/shm; batch-1 workers need a handful of slots.
+_CPP_TTS_TASK_QUEUE_CAPACITY = "16"
+_CPP_TTS_AUDIO_QUEUE_CAPACITY = "64"
+_CPP_TTS_CANCEL_QUEUE_CAPACITY = "64"
+
+
 def _is_cpp_media_spec(model_spec) -> bool:
     """True if this MEDIA spec should run on the cpp_server backend."""
     if model_spec.inference_engine != InferenceEngine.MEDIA.value:
@@ -116,6 +141,8 @@ def _is_cpp_media_spec(model_spec) -> bool:
         return device in _CPP_SDXL_DEVICE_DEFAULTS
     if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return device in _CPP_EMBEDDING_DEVICE_IDS
+    if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+        return device in _CPP_TTS_DEVICE_IDS
     return False
 
 
@@ -183,10 +210,39 @@ def _get_cpp_embedding_server_docker_env_vars(model_spec):
     return env_vars
 
 
+def _get_cpp_tts_server_docker_env_vars(model_spec):
+    """Build the env-var set the cpp_server TTS (Qwen3-TTS) service needs."""
+    device = model_spec.device_type.name.lower()
+    runner = _CPP_TTS_RUNNER_BY_MODEL_NAME[model_spec.model_name]
+    device_ids = _CPP_TTS_DEVICE_IDS[device]
+
+    env_vars = {
+        "SERVER_MODE": "cpp",
+        "MODEL_SERVICE": "tts",
+        "MODEL_RUNNER_TYPE": runner,
+        "HF_MODEL": model_spec.hf_model_repo,
+        "DEVICE_IDS": device_ids,
+        "TTS_QWEN3_SEED": _CPP_TTS_SEED,
+        "TTS_TASK_QUEUE_CAPACITY": _CPP_TTS_TASK_QUEUE_CAPACITY,
+        "TTS_AUDIO_QUEUE_CAPACITY": _CPP_TTS_AUDIO_QUEUE_CAPACITY,
+        "TTS_CANCEL_QUEUE_CAPACITY": _CPP_TTS_CANCEL_QUEUE_CAPACITY,
+        "CACHE_ROOT": "/home/container_app_user/cache_root",
+        "HF_HOME": "/home/container_app_user/cache_root/huggingface",
+    }
+    logger.info(
+        f"cpp_server environment variables: MODEL_SERVICE=tts, "
+        f"MODEL_RUNNER_TYPE={runner}, HF_MODEL={model_spec.hf_model_repo}, "
+        f"DEVICE_IDS={device_ids}"
+    )
+    return env_vars
+
+
 def _get_cpp_server_docker_env_vars(model_spec):
     """Dispatch to the per-service env-var builder for the cpp_server backend."""
     if model_spec.model_name in _CPP_EMBEDDING_RUNNER_BY_MODEL_NAME:
         return _get_cpp_embedding_server_docker_env_vars(model_spec)
+    if model_spec.model_name in _CPP_TTS_RUNNER_BY_MODEL_NAME:
+        return _get_cpp_tts_server_docker_env_vars(model_spec)
     return _get_cpp_image_server_docker_env_vars(model_spec)
 
 
