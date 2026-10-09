@@ -14,7 +14,8 @@ commits, task lists, or agent policies are kept separate.
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
-| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C1, C4 and C2/192K pending; paths and token volume differ |
+| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C1 and C2/192K pending; paths and token volume differ |
+| Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -784,3 +785,64 @@ supports testing a smaller KV pool, but its peak occupancy alone cannot
 establish safety for four simultaneous long Terminal requests. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-terminal-c2-main/`
 and `/home/mvasiljev/build/gemma-terminal-c2-main-summary.json`.
+
+### C4 Terminal versus C2 on pinned main
+
+The [C4 fixed-five Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963848727)
+also completed all five cases with zero case errors and resolved **1/5**,
+COBOL. Its CI failure was again the five-case 20% score against the 44.94%
+full-set H100 target. It used the same Metal image and five tasks as C2,
+but a four-row physical decode trace and four simultaneous agent trials.
+
+| Fixed-five Terminal measure | C2 | C4 |
+| --- | ---: | ---: |
+| Evaluation wall, min | 175.87 | 170.60 |
+| Full test job, min | 182.57 | 177.08 |
+| Sum of case clocks, min | 347.12 | 460.68 |
+| Observed active-case parallelism | 1.97 | 2.70 |
+| Solved | 1/5 COBOL | 1/5 COBOL |
+| Input / output tokens | 2.717M / 399K | 3.091M / 410K |
+| Recorded API calls | 126 | 142 |
+| Sum of API / other case time, min | 202.61 / 144.51 | 247.66 / 213.02 |
+| Peak / p95 sampled KV | 52.6% / 34.4% | 50.5% / 34.3% |
+| Samples with waiting | 0/1,056 | 0/1,024 |
+
+C4's observed suite wall is only **3.1% shorter** than C2's, even though
+it overlapped more case work. Its case-clock sum was 33% longer and its
+request path had 16 more calls, 14% more input tokens and 3% more output
+tokens. As with SWE, stochastic tool and text trajectories prevent a
+controlled end-to-end batching speedup claim. The synthetic short-prompt
+throughput gain does not translate into a similar suite-wall gain when a
+slow case sets the deadline.
+
+| Terminal case wall, min | C2 | C4 | C4 change |
+| --- | ---: | ---: | ---: |
+| HTML filter | 171.3 | 168.3 | −3.0 |
+| COBOL modernization | 9.6 | 14.7 | +5.1 |
+| CompCert | 120.5 | 84.3 | −36.2 |
+| FEAL | 28.8 | 170.6 | +141.8 |
+| QEMU startup | 17.0 | 22.7 | +5.7 |
+
+FEAL was the C4 straggler: **40.2 minutes** of recorded model API time
+and **130.4 minutes** outside those calls, compared with C2's 13.3 and
+15.5 minutes. The C4 trajectory's first tool command, `cat /app/feal.py`,
+completed in about 0.01 seconds in its terminal recording. The gap from
+that step to the next model step was 78.6 minutes, while its corresponding
+recorded API time was 8.1 minutes; about **70.5 minutes of that gap** are
+unaccounted for by that recorded API time or shell command. The C2
+FEAL trajectory had a 19.0-minute analogous gap, 3.9 minutes of recorded
+API time and about 15 minutes residual. C4's trial log records 14
+output-limit warnings across 15 model steps, versus two across six in C2,
+and many malformed JSON/parser warnings. Retries or agent parsing are
+plausible contributors, but the retained timing fields do not prove how
+the residual was spent. This is a targeted candidate for request-level
+instrumentation and deadline-policy pilots, not evidence of KV exhaustion.
+
+C4 reached four running requests in 84 of 1,024 ten-second samples and
+three in 247; **none** showed a waiting request. Peak sampled KV was 50.5%,
+similar to C2's 52.6%. Trace warm/capture intervals numbered 162 and
+summed to 66.3 seconds, small against 170.6 minutes of evaluation. Its
+host `qb2-120-p05t05` did not log an AICLK clamp; the Hugging Face model
+snapshot was warm and API readiness took about 4 min 54 s. Raw artifacts
+and numeric summary are under `/home/mvasiljev/build/gemma-terminal-c4-main/`
+and `/home/mvasiljev/build/gemma-terminal-c4-main-summary.json`.
