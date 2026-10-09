@@ -58,7 +58,8 @@ constexpr double WARMUP_TONE_HZ = 220.0;
 // every worker); remembered only this long.
 constexpr size_t CANCELLED_TASK_MEMORY = 4096;
 
-constexpr auto IDLE_POLL = std::chrono::milliseconds(2);
+// Same 1 ms cadence as BlazeTtsRunner::step().
+constexpr auto IDLE_POLL = std::chrono::milliseconds(1);
 constexpr auto PUSH_RETRY = std::chrono::milliseconds(1);
 
 // What the language defaults to when a request leaves it out, as
@@ -174,8 +175,9 @@ struct __attribute__((visibility("hidden"))) PythonState {
                          .attr("to")(torch.attr("int16"))
                          .attr("contiguous")()
                          .attr("numpy")();
-    auto samples = py::array_t < int16_t,
-         py::array::c_style | py::array::forcecast > (pcm);
+    using Int16Array =
+        py::array_t<int16_t, py::array::c_style | py::array::forcecast>;
+    const auto samples = pcm.cast<Int16Array>();
     return std::vector<int16_t>(samples.data(),
                                 samples.data() + samples.size());
   }
@@ -359,7 +361,7 @@ bool Qwen3TtsRunner::warmup() {
             "[Qwen3TtsRunner] Warmup utterance ended before its first frame; "
             "continuing");
       }
-      TT_LOG_INFO("[Qwen3TtsRunner] Warmup utterance done in {:.1f} s",
+      TT_LOG_INFO("[Qwen3TtsRunner] Warmup complete in {:.1f} s",
                   std::chrono::duration<double>(
                       std::chrono::steady_clock::now() - started)
                       .count());
@@ -509,9 +511,10 @@ void Qwen3TtsRunner::handleTask(const ipc::tts::TtsIpcTask& task) {
         reason = domain::tts::TtsFinishReason::Error;
         const std::string what = e.what();
         error = what.find("end-of-speech before any frame") != std::string::npos
-                    ? "the model produced no audio for this text; try again"
+                    ? "TTS model produced no audio for this text; try again"
                     : firstLine(what);
-        TT_LOG_ERROR("[Qwen3TtsRunner] Task {} failed:\n{}", taskId, what);
+        TT_LOG_ERROR("[Qwen3TtsRunner] Task failed taskId={}:\n{}", taskId,
+                     what);
       }
     }
   } catch (const TaskCancelled&) {
@@ -519,12 +522,14 @@ void Qwen3TtsRunner::handleTask(const ipc::tts::TtsIpcTask& task) {
   } catch (const std::exception& e) {
     reason = domain::tts::TtsFinishReason::Error;
     error = e.what();
-    TT_LOG_ERROR("[Qwen3TtsRunner] Task {} failed: {}", taskId, e.what());
+    TT_LOG_ERROR("[Qwen3TtsRunner] Task failed taskId={}: {}", taskId,
+                 e.what());
   } catch (...) {
     reason = domain::tts::TtsFinishReason::Error;
-    error = "unknown error in the Qwen3-TTS runner";
-    TT_LOG_ERROR("[Qwen3TtsRunner] Task {} failed with an unknown exception",
-                 taskId);
+    error = "TTS runner failed with an unknown exception";
+    TT_LOG_ERROR(
+        "[Qwen3TtsRunner] Task failed with an unknown exception taskId={}",
+        taskId);
   }
 
   if (reason == domain::tts::TtsFinishReason::Completed) {
@@ -542,8 +547,8 @@ void Qwen3TtsRunner::handleTask(const ipc::tts::TtsIpcTask& task) {
           tt::worker::tts::batchBucketOf(1), pcm.size(), chunks.size());
     }
     TT_LOG_INFO(
-        "[Qwen3TtsRunner] Task {} done: {:.2f} s of audio in {:.2f} s ({} "
-        "chunks)",
+        "[Qwen3TtsRunner] Task done taskId={}: {:.2f} s of audio in {:.2f} s "
+        "({} chunks)",
         taskId, static_cast<double>(pcm.size()) / config.audioSampleRateHz,
         std::chrono::duration<double>(std::chrono::steady_clock::now() -
                                       started)
@@ -575,8 +580,8 @@ void Qwen3TtsRunner::sendFinish(uint32_t taskId,
   message.voiceEncodeUs = voiceEncodeUs;
   if (!pushBlocking(message)) {
     TT_LOG_WARN(
-        "[Qwen3TtsRunner] Shutting down before the terminal message for task "
-        "{} was delivered",
+        "[Qwen3TtsRunner] Shutting down before the terminal message was "
+        "delivered taskId={}",
         taskId);
   }
 }
