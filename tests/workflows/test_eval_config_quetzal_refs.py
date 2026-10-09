@@ -62,6 +62,10 @@ EXPECTED = {
         "leaderboard_math_hard": 5.22,
         "mmlu_pro": None,
     },
+    "01-ai/Yi-1.5-6B-Chat": {
+        "leaderboard_ifeval": 45.47,
+        "leaderboard_math_hard": 14.43,
+    },
     "01-ai/Yi-1.5-9B-Chat": {
         "leaderboard_ifeval": 55.08,
         "leaderboard_math_hard": 19.85,
@@ -109,6 +113,7 @@ EXPECTED = {
 # what the pinned harness does under --apply_chat_template, so matching this flag
 # reproduces the reference prompts.
 OLL_CHAT_TEMPLATE = {
+    "01-ai/Yi-1.5-6B-Chat": True,
     "01-ai/Yi-1.5-9B-Chat": True,
     "arcee-ai/Arcee-Spark": True,
     "EleutherAI/pythia-160m": False,
