@@ -272,9 +272,9 @@ appears below.
    Hardware benchmark startup and all 23 synthetic request shapes completed;
    throughput and KV details appear below. The
    [fixed-five Terminal C2/192K job](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37964456985)
-   is running on that image with inference-server
-   `6682a78c8a1009934838f58b3070927973ec7f4f`; it still needs the
-   fixed-case reward and waiting/preemption check.
+   finished on that image with inference-server
+   `6682a78c8a1009934838f58b3070927973ec7f4f`. The fixed-case reward,
+   timeout and waiting comparison appear below.
 3. [C2 thinking-off pilot](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-thinkoff):
    changes only the server's `enable_thinking` default. Granite's fixed-case
    pilot reduced output volume markedly, and Gemma's archived latency fit
@@ -1017,3 +1017,37 @@ why its full test-job wall is 14.5 minutes above evaluation wall. Raw
 artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c1-main/` and
 `/home/mvasiljev/build/gemma-terminal-c1-main-summary.json`.
+
+### Live 192K KV comparison
+
+The [C2/192K fixed-five Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37964456985)
+finished all five trials; HTML filter recorded one `AgentTimeoutError` at
+180.4 minutes. It solved **1/5, COBOL**, the same case as C2/256K. The
+generic accuracy gate failed because 20% is below the full-set 44.94% H100
+reference, and the timeout is a real case error. No server preemption or
+AICLK warning appeared in its logs. The server reached two active requests,
+had only **1/1,247** ten-second samples with waiting, and peaked at 58.2%
+sampled KV (p95 36.3%). Thus 192K was adequate for this live fixed-five
+trajectory; the result does not establish a speed benefit or universal
+capacity safety for larger case sets.
+
+| C2 Terminal measure | 256K pinned main | 192K KV branch |
+| --- | ---: | ---: |
+| Evaluation wall, min | 175.87 | 207.79 |
+| Sum of case clocks, min | 347.12 | 388.19 |
+| Solved / case errors | 1/5 / 0 | 1/5 / 1 timeout |
+| Input / output tokens | 2.717M / 399K | 3.137M / 488K |
+| API / other case time, min | 202.61 / 144.51 | 272.22 / 115.97 |
+| Peak / p95 sampled KV | 52.6% / 34.4% | 58.2% / 36.3% |
+| Samples with waiting | 0/1,056 | 1/1,247 |
+
+The 192K wall was **18.2% longer** while output volume was **22.3% higher**.
+Its 148 matched requests fit 31.68 seconds per 1K output tokens versus
+27.06 for C2/256K's 126 calls, but these trajectories and Metal images
+differ; the fit cannot isolate a KV-size effect. Synthetic rates were nearly
+equal at matched shapes. Keeping 256K is the current conservative choice:
+192K saves cache allocation and passed this live trajectory, but has no
+observed wall or reward advantage to offset its smaller admission margin.
+Raw artifacts and numeric summary are at
+`/home/mvasiljev/build/gemma-terminal-c2-kv192/` and
+`/home/mvasiljev/build/gemma-terminal-c2-kv192-summary.json`.
