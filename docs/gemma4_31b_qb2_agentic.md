@@ -481,6 +481,15 @@ benchmark prompts do not create that tail shape. The repeated first-wave
 delay is consistent with a cold partial-chunk program or scheduling path,
 but the retained logs do not time kernel compilation or device operations,
 so this remains a hypothesis for a targeted warm/cold profile.
+A separate [later-main C4 benchmark](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37975935523)
+was dispatched with Metal `6ea152854fe896a9980e02c51af3cd786a0c6599`
+and the same C4 inference-server commit. This image must build before the
+benchmark can run. Among the intervening main commits,
+`bde0257bf3c` defers duplicate kernel builds without holding worker threads;
+it might affect cold-prefill latency, but was measured upstream on a different
+model. Compare the first and second 10K C4 waves and steady-state points to
+the original pinned-main run; this follow-up is not part of the C1/C2/C4
+same-image comparison.
 
 ## First current-main SWE result (C2, 9 October)
 
