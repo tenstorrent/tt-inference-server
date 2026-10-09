@@ -481,6 +481,8 @@ above, not a test execution check.
 | Same-main fixed-five SWE | C1 | C2 | C2/C1 or difference |
 | --- | ---: | ---: | ---: |
 | Evaluation wall | 54.94 min | 33.44 min | 1.64× faster observed |
+| Summed five case clocks | 54.94 min | 60.39 min | +9.9% |
+| Observed active-case parallelism | 1.00 | 1.81 | More overlapping work |
 | Full CI test job | 70.42 min | 49.20 min | 1.43× faster observed |
 | Solved | 1/5 Django | 1/5 Matplotlib | Different case |
 | Total input tokens | 3.122M | 3.358M | +7.6% |
@@ -497,6 +499,10 @@ but generated 23,239 fewer output tokens, and different code/tool trajectories c
 identities. The synthetic same-server 128/128 C1/C2 point isolates a nearly
 2× aggregate short-context throughput effect more cleanly; repeated fixed
 case runs and the pending C4 result are needed for an end-to-end policy.
+Notably, C2's **summed** case clocks were longer, yet its suite elapsed time
+was shorter because the cases overlapped. This directly supports task
+parallelism as a useful mechanism, without assigning a precise share of the
+21.5-minute wall reduction to it.
 The C1 raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c1-main/` and
 `/home/mvasiljev/build/gemma-swe-c1-main-summary.json`.
