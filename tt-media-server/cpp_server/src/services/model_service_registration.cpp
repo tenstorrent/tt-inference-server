@@ -16,6 +16,7 @@
 #include "runtime/runners/blaze_runner/blaze_tts_scheduler_factory.hpp"
 #include "runtime/runners/embedding_runner.hpp"
 #include "runtime/runners/image_ipc_runner.hpp"
+#include "runtime/runners/qwen3_tts/qwen3_tts_runner.hpp"
 #include "runtime/runners/runner_registry.hpp"
 #include "runtime/runners/sdxl/sdxl_edit_runner.hpp"
 #include "runtime/runners/sdxl/sdxl_generate_runner.hpp"
@@ -218,6 +219,21 @@ void registerTts() {
         return std::make_unique<runners::blaze::BlazeTtsRunner>(
             ttsCfg, runners::blaze::makeMockTtsScheduler(ttsCfg), taskQueue,
             audioQueue, cancelQueue);
+      });
+
+  runners.registerTtsIpcRunner(
+      config::ModelService::TTS, config::ModelRunnerType::TT_QWEN3_TTS,
+      [](const config::RunnerConfig& runnerCfg,
+         ipc::tts::TtsTaskQueue* taskQueue,
+         ipc::tts::TtsAudioChunkQueue* audioQueue,
+         ipc::ICancelQueue* cancelQueue) -> std::unique_ptr<runners::IRunner> {
+        auto ttsCfg = std::get<config::TtsConfig>(runnerCfg);
+        TT_LOG_INFO(
+            "[RunnerRegistry] Creating Qwen3-TTS IPC runner worker={} "
+            "TT_VISIBLE_DEVICES='{}'",
+            ttsCfg.workerId, ttsCfg.visibleDevices);
+        return std::make_unique<runners::qwen3_tts::Qwen3TtsRunner>(
+            ttsCfg, taskQueue, audioQueue, cancelQueue);
       });
 
   ServiceRegistry::instance().registerService(

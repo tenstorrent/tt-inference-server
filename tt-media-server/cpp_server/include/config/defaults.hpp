@@ -200,4 +200,23 @@ constexpr const char* TTS_ENCODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_encoder";
 constexpr const char* TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX = "tts2_speechlm";
 constexpr const char* TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX = "tts2_decoder";
 
+// Qwen3-TTS (MODEL_RUNNER_TYPE=tt_qwen3_tts). The codec works at 24 kHz on
+// both sides: the voice clip it clones from and the waveform it produces.
+constexpr uint32_t TTS_QWEN3_SAMPLE_RATE_HZ = 24000;
+// Frame budget per utterance at 12.5 frames a second (32 s); fixes the talker's
+// KV cache size for the life of the worker.
+constexpr uint32_t TTS_QWEN3_MAX_FRAMES = 400;
+// Longest voice clip accepted for cloning. Upstream finds 3-10 s useful, every
+// reference frame costs a prompt position, and the clip has to fit the 2 MiB
+// TTS task-queue message at 24 kHz PCM16 (~43 s), hence the hard ceiling.
+constexpr uint32_t TTS_QWEN3_MAX_REFERENCE_SECONDS = 30;
+constexpr uint32_t TTS_QWEN3_MAX_REFERENCE_SECONDS_LIMIT = 40;
+// PCM16 samples per audio IPC message: 4 s at 24 kHz, 192 KB, well under the
+// 512 KiB audio-queue message limit.
+constexpr size_t TTS_QWEN3_CHUNK_SAMPLES = 96000;
+// What tt-metal's weights.checkpoint_dir() falls back to with neither
+// QWEN3_TTS_CKPT nor HF_MODEL set.
+constexpr const char* TTS_QWEN3_DEFAULT_HF_MODEL =
+    "Qwen/Qwen3-TTS-12Hz-1.7B-Base";
+
 }  // namespace tt::config::defaults

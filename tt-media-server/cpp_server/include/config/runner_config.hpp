@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -166,6 +167,31 @@ struct TtsConfig : RunnerConfigBase {
       defaults::TTS_SPEECHLM_SOCKET_DESCRIPTOR_PREFIX;
   std::string decoderSocketDescriptorPrefix =
       defaults::TTS_DECODER_SOCKET_DESCRIPTOR_PREFIX;
+
+  // Worker identity, filled per worker by workerRunnerConfig(). The Qwen3-TTS
+  // runner opens its device from these; the Blaze runner ignores them.
+  size_t workerId = 0;
+  // Chip ids this worker may use, e.g. "0" or "1" (its DEVICE_IDS group).
+  std::string visibleDevices;
+
+  // Qwen3-TTS (runner_type == TT_QWEN3_TTS) only. One release per deployment:
+  // which checkpoint is served comes from HF_MODEL / QWEN3_TTS_CKPT, and the
+  // parent rejects requests that do not fit it before streaming starts.
+  Qwen3TtsRelease qwen3Release = Qwen3TtsRelease::BASE;
+  Qwen3TtsModelSize qwen3ModelSize = Qwen3TtsModelSize::SIZE_1B7;
+  // Where the worker loads the checkpoint from, as deployed: QWEN3_TTS_CKPT
+  // (a local directory) and HF_MODEL (a hub id or a directory).
+  std::string qwen3CheckpointDir;
+  std::string qwen3HfModel;
+  // Lower-cased speaker and language names from the checkpoint's config.json,
+  // when the parent can find it locally. Empty = unknown; the parent then
+  // leaves those two checks to the worker.
+  std::vector<std::string> qwen3Speakers;
+  std::vector<std::string> qwen3Languages;
+  uint32_t qwen3MaxFrames = defaults::TTS_QWEN3_MAX_FRAMES;
+  // Sampling seed applied before every request; unset = unseeded sampling.
+  std::optional<uint64_t> qwen3Seed;
+  uint32_t qwen3MaxReferenceSeconds = defaults::TTS_QWEN3_MAX_REFERENCE_SECONDS;
 };
 
 using RunnerConfig =

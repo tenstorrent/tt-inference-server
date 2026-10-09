@@ -79,10 +79,19 @@ std::vector<int16_t> resampleLinear(const std::vector<int16_t>& mono,
 }  // namespace
 
 TtsRequestPreprocessor::TtsRequestPreprocessor(config::TtsConfig config)
-    : config(std::move(config)) {}
+    : config(std::move(config)) {
+  if (this->config.runner_type == config::ModelRunnerType::TT_QWEN3_TTS) {
+    qwen3Validator =
+        std::make_shared<const qwen3_tts::RequestValidator>(this->config);
+  }
+}
 
 tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
     const tt::domain::tts::TtsRequest& request) const {
+  if (qwen3Validator) {
+    return processQwen3(request);
+  }
+
   tt::domain::tts::TtsTask task;
   task.task_id = request.task_id;
   task.text = request.text;
@@ -101,6 +110,26 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::process(
         config.bosToken);
   }
 
+  return task;
+}
+
+tt::domain::tts::TtsTask TtsRequestPreprocessor::processQwen3(
+    const tt::domain::tts::TtsRequest& request) const {
+  qwen3Validator->validate(request);
+
+  tt::domain::tts::TtsTask task;
+  task.task_id = request.task_id;
+  task.text = request.text;
+  // Blank fields travel as absent, the way the model's front-end reads them.
+  task.description = qwen3_tts::nonBlank(request.description);
+  task.speaker = qwen3_tts::nonBlank(request.speaker);
+  task.language = qwen3_tts::nonBlank(request.language);
+  task.referenceText = qwen3_tts::nonBlank(request.referenceText);
+  if (request.voiceSample.has_value()) {
+    // Mono at the codec's 24 kHz (config.voiceSampleRateHz), which is what
+    // build_clone_reference() expects.
+    task.voiceWavPcm = normalizeVoiceSample(*request.voiceSample).wavPcm;
+  }
   return task;
 }
 
