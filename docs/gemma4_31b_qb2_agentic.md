@@ -65,6 +65,19 @@ commits, task lists, or agent policies are kept separate.
   trajectory at unchanged task/scorer, while expanded KV reduced sampled
   waiting at C10. Neither effect transfers automatically to Gemma.
 
+| September 21 Terminal case | Reward | Wall min | Model API min | Output tokens |
+|---|---:|---:|---:|---:|
+| HTML filter | 0 | 171.4 | 102.4 | 212,971 |
+| COBOL modernization | 1 | 9.0 | 7.1 | 15,178 |
+| CompCert | 0 | 162.1 | 60.8 | 118,969 |
+| FEAL | 0 | 63.7 | 54.3 | 120,476 |
+| QEMU startup | 0 | 64.3 | 46.2 | 89,380 |
+
+The same run's SWE cases resolved Django 11299 (1/5 overall). Astropy 14096,
+Matplotlib 25332, Sympy 13551 and scikit-learn 14629 did not resolve. The
+Mini-SWE-Agent trajectories recorded 32–50 API calls per case, but their
+archived summary lacks per-case wall and token timings.
+
 ## Current-main baseline setup
 
 - Metal main pinned at `2c1e1ebdd638886821f35113a5fd0d6335d71608`.
