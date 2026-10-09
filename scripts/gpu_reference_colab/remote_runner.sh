@@ -119,8 +119,7 @@ start_server() {
 server_ready() {
     local model="$1" body
     body="$(curl -sf "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || return 1
-    printf '%s' "${body}" \
-        | python3 -c 'import json,sys; ids=[m["id"] for m in json.load(sys.stdin).get("data",[])]; sys.exit(0 if sys.argv[1] in ids else 1)' "${model}" 2>/dev/null
+    printf '%s' "${body}" | python3 "${GPUREF}" served "${model}"
 }
 
 wait_for_server() {
@@ -189,7 +188,7 @@ run_model() {
         status="failed"; note="GPU spec did not resolve (serve_plan.err)"
     else
         local -a serve_args=()
-        mapfile -t serve_args < <(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1]))["vllm_serve_args"]))' "${mdir}/serve_plan.json")
+        mapfile -t serve_args < <(python3 "${GPUREF}" plan-argv "${mdir}/serve_plan.json")
         phase "model ${idx}/${total} ${model}: vllm serve"
         start_server "${mdir}/vllm_server.log" "${serve_args[@]}"
         local ready=0
@@ -220,10 +219,28 @@ run_model() {
             (cd "${TTIS_DIR}" && python3 run.py --workflow evals --tt-device gpu --model "${model}" --dev-mode) \
                 > "${mdir}/run_py.log" 2>&1 < /dev/null
             evals_rc=$?
-            if [[ "${evals_rc}" -eq 0 ]]; then status="ok"; else status="failed"; note="run.py exited ${evals_rc} (run_py.log)"; fi
+            if [[ "${evals_rc}" -ne 0 ]]; then status="failed"; note="run.py exited ${evals_rc} (run_py.log)"
+            # run.py exits 0 even when one task's lm-eval subprocess failed.
+            elif grep -q "command failed with return code" "${mdir}/run_py.log"; then status="failed"; note="an eval task failed (run_py.log)"
+            else status="ok"; fi
             if [[ -n "${cap}" ]]; then note="${note:+${note}; }max_model_len capped to ${cap} on this GPU (spec max_context not servable)"; fi
         fi
         stop_server
+    fi
+    # Evidence that a cap did not bind: longest prompt+generation per task and
+    # any rejected/truncated-request log lines. A capped run that came close is
+    # not usable as a reference.
+    local evidence="${mdir}/request_evidence.json"
+    if [[ -n "${evals_rc}" ]]; then
+        local -a logs=(--log "${mdir}/run_py.log" --log "${mdir}/vllm_server.log")
+        local f; for f in "${TTIS_DIR}"/workflow_logs/run_logs/*"${model##*/}"*; do [[ -e "$f" ]] && logs+=(--log "$f"); done
+        "${VENV}/bin/python" "${GPUREF}" request-evidence --model "${model}" \
+            --revision "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("revision") or "main")' "${mdir}/serve_plan.json")" \
+            --samples-root "${TTIS_DIR}/workflow_logs/reports_output/evals/${slug}_gpu_evals" \
+            "${logs[@]}" --out "${evidence}" || log "WARNING: request evidence not computed for ${model}"
+        if [[ -n "${cap}" ]] && python3 "${GPUREF}" cap-bound "${evidence}" "${cap}"; then
+            status="failed"; note="${note:+${note}; }a request reached the max_model_len cap or was rejected: not a usable reference"
+        fi
     fi
     finished="$(now)"
     log "${model}: ${status}${note:+ -- ${note}}"
@@ -233,19 +250,10 @@ run_model() {
         --vllm-python "${VENV}/bin/python" --vllm-bin "${VENV}/bin/vllm" \
         --status "${status}" ${evals_rc:+--evals-rc "${evals_rc}"} \
         --started-at "${started}" --finished-at "${finished}" ${note:+--note "${note}"} \
-        ${cap:+--max-model-len-cap "${cap}"} \
+        ${cap:+--max-model-len-cap "${cap}"} --evidence "${evidence}" \
         || log "WARNING: provenance.json not written for ${model}"
 
-    python3 - "${RESULTS}/status.json" "${model}" "${status}" "${note}" <<'PY'
-import json, sys
-path, model, status, note = sys.argv[1:5]
-try:
-    data = json.load(open(path))
-except (OSError, ValueError):
-    data = {}
-data[model] = {"status": status, "note": note or None}
-json.dump(data, open(path, "w"), indent=2)
-PY
+    python3 "${GPUREF}" record-status "${RESULTS}/status.json" "${model}" "${status}" "${note}"
     [[ "${status}" == "ok" ]]
 }
 

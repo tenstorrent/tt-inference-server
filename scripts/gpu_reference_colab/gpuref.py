@@ -2,18 +2,21 @@
 # SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
-"""Python helpers for the Colab GPU-reference workflow (see README.md here).
+"""All non-`colab` logic of the Colab GPU-reference workflow (see README.md).
 
-Subcommands, all printing JSON or plain text on stdout:
-
-  check-models MODEL...   resolve each model's GPU DeviceModelSpec (dev catalog)
-                          and report whether its HF repo is gated and whether
-                          the local HF token can read it (driver preflight)
-  serve-plan  --model M   the exact `vllm serve` argv for M's GPU spec
-                          (runner, on the VM)
-  provenance  ...         write provenance.json for one model (runner)
-  summary     DIR         per-model, per-task score table parsed from the
-                          TTIS eval report JSON under DIR (driver)
+Driver side (local):
+  preflight --gpus G[,G] MODEL...  GPU spec, HF access and memory-fit checks;
+                                   prints the usable GPU types
+  snippet NAME [...]               Python code sent to the VM with `colab exec`
+  status-view                      parse the status snippet's output (stdin)
+  balance-below CU                 exit 0 if `colab usage` (stdin) is below CU
+  summary DIR                      per-model, per-task score table
+Runner side (on the VM):
+  serve-plan --model M             the exact `vllm serve` argv for M's GPU spec
+  plan-argv PLAN                   that argv, one item per line
+  served MODEL                     exit 0 if /v1/models JSON (stdin) lists MODEL
+  record-status FILE MODEL STATUS [NOTE]
+  provenance ...                   write provenance.json for one model
 
 The HF token is only ever read from $HF_TOKEN or the token file; it is never
 taken as an argument and never printed.
@@ -235,13 +238,6 @@ def memory_estimate(
     }
 
 
-def gpu_fits(need_gib: float) -> Dict[str, bool]:
-    return {
-        gpu: need_gib <= mem * GPU_MEMORY_UTILIZATION
-        for gpu, mem in GPU_MEMORY_GIB.items()
-    }
-
-
 def gpu_verdicts(estimate: Dict[str, Any], max_context: int) -> Dict[str, Any]:
     """Per Colab GPU: "fits", {"cap": tokens} or "no".
 
@@ -335,7 +331,6 @@ def hf_memory_estimate(
             "kv_unknown": True,
         }
     estimate["num_params"] = num_params
-    estimate["fits"] = gpu_fits(estimate["need_gib"])
     estimate["verdicts"] = gpu_verdicts(estimate, max_context)
     return estimate
 
@@ -375,6 +370,303 @@ def check_models(models: Iterable[str]) -> List[Dict[str, Any]]:
         )
         rows.append(row)
     return rows
+
+
+def preflight(rows: List[Dict[str, Any]], gpus: List[str]):
+    """Apply the run policy to check_models() rows.
+
+    Returns (usable_gpus, ok, messages). A model must resolve, have HF access,
+    and fit in bf16: per listed GPU it "fits" (weights + one max_context
+    sequence), needs a max_model_len cap (weights fit, max_context does not),
+    or does not fit. It may use the GPUs that fit fully, else a capped one; with
+    neither it is refused (quantized references are out of scope, and one
+    Colab runtime has one GPU, so ~70B models cannot run). The run keeps the
+    GPU types every model accepts.
+    """
+    usable, ok, msgs = list(gpus), True, []
+    for r in rows:
+        model = r["model"]
+        if not r.get("ok"):
+            msgs += [
+                f"{model}: {r.get('error')}",
+                "add a `- device: GPU` entry with default_impl: true to its dev spec",
+            ]
+            ok = False
+            continue
+        gated = {True: "gated", False: "public", None: "gating unknown"}[r["gated"]]
+        msgs.append(
+            f"{model}: {r['model_id']} max_context={r['max_context']} "
+            f"max_concurrency={r['max_concurrency']} revision={r['revision']} ({gated})"
+        )
+        if r["needs_token"] and not r["have_token"]:
+            msgs.append("  needs an HF token: set HF_TOKEN or run `hf auth login`")
+            ok = False
+        if r.get("token_can_read") is False:
+            msgs.append("  the HF token cannot read it: accept the license on the Hub")
+            ok = False
+        mem = r.get("memory")
+        if mem is None:
+            msgs.append(
+                "  no parameter count on the Hub: cannot check GPU fit, refusing"
+            )
+            ok = False
+            continue
+        if mem.get("kv_unknown"):
+            msgs.append(
+                f"  bf16 weights {mem['weights_gib']} GiB (config.json unreadable)"
+            )
+        else:
+            msgs.append(
+                f"  bf16 weights {mem['weights_gib']} GiB + KV {mem['kv_gib_one_seq']} GiB/seq "
+                f"-> needs ~{mem['need_gib']} GiB"
+            )
+        verdicts = {g: mem["verdicts"].get(g) for g in gpus}
+        full = {g for g, v in verdicts.items() if v == "fits"}
+        capped = {g for g, v in verdicts.items() if isinstance(v, dict)}
+        unknown = {g for g, v in verdicts.items() if v is None}
+        for g, v in verdicts.items():
+            if isinstance(v, dict):
+                msgs.append(
+                    f"  {g}: max_context does not fit; ~{v['cap']} tokens would (cap recorded)"
+                )
+            elif v == "no":
+                msgs.append(f"  {g}: bf16 weights do not fit")
+        if not (full or capped) and not unknown:
+            hint = (
+                "add H100 (80 GB) to --gpu"
+                if "H100" not in gpus
+                else "models above ~32B (e.g. 70B) need a multi-GPU machine, out of scope on Colab"
+            )
+            msgs.append(f"  refused: bf16 weights do not fit any GPU in --gpu; {hint}")
+            ok = False
+            continue
+        allowed = (full or capped) | unknown
+        dropped = [g for g in usable if g not in allowed]
+        if dropped:
+            msgs.append(f"  dropping {', '.join(dropped)} from --gpu for this run")
+        usable = [g for g in usable if g in allowed]
+    if ok and not usable:
+        msgs.append("no GPU in --gpu fits every model; split them into separate runs")
+        ok = False
+    return usable, ok, msgs
+
+
+# --------------------------------------------------------------------------
+# VM snippets (sent with `colab exec`; none of them handles the token's value)
+# --------------------------------------------------------------------------
+
+REMOTE_DIR = "/content/gpuref"
+
+_SNIPPETS = {
+    "prepare": """
+import os
+os.makedirs(W, exist_ok=True)
+hf = os.path.expanduser("~/.cache/huggingface")
+os.makedirs(hf, mode=0o700, exist_ok=True)
+os.chmod(hf, 0o700)
+print("GPUREF_PREPARED")
+""",
+    # The upload lands in the non-hidden work dir (Jupyter's contents API may
+    # refuse hidden paths such as ~/.cache); this moves it into place.
+    "install_token": """
+import os
+src, dst = os.path.join(W, "hf_token.upload"), os.path.expanduser("~/.cache/huggingface/token")
+os.chmod(src, 0o600)
+os.replace(src, dst)
+os.chmod(dst, 0o600)
+print("GPUREF_TOKEN_INSTALLED mode=%o bytes=%d" % (os.stat(dst).st_mode & 0o777, os.stat(dst).st_size))
+""",
+    # start_new_session=True is setsid(): no controlling terminal, its own
+    # process group, so the runner outlives this kernel call (nohup-like).
+    "launch": """
+import os, subprocess
+for name in ("DONE", "FAILED", "phase"):
+    try:
+        os.remove(os.path.join(W, name))
+    except OSError:
+        pass
+log = open(os.path.join(W, "runner.log"), "ab")
+proc = subprocess.Popen(["bash", os.path.join(W, "remote_runner.sh")] + ARGS,
+                        cwd=W, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+                        start_new_session=True, close_fds=True)
+with open(os.path.join(W, "runner.pid"), "w") as f:
+    f.write(str(proc.pid))
+print("GPUREF_LAUNCHED pid=%d" % proc.pid)
+""",
+    "status": """
+import glob, os, subprocess
+def read(name):
+    try:
+        with open(os.path.join(W, name)) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+def alive(pid):
+    try:
+        with open(f"/proc/{int(pid)}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, ValueError, IndexError):
+        return False
+pid = read("runner.pid")
+for state, cond in (("DONE", os.path.exists(os.path.join(W, "DONE"))),
+                    ("FAILED", os.path.exists(os.path.join(W, "FAILED"))),
+                    ("RUNNING", bool(pid) and alive(pid)), ("DIED", bool(pid)), ("ABSENT", True)):
+    if cond:
+        break
+print("GPUREF_STATE=" + state)
+print("GPUREF_PHASE=" + read("phase"))
+try:
+    print("GPUREF_GPU=" + subprocess.run(
+        ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total", "--format=csv,noheader"],
+        capture_output=True, text=True, timeout=30).stdout.strip())
+except Exception:
+    pass
+for line in read("runner.log").splitlines()[-12:]:
+    print("GPUREF_LOG| " + line)
+logs = sorted(glob.glob(os.path.join(W, "results", "*", "run_py.log")), key=os.path.getmtime)
+if logs:
+    with open(logs[-1], "rb") as f:
+        f.seek(0, 2)
+        f.seek(max(0, f.tell() - 4096))
+        tail = f.read().decode("utf-8", "replace").replace("\\r", "\\n").splitlines()
+    if tail:
+        print("GPUREF_EVAL=" + os.path.basename(os.path.dirname(logs[-1])) + ": " + tail[-1][-200:])
+""",
+    # A run stopped early (--min-balance) has not copied TTIS's workflow_logs.
+    "pack": """
+import os, subprocess
+tarball, paths = os.path.join(W, "gpuref-results.tar.gz"), ["results"]
+if not os.path.isdir(os.path.join(W, "results", "workflow_logs")) and os.path.isdir(
+        os.path.join(W, "tt-inference-server", "workflow_logs")):
+    paths.append("tt-inference-server/workflow_logs")
+subprocess.run(["tar", "-czf", tarball, "-C", W] + paths, check=True)
+print("GPUREF_PACKED bytes=%d" % os.path.getsize(tarball))
+""",
+}
+
+
+def render_snippet(name: str, runner_args: Optional[List[str]] = None) -> str:
+    """Python source for one VM step. Only `launch` takes arguments (the
+    runner's argv: sha, vLLM pin, models), embedded with repr()."""
+    head = f"W = {REMOTE_DIR!r}\n"
+    if name == "launch":
+        head += f"ARGS = {list(runner_args or [])!r}\n"
+    return head + _SNIPPETS[name].lstrip("\n")
+
+
+def parse_status(text: str):
+    """(state, display_lines) from the status snippet's output."""
+    state, lines = None, []
+    labels = {
+        "GPUREF_PHASE=": "  phase: ",
+        "GPUREF_GPU=": "  gpu:   ",
+        "GPUREF_EVAL=": "  evals: ",
+    }
+    for line in text.splitlines():
+        if line.startswith("GPUREF_STATE="):
+            state = line.split("=", 1)[1].strip() or None
+        elif line.startswith("GPUREF_LOG| "):
+            lines.append("  | " + line[len("GPUREF_LOG| ") :])
+        else:
+            for prefix, label in labels.items():
+                if line.startswith(prefix):
+                    lines.append(label + line[len(prefix) :])
+    return state, lines
+
+
+def parse_balance(text: str) -> Optional[float]:
+    """Compute-unit balance from `colab usage` output, or None."""
+    match = re.search(r"Current balance:\s*([0-9.]+)", text)
+    return float(match.group(1)) if match else None
+
+
+def record_status(path: Path, model: str, status: str, note: Optional[str]) -> None:
+    data = _load_json(path) if path.exists() else None
+    data = data if isinstance(data, dict) else {}
+    data[model] = {"status": status, "note": note or None}
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def served_models(payload: Any) -> List[str]:
+    """Model ids in an OpenAI /v1/models response."""
+    data = payload.get("data") if isinstance(payload, dict) else None
+    return [m.get("id") for m in data or [] if isinstance(m, dict)]
+
+
+# --------------------------------------------------------------------------
+# Request-length evidence (for runs served under a max_model_len cap)
+# --------------------------------------------------------------------------
+
+# Markers of a request the server rejected or the harness cut short.
+REJECTION_PATTERN = re.compile(
+    r"maximum context length|truncat|HTTP/1\.1\" 400|400 Bad Request", re.IGNORECASE
+)
+
+
+def sample_task_name(path: Path) -> str:
+    """'samples_mmlu_pro_law_2026-10-09T00-14-03.525271.jsonl' -> 'mmlu_pro_law'."""
+    return re.sub(r"_\d{4}-\d{2}-\d{2}T[\d.-]+$", "", path.stem[len("samples_") :])
+
+
+def request_token_stats(root: Path, count_tokens) -> Dict[str, Dict[str, int]]:
+    """Per lm-eval task: samples, longest prompt+generation in tokens, and
+    empty responses, from every samples_*.jsonl under root.
+
+    ``count_tokens(text) -> int`` is the served model's tokenizer.
+    """
+    stats: Dict[str, Dict[str, int]] = {}
+    for path in sorted(root.rglob("samples_*.jsonl")):
+        entry = stats.setdefault(
+            sample_task_name(path), {"samples": 0, "max_tokens": 0, "empty": 0}
+        )
+        with path.open() as f:
+            for line in f:
+                sample = json.loads(line)
+                args = sample.get("arguments") or {}
+                first = args.get("gen_args_0") if isinstance(args, dict) else None
+                prompt = (
+                    (first or {}).get("arg_0")
+                    if first
+                    else (args[0][0] if args else "")
+                )
+                resp = (sample.get("resps") or [[""]])[0]
+                resp = resp[0] if isinstance(resp, list) else resp
+                total = count_tokens(str(prompt or "")) + count_tokens(str(resp or ""))
+                entry["samples"] += 1
+                entry["max_tokens"] = max(entry["max_tokens"], total)
+                entry["empty"] += 0 if str(resp or "").strip() else 1
+    return stats
+
+
+def cap_bound(evidence: Optional[Dict[str, Any]], cap: int) -> bool:
+    """True when a capped run cannot be trusted: no evidence, a rejected or
+    truncated request in the logs, or a request at the cap (prompt+generation
+    within 64 tokens of it, the harness's context reserve)."""
+    if not isinstance(evidence, dict):
+        return True
+    if evidence.get("rejection_log_lines"):
+        return True
+    lengths = [
+        t.get("max_tokens", 0)
+        for t in (evidence.get("max_request_tokens") or {}).values()
+    ]
+    return not lengths or max(lengths) >= cap - 64
+
+
+def rejection_lines(paths: Iterable[Path]) -> List[str]:
+    """Log lines that look like a rejected or truncated request."""
+    hits = []
+    for path in paths:
+        try:
+            text = path.read_text(errors="replace")
+        except OSError:
+            continue
+        hits += [
+            f"{path.name}: {ln.strip()[:200]}"
+            for ln in text.splitlines()
+            if REJECTION_PATTERN.search(ln)
+        ]
+    return hits
 
 
 # --------------------------------------------------------------------------
@@ -489,6 +781,9 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "lm_eval_commit_pinned": lm_eval_commit_pinned(ttis_dir),
         "lm_eval_commit_installed": lm_eval_commit_installed(ttis_dir),
         "note": args.note,
+        # Longest prompt+generation per task and any rejection/truncation log
+        # lines: the evidence that a max_model_len cap did not bind.
+        "request_evidence": _load_json(Path(args.evidence)) if args.evidence else None,
     }
 
 
@@ -609,31 +904,57 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    p_check = sub.add_parser("check-models")
-    p_check.add_argument("models", nargs="+")
+    p = sub.add_parser("check-models")
+    p.add_argument("models", nargs="+")
+    p = sub.add_parser("preflight")
+    p.add_argument("--gpus", required=True, help="comma-separated, in preference order")
+    p.add_argument("models", nargs="+")
+    p = sub.add_parser("snippet")
+    p.add_argument("name", choices=sorted(_SNIPPETS))
+    p.add_argument("runner_args", nargs="*", help="launch only: remote_runner.sh argv")
+    sub.add_parser("status-view")
+    p = sub.add_parser("balance-below")
+    p.add_argument("floor", type=float)
+    p = sub.add_parser("summary")
+    p.add_argument("dir")
+    p.add_argument("--json", action="store_true", help="print rows as JSON")
 
-    p_plan = sub.add_parser("serve-plan")
-    p_plan.add_argument("--model", required=True)
-    p_plan.add_argument("--ttis-dir", default=str(REPO_ROOT))
-    p_plan.add_argument("--port", type=int, default=8000)
-
-    p_prov = sub.add_parser("provenance")
-    p_prov.add_argument("--out", required=True)
-    p_prov.add_argument("--model", required=True)
-    p_prov.add_argument("--ttis-dir", required=True)
-    p_prov.add_argument("--plan", default=None)
-    p_prov.add_argument("--vllm-python", required=True)
-    p_prov.add_argument("--vllm-bin", required=True)
-    p_prov.add_argument("--status", required=True)
-    p_prov.add_argument("--evals-rc", type=int, default=None)
-    p_prov.add_argument("--started-at", required=True)
-    p_prov.add_argument("--finished-at", required=True)
-    p_prov.add_argument("--note", default=None)
-    p_prov.add_argument("--max-model-len-cap", type=int, default=None)
-
-    p_sum = sub.add_parser("summary")
-    p_sum.add_argument("dir")
-    p_sum.add_argument("--json", action="store_true", help="print rows as JSON")
+    p = sub.add_parser("serve-plan")
+    p.add_argument("--model", required=True)
+    p.add_argument("--ttis-dir", default=str(REPO_ROOT))
+    p.add_argument("--port", type=int, default=8000)
+    p = sub.add_parser("plan-argv")
+    p.add_argument("plan")
+    p = sub.add_parser("served")
+    p.add_argument("model")
+    p = sub.add_parser("record-status")
+    p.add_argument("file")
+    p.add_argument("model")
+    p.add_argument("status")
+    p.add_argument("note", nargs="?", default=None)
+    p = sub.add_parser("request-evidence")
+    p.add_argument("--model", required=True)
+    p.add_argument("--revision", default=None)
+    p.add_argument("--samples-root", required=True)
+    p.add_argument("--log", action="append", default=[], help="log files to scan")
+    p.add_argument("--out", required=True, help="JSON file to write")
+    p = sub.add_parser("cap-bound")
+    p.add_argument("evidence")
+    p.add_argument("cap", type=int)
+    p = sub.add_parser("provenance")
+    p.add_argument("--out", required=True)
+    p.add_argument("--model", required=True)
+    p.add_argument("--ttis-dir", required=True)
+    p.add_argument("--plan", default=None)
+    p.add_argument("--vllm-python", required=True)
+    p.add_argument("--vllm-bin", required=True)
+    p.add_argument("--status", required=True)
+    p.add_argument("--evals-rc", type=int, default=None)
+    p.add_argument("--started-at", required=True)
+    p.add_argument("--finished-at", required=True)
+    p.add_argument("--note", default=None)
+    p.add_argument("--max-model-len-cap", type=int, default=None)
+    p.add_argument("--evidence", default=None, help="request-evidence JSON to embed")
 
     args = parser.parse_args(argv)
 
@@ -641,17 +962,74 @@ def main(argv: Optional[List[str]] = None) -> int:
         rows = check_models(args.models)
         print(json.dumps(rows, indent=2))
         return 0 if all(r["ok"] for r in rows) else 1
+    if args.cmd == "preflight":
+        usable, ok, msgs = preflight(check_models(args.models), args.gpus.split(","))
+        for msg in msgs:
+            print(f"[gpuref]   {msg}", file=sys.stderr)
+        print(" ".join(usable))
+        return 0 if ok else 1
+    if args.cmd == "snippet":
+        print(render_snippet(args.name, args.runner_args), end="")
+        return 0
+    if args.cmd == "status-view":
+        state, lines = parse_status(sys.stdin.read())
+        for line in lines:
+            print(line, file=sys.stderr)
+        if state is None:
+            return 1
+        print(state)
+        return 0
+    if args.cmd == "balance-below":
+        balance = parse_balance(sys.stdin.read())
+        print(f"{balance:.2f}" if balance is not None else "unknown")
+        return 0 if balance is not None and balance < args.floor else 1
+    if args.cmd == "summary":
+        root = Path(args.dir)
+        status = _load_json(root / "status.json")
+        if isinstance(status, dict) and not args.json:
+            for model, info in status.items():
+                print(
+                    f"{model}: {info.get('status')}"
+                    + (f" ({info['note']})" if info.get("note") else "")
+                )
+        rows = summary_rows(root)
+        print(json.dumps(rows, indent=2) if args.json else format_summary(rows))
+        return 0 if rows else 1
     if args.cmd == "serve-plan":
         spec = load_gpu_spec(args.model, Path(args.ttis_dir))
         print(json.dumps(serve_plan(spec, port=args.port), indent=2))
         return 0
+    if args.cmd == "plan-argv":
+        print("\n".join(json.loads(Path(args.plan).read_text())["vllm_serve_args"]))
+        return 0
+    if args.cmd == "served":
+        try:
+            payload = json.loads(sys.stdin.read())
+        except ValueError:
+            return 1
+        return 0 if args.model in served_models(payload) else 1
+    if args.cmd == "record-status":
+        record_status(Path(args.file), args.model, args.status, args.note)
+        return 0
+    if args.cmd == "request-evidence":
+        # Needs transformers: run with the vLLM venv's python.
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision)
+        evidence = {
+            "max_request_tokens": request_token_stats(
+                Path(args.samples_root),
+                lambda t: len(tok(t, add_special_tokens=False).input_ids),
+            ),
+            "rejection_log_lines": rejection_lines(Path(p) for p in args.log),
+        }
+        Path(args.out).write_text(json.dumps(evidence, indent=2) + "\n")
+        return 0
+    if args.cmd == "cap-bound":
+        return 0 if cap_bound(_load_json(Path(args.evidence)), args.cap) else 1
     if args.cmd == "provenance":
         Path(args.out).write_text(json.dumps(build_provenance(args), indent=2) + "\n")
         return 0
-    if args.cmd == "summary":
-        rows = summary_rows(Path(args.dir))
-        print(json.dumps(rows, indent=2) if args.json else format_summary(rows))
-        return 0 if rows else 1
     return 2
 
 

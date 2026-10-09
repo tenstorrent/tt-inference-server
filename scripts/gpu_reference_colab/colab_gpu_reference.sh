@@ -3,567 +3,202 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
-# colab_gpu_reference.sh -- collect GPU reference eval scores (gpu_reference_score)
-# on a Google Colab GPU VM with the Colab CLI (https://github.com/googlecolab/google-colab-cli).
+# colab_gpu_reference.sh -- GPU reference eval scores on a Google Colab VM (README.md).
 #
-# For each MODEL the VM serves the HF repo with upstream vLLM and runs TTIS's
-# own `run.py --workflow evals --tt-device gpu` against it, so the GPU numbers
-# come from the exact TTIS task configs the Tenstorrent runs use. See README.md
-# in this directory for the full workflow, outputs and troubleshooting.
+#   1 preflight   2 start VM   3 upload token   4 launch runner
+#   5 poll        6 download + summary          7 stop (EXIT trap, unless --keep)
 #
-#   scripts/gpu_reference_colab/colab_gpu_reference.sh MODEL [MODEL...]
-#
-# The HF token (HF_TOKEN or ~/.cache/huggingface/token) is copied to a 0600
-# temp file, sent with `colab upload` and deleted; it never appears on a
-# command line, in a log, or in code sent with `colab exec`.
+# Only the `colab` calls and this flow live here; every check, snippet and
+# parser is in gpuref.py. The HF token goes up as a 0600 temp file through
+# `colab upload`: never on a command line, in a log, or in code sent with exec.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-REMOTE_DIR="/content/gpuref"             # absolute path on the VM
-REMOTE_REL="content/gpuref"              # same path for colab upload/download
-
-GPU="H100"
-HIGH_MEM=0
-TTIS_REF=""
-OUT_DIR=""
-KEEP=0
-SESSION=""
-POLL_MINUTES=5
-VLLM_VERSION=""
-DRY_RUN=0
-MIN_BALANCE=0            # stop (collect partial results) below this many CU; 0 = off
-NEW_ATTEMPTS=3           # colab new attempts per GPU type on 503 (no capacity)
-NEW_RETRY_SECONDS=120    # backoff: 120 s, then 240 s
-MODELS=()
+REMOTE_REL="content/gpuref"   # /content/gpuref on the VM, for upload/download
+GPU="H100" HIGH_MEM=0 TTIS_REF="HEAD" OUT_DIR="" KEEP=0 SESSION="" POLL_MINUTES=5
+VLLM_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=()
+NEW_ATTEMPTS=3 NEW_RETRY_SECONDS=120   # per GPU type, on 503 (no capacity)
 
 usage() {
     cat <<'EOF'
 Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
-
-Collect GPU reference eval scores for TTIS models on a Google Colab GPU VM.
-
-Options:
-  --gpu GPU[,GPU...]   Colab GPU types in order of preference (default: H100).
-                       Each is tried a few times with backoff while Colab
-                       answers 503 (no capacity), then the next, e.g. H100,A100
-  --high-mem           request a high-RAM machine shape
-  --ttis-ref REF       TTIS commit the VM checks out (default: HEAD of this
-                       checkout; it must already be pushed to origin)
-  --out DIR            local results dir
-                       (default: workflow_logs/gpu_reference_colab/<session>)
-  --keep               do not `colab stop` the session on exit
-  --session NAME       Colab session name (default: gpuref-<ttis sha[:8]>);
-                       re-running with the same name attaches to that run
-  --poll-minutes N     minutes between status polls (default: 5)
-  --vllm-version V     override the vLLM pin in remote_runner.sh
-  --min-balance CU     at each poll, stop the run (collect partial results, stop
-                       the VM) once `colab usage` shows fewer compute units
-  --dry-run            print every colab command instead of running it
-  -h, --help           show this help
+  --gpu G[,G...]      GPU types in preference order (default H100), e.g. H100,A100
+  --high-mem          high-RAM machine shape
+  --ttis-ref REF      pushed TTIS commit the VM checks out (default HEAD)
+  --out DIR           results dir (default workflow_logs/gpu_reference_colab/<session>)
+  --keep              do not stop the VM on exit
+  --session NAME      session name (default gpuref-<sha[:8]>); same name re-attaches
+  --poll-minutes N    minutes between polls (default 5)
+  --min-balance CU    stop (keeping partial results) below this compute-unit balance
+  --vllm-version V    override the runner's vLLM pin
+  --dry-run           print every colab command instead of running it
 EOF
 }
-
 log() { printf '[gpuref] %s\n' "$*" >&2; }
 die() { printf '[gpuref] ERROR: %s\n' "$*" >&2; exit 1; }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --gpu) GPU="$2"; shift 2 ;;
-        --high-mem) HIGH_MEM=1; shift ;;
-        --ttis-ref) TTIS_REF="$2"; shift 2 ;;
-        --out) OUT_DIR="$2"; shift 2 ;;
-        --keep) KEEP=1; shift ;;
-        --session) SESSION="$2"; shift 2 ;;
+        --gpu) GPU="$2"; shift 2 ;;            --high-mem) HIGH_MEM=1; shift ;;
+        --ttis-ref) TTIS_REF="$2"; shift 2 ;;  --out) OUT_DIR="$2"; shift 2 ;;
+        --keep) KEEP=1; shift ;;               --session) SESSION="$2"; shift 2 ;;
         --poll-minutes) POLL_MINUTES="$2"; shift 2 ;;
-        --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
         --min-balance) MIN_BALANCE="$2"; shift 2 ;;
-        --dry-run) DRY_RUN=1; shift ;;
-        -h|--help) usage; exit 0 ;;
+        --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
+        --dry-run) DRY_RUN=1; shift ;;         -h|--help) usage; exit 0 ;;
         -*) usage >&2; die "unknown option: $1" ;;
         *) MODELS+=("$1"); shift ;;
     esac
 done
-
 [[ ${#MODELS[@]} -gt 0 ]] || { usage >&2; die "at least one MODEL (HF repo id) is required"; }
-for m in "${MODELS[@]}"; do
-    [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "not an HF repo id: $m"
-done
-IFS=',' read -r -a GPUS <<< "${GPU}"
-[[ ${#GPUS[@]} -gt 0 ]] || die "--gpu needs at least one GPU type"
-for g in "${GPUS[@]}"; do
-    [[ "${g}" =~ ^(T4|L4|G4|H100|A100)$ ]] || die "unsupported --gpu type: ${g} (T4, L4, G4, H100, A100)"
-done
-[[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number of compute units"
+for m in "${MODELS[@]}"; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "not an HF repo id: $m"; done
+[[ "${GPU}" =~ ^((T4|L4|G4|H100|A100),)*(T4|L4|G4|H100|A100)$ ]] || die "bad --gpu: ${GPU}"
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
+[[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number"
 [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --vllm-version"
 
-# ----------------------------------------------------------------------------
-# Local helpers
-# ----------------------------------------------------------------------------
-
-LOCAL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/gpuref.XXXXXX")"
-chmod 700 "${LOCAL_TMP}"
-SESSION_ACTIVE=0   # set once this run created or attached to the session
-
-cleanup() {
+LOCAL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/gpuref.XXXXXX")"; chmod 700 "${LOCAL_TMP}"
+SESSION_ACTIVE=0
+cleanup() {   # step 7: always runs
     local rc=$?
     rm -rf "${LOCAL_TMP}"
-    if [[ "${SESSION_ACTIVE}" -eq 1 ]]; then
-        if [[ "${KEEP}" -eq 1 ]]; then
-            log "--keep: session '${SESSION}' left running. Re-attach with the same command; stop with: colab stop -s ${SESSION}"
-        else
-            log "stopping session '${SESSION}'"
-            colab_cmd stop -s "${SESSION}" || log "WARNING: 'colab stop -s ${SESSION}' failed; check 'colab sessions'"
-        fi
+    if [[ "${SESSION_ACTIVE}" -eq 1 && "${KEEP}" -eq 1 ]]; then
+        log "--keep: '${SESSION}' left running; re-attach with the same command, stop with: colab stop -s ${SESSION}"
+    elif [[ "${SESSION_ACTIVE}" -eq 1 ]]; then
+        log "stopping session '${SESSION}'"
+        colab_cmd stop -s "${SESSION}" || log "WARNING: 'colab stop -s ${SESSION}' failed; check 'colab sessions'"
     fi
     exit "${rc}"
 }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap cleanup EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
 
-# Every colab call goes through here so --dry-run can print it (to stderr,
-# so it also shows for calls whose stdout is captured or discarded) instead.
-colab_cmd() {
-    if [[ "${DRY_RUN}" -eq 1 ]]; then
-        { printf '+ colab'; printf ' %q' "$@"; printf '\n'; } >&2
-        return 0
-    fi
+colab_cmd() {   # every colab call; --dry-run prints it to stderr instead
+    if [[ "${DRY_RUN}" -eq 1 ]]; then { printf '+ colab'; printf ' %q' "$@"; printf '\n'; } >&2; return 0; fi
     colab "$@" < /dev/null
 }
-
-# Python with PyYAML for gpuref.py (TTIS's spec loader needs it).
-if python3 -c 'import yaml' 2>/dev/null; then
-    PYRUN=(python3)
-elif command -v uv >/dev/null 2>&1; then
-    PYRUN=(uv run --no-project --quiet --with pyyaml python)
-else
-    die "need python3 with PyYAML, or uv (https://docs.astral.sh/uv/)"
-fi
+if python3 -c 'import yaml' 2>/dev/null; then PYRUN=(python3)
+elif command -v uv >/dev/null 2>&1; then PYRUN=(uv run --no-project --quiet --with pyyaml python)
+else die "need python3 with PyYAML, or uv"; fi
 gpuref() { "${PYRUN[@]}" "${SCRIPT_DIR}/gpuref.py" "$@"; }
-
-# Write a snippet for `colab exec -f` into LOCAL_TMP; prints its path.
-snippet() {
-    local name="$1" path="${LOCAL_TMP}/$1.py"
-    cat > "${path}"
-    printf '%s\n' "${path}"
+remote_exec() {   # NAME TIMEOUT [RUNNER ARGS...]: run a gpuref.py snippet on the VM
+    local name="$1" timeout="$2"; shift 2
+    gpuref snippet "${name}" -- "$@" > "${LOCAL_TMP}/${name}.py" || die "could not render snippet ${name}"
+    [[ "${DRY_RUN}" -eq 1 ]] && { colab_cmd exec -s "${SESSION}" -f "${LOCAL_TMP}/${name}.py" --timeout "${timeout}"; return; }
+    # Hard deadline: a lost kernel websocket can hang `colab exec` past --timeout.
+    perl -e 'alarm shift; exec @ARGV' $((timeout + 120)) \
+        colab exec -s "${SESSION}" -f "${LOCAL_TMP}/${name}.py" --timeout "${timeout}" < /dev/null
 }
-
-# Run a snippet on the VM (stdout = its output); in dry-run just print the call.
-remote_exec() {
-    local name="$1" timeout="$2"
-    colab_cmd exec -s "${SESSION}" -f "${LOCAL_TMP}/${name}.py" --timeout "${timeout}"
-}
-
-# remote_exec, then require the snippet's success marker in its output:
-# `colab exec` exits 0 even when the code raised on the VM.
-remote_step() {
-    local name="$1" timeout="$2" marker="$3" out
-    if [[ "${DRY_RUN}" -eq 1 ]]; then
-        remote_exec "${name}" "${timeout}"
-        return 0
-    fi
-    out="$(remote_exec "${name}" "${timeout}" 2>&1)" || true
+remote_step() {   # NAME TIMEOUT MARKER [ARGS...]: `colab exec` exits 0 even if the code raised
+    local name="$1" timeout="$2" marker="$3" out; shift 3
+    if [[ "${DRY_RUN}" -eq 1 ]]; then remote_exec "${name}" "${timeout}" "$@"; return 0; fi
+    out="$(remote_exec "${name}" "${timeout}" "$@" 2>&1)" || true
     printf '%s\n' "${out}" | grep "^GPUREF_" >&2 || true
-    printf '%s\n' "${out}" | grep -q "^${marker}" \
-        || die "VM step '${name}' failed:"$'\n'"${out}"
+    printf '%s\n' "${out}" | grep -q "^${marker}" || die "VM step '${name}' failed:"$'\n'"${out}"
+}
+has_session() { awk -v want="[${SESSION}]" '$1 == want { f = 1 } END { exit !f }'; }
+remote_state() {   # sets STATE; fails when the status cannot be read
+    local out; out="$(remote_exec status 120 2>&1)" || return 1
+    STATE="$(printf '%s\n' "${out}" | gpuref status-view)"
 }
 
-# Whether `colab sessions` output (stdin) lists SESSION by name.
-has_session() {
-    awk -v want="[${SESSION}]" '$1 == want { found = 1 } END { exit !found }'
-}
-
-# ----------------------------------------------------------------------------
-# Preflight
-# ----------------------------------------------------------------------------
-
-TTIS_REF="${TTIS_REF:-HEAD}"
-TTIS_SHA="$(git -C "${REPO_ROOT}" rev-parse --verify "${TTIS_REF}^{commit}" 2>/dev/null)" \
-    || die "--ttis-ref ${TTIS_REF} is not a commit in ${REPO_ROOT}"
-git -C "${REPO_ROOT}" fetch -q origin 2>/dev/null || log "WARNING: git fetch origin failed; checking pushed state against cached remote refs"
+# 1 preflight ---------------------------------------------------------------
+TTIS_SHA="$(git -C "${REPO_ROOT}" rev-parse --verify "${TTIS_REF}^{commit}" 2>/dev/null)" || die "--ttis-ref ${TTIS_REF} is not a commit"
+git -C "${REPO_ROOT}" fetch -q origin 2>/dev/null || log "WARNING: git fetch origin failed"
 if [[ -z "$(git -C "${REPO_ROOT}" branch -r --contains "${TTIS_SHA}" 2>/dev/null)" ]]; then
-    msg="TTIS ${TTIS_SHA} is not on any origin branch; push it first (the VM clones the public repo at this exact sha)"
+    msg="TTIS ${TTIS_SHA} is not on any origin branch; push it first (the VM clones that exact sha)"
     if [[ "${DRY_RUN}" -eq 1 ]]; then log "WARNING: ${msg}"; else die "${msg}"; fi
 fi
-# The preflight below reads this checkout's catalog; the VM reads TTIS_SHA's.
-if ! git -C "${REPO_ROOT}" diff --quiet "${TTIS_SHA}" -- workflows/model_specs reference_config/evals; then
-    log "WARNING: local specs/eval configs differ from ${TTIS_SHA}; the preflight may not match what the VM runs"
-fi
+git -C "${REPO_ROOT}" diff --quiet "${TTIS_SHA}" -- workflows/model_specs reference_config/evals \
+    || log "WARNING: local specs/eval configs differ from ${TTIS_SHA}; the preflight may not match the VM"
 SESSION="${SESSION:-gpuref-${TTIS_SHA:0:8}}"
 [[ "${SESSION}" =~ ^[A-Za-z0-9._-]+$ ]] || die "bad --session: ${SESSION}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/workflow_logs/gpu_reference_colab/${SESSION}}"
-
-log "models:  ${MODELS[*]}"
-log "ttis:    ${TTIS_SHA} (${TTIS_REF})"
-log "session: ${SESSION} (--gpu ${GPUS[*]}$([[ ${HIGH_MEM} -eq 1 ]] && echo ' --high-mem'))"
-log "out:     ${OUT_DIR}"
-
-# Models must resolve to a GPU DeviceModelSpec in the dev catalog (the same
-# lookup run.py does on the VM), and gated repos need a token that can read them.
-CHECK_JSON="${LOCAL_TMP}/check.json"
-gpuref check-models "${MODELS[@]}" > "${CHECK_JSON}" || true
-FIT_GPUS="${LOCAL_TMP}/fit_gpus"
-"${PYRUN[@]}" - "${CHECK_JSON}" "${FIT_GPUS}" "${GPUS[@]}" <<'PY' || die "model preflight failed (see above)"
-import json, sys
-rows = json.load(open(sys.argv[1]))
-fit_path, gpus = sys.argv[2], sys.argv[3:]
-usable = set(gpus)
-bad = False
-for r in rows:
-    if not r.get("ok"):
-        print(f"[gpuref]   {r['model']}: {r.get('error')}", file=sys.stderr)
-        print("[gpuref]   add a `- device: GPU` entry with default_impl: true to its dev spec (docs/gpu_workflows.md)", file=sys.stderr)
-        bad = True
-        continue
-    gated = {True: "gated", False: "public", None: "gating unknown"}[r["gated"]]
-    print(f"[gpuref]   {r['model']}: {r['model_id']} max_context={r['max_context']} "
-          f"max_concurrency={r['max_concurrency']} revision={r['revision']} ({gated})", file=sys.stderr)
-    if r["needs_token"] and not r["have_token"]:
-        print(f"[gpuref]   {r['model']} needs an HF token: set HF_TOKEN or run `hf auth login`", file=sys.stderr)
-        bad = True
-    if r.get("token_can_read") is False:
-        print(f"[gpuref]   the HF token cannot read {r['model']}: accept its license at https://huggingface.co/{r['model']}", file=sys.stderr)
-        bad = True
-    # Sizing (bf16 only; quantized references are out of scope). Per listed
-    # GPU: "fits" (weights + one max_context sequence), a KV cap (weights fit,
-    # max_context does not), or "no". A model may use the GPUs that fit fully;
-    # only if none does may it use a capped one; if neither, it is refused.
-    mem = r.get("memory")
-    if mem is None:
-        print(f"[gpuref]     {r['model']}: no parameter count on the Hub; cannot check GPU fit, refusing", file=sys.stderr)
-        bad = True
-        continue
-    if mem.get("kv_unknown"):
-        print(f"[gpuref]     bf16 weights {mem['weights_gib']} GiB (config.json unreadable: KV not sized)", file=sys.stderr)
-    else:
-        print(f"[gpuref]     bf16 weights {mem['weights_gib']} GiB + KV {mem['kv_gib_one_seq']} GiB/seq at max_context "
-              f"(x{r['max_concurrency']} = {mem['kv_gib_all_seqs']} GiB) -> needs ~{mem['need_gib']} GiB", file=sys.stderr)
-    verdicts = {g: mem["verdicts"].get(g) for g in gpus}
-    full = {g for g, v in verdicts.items() if v == "fits"}
-    capped = {g for g, v in verdicts.items() if isinstance(v, dict)}
-    for g, v in verdicts.items():
-        if v is None:
-            print(f"[gpuref]     {g}: memory not characterised; not checked", file=sys.stderr)
-        elif isinstance(v, dict):
-            print(f"[gpuref]     {g}: weights fit but max_context {r['max_context']} does not; "
-                  f"~{v['cap']} tokens would (max_model_len cap, recorded in provenance.json)", file=sys.stderr)
-        elif v == "no":
-            print(f"[gpuref]     {g}: bf16 weights do not fit", file=sys.stderr)
-    unknown = {g for g, v in verdicts.items() if v is None}
-    allowed = (full or capped) | unknown
-    if not (full or capped):
-        known = [g for g in gpus if g not in unknown]
-        if known and not unknown:
-            hint = ("add H100 (80 GB) to --gpu" if "H100" not in gpus else
-                    "one Colab runtime has one GPU, so models above ~32B (e.g. 70B) are out of scope "
-                    "here: they need a multi-GPU machine")
-            print(f"[gpuref]   {r['model']}: bf16 weights ({mem['weights_gib']} GiB) do not fit the largest GPU in "
-                  f"--gpu ({', '.join(known)}); {hint}.", file=sys.stderr)
-            bad = True
-            continue
-    for g in gpus:
-        if g not in allowed and g in usable:
-            print(f"[gpuref]     dropping {g} from --gpu for this run (it cannot hold {r['model']} at full max_context"
-                  f"{'' if full else ' or with a cap'})", file=sys.stderr)
-    usable &= allowed
-if not bad and not usable:
-    print("[gpuref]   no GPU in --gpu fits every model; split the models into separate runs", file=sys.stderr)
-    bad = True
-open(fit_path, "w").write(" ".join(g for g in gpus if g in usable))
-sys.exit(1 if bad else 0)
-PY
-read -r -a GPUS < "${FIT_GPUS}" || true   # no trailing newline
+log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; session ${SESSION}; out ${OUT_DIR}"
+usable="$(gpuref preflight --gpus "${GPU}" "${MODELS[@]}")" || die "preflight failed (see above)"
+read -r -a GPUS <<< "${usable}"
 [[ ${#GPUS[@]} -gt 0 ]] || die "no usable GPU type"
-
-HAVE_TOKEN=0
-if [[ -n "${HF_TOKEN:-}" || -s "${HOME}/.cache/huggingface/token" ]]; then
-    HAVE_TOKEN=1
-fi
-
+HAVE_TOKEN=0; [[ -n "${HF_TOKEN:-}" || -s "${HOME}/.cache/huggingface/token" ]] && HAVE_TOKEN=1
 if [[ "${DRY_RUN}" -eq 0 ]]; then
-    command -v colab >/dev/null 2>&1 \
-        || die "the Colab CLI is not installed: uv tool install google-colab-cli"
-    # Without a cached token any colab call starts the interactive OAuth flow;
-    # with stdin at /dev/null it fails instead of hanging.
-    [[ -s "${HOME}/.config/colab-cli/token.json" ]] \
-        || die "the Colab CLI is not signed in: run 'colab sessions' once in a terminal and complete the sign-in"
-    SESSIONS_OUT="$(colab sessions < /dev/null 2>&1)" \
-        || die "'colab sessions' failed (${SESSIONS_OUT}); run 'colab sessions' once in a terminal to sign in again"
-else
-    colab_cmd sessions
-    SESSIONS_OUT=""
+    command -v colab >/dev/null 2>&1 || die "install the Colab CLI: uv tool install google-colab-cli"
+    # Without a cached token colab would start an interactive sign-in.
+    [[ -s "${HOME}/.config/colab-cli/token.json" ]] || die "Colab CLI not signed in: run 'colab sessions' once in a terminal"
 fi
+if [[ "${DRY_RUN}" -eq 1 ]]; then colab_cmd sessions; SESSIONS_OUT=""
+else SESSIONS_OUT="$(colab_cmd sessions 2>&1)" || die "'colab sessions' failed: ${SESSIONS_OUT}"; fi
 
-# ----------------------------------------------------------------------------
-# VM-side snippets (no secrets in any of them)
-# ----------------------------------------------------------------------------
-
-snippet status > /dev/null <<PY
-import os, subprocess
-W = "${REMOTE_DIR}"
-def read(name):
-    try:
-        with open(os.path.join(W, name)) as f:
-            return f.read().strip()
-    except OSError:
-        return ""
-def alive(pid):
-    try:
-        with open(f"/proc/{int(pid)}/stat") as f:
-            return f.read().rsplit(")", 1)[1].split()[0] != "Z"
-    except (OSError, ValueError, IndexError):
-        return False
-pid = read("runner.pid")
-if os.path.exists(os.path.join(W, "DONE")):
-    state = "DONE"
-elif os.path.exists(os.path.join(W, "FAILED")):
-    state = "FAILED"
-elif pid and alive(pid):
-    state = "RUNNING"
-elif pid:
-    state = "DIED"
-else:
-    state = "ABSENT"
-print("GPUREF_STATE=" + state)
-print("GPUREF_PHASE=" + read("phase"))
-try:
-    gpu = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
-                          "--format=csv,noheader"], capture_output=True, text=True, timeout=30).stdout.strip()
-    print("GPUREF_GPU=" + gpu)
-except Exception:
-    pass
-for line in read("runner.log").splitlines()[-12:]:
-    print("GPUREF_LOG| " + line)
-# Latest progress line of the model currently in evals (run.py's tqdm output).
-import glob
-logs = sorted(glob.glob(os.path.join(W, "results", "*", "run_py.log")), key=os.path.getmtime)
-if logs:
-    with open(logs[-1], "rb") as f:
-        f.seek(0, 2)
-        f.seek(max(0, f.tell() - 4096))
-        tail = f.read().decode("utf-8", "replace").replace("\r", "\n").splitlines()
-    if tail:
-        print("GPUREF_EVAL=" + os.path.basename(os.path.dirname(logs[-1])) + ": " + tail[-1][-200:])
-PY
-
-snippet prepare > /dev/null <<PY
-import os
-os.makedirs("${REMOTE_DIR}", exist_ok=True)
-hf = os.path.expanduser("~/.cache/huggingface")
-os.makedirs(hf, mode=0o700, exist_ok=True)
-os.chmod(hf, 0o700)
-print("GPUREF_PREPARED")
-PY
-
-# The upload lands in the (non-hidden) work dir because Jupyter's contents API
-# may refuse hidden paths such as ~/.cache; this moves it into place.
-snippet install_token > /dev/null <<PY
-import os
-src = "${REMOTE_DIR}/hf_token.upload"
-dst = os.path.expanduser("~/.cache/huggingface/token")
-os.chmod(src, 0o600)
-os.replace(src, dst)
-os.chmod(dst, 0o600)
-print("GPUREF_TOKEN_INSTALLED mode=%o bytes=%d" % (os.stat(dst).st_mode & 0o777, os.stat(dst).st_size))
-PY
-
-RUNNER_ARGS="['--ttis-sha', '${TTIS_SHA}', '--work-dir', '${REMOTE_DIR}'"
-if [[ -n "${VLLM_VERSION}" ]]; then RUNNER_ARGS+=", '--vllm-version', '${VLLM_VERSION}'"; fi
-for m in "${MODELS[@]}"; do RUNNER_ARGS+=", '${m}'"; done
-RUNNER_ARGS+="]"
-
-snippet launch > /dev/null <<PY
-import os, subprocess
-W = "${REMOTE_DIR}"
-for name in ("DONE", "FAILED", "phase"):
-    try:
-        os.remove(os.path.join(W, name))
-    except OSError:
-        pass
-log = open(os.path.join(W, "runner.log"), "ab")
-# start_new_session=True is setsid(): the runner has no controlling terminal
-# and its own process group, so it outlives this kernel call (nohup-like).
-proc = subprocess.Popen(["bash", os.path.join(W, "remote_runner.sh")] + ${RUNNER_ARGS},
-                        cwd=W, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
-                        start_new_session=True, close_fds=True)
-with open(os.path.join(W, "runner.pid"), "w") as f:
-    f.write(str(proc.pid))
-print("GPUREF_LAUNCHED pid=%d" % proc.pid)
-PY
-
-snippet pack > /dev/null <<PY
-import os, subprocess
-W = "${REMOTE_DIR}"
-tarball = os.path.join(W, "gpuref-results.tar.gz")
-paths = ["results"]
-# A run stopped early (e.g. --min-balance) has not copied TTIS's workflow_logs yet.
-if not os.path.isdir(os.path.join(W, "results", "workflow_logs")) and os.path.isdir(
-        os.path.join(W, "tt-inference-server", "workflow_logs")):
-    paths.append("tt-inference-server/workflow_logs")
-subprocess.run(["tar", "-czf", tarball, "-C", W] + paths, check=True)
-print("GPUREF_PACKED bytes=%d" % os.path.getsize(tarball))
-PY
-
-# ----------------------------------------------------------------------------
-# Remote state
-# ----------------------------------------------------------------------------
-
-# Sets STATUS_OUT (raw snippet output) and REMOTE_STATE; fails when unreadable.
-STATUS_OUT=""
-REMOTE_STATE=""
-remote_state() {
-    STATUS_OUT="$(remote_exec status 120 2>&1)" || return 1
-    REMOTE_STATE="$(printf '%s\n' "${STATUS_OUT}" | sed -n 's/^GPUREF_STATE=//p' | tail -1)"
-    [[ -n "${REMOTE_STATE}" ]]
-}
-
-show_status() {
-    printf '%s\n' "${STATUS_OUT}" | sed -n 's/^GPUREF_PHASE=/  phase: /p; s/^GPUREF_GPU=/  gpu:   /p; s/^GPUREF_EVAL=/  evals: /p; s/^GPUREF_LOG| /  | /p' >&2
-}
-
-upload_token() {
-    [[ "${HAVE_TOKEN}" -eq 1 ]] || { log "no local HF token; skipping token upload"; return 0; }
-    local tok="${LOCAL_TMP}/hf_token"
-    ( umask 077
-      if [[ -n "${HF_TOKEN:-}" ]]; then
-          printf '%s' "${HF_TOKEN}" > "${tok}"     # printf is a builtin: no argv exposure
-      else
-          cp "${HOME}/.cache/huggingface/token" "${tok}"
-      fi )
-    if ! colab_cmd upload -s "${SESSION}" "${tok}" "${REMOTE_REL}/hf_token.upload" > /dev/null; then
-        rm -f "${tok}"
-        die "HF token upload failed"
-    fi
-    rm -f "${tok}"
-    remote_step install_token 60 GPUREF_TOKEN_INSTALLED
-}
-
-launch() {
-    log "preparing the VM"
-    remote_step prepare 60 GPUREF_PREPARED
-    upload_token
-    colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/remote_runner.sh" "${REMOTE_REL}/remote_runner.sh"
-    colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/gpuref.py" "${REMOTE_REL}/gpuref.py"
-    remote_step launch 60 GPUREF_LAUNCHED
-}
-
-collect() {
-    log "packing results on the VM"
-    remote_step pack 900 GPUREF_PACKED
-    mkdir -p "${OUT_DIR}"
-    colab_cmd download -s "${SESSION}" "${REMOTE_REL}/gpuref-results.tar.gz" "${OUT_DIR}/gpuref-results.tar.gz"
-    if [[ "${DRY_RUN}" -eq 1 ]]; then
-        printf '+ tar -xzf %q -C %q\n' "${OUT_DIR}/gpuref-results.tar.gz" "${OUT_DIR}" >&2
-        printf '+ gpuref.py summary %q\n' "${OUT_DIR}/results" >&2
-        return 0
-    fi
-    tar -xzf "${OUT_DIR}/gpuref-results.tar.gz" -C "${OUT_DIR}"
-    log "results in ${OUT_DIR}/results"
-    if [[ -f "${OUT_DIR}/results/status.json" ]]; then
-        log "per-model status:"; sed 's/^/  /' "${OUT_DIR}/results/status.json" >&2
-    fi
-    gpuref summary "${OUT_DIR}/results" | tee "${OUT_DIR}/summary.txt" || log "no TTIS eval reports in the results"
-}
-
-# ----------------------------------------------------------------------------
-# Main
-# ----------------------------------------------------------------------------
-
+# 2 start VM (or re-attach) ---------------------------------------------------
 STATE="ABSENT"
 if [[ "${DRY_RUN}" -eq 0 ]] && printf '%s\n' "${SESSIONS_OUT}" | has_session; then
-    log "session '${SESSION}' exists; checking for a runner"
     SESSION_ACTIVE=1
-    remote_state || die "could not read the runner state on '${SESSION}': ${STATUS_OUT}"
-    STATE="${REMOTE_STATE}"
-    log "remote state: ${STATE}"
+    remote_state || die "could not read the runner state on '${SESSION}'"
+    log "session '${SESSION}' exists; runner ${STATE}"
 else
-    # Walk the preference list. A 503 from the assign endpoint means no
-    # capacity right now: retry that type with backoff, then fall through to
-    # the next. Any other failure (quota, entitlement) moves on at once.
-    ALLOCATED_GPU=""
     for gpu in "${GPUS[@]}"; do
-        new_args=(new -s "${SESSION}" --gpu "${gpu}")
-        if [[ "${HIGH_MEM}" -eq 1 ]]; then new_args+=(--high-mem); fi
-        attempt=1
-        delay="${NEW_RETRY_SECONDS}"
-        while true; do
-            log "creating session '${SESSION}' on ${gpu} (attempt ${attempt}/${NEW_ATTEMPTS})"
-            if colab_cmd "${new_args[@]}" > "${LOCAL_TMP}/new.out" 2>&1; then
-                cat "${LOCAL_TMP}/new.out" >&2
-                ALLOCATED_GPU="${gpu}"
-                break
-            fi
+        new_args=(new -s "${SESSION}" --gpu "${gpu}"); [[ "${HIGH_MEM}" -eq 1 ]] && new_args+=(--high-mem)
+        for ((attempt = 1, delay = NEW_RETRY_SECONDS; attempt <= NEW_ATTEMPTS; attempt++, delay *= 2)); do
+            log "creating '${SESSION}' on ${gpu} (attempt ${attempt}/${NEW_ATTEMPTS})"
+            if colab_cmd "${new_args[@]}" > "${LOCAL_TMP}/new.out" 2>&1; then cat "${LOCAL_TMP}/new.out" >&2; SESSION_ACTIVE=1; break 2; fi
             tail -3 "${LOCAL_TMP}/new.out" >&2
-            # Make sure a half-created assignment is not left behind.
-            if colab sessions < /dev/null 2>&1 | has_session; then
-                SESSION_ACTIVE=1
-                die "'colab new' failed but '${SESSION}' exists; it will be stopped"
-            fi
-            if grep -q "Service Unavailable" "${LOCAL_TMP}/new.out" && (( attempt < NEW_ATTEMPTS )); then
-                log "no ${gpu} capacity (503); retrying in ${delay}s"
-                sleep "${delay}"
-                attempt=$((attempt + 1))
-                delay=$((delay * 2))
-                continue
-            fi
-            log "${gpu} unavailable; trying the next GPU type"
-            break
+            if colab sessions < /dev/null 2>&1 | has_session; then SESSION_ACTIVE=1; die "'colab new' failed but the session exists"; fi
+            if ! grep -q "Service Unavailable" "${LOCAL_TMP}/new.out" || (( attempt == NEW_ATTEMPTS )); then break; fi
+            log "no ${gpu} capacity (503); retrying in ${delay}s"; sleep "${delay}"
         done
-        [[ -n "${ALLOCATED_GPU}" ]] && break
     done
-    [[ -n "${ALLOCATED_GPU}" ]] \
-        || die "'colab new' failed on every GPU in --gpu (${GPUS[*]}); see ${HOME}/.config/colab-cli/colab.log"
-    SESSION_ACTIVE=1
-    log "allocated ${ALLOCATED_GPU} (the exact GPU model is recorded in each provenance.json)"
+    [[ "${SESSION_ACTIVE}" -eq 1 ]] || die "'colab new' failed on every GPU in --gpu (${GPUS[*]})"
+    log "allocated ${gpu} (the exact GPU is recorded in provenance.json)"
 fi
 
-case "${STATE}" in
-    ABSENT|DIED)
-        if [[ "${STATE}" == "DIED" ]]; then log "the previous runner died without a marker; relaunching"; fi
-        launch ;;
-    RUNNING) log "attaching to the running runner" ;;
-    DONE|FAILED) log "runner already finished (${STATE})" ;;
-    *) die "unexpected remote state: ${STATE}" ;;
-esac
-
-# Poll. Each poll is a short kernel execution, which also keeps the session's
-# kernel active (Colab liveness is driven by kernel activity).
-if [[ "${DRY_RUN}" -eq 1 ]]; then
-    log "poll every ${POLL_MINUTES} min until DONE/FAILED:"
-    remote_exec status 120
-    STATE="DONE"
+if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then
+    # 3 upload token --------------------------------------------------------
+    remote_step prepare 60 GPUREF_PREPARED
+    if [[ "${HAVE_TOKEN}" -eq 1 ]]; then
+        tok="${LOCAL_TMP}/hf_token"
+        ( umask 077; if [[ -n "${HF_TOKEN:-}" ]]; then printf '%s' "${HF_TOKEN}" > "${tok}"; else cp "${HOME}/.cache/huggingface/token" "${tok}"; fi )
+        colab_cmd upload -s "${SESSION}" "${tok}" "${REMOTE_REL}/hf_token.upload" > /dev/null || { rm -f "${tok}"; die "HF token upload failed"; }
+        rm -f "${tok}"
+        remote_step install_token 60 GPUREF_TOKEN_INSTALLED
+    fi
+    # 4 launch the runner detached ------------------------------------------
+    colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/remote_runner.sh" "${REMOTE_REL}/remote_runner.sh"
+    colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/gpuref.py" "${REMOTE_REL}/gpuref.py"
+    runner_args=(--ttis-sha "${TTIS_SHA}" --work-dir "/${REMOTE_REL}")
+    [[ -n "${VLLM_VERSION}" ]] && runner_args+=(--vllm-version "${VLLM_VERSION}")
+    remote_step launch 60 GPUREF_LAUNCHED "${runner_args[@]}" "${MODELS[@]}"
+    STATE="RUNNING"
 fi
-FAILURES=0
-while [[ "${STATE}" != "DONE" && "${STATE}" != "FAILED" ]]; do
+
+# 5 poll (each poll is a kernel execution, which also keeps the VM alive) -----
+if [[ "${DRY_RUN}" -eq 1 ]]; then log "poll every ${POLL_MINUTES} min until DONE/FAILED:"; remote_exec status 120; STATE="DONE"; fi
+failures=0
+while [[ "${STATE}" == "RUNNING" ]]; do
     sleep $((POLL_MINUTES * 60))
-    if remote_state; then
-        FAILURES=0
-        STATE="${REMOTE_STATE}"
-        log "$(date '+%H:%M:%S') state ${STATE}"
-        show_status
-        if [[ "${STATE}" == "DIED" ]]; then log "runner died without a marker"; STATE="FAILED"; fi
-        if [[ "${MIN_BALANCE}" != "0" && "${STATE}" == "RUNNING" ]]; then
-            BALANCE="$(colab usage < /dev/null 2>/dev/null | sed -n 's/^Current balance: *\([0-9.]*\).*/\1/p')"
-            log "compute units: ${BALANCE:-unknown} (stop below ${MIN_BALANCE})"
-            if [[ -n "${BALANCE}" ]] && awk -v b="${BALANCE}" -v m="${MIN_BALANCE}" 'BEGIN { exit !(b < m) }'; then
-                log "balance below --min-balance; collecting partial results and stopping"
-                STATE="FAILED"
-            fi
+    if ! remote_state; then
+        failures=$((failures + 1)); log "status poll failed (${failures}/6)"
+        if (( failures >= 6 )); then
+            colab sessions < /dev/null 2>&1 | has_session || { SESSION_ACTIVE=0; die "session '${SESSION}' is gone; results on the VM are lost"; }
+            failures=0
         fi
-    else
-        FAILURES=$((FAILURES + 1))
-        log "status poll failed (${FAILURES}/6): $(printf '%s' "${STATUS_OUT}" | tail -2)"
-        if (( FAILURES >= 6 )); then
-            colab sessions < /dev/null 2>&1 | has_session \
-                || { SESSION_ACTIVE=0; die "session '${SESSION}' is gone (reclaimed or stopped); results on the VM are lost"; }
-            FAILURES=0
-        fi
+        STATE="RUNNING"; continue
+    fi
+    failures=0; log "$(date '+%H:%M:%S') runner ${STATE}"
+    [[ "${STATE}" == "DIED" ]] && STATE="FAILED"
+    if [[ "${MIN_BALANCE}" != "0" && "${STATE}" == "RUNNING" ]] \
+        && balance="$(colab usage < /dev/null 2>/dev/null | gpuref balance-below "${MIN_BALANCE}")"; then
+        log "balance ${balance} CU is below --min-balance ${MIN_BALANCE}; collecting partial results"; STATE="FAILED"
     fi
 done
 
-collect
-[[ "${STATE}" == "DONE" ]] || { log "runner finished FAILED; partial results collected"; exit 1; }
-log "done"
+# 6 download + summary ----------------------------------------------------------
+remote_step pack 900 GPUREF_PACKED
+mkdir -p "${OUT_DIR}"
+colab_cmd download -s "${SESSION}" "${REMOTE_REL}/gpuref-results.tar.gz" "${OUT_DIR}/gpuref-results.tar.gz"
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    printf '+ tar -xzf %q -C %q\n+ gpuref.py summary %q\n' "${OUT_DIR}/gpuref-results.tar.gz" "${OUT_DIR}" "${OUT_DIR}/results" >&2
+else
+    tar -xzf "${OUT_DIR}/gpuref-results.tar.gz" -C "${OUT_DIR}"
+    gpuref summary "${OUT_DIR}/results" | tee "${OUT_DIR}/summary.txt" || log "no TTIS eval reports in the results"
+fi
+[[ "${STATE}" == "DONE" ]] || { log "runner finished ${STATE}; partial results in ${OUT_DIR}"; exit 1; }
+log "done: ${OUT_DIR}"

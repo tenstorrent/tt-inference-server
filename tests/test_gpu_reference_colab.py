@@ -240,8 +240,8 @@ def test_memory_estimate_and_fit():
     assert est["weights_gib"] == pytest.approx(19.99, abs=0.01)
     assert est["kv_gib_one_seq"] == pytest.approx(0.75, abs=0.01)
     assert est["kv_gib_all_seqs"] == pytest.approx(24.0, abs=0.01)
-    fits = gpuref.gpu_fits(est["need_gib"])
-    assert fits["H100"] and fits["A100"] and not fits["T4"]
+    verdicts = gpuref.gpu_verdicts(est, 4096)
+    assert verdicts["H100"] == verdicts["A100"] == "fits" and verdicts["T4"] == "no"
     # Explicit head_dim wins over hidden_size // heads; MHA defaults kv_heads.
     assert gpuref.kv_bytes_per_token(
         {
@@ -347,3 +347,191 @@ def test_shell_scripts_parse(script):
 @pytest.mark.parametrize("script", ["colab_gpu_reference.sh", "remote_runner.sh"])
 def test_shell_scripts_shellcheck(script):
     subprocess.run(["shellcheck", str(SCRIPT_DIR / script)], check=True)
+
+
+# --- driver-side helpers ------------------------------------------------------
+
+
+def _row(model, verdicts, **extra):
+    row = {
+        "model": model,
+        "ok": True,
+        "model_id": "id_x",
+        "max_context": 4096,
+        "max_concurrency": 32,
+        "revision": "r",
+        "gated": False,
+        "needs_token": False,
+        "have_token": True,
+        "memory": {
+            "weights_gib": 20.0,
+            "kv_gib_one_seq": 1.0,
+            "need_gib": 25.0,
+            "verdicts": verdicts,
+        },
+    }
+    row.update(extra)
+    return row
+
+
+def test_preflight_keeps_gpus_every_model_can_use_fully():
+    small = _row("a/small", {"H100": "fits", "A100": "fits"})
+    big = _row("a/big", {"H100": "fits", "A100": {"cap": 20000}})
+    usable, ok, _ = gpuref.preflight([small, big], ["H100", "A100"])
+    assert ok and usable == ["H100"]
+    # With A100 alone, a capped fit is accepted (and reported).
+    usable, ok, msgs = gpuref.preflight([big], ["A100"])
+    assert ok and usable == ["A100"] and any("cap" in m for m in msgs)
+
+
+def test_preflight_refuses_models_that_fit_no_listed_gpu():
+    seventy_b = _row("a/70b", {"H100": "no", "A100": "no"})
+    _, ok, msgs = gpuref.preflight([seventy_b], ["H100", "A100"])
+    assert not ok and any("multi-GPU" in m for m in msgs)
+    thirty_b = _row("a/32b", {"H100": "fits", "A100": "no"})
+    _, ok, msgs = gpuref.preflight([thirty_b], ["A100"])
+    assert not ok and any("add H100" in m for m in msgs)
+
+
+def test_preflight_access_and_spec_failures():
+    no_spec = {"model": "a/b", "ok": False, "error": "no GPU spec"}
+    assert not gpuref.preflight([no_spec], ["H100"])[1]
+    gated = _row(
+        "a/g", {"H100": "fits"}, gated=True, needs_token=True, have_token=False
+    )
+    assert not gpuref.preflight([gated], ["H100"])[1]
+    unreadable = _row(
+        "a/g", {"H100": "fits"}, gated=True, needs_token=True, token_can_read=False
+    )
+    assert not gpuref.preflight([unreadable], ["H100"])[1]
+    assert not gpuref.preflight([_row("a/m", {}, memory=None)], ["H100"])[1]
+
+
+@pytest.mark.parametrize(
+    "name", ["prepare", "install_token", "launch", "status", "pack"]
+)
+def test_snippets_compile_and_never_carry_a_token(name, monkeypatch):
+    monkeypatch.setenv("HF_TOKEN", "hf_SECRET_SHOULD_NOT_APPEAR")
+    src = gpuref.render_snippet(name, ["--ttis-sha", "a" * 40, "org/model"])
+    compile(src, name, "exec")
+    assert src.startswith("W = '/content/gpuref'")
+    assert "SECRET" not in src and "HF_TOKEN" not in src
+
+
+def test_launch_snippet_embeds_runner_args_and_detaches():
+    src = gpuref.render_snippet("launch", ["--ttis-sha", "b" * 40, "org/model"])
+    assert "ARGS = ['--ttis-sha', '" + "b" * 40 + "', 'org/model']" in src
+    assert "start_new_session=True" in src
+
+
+def test_status_snippet_reports_state(tmp_path):
+    src = gpuref.render_snippet("status").replace("/content/gpuref", str(tmp_path))
+    (tmp_path / "FAILED").write_text("x")
+    (tmp_path / "runner.log").write_text("line1\nline2\n")
+    out = subprocess.run(
+        [sys.executable, "-c", src], capture_output=True, text=True, check=True
+    )
+    state, lines = gpuref.parse_status(out.stdout)
+    assert state == "FAILED" and "  | line2" in lines
+
+
+def test_parse_status_and_balance():
+    state, lines = gpuref.parse_status(
+        "noise\nGPUREF_STATE=RUNNING\nGPUREF_PHASE=model 1/3 x: evals\nGPUREF_LOG| hello\n"
+    )
+    assert state == "RUNNING"
+    assert lines == ["  phase: model 1/3 x: evals", "  | hello"]
+    assert gpuref.parse_status("garbage")[0] is None
+    usage = "Current balance: 4988.40 compute units\nUsage rate: 5.30/hr\n"
+    assert gpuref.parse_balance(usage) == 4988.40
+    assert gpuref.parse_balance("nothing") is None
+
+
+def test_runner_helpers(tmp_path):
+    path = tmp_path / "status.json"
+    gpuref.record_status(path, "a/b", "ok", "")
+    gpuref.record_status(path, "c/d", "failed", "run.py exited 1")
+    assert json.loads(path.read_text()) == {
+        "a/b": {"status": "ok", "note": None},
+        "c/d": {"status": "failed", "note": "run.py exited 1"},
+    }
+    assert gpuref.served_models({"data": [{"id": "a/b"}]}) == ["a/b"]
+    assert gpuref.served_models({}) == []
+
+
+# --- request-length evidence for capped runs ---------------------------------
+
+
+def _write_samples(path, rows):
+    path.write_text(
+        "".join(
+            json.dumps(
+                {"arguments": {"gen_args_0": {"arg_0": p, "arg_1": {}}}, "resps": [[r]]}
+            )
+            + "\n"
+            for p, r in rows
+        )
+    )
+
+
+def test_request_token_stats_per_task(tmp_path):
+    assert (
+        gpuref.sample_task_name(
+            Path("samples_mmlu_pro_law_2026-10-09T00-14-03.525271.jsonl")
+        )
+        == "mmlu_pro_law"
+    )
+    _write_samples(
+        tmp_path / "samples_mmlu_pro_law_2026-10-09T00-14-03.525271.jsonl",
+        [("a b c", "d e"), ("a", "")],
+    )
+    _write_samples(
+        tmp_path / "samples_leaderboard_ifeval_2026-10-08T23-28-26.301824.jsonl",
+        [("x " * 10, "y " * 5)],
+    )
+    stats = gpuref.request_token_stats(tmp_path, lambda t: len(t.split()))
+    assert stats["mmlu_pro_law"] == {"samples": 2, "max_tokens": 5, "empty": 1}
+    assert stats["leaderboard_ifeval"]["max_tokens"] == 15
+
+
+def test_cap_bound_needs_clean_logs_and_headroom(tmp_path):
+    ok = {
+        "max_request_tokens": {"mmlu_pro_law": {"max_tokens": 4033}},
+        "rejection_log_lines": [],
+    }
+    assert not gpuref.cap_bound(ok, 22960)
+    assert gpuref.cap_bound(ok, 4090)  # within the 64-token reserve of the cap
+    assert gpuref.cap_bound(dict(ok, rejection_log_lines=["x: 400 Bad Request"]), 22960)
+    assert gpuref.cap_bound(None, 22960)
+    log = tmp_path / "run.log"
+    log.write_text("fine\nThis model's maximum context length is 22960 tokens\n")
+    assert gpuref.rejection_lines([log, tmp_path / "missing.log"]) == [
+        "run.log: This model's maximum context length is 22960 tokens"
+    ]
+
+
+def test_snippet_cli_accepts_runner_options_after_double_dash():
+    """The driver renders `launch` as `gpuref.py snippet launch -- --ttis-sha ...`;
+    without the `--`, argparse would read the runner's options as its own."""
+    out = subprocess.run(
+        [
+            sys.executable,
+            str(GPUREF_PATH),
+            "snippet",
+            "launch",
+            "--",
+            "--ttis-sha",
+            "c" * 40,
+            "org/m",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert f"ARGS = ['--ttis-sha', '{'c' * 40}', 'org/m']" in out.stdout
+    assert (
+        "--"
+        in (SCRIPT_DIR / "colab_gpu_reference.sh")
+        .read_text()
+        .split('gpuref snippet "${name}"')[1][:4]
+    )
