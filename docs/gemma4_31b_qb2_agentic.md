@@ -194,7 +194,7 @@ The first corrected C2 and C4 runs also landed on the occupied host and
 stopped before model work. Their
 [C2 retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963842946)
 and [C4 retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963848727)
-are queued behind active clean-host jobs, with the occupied host held aside.
+are running on clean hosts, with the occupied host held aside.
 The [C2 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962976771)
 and [C4 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962982690)
 reuse that image as separate benchmark jobs. Compare matching input/output
@@ -203,7 +203,8 @@ bursts alone do not establish the fastest agentic suite wall time. The first
 C4 benchmark attempt stopped before testing on the same occupied host as the
 failed C2 Terminal attempt. The
 [C4 benchmark retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963865248)
-is queued for a clean runner.
+completed all 23 request shapes on a clean runner; its numeric analysis
+appears below.
 
 ## Candidates and acceptance
 
@@ -259,7 +260,7 @@ is queued for a clean runner.
    Hardware benchmark startup and all 23 synthetic request shapes completed;
    throughput and KV details appear below. The
    [fixed-five Terminal C2/192K job](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37964456985)
-   is queued on that image with inference-server
+   is running on that image with inference-server
    `6682a78c8a1009934838f58b3070927973ec7f4f`; it still needs the
    fixed-case reward and waiting/preemption check.
 3. [C2 thinking-off pilot](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-thinkoff):
@@ -554,7 +555,7 @@ CI marked this run **FAIL** only because its generic acceptance criterion
 compares the five-case 20% score with the full 500-case H100 reference of
 64.8%. Preserve that full-set reference target; do not interpret this
 five-case acceptance gate as a model error or claim that 20% meets 64.8%.
-The same fixed-five SWE suite is queued at C4 in
+The same fixed-five SWE suite is running at C4 in
 [QB2 run 37970495434](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970495434)
 on the Metal-main image and inference-server
 `7e6ac75afa416ae28274d8a663809a039ddc3c44`; compare its suite wall,
