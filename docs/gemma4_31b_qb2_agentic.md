@@ -7,11 +7,18 @@ commits, task lists, or agent policies are kept separate.
 ## Existing evidence
 
 - The [September 21 baseline](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/35667712636)
-  used an older Metal implementation and the fixed first five Terminal-Bench 2.0
-  and SWE-bench Verified cases. It scored **1/5** on each. Terminal ran 7.84
-  hours (5,646.8 seconds per case), with 4.61 million input and 557 thousand
+  used Metal `dcfa5e2da087432c337a70ac92f8eeeb3bb97f55` and the fixed
+  first five Terminal-Bench 2.0 and SWE-bench Verified cases. It scored **1/5**
+  on each. Terminal ran 7.84 hours (5,646.8 seconds per case), with 4.61
+  million input and 557 thousand
   output tokens across the five cases. SWE ran 2.00 hours. These are
   historical outcomes, not scores for current Metal main.
+- The five Terminal case clocks summed to 28,230 seconds. Their recorded model
+  API requests summed to 16,248 seconds (**57.6%**); the 11,982-second
+  remainder includes shell work, tools, setup and verification. CompCert and
+  HTML filtering accounted for much of that remainder. Overlapping another
+  agent's inference with these activities is a concrete reason to test C2,
+  even if per-user token speed falls slightly.
 - That Terminal server logged 409 model-trace warm/capture cycles. Matched
   warm-to-capture intervals sum to 119.8 seconds (median 0.157 seconds, p95
   0.440 seconds), so trace recapture alone is a small part of its 7.84-hour
@@ -19,6 +26,11 @@ commits, task lists, or agent policies are kept separate.
   be kept separate. Its 3,545 roughly ten-second KV samples reached 28.7%
   maximum and 19.7% p95; no sample showed a waiting request. These samples
   cannot establish a safe smaller pool under higher concurrency.
+- The separate [September 24 exploratory cases](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/35986956766)
+  scored 3/5 Terminal and 1/5 SWE on **different task IDs**. Terminal used
+  72,817 output tokens and 3.62 hours; peak sampled KV was 13.4%. The differing
+  tasks and trajectories prevent reading its shorter wall time as a serving
+  speed improvement over the September 21 fixed-case run.
 - The dedicated model's [README](https://github.com/tenstorrent/tt-metal/blob/main/models/demos/gemma4_31b_qb2/README.md)
   supports batch 1–32. Its measured 128/128 case completed 0.357 requests/s at
   batch 1 and 5.847 requests/s with 32 concurrent requests. At 1024/128,
@@ -87,6 +99,11 @@ preemptions, trace recapture count and server identity. Increase to ten cases
 only after the five-case results preserve at least the baseline's solved cases
 and show a useful wall-time gain. The full-set H100 targets remain recorded;
 do not turn a missing reward or smaller denominator into a passing score.
+
+For a downloaded Actions artifact directory, run
+`python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
+The script emits only case IDs, numeric timings/tokens/rewards and server
+counts; it omits prompts, patches, shell transcripts and model responses.
 
 The current model uses one physical decode batch equal to the server's
 `max_num_seqs`, warmed at startup. It does not switch physical batch sizes

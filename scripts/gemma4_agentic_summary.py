@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: (c) 2026 Tenstorrent AI ULC
+#
+# SPDX-License-Identifier: Apache-2.0
 """Summarize retained Gemma4 agentic CI artifacts without copying task text."""
 
 import argparse
@@ -85,6 +88,23 @@ def summarize_task(path):
                 "exception": (item.get("exception_info") or {}).get("exception_type"),
             }
         )
+    if path.parent.name == "swe_bench_verified":
+        trajectories = path.parent / "mini_sweagent"
+        for item in summary.get("trial_results") or []:
+            case_id = item.get("task_name")
+            trajectory = trajectories / case_id / f"{case_id}.traj.json" if case_id else None
+            info = {}
+            if trajectory and trajectory.exists():
+                info = json.loads(trajectory.read_text()).get("info") or {}
+            model_stats = info.get("model_stats") or {}
+            cases.append(
+                {
+                    "id": case_id,
+                    "reward": ((item.get("verifier_result") or {}).get("rewards") or {}).get("reward"),
+                    "api_calls": model_stats.get("api_calls"),
+                    "exit_status": info.get("exit_status"),
+                }
+            )
     return {
         "task": path.parent.name,
         "result_path": str(path),
