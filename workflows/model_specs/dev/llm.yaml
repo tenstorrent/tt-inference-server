@@ -878,8 +878,9 @@ templates:
       tool_call_parser_name: gemma4
 
 # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
-# models/demos/gemma4_31b_qb2. C2 agentic candidate: one fixed physical batch-2
-# decode trace serves one or two live requests without changing model weights.
+# models/demos/gemma4_31b_qb2. C2/192K KV candidate with fixed batch-2 trace.
+# The fixed agentic request budgets fit within this context; the TT hook sizes
+# the shared pool from max_model_len in tt-metal's agentic KV branch.
 - weights:
     - google/gemma-4-31B-it
   impl: gemma4_31b_qb2
@@ -887,7 +888,7 @@ templates:
   device_model_specs:
     - device: P300X2
       max_concurrency: 2
-      max_context: 262144
+      max_context: 196608
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
