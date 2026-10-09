@@ -63,11 +63,18 @@ commits, task lists, or agent policies are kept separate.
    tasks, request policy, timeout, scorer and 256K context. This is the first
    batching candidate; test the server startup, live API/tool calls, KV
    occupancy, task completion and wall time before increasing agent count.
+   A [C4 branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c4)
+   is prepared for an exploratory performance comparison; do not use its
+   four-agent eval result as a replacement for the C1 baseline without a
+   complete fixed-case denominator and resource/score review.
 2. [Context-sized KV hook](https://github.com/tenstorrent/tt-metal/tree/mvasiljevic/gemma4-31b-agentic-kv)
    and [C2/192K catalog](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-kv192):
    keep the physical batch at two and size the base full-attention pool from
    `max_model_len=196608`. The previous full-context 262144 setting returns
-   the same pool as main. The 64K/16K Terminal request budgets fit below 192K.
+   the same pool as main. The hook requests 355,584 tokens at C2/256K and
+   290,048 at C2/192K, including sliding-window and in-flight headroom, before
+   the plugin's additional per-request output pages. The 64K/16K Terminal
+   request budgets fit below 192K.
    The candidate requires device proof: startup/allocation, high page IDs,
    long prefill/decode, 1- and 2-request quality checks, and an agentic run
    without KV preemption before it can be selected. One host-side budget test
