@@ -536,6 +536,12 @@ class DeviceModelSpec:
     override_tt_config: Dict[str, str] = field(default_factory=dict)
     env_vars: Dict[str, str] = field(default_factory=dict)
     tensor_cache_timeout: float = 3600.0
+    # When set, the docker server runs this entry in a private IPC namespace with a /dev/shm of
+    # this size (docker --ipc private --shm-size) instead of sharing the host's (--ipc host). Use it
+    # where the host prunes /dev/shm under running jobs: vLLM's engine<->worker ring buffers and
+    # multiprocessing semaphores live there, and a multi-engine (data-parallel) server attaches to
+    # them only after model load.
+    docker_shm_size: Optional[str] = None
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
     # When set, run_evals appends max_retries=<N> to lm-eval --model_args.

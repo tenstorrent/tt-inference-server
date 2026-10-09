@@ -476,6 +476,15 @@ def _resolve_training_store_root(setup_config) -> str:
     return _EPHEMERAL_TRAINING_STORE_ROOT
 
 
+def _docker_ipc_args(model_spec) -> List[str]:
+    """IPC namespace for the container: the host's by default; a private one with its own
+    /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec)."""
+    shm_size = getattr(model_spec.device_model_spec, "docker_shm_size", None)
+    if shm_size:
+        return ["--ipc", "private", "--shm-size", str(shm_size)]
+    return ["--ipc", "host"]
+
+
 def generate_docker_run_command(
     model_spec, runtime_config, setup_config=None, json_fpath=None, str_cmd=False
 ):
@@ -524,7 +533,7 @@ def generate_docker_run_command(
         "--name", container_name,
         *( ["--user", str(runtime_config.image_user)] if runtime_config.image_user and str(runtime_config.image_user) != "1000" else []),
         "--env-file", str(default_dotenv_path),
-        "--ipc", "host",
+        *_docker_ipc_args(model_spec),
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
     ]

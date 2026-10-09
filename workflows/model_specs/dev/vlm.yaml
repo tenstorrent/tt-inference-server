@@ -218,10 +218,11 @@ templates:
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
-        # Four DP engines bring up their 1x8 submeshes at once; first-run cache generation and fabric
-        # init on a shared Galaxy exceed the 5 s default of the device-op watchdog (tt-triage fired
-        # in every CI bring-up). Keep hang detection, with a budget that fits the DP=4 start.
-        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"
+      # Private IPC namespace: the Wormhole Galaxy CI hosts prune the host /dev/shm every ~70 s
+      # under running jobs, and the four data-parallel engines' workers attach to their engine's
+      # shared-memory queue only after model load (~60 s on a cold cache), so the queue was gone
+      # (tt-shield run 37872760219 vs 37873453896). 8g is a ceiling, not a reservation.
+      docker_shm_size: 8g
       vllm_args:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
@@ -276,10 +277,11 @@ templates:
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
-        # Four DP engines bring up their 1x8 submeshes at once; first-run cache generation and fabric
-        # init on a shared Galaxy exceed the 5 s default of the device-op watchdog (tt-triage fired
-        # in every CI bring-up). Keep hang detection, with a budget that fits the DP=4 start.
-        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"
+      # Private IPC namespace: the Wormhole Galaxy CI hosts prune the host /dev/shm every ~70 s
+      # under running jobs, and the four data-parallel engines' workers attach to their engine's
+      # shared-memory queue only after model load (~60 s on a cold cache), so the queue was gone
+      # (tt-shield run 37872760219 vs 37873453896). 8g is a ceiling, not a reservation.
+      docker_shm_size: 8g
       vllm_args:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
