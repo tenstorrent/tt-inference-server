@@ -200,7 +200,7 @@ def summarize_task(path):
                 case["max_prompt_tokens"] = max(prompt_counts, default=None)
         cases.append(case)
         trajectory_path = case_path.parent / "agent" / "trajectory.json"
-        if path.parent.name == "terminal_bench_2" and trajectory_path.exists():
+        if path.parent.name.startswith("terminal_bench_2") and trajectory_path.exists():
             trajectory = json.loads(trajectory_path.read_text())
             metrics = [
                 step["metrics"]
@@ -298,7 +298,7 @@ def summarize_task(path):
     result["total_non_api_s"] = (
         sum(case["non_api_s"] for case in api_cases) if api_cases else None
     )
-    if path.parent.name == "terminal_bench_2":
+    if path.parent.name.startswith("terminal_bench_2"):
         result["request_latency_fit"] = fit_request_latency(request_rows)
         result["unmatched_request_cases"] = unmatched_cases
     return result
