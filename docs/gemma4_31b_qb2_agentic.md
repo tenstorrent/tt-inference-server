@@ -396,3 +396,8 @@ CI marked this run **FAIL** only because its generic acceptance criterion
 compares the five-case 20% score with the full 500-case H100 reference of
 64.8%. Preserve that full-set reference target; do not interpret this
 five-case acceptance gate as a model error or claim that 20% meets 64.8%.
+The same fixed-five SWE suite is queued at C4 in
+[QB2 run 37970495434](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970495434)
+on the Metal-main image and inference-server
+`7e6ac75afa416ae28274d8a663809a039ddc3c44`; compare its suite wall,
+all five rewards, running/waiting counts and KV occupancy with C1 and C2.
