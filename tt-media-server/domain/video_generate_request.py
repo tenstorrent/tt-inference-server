@@ -2,15 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2025 Tenstorrent USA, Inc.
 
-"""Text-to-video request schema.
-
-LTX shape fields (``height``/``width``/``fps``, and the frame count as
-``duration`` or ``num_frames``) are validated against the shape baked into the
-running pipeline's traces, not honoured as free variables; ``None`` means "use
-the served config". MiniMax-H3 selects its shape with ``aspect_ratio`` +
-``duration_seconds``. Each model refuses the other's shape fields.
-"""
-
+import os
 from typing import Optional
 
 from config.constants import (
@@ -26,8 +18,12 @@ from config.settings import get_settings
 from domain.base_request import BaseRequest
 from pydantic import Field, field_validator, model_validator
 
-# Shape fields only LTX reads; MiniMax-H3 treats them as unknown.
-_LTX_SHAPE_FIELDS = frozenset({"height", "width", "fps", "duration", "num_frames"})
+# Fields on the shared schema that MiniMax-H3 does not read: LTX's frame-shape
+# fields, ``num_inference_steps`` because H3's AdaLN table is precomputed at a
+# fixed step count, and ``negative_prompt`` because the H3 pipeline takes none.
+_H3_UNREAD_FIELDS = frozenset(
+    {"fps", "num_frames", "num_inference_steps", "negative_prompt"}
+)
 
 
 class VideoGenerateRequest(BaseRequest):
@@ -51,9 +47,6 @@ class VideoGenerateRequest(BaseRequest):
     # rather than an enum so a per-model validator can reject with a message naming what it does
     # serve -- a 422 from pydantic on a shared field cannot say that.
     aspect_ratio: Optional[str] = Field(default=None, examples=["16:9", "9:16", "1:1"])
-    duration_seconds: Optional[int] = Field(
-        default=None, ge=1, le=60, examples=[5, 10, 15]
-    )
 
     # TODO: Make generic for all video models, and remove model specific logic
     # Unknown fields are refused for MiniMax-H3 rather than ignored. Pydantic's default is to
@@ -67,14 +60,14 @@ class VideoGenerateRequest(BaseRequest):
     def _reject_unknown_fields(cls, data):
         if not isinstance(data, dict) or not _is_minimax_h3():
             return data
-        readable = set(cls.model_fields) - _LTX_SHAPE_FIELDS
+        readable = set(cls.model_fields) - _H3_UNREAD_FIELDS
         unknown = sorted(set(data) - readable)
         if unknown:
             known = ", ".join(sorted(readable))
             raise ValueError(
-                f"unknown field(s) for MiniMax-H3 t2va: {', '.join(unknown)}. "
-                f"This deployment reads: {known}. Note `duration` is not one of them -- the field "
-                "is `duration_seconds` -- and resolution is selected with `aspect_ratio`."
+                f"unknown field(s) for MiniMax-H3: {', '.join(unknown)}. "
+                f"This deployment reads: {known}. Resolution is selected with `aspect_ratio` "
+                "or `height`/`width`."
             )
         return data
 
@@ -94,21 +87,23 @@ class VideoGenerateRequest(BaseRequest):
         return value
 
     # TODO: Make generic for all video models, and remove model specific logic
-    @field_validator("duration_seconds")
+    @field_validator("duration")
     @classmethod
-    def _validate_duration_seconds(cls, value):
+    def _validate_h3_duration(cls, value):
         if value is None or not _is_minimax_h3():
             return value
         from tt_model_runners.minimax_h3_policy import MINIMAX_H3_DURATIONS_S
 
-        if value not in MINIMAX_H3_DURATIONS_S:
+        if value != int(value) or int(value) not in MINIMAX_H3_DURATIONS_S:
             raise ValueError(
-                f"duration_seconds must be an integer from {min(MINIMAX_H3_DURATIONS_S)} to "
-                f"{max(MINIMAX_H3_DURATIONS_S)}; got {value}"
+                f"duration must be a whole number of seconds from {min(MINIMAX_H3_DURATIONS_S)} "
+                f"to {max(MINIMAX_H3_DURATIONS_S)}; got {value:g}"
             )
         return value
 
     # Shape. None = use the served config; see _validate_shape.
+    # MiniMax-H3: an explicit height/width canvas overrides `aspect_ratio`. Left unset, the
+    # pipeline resolves it from `aspect_ratio`, or from the first keyframe for fl2va.
     height: Optional[int] = Field(default=None, gt=0)
     width: Optional[int] = Field(default=None, gt=0)
     fps: Optional[float] = Field(default=None, gt=0)
@@ -128,15 +123,11 @@ class VideoGenerateRequest(BaseRequest):
                 self.num_inference_steps = DEFAULT_VIDEO_INFERENCE_STEPS
             return self
 
-        # Refuse MiniMax-H3's shape selectors rather than silently dropping them.
-        for field, hint in (
-            ("aspect_ratio", "height/width"),
-            ("duration_seconds", "duration or num_frames"),
-        ):
-            if getattr(self, field) is not None:
-                raise ValueError(
-                    f"{field} is not supported by LTX-2.3; use {hint} instead."
-                )
+        # Refuse MiniMax-H3's shape selector rather than silently dropping it.
+        if self.aspect_ratio is not None:
+            raise ValueError(
+                "aspect_ratio is not supported by LTX-2.3; use height/width instead."
+            )
 
         served = ltx_served_shape()
         served_duration = served.num_frames / served.fps
@@ -197,9 +188,35 @@ class VideoGenerateRequest(BaseRequest):
 
 # TODO: Remove model specific logic
 def _is_minimax_h3() -> bool:
-    from config.constants import ModelRunners
+    from config.constants import ModelNames, ModelRunners
 
     try:
-        return get_settings().model_runner == ModelRunners.TT_MINIMAX_H3_T2VA.value
+        runner = get_settings().model_runner
     except Exception:  # noqa: BLE001 - settings unavailable (tests, tooling): do not gate on it
+        return False
+
+    if runner in {
+        ModelRunners.TT_MINIMAX_H3_T2VA.value,
+        ModelRunners.TT_MINIMAX_H3_FL2VA.value,
+        ModelRunners.TT_MINIMAX_H3_REF2VA.value,
+        ModelRunners.TT_MINIMAX_H3_FASTH3.value,
+    }:
+        return True
+
+    # sp_runner is a SHM proxy and does not load weights. MODEL is the same
+    # peer signal the video API already uses for T2VA / FL2VA / Ref2VA routing;
+    # without it a 30s request would 202 and then fail as a worker error.
+    if runner != ModelRunners.SP_RUNNER.value:
+        return False
+    model_env = os.getenv("MODEL")
+    if not model_env:
+        return False
+    try:
+        return ModelNames(model_env) in {
+            ModelNames.MINIMAX_H3,
+            ModelNames.MINIMAX_H3_FL2VA,
+            ModelNames.MINIMAX_H3_REF2VA,
+            ModelNames.MINIMAX_H3_FASTH3,
+        }
+    except ValueError:
         return False
