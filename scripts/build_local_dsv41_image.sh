@@ -48,7 +48,7 @@ mkdir -p "$CTX/vllm-tt-metal"
 cp -a "$CTX/tis/vllm-tt-metal/src" "$CTX/vllm-tt-metal/src"
 cp -a "$CTX/tis/vllm-tt-metal/requirements.txt" "$CTX/vllm-tt-metal/"
 cp -a "$CTX/tis/utils" "$CTX/tis/VERSION" "$CTX/"
-(cd "$CTX/tis" && MODEL_SPECS_ENV=dev python3 -c "
+(cd "$CTX/tis" && git init -q && MODEL_SPECS_ENV=dev python3 -c "
 from pathlib import Path
 from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 n = export_model_specs_json(MODEL_SPECS, Path('$CTX/model_spec.json'))
