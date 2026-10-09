@@ -244,7 +244,8 @@ is queued for a clean runner.
    quality policy, not a reference-equivalent speed result. Do not select it
    solely on a faster wall clock or a five-case score tie. Its
    [fixed-five dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37965857157)
-   is queued behind the thinking-on comparison and uses inference-server
+   was cancelled before model work to prioritize the C4 SWE comparison;
+   re-dispatch when clean runner capacity returns. It uses inference-server
    `d55d5fb55308109b303a85d14ea2832c679b9888` on the Metal-main image.
 
 Use the same five case IDs and official verifier rewards for all timing
@@ -271,8 +272,10 @@ appends these exact IDs after the first five and is ready for dispatch when
 the current-main five-case comparison supports expansion.
 
 A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
-is queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970041530)
-on the Metal-main image with inference-server
+was queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970041530),
+then cancelled before model work to prioritize the C4 SWE comparison on the
+clean runners. Re-dispatch after the main C1/C2/C4 and KV evidence is in. It
+uses the Metal-main image with inference-server
 `202fa984f759d43aac5e927cf66f2989cd028e2f`. The first
 [dispatch 37969856863](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37969856863)
 used an abbreviated SHA and failed during checkout, before model work.
