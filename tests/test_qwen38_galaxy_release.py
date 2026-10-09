@@ -22,6 +22,7 @@ from utils.pinned_artifacts import get_pinned_revision
     params=[
         "precision_accurate_decode.json",
         "precision_accurate_decode_bfp8_head.json",
+        "precision_accurate_decode_bfp8_all.json",
     ]
 )
 def spec(request):

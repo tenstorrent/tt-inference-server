@@ -155,26 +155,27 @@ reproduce.
 
 ## Preparing an alternate precision policy
 
-The BFP8/HiFi2-head experiment completed 166/198 and did not qualify. A full
-BFP8 decoder experiment is now running after improving the short reference
-comparison. It still requires its own passing G0 receipt and full GPQA result.
-If a policy qualifies, commit the exact tested runtime and policy to a separate
-model-source revision, then prepare a new bundle (this example shows the
-head-only policy; substitute the exact qualified policy):
+The BFP8/HiFi2-head experiment completed 166/198 and did not qualify. The full
+BFP8 decoder passed eight-replica G0 on Oct 9 and has a full GPQA job in progress.
+Its immutable runtime is `20619e008a236aaf393937b222a60a5b03e49cdc`, on
+`anatarajan/qwen38-bfp8-control-runtime-20261009`; runtime/config bytes match
+the tested source. This remains an experiment, not accuracy qualification.
+Prepare an experimental bundle using its own exact G0 receipt:
 
 ```bash
 python scripts/release/prepare_qwen38_galaxy.py \
-  --model-source /path/to/committed-head-control-checkout \
-  --qualification /path/to/head-control/native-g0/receipts/full-model.json \
-  --precision precision_accurate_decode_bfp8_head.json \
+  --model-source /path/to/committed-bfp8-control-checkout \
+  --qualification /path/to/bfp8-control/native-g0/receipts/full-model.json \
+  --precision precision_accurate_decode_bfp8_all.json \
   --weights-host-path /absolute/host/checkpoint-directory \
-  --output qwen38-head-bundle
+  --output qwen38-bfp8-bundle
 ```
 
 Use the new manifest's `MODEL_SHA` when building. The selected policy is preserved
 through the runtime ModelSpec, TTIS wrapper and Helm pod environment. Rebuild and
 qualify that new image; the existing native-policy image does not inherit later
-head-control results.
+precision-control results. Runtime ModelSpec, authenticated Helm probes and
+startup checks are tested with native, head-only BFP8 and all-BFP8 policies.
 
 The separate head-policy image is built at TTIS
 `2485b039be071f75fa29adff6c84ecc87d60359e` and model source
