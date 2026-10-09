@@ -5264,6 +5264,32 @@ templates:
       tokenizer_revision: 771924d1c83d67527d665913415d7086f11ea9c0
   status: EXPERIMENTAL
 - weights:
+  - HuggingFaceTB/SmolLM2-1.7B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 8192  # quetzal P300X2 row max_context 8192, native 8192
+    default_impl: true
+    vllm_args:
+      revision: 31b70e2e869a7173562077fd711b654946d38674
+      tokenizer_revision: 31b70e2e869a7173562077fd711b654946d38674
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 453ed1575b739b5b03ce3758b23befdb0967f40e
+      tokenizer_revision: 453ed1575b739b5b03ce3758b23befdb0967f40e
+  status: EXPERIMENTAL
+- weights:
   - Qwen/Qwen2.5-14B-Instruct-1M
   impl: quetzal
   inference_engine: VLLM
@@ -5320,6 +5346,19 @@ templates:
       tokenizer_revision: 381fc969f78efac66bc87ff7ddeadb7e73c218a7
   status: EXPERIMENTAL
 - weights:
+  - Qwen/Qwen2.5-Coder-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 0396a76181e127dfc13e5c5ec48a8cee09938b02
+      tokenizer_revision: 0396a76181e127dfc13e5c5ec48a8cee09938b02
+  status: EXPERIMENTAL
+- weights:
   - Qwen/Qwen2.5-Coder-7B-Instruct
   impl: quetzal
   inference_engine: VLLM
@@ -5331,6 +5370,19 @@ templates:
     vllm_args:
       revision: c03e6d358207e414f1eca0bb1891e29f1db0e242
       tokenizer_revision: c03e6d358207e414f1eca0bb1891e29f1db0e242
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen2.5-Math-7B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: b101308fe89651ea5ce025f25317fea6fc07e96e
+      tokenizer_revision: b101308fe89651ea5ce025f25317fea6fc07e96e
   status: EXPERIMENTAL
 - weights:
   - Qwen/Qwen3-0.6B
@@ -5385,6 +5437,19 @@ templates:
       tokenizer_revision: 1cfa9a7208912126459214e8b04321603b3df60c
   status: EXPERIMENTAL
 - weights:
+  - Qwen/Qwen3-4B-Instruct-2507
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 262144
+    default_impl: true
+    vllm_args:
+      revision: cdbee75f17c01a7cc42f958dc650907174af0554
+      tokenizer_revision: cdbee75f17c01a7cc42f958dc650907174af0554
+  status: EXPERIMENTAL
+- weights:
   - Qwen/Qwen3-8B
   impl: quetzal
   inference_engine: VLLM
@@ -5396,6 +5461,45 @@ templates:
     vllm_args:
       revision: b968826d9c46dd6066d109eabc6255188de91218
       tokenizer_revision: b968826d9c46dd6066d109eabc6255188de91218
+  status: EXPERIMENTAL
+- weights:
+  - Qwen/Qwen3.8-27B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 262144  # quetzal P300X2 row max_context 262144, native None
+    default_impl: true
+    vllm_args:
+      revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+      tokenizer_revision: 1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0
+  status: EXPERIMENTAL
+- weights:
+  - TinyLlama/TinyLlama-1.1B-Chat-v1.0
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: fe8a4ea1ffedaf415f4da2f062534de366a451e6
+      tokenizer_revision: fe8a4ea1ffedaf415f4da2f062534de366a451e6
+  status: EXPERIMENTAL
+- weights:
+  - TinyLlama/TinyLlama_v1.1
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: ff3c701f2424c7625fdefb9dd470f45ef18b02d6
+      tokenizer_revision: ff3c701f2424c7625fdefb9dd470f45ef18b02d6
   status: EXPERIMENTAL
 - weights:
   - arcee-ai/AFM-4.5B
@@ -5424,6 +5528,136 @@ templates:
       tokenizer_revision: 69bafc5fc790f3d663094fdc9220a4b7ca0ba654
   status: EXPERIMENTAL
 - weights:
+  - deepcogito/cogito-v1-preview-llama-3B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 5a0ad6f39500e9af65e727f15d5554352933ed65
+      tokenizer_revision: 5a0ad6f39500e9af65e727f15d5554352933ed65
+  status: EXPERIMENTAL
+- weights:
+  - deepcogito/cogito-v1-preview-llama-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 64c42369b3f322fbffb277bfff146551dd2823cc
+      tokenizer_revision: 64c42369b3f322fbffb277bfff146551dd2823cc
+  status: EXPERIMENTAL
+- weights:
+  - deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 6a6f4aa4197940add57724a7707d069478df56b1
+      tokenizer_revision: 6a6f4aa4197940add57724a7707d069478df56b1
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-1B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 9213176726f574b556790deb65791e0c5aa438b6
+      tokenizer_revision: 9213176726f574b556790deb65791e0c5aa438b6
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-3B
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 13afe5124825b4f3751f836b40dafda64c1ed062
+      tokenizer_revision: 13afe5124825b4f3751f836b40dafda64c1ed062
+  status: EXPERIMENTAL
+- weights:
+  - meta-llama/Llama-3.2-3B-Instruct
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 131072  # quetzal P300X2 row max_context 131072, native 131072
+    default_impl: true
+    vllm_args:
+      revision: 0cb88a4f764b7a12671c53f0838cd831a0843b95
+      tokenizer_revision: 0cb88a4f764b7a12671c53f0838cd831a0843b95
+  status: EXPERIMENTAL
+- weights:
+  - microsoft/phi-1
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: d4c0adcb065e84e00ca814e35cba3012ea9841ab
+      tokenizer_revision: d4c0adcb065e84e00ca814e35cba3012ea9841ab
+  status: EXPERIMENTAL
+- weights:
+  - microsoft/phi-1_5
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 2048  # quetzal P300X2 row max_context 2048, native 2048
+    default_impl: true
+    vllm_args:
+      revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
+      tokenizer_revision: 77aa61eeac94fbf33d492b9f2744c98b42d5b5eb
+  status: EXPERIMENTAL
+- weights:
+  - stabilityai/stablelm-2-1_6b
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: f499ead74c53749bd93cebc6ce8bc0d7bdf1eaef
+      tokenizer_revision: f499ead74c53749bd93cebc6ce8bc0d7bdf1eaef
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-10B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 34bb99a889fe0426412da3dd2b46e6f64c8fd003
+      tokenizer_revision: 34bb99a889fe0426412da3dd2b46e6f64c8fd003
+  status: EXPERIMENTAL
+- weights:
   - tiiuae/Falcon3-10B-Instruct
   impl: quetzal
   inference_engine: VLLM
@@ -5435,6 +5669,19 @@ templates:
     vllm_args:
       revision: 8799bc6aec0152757221dc6b272d824642db6202
       tokenizer_revision: 8799bc6aec0152757221dc6b272d824642db6202
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-1B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 4096  # quetzal P300X2 row max_context 4096, native 4096
+    default_impl: true
+    vllm_args:
+      revision: cb37ef3559b157b5c9d9226296ba01a5162da1f7
+      tokenizer_revision: cb37ef3559b157b5c9d9226296ba01a5162da1f7
   status: EXPERIMENTAL
 - weights:
   - tiiuae/Falcon3-1B-Instruct
@@ -5450,6 +5697,19 @@ templates:
       tokenizer_revision: 28ba2251970a01dd1edc7ba7dad2eb71216ccfdf
   status: EXPERIMENTAL
 - weights:
+  - tiiuae/Falcon3-3B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: 092c29e3114ff551bd06b93b85424cdb525d227c
+      tokenizer_revision: 092c29e3114ff551bd06b93b85424cdb525d227c
+  status: EXPERIMENTAL
+- weights:
   - tiiuae/Falcon3-3B-Instruct
   impl: quetzal
   inference_engine: VLLM
@@ -5461,5 +5721,18 @@ templates:
     vllm_args:
       revision: 411bb94318f94f7a5735b77109f456b1e74b42a1
       tokenizer_revision: 411bb94318f94f7a5735b77109f456b1e74b42a1
+  status: EXPERIMENTAL
+- weights:
+  - tiiuae/Falcon3-7B-Base
+  impl: quetzal
+  inference_engine: VLLM
+  device_model_specs:
+  - device: GPU
+    max_concurrency: 32
+    max_context: 32768  # quetzal P300X2 row max_context 32768, native 32768
+    default_impl: true
+    vllm_args:
+      revision: bf3d7ed586cb22a921520e2d681a9d3d7642cde8
+      tokenizer_revision: bf3d7ed586cb22a921520e2d681a9d3d7642cde8
   status: EXPERIMENTAL
 # END gpu-ref sweep: derived GPU specs
