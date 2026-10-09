@@ -10,6 +10,7 @@ commits, task lists, or agent policies are kept separate.
 | --- | --- | --- |
 | SWE fixed five, C1 | 1/5 solved, 54.9 min evaluation | Full-set H100 target is 64.8%, not comparable to five cases |
 | SWE fixed five, C2 | 1/5 solved, 33.4 min evaluation | Different solved case and 34% fewer output tokens than C1 |
+| SWE fixed five, C4 | 2/5 solved, 29.6 min evaluation | Retained both previously solved cases; 800 MHz AICLK warning on this runner |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
@@ -569,11 +570,11 @@ CI marked this run **FAIL** only because its generic acceptance criterion
 compares the five-case 20% score with the full 500-case H100 reference of
 64.8%. Preserve that full-set reference target; do not interpret this
 five-case acceptance gate as a model error or claim that 20% meets 64.8%.
-The same fixed-five SWE suite is running at C4 in
+The same fixed-five SWE suite completed at C4 in
 [QB2 run 37970495434](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970495434)
 on the Metal-main image and inference-server
-`7e6ac75afa416ae28274d8a663809a039ddc3c44`; compare its suite wall,
-all five rewards, running/waiting counts and KV occupancy with C1 and C2.
+`7e6ac75afa416ae28274d8a663809a039ddc3c44`; its per-case result is
+analyzed below.
 Once a physical batch size and context are selected, a single
 `tb2.0,swebench` dispatch can run both suites against one warmed server,
 amortizing startup. Separate jobs remain useful for parallel exploratory
@@ -611,7 +612,7 @@ controlled batching speedup**: at temperature 1.0 C2 made 20 more API calls
 but generated 23,239 fewer output tokens, and different code/tool trajectories changed case clocks and solved
 identities. The synthetic same-server 128/128 C1/C2 point isolates a nearly
 2× aggregate short-context throughput effect more cleanly; repeated fixed
-case runs and the pending C4 result are needed for an end-to-end policy.
+case runs and the C4 result are needed for an end-to-end policy.
 Notably, C2's **summed** case clocks were longer, yet its suite elapsed time
 was shorter because the cases overlapped. This directly supports task
 parallelism as a useful mechanism, without assigning a precise share of the
@@ -625,6 +626,56 @@ despite about 68.5K output tokens. The Metal commit and prefill policy changed
 and the stochastic trajectories differ, so this is evidence of a much faster
 observed end-to-end run, not a measured speedup attributable to one code
 change.
+
+### Same-main C4 SWE result
+
+The [C4 fixed-five SWE run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970495434)
+completed all five cases with zero case errors. It resolved **2/5**:
+Django and Matplotlib, the union of the cases solved by C1 and C2. This is
+encouraging quality evidence on the fixed task list, but a single sampled
+trajectory at temperature 1.0 does not establish a reliable score change.
+CI reported failure because the generic acceptance gate compared the five-case
+40% score to the full 500-case H100 target of 64.8%.
+
+| Fixed-five SWE measure | C1 | C2 | C4 |
+| --- | ---: | ---: | ---: |
+| Evaluation wall, min | 54.94 | 33.44 | 29.57 |
+| Full test job, min | 70.42 | 49.20 | 45.32 |
+| Sum of case clocks, min | 54.94 | 60.39 | 102.92 |
+| Observed active-case parallelism | 1.00 | 1.81 | 3.48 |
+| Resolved | 1/5 | 1/5 | 2/5 |
+| Input tokens, M | 3.122 | 3.358 | 3.086 |
+| Output tokens | 68,495 | 45,256 | 55,891 |
+| Model API calls | 220 | 240 | 218 |
+| Peak / p95 KV sampled | 31.9% / 28.1% | 35.7% / 33.0% | 46.6% / 37.2% |
+| Samples with waiting | 0/330 | 1/201 | 3/178 |
+
+| SWE case | C1 | C2 | C4 | C4 wall (s) | C4 input / output |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Astropy 14096 | 0 | 0 | 0 | 1,627 | 603K / 15.3K |
+| Django 11299 | 1 | 0 | 1 | 904 | 212K / 5.5K |
+| Matplotlib 25332 | 0 | 1 | 1 | 1,175 | 996K / 7.8K |
+| scikit-learn 14629 | 0 | 0 | 0 | 696 | 439K / 9.7K |
+| Sympy 13551 | 0 | 0 | 0 | 1,774 | 837K / 17.7K |
+
+C4 observed a **1.13× shorter evaluation wall than C2** and **1.86× than
+C1**, while its summed case clocks were 70% longer than C2's. Concurrent
+agent work, not uniformly faster cases, produced the shorter wall. C4 also
+generated 23.5% more output tokens than C2, so their suite clocks cannot
+isolate a decode throughput effect. Three of 178 ten-second server samples
+had waiting requests; peak KV was only 46.6%, with no evidence here of
+sustained KV pressure. Trace warm/capture pairs numbered 216 and summed to
+69.5 seconds, again small against the suite wall.
+
+This C4 run used runner `120-qb2-p04t05`. Its server emitted two startup
+warnings that AICLK was expected at 1350 MHz but observed at 800 MHz,
+clamped by firmware max-arbiter index 5. The C1 and C2 SWE server logs did
+not emit that warning. The warning may affect C4 timing; these logs do not
+show its duration or per-chip clocks during the cases, so no clock-normalized
+speedup is claimed. A repeat on a healthy runner would help separate host
+frequency from stochastic case paths. Raw artifacts and numeric summary:
+`/home/mvasiljev/build/gemma-swe-c4-main/` and
+`/home/mvasiljev/build/gemma-swe-c4-main-summary.json`.
 
 ### Startup cost and reuse
 
