@@ -439,9 +439,13 @@ The `verify` metrics and their default thresholds come from the verifier README.
 | `language_following_success_rate` | Language-Following-Success-Rate | ≥ 40% |
 | `scenario_check_pass_rate` | Scenario-Check-Pass-Rate | ≥ 100% |
 
-The README thresholds are calibrated on the mean of 10 runs. A single run (`verify_loops: 1`) is noisier, so set `verify_loops` or measured per-model targets before relying on a tight gate.
+Per-model targets follow the same method as the tool-call schema tests. For ToolCalls-Match-Rate, Trigger-Similarity and Schema-Accuracy, the target is the mean minus 3 sample standard deviations over 10 `verify.py` runs on GPU vLLM, and a single run is graded against it. MiniMax-M3's targets were set this way; the derivation is in `_comment_threshold` in `llm.json`. MiniMax-M3's Scenario-Check is reported but not gated (target 0): it is a single case, and GPU vLLM fails it in 2 of 10 runs. The other metrics keep the README gates, because they show no variance or are graded on only 2 cases. A model without measured targets uses the README thresholds, which are calibrated on means of 10 runs of MiniMax's official deployment.
 
-The verifier is not vendored. On first use, the `MINIMAX_VERIFIER` venv (Python 3.12, `requirements/minimax-verifier.txt`) checks it out with git at the upstream commit pinned in `workflows/workflow_venvs.py` (`MINIMAX_VERIFIER_REPO` / `MINIMAX_VERIFIER_REF`). The checkout is sparse: only the paths in `MINIMAX_VERIFIER_SPARSE_PATHS` are downloaded. That's about 260 MB, and about 600 MB on disk instead of the full 870 MB tree. The host needs git and access to github.com once. To update the verifier, bump `MINIMAX_VERIFIER_REF`. To enroll another model, point its `verify_baseline` at `output-dir/<model>/loop_01` and add that path to the sparse paths.
+The verifier is not vendored. The `MINIMAX_VERIFIER` venv (Python 3.12, `requirements/minimax-verifier.txt`) exports it from the branch set in `workflows/workflow_venvs.py` (`MINIMAX_VERIFIER_REPO` / `MINIMAX_VERIFIER_BRANCH`). Every run resolves the branch head with `git ls-remote` and re-exports only when the head has moved. If GitHub can't be reached, the existing export is used.
+
+The export is plain files, without `.git`. Only the paths in `MINIMAX_VERIFIER_SPARSE_PATHS` are downloaded, through a blob-less sparse clone: about 340 MB on disk instead of the full 870 MB tree. The exported commit is recorded in `.source_commit` and reported as `verifier_commit` in each block.
+
+To enroll another model, point its `verify_baseline` at `output-dir/<model>/loop_01` and add that path to the sparse paths.
 
 ```bash
 python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \

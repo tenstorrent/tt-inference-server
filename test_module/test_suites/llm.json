@@ -175,9 +175,16 @@
           "enabled": true,
           "description": "MiniMax Provider Verifier verify.py: tool-call metrics on 102 agentic replays vs the verifier README thresholds",
           "_comment": "The verifier is checked out at the commit pinned in workflows/workflow_venvs.py (MINIMAX_VERIFIER_REF); graded by test_module/llm_tests/minimax_verifier_grading.py. Each metric defaults to the verifier README threshold (calibrated on pass@10 means, graded here on one run); targets.<metric key> overrides it. verify_baseline is the official deployment's results for ToolCalls-Trigger-Similarity and must be in MINIMAX_VERIFIER_SPARSE_PATHS.",
+          "_comment_threshold": "targets = mean - 3 sample std of 10 verify.py runs on GPU vLLM (102 cases, concurrency 20, verifier 87c03f2, 2026-10-08): ToolCalls-Match-Rate 96.70% - 3 x 0.82% = 94.23%, i.e. at least 95 of 100 labelled cases; ToolCalls-Trigger-Similarity 98.61% - 3 x 0.50% = 97.10%; ToolCalls-Schema-Accuracy 98.65% - 3 x 0.38% = 97.50%, i.e. at most 2 invalid of ~82 tool calls. Scenario-Check-Pass-Rate is reported, not gated (target 0): it is one case, and GPU vLLM failed it in 2 of the 10 runs. The other metrics keep the README gates (no variance, or 2 cases).",
           "test_config": {
             "suite": "verify",
             "verify_baseline": "output-dir/MiniMax-M3/loop_01"
+          },
+          "targets": {
+            "tool_calls_match_rate": 0.9423,
+            "tool_calls_trigger_similarity": 0.971,
+            "tool_calls_schema_accuracy": 0.975,
+            "scenario_check_pass_rate": 0.0
           }
         },
         {

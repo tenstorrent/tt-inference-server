@@ -1,71 +1,121 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: 2026 Tenstorrent AI ULC
 
-"""The MINIMAX_VERIFIER venv's pinned, sparse checkout of MiniMax-Provider-Verifier."""
+"""The MINIMAX_VERIFIER venv's export of MiniMax-Provider-Verifier."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import workflows.workflow_venvs as wv
 from workflow_module.engine_types import WorkflowVenvType
 
 
-def _record(monkeypatch):
-    calls = []
-    monkeypatch.setattr(wv, "run_command", lambda cmd, **kw: calls.append(cmd) or 0)
-    return calls
+class _Git:
+    """Fakes git: ls-remote returns ``head``; a clone writes the files."""
+
+    def __init__(self, monkeypatch, head="a" * 40):
+        self.head = head
+        self.commands = []
+        monkeypatch.setattr(wv, "run_command", self.run)
+        monkeypatch.setattr(wv, "_git_output", self.output)
+
+    def output(self, *args):
+        if args[0] == "ls-remote":
+            return f"{self.head}\trefs/heads/b" if self.head else None
+        return self.head  # rev-parse HEAD
+
+    def run(self, cmd, **kw):
+        self.commands.append(cmd)
+        if cmd.startswith("git clone"):
+            staging = Path(cmd.split()[-1])
+            (staging / ".git").mkdir(parents=True)
+            (staging / "verify.py").write_text("")
+        return 0
 
 
-def test_sparse_paths_are_set_before_the_checkout(monkeypatch, tmp_path):
-    calls = _record(monkeypatch)
+def test_the_branch_head_is_exported_without_git_metadata(monkeypatch, tmp_path):
+    git = _Git(monkeypatch)
+    dest = tmp_path / "verifier"
 
-    assert wv.checkout_pinned_repo(tmp_path / "repo", "url", "abc", ["a", "b/c"])
+    assert wv.export_repo_branch(dest, "url", "b", ["validator", "m3_format_check"])
 
-    sparse = calls.index(f"git -C {tmp_path / 'repo'} sparse-checkout set --cone a b/c")
-    checkout = next(i for i, c in enumerate(calls) if " checkout --detach " in c)
-    assert sparse < checkout
-    assert calls[0].startswith("git clone --filter=blob:none --no-checkout url ")
-
-
-def test_without_sparse_paths_the_commands_are_unchanged(monkeypatch, tmp_path):
-    calls = _record(monkeypatch)
-    dest = tmp_path / "repo"
-
-    assert wv.checkout_pinned_repo(dest, "url", "abc")
-
-    assert calls == [
-        f"git clone --filter=blob:none --no-checkout url {dest}",
-        f"git -C {dest} remote set-url origin url",
-        f"git -C {dest} fetch --depth 1 origin abc",
-        f"git -C {dest} checkout --detach --force FETCH_HEAD",
-    ]
+    assert (dest / "verify.py").exists()
+    assert not (dest / ".git").exists()
+    assert wv.read_source_commit(dest) == git.head
+    assert not (tmp_path / "verifier.staging").exists()
+    clone, sparse, checkout = git.commands
+    assert clone.startswith("git clone --filter=blob:none --no-checkout --depth 1 ")
+    assert "--branch b url" in clone
+    assert sparse.endswith("sparse-checkout set --cone validator m3_format_check")
+    assert checkout.endswith("checkout b")
 
 
-def test_the_verifier_is_checked_out_at_its_pinned_commit(monkeypatch, tmp_path):
+def test_an_export_at_the_branch_head_is_kept(monkeypatch, tmp_path):
+    git = _Git(monkeypatch)
+    dest = tmp_path / "verifier"
+    wv.export_repo_branch(dest, "url", "b", ["validator"])
+    git.commands.clear()
+
+    assert wv.export_repo_branch(dest, "url", "b", ["validator"])
+
+    assert git.commands == []
+
+
+def test_a_moved_branch_is_exported_again(monkeypatch, tmp_path):
+    git = _Git(monkeypatch)
+    dest = tmp_path / "verifier"
+    wv.export_repo_branch(dest, "url", "b", ["validator"])
+    (dest / "stale.txt").write_text("")
+    git.head = "b" * 40
+
+    assert wv.export_repo_branch(dest, "url", "b", ["validator"])
+
+    assert wv.read_source_commit(dest) == "b" * 40
+    assert not (dest / "stale.txt").exists()
+
+
+def test_an_unreachable_remote_keeps_an_existing_export(monkeypatch, tmp_path):
+    git = _Git(monkeypatch)
+    dest = tmp_path / "verifier"
+    wv.export_repo_branch(dest, "url", "b", ["validator"])
+    git.head = None
+
+    assert wv.export_repo_branch(dest, "url", "b", ["validator"])
+    assert not wv.export_repo_branch(tmp_path / "other", "url", "b", ["validator"])
+
+
+def test_a_failed_clone_leaves_no_staging_directory(monkeypatch, tmp_path):
+    _Git(monkeypatch)
+    monkeypatch.setattr(wv, "run_command", lambda cmd, **kw: 1)
+
+    assert not wv.export_repo_branch(tmp_path / "verifier", "url", "b", ["v"])
+    assert not (tmp_path / "verifier.staging").exists()
+
+
+def test_the_verifier_branch_is_exported(monkeypatch, tmp_path):
     seen = {}
 
-    def checkout(dest, repo, ref, sparse_paths=None):
-        seen.update(dest=dest, repo=repo, ref=ref, sparse_paths=sparse_paths)
+    def export(dest, repo, branch, paths):
+        seen.update(dest=dest, repo=repo, branch=branch, paths=paths)
         return True
 
-    monkeypatch.setattr(wv, "checkout_pinned_repo", checkout)
-    venv = SimpleNamespace(venv_path=tmp_path)
+    monkeypatch.setattr(wv, "export_repo_branch", export)
 
-    assert wv.setup_minimax_verifier(venv, model_spec=None)
+    assert wv.setup_minimax_verifier(SimpleNamespace(venv_path=tmp_path), None)
 
     assert seen["dest"] == tmp_path / "MiniMax-Provider-Verifier"
     assert seen["repo"] == wv.MINIMAX_VERIFIER_REPO
-    # A full commit SHA, not a branch: the checkout must not drift.
-    assert len(seen["ref"]) == 40 and int(seen["ref"], 16) >= 0
+    assert seen["branch"] == wv.MINIMAX_VERIFIER_BRANCH
     # verify.py imports validator/; the pytest suites and fixtures live in
     # m3_format_check/.
     for path in ("validator", "m3_format_check"):
-        assert path in seen["sparse_paths"]
+        assert path in seen["paths"]
 
 
 def test_every_configured_baseline_is_checked_out():
-    """A verify case's verify_baseline must be inside the sparse checkout, or
+    """A verify case's verify_baseline must be inside the exported paths, or
     the run fails for a missing baseline."""
     from test_module.test_categorization_system.test_filter import (
         TestFilter as SuiteTestFilter,  # aliased so pytest does not collect it

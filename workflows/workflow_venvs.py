@@ -45,33 +45,30 @@ HARBOR_REF = "tt-inference-server"
 EVALS_COMMON_LM_EVAL_COMMIT = "be23028b161addd616ecabff740dee62d1d9fbd8"
 
 # MiniMax-Provider-Verifier, run by the MiniMaxProviderVerifierTest spec test:
-# its verify.py and m3_format_check pytest suites run unchanged from this
-# checkout, and test_module/llm_tests/minimax_verifier_grading.py grades their
-# output. Pinned to a commit (upstream main, which includes the
-# `reasoning_content` fix vLLM servers need); bump it together with any change
-# to verify.py's results format or the suites' file names.
-MINIMAX_VERIFIER_REPO = "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
-MINIMAX_VERIFIER_REF = "4e778f7c3da5f0feca02741f5f736c8568760a6f"
+# its verify.py and m3_format_check pytest suites run unchanged from these
+# files, and test_module/llm_tests/minimax_verifier_grading.py grades their
+# output. Tracks a branch: each venv setup resolves its head and re-fetches
+# when it moved (see export_repo_branch). The fork's branch carries upstream
+# main, including the `reasoning_content` fix vLLM servers need.
+MINIMAX_VERIFIER_REPO = "https://github.com/ipastalTT/MiniMax-Provider-Verifier.git"
+MINIMAX_VERIFIER_BRANCH = "vendor-test-report"
 MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
 # The full tree is ~870 MB, mostly official-deployment baselines for every
 # model x 10 loops. The spec test reads only the first loop of each enrolled
 # model, as its ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
 # test_module/test_suites/llm.json). Root files (verify.py, sample.jsonl) are
-# always part of a cone checkout.
+# always included.
 MINIMAX_VERIFIER_SPARSE_PATHS = (
     "validator",
     "m3_format_check",
     "output-dir/MiniMax-M3/loop_01",
     "output-dir/MiniMax-M2.7/loop_01",
 )
+# Written next to the exported files: the commit they came from.
+SOURCE_COMMIT_FILE = ".source_commit"
 
 
-def checkout_pinned_repo(
-    dest: Path,
-    repo: str,
-    ref: str,
-    sparse_paths: Optional[Sequence[str]] = None,
-) -> bool:
+def checkout_pinned_repo(dest: Path, repo: str, ref: str) -> bool:
     """Materialize *repo* at exactly *ref* in *dest*. Returns success.
 
     Idempotent, and converging rather than incremental: the directory may be
@@ -79,10 +76,6 @@ def checkout_pinned_repo(
     or not a git repository at all. Self-hosted runners keep the venv tree
     between jobs, so a "clone only when missing" shortcut would keep
     installing whatever the previous pin was.
-
-    *sparse_paths* limits the working tree to those directories (cone mode;
-    files at the repo root are always included). The clone is blob-less, so
-    git downloads only the files inside them.
     """
     if not (dest / ".git").is_dir():
         if dest.exists():
@@ -102,17 +95,86 @@ def checkout_pinned_repo(
     steps = (
         f"git -C {dest} remote set-url origin {repo}",
         f"git -C {dest} fetch --depth 1 origin {ref}",
-        *(
-            (f"git -C {dest} sparse-checkout set --cone {' '.join(sparse_paths)}",)
-            if sparse_paths
-            else ()
-        ),
         f"git -C {dest} checkout --detach --force FETCH_HEAD",
     )
     for step in steps:
         if run_command(step, logger=logger) != 0:
             logger.error("Failed to pin %s to %s (%s)", dest, ref, step)
             return False
+    return True
+
+
+def _git_output(*args: str) -> Optional[str]:
+    """stdout of a git command, or None when it fails."""
+    result = subprocess.run(["git", *args], capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.warning("git %s failed: %s", " ".join(args), result.stderr.strip())
+        return None
+    return result.stdout.strip()
+
+
+def read_source_commit(dest: Path) -> Optional[str]:
+    """The commit :func:`export_repo_branch` exported into *dest*, if any."""
+    try:
+        return (dest / SOURCE_COMMIT_FILE).read_text().strip() or None
+    except OSError:
+        return None
+
+
+def export_repo_branch(
+    dest: Path, repo: str, branch: str, paths: Sequence[str]
+) -> bool:
+    """Materialize *paths* of *repo* at the head of *branch* in *dest*, as
+    plain files: no ``.git``. Returns success.
+
+    The head is resolved with ``git ls-remote`` on every call and the files
+    are re-exported only when it moved (the exported commit is kept in
+    ``SOURCE_COMMIT_FILE``). When the remote cannot be reached, an existing
+    export is used as is.
+
+    The export goes through a blob-less, depth-1, sparse clone in a sibling
+    directory, so only the files under *paths* (plus the repository root's)
+    are downloaded; its ``.git`` is then removed and the directory swapped
+    into place.
+    """
+    current = read_source_commit(dest) if dest.is_dir() else None
+    listing = _git_output("ls-remote", repo, f"refs/heads/{branch}")
+    head = listing.split()[0] if listing else None
+    if head is None:
+        if current:
+            logger.warning(
+                "Cannot resolve %s %s; using the existing export at %s",
+                repo,
+                branch,
+                current,
+            )
+            return True
+        logger.error("Cannot resolve branch %s of %s", branch, repo)
+        return False
+    if head == current:
+        logger.info("%s is at %s %s (%s)", dest, repo, branch, head)
+        return True
+
+    staging = dest.with_name(dest.name + ".staging")
+    shutil.rmtree(staging, ignore_errors=True)
+    steps = (
+        f"git clone --filter=blob:none --no-checkout --depth 1 --branch {branch} "
+        f"{repo} {staging}",
+        f"git -C {staging} sparse-checkout set --cone {' '.join(paths)}",
+        f"git -C {staging} checkout {branch}",
+    )
+    for step in steps:
+        if run_command(step, logger=logger) != 0:
+            logger.error("Failed to export %s %s (%s)", repo, branch, step)
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+    # The branch may have moved since ls-remote; record what was exported.
+    commit = _git_output("-C", str(staging), "rev-parse", "HEAD") or head
+    shutil.rmtree(staging / ".git")
+    (staging / SOURCE_COMMIT_FILE).write_text(commit + "\n")
+    shutil.rmtree(dest, ignore_errors=True)
+    staging.rename(dest)
+    logger.info("Exported %s %s (%s) to %s", repo, branch, commit, dest)
     return True
 
 
@@ -293,17 +355,17 @@ def setup_minimax_verifier(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    """Hook for MINIMAX_VERIFIER: check out MiniMax-Provider-Verifier at its pin.
+    """Hook for MINIMAX_VERIFIER: export MiniMax-Provider-Verifier's branch.
 
     Nothing is installed from the checkout: the spec test runs its
     ``verify.py`` and pytest suites with this venv's python, and the
     dependencies come from requirements/minimax-verifier.txt.
     """
-    return checkout_pinned_repo(
+    return export_repo_branch(
         venv_config.venv_path / MINIMAX_VERIFIER_DIR_NAME,
         MINIMAX_VERIFIER_REPO,
-        MINIMAX_VERIFIER_REF,
-        sparse_paths=MINIMAX_VERIFIER_SPARSE_PATHS,
+        MINIMAX_VERIFIER_BRANCH,
+        MINIMAX_VERIFIER_SPARSE_PATHS,
     )
 
 

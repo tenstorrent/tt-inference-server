@@ -79,6 +79,7 @@ class _FakeVerifier:
         (baseline / "official_results.jsonl").write_text(
             "".join(json.dumps(_row(i)) + "\n" for i in range(3))
         )
+        (self.dir / ".source_commit").write_text("c0ffee\n")
         self.calls = []
         self.rows = [_row(0), _row(1), _row(2)]
         self.junit = _JUNIT_PASS
@@ -144,6 +145,7 @@ def test_verify_runs_verify_py_against_the_v1_url(fake, tmp_path):
     assert call["cwd"] == fake.dir
     assert call["env"]["OPENAI_API_KEY"] == "tok"
     assert block.data["status"] == "pass"
+    assert block.data["verifier_commit"] == "c0ffee"
     assert block.data["verify_baseline"].startswith("output-dir/MiniMax-M3/loop_01/")
     metrics = {m["key"]: m for m in block.data["verify_metrics"]}
     assert metrics["tool_calls_trigger_similarity"]["value"] == 1.0

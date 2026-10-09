@@ -4,8 +4,8 @@
 
 """Spec-test wrapper for MiniMax-Provider-Verifier.
 
-The verifier is not vendored: the MINIMAX_VERIFIER workflow venv checks it out
-at a pinned commit (``workflows/workflow_venvs.py``). This test runs one of its
+The verifier is not vendored: the MINIMAX_VERIFIER workflow venv exports it
+from a branch (``workflows/workflow_venvs.py``), without git metadata. This test runs one of its
 suites with that venv's python and grades the raw output itself
 (``minimax_verifier_grading``), so thresholds live in the suite files like the
 other spec tests'. One test case runs one suite and becomes one Block:
@@ -165,7 +165,7 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
             "suite": suite,
             "base_url": f"{self.base_url}/v1",
             "model_name": model_name,
-            "verifier_commit": self._verifier_commit(),
+            "verifier_commit": self._verifier_commit(verifier_dir),
             "artifacts_dir": str(artifacts) if artifacts else None,
             **result,
             **self._non_blocking_fields(),
@@ -439,10 +439,11 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
         return provisioner.venv_python(venv_type), verifier_dir
 
     @staticmethod
-    def _verifier_commit() -> str:
-        from workflows.workflow_venvs import MINIMAX_VERIFIER_REF
+    def _verifier_commit(verifier_dir: Path) -> Optional[str]:
+        """The commit the verifier files were exported from."""
+        from workflows.workflow_venvs import read_source_commit
 
-        return MINIMAX_VERIFIER_REF
+        return read_source_commit(verifier_dir)
 
     @staticmethod
     def _auth_token() -> Optional[str]:
