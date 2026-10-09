@@ -8911,7 +8911,8 @@ _eval_config_list = [
                     n_tasks=None,
                     override_cpus=16,
                     override_memory_mb=48 * 1024,
-                    agent_timeout_sec=3 * 60 * 60,
+                    # Exploratory C2 tail cap; compare rewards with the 3h control.
+                    agent_timeout_sec=60 * 60,
                     agent_kwargs={
                         "parser_name": "json",
                         "temperature": 1.0,
