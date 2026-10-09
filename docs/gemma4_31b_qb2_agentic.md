@@ -219,6 +219,7 @@ appears below.
 | Current-main baseline | 1 | 1 | 256K | On | `2c1e1ebd` |
 | C2 | 2 | 2 | 256K | On | `2c1e1ebd` |
 | C4 | 4 | 4 | 256K | On | `2c1e1ebd` |
+| C8 scaling sweep | 8 | 8 | 256K | On | `2c1e1ebd` |
 | C2/192K KV | 2 | 2 | 192K | On | `6b70d126` |
 | C2 thinking-off pilot | 2 | 2 | 256K | Off | `2c1e1ebd` |
 
@@ -481,7 +482,14 @@ trajectories build large prompts; this scaling curve argues against assuming
 that C8 will double Terminal throughput. A
 [C8 catalog candidate](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c8)
 is prepared for a benchmark on a clean runner after the active evaluation
-queue, to locate that limit before spending hours on C8 agentic cases.
+queue, to locate that limit before spending hours on C8 agentic cases. Its
+[pinned-main dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37984140248)
+uses the same Metal image and full inference-server commit
+`5f0374c51d6d883767f48af4c63a5027c2883437`. The first setup dispatch
+with a short checkout SHA was canceled; the next failed server-type resolution
+because its implementation ID used underscores instead of the catalog's
+`gemma4-31b-qb2`. Neither reached hardware. The linked dispatch corrects
+both inputs.
 
 The benchmark selector reduced the 65,536/128 point to three concurrent
 requests under the 256K shared context; C3 output was 7.96 tokens/s versus
