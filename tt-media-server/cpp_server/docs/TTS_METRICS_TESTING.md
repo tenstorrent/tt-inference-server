@@ -13,6 +13,10 @@ real engine, so every metric below is exercised through the same
 `TtsWorkerMetricsRenderer`. The only thing it does not validate is the real
 engine's call pattern.
 
+The expected values below are for TTS-2 (`tt_tts` / `mock_tts`). The Qwen3-TTS
+runner (`tt_qwen3_tts`) reports the same series; how its numbers differ is in
+[`QWEN3_TTS.md`](QWEN3_TTS.md#metrics).
+
 ## Prerequisite: a TTS tokenizer
 
 Both lanes need `TTS_TOKENIZER_PATH` pointing at a `tokenizer.json` whose vocab

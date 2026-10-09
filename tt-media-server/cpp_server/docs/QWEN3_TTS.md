@@ -126,9 +126,9 @@ env PYTHONPATH= \
 ```
 
 `/health` reports `runner_in_use: tt_qwen3_tts` (the `MODEL_RUNNER_TYPE`
-value, as for `tt_tts` and `mock_tts`). Each worker reports ready
-after its warmup utterance, which compiles the kernels; the first requests of a
-new prompt length or audio length still compile a little more.
+value, as for `tt_tts` and `mock_tts`). Each worker reports ready after its
+warmup utterance, which compiles the kernels; the first requests of a new
+prompt length or audio length still compile a little more.
 
 ## Requests
 
@@ -164,6 +164,26 @@ curl -H "Authorization: Bearer your-secret-key" \
 
 The file part's field name does not matter; the first file in the form is the
 clip.
+
+## Metrics
+
+Qwen3-TTS feeds the same `/metrics` series as TTS-2, under the same names and
+labels; [`TTS_METRICS_TESTING.md`](TTS_METRICS_TESTING.md) is the procedure for
+checking them. What the numbers mean for this runner:
+
+| series | Qwen3-TTS |
+|---|---|
+| `tt_tts_codec_tokens_total` | one per codebook per generated frame, 16 per frame, so 200 per second of audio. `voice_source`: `voice_sample` for a clone (Base), `description` when the request has one (VoiceDesign, an instructed CustomVoice), else `default` |
+| `tt_tts_audio_frames_total`, `tt_tts_vocoder_chunks_total` | always `batch="1"` (one utterance per worker); one chunk per 4 s IPC message |
+| `tt_tts_audio_sample_rate_hz` | 24000 |
+| `tt_tts_conditioning_seconds{stage="voice_normalization"}` | Base requests: WAV downmix and resample in the server process |
+| `tt_tts_conditioning_seconds{stage="text_conditioning"}` | other requests: release validation only, since the prompt is templated in the worker |
+| `tt_tts_conditioning_seconds{stage="voice_encode"}` | Base requests: building the clone reference on the worker (speaker encoder, plus the codec encoder for an in-context clone). There is no reference cache, so every clone reports it |
+| `tt_tts_conditioning_seconds{stage="prompt_compile"}` | never observed: prompt building happens inside generation and is not timed apart |
+
+Codec tokens are counted as frames are generated, but audio frames only once
+the codec has decoded the whole utterance, so the two rates move together only
+over windows longer than an utterance.
 
 ## Limitations
 
