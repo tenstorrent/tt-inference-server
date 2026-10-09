@@ -218,6 +218,10 @@ templates:
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
+        # Four DP engines bring up their 1x8 submeshes at once; first-run cache generation and fabric
+        # init on a shared Galaxy exceed the 5 s default of the device-op watchdog (tt-triage fired
+        # in every CI bring-up). Keep hang detection, with a budget that fits the DP=4 start.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"
       vllm_args:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
@@ -272,6 +276,10 @@ templates:
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
+        # Four DP engines bring up their 1x8 submeshes at once; first-run cache generation and fabric
+        # init on a shared Galaxy exceed the 5 s default of the device-op watchdog (tt-triage fired
+        # in every CI bring-up). Keep hang detection, with a budget that fits the DP=4 start.
+        TT_METAL_OPERATION_TIMEOUT_SECONDS: "120"
       vllm_args:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
