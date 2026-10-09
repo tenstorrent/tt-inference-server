@@ -22,6 +22,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | 192K live run also 1/5, with more output and a timeout |
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
 | Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
+| Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; ten-case control dispatched |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -288,8 +289,8 @@ appears below.
    [fixed-five dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37965857157)
    was cancelled before model work to prioritize the C4 SWE comparison;
    the [same fixed-five pilot](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37991891787)
-   was then re-dispatched after the C2/C4 full-deadline results and passed
-   server-type resolution. Its hardware job is queued. It uses inference-server
+   was then re-dispatched after the C2/C4 full-deadline results and
+   completed. It uses inference-server
    `d55d5fb55308109b303a85d14ea2832c679b9888` on the Metal-main image.
 
 Use the same five case IDs and official verifier rewards for all timing
@@ -312,14 +313,13 @@ ten-case aggregate containing it may be easier than the original five. Keep
 the fixed-five result visible and avoid comparing a ten-case percentage to a
 five-case or full-set target. The
 [C2 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten)
-appends these exact IDs after the first five and is ready for dispatch when
-the current-main five-case comparison supports expansion. With C2 SWE's
+appends these exact IDs after the first five. With C2 SWE's
 33.4-minute fixed-five evaluation and 1/5 solved count, the ten-case **SWE
-only** expansion is queued in
+only** expansion completed in
 [QB2 run 37971863336](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37971863336)
 on Metal main, inference-server `3bb48bc36c9d47848de6cf01208e3bc6063acb34`.
 Its first attempt was canceled while queued to let a guard occupy the known
-dirty runner; attempt two is queued with the same inputs. The first five
+dirty runner; attempt two completed with the same inputs. The first five
 remain identical to the C2 control. After C4 fixed-five completed faster
 and retained both previously solved SWE cases, the
 [C4 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c4-ten)
@@ -344,7 +344,7 @@ was queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-br
 then cancelled before model work to prioritize the C4 SWE comparison on the
 clean runners. After the C2 and C4 full-deadline fixed-five results, the
 [same one-hour pilot was re-dispatched](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37991526452)
-and passed server-type resolution; its hardware test is queued. It uses
+and completed; its timing and timeout results appear below. It uses
 the Metal-main image with inference-server
 `202fa984f759d43aac5e927cf66f2989cd028e2f`. The first
 [dispatch 37969856863](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37969856863)
@@ -436,7 +436,7 @@ subsequent benchmark artifact, run
 `python3 scripts/gemma4_benchmark_summary.py ARTIFACT_DIR --output summary.json`.
 This parser omits generated text. For the C2 run it found 23 completed points,
 zero failed requests, peak two running/one waiting request, and peak 59% KV
-usage. The C4 sweep is running. None of these synthetic points
+usage. The C4 sweep finished later and is analyzed below. None of these synthetic points
 measures official Terminal or SWE rewards.
 
 ### C2/192K KV sweep against C2/256K
@@ -1200,3 +1200,37 @@ as well as the total wall before selecting this policy. Raw pilot artifacts
 and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c2-thinkoff/` and
 `/home/mvasiljev/build/gemma-terminal-c2-thinkoff-summary.json`.
+
+### One-hour fixed-five Terminal deadline pilot
+
+The [C2 one-hour cap pilot](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37991526452)
+used the pinned Metal-main image and changed only `agent_timeout_sec` from
+10,800 to 3,600. It completed all five case records, solved **1/5,
+COBOL**, and recorded two `AgentTimeoutError`s: HTML filter at 60.44
+minutes and CompCert at 60.40 minutes. Both cases scored zero after
+171.25 and 120.48 minutes in the three-hour C2 control, so the observed
+reward on this fixed five was preserved. The generic accuracy gate still
+failed against the 44.94% full-set H100 reference.
+
+| C2 fixed-five Terminal measure | Three-hour cap | One-hour cap |
+| --- | ---: | ---: |
+| Evaluation wall, min | 175.87 | 102.09 |
+| Sum of case clocks, min | 347.12 | 174.53 |
+| Solved / timed-out cases | 1/5 / 0 | 1/5 / 2 |
+| Model API calls | 126 | 78 |
+| Input / output tokens | 2.717M / 399K | 1.246M / 238K |
+| Sum API / other case time, min | 202.61 / 144.51 | 119.06 / 55.47 |
+| Peak sampled KV / waiting samples | 52.6% / 0 | 39.8% / 0 |
+
+Wall fell **42.0%** because long unsuccessful paths were stopped. COBOL
+still passed in 9.19 versus 9.58 minutes; FEAL and QEMU remained unsolved
+on different stochastic paths. A one-hour cap can lose cases that need
+later work, so the five-case tie is insufficient for a default change.
+The [C2 ten-case one-hour branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-60m)
+changes only this deadline from C2/ten. Its
+[matched Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38004228585)
+has started on clean runner `qb2-120-p05t02`; compare each reward and the
+original/added five separately with the three-hour C2/ten run. Raw pilot
+artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c2-60m/` and
+`/home/mvasiljev/build/gemma-terminal-c2-60m-summary.json`.
