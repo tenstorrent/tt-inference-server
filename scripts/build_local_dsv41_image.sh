@@ -22,9 +22,11 @@ IMAGE_REPO=${IMAGE_REPO:-dsv41-flash-local}
 SKIP_BASE=0
 [[ "${1:-}" == "--skip-base" ]] && SKIP_BASE=1
 
-METAL_SHA=$(git -C "$TT_METAL_DIR" rev-parse HEAD)
-TTIS_SHA=$(git -C "$TTIS_DIR" rev-parse HEAD)
-PLUGIN_SHA=$(git -C "$PLUGIN_DIR" rev-parse HEAD)
+# Pin the commits with METAL_SHA / TTIS_SHA / PLUGIN_SHA; REUSE_CTX=1 reuses an already
+# exported context of the same tag (resume after a failed base/image build).
+METAL_SHA=${METAL_SHA:-$(git -C "$TT_METAL_DIR" rev-parse HEAD)}
+TTIS_SHA=${TTIS_SHA:-$(git -C "$TTIS_DIR" rev-parse HEAD)}
+PLUGIN_SHA=${PLUGIN_SHA:-$(git -C "$PLUGIN_DIR" rev-parse HEAD)}
 TAG="${METAL_SHA:0:11}-${TTIS_SHA:0:8}-${PLUGIN_SHA:0:7}"
 IMAGE="${IMAGE_REPO}:${TAG}"
 BASE_TAG=${BASE_TAG:-tt-metalium-ci-build:local-${METAL_SHA:0:11}}
@@ -33,6 +35,7 @@ echo "tt-metal=$METAL_SHA tt-inference-server=$TTIS_SHA vllm-tt-plugin=$PLUGIN_S
 echo "image=$IMAGE base=$BASE_TAG ctx=$CTX"
 
 # ---- 1. export sources (no .git, no untracked/ignored files, no build artifacts) ----
+if [[ "${REUSE_CTX:-0}" == 1 && -f "$CTX/model_spec.json" ]]; then echo "reusing $CTX"; else
 rm -rf "$CTX"; mkdir -p "$CTX/tt-metal" "$CTX/vllm-tt-plugin" "$CTX/tis"
 git -C "$TT_METAL_DIR" archive "$METAL_SHA" | tar -x -C "$CTX/tt-metal"
 # git archive skips submodules: export each at the commit recorded in the superproject
@@ -55,6 +58,7 @@ n = export_model_specs_json(MODEL_SPECS, Path('$CTX/model_spec.json'))
 print('model_spec.json:', n, 'specs')")
 cp "$CTX/tis/vllm-tt-metal/vllm.tt-metal.local.Dockerfile" "$CTX/Dockerfile"
 rm -rf "$CTX/tis"
+fi
 du -sh "$CTX"
 
 # ---- 2. base (toolchain) image from the tt-metal export's own dockerfile/docker-bake.hcl ----
