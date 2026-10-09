@@ -1556,6 +1556,41 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
+# Qwen3.8-27B on the qwen36_blackhole TP implementation (P150x8 / TP=8). Local dev entry.
+- weights:
+    - Qwen/Qwen3.8-27B
+  impl: qwen36_blackhole
+  inference_engine: VLLM
+  model_type: LLM
+  supported_modalities:
+    - text
+  device_model_specs:
+    - device: P150X8
+      max_concurrency: 32
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "P150x8"
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+      vllm_args:
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    Qwen/Qwen3.8-27B:
+      reasoning_parser_name: qwen3
+      tool_call_parser_name: qwen3_coder
+
 - weights:
     - Qwen/Qwen3.8-27B
   impl: qwen38_27b_qb2
