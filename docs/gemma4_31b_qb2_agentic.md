@@ -466,7 +466,11 @@ penalty is small enough to make that simpler policy plausible.
 The benchmark selector reduced the 65,536/128 point to three concurrent
 requests under the 256K shared context; C3 output was 7.96 tokens/s versus
 C2's 7.70. This is a practical limit on long-prompt C4 scaling. C4 reached
-four running requests, two waiting, and 75.9% peak sampled KV usage. Several
+four running requests, two waiting, and 75.9% peak sampled KV usage. Waiting
+appeared in 12/159 samples (7.5%), versus 2/147 (1.4%) for C2/256K and
+4/146 (2.7%) for C2/192K. The test shape mix differs between C2 and C4,
+and ten-second samples miss short waits; these rates are a warning to inspect
+live task admission, not a normalized throughput metric. Several
 waiting samples had only 17–38% KV usage, so prefill/scheduler admission is
 again involved; sampled occupancy alone does not establish page exhaustion.
 At 10K/1024 the first four C4 TTFTs were 13.2, 70.2, 70.5 and 80.5 seconds,

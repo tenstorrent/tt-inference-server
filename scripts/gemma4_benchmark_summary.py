@@ -51,6 +51,10 @@ def summarize(root):
     return {
         "points": points,
         "server_samples": len(samples),
+        "waiting_samples": sum(sample[1] > 0 for sample in samples),
+        "waiting_sample_fraction": (
+            sum(sample[1] > 0 for sample in samples) / len(samples) if samples else None
+        ),
         "peak_running_requests": max((s[0] for s in samples), default=None),
         "peak_waiting_requests": max((s[1] for s in samples), default=None),
         "peak_kv_usage_percent": max((s[2] for s in samples), default=None),
