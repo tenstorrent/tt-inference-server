@@ -92,7 +92,13 @@ isolated sizing change. Details, artifacts and acceptance explanations follow.
   other agent work overlaps another case's inference. Its thinking-off pilot
   produced fewer output tokens and shorter suite time on one stochastic
   trajectory at unchanged task/scorer, while expanded KV reduced sampled
-  waiting at C10. Neither effect transfers automatically to Gemma.
+  waiting at C10. Granite also warms physical decode buckets 1, 8 and 16
+  before serving, then switches by live decode count without observed case-time
+  compilation; this is the relevant trace-switching precedent. Gemma's
+  adapter currently fixes one physical batch at server startup, so the C4
+  single-active penalty and the optional C8 sweep determine whether multiple
+  warmed physical buckets would buy enough to justify adapting that design.
+  Neither Granite timing effect transfers automatically to Gemma.
 
 | September 21 Terminal case | Reward | Wall min | Model API min | Output tokens |
 |---|---:|---:|---:|---:|
