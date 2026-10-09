@@ -136,6 +136,11 @@ and [SWE C2](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/
 [Terminal C4](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962796381)
 (`7e6ac75afa416ae28274d8a663809a039ddc3c44`). Each run uses the
 dedicated `gemma4-31b-qb2` implementation and the fixed-five task list.
+The [C2 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962976771)
+and [C4 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962982690)
+reuse that image as separate benchmark jobs. Compare matching input/output
+lengths and both per-user latency and aggregate throughput; short synthetic
+bursts alone do not establish the fastest agentic suite wall time.
 
 ## Candidates and acceptance
 
