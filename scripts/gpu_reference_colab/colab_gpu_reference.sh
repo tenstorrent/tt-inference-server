@@ -19,11 +19,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 REMOTE_REL="content/gpuref"   # /content/gpuref on the VM, for upload/download
 GPU="H100" HIGH_MEM=0 TTIS_REF="HEAD" OUT_DIR="" KEEP=0 SESSION="" POLL_MINUTES=5
 VLLM_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=()
+SWEEP=0 REFRESH=0 WRITE_SPECS=0 EMIT_PATCH=0 TT_REPORTS="" ORIG_ARGS=("$@")
 NEW_ATTEMPTS=3 NEW_RETRY_SECONDS=120   # per GPU type, on 503 (no capacity)
 
 usage() {
     cat <<'EOF'
 Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
+       colab_gpu_reference.sh --sweep [options]   (targets picked from the catalog)
   --gpu G[,G...]      GPU types in preference order (default H100), e.g. H100,A100
   --high-mem          high-RAM machine shape
   --ttis-ref REF      pushed TTIS commit the VM checks out (default HEAD)
@@ -34,6 +36,12 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
   --min-balance CU    stop (keeping partial results) below this compute-unit balance
   --vllm-version V    override the runner's vLLM pin
   --dry-run           print every colab command instead of running it
+ sweep mode:
+  --sweep             measure every ungated or gpu_reference_requested eval task
+  --refresh           also re-measure tasks that already have a GPU reference
+  --write-specs       add derived GPU specs to llm.yaml (then review, commit, push)
+  --emit-patch        write the proposed eval_config.patch (never applied)
+  --tt-reports DIR    Shield eval report JSONs, for TT scores next to GPU ones
 EOF
 }
 log() { printf '[gpuref] %s\n' "$*" >&2; }
@@ -48,11 +56,15 @@ while [[ $# -gt 0 ]]; do
         --min-balance) MIN_BALANCE="$2"; shift 2 ;;
         --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;         -h|--help) usage; exit 0 ;;
+        --sweep) SWEEP=1; shift ;;             --refresh) REFRESH=1; shift ;;
+        --write-specs) WRITE_SPECS=1; shift ;; --emit-patch) EMIT_PATCH=1; shift ;;
+        --tt-reports) TT_REPORTS="$2"; shift 2 ;;
         -*) usage >&2; die "unknown option: $1" ;;
         *) MODELS+=("$1"); shift ;;
     esac
 done
-[[ ${#MODELS[@]} -gt 0 ]] || { usage >&2; die "at least one MODEL (HF repo id) is required"; }
+[[ ${#MODELS[@]} -gt 0 || "${SWEEP}" -eq 1 ]] || { usage >&2; die "at least one MODEL (HF repo id) is required"; }
+[[ ${#MODELS[@]} -eq 0 || "${SWEEP}" -eq 0 ]] || die "--sweep picks its own models from the catalog"
 for m in "${MODELS[@]}"; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "not an HF repo id: $m"; done
 [[ "${GPU}" =~ ^((T4|L4|G4|H100|A100),)*(T4|L4|G4|H100|A100)$ ]] || die "bad --gpu: ${GPU}"
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
@@ -103,9 +115,17 @@ remote_step() {   # NAME TIMEOUT MARKER [ARGS...]: `colab exec` exits 0 even if 
     printf '%s\n' "${out}" | grep -q "^${marker}" || die "VM step '${name}' failed:"$'\n'"${out}"
 }
 has_session() { awk -v want="[${SESSION}]" '$1 == want { f = 1 } END { exit !f }'; }
-remote_state() {   # sets STATE; fails when the status cannot be read
-    local out; out="$(remote_exec status 120 2>&1)" || return 1
-    STATE="$(printf '%s\n' "${out}" | gpuref status-view)"
+remote_state() {   # sets STATE and NDONE (models finished); fails when unreadable
+    local out view; out="$(remote_exec status 120 2>&1)" || return 1
+    view="$(printf '%s\n' "${out}" | gpuref status-view)" || return 1
+    read -r STATE NDONE <<< "${view}"
+}
+fetch_results() {   # pack on the VM, download, extract into OUT_DIR
+    remote_step pack 900 GPUREF_PACKED
+    mkdir -p "${OUT_DIR}"
+    colab_cmd download -s "${SESSION}" "${REMOTE_REL}/gpuref-results.tar.gz" "${OUT_DIR}/gpuref-results.tar.gz"
+    if [[ "${DRY_RUN}" -eq 1 ]]; then printf '+ tar -xzf %q -C %q\n' "${OUT_DIR}/gpuref-results.tar.gz" "${OUT_DIR}" >&2
+    else tar -xzf "${OUT_DIR}/gpuref-results.tar.gz" -C "${OUT_DIR}"; fi
 }
 
 # 1 preflight ---------------------------------------------------------------
@@ -117,6 +137,43 @@ if [[ -z "$(git -C "${REPO_ROOT}" branch -r --contains "${TTIS_SHA}" 2>/dev/null
 fi
 git -C "${REPO_ROOT}" diff --quiet "${TTIS_SHA}" -- workflows/model_specs reference_config/evals \
     || log "WARNING: local specs/eval configs differ from ${TTIS_SHA}; the preflight may not match the VM"
+
+if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per GPU group
+    ROOT="${REPO_ROOT}/workflow_logs/gpu_reference_colab"; SWEEP_DIR="${ROOT}/sweep-${TTIS_SHA:0:8}"
+    mkdir -p "${SWEEP_DIR}"
+    plan_args=(sweep plan --sha "${TTIS_SHA}" --plan "${SWEEP_DIR}/sweep_plan.json")
+    if [[ "${REFRESH}" -eq 1 ]]; then plan_args+=(--refresh); fi
+    if [[ "${WRITE_SPECS}" -eq 1 ]]; then plan_args+=(--write-specs); fi
+    rc=0; gpuref "${plan_args[@]}" > "${SWEEP_DIR}/groups.tsv" || rc=$?
+    [[ "${rc}" -ne 2 ]] || die "some targets need derived GPU specs: re-run with --write-specs, review and commit the llm.yaml change, push, and run again"
+    [[ "${rc}" -eq 0 ]] || die "sweep plan failed"
+    printf 'Sweep at TTIS %s, started %s. Plan: %s\nResume (finished models are skipped, running sessions re-attached):\n  %q' \
+        "${TTIS_SHA}" "$(date)" "${SWEEP_DIR}/sweep_plan.json" "$0" > "${ROOT}/RESUME.txt"
+    printf ' %q' "${ORIG_ARGS[@]}" >> "${ROOT}/RESUME.txt"; printf '\n' >> "${ROOT}/RESUME.txt"
+    child=(--ttis-ref "${TTIS_SHA}" --poll-minutes "${POLL_MINUTES}" --min-balance "${MIN_BALANCE}")
+    if [[ -n "${VLLM_VERSION}" ]]; then child+=(--vllm-version "${VLLM_VERSION}"); fi
+    if [[ "${KEEP}" -eq 1 ]]; then child+=(--keep); fi
+    if [[ "${HIGH_MEM}" -eq 1 ]]; then child+=(--high-mem); fi
+    if [[ "${DRY_RUN}" -eq 1 ]]; then child+=(--dry-run); fi
+    rc=0
+    while IFS=$'\t' read -r gpus models; do
+        read -r -a group_models <<< "${models}"
+        [[ ${#group_models[@]} -gt 0 ]] || continue
+        if [[ "${MIN_BALANCE}" != "0" && "${DRY_RUN}" -eq 0 ]] \
+            && colab usage < /dev/null 2>/dev/null | gpuref balance-below "${MIN_BALANCE}" > /dev/null; then
+            log "balance below --min-balance ${MIN_BALANCE}; not starting the ${gpus} group"; rc=1; continue
+        fi
+        label="$( [[ "${gpus}" == *A100* ]] && echo a100 || echo h100 )"
+        log "sweep group ${gpus}: ${models}"
+        "$0" "${child[@]}" --gpu "${gpus}" --session "gpuref-sweep-${label}-${TTIS_SHA:0:8}" "${group_models[@]}" || rc=1
+    done < "${SWEEP_DIR}/groups.tsv"
+    report=(sweep report --plan "${SWEEP_DIR}/sweep_plan.json" --out-dir "${SWEEP_DIR}")
+    if [[ -n "${TT_REPORTS}" ]]; then report+=(--tt-reports "${TT_REPORTS}"); fi
+    if [[ "${EMIT_PATCH}" -eq 1 ]]; then report+=(--emit-patch); fi
+    gpuref "${report[@]}" > /dev/null || rc=1
+    log "sweep outputs: ${SWEEP_DIR}/{sweep_summary.json,sweep_5353.md$([[ ${EMIT_PATCH} -eq 1 ]] && echo ,eval_config.patch)}"
+    exit "${rc}"
+fi
 SESSION="${SESSION:-gpuref-${TTIS_SHA:0:8}}"
 [[ "${SESSION}" =~ ^[A-Za-z0-9._-]+$ ]] || die "bad --session: ${SESSION}"
 OUT_DIR="${OUT_DIR:-${REPO_ROOT}/workflow_logs/gpu_reference_colab/${SESSION}}"
@@ -176,7 +233,7 @@ fi
 
 # 5 poll (each poll is a kernel execution, which also keeps the VM alive) -----
 if [[ "${DRY_RUN}" -eq 1 ]]; then log "poll every ${POLL_MINUTES} min until DONE/FAILED:"; remote_exec status 120; STATE="DONE"; fi
-failures=0
+failures=0 FETCHED=0 NDONE=0
 while [[ "${STATE}" == "RUNNING" ]]; do
     sleep $((POLL_MINUTES * 60))
     if ! remote_state; then
@@ -187,7 +244,9 @@ while [[ "${STATE}" == "RUNNING" ]]; do
         fi
         STATE="RUNNING"; continue
     fi
-    failures=0; log "$(date '+%H:%M:%S') runner ${STATE}"
+    failures=0; log "$(date '+%H:%M:%S') runner ${STATE}, ${NDONE} model(s) finished"
+    # Bring each finished model home at once, so a lost VM loses at most one.
+    if [[ "${STATE}" == "RUNNING" && "${NDONE}" -gt "${FETCHED}" ]]; then fetch_results; FETCHED="${NDONE}"; fi
     [[ "${STATE}" == "DIED" ]] && STATE="FAILED"
     if [[ "${MIN_BALANCE}" != "0" && "${STATE}" == "RUNNING" ]] \
         && balance="$(colab usage < /dev/null 2>/dev/null | gpuref balance-below "${MIN_BALANCE}")"; then
@@ -196,14 +255,8 @@ while [[ "${STATE}" == "RUNNING" ]]; do
 done
 
 # 6 download + summary ----------------------------------------------------------
-remote_step pack 900 GPUREF_PACKED
-mkdir -p "${OUT_DIR}"
-colab_cmd download -s "${SESSION}" "${REMOTE_REL}/gpuref-results.tar.gz" "${OUT_DIR}/gpuref-results.tar.gz"
-if [[ "${DRY_RUN}" -eq 1 ]]; then
-    printf '+ tar -xzf %q -C %q\n+ gpuref.py summary %q\n' "${OUT_DIR}/gpuref-results.tar.gz" "${OUT_DIR}" "${OUT_DIR}/results" >&2
-else
-    tar -xzf "${OUT_DIR}/gpuref-results.tar.gz" -C "${OUT_DIR}"
-    gpuref summary "${OUT_DIR}/results" | tee "${OUT_DIR}/summary.txt" || log "no TTIS eval reports in the results"
-fi
+fetch_results
+if [[ "${DRY_RUN}" -eq 1 ]]; then printf '+ gpuref.py summary %q\n' "${OUT_DIR}/results" >&2
+else gpuref summary "${OUT_DIR}/results" | tee "${OUT_DIR}/summary.txt" || log "no TTIS eval reports in the results"; fi
 [[ "${STATE}" == "DONE" ]] || { log "runner finished ${STATE}; partial results in ${OUT_DIR}"; exit 1; }
 log "done: ${OUT_DIR}"

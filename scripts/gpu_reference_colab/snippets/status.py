@@ -31,6 +31,7 @@ else:
     state = "RUNNING" if alive else ("DIED" if pid else "ABSENT")
 print("GPUREF_STATE=" + state)
 print("GPUREF_PHASE=" + read("phase"))
+print("GPUREF_DONE=%d" % read("results/status.json").count('"status"'))
 query = [
     "nvidia-smi",
     "--query-gpu=utilization.gpu,memory.used,memory.total",

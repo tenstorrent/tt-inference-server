@@ -45,6 +45,10 @@ GPU_MEMORY_GIB = {"H100": 80.0, "A100": 40.0, "L4": 22.5, "T4": 15.0}
 GPU_MEMORY_UTILIZATION = 0.9
 OVERHEAD_GIB = 4.0
 GIB = float(1 << 30)
+# Prefill chunk for GPU serving. The TT spec default is max_context, but a
+# chunk that big makes vLLM's activation profiling OOM (cogito-qwen-14B on an
+# A100: 6.75 GiB for 131072 tokens). It only schedules work; outputs match.
+GPU_MAX_BATCHED_TOKENS = 16384
 REJECTION_PATTERN = re.compile(
     r"maximum context length|truncat|HTTP/1\.1\" 400|400 Bad Request", re.IGNORECASE
 )
@@ -91,13 +95,16 @@ def serve_plan(spec, port: int = 8000) -> Dict[str, Any]:
     argv = ["serve", repo, "--served-model-name", repo, "--port", str(port)]
     argv += ["--max-model-len", str(dms.max_context)]
     argv += ["--max-num-seqs", str(dms.max_concurrency), "--dtype", "bfloat16"]
+    vllm_args = dict(dms.vllm_args)
+    batched = int(vllm_args.get("max_num_batched_tokens") or dms.max_context)
+    vllm_args["max_num_batched_tokens"] = str(min(batched, GPU_MAX_BATCHED_TOKENS))
     return {
         "model": repo,
         "model_id": spec.model_id,
         "max_context": dms.max_context,
         "max_concurrency": dms.max_concurrency,
         "revision": dms.vllm_args.get("revision"),
-        "vllm_serve_args": argv + vllm_flags(dms.vllm_args),
+        "vllm_serve_args": argv + vllm_flags(vllm_args),
         "dropped_tt_only_vllm_args": {
             k: v for k, v in dms.vllm_args.items() if k in TT_ONLY_SERVE_KEYS
         },
@@ -147,11 +154,15 @@ def memory_estimate(
     weights = num_params * 2 / GIB
     per_token = kv_bytes_per_token(config) if config else None
     one_seq = per_token * max_context / GIB if per_token else 0.0
+    # Peak MLP activation (gate+up, bf16) for one prefill chunk.
+    chunk = min(max_context, GPU_MAX_BATCHED_TOKENS)
+    act = chunk * int((config or {}).get("intermediate_size") or 0) * 4 / GIB
     return {
         "weights_gib": round(weights, 2),
+        "activation_gib": round(act, 2),
         "kv_gib_one_seq": round(one_seq, 2) if per_token else None,
         "kv_gib_all_seqs": round(one_seq * max_concurrency, 2) if per_token else None,
-        "need_gib": round(weights + one_seq + OVERHEAD_GIB, 2),
+        "need_gib": round(weights + act + one_seq + OVERHEAD_GIB, 2),
         "kv_bytes_per_token": per_token,
         "kv_unknown": per_token is None,
     }
@@ -163,7 +174,8 @@ def gpu_verdicts(estimate: Dict[str, Any], max_context: int) -> Dict[str, Any]:
     verdicts: Dict[str, Any] = {}
     for gpu, mem in GPU_MEMORY_GIB.items():
         usable = mem * GPU_MEMORY_UTILIZATION
-        spare = usable - estimate["weights_gib"] - OVERHEAD_GIB
+        fixed = estimate["weights_gib"] + estimate.get("activation_gib", 0.0)
+        spare = usable - fixed - OVERHEAD_GIB
         per_token = estimate.get("kv_bytes_per_token")
         tokens = int(spare * GIB // per_token) if per_token and spare > 0 else 0
         if estimate["need_gib"] <= usable:
@@ -175,6 +187,29 @@ def gpu_verdicts(estimate: Dict[str, Any], max_context: int) -> Dict[str, Any]:
     return verdicts
 
 
+def model_facts(
+    model: str, plan: Dict[str, Any], token: Optional[str]
+) -> Dict[str, Any]:
+    """HF gating/access, config.json and the memory-fit verdicts for a plan."""
+    rev = plan.get("revision") or "main"
+    info = hf_get(f"{HF}/api/models/{model}")
+    gated = None if info is None else bool(info.get("gated"))
+    use_token = token if gated is not False else None
+    meta = hf_get(f"{HF}/api/models/{model}/revision/{rev}", use_token)
+    config = hf_get(f"{HF}/{model}/resolve/{rev}/config.json", use_token)
+    params = ((meta or {}).get("safetensors") or {}).get("total")
+    memory = None
+    if params:
+        ctx, conc = plan["max_context"], plan["max_concurrency"]
+        memory = memory_estimate(params, config, ctx, conc)
+        memory["verdicts"] = gpu_verdicts(memory, ctx)
+    row = dict(plan, model=model, ok=True, gated=gated, memory=memory, config=config)
+    row.update(needs_token=gated is not False, have_token=token is not None)
+    if token and gated is not False:
+        row["token_can_read"] = meta is not None
+    return row
+
+
 def check_models(models: List[str]) -> List[Dict[str, Any]]:
     """Spec, HF access and memory facts per model (preflight input)."""
     token, rows = hf_token(), []
@@ -184,29 +219,14 @@ def check_models(models: List[str]) -> List[Dict[str, Any]]:
         except Exception as exc:  # the resolver raises ValueError
             rows.append({"model": model, "ok": False, "error": f"no GPU spec: {exc}"})
             continue
-        rev = plan["revision"] or "main"
-        info = hf_get(f"{HF}/api/models/{model}")
-        gated = None if info is None else bool(info.get("gated"))
-        use_token = token if gated is not False else None
-        meta = hf_get(f"{HF}/api/models/{model}/revision/{rev}", use_token)
-        config = hf_get(f"{HF}/{model}/resolve/{rev}/config.json", use_token)
-        params = ((meta or {}).get("safetensors") or {}).get("total")
-        memory = None
-        if params:
-            ctx, conc = plan["max_context"], plan["max_concurrency"]
-            memory = memory_estimate(params, config, ctx, conc)
-            memory["verdicts"] = gpu_verdicts(memory, ctx)
-        row = dict(plan, model=model, ok=True, gated=gated, memory=memory)
-        row.update(needs_token=gated is not False, have_token=token is not None)
-        if token and gated is not False:
-            row["token_can_read"] = meta is not None
-        rows.append(row)
+        rows.append(model_facts(model, plan, token))
     return rows
 
 
 def preflight(rows: List[Dict[str, Any]], gpus: List[str]):
     """(usable_gpus, ok, messages). Each model must resolve, be readable and
-    fit in bf16 on a listed GPU: fully if any GPU allows it, else with a cap.
+    fit in bf16 on a listed GPU, fully or with a max_model_len cap (a capped
+    run is checked by the runner's request evidence).
     A model fitting none is refused (one Colab GPU per runtime, so ~70B is out
     of scope). The run keeps the GPU types every model accepts."""
     usable, ok, msgs = list(gpus), True, []
@@ -264,7 +284,7 @@ def preflight(rows: List[Dict[str, Any]], gpus: List[str]):
             msgs.append(f"  refused: bf16 weights do not fit any GPU in --gpu; {hint}")
             ok = False
             continue
-        allowed = (full or capped) | unknown
+        allowed = full | capped | unknown
         if any(g not in allowed for g in usable):
             msgs.append(f"  dropping {', '.join(set(usable) - allowed)} from --gpu")
         usable = [g for g in usable if g in allowed]
@@ -285,15 +305,17 @@ STATUS_LABELS = {
 
 
 def parse_status(text: str):
-    """(state, display lines) from snippets/status.py output."""
-    state, lines = None, []
+    """(state, display lines, models finished) from snippets/status.py output."""
+    state, lines, done = None, [], 0
     for line in text.splitlines():
         if line.startswith("GPUREF_STATE="):
             state = line.split("=", 1)[1].strip() or None
+        if line.startswith("GPUREF_DONE="):
+            done = int(line.split("=", 1)[1] or 0)
         for prefix, label in STATUS_LABELS.items():
             if line.startswith(prefix):
                 lines.append(label + line[len(prefix) :])
-    return state, lines
+    return state, lines, done
 
 
 def parse_balance(text: str) -> Optional[float]:
@@ -338,6 +360,10 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
     ]
 
 
+def fmt(v: Any) -> str:
+    return f"{v:.2f}" if isinstance(v, float) else "-" if v is None else str(v)
+
+
 def format_summary(rows: List[Dict[str, Any]]) -> str:
     if not rows:
         return "No TTIS eval reports found."
@@ -350,9 +376,6 @@ def format_summary(rows: List[Dict[str, Any]]) -> str:
         "published_score",
         "gpu_reference_score",
     ]
-
-    def fmt(v):
-        return f"{v:.2f}" if isinstance(v, float) else "-" if v is None else str(v)
 
     table = [["model", "device", "gpu", "task", "score", "published", "gpu_ref"]]
     table += [[fmt(r.get(k)) for k in keys] for r in rows]
@@ -483,6 +506,309 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
     }
 
 
+# --- sweep: pick targets from the catalog, place, run, report ----------------
+
+SWEEP_VENVS = {"EVALS_COMMON"}  # tasks the lm-eval evals path can run on a GPU
+SPEC_BEGIN = (
+    "# BEGIN gpu-ref sweep: derived GPU specs. Generated by\n"
+    "# scripts/gpu_reference_colab/gpuref.py sweep plan --write-specs from each\n"
+    "# model's TT row (Quetzal row first): max_context = min(row, native\n"
+    "# max_position_embeddings), same max_concurrency and HF revision. Do not hand-edit."
+)
+SPEC_END = "# END gpu-ref sweep: derived GPU specs"
+ISSUE_URL = "https://github.com/tenstorrent/tt-inference-server/issues/5353"
+
+
+def catalog_facts(ttis_dir: Path = REPO_ROOT):
+    """(tasks, rows) per HF repo from TTIS's own eval-config map and dev catalog."""
+    os.environ["MODEL_SPECS_ENV"] = "dev"
+    sys.path.insert(0, str(ttis_dir))
+    from reference_config.evals.eval_config import _eval_config_map
+    from workflows.model_spec import MODEL_SPECS
+
+    tasks = {
+        repo: [
+            {
+                "task": t.task_name,
+                "published": t.score.published_score,
+                "gpu_ref": t.score.gpu_reference_score,
+                "requested": getattr(t, "gpu_reference_requested", None),
+                "venv": t.workflow_venv_type.name,
+            }
+            for t in cfg.tasks
+            if t.score
+        ]
+        for repo, cfg in _eval_config_map.items()
+    }
+    rows: Dict[str, List[Dict[str, Any]]] = {}
+    for spec in MODEL_SPECS.values():
+        d = spec.device_model_spec
+        rows.setdefault(spec.hf_model_repo, []).append({
+            "device": spec.device_type.name, "impl": spec.impl.impl_id,
+            "default": d.default_impl, "max_context": d.max_context,
+            "max_concurrency": d.max_concurrency, "revision": d.vllm_args.get("revision"),
+        })  # fmt: skip
+    return tasks, rows
+
+
+def select_targets(tasks, rows, refresh: bool = False):
+    """(targets, skipped). A task is a target when gpu_reference_requested is
+    set (a reviewed request to measure, even over an existing reference), when
+    it has neither published_score nor gpu_reference_score, or, with
+    refresh, when it has a gpu_reference_score. It needs an lm-eval
+    (EVALS_COMMON) task and a GPU spec, or a TT row to derive one from."""
+    targets, skipped = [], []
+    for repo in sorted(tasks):
+        model_rows = rows.get(repo, [])
+        has_gpu = any(r["device"] == "GPU" for r in model_rows)
+        derivable = any(r["impl"] == "quetzal" or r["default"] for r in model_rows)
+        for t in tasks[repo]:
+            if t["requested"]:
+                reason = f"requested: {t['requested']}"
+            elif t["gpu_ref"] is not None:
+                if not refresh:
+                    continue
+                reason = "refresh"
+            elif t["published"] is None:
+                reason = "ungated"
+            else:
+                continue
+            item = {"model": repo, "task": t["task"], "reason": reason}
+            if t["venv"] not in SWEEP_VENVS:
+                skipped.append(
+                    dict(item, skip=f"{t['venv']} task, not run by the lm-eval path")
+                )
+            elif not (has_gpu or derivable):
+                skipped.append(
+                    dict(item, skip="no GPU spec and no TT row to derive one")
+                )
+            else:
+                targets.append(dict(item, spec="existing" if has_gpu else "derived"))
+    return targets, skipped
+
+
+def derive_gpu_spec(model_rows, native_ctx: Optional[int]) -> Optional[Dict[str, Any]]:
+    """GPU spec from the model's Quetzal row, else its default TT rows (the
+    smallest context): max_context capped at the native context."""
+    tt = [r for r in model_rows if r["device"] != "GPU"]
+    source = [r for r in tt if r["impl"] == "quetzal"] or [
+        r for r in tt if r["default"]
+    ]
+    if not source:
+        return None
+    row = min(source, key=lambda r: r["max_context"])
+    ctx = min(row["max_context"], native_ctx or row["max_context"])
+    return {
+        "impl": row["impl"], "max_context": ctx, "max_concurrency": row["max_concurrency"],
+        "revision": row["revision"],
+        "source": f"{row['impl']} {row['device']} row max_context {row['max_context']}, "
+        f"native {native_ctx}",
+    }  # fmt: skip
+
+
+def gpu_group(verdicts: Dict[str, Any]) -> Optional[str]:
+    """Run list for a model: "H100,A100" if its bf16 weights fit an A100
+    (fully or with a cap), "H100" if they need 80 GB, None if nothing fits."""
+
+    def fits(gpu):
+        return verdicts.get(gpu) == "fits" or isinstance(verdicts.get(gpu), dict)
+
+    return "H100,A100" if fits("A100") else "H100" if fits("H100") else None
+
+
+def derived_specs_yaml(derived: Dict[str, Dict[str, Any]]) -> str:
+    out = []
+    for model, d in sorted(derived.items()):
+        out += [
+            f"- weights:\n  - {model}\n  impl: {d['impl']}\n  inference_engine: VLLM",
+            f"  device_model_specs:\n  - device: GPU\n    max_concurrency: {d['max_concurrency']}",
+            f"    max_context: {d['max_context']}  # {d['source']}\n    default_impl: true",
+        ]
+        if d["revision"]:
+            out.append(f"    vllm_args:\n      revision: {d['revision']}")
+            out.append(f"      tokenizer_revision: {d['revision']}")
+        out.append("  status: EXPERIMENTAL")
+    return "\n".join(out)
+
+
+def write_derived_specs(text: str, derived: Dict[str, Dict[str, Any]]) -> str:
+    """llm.yaml text with the derived entries added to the generated block."""
+    if not derived:
+        return text
+    if SPEC_BEGIN not in text:
+        return (
+            text.rstrip("\n")
+            + f"\n\n{SPEC_BEGIN}\n{derived_specs_yaml(derived)}\n{SPEC_END}\n"
+        )
+    end = text.index(SPEC_END)
+    return text[:end] + derived_specs_yaml(derived) + "\n" + text[end:]
+
+
+def finished_models(results_root: Path, sha: Optional[str] = None) -> Dict[str, Path]:
+    """model -> newest results dir where it finished ok (at sha, if given)."""
+    done: Dict[str, Any] = {}
+    for prov_path in results_root.glob("*/results/*/provenance.json"):
+        prov = load_json(prov_path) or {}
+        if prov.get("status") != "ok" or (sha and prov.get("ttis_sha") != sha):
+            continue
+        model, stamp = prov.get("model"), prov.get("finished_at") or ""
+        if model not in done or stamp > done[model][0]:
+            done[model] = (stamp, prov_path.parent.parent, prov)
+    return done
+
+
+def sweep_plan(sha: str, results_root: Path, refresh: bool = False):
+    tasks, rows = catalog_facts()
+    targets, skipped = select_targets(tasks, rows, refresh)
+    token, derived, groups, placed = hf_token(), {}, {}, {}
+    done = finished_models(results_root, sha)
+    for model in sorted({t["model"] for t in targets}):
+        if any(r["device"] == "GPU" for r in rows[model]):
+            plan = serve_plan(load_gpu_spec(model))
+        else:
+            rev = next(
+                (r["revision"] for r in rows[model] if r["impl"] == "quetzal"), None
+            )
+            config = (
+                hf_get(f"{HF}/{model}/resolve/{rev or 'main'}/config.json", token) or {}
+            )
+            derived[model] = derive_gpu_spec(
+                rows[model], config.get("max_position_embeddings")
+            )
+            if not derived[model]["revision"]:  # pin the Hub's current main
+                main = hf_get(f"{HF}/api/models/{model}/revision/main", token) or {}
+                derived[model]["revision"] = main.get("sha")
+            plan = {
+                k: derived[model][k]
+                for k in ("revision", "max_context", "max_concurrency")
+            }
+        facts = model_facts(model, plan, token)
+        memory = facts["memory"] or {}
+        placed[model] = {
+            "group": gpu_group(memory.get("verdicts") or {}),
+            "max_context": plan["max_context"],
+            "need_gib": memory.get("need_gib"),
+            "done": model in done,
+        }
+    kept = []
+    for t in targets:
+        info = placed[t["model"]]
+        if info["group"] is None:
+            skipped.append(
+                dict(
+                    t, skip="bf16 weights fit no Colab GPU (needs a multi-GPU machine)"
+                )
+            )
+            continue
+        kept.append(dict(t, **info))
+        if not info["done"]:
+            groups.setdefault(info["group"], [])
+            if t["model"] not in groups[info["group"]]:
+                groups[info["group"]].append(t["model"])
+    placeable = {t["model"] for t in kept}
+    derived = {m: d for m, d in derived.items() if m in placeable}
+    return {
+        "sha": sha,
+        "targets": kept,
+        "skipped": skipped,
+        "groups": groups,
+        "derived": derived,
+    }
+
+
+def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) -> str:
+    """eval_config.py text with each result's gpu_reference_score/_ref set and
+    its gpu_reference_requested cleared. Proposed only; never applied here."""
+    for r in results:
+        start = text.index(f'        hf_model_repo="{r["model"]}",')
+        end = text.find("\n    EvalConfig(", start)
+        end = len(text) if end < 0 else end
+        block = text[start:end]
+        at = block.index(f'task_name="{r["task"]}"')
+        nxt = block.find("EvalTask(", at)
+        nxt = len(block) if nxt < 0 else nxt
+        task = block[at:nxt]
+        task = re.sub(r"\n\s*gpu_reference_requested=(\"[^\"]*\"|'[^']*'),", "", task)
+        task = re.sub(
+            r"gpu_reference_score=[^,\n]+,",
+            f"gpu_reference_score={r['score']:.2f},",
+            task,
+            1,
+        )
+        task = re.sub(
+            r"gpu_reference_score_ref=[^\n]+,",
+            f'gpu_reference_score_ref="{ref_url}",',
+            task,
+            1,
+        )
+        text = text[:start] + block[:at] + task + block[nxt:] + text[end:]
+    return text
+
+
+def sweep_results(
+    plan, results_root: Path, tt_root: Optional[Path]
+) -> List[Dict[str, Any]]:
+    """One row per target: GPU score from the newest ok run of its model, the
+    evidence/cap/GPU from provenance, and the TT score from Shield reports."""
+    done = finished_models(results_root)
+    tt = {}
+    if tt_root:
+        for row in summary_rows(tt_root):
+            if row["device"] != "GPU":
+                tt[(row["model"], row["task"])] = row["score"]
+    rows = []
+    for t in plan["targets"]:
+        row = dict(t, tt_score=tt.get((t["model"], t["task"])), score=None)
+        if t["model"] in done:
+            _, results_dir, prov = done[t["model"]]
+            # Partial fetches keep the TTIS reports beside results/, so read the session dir.
+            rows_ = summary_rows(results_dir.parent)
+            scores = {(r["model"], r["task"]): r["score"] for r in rows_}
+            evidence = (prov.get("request_evidence") or {}).get(
+                "max_request_tokens"
+            ) or {}
+            math = t["task"] == "leaderboard_math_hard"
+            prefix = "leaderboard_math_" if math else t["task"] + "_"
+            sub = [
+                v for k, v in evidence.items() if k == t["task"] or k.startswith(prefix)
+            ]
+            row.update(
+                score=scores.get((t["model"], t["task"])),
+                samples=sum(v["samples"] for v in sub) or None,
+                max_request_tokens=max((v["max_tokens"] for v in sub), default=None),
+                cap=prov.get("max_model_len_cap"), gpu=(prov.get("gpu") or {}).get("name"),
+                ttis_sha=prov.get("ttis_sha"), revision=prov.get("model_revision_sha"),
+                vllm=(prov.get("packages") or {}).get("vllm"), results=str(results_dir),
+            )  # fmt: skip
+        rows.append(row)
+    return rows
+
+
+def sweep_markdown(rows: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) -> str:
+    """Ready-to-paste #5353 block."""
+    out = ["## GPU reference sweep", ""]
+    out.append(
+        "| model | task | GPU score | samples | TT score | why selected | GPU | cap (longest request) |"
+    )
+    out.append("|---|---|---|---|---|---|---|---|")
+    for r in rows:
+        cap = f"{r['cap']} ({r.get('max_request_tokens')})" if r.get("cap") else "none"
+        out.append(
+            f"| {r['model']} | {r['task']} | {fmt(r['score'])} | {fmt(r.get('samples'))} | "
+            f"{fmt(r['tt_score'])} | {r['reason']} | {fmt(r.get('gpu'))} | {cap} |"
+        )
+    shas = sorted({r["ttis_sha"] for r in rows if r.get("ttis_sha")})
+    out += ["", f"TTIS sha(s): {', '.join(shas) or '-'}; vLLM "
+            f"{', '.join(sorted({r['vllm'] for r in rows if r.get('vllm')})) or '-'} bf16; "
+            "full sample counts; per-model provenance.json (HF revision, exact vllm serve "
+            "args, request evidence) in each results dir."]  # fmt: skip
+    if skipped:
+        out += ["", "Skipped:", ""] + [
+            f"- {s['model']} {s['task']}: {s['skip']}" for s in skipped
+        ]
+    return "\n".join(out) + "\n"
+
+
 # --- CLI ----------------------------------------------------------------------
 
 
@@ -509,20 +835,92 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("request-evidence", model=req, revision={}, samples_root=req, out=req,
         log={"action": "append", "default": []})  # fmt: skip
     add("cap-bound", "evidence", "cap")
+    p = sub.add_parser("sweep")
+    p.add_argument("action", choices=["plan", "report"])
+    p.add_argument("--sha", default=None)
+    p.add_argument(
+        "--plan", required=True, help="plan JSON (written by plan, read by report)"
+    )
+    p.add_argument(
+        "--results-root",
+        default=str(REPO_ROOT / "workflow_logs" / "gpu_reference_colab"),
+    )
+    p.add_argument("--refresh", action="store_true")
+    p.add_argument(
+        "--write-specs", action="store_true", help="add derived GPU specs to llm.yaml"
+    )
+    p.add_argument("--out-dir", default=None)
+    p.add_argument(
+        "--tt-reports", default=None, help="dir with Shield eval report JSONs"
+    )
+    p.add_argument("--emit-patch", action="store_true")
+    p.add_argument("--ref-url", default=ISSUE_URL)
     add("provenance", out=req, model=req, ttis_dir=req, plan=req, vllm_python=req,
         vllm_bin=req, status=req, evals_rc={"type": int}, started_at=req,
         finished_at=req, note={}, max_model_len_cap={"type": int}, evidence={})  # fmt: skip
     args = parser.parse_args(argv)
 
+    if args.cmd == "sweep" and args.action == "plan":
+        plan = sweep_plan(args.sha, Path(args.results_root), args.refresh)
+        Path(args.plan).write_text(json.dumps(plan, indent=2) + "\n")
+        for t in plan["targets"]:
+            state = "done" if t["done"] else f"[{t['group']}]"
+            print(f"[gpuref]   {state:12} {t['model']} {t['task']}: {t['reason']}"
+                  f" (spec {t['spec']}, need ~{t['need_gib']} GiB)", file=sys.stderr)  # fmt: skip
+        for t in plan["skipped"]:
+            print(
+                f"[gpuref]   skipped      {t['model']} {t['task']}: {t['skip']}",
+                file=sys.stderr,
+            )
+        yaml_path = REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
+        if plan["derived"] and args.write_specs:
+            yaml_path.write_text(
+                write_derived_specs(yaml_path.read_text(), plan["derived"])
+            )
+            print(
+                f"[gpuref]   derived GPU specs written to {yaml_path}", file=sys.stderr
+            )
+        for group, models in plan["groups"].items():
+            print(group + "\t" + " ".join(models))
+        return 2 if plan["derived"] else 0  # 2: specs must be committed first
+    if args.cmd == "sweep":  # report
+        plan = load_json(Path(args.plan))
+        rows = sweep_results(
+            plan,
+            Path(args.results_root),
+            Path(args.tt_reports) if args.tt_reports else None,
+        )
+        out = Path(args.out_dir or Path(args.plan).parent)
+        summary = {"sha": plan["sha"], "results": rows, "skipped": plan["skipped"]}
+        (out / "sweep_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+        (out / "sweep_5353.md").write_text(sweep_markdown(rows, plan["skipped"]))
+        finished = [r for r in rows if r["score"] is not None]
+        if args.emit_patch and finished:
+            import difflib
+
+            path = REPO_ROOT / "reference_config" / "evals" / "eval_config.py"
+            old = path.read_text()
+            new = patch_eval_config(old, finished, args.ref_url)
+            name = "reference_config/evals/eval_config.py"
+            diff = difflib.unified_diff(
+                old.splitlines(True), new.splitlines(True), f"a/{name}", f"b/{name}"
+            )
+            (out / "eval_config.patch").write_text("".join(diff))
+        print(sweep_markdown(rows, plan["skipped"]))
+        print(
+            f"{len(finished)}/{len(rows)} targets measured; outputs in {out}",
+            file=sys.stderr,
+        )
+        return 0
     if args.cmd == "preflight":
         usable, ok, msgs = preflight(check_models(args.models), args.gpus.split(","))
         print("\n".join(f"[gpuref]   {m}" for m in msgs), file=sys.stderr)
         print(" ".join(usable))
         return 0 if ok else 1
     if args.cmd == "status-view":
-        state, lines = parse_status(sys.stdin.read())
+        state, lines, done = parse_status(sys.stdin.read())
         print("\n".join(lines), file=sys.stderr)
-        print(state or "")
+        print(f"{state} {done}" if state else "")
         return 0 if state else 1
     if args.cmd == "balance-below":
         balance = parse_balance(sys.stdin.read())

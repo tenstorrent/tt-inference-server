@@ -367,10 +367,16 @@ def _row(model, verdicts, **extra):
     return row
 
 
-def test_preflight_keeps_gpus_every_model_can_use_fully():
+def test_preflight_keeps_gpus_that_hold_every_model():
     small = _row("a/small", {"H100": "fits", "A100": "fits"})
     big = _row("a/big", {"H100": "fits", "A100": {"cap": 20000}})
+    huge = _row("a/huge", {"H100": "fits", "A100": "no"})
     usable, ok, _ = gpuref.preflight([small, big], ["H100", "A100"])
+    assert ok and usable == [
+        "H100",
+        "A100",
+    ]  # capped A100 is a fallback, checked by evidence
+    usable, ok, _ = gpuref.preflight([small, huge], ["H100", "A100"])
     assert ok and usable == ["H100"]
     # With A100 alone, a capped fit is accepted (and reported).
     usable, ok, msgs = gpuref.preflight([big], ["A100"])
@@ -443,15 +449,19 @@ def test_status_snippet_reports_state(tmp_path):
     assert state()[0] == "DIED"
     (tmp_path / "FAILED").write_text("x")
     (tmp_path / "runner.log").write_text("line1\nline2\n")
-    status, lines = state()
-    assert status == "FAILED" and "  | line2" in lines
+    (tmp_path / "results").mkdir()
+    (tmp_path / "results" / "status.json").write_text(
+        json.dumps({"a/b": {"status": "ok"}, "c/d": {"status": "failed"}})
+    )
+    status, lines, done = state()
+    assert status == "FAILED" and "  | line2" in lines and done == 2
 
 
 def test_parse_status_and_balance():
-    state, lines = gpuref.parse_status(
-        "noise\nGPUREF_STATE=RUNNING\nGPUREF_PHASE=model 1/3 x: evals\nGPUREF_LOG| hello\n"
+    state, lines, done = gpuref.parse_status(
+        "noise\nGPUREF_STATE=RUNNING\nGPUREF_DONE=1\nGPUREF_PHASE=model 1/3 x: evals\nGPUREF_LOG| hello\n"
     )
-    assert state == "RUNNING"
+    assert state == "RUNNING" and done == 1
     assert lines == ["  phase: model 1/3 x: evals", "  | hello"]
     assert gpuref.parse_status("garbage")[0] is None
     usage = "Current balance: 4988.40 compute units\nUsage rate: 5.30/hr\n"
@@ -517,3 +527,129 @@ def test_cap_bound_needs_clean_logs_and_headroom(tmp_path):
     assert gpuref.rejection_lines([log, tmp_path / "missing.log"]) == [
         "run.log: This model's maximum context length is 22960 tokens"
     ]
+
+
+# --- sweep: target selection, placement, derived specs, proposed patch --------
+
+
+def _task(task, published=None, gpu_ref=None, requested=None, venv="EVALS_COMMON"):
+    return {"task": task, "published": published, "gpu_ref": gpu_ref,
+            "requested": requested, "venv": venv}  # fmt: skip
+
+
+def _spec_row(device, impl="quetzal", default=False, ctx=32768, rev="r1"):
+    return {"device": device, "impl": impl, "default": default, "max_context": ctx,
+            "max_concurrency": 32, "revision": rev}  # fmt: skip
+
+
+SWEEP_TASKS = {
+    "org/gpu-model": [
+        _task("ungated"),  # no published, no GPU reference
+        _task("published", published=40.0),  # gated by a published score
+        _task("referenced", gpu_ref=50.0),  # already has a GPU reference
+        _task(
+            "flagged", published=56.7, gpu_ref=66.1, requested="different checkpoint"
+        ),
+        _task("agentic", venv="EVALS_AGENTIC"),
+    ],
+    "org/quetzal-only": [_task("ungated")],
+    "org/no-rows": [_task("ungated")],
+}
+SWEEP_ROWS = {
+    "org/gpu-model": [_spec_row("GPU"), _spec_row("P300X2")],
+    "org/quetzal-only": [_spec_row("P300X2", ctx=131072)],
+}
+
+
+def test_select_targets_ungated_flagged_and_exclusions():
+    targets, skipped = gpuref.select_targets(SWEEP_TASKS, SWEEP_ROWS)
+    picked = {(t["model"], t["task"]): t for t in targets}
+    assert set(picked) == {
+        ("org/gpu-model", "ungated"),
+        ("org/gpu-model", "flagged"),
+        ("org/quetzal-only", "ungated"),
+    }
+    assert picked[("org/gpu-model", "ungated")]["reason"] == "ungated"
+    assert (
+        picked[("org/gpu-model", "flagged")]["reason"]
+        == "requested: different checkpoint"
+    )
+    assert picked[("org/gpu-model", "ungated")]["spec"] == "existing"
+    assert picked[("org/quetzal-only", "ungated")]["spec"] == "derived"
+    why = {(s["model"], s["task"]): s["skip"] for s in skipped}
+    assert "EVALS_AGENTIC" in why[("org/gpu-model", "agentic")]
+    assert "no GPU spec" in why[("org/no-rows", "ungated")]
+    # Already referenced: only with --refresh.
+    targets, _ = gpuref.select_targets(SWEEP_TASKS, SWEEP_ROWS, refresh=True)
+    refreshed = {
+        t["task"]: t["reason"] for t in targets if t["model"] == "org/gpu-model"
+    }
+    assert refreshed["referenced"] == "refresh"
+    assert "published" not in refreshed
+
+
+def test_gpu_group_placement():
+    assert gpuref.gpu_group({"A100": "fits", "H100": "fits"}) == "H100,A100"
+    assert gpuref.gpu_group({"A100": {"cap": 20000}, "H100": "fits"}) == "H100,A100"
+    assert gpuref.gpu_group({"A100": "no", "H100": {"cap": 21000}}) == "H100"
+    assert gpuref.gpu_group({"A100": "no", "H100": "no"}) is None  # 70B: skipped
+
+
+def test_too_big_for_any_gpu_is_skipped_by_verdicts():
+    config = {"num_hidden_layers": 80, "num_attention_heads": 64,
+              "num_key_value_heads": 8, "hidden_size": 8192, "intermediate_size": 29568}  # fmt: skip
+    est = gpuref.memory_estimate(72_700_000_000, config, 32768, 32)  # a 72B model
+    assert gpuref.gpu_group(gpuref.gpu_verdicts(est, 32768)) is None
+
+
+def test_derive_gpu_spec_prefers_quetzal_row_and_caps_native_context():
+    rows = [_spec_row("P300X2", ctx=131072, rev="abc"),
+            _spec_row("T3K", impl="tt_transformers", default=True, ctx=8192, rev=None)]  # fmt: skip
+    spec = gpuref.derive_gpu_spec(rows, native_ctx=32768)
+    assert spec["impl"] == "quetzal" and spec["max_context"] == 32768
+    assert spec["max_concurrency"] == 32 and spec["revision"] == "abc"
+    tt_only = [
+        _spec_row("T3K", impl="tt_transformers", default=True, ctx=131072, rev=None)
+    ]
+    spec = gpuref.derive_gpu_spec(tt_only, native_ctx=32768)
+    assert spec["impl"] == "tt_transformers" and spec["max_context"] == 32768
+    assert gpuref.derive_gpu_spec([_spec_row("GPU")], 4096) is None
+
+
+def test_write_derived_specs_appends_a_loadable_generated_block():
+    import yaml
+
+    derived = {"org/m": {"impl": "quetzal", "max_context": 4096, "max_concurrency": 32,
+                         "revision": "abc", "source": "quetzal P300X2 row"}}  # fmt: skip
+    text = gpuref.write_derived_specs("templates:\n- weights:\n  - org/x\n", derived)
+    assert gpuref.SPEC_BEGIN in text and gpuref.SPEC_END in text
+    more = gpuref.write_derived_specs(text, {"org/n": dict(derived["org/m"])})
+    assert more.count(gpuref.SPEC_BEGIN) == 1
+    entries = yaml.safe_load(more)["templates"]
+    gpu = {e["weights"][0]: e["device_model_specs"][0] for e in entries[1:]}
+    assert gpu["org/m"] == {"device": "GPU", "max_concurrency": 32, "max_context": 4096,
+                            "default_impl": True,
+                            "vllm_args": {"revision": "abc", "tokenizer_revision": "abc"}}  # fmt: skip
+    assert set(gpu) == {"org/m", "org/n"}
+
+
+def test_patch_eval_config_sets_reference_and_clears_request():
+    text = (
+        '    EvalConfig(\n        hf_model_repo="org/m",\n        tasks=[\n'
+        '            EvalTask(\n                task_name="a",\n'
+        '                gpu_reference_requested="why",\n'
+        "                score=EvalTaskScore(\n                    gpu_reference_score=1.0,\n"
+        '                    gpu_reference_score_ref="old",\n'
+        '            EvalTask(\n                task_name="b",\n'
+        "                score=EvalTaskScore(\n                    gpu_reference_score=None,\n"
+        '                    gpu_reference_score_ref="TBD",\n'
+        "    EvalConfig(\n"
+    )
+    new = gpuref.patch_eval_config(
+        text, [{"model": "org/m", "task": "a", "score": 12.345}], "URL"
+    )
+    assert "gpu_reference_requested" not in new
+    assert (
+        "gpu_reference_score=12.35," in new and 'gpu_reference_score_ref="URL",' in new
+    )
+    assert 'gpu_reference_score_ref="TBD"' in new  # task b untouched

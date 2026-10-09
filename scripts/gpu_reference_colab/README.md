@@ -33,6 +33,7 @@ To record a reference:
 | `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this |
 | `--vllm-version V` | `0.13.0` | override the runner's vLLM pin |
 | `--dry-run` | off | local preflight, then print every `colab` command instead of running it |
+| `--sweep` and its sweep options | off | see "Sweep" below |
 
 The driver runs these steps in order: preflight, start the VM, upload the token, launch the runner detached (`setsid`), poll, then download and summarise. An `EXIT` trap stops the VM on every exit path unless you pass `--keep`.
 
@@ -41,6 +42,57 @@ Each poll is a short kernel execution, so polling also keeps the session alive.
 Checks and parsers live in `gpuref.py`, and the code the driver sends with `colab exec` lives in `snippets/`. `remote_runner.sh` runs on the VM: it clones TTIS at the exact sha, installs pinned vLLM, and serves and evaluates one model at a time.
 
 **Re-attach and stop.** Re-run the same command to re-attach: it attaches to a running runner, downloads a finished one, or relaunches a dead one. Use `--keep` if you want to detach. `colab sessions` lists the VMs and `colab stop -s <session>` stops one by hand.
+
+## Sweep
+
+```bash
+scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --dry-run      # targets, why, GPU group
+scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --min-balance 4000 --emit-patch \
+    --tt-reports <dir with Shield report JSONs>
+```
+
+`--sweep` reads its targets from the catalog; no model list lives in code.
+
+**What gets selected.** An EvalConfig task is a target if either:
+
+- it has neither `published_score` nor `gpu_reference_score` (ungated); or
+- it sets `gpu_reference_requested="<why>"`. This is a reviewed request to measure it, even over an existing reference.
+
+`--refresh` also re-measures tasks that already have a GPU reference.
+
+**What gets skipped** (`--dry-run` shows the reason for each):
+
+- tasks that are not lm-eval (`EVALS_COMMON`) tasks;
+- models with no GPU spec and no TT row to derive one from;
+- models whose bf16 weights fit no Colab GPU.
+
+**GPU specs.** A target model without a GPU spec gets one derived from its TT row: its Quetzal row first, otherwise its default TT rows. It keeps the row's `max_concurrency`, `max_context` is capped at the native `max_position_embeddings`, and the HF revision is pinned.
+
+1. `--write-specs` adds the derived entries to a generated block at the end of `workflows/model_specs/dev/llm.yaml`.
+2. Review that change, commit it and push it. The VM runs the pushed sha.
+
+**Placement and sessions.** The memory preflight places each model:
+
+- on `H100,A100` if its bf16 weights fit a 40 GB A100, even if only with a `max_model_len` cap;
+- on `H100` if it needs 80 GB.
+
+Each group runs in one session, named `gpuref-sweep-{a100,h100}-<sha8>`.
+
+**Resume.** Each finished model is downloaded as soon as it completes. Re-running the same command, which is recorded in `workflow_logs/gpu_reference_colab/RESUME.txt`, does two things:
+
+- skips models that already finished `ok` at that sha;
+- re-attaches to a session that is still running.
+
+`--min-balance` is checked before each group and at every poll.
+
+**Outputs** (`workflow_logs/gpu_reference_colab/sweep-<sha8>/`):
+
+- `sweep_plan.json`;
+- `sweep_summary.json`: GPU score, samples, TT score, cap and longest request per task;
+- `sweep_5353.md`: ready to paste into #5353;
+- with `--emit-patch`, a proposed `eval_config.patch`. It sets `gpu_reference_score` and `gpu_reference_score_ref` and clears `gpu_reference_requested`. **It is never applied automatically**: review it, then `git apply` it.
+
+Only whole models can be run, because `run.py` evaluates every task in a config. Any non-target tasks are measured too, but they are not proposed.
 
 ## HF token
 
@@ -71,7 +123,7 @@ Before provisioning, the preflight estimates bf16 weights plus the KV cache for 
 - refuses a model that fits no listed GPU, with the reason;
 - drops GPU types a model cannot use fully, when another listed type can.
 
-If vLLM still refuses `max_context`, the runner retries once at vLLM's own estimate. It records `max_model_len_cap` in `provenance.json` and a note in `status.json`, so review those runs. `max_num_seqs` is never reduced: vLLM queues what does not fit.
+If vLLM still refuses `max_context`, the runner retries once at vLLM's own estimate. It records `max_model_len_cap` in `provenance.json` and a note in `status.json`, so review those runs. The prefill chunk (`--max-num-batched-tokens`) is capped at 16384 on GPU. The TT default equals `max_context`, and at 131072 that made vLLM's memory profiling run out of memory on an A100. The chunk size only changes how work is scheduled, not the scores. `max_num_seqs` is never reduced: vLLM queues what does not fit.
 
 ## Outputs
 
