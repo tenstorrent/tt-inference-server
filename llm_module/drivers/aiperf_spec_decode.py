@@ -255,6 +255,14 @@ class AIPerfSpecDecodeDriver:
         spec_decode_metrics = _scrape_acceptance_metrics(
             url, before, spec_run, metrics_urls
         )
+        if (spec_decode_metrics or {}).get("draft_tokens"):
+            spec_decode_metrics["source"] = "metrics"
+        else:
+            # No counters on /metrics (e.g. a Dynamo frontend): fall back to
+            # the accepted/rejected prediction tokens in each response's usage.
+            spec_decode_metrics = (
+                _usage_acceptance_metrics(artifact_dir) or spec_decode_metrics
+            )
 
         payload = _build_payload(
             run=spec_run,
@@ -429,6 +437,15 @@ def _build_aiperf_cmd(
             f"max_completion_tokens:{run.max_completion_tokens}",
         ]
     cmd += [
+        # Streaming responses carry usage (with the accepted/rejected
+        # prediction tokens) only when asked, and a Dynamo frontend forwards
+        # the worker's engine_data (draft count) only when selected. The raw
+        # export keeps both.
+        "--extra-inputs",
+        '{"stream_options": {"include_usage": true}, '
+        '"nvext": {"extra_fields": ["engine_data"]}}',
+        "--export-level",
+        "raw",
         "--artifact-dir",
         artifact_dir,
     ]
@@ -575,6 +592,74 @@ def _scrape_acceptance_metrics(
             exc,
         )
         return None
+
+
+def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
+    """Acceptance from each response in aiperf's raw export.
+
+    Sums ``usage.completion_tokens_details`` ``accepted_prediction_tokens`` /
+    ``rejected_prediction_tokens`` over each request's last usage chunk.
+    ``usage`` has no draft count, so ``num_drafts`` (and with it mean
+    accepted length) comes from ``nvext.engine_data.spec_decode`` when the
+    server sends it. A response without the prediction tokens is left out of
+    the sums, counted in ``responses_without_usage`` and warned about. ``None``
+    when no response reports prediction tokens.
+    """
+    accepted = rejected = num_drafts = responses = without = 0
+    found = has_drafts = False
+    for path in Path(artifact_dir).rglob("profile_export_raw.jsonl"):
+        with path.open(errors="replace") as fh:
+            for line in fh:
+                responses += 1
+                details = spec = None
+                for response in json.loads(line).get("responses") or []:
+                    for packet in response.get("packets") or []:
+                        value = packet.get("value") or ""
+                        if '"completion_tokens_details"' not in value and (
+                            '"engine_data"' not in value
+                        ):
+                            continue
+                        chunk = json.loads(value)
+                        usage = chunk.get("usage") or {}
+                        details = usage.get("completion_tokens_details") or details
+                        engine_data = (chunk.get("nvext") or {}).get(
+                            "engine_data"
+                        ) or {}
+                        spec = engine_data.get("spec_decode") or spec
+                if details and "accepted_prediction_tokens" in details:
+                    found = True
+                    accepted += details.get("accepted_prediction_tokens") or 0
+                    rejected += details.get("rejected_prediction_tokens") or 0
+                else:
+                    without += 1
+                if spec and spec.get("num_drafts") is not None:
+                    has_drafts = True
+                    num_drafts += spec["num_drafts"]
+    if not found:
+        return None
+    if without:
+        # A Dynamo frontend that stops on a stop string drops the worker's
+        # final usage (ai-dynamo/dynamo#15386); a request that drafted
+        # nothing omits it too.
+        logger.warning(
+            "[spec-decode] %d/%d responses carry no prediction tokens in "
+            "usage; acceptance covers the other %d.",
+            without,
+            responses,
+            responses - without,
+        )
+    draft = accepted + rejected
+    return {
+        "acceptance_rate": accepted / draft if draft else 0.0,
+        "accepted_tokens": float(accepted),
+        "draft_tokens": float(draft),
+        "num_drafts": float(num_drafts) if has_drafts else None,
+        "mean_accepted_length": 1 + accepted / num_drafts if num_drafts else None,
+        "accepted_per_pos": [],
+        "source": "usage",
+        "responses_without_usage": without,
+        "responses": responses,
+    }
 
 
 def _build_payload(

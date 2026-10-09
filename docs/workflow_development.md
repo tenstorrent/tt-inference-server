@@ -357,7 +357,7 @@ reference GPU vLLM).
 ## Speculative-decoding benchmark
 
 Run the AIPerf SPEED-Bench spec-decode sweep directly against an already-up
-vLLM-compatible server. The workflow is
+OpenAI-compatible server. The workflow is
 `benchmarks`; the spec-decode flag swaps the default media-task dispatch for
 the sweep defined in [`llm_module/spec_decode/runs.py`](../llm_module/spec_decode/runs.py):
 all 11 SPEED-Bench qualitative categories at concurrency 1 plus a 1k–32k ISL
@@ -369,29 +369,53 @@ throughput sweep at concurrency 1/8/16/32/64.
 | `ci` | `coding` | 32k | 1, 16, 64 |
 | `throughput` | none | 1k, 2k, 8k, 16k, 32k | 1, 8, 16, 32, 64 |
 
+The preset's concurrencies are capped at the model spec's `max_concurrency`
+(the server's user slots): a point above it runs at `max_concurrency` instead,
+so an 8-slot server sweeps 1 and 8. Beyond the slots a server rejects requests
+rather than queueing them, which would measure rejections, not throughput.
+
 The `SPEC_DECODE_ISLS` (comma-separated, any of `1k,2k,8k,16k,32k`) and
 `SPEC_DECODE_CONCURRENCIES` (comma-separated positive integers) env vars
-replace the preset's throughput ISLs / concurrencies; qualitative runs are
+replace the preset's throughput ISLs / concurrencies, and an explicit
+`SPEC_DECODE_CONCURRENCIES` is used as is (no cap); qualitative runs are
 unaffected. Each throughput run sends `max(32, 4 × concurrency)` requests. For
 example, `SPEC_DECODE_ISLS=1k,8k SPEC_DECODE_CONCURRENCIES=8,32` with
 `--spec-decode-preset throughput` runs four throughput points and nothing else.
+`--spec-decode-warmup-requests N` sets the warmup requests sent before the
+sweep (default 4, `0` disables).
 
 Server-side speculative config is out of scope — it belongs to whoever
-launched the server, before the benchmark starts. Each run scrapes the vLLM
-`vllm:spec_decode_*` Prometheus counters before/after every AIPerf invocation,
-so acceptance rate and mean accepted length are per-run deltas. Note the TT
-backend (`tt-vllm-plugin`) does not support speculative decoding yet, so a
-spec-enabled target currently requires a reference GPU vLLM.
+launched the server, before the benchmark starts. Acceptance comes from one of
+two sources, recorded per run and shown in the report's "Acceptance Source"
+column:
+
+- **`metrics`** — Prometheus counters scraped before/after every AIPerf
+  invocation, so acceptance rate and mean accepted length are per-run deltas.
+  Recognized: vLLM's `vllm:spec_decode_*`, the cpp_server's
+  `tt_worker_spec_{accepts,rejects}_total` (no draft count, so no mean accepted
+  length), and tt-d-gen's
+  `tt_engine_spec_decode_{accepted_tokens,draft_tokens,drafts}_total{method}`
+  (summed across `method`), plus provisional `tt_spec_decode_*` spellings.
+- **`usage`** — used when the scrape finds no draft tokens. Each request asks
+  for `stream_options.include_usage` and `nvext.extra_fields: ["engine_data"]`,
+  and the driver sums `usage.completion_tokens_details`
+  `accepted_prediction_tokens` / `rejected_prediction_tokens` over the
+  responses (from AIPerf's raw export). `usage` has no draft count; when the
+  server sends `nvext.engine_data.spec_decode.num_drafts` (tt-d-gen), it also
+  gives mean accepted length. Through a Dynamo frontend these fields need
+  ai-dynamo ≥ 1.4.0, and the worker has to send them. A response without them
+  is left out of the sums, and the run logs a warning and shows the count in
+  "Acceptance Source" (e.g. `usage (3/80 without)`). A Dynamo frontend drops
+  them when it stops on a `stop` string (ai-dynamo/dynamo#15386).
 
 By default the counter scrape targets the load target (`--service-port`). In a
 Dynamo deployment that target is the spec-decode-unaware frontend, which does
-not expose or aggregate the workers' spec-decode counters, so the
-acceptance-rate / mean-accepted-length / per-position columns would render
-`0`/`null`. Point the scrape at the worker(s) with `--spec-decode-metrics-url`
-while load stays on the frontend. It accepts a full URL, `host:port`, or
-`host:port/metrics` (`http://` and `/metrics` are added if missing), and is
-repeatable for multi-worker (KV-routed) deployments — the before/after deltas
-are summed across endpoints before computing
+not expose or aggregate the workers' spec-decode counters, so acceptance comes
+from `usage`. To use the workers' counters instead, point the scrape at them
+with `--spec-decode-metrics-url` while load stays on the frontend. It accepts a
+full URL, `host:port`, or `host:port/metrics` (`http://` and `/metrics` are
+added if missing), and is repeatable for multi-worker (KV-routed) deployments —
+the before/after deltas are summed across endpoints before computing
 `acceptance_rate = accepted/draft` and
 `mean_accepted_length = 1 + accepted/num_drafts`:
 
@@ -403,13 +427,6 @@ python launchers/run_spec_decode.py \
     --spec-decode-metrics-url worker-b:9000 \
     --jwt-secret "$JWT_SECRET"
 ```
-
-The scraper also recognizes the `tt_spec_decode_*` spellings alongside
-`vllm:spec_decode_*` (mirroring the prefix-cache benchmark's
-`tt_prefix_cache_*` coverage), so a future cpp_server spec-decode
-implementation lights up the acceptance columns without a benchmark-side
-change. Until a TT server actually emits those counters, the metrics columns
-are populated only against a vLLM reference server.
 
 `run_workflows.py` must run inside the dedicated `SPEC_DECODE` venv (aiperf >= 0.8
 for the SPEED-Bench dataset plugins — its pillow requirement conflicts with the
@@ -432,10 +449,19 @@ python launchers/run_spec_decode.py \
 
 Each AIPerf run emits a `Block(kind="aiperf_spec_decode")`, which the report
 generator collapses into a per-run Markdown table (latency percentiles,
-throughput, acceptance metrics) via the renderer registered in
-[`report_module/spec_decode_renderer.py`](../report_module/spec_decode_renderer.py).
+throughput, acceptance metrics) via the generic table renderer in
+[`report_module/renderers.py`](../report_module/renderers.py); the columns are
+chosen by [`llm_module/parsers/aiperf_spec_decode.py`](../llm_module/parsers/aiperf_spec_decode.py).
 An acceptance rate of `0.000` means the target server is not actually running
 with speculative decoding enabled.
+
+The public Hugging Face copy of SPEED-Bench replaces many prompts with a
+placeholder sentence ("FULL BENCHMARK DATA SHOULD BE FETCHED FROM THE SOURCE
+USING SPECDEC_BENCH"), and AIPerf sends it as is. Each run counts those prompts
+in AIPerf's `inputs.json`, logs a warning, and the report shows the count in a
+"Placeholders in Dataset" column. For the throughput splits that count covers
+the whole split AIPerf loaded, not only the requests sent. Results on
+placeholder-heavy categories do not reflect real prompts.
 
 ## Agentic evals
 
