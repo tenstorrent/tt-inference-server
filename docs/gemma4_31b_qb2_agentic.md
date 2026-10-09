@@ -491,3 +491,9 @@ case runs and the pending C4 result are needed for an end-to-end policy.
 The C1 raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c1-main/` and
 `/home/mvasiljev/build/gemma-swe-c1-main-summary.json`.
+For context only, September's older C1 fixed-five SWE run took 120.1 minutes
+and yielded about 46.4K output tokens; current-main C1 took 54.9 minutes
+despite about 68.5K output tokens. The Metal commit and prefill policy changed
+and the stochastic trajectories differ, so this is evidence of a much faster
+observed end-to-end run, not a measured speedup attributable to one code
+change.
