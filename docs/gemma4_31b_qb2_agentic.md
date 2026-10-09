@@ -401,7 +401,10 @@ change from 256K was **0.12%**; the largest was 1.77% at 10K/1024 C2.
 | 131,072/128, 1 | 2.93 | 2.92 |
 
 Peak sampled KV usage increased from **59.0% to 72.3%** with the smaller
-pool; each sweep had a peak of two running and one waiting request. The
+pool; the 1.225 occupancy ratio nearly matches the 1.226 ratio of requested
+pool sizes (355,584 / 290,048), consistent with the hook actually shrinking
+the allocated pool. Each sweep had a peak of two running and one waiting
+request. The
 192K server also showed waiting samples at only 21.8% KV usage, so those
 samples cannot be explained by exhaustion of its allocated KV pages alone;
 prefill/scheduler admission remains a candidate. The
