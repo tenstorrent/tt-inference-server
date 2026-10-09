@@ -95,6 +95,12 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
 ## Current-main baseline setup
 
 - Metal main pinned at `2c1e1ebdd638886821f35113a5fd0d6335d71608`.
+  Main later advanced to `6ea152854fe896a9980e02c51af3cd786a0c6599`
+  during these runs. The intervening seven commits changed generic dispatch,
+  kernel-build and test code, with no file changes under the dedicated
+  `models/demos/gemma4_31b_qb2` implementation. Keep this experiment pinned
+  to its start-of-run commit; a follow-up on later main would be a separate
+  server-image comparison.
 - The local workstation has a QB2, but no Gemma 4 31B checkpoint in its
   Hugging Face cache and no active Hugging Face login. Host-only budget and
   config checks ran locally; model/device measurements use the CI runners,
