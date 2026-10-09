@@ -589,8 +589,8 @@ def test_select_targets_ungated_flagged_and_exclusions():
 
 
 def test_gpu_group_placement():
-    assert gpuref.gpu_group({"A100": "fits", "H100": "fits"}) == "A100,H100"
-    assert gpuref.gpu_group({"A100": {"cap": 20000}, "H100": "fits"}) == "A100,H100"
+    assert gpuref.gpu_group({"A100": "fits", "H100": "fits"}) == "A100"
+    assert gpuref.gpu_group({"A100": {"cap": 20000}, "H100": "fits"}) == "A100"
     assert gpuref.gpu_group({"A100": "no", "H100": {"cap": 21000}}) == "H100"
     assert gpuref.gpu_group({"A100": "no", "H100": "no"}) is None  # 70B: skipped
 
@@ -750,3 +750,16 @@ def test_estimate_hours_and_param_fallback():
                  "num_key_value_heads": 4, "intermediate_size": 5632, "vocab_size": 32000}  # fmt: skip
     assert gpuref.params_from_config(tinyllama) == pytest.approx(1.1e9, rel=0.02)
     assert gpuref.params_from_config({}) is None
+
+
+def test_tt_grade_ratio_and_noise_rules():
+    assert gpuref.tt_grade(13.89, 13.54, 0.05, 12032) == "PASS"  # SOLAR mmlu_pro, ratio
+    assert (
+        gpuref.tt_grade(11.83, 13.12, 0.05, 541) == "PASS"
+    )  # Qwen1.5 ifeval, within noise
+    assert gpuref.tt_grade(52.59, 57.39, 0.05, 12032) == "FAIL"  # Qwen2.5-7B mmlu_pro
+    assert (
+        gpuref.tt_grade(52.59, 28.09, 0.05, 12032) == "PASS"
+    )  # ... against the old ref
+    assert gpuref.tt_grade(None, 50.0, 0.05, 100) == "NA"
+    assert gpuref.tt_grade(50.0, None, 0.05, 100) == "NA"

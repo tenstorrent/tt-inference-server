@@ -16,10 +16,13 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+# Where results land; set GPUREF_RESULTS_ROOT to keep them outside the checkout
+# (e.g. when it lives under a /tmp that is cleared on reboot).
+RESULTS_ROOT="${GPUREF_RESULTS_ROOT:-${REPO_ROOT}/workflow_logs/gpu_reference_colab}"
 REMOTE_REL="content/gpuref"   # /content/gpuref on the VM, for upload/download
 GPU="H100" HIGH_MEM=0 TTIS_REF="HEAD" OUT_DIR="" KEEP=0 SESSION="" POLL_MINUTES=5
 VLLM_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=()
-SWEEP=0 REFRESH=0 WRITE_SPECS=0 EMIT_PATCH=0 TT_REPORTS="" ORIG_ARGS=("$@")
+SWEEP=0 REFRESH=0 WRITE_SPECS=0 EMIT_PATCH=0 TT_REPORTS="" AUDIT_REFS="" ORIG_ARGS=("$@")
 NEW_ATTEMPTS=3 NEW_RETRY_SECONDS=120   # per GPU type, on 503 (no capacity)
 
 usage() {
@@ -29,7 +32,7 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
   --gpu G[,G...]      GPU types in preference order (default H100), e.g. H100,A100
   --high-mem          high-RAM machine shape
   --ttis-ref REF      pushed TTIS commit the VM checks out (default HEAD)
-  --out DIR           results dir (default workflow_logs/gpu_reference_colab/<session>)
+  --out DIR           results dir (default $GPUREF_RESULTS_ROOT or workflow_logs/gpu_reference_colab, /<session>)
   --keep              do not stop the VM on exit
   --session NAME      session name (default gpuref-<sha[:8]>); same name re-attaches
   --poll-minutes N    minutes between polls (default 5)
@@ -39,6 +42,8 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
  sweep mode:
   --sweep             measure every ungated or gpu_reference_requested eval task
   --refresh           also re-measure tasks that already have a GPU reference
+  --refresh-quetzal R[,R]  audit every task of every model with a Quetzal P300X2
+                      row here or on git refs R (e.g. origin/main,PR heads); "." = here only
   --write-specs       add derived GPU specs to llm.yaml (then review, commit, push)
   --emit-patch        write the proposed eval_config.patch (never applied)
   --tt-reports DIR    Shield eval report JSONs, for TT scores next to GPU ones
@@ -57,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;         -h|--help) usage; exit 0 ;;
         --sweep) SWEEP=1; shift ;;             --refresh) REFRESH=1; shift ;;
+        --refresh-quetzal) AUDIT_REFS="$2"; shift 2 ;;
         --write-specs) WRITE_SPECS=1; shift ;; --emit-patch) EMIT_PATCH=1; shift ;;
         --tt-reports) TT_REPORTS="$2"; shift 2 ;;
         -*) usage >&2; die "unknown option: $1" ;;
@@ -139,10 +145,15 @@ git -C "${REPO_ROOT}" diff --quiet "${TTIS_SHA}" -- workflows/model_specs refere
     || log "WARNING: local specs/eval configs differ from ${TTIS_SHA}; the preflight may not match the VM"
 
 if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per GPU group
-    ROOT="${REPO_ROOT}/workflow_logs/gpu_reference_colab"; SWEEP_DIR="${ROOT}/sweep-${TTIS_SHA:0:8}"
+    ROOT="${RESULTS_ROOT}"; SWEEP_DIR="${ROOT}/sweep-${TTIS_SHA:0:8}"
     mkdir -p "${SWEEP_DIR}"
-    plan_args=(sweep plan --sha "${TTIS_SHA}" --plan "${SWEEP_DIR}/sweep_plan.json")
+    plan_args=(sweep plan --sha "${TTIS_SHA}" --plan "${SWEEP_DIR}/sweep_plan.json" --results-root "${ROOT}")
     if [[ "${REFRESH}" -eq 1 ]]; then plan_args+=(--refresh); fi
+    if [[ -n "${AUDIT_REFS}" ]]; then
+        IFS=',' read -r -a audit_refs <<< "${AUDIT_REFS}"
+        plan_args+=(--refresh-quetzal)
+        for ref in "${audit_refs[@]}"; do [[ "${ref}" == "." ]] || plan_args+=("${ref}"); done
+    fi
     if [[ "${WRITE_SPECS}" -eq 1 ]]; then plan_args+=(--write-specs); fi
     rc=0; gpuref "${plan_args[@]}" > "${SWEEP_DIR}/groups.tsv" || rc=$?
     [[ "${rc}" -ne 2 ]] || die "some targets need derived GPU specs: re-run with --write-specs, review and commit the llm.yaml change, push, and run again"
@@ -171,7 +182,7 @@ if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per 
         log "sweep group ${gpus}: ${models}"
         "$0" "${child[@]}" --gpu "${gpus}" --session "gpuref-sweep-${label}-${TTIS_SHA:0:8}" "${group_models[@]}" || rc=1
     done < "${SWEEP_DIR}/groups.tsv"
-    report=(sweep report --plan "${SWEEP_DIR}/sweep_plan.json" --out-dir "${SWEEP_DIR}")
+    report=(sweep report --plan "${SWEEP_DIR}/sweep_plan.json" --out-dir "${SWEEP_DIR}" --results-root "${ROOT}")
     if [[ -n "${TT_REPORTS}" ]]; then report+=(--tt-reports "${TT_REPORTS}"); fi
     if [[ "${EMIT_PATCH}" -eq 1 ]]; then report+=(--emit-patch); fi
     gpuref "${report[@]}" > /dev/null || rc=1
@@ -180,7 +191,7 @@ if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per 
 fi
 SESSION="${SESSION:-gpuref-${TTIS_SHA:0:8}}"
 [[ "${SESSION}" =~ ^[A-Za-z0-9._-]+$ ]] || die "bad --session: ${SESSION}"
-OUT_DIR="${OUT_DIR:-${REPO_ROOT}/workflow_logs/gpu_reference_colab/${SESSION}}"
+OUT_DIR="${OUT_DIR:-${RESULTS_ROOT}/${SESSION}}"
 log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; session ${SESSION}; out ${OUT_DIR}"
 usable="$(gpuref preflight --gpus "${GPU}" "${MODELS[@]}")" || die "preflight failed (see above)"
 read -r -a GPUS <<< "${usable}"

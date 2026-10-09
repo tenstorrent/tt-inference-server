@@ -60,6 +60,10 @@ scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --min-balance 4000 --
 
 `--refresh` also re-measures tasks that already have a GPU reference.
 
+`--refresh-quetzal origin/main,<PR head>,...` audits every lm-eval task of every model that has a Quetzal P300X2 row, here or on those refs, whatever its current references (use `.` for this branch only). The plan prints the estimated hours and CU per group. Set `--min-balance` to your budget floor.
+
+The report compares the Shield TT score against both the current and the proposed reference, using TTIS's own ratio and noise rules. It lists every TT pass that would fail, and every failure that would pass.
+
 **What gets skipped** (`--dry-run` shows the reason for each):
 
 - tasks that are not lm-eval (`EVALS_COMMON`) tasks;
@@ -77,7 +81,7 @@ The generated block is regenerated in full on every `--write-specs`, so a change
 
 **Placement and sessions.** The memory preflight places each model:
 
-- on `A100,H100` (A100 first) if its bf16 weights fit a 40 GB A100, even if only with a `max_model_len` cap;
+- on `A100` if its bf16 weights fit a 40 GB A100, even if only with a `max_model_len` cap. There is no H100 fallback: an A100 bills about 5.3 CU/hr against about 18 for an H100, and the scores are valid on either;
 - on `H100` if it needs 80 GB.
 
 Each group runs in one session, named `gpuref-sweep-{a100,h100}-<sha8>`.
@@ -87,7 +91,7 @@ Each group runs in one session, named `gpuref-sweep-{a100,h100}-<sha8>`.
 - skips models whose latest `ok` run used exactly the same `vllm serve` arguments (revision, context, flags) and scored every target task;
 - re-attaches to a session that is still running.
 
-`--min-balance` is checked before each group and at every poll.
+`--min-balance` is checked before each group and at every poll. Set `GPUREF_RESULTS_ROOT` to keep results (and `RESUME.txt`) outside the checkout, for example when the checkout sits under a `/tmp` that is cleared on reboot.
 
 **Outputs** (`workflow_logs/gpu_reference_colab/sweep-<sha8>/`):
 
@@ -114,7 +118,7 @@ The token never appears on a command line, in a log, or in exec code.
 
 Colab answers `503 Service Unavailable` when it has no capacity. Each `--gpu` type gets 3 attempts with 120 s and 240 s backoff before the driver moves to the next type. Any other refusal moves on at once.
 
-**Cost.** An A100 bills about 5.3 CU/hr and an H100 about 18 CU/hr (measured 2026-10-09). The scores are valid on either GPU, so a model whose weights fit an A100 should list A100 first; the sweep places such models on `A100,H100`. Check the rate with `colab usage`. Batch 1 took 2.4 h and 11.6 CU: SOLAR-10.7B, Llama-3.2-1B and Qwen1.5-0.5B on an A100, with most of the time spent on MMLU-Pro CoT.
+**Cost.** An A100 bills about 5.3 CU/hr and an H100 about 18 CU/hr (measured 2026-10-09). The scores are valid on either GPU, so the sweep runs every model whose weights fit an A100 on an A100 only. Check the rate with `colab usage`. Batch 1 took 2.4 h and 11.6 CU: SOLAR-10.7B, Llama-3.2-1B and Qwen1.5-0.5B on an A100, with most of the time spent on MMLU-Pro CoT.
 
 The scores are bf16 vLLM references and valid on either GPU. The GPU you actually got is recorded in `provenance.json` and in the `gpu` column of the summary.
 

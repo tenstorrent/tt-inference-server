@@ -575,6 +575,7 @@ def catalog_facts(ttis_dir: Path = REPO_ROOT):
                 "gpu_ref": t.score.gpu_reference_score,
                 "requested": getattr(t, "gpu_reference_requested", None),
                 "venv": t.workflow_venv_type.name,
+                "tolerance": t.score.tolerance,
             }
             for t in cfg.tasks
             if t.score
@@ -620,6 +621,8 @@ def select_targets(tasks, rows, refresh: bool = False, audit: frozenset = frozen
                 "task": t["task"],
                 "reason": reason,
                 "old_gpu_ref": t["gpu_ref"],
+                "published": t["published"],
+                "tolerance": t.get("tolerance", 0.05),
             }
             if t["venv"] not in SWEEP_VENVS:
                 skipped.append(
@@ -654,15 +657,15 @@ def derive_gpu_spec(model_rows, native_ctx: Optional[int]) -> Optional[Dict[str,
 
 
 def gpu_group(verdicts: Dict[str, Any]) -> Optional[str]:
-    """Run list for a model: "A100,H100" if its bf16 weights fit an A100
-    (fully or with a cap) -- an A100 bills ~5.3 CU/hr against ~18 for an H100,
-    and the scores are valid on either -- "H100" if it needs 80 GB, None if
-    nothing fits."""
+    """Run list for a model: "A100" if its bf16 weights fit an A100 (fully or
+    with a cap) -- an A100 bills ~5.3 CU/hr against ~18 for an H100 and the
+    scores are valid on either, so no H100 fallback -- "H100" if it needs
+    80 GB, None if nothing fits."""
 
     def fits(gpu):
         return verdicts.get(gpu) == "fits" or isinstance(verdicts.get(gpu), dict)
 
-    return "A100,H100" if fits("A100") else "H100" if fits("H100") else None
+    return "A100" if fits("A100") else "H100" if fits("H100") else None
 
 
 def derive_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -966,8 +969,25 @@ def sweep_results(
         row["verdict"] = reference_verdict(
             row.get("old_gpu_ref"), row["score"], row.get("samples")
         )
+        current = row.get("old_gpu_ref") or row.get("published")
+        proposed = current if row["verdict"] in (None, "keep") else row["score"]
+        n, tol = row.get("samples"), row.get("tolerance", 0.05)
+        row["tt_now"] = tt_grade(row["tt_score"], current, tol, n)
+        row["tt_proposed"] = tt_grade(row["tt_score"], proposed, tol, n)
         rows.append(row)
     return rows
+
+
+def tt_grade(score, ref, tolerance: float, n) -> str:
+    """TTIS's rule for a TT score against a reference: PASS on the ratio rule
+    (score/ref >= 1 - tolerance) or within noise (ref - score <= 1.96 binomial
+    SE at the reference), else FAIL; NA without a score or reference."""
+    if score is None or not ref:
+        return "NA"
+    if score / ref >= 1 - tolerance:
+        return "PASS"
+    se = 100 * (ref / 100 * (1 - ref / 100) / n) ** 0.5 if n and 0 < ref < 100 else None
+    return "PASS" if se is not None and ref - score <= 1.96 * se else "FAIL"
 
 
 def reference_verdict(
@@ -990,10 +1010,10 @@ def sweep_markdown(rows: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) ->
     """Ready-to-paste #5353 block."""
     out = ["## GPU reference sweep", ""]
     out.append(
-        "| model | task | GPU score | samples | TT score | old GPU ref | proposal | why selected "
-        "| GPU | chunk | cap (longest request) |"
+        "| model | task | GPU score | samples | TT score | old GPU ref | proposal | TT now -> proposed "
+        "| why selected | GPU | chunk | cap (longest request) |"
     )
-    out.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    out.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
     proposal = {"new": "record", "keep": "keep old (within noise); clear flag",
                 "replace": "replace old", None: "not measured"}  # fmt: skip
     for r in rows:
@@ -1001,8 +1021,32 @@ def sweep_markdown(rows: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) ->
         out.append(
             f"| {r['model']} | {r['task']} | {fmt(r['score'])} | {fmt(r.get('samples'))} | "
             f"{fmt(r['tt_score'])} | {fmt(r.get('old_gpu_ref'))} | {proposal[r.get('verdict')]} | "
+            f"{r.get('tt_now', 'NA')} -> {r.get('tt_proposed', 'NA')} | "
             f"{r['reason']} | {fmt(r.get('gpu'))} | {fmt(r.get('max_num_batched_tokens'))} | {cap} |"
         )
+    measured = [r for r in rows if r.get("score") is not None]
+    for title, now, new in (
+        (
+            "**TT passes that would FAIL against the proposed reference:**",
+            "PASS",
+            "FAIL",
+        ),
+        (
+            "**TT failures that would PASS against the proposed reference:**",
+            "FAIL",
+            "PASS",
+        ),
+    ):
+        hit = [
+            r
+            for r in measured
+            if r.get("tt_now") == now and r.get("tt_proposed") == new
+        ]
+        lines = [
+            f"- {r['model']} {r['task']}: TT {fmt(r['tt_score'])} vs GPU {fmt(r['score'])}"
+            for r in hit
+        ]
+        out += ["", title] + (lines or ["- none"])
     shas = sorted({r["ttis_sha"] for r in rows if r.get("ttis_sha")})
     out += ["", f"TTIS sha(s): {', '.join(shas) or '-'}; vLLM "
             f"{', '.join(sorted({r['vllm'] for r in rows if r.get('vllm')})) or '-'} bf16; "
