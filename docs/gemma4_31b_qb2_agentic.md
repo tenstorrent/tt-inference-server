@@ -20,6 +20,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C1 | 0/5 solved, 270.1 min evaluation | Sampling paths differ from C2/C4; full-set target remains 44.94% |
 | Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | 192K live run also 1/5, with more output and a timeout |
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
+| Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -1087,3 +1088,45 @@ observed wall or reward advantage to offset its smaller admission margin.
 Raw artifacts and numeric summary are at
 `/home/mvasiljev/build/gemma-terminal-c2-kv192/` and
 `/home/mvasiljev/build/gemma-terminal-c2-kv192-summary.json`.
+
+### Thinking-off fixed-five Terminal pilot
+
+The [C2 thinking-off pilot](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37991891787)
+used the pinned Metal-main image and the original five cases with the
+three-hour deadline. The only server policy change was
+`default-chat-template-kwargs: {"enable_thinking":false}`. It completed
+all five trials with zero case errors and solved **1/5, COBOL**, the same
+case as C2 with thinking on. Its generic CI gate failed on the same 20%
+versus full-set 44.94% H100 comparison.
+
+| C2 fixed-five Terminal measure | Thinking on | Thinking off |
+| --- | ---: | ---: |
+| Evaluation wall, min | 175.87 | 37.43 |
+| Sum of case clocks, min | 347.12 | 70.85 |
+| Solved / case errors | 1/5 / 0 | 1/5 / 0 |
+| Model API calls | 126 | 119 |
+| Input / output tokens | 2.717M / 399.1K | 2.286M / 53.8K |
+| Sum API / other case time, min | 202.61 / 144.51 | 52.44 / 18.41 |
+| Peak sampled KV / waiting samples | 52.6% / 0 | 37.0% / 0 |
+
+Wall fell **4.70×** and output volume **86.5%** in this single run. The
+HTML and CompCert trials each still made 50 model calls, but produced only
+32,625 and 11,821 output tokens versus 199,608 and 125,230 with thinking
+on. COBOL remained solved in 5.71 versus 9.58 minutes. FEAL and QEMU made
+fewer calls and remained unsolved. This is a meaningful output-volume and
+wall reduction, not evidence of a faster decode kernel. The thinking-off
+request-time fit has low R² (0.689) and should not be used for a per-token
+speed claim. No AICLK warning or server preemption appeared in its logs.
+
+To check whether the quality result survives a larger fixed denominator,
+the [C2 ten-case thinking-off branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-thinkoff)
+changes only that template setting from C2/ten. Its
+[combined Terminal and SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37999680461)
+will reuse one warmed server for the same ten cases in each suite. A first
+dispatch with an abbreviated inference-server SHA was canceled before
+hardware work; the linked dispatch pins the full commit. Score original
+first-five and added-five cases separately and require the solved-case set
+as well as the total wall before selecting this policy. Raw pilot artifacts
+and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c2-thinkoff/` and
+`/home/mvasiljev/build/gemma-terminal-c2-thinkoff-summary.json`.
