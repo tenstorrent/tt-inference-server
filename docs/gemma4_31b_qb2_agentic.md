@@ -137,7 +137,11 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
    A [C4 branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c4)
    is prepared for an exploratory performance comparison; do not use its
    four-agent eval result as a replacement for the C1 baseline without a
-   complete fixed-case denominator and resource/score review.
+   complete fixed-case denominator and resource/score review. The four largest
+   archived Terminal request lengths from different cases sum to about 206K,
+   below C4's 256K full-attention logical pool, but four requests at their
+   configured 80K ceilings would exceed it. Watch live waiting/preemption
+   and agent deadlines rather than inferring safety from the old trajectories.
 2. [Context-sized KV hook](https://github.com/tenstorrent/tt-metal/tree/mvasiljevic/gemma4-31b-agentic-kv)
    and [C2/192K catalog](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-kv192):
    keep the physical batch at two and size the base full-attention pool from
