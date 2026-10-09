@@ -8,11 +8,24 @@ Weights are mounted read-only from local host disk. Compilation and tensor cache
 are separate, removable host-local data.
 
 This is **not a qualified release**. The eight-replica native-recurrence G0 check
-passed on October 9, 2026 UTC. Native-control GPQA and the Tau3 pilot remain in
+passed on October 9, 2026 UTC. Native-control full GPQA finished **170/198
+(85.86%)**, including one output-budget cutoff counted incorrect; Tau3 is in
 progress. The optimized recurrence's completed full GPQA result was 163/198
 (82.32%); 15 output-budget cutoffs were included as incorrect. Neither that
 result nor G0 alone meets the accuracy release gate. Container hardware and SJC3
 Helm qualification also remain required.
+
+The first experimental image completed compilation and source/import verification
+at TTIS source `e0e05bad5361d7c170068b3ad7b4df27de192250`. Its OCI manifest is
+`sha256:0b11f045bf089088a62b6e3c1aeb9b64cc72b74a632935f25203609b1e023579`.
+The archive is preserved on the build host at
+`/home/ttuser/qwen38-release-build-20261009-v5/artifact/qwen38-image.oci.tar`,
+with full-file SHA-256
+`755626b044cea12f390fd343439dbfe4af920aba6e7d156a26490c478325d648`.
+It is not yet registry-published or hardware-qualified. The archive checksum
+and OCI manifest digest are different identities. Do not use the archive checksum
+as a Helm image digest. The separately queued BFP8/HiFi2-head experiment does
+not alter this built image's native BFP4/LoFi-head policy.
 
 ## Source identity
 
