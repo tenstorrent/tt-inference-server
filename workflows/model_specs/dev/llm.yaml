@@ -906,6 +906,53 @@ templates:
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
 
+# Dedicated Gemma 4 26B A4B QB2 implementation. Keep it opt-in while the
+# canonical tt-transformers profile remains the default for these weights.
+- weights:
+    - google/gemma-4-26B-A4B-it
+  impl: gemma4_26b_a4b_qb2
+  inference_engine: VLLM
+  device_model_specs:
+    - device: P300X2
+      max_concurrency: 32
+      max_context: 262144
+      default_impl: false
+      env_vars:
+        MESH_DEVICE: "P300x2"
+        OMP_NUM_THREADS: "8"
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        GEMMA4_26B_ALLOW_HOST_SAMPLING: "1"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+        trace_region_size: 1000000000
+        sample_on_device_mode: all
+        trace_mode: decode_only
+        enable_model_warmup: false
+      vllm_args:
+        revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        tokenizer_revision: 4d7ae4984b7db7de8f8457170b3f1a419ee76d52
+        hf-overrides: '{"architectures":["TTGemma4A4BForCausalLM"]}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
+        block_size: 32
+        max_num_seqs: 32
+        max_model_len: 262144
+        max_num_batched_tokens: 262144
+        no-enable-chunked-prefill: true
+        no-enable-prefix-caching: true
+        async-scheduling: true
+  status: FUNCTIONAL
+  has_builtin_warmup: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-26B-A4B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
+      benchmark_max_concurrency: 1
+
 - weights:
     - google/gemma-4-12B-it
   impl: tt_transformers
