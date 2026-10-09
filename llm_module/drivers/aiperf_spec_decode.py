@@ -601,13 +601,16 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
     ``rejected_prediction_tokens`` over each request's last usage chunk.
     ``usage`` has no draft count, so ``num_drafts`` (and with it mean
     accepted length) comes from ``nvext.engine_data.spec_decode`` when the
-    server sends it. ``None`` when no response reports prediction tokens.
+    server sends it. A response without the prediction tokens is left out of
+    the sums, counted in ``responses_without_usage`` and warned about. ``None``
+    when no response reports prediction tokens.
     """
-    accepted = rejected = num_drafts = 0
+    accepted = rejected = num_drafts = responses = without = 0
     found = has_drafts = False
     for path in Path(artifact_dir).rglob("profile_export_raw.jsonl"):
         with path.open(errors="replace") as fh:
             for line in fh:
+                responses += 1
                 details = spec = None
                 for response in json.loads(line).get("responses") or []:
                     for packet in response.get("packets") or []:
@@ -627,11 +630,24 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
                     found = True
                     accepted += details.get("accepted_prediction_tokens") or 0
                     rejected += details.get("rejected_prediction_tokens") or 0
+                else:
+                    without += 1
                 if spec and spec.get("num_drafts") is not None:
                     has_drafts = True
                     num_drafts += spec["num_drafts"]
     if not found:
         return None
+    if without:
+        # A Dynamo frontend that stops on a stop string drops the worker's
+        # final usage (ai-dynamo/dynamo#15386); a request that drafted
+        # nothing omits it too.
+        logger.warning(
+            "[spec-decode] %d/%d responses carry no prediction tokens in "
+            "usage; acceptance covers the other %d.",
+            without,
+            responses,
+            responses - without,
+        )
     draft = accepted + rejected
     return {
         "acceptance_rate": accepted / draft if draft else 0.0,
@@ -641,6 +657,8 @@ def _usage_acceptance_metrics(artifact_dir: Path) -> Optional[Dict[str, Any]]:
         "mean_accepted_length": 1 + accepted / num_drafts if num_drafts else None,
         "accepted_per_pos": [],
         "source": "usage",
+        "responses_without_usage": without,
+        "responses": responses,
     }
 
 

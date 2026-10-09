@@ -403,7 +403,10 @@ column:
   responses (from AIPerf's raw export). `usage` has no draft count; when the
   server sends `nvext.engine_data.spec_decode.num_drafts` (tt-d-gen), it also
   gives mean accepted length. Through a Dynamo frontend these fields need
-  ai-dynamo ≥ 1.4.0, and the worker has to send them.
+  ai-dynamo ≥ 1.4.0, and the worker has to send them. A response without them
+  is left out of the sums, and the run logs a warning and shows the count in
+  "Acceptance Source" (e.g. `usage (3/80 without)`). A Dynamo frontend drops
+  them when it stops on a `stop` string (ai-dynamo/dynamo#15386).
 
 By default the counter scrape targets the load target (`--service-port`). In a
 Dynamo deployment that target is the spec-decode-unaware frontend, which does

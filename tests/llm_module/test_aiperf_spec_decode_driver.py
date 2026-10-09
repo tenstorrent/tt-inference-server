@@ -330,6 +330,8 @@ class TestUsageAcceptance:
         assert out["source"] == "usage"
         assert out["num_drafts"] is None
         assert out["mean_accepted_length"] is None
+        assert out["responses_without_usage"] == 1
+        assert out["responses"] == 3
 
     def test_engine_data_draft_count_gives_mean_accepted_length(self, tmp_path):
         details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
@@ -359,3 +361,27 @@ class TestUsageAcceptance:
             }
             assert parser.parse(raw).data["acceptance_source"] == source
         assert parser.parse(base).data["acceptance_source"] is None
+
+    def test_responses_without_usage_are_counted_and_shown(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(tmp_path, [{"completion_tokens_details": details}] + [None] * 3)
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert "3/4 responses carry no prediction tokens" in caplog.text
+        raw = {"public_dataset": "speed_bench_qa", "spec_decode_metrics": out}
+        source = AIPerfSpecDecodeParser().parse(raw).data["acceptance_source"]
+        assert source == "usage (3/4 without)"
+
+    def test_every_response_with_usage_shows_plain_source(self, tmp_path, caplog):
+        details = {"accepted_prediction_tokens": 6, "rejected_prediction_tokens": 4}
+        self._write_raw(tmp_path, [{"completion_tokens_details": details}] * 2)
+
+        with caplog.at_level("WARNING"):
+            out = driver_mod._usage_acceptance_metrics(tmp_path)
+
+        assert out["responses_without_usage"] == 0
+        assert "prediction tokens" not in caplog.text
+        raw = {"public_dataset": "speed_bench_qa", "spec_decode_metrics": out}
+        assert AIPerfSpecDecodeParser().parse(raw).data["acceptance_source"] == "usage"
