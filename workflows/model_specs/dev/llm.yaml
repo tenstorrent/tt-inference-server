@@ -909,12 +909,18 @@ templates:
         enable-chunked-prefill: true
         max_num_batched_tokens: '8192'
         override_generation_config: '{"top_k": 20}'
+        enable-auto-tool-choice: true
+        tool-call-parser: gemma4
         reasoning-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking":true}'
   status: COMPLETE
   has_builtin_warmup: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+  metadata:
+    google/gemma-4-31B-it:
+      reasoning_parser_name: gemma4
+      tool_call_parser_name: gemma4
 
 - weights:
     - google/gemma-4-12B-it
