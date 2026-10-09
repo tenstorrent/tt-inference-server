@@ -457,11 +457,24 @@ penalty is small enough to make that simpler policy plausible.
 | --- | ---: | ---: | ---: |
 | 128/128 | 72.56 | 131.48 | 1.81× |
 | 128/1024 | 72.82 | 142.75 | 1.96× |
+| 1,024/128 | 66.69 | 120.73 | 1.81× |
+| 2,048/128 | 61.57 | 105.13 | 1.71× |
+| 4,096/128 | 53.46 | 81.53 | 1.53× |
 | 8,192/128 | 42.12 | 58.87 | 1.40× |
 | 8,192/1024 | 64.93 | 116.52 | 1.79× |
 | 10,000/1024 | 45.19 | 55.41 | 1.23× |
 | 16,384/128 | 28.44 | 35.21 | 1.24× |
 | 32,768/128 | 16.23 | 18.18 | 1.12× |
+
+For a fixed 128-token completion, the gain from adding two more active
+requests declines steadily as input grows from 1K to 32K. Gemma's prefill
+loop processes concurrent rows serially, so C4 adds useful decode overlap
+but cannot provide the same gain when prompt processing dominates. Terminal
+trajectories build large prompts; this scaling curve argues against assuming
+that C8 will double Terminal throughput. A
+[C8 catalog candidate](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c8)
+is prepared for a benchmark on a clean runner after the active evaluation
+queue, to locate that limit before spending hours on C8 agentic cases.
 
 The benchmark selector reduced the 65,536/128 point to three concurrent
 requests under the 256K shared context; C3 output was 7.96 tokens/s versus
