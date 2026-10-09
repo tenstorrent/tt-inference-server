@@ -930,10 +930,19 @@ configuration. Raw artifacts and numeric summary are under
 
 With the SWE/ten capacity and reward check complete, a
 [matched C8 Terminal/ten dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38001414052)
-uses the same pinned Metal image and the same Terminal IDs as C2/ten and
-C4/ten. Long-prompt prefill and shared-context admission can limit C8, so
-compare its full suite wall, original first-five rewards, waiting/preemption
-and token volume before preferring it for Terminal.
+was attempted with the same pinned Metal image and Terminal IDs as C2/ten
+and C4/ten. It failed **before model loading or evaluation** on
+`120-qb2-p04t05`: the fabric topology mapper could not map the four-chip
+logical mesh onto the discovered four ASICs (`topology_mapper.cpp:556`).
+The same host had completed C8 SWE minutes earlier; this run provides no
+Terminal speed or reward evidence. The two startup attempts and server
+logs are preserved under
+`/home/mvasiljev/build/gemma-terminal-c8-ten-startup-fail/`. A retry needs
+a healthy host or a bounded device list/reset/list and mesh-open check by
+the host operator. Do not fold this infrastructure failure into the model
+score denominator. Long-prompt prefill and shared-context admission can
+limit C8, so a successful full suite is still needed before preferring it
+for Terminal.
 
 ## Current-main Terminal fixed-five result at C2
 
