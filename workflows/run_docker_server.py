@@ -479,7 +479,8 @@ def _resolve_training_store_root(setup_config) -> str:
 def _docker_ipc_args(model_spec) -> List[str]:
     """IPC namespace for the container: the host's by default; a private one with its own
     /dev/shm when the device spec sets ``docker_shm_size`` (see DeviceModelSpec)."""
-    shm_size = getattr(model_spec.device_model_spec, "docker_shm_size", None)
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    shm_size = getattr(device_spec, "docker_shm_size", None)
     if shm_size:
         return ["--ipc", "private", "--shm-size", str(shm_size)]
     return ["--ipc", "host"]
