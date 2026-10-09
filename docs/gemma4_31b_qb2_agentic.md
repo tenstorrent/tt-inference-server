@@ -223,8 +223,14 @@ is queued for a clean runner.
    without KV preemption before it can be selected. One host-side budget test
    and Ruff/pre-commit pass; no device claim is made yet. Its
    [benchmark dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37956805379)
-   is building a separate image from Metal `6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94`
-   and inference-server `84c126298977df6f3d90ff2ea1313c7a255ec4c8`.
+   built a separate image from Metal `6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94`
+   and inference-server `84c126298977df6f3d90ff2ea1313c7a255ec4c8`:
+   `ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.24.0-6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94-c62035d-113909389966`.
+   Hardware benchmark results are still pending. The
+   [fixed-five Terminal C2/192K job](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37964456985)
+   is queued on that image with inference-server
+   `6682a78c8a1009934838f58b3070927973ec7f4f`; cancel it before model
+   work if the preceding KV benchmark fails startup or correctness.
 3. [C2 thinking-off pilot](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-thinkoff):
    changes only the server's `enable_thinking` default. Granite's fixed-case
    pilot reduced output volume markedly, and Gemma's archived latency fit
