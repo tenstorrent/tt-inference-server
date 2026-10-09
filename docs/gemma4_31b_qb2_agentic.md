@@ -151,12 +151,11 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
   [read-only occupied-runner hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963641492)
   landed on `120-qb2-p04t07`, the host that repeatedly failed the ownership
   check due to a stopped container. The hold leaves that container and
-  hardware untouched while clean hosts accept the queued Gemma jobs; cancel
-  it after those jobs are assigned. A
-  [second queued hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37973784755)
-  can take the same occupied host when the first hold expires; move queued
-  model jobs behind it before that handoff so the dirty runner does not take
-  one. Cancel the hold once all model jobs have clean runner assignments.
+  hardware untouched while clean hosts accept the Gemma jobs. A
+  [second hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37973784755)
+  occupied the same host on its second attempt and later completed after all
+  queued model jobs had clean runner assignments. The stopped container was
+  not modified by this work.
 - The inference-server [baseline branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-baseline)
   adds tool-call parsing to the dedicated dev catalog entry and restores the
   original five fixed Terminal-Bench 2.0 and SWE-bench Verified cases. It keeps
@@ -209,7 +208,7 @@ The first corrected C2 and C4 runs also landed on the occupied host and
 stopped before model work. Their
 [C2 retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963842946)
 and [C4 retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963848727)
-are running on clean hosts, with the occupied host held aside.
+later completed on clean hosts, with the occupied host held aside.
 The [C2 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962976771)
 and [C4 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962982690)
 reuse that image as separate benchmark jobs. Compare matching input/output
@@ -329,9 +328,8 @@ all-ten rewards separately for both variants. After the successful C8
 synthetic sweep, the
 [C8 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c8-ten)
 and [QB2 dispatch 37994423239](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37994423239)
-use those same ten SWE IDs at physical batch eight; its hardware test is
-running. Compare rewards, wall, waits and per-case clocks before choosing C8
-for agentic work. Matched ten-case Terminal expansions are now running at
+used those same ten SWE IDs at physical batch eight and completed; results
+appear below. Matched ten-case Terminal expansions are running at
 [C2](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996976665)
 and [C4](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996981703)
 with the same pinned Metal-main image and ten IDs used for SWE. Their first
@@ -841,7 +839,7 @@ to 97.0 seconds. There was no sustained KV queue. The run used the
 warm-weight host `120-qb2-p04t05`, whose server again logged two startup
 AICLK warnings with 800 MHz observed versus 1350 MHz expected. Thus its
 wall time should not be treated as a normalized speed comparison with the
-healthy-host C2 fixed-five control or forthcoming C4 ten-case run. Raw
+healthy-host C2 fixed-five control or the C4 ten-case run. Raw
 artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c2-ten-main/` and
 `/home/mvasiljev/build/gemma-swe-c2-ten-main-summary.json`.
