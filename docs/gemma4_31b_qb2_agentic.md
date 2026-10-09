@@ -535,15 +535,45 @@ so this remains a hypothesis for a targeted warm/cold profile.
 A separate [later-main C4 benchmark](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37975935523)
 was dispatched with Metal `6ea152854fe896a9980e02c51af3cd786a0c6599`
 and the same C4 inference-server commit. Its image build succeeded in
-67 minutes and the benchmark
-job is now running on `120-qb2-p04t05`, the host that logged an 800 MHz
-AICLK warning in C4 SWE; inspect the new benchmark's clock logs before any
-cross-host speed comparison. Among the intervening main commits,
+67 minutes and the benchmark completed on `120-qb2-p04t05`, the host that
+logged an 800 MHz AICLK warning in C4 SWE. It logged the same warning in this
+benchmark, so cross-host throughput is confounded. Among the intervening main commits,
 `bde0257bf3c` defers duplicate kernel builds without holding worker threads;
 it might affect cold-prefill latency, but was measured upstream on a different
 model. Compare the first and second 10K C4 waves and steady-state points to
 the original pinned-main run; this follow-up is not part of the C1/C2/C4
 same-image comparison.
+
+The later-main benchmark finished all **23 shapes with zero request errors**.
+Its generic release gate still failed: 128/128 C4 produced 105.50 output
+tokens/s versus the 217.65 target. The matching pinned-main C4 point was
+131.48 tokens/s on `120-qb2-p05t01`, a host without the AICLK warning.
+Single-user short-prompt output rates were 9–23% lower on the later run;
+most 16K–131K input points were within a few percent, with the 32K
+single-user point 7% lower.
+That shape-dependent difference is consistent with host clock effects and/or
+intervening Metal changes, and these runs cannot apportion it. The later
+test job took 37.2 minutes versus 32.7 minutes for the pinned-main sweep.
+
+The important cold-prefill result **did not change**: at 10K/1024 C4, the
+later run's first four TTFTs were 13.29, 70.56, 70.85 and 80.94 seconds,
+versus 13.24, 70.23, 70.51 and 80.48 on pinned main. The next four were
+2.59–5.24 seconds, versus 2.61–5.30. This close match on distinct runners
+shows that the seven intervening Metal commits, including the generic
+duplicate-build change, did not remove Gemma's cold 10K stall. It does not
+identify the underlying compilation/device/scheduler step. The later run
+had 13/176 ten-second samples with waiting and 67.0% peak KV use; the
+pinned run had 12/159 and 75.9%. These samples do not support a KV-capacity
+explanation for the repeated first-wave latency.
+
+Both C4 benchmark starts reused host-local model weights: their Hugging Face
+snapshot steps finished in about **0.1 seconds**, and API readiness followed
+in about **4 min 44–49 s**. This contrasts with the approximately 7 min 45 s
+snapshot and 12 min 40 s readiness on cold SWE runners. The model cache
+persists across separate jobs on the same host, while a fresh host can still
+pay the cold cost. Raw later-main artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-c4-benchmark-later-main/` and
+`/home/mvasiljev/build/gemma-c4-benchmark-later-main-summary.json`.
 
 ## First current-main SWE result (C2, 9 October)
 
