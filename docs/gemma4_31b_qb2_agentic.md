@@ -95,6 +95,10 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
 ## Current-main baseline setup
 
 - Metal main pinned at `2c1e1ebdd638886821f35113a5fd0d6335d71608`.
+- The local workstation has a QB2, but no Gemma 4 31B checkpoint in its
+  Hugging Face cache and no active Hugging Face login. Host-only budget and
+  config checks ran locally; model/device measurements use the CI runners,
+  whose checkpoint mounts are already provisioned.
 - Dispatch through `tt-agentic-bringup-qb2` wrapper ref
   `mvasiljevic/granite-kv-overlay-ci`, whose manual workflow exposes the
   `agentic` workflow and partition selector. It calls Shield's reusable
