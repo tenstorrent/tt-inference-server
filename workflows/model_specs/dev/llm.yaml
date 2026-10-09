@@ -407,7 +407,9 @@ templates:
       # slots at 16K context; larger contexts and more concurrent slots require
       # subsequent implementation changes.
       max_concurrency: 2
-      max_context: 16384  # 16 * 1024; a multiple of the 8192 prefill chunk
+      # 3 * 5120: a multiple of the prefill chunk, within the decode step's
+      # 16,384-row candidate budget, above the c1 points' isl 8192 + osl 128.
+      max_context: 15360
       default_impl: true
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
@@ -427,7 +429,11 @@ templates:
         TT_V41_CHECKPOINT: "/data/huggingface/hub/models--deepseek-ai--DeepSeek-V4.1-Flash/snapshots/dba1be0a40aa45a94ad051997016db3960a90277"
         TT_V41_WEIGHT_CACHE: "/data2/ttnn-cache"
         TT_V41_ENGRAM_MMAP: "0"
-        TT_V41_CHUNK: "8192"
+        # 5120, not 8192: a chunk is padded to its full size and the device
+        # time of a mostly padded chunk exceeds a full one's
+        # so the c1 points up to isl 4096 run in one
+        # 5,120-row chunk and isl 8192 in two.
+        TT_V41_CHUNK: "5120"
         # Prompt lengths whose prefill is captured per slot at warm-up and
         # replayed: the four registered c1 points, each
         # isl plus the 4 tokens the chat template adds. Any other length runs
