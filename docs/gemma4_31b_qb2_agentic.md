@@ -589,3 +589,21 @@ despite about 68.5K output tokens. The Metal commit and prefill policy changed
 and the stochastic trajectories differ, so this is evidence of a much faster
 observed end-to-end run, not a measured speedup attributable to one code
 change.
+
+### Startup cost and reuse
+
+The C2 SWE job spent about **12 min 40 s** between starting the inference
+server at 17:00:04 UTC and API readiness at 17:12:44. Its Docker image pull
+took about one second, while the server's Hugging Face snapshot step for
+`google/gemma-4-31B-it` took **7 min 45 s** (17:00:08–17:07:54); vLLM import,
+device setup, weight loading and warmup occupied the remainder. Thus starting
+another server for every short evaluation has a measurable cost independent
+of case execution. Running the selected Terminal and SWE suites against one
+warmed server should save one startup interval, subject to the combined job
+using the same physical batch, context, model image and scoring settings.
+The snapshot time is from this runner and may vary with cache state and
+network throughput. The independent C2 benchmark on runner
+`120-qb2-p05t01` took 7 min 44 s in the same snapshot step, while C2 SWE
+ran on `qb2-120-p05t02`. Both were separate server starts and runner hosts;
+these logs show repeated snapshot cost, though not whether each byte came
+from the network rather than a lower-level cache.
