@@ -1,0 +1,65 @@
+{
+  "scope": "Captured receipts, not container inference completion",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 2420,
+      "sha256": "e14cd4b4d1711ffd5d67fc72a077a16a7652ed8d32345e76f4b568ab4e61fc66"
+    },
+    {
+      "path": "cpu-tests.xml",
+      "bytes": 6536,
+      "sha256": "2131f773c9f8d5b8949db49eeb7ff942dc397d7165c342234de8641a389d7a3b"
+    },
+    {
+      "path": "image-hardware-control-v1/launch.json",
+      "bytes": 2472,
+      "sha256": "176d4e2c2a7be7375b9d3b23ca096a701a0cc3aedd2348e57cf210516a526c98"
+    },
+    {
+      "path": "image-hardware-control-v2/evaluation-command.json",
+      "bytes": 521,
+      "sha256": "80e90d57f84a3c5aa7751803b5ee462fe60bbf9ea62677551e8b9ab96c93bef4"
+    },
+    {
+      "path": "image-hardware-control-v2/launch.json",
+      "bytes": 2748,
+      "sha256": "b3baafe68e29aa3d9fd9f509b425647675014e4ea9c5793d967e48113194d622"
+    },
+    {
+      "path": "image-hardware-control-v2/preflight.log",
+      "bytes": 38,
+      "sha256": "07176337b1eff3642fc8bb9745af1195461af48bb36118fbaf68ad2d973c9464"
+    },
+    {
+      "path": "image-hardware-v1/status.json",
+      "bytes": 587,
+      "sha256": "f9d1c98680288b7101248904605f956975dbe90a5e6a72055d6d237a4a3168c2"
+    },
+    {
+      "path": "image-hardware-v2/status.json",
+      "bytes": 586,
+      "sha256": "c3ef327cca3f456bcdf1cf88efc4deed6d38d52a224871b36fd601814fae8dcd"
+    },
+    {
+      "path": "image-startup-bfp8-v8/image-identity.json",
+      "bytes": 1292,
+      "sha256": "110f0e3bf86afd3d56b976e05661868281831f510cda068818201b45ca168964"
+    },
+    {
+      "path": "image-startup-bfp8-v8/report.json",
+      "bytes": 3162,
+      "sha256": "1a808e4c1cc2385f2a578011420bedbe3b48c2b66fbe9405fcd3aee2aea43bae"
+    },
+    {
+      "path": "image-startup-bfp8-v8/status.json",
+      "bytes": 1375,
+      "sha256": "04aeebdd4fba97dbbfd19223430e0853fc0f3b6248612ca13eeed1c1e7f430b6"
+    },
+    {
+      "path": "live-observation.json",
+      "bytes": 454,
+      "sha256": "08b8c9dd8de51edc3bd3e817492934e01fe4e87ff51a85b155813ae03dcf35d0"
+    }
+  ]
+}

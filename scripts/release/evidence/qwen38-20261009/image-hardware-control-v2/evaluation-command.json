@@ -1,0 +1,14 @@
+[
+  "/home/ttuser/qwen38-artifacts-20261007/openbench-overnight-v1/harness/.venv/bin/python",
+  "/home/ttuser/qwen38-artifacts-20261007/image-hardware-control-v2/openbench.py",
+  "--root",
+  "/home/ttuser/qwen38-artifacts-20261007/openbench-overnight-v1",
+  "--csv",
+  "/home/ttuser/kimi-prefill.Ubx2wY/runtime/qwen38-27b-20261006/gpqa-data/gpqa_diamond.csv",
+  "--output",
+  "/home/ttuser/qwen38-artifacts-20261007/openbench-container-v2",
+  "--base-url",
+  "http://127.0.0.1:8079/v1",
+  "--request-timeout",
+  "7000"
+]

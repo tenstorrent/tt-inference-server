@@ -1,0 +1,17 @@
+{
+  "captured_at": 1791572951.671772,
+  "units": {
+    "qwen38-image-hardware-v2-20261009.service": {
+      "MainPID": "2335933",
+      "Result": "success",
+      "ActiveState": "active",
+      "InvocationID": "d369052ee99040c1810ae8d56a76dd51"
+    },
+    "qwen38-gpqa-first-v2-20261009.service": {
+      "MainPID": "1982991",
+      "Result": "success",
+      "ActiveState": "active",
+      "InvocationID": "a6b386c9e3734c849202bb266bf4ff23"
+    }
+  }
+}
