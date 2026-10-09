@@ -165,7 +165,10 @@ Terminal `cancel-async-tasks`, `git-multibranch`, `password-recovery`,
 `sympy__sympy-16597`. That Terminal group previously scored 3/5, so a
 ten-case aggregate containing it may be easier than the original five. Keep
 the fixed-five result visible and avoid comparing a ten-case percentage to a
-five-case or full-set target.
+five-case or full-set target. The
+[C2 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten)
+appends these exact IDs after the first five and is ready for dispatch when
+the current-main five-case comparison supports expansion.
 
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
