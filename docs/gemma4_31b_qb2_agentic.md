@@ -534,8 +534,11 @@ but the retained logs do not time kernel compilation or device operations,
 so this remains a hypothesis for a targeted warm/cold profile.
 A separate [later-main C4 benchmark](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37975935523)
 was dispatched with Metal `6ea152854fe896a9980e02c51af3cd786a0c6599`
-and the same C4 inference-server commit. This image must build before the
-benchmark can run. Among the intervening main commits,
+and the same C4 inference-server commit. Its image build succeeded in
+67 minutes and the benchmark
+job is now running on `120-qb2-p04t05`, the host that logged an 800 MHz
+AICLK warning in C4 SWE; inspect the new benchmark's clock logs before any
+cross-host speed comparison. Among the intervening main commits,
 `bde0257bf3c` defers duplicate kernel builds without holding worker threads;
 it might affect cold-prefill latency, but was measured upstream on a different
 model. Compare the first and second 10K C4 waves and steady-state points to
