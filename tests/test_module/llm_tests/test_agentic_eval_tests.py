@@ -178,6 +178,36 @@ class TestAgenticParser:
         assert "success" not in block.data
         assert "accuracy" not in block.data
 
+    def test_priority_defaults_to_must_on_parsed_and_failure_blocks(self):
+        # Acceptance reads block.data["priority"] and treats a missing key as
+        # "must"; stamping it explicitly keeps agentic blocks aligned with the
+        # lm-eval emitter.
+        parser = AgenticEvalParser(task_name="terminal_bench_2", score=FakeScore())
+        assert (
+            parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"]
+            == "must"
+        )
+        assert (
+            parser.failure_block(return_code=1, device="N150").data["priority"]
+            == "must"
+        )
+
+    def test_should_priority_travels_on_parsed_and_failure_blocks(self):
+        # A catalog task with priority="should" is informational: the agentic
+        # blocks must carry that, or a 0/5 terminal_bench_2 subset blocks a
+        # COMPLETE entry exactly as if the task were "must".
+        parser = AgenticEvalParser(
+            task_name="terminal_bench_2", score=FakeScore(), priority="should"
+        )
+        assert (
+            parser.parse(HARBOR_RESULT_FIXTURE, device="N150").data["priority"]
+            == "should"
+        )
+        assert (
+            parser.failure_block(return_code=1, device="N150").data["priority"]
+            == "should"
+        )
+
     def test_zero_trial_harbor_result_stays_na(self):
         # Shared by every EVALS_AGENTIC catalog task. A Harbor setup failure
         # (n_trials=0, no score metric) must keep the historical N/A row rather
@@ -351,22 +381,23 @@ class TestStandardEvalModeReference:
         assert abs(s - 70.0) < 1e-6
         assert ac_ci == ReportCheckTypes.PASS
 
-    def test_collect_sample_counts_reads_effective(self, tmp_path):
+    def test_load_eval_results_reads_effective_count(self, tmp_path):
         import json as _json
-        from test_module.llm_tests.llm_eval_tests import collect_sample_counts
+        from test_module.llm_tests.llm_eval_tests import load_eval_results
 
         f = tmp_path / "results_x.json"
         f.write_text(
             _json.dumps(
                 {
                     "results": {"r1_gpqa_diamond": {"exact_match,none": 0.7}},
+                    "configs": {"r1_gpqa_diamond": {"dataset_path": "gpqa"}},
                     "n-samples": {
                         "r1_gpqa_diamond": {"original": 198, "effective": 40}
                     },
                 }
             )
         )
-        counts = collect_sample_counts([str(f)])
+        _, counts = load_eval_results([str(f)])
         assert counts == {"r1_gpqa_diamond": 40}
 
 
@@ -804,6 +835,48 @@ class TestMiniSweAgentParity:
         kwargs = harbor._get_agent_kwargs(cfg)
         assert "config" not in kwargs
 
+    def test_mini_swe_docker_uses_host_gateway(self, tmp_path):
+        cfg = build_harbor_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch.object(harbor, "run_with_progress", return_value=17) as run_cmd:
+            assert harbor.run(cfg) == 17
+
+        assert run_cmd.call_args.kwargs["env"]["OPENAI_API_BASE"] == (
+            "http://127.0.0.1:8000/v1"
+        )
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        harbor_config = json.loads(config_path.read_text())
+        assert harbor_config["agents"][0]["env"] == {
+            "OPENAI_BASE_URL": "http://host.docker.internal:8000/v1",
+            "OPENAI_API_BASE": "http://host.docker.internal:8000/v1",
+        }
+        overlay_path = Path(harbor_config["environment"]["extra_docker_compose"][0])
+        assert json.loads(overlay_path.read_text()) == {
+            "services": {
+                "main": {
+                    "extra_hosts": ["host.docker.internal:host-gateway"],
+                }
+            }
+        }
+
+    def test_host_executed_agent_keeps_loopback_endpoint(self, tmp_path):
+        cfg = build_harbor_config(
+            _harbor_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        assert harbor._get_agent_env(cfg) == {
+            "OPENAI_BASE_URL": "http://127.0.0.1:8000/v1",
+            "OPENAI_API_BASE": "http://127.0.0.1:8000/v1",
+        }
+
 
 class TestAgenticLimitResolution:
     def test_fractional_agentic_limits_become_one_task(self):
@@ -976,6 +1049,13 @@ class TestAgenticRunTimestamp:
             f"/tmp/out/eval_Qwen__Qwen3.6-27B/agentic/terminal_bench_2_{self.STAMP}/result.json"
         )
 
+    def test_driver_hands_the_task_priority_to_its_parser(self):
+        assert HarborAgenticDriver(_harbor_task())._parser.priority == "must"
+        assert (
+            HarborAgenticDriver(_harbor_task(priority="should"))._parser.priority
+            == "should"
+        )
+
     def test_swebench_driver_result_path_matches_stamped_folder(self):
         driver = HarborAgenticDriver(_swebench_task())
         driver._run_stamp = self.STAMP
@@ -1026,3 +1106,105 @@ class TestAgenticBridge:
         driver.run.assert_called_once()
         driver.parse.assert_called_once_with(HARBOR_RESULT_FIXTURE, device="N150")
         accept.assert_called_once()
+
+    def test_each_task_is_accepted_before_the_next_one_starts(self):
+        """A job cancelled during task N must still have tasks 1..N-1 accepted.
+
+        Accepting is what checkpoints the report (the WorkflowExecution hook),
+        so a bridge that accepts only after the loop loses every finished
+        multi-hour task when a later one is killed.
+        """
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_harbor_task(), _swebench_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("smoke-test")
+
+        first_block = AgenticEvalParser(
+            task_name="terminal_bench_2",
+            score=FakeScore(),
+        ).parse(HARBOR_RESULT_FIXTURE, device="N150")
+        finished = MagicMock()
+        finished.name = "terminal_bench"
+        finished.run.return_value.return_code = 0
+        finished.run.return_value.raw = HARBOR_RESULT_FIXTURE
+        finished.parse.return_value = first_block
+        killed = MagicMock()
+        killed.name = "swe_bench"
+        killed.run.side_effect = KeyboardInterrupt  # SIGINT from a GitHub cancel
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            side_effect=[finished, killed],
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.accept_blocks"
+        ) as accept, pytest.raises(KeyboardInterrupt):
+            run_llm_agentic_eval(ctx)
+
+        accept.assert_called_once()
+        assert accept.call_args.args[0] == [first_block]
+
+    def test_failed_task_block_is_accepted_as_it_happens(self):
+        from test_module.llm_tests.agentic_eval_tests import run_llm_agentic_eval
+
+        ctx = MagicMock()
+        ctx.all_params.tasks = [_harbor_task(), _swebench_task()]
+        ctx.model_spec.model_name = "test-llm"
+        ctx.model_spec.hf_model_repo = "Qwen/Qwen3.6-27B"
+        ctx.device.name = "N150"
+        ctx.service_port = 8000
+        ctx.output_path = "/tmp/out"
+        ctx.runtime_config = _runtime("smoke-test")
+
+        failure_block = MagicMock()
+        failed = MagicMock()
+        failed.name = "terminal_bench"
+        failed.run.return_value.return_code = 3
+        failed.failure_block.return_value = failure_block
+        killed = MagicMock()
+        killed.name = "swe_bench"
+        killed.run.side_effect = KeyboardInterrupt
+
+        with patch(
+            "test_module.llm_tests.agentic_eval_tests._require_openai_server"
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.make_agentic_driver",
+            side_effect=[failed, killed],
+        ), patch(
+            "test_module.llm_tests.agentic_eval_tests.accept_blocks"
+        ) as accept, pytest.raises(KeyboardInterrupt):
+            run_llm_agentic_eval(ctx)
+
+        assert accept.call_args.args[0] == [failure_block]
+
+
+class TestAgenticRequestOverrides:
+    def test_thinking_off_becomes_the_agents_extra_body(self):
+        task = _harbor_task(
+            thinking=False, request_body={}, thinking_kwarg="enable_thinking"
+        )
+        task.agentic_eval_config.agent = "terminus-2"
+        task.agentic_eval_config.agent_kwargs = {"parser_name": "json"}
+
+        cfg = build_harbor_config(task, _server(), _driver_context())
+
+        assert cfg.agent_kwargs == {
+            "parser_name": "json",
+            "llm_call_kwargs": {
+                "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}
+            },
+        }
+        # the shared eval config is never mutated
+        assert task.agentic_eval_config.agent_kwargs == {"parser_name": "json"}
+
+    def test_no_override_leaves_agent_kwargs_untouched(self):
+        task = _harbor_task()
+        cfg = build_harbor_config(task, _server(), _driver_context())
+        assert cfg.agent_kwargs == dict(task.agentic_eval_config.agent_kwargs)

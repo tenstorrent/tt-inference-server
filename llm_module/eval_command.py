@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, List, Optional
 from utils.url_helpers import build_base_url
 from workflow_module.engine_types import EvalLimitMode
 from workflow_module.engine_types import WorkflowVenvType
+from llm_module.request_overrides import resolve_request_body
 from workflow_module.venv_provisioner import get_venv_provisioner
 
 if TYPE_CHECKING:
@@ -32,6 +33,59 @@ SMOKE_TEST_EVAL_LIMIT = 3
 # devices with very small max_context.
 _MAX_GEN_TOKS_PROMPT_RESERVE = 1024
 _MIN_OUTPUT_TOKENS = 256
+
+# Headroom kept between the harness window and device_model_spec.max_context.
+# lm-eval left-truncates to max_length - 1 - max_gen_toks, so a window equal to
+# max_context lands every long prompt at exactly prompt + max_tokens ==
+# max_context - 1; the gpt-oss aime25 note records empty responses on TT at that
+# boundary. One paged-KV block (64 tokens) of slack keeps requests strictly
+# inside the served context at negligible cost to a 32K-131K window.
+_HARNESS_CONTEXT_RESERVE = 64
+
+
+def _effective_model_kwargs(
+    task: "EvalTask", device_max_context: Optional[int]
+) -> dict:
+    """Bind text-harness context to the selected deployment envelope."""
+    model_kwargs = dict(task.model_kwargs or {})
+    if task.workflow_venv_type in (
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ):
+        return model_kwargs
+    if not device_max_context:
+        raise ValueError(
+            f"{task.task_name} requires device_model_spec.max_context for text evals"
+        )
+    if isinstance(device_max_context, bool):
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        )
+    try:
+        device_max_context = int(device_max_context)
+        requested = int(model_kwargs.get("max_length", device_max_context))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        ) from exc
+    if device_max_context <= 0 or requested <= 0:
+        raise ValueError(
+            f"{task.task_name} requires positive integer max_context/max_length"
+        )
+    # A shared task config may declare a larger harness window than this
+    # deployment serves (e.g. 65536 on a 40960-token device). The harness can
+    # only use what the device holds, so bind it to the device rather than
+    # refusing a config that ran before this binding existed.
+    ceiling = max(device_max_context - _HARNESS_CONTEXT_RESERVE, 1)
+    requested = min(requested, ceiling)
+    minimum = getattr(task, "min_context_required", None)
+    if minimum is not None and device_max_context < minimum:
+        raise ValueError(
+            f"{task.task_name} requires device context >= {minimum}, but "
+            f"device max_context={device_max_context}"
+        )
+    model_kwargs["max_length"] = requested
+    return model_kwargs
 
 
 def _clamp_max_gen_toks(
@@ -172,6 +226,62 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
     return json.dumps({task.task_name: list(indices)})
 
 
+def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:
+    """request_body / thinking run through the lm-eval request-overrides
+    wrapper, which only the lm-eval adapters support."""
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ]:
+        raise ValueError(
+            f"request_body/thinking on {task.task_name} needs "
+            "the lm-eval request-overrides wrapper, which lmms-eval tasks "
+            "cannot use"
+        )
+    from llm_module.lm_eval_request_overrides import SUPPORTED_EVAL_CLASSES
+
+    if task.eval_class not in SUPPORTED_EVAL_CLASSES:
+        raise ValueError(
+            f"request_body/thinking on {task.task_name}: eval_class "
+            f"{task.eval_class!r} is not one of the lm-eval adapters the "
+            f"request-overrides wrapper patches ({', '.join(SUPPORTED_EVAL_CLASSES)})"
+        )
+    if "chat_template_kwargs" in request_body and not task.use_chat_api:
+        raise ValueError(
+            f"{task.task_name}: chat_template_kwargs (thinking={task.thinking!r}) "
+            "only reach the server on the chat API; the completions API renders "
+            "the chat template client-side. Set use_chat_api=True."
+        )
+    thinking = getattr(task, "thinking", None)
+    if thinking is None:
+        return
+    # Warn when the serving entry's own switch is spelled differently: the
+    # override would then not flip what the server flips by default.
+    vllm_args = (
+        getattr(getattr(model_spec, "device_model_spec", None), "vllm_args", None) or {}
+    )
+    raw_defaults = vllm_args.get("default-chat-template-kwargs")
+    if not raw_defaults:
+        return
+    try:
+        defaults = (
+            json.loads(raw_defaults)
+            if isinstance(raw_defaults, str)
+            else dict(raw_defaults)
+        )
+    except (TypeError, ValueError):
+        return
+    if defaults and task.thinking_kwarg not in defaults:
+        logger.warning(
+            "%s: thinking=%s sets chat_template_kwargs[%r], but the serving entry's "
+            "default-chat-template-kwargs uses %s; set thinking_kwarg to match",
+            task.task_name,
+            thinking,
+            task.thinking_kwarg,
+            sorted(defaults),
+        )
+
+
 def build_eval_command(
     task: "EvalTask",
     model_spec,
@@ -180,6 +290,7 @@ def build_eval_command(
     service_port,
     runtime_config=None,
     deploy_url: str = "http://127.0.0.1",
+    tokenizer_path: Optional[str] = None,
 ) -> List[str]:
     """Build the lm_eval / lmms-eval command for one standard eval task."""
     if task.workflow_venv_type == WorkflowVenvType.EVALS_AGENTIC:
@@ -232,8 +343,11 @@ def build_eval_command(
     device_max_context = getattr(
         getattr(model_spec, "device_model_spec", None), "max_context", None
     )
+    effective_model_kwargs = _effective_model_kwargs(task, device_max_context)
     effective_gen_kwargs = _clamp_max_gen_toks(
-        task.gen_kwargs, device_max_context, task.task_name
+        task.gen_kwargs,
+        effective_model_kwargs.get("max_length"),
+        task.task_name,
     )
     if getattr(task, "propagate_seed_to_gen_kwargs", True):
         effective_gen_kwargs = _inject_seed_into_gen_kwargs(
@@ -249,6 +363,11 @@ def build_eval_command(
     eval_max_retries = getattr(
         getattr(model_spec, "device_model_spec", None), "eval_max_retries", None
     )
+    if getattr(task, "max_attempts", None) is not None:
+        # max_attempts is a TOTAL attempt count including the first. lm-eval's
+        # max_retries counts only the retries after it, so passing the total
+        # straight through gives one attempt too many (max_attempts=1 -> 2).
+        eval_max_retries = task.max_attempts - 1
     if (
         eval_max_retries is not None
         and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
@@ -280,9 +399,28 @@ def build_eval_command(
         lm_eval_exec = task_venv_path / "bin" / "lm_eval"
 
     lm_eval_prefix = [str(lm_eval_exec)]
+    request_body = resolve_request_body(task)
+    if request_body:
+        _check_request_overrides_supported(task, request_body, model_spec)
+        # One wrapper covers every payload patch for a task that opts into
+        # request overrides (body, seed drop, reasoning capture). Tasks without
+        # an override keep their existing launch path untouched, including the
+        # capture_reasoning flag, which the plain lm_eval entry point does not
+        # act on.
+        lm_eval_prefix = [
+            str(task_venv_path / "bin" / "python"),
+            str(Path(__file__).with_name("lm_eval_request_overrides.py")),
+            "--request-body",
+            json.dumps(request_body, sort_keys=True),
+        ]
+        if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+            lm_eval_prefix.append("--drop-server-seed")
+        if getattr(task, "capture_reasoning", False):
+            lm_eval_prefix.append("--preserve-reasoning")
+        lm_eval_prefix.append("--")
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993
-    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+    elif not getattr(task, "propagate_seed_to_gen_kwargs", True):
         if task.workflow_venv_type in [
             WorkflowVenvType.EVALS_VISION,
             WorkflowVenvType.EVALS_AUDIO,
@@ -300,7 +438,9 @@ def build_eval_command(
             str(Path(__file__).with_name("lm_eval_no_server_seed.py")),
         ]
 
-    model_kwargs_list = [f"{k}={v}" for k, v in task.model_kwargs.items()]
+    if tokenizer_path is not None:
+        effective_model_kwargs["tokenizer"] = tokenizer_path
+    model_kwargs_list = [f"{k}={v}" for k, v in effective_model_kwargs.items()]
     model_kwargs_list += optional_model_args
     model_kwargs_str = ",".join(model_kwargs_list)
 

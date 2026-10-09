@@ -314,6 +314,7 @@ class TrainingLoraRunner(BaseDeviceRunner):
 
                     running_loss += loss.item()
                     global_step += 1
+                    request.touch_progress()
 
                     # Training metrics
                     if global_step % request.steps_freq == 0:
@@ -496,5 +497,6 @@ class TrainingLoraRunner(BaseDeviceRunner):
 
                 total_val_loss += loss.item()
                 num_val_batches += 1
+                request.touch_progress()
 
         return total_val_loss / num_val_batches if num_val_batches > 0 else 0.0

@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import shutil
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -23,7 +24,9 @@ from typing import List, Optional, Tuple
 from utils.url_helpers import uses_remote_base_url
 
 from ..config import DriverContext, LLMRunConfig, ServerConnection
+from ..goodput import VLLM_GOODPUT_KEYS, render_goodput
 from ..parsers.vllm import VLLMBenchParser
+from ..fixed_workload_protocol import validate_fixed_workload
 from ._subprocess import load_json, run_command, safe_filename_part
 from .base import DriverResult, LLMDriver
 
@@ -34,6 +37,11 @@ def _resolve_auth_token(server: ServerConnection) -> str:
     return (
         server.auth_token or os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or ""
     )
+
+
+def benchmark_cache_salt(config: LLMRunConfig) -> str:
+    """A prefix-cache salt unique to this sweep point and driver invocation."""
+    return f"bench-isl{config.isl}-osl{config.osl}-c{config.max_concurrency}-{uuid.uuid4().hex[:12]}"
 
 
 def build_vllm_bench_serve_argv(
@@ -76,11 +84,29 @@ def build_vllm_bench_serve_argv(
         str(result_filename),
     ]
 
-    if config.goodput:
+    goodput = render_goodput(config.goodput, VLLM_GOODPUT_KEYS)
+    if goodput:
         # --goodput takes space-separated KEY:VALUE SLO pairs as separate
         # argv tokens (nargs="+"; keys ttft/tpot/e2el, milliseconds). With
         # it the result JSON gains request_goodput (good requests/sec).
-        cmd.extend(["--goodput", *config.goodput.split()])
+        cmd.extend(["--goodput", *goodput.split()])
+
+    if config.token_timing:
+        cmd.extend(
+            [
+                "--ignore-eos",
+                "--tokenizer",
+                server.tokenizer,
+                "--random-range-ratio",
+                "0.0",
+                "--seed",
+                "0",
+                "--request-rate",
+                "inf",
+                "--num-warmups",
+                "0",
+            ]
+        )
 
     if config.custom_dataset_path is not None:
         cmd.extend(
@@ -116,6 +142,10 @@ def build_vllm_bench_serve_argv(
     if server.tokenizer_trust_remote_code or is_remote_base_url:
         cmd.append("--trust-remote-code")
 
+    extra_body = {"seed": 42} if config.token_timing else {}
+    # Benchmarks run with the prefix cache effectively off for their own
+    # requests (see LLMRunConfig.cache_salt); the server keeps its default.
+    extra_body["cache_salt"] = config.cache_salt or benchmark_cache_salt(config)
     if is_remote_base_url:
         cmd.extend(["--base-url", server.url_with_port])
         cmd.extend(["--ready-check-timeout-sec", "0"])
@@ -123,12 +153,10 @@ def build_vllm_bench_serve_argv(
             headers.append(f"Authorization=Bearer {auth_token}")
     else:
         cmd.extend(["--host", server.host, "--port", str(server.service_port)])
-        cmd.extend(
-            [
-                "--extra-body",
-                json.dumps({"truncate_prompt_tokens": config.isl}),
-            ]
-        )
+        extra_body["truncate_prompt_tokens"] = config.isl
+
+    if extra_body:
+        cmd.extend(["--extra-body", json.dumps(extra_body)])
 
     # vllm bench serve defines --header with nargs="*"; pass all headers on one flag.
     cmd.extend(["--header", *headers])
@@ -149,7 +177,7 @@ class VLLMBenchDriver(LLMDriver):
         context: DriverContext,
     ) -> DriverResult:
         context.output_dir.mkdir(parents=True, exist_ok=True)
-        run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")
         result_filename = context.output_dir / (
             f"benchmark_{safe_filename_part(server.model)}_{run_ts}"
             f"_isl-{config.isl}_osl-{config.osl}"
@@ -163,12 +191,39 @@ class VLLMBenchDriver(LLMDriver):
             result_filename=result_filename,
         )
 
+        binary = Path(shutil.which(self.vllm_binary) or self.vllm_binary)
+        if config.token_timing:
+            cmd = [
+                str(binary.parent / "python"),
+                str(Path(__file__).parents[1] / "vllm_token_timing.py"),
+                *cmd[1:],
+            ]
+        else:
+            # Every request gets its own prefix-cache salt (LLMRunConfig.cache_salt +
+            # llm_module/vllm_bench_cache_off.py): vllm bench serve sends an untimed
+            # test request with the first prompt, and under one per-invocation salt
+            # the measured prompt 0 would hit the blocks that request just filled.
+            cmd = [
+                str(binary.parent / "python"),
+                str(Path(__file__).parents[1] / "vllm_bench_cache_off.py"),
+                *cmd[1:],
+            ]
+
         env = dict(context.extra_env)
         if auth_token:
             env["OPENAI_API_KEY"] = auth_token
 
         rc = run_command(cmd, env=env, timeout_s=context.per_run_timeout_s)
         raw = load_json(result_filename) if rc == 0 else None
+        if raw is not None and config.token_timing:
+            raw["tt_timing_protocol"] = "first-to-last-nonempty-content"
+            try:
+                validate_fixed_workload(raw, config)
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.error(
+                    "Invalid fixed-workload evidence in %s: %s", result_filename, exc
+                )
+                rc = 1
         if raw is not None and config.output_block_size > 1:
             raw["tt_output_block_size"] = config.output_block_size
         return DriverResult(return_code=rc, raw=raw, raw_path=result_filename)

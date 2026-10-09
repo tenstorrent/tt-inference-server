@@ -22,8 +22,6 @@ from telemetry.prometheus_metrics import PrometheusMetrics
 from utils.job_manager import get_job_manager
 
 env = os.getenv("ENVIRONMENT", "production")
-# TODO load proper development later
-env = "development"
 
 
 @asynccontextmanager

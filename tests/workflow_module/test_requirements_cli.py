@@ -73,12 +73,13 @@ def test_requirements_mode_defaults_device_when_no_hardware(monkeypatch, tmp_pat
     # to the requirements default (the endpoint is chosen by --server-url, not
     # the device).
     doc = {
-        "schemaVersion": "2.1.0",
+        "schemaVersion": "3.1.0",
         "id": "no-hw",
         "model": {"name": "acme/tiny-llm", "contextLength": 4096},
         "deployment": {"maxConcurrencyPerInstance": 8},
-        "accuracyEvals": [],
-        "scenarios": [],
+        "stages": [
+            {"key": "stage-1", "name": "Stage 1", "progress": {"status": "not_started"}}
+        ],
     }
     path = tmp_path / "no-hw.json"
     path.write_text(json.dumps(doc))
@@ -112,12 +113,20 @@ def test_non_requirements_mode_still_gates_unknown_model(monkeypatch):
 def test_unknown_accuracy_eval_fails_at_parse_time(monkeypatch, tmp_path):
     """A mistyped eval name is a CLI usage error, not a mid-run crash."""
     doc = {
-        "schemaVersion": "2.1.0",
+        "schemaVersion": "3.1.0",
         "id": "bad-eval",
         "model": {"name": "acme/tiny-llm", "contextLength": 4096},
         "deployment": {"maxConcurrencyPerInstance": 8},
-        "accuracyEvals": [{"name": "GPQA Diamnd"}],  # typo
-        "scenarios": [],
+        "stages": [
+            {
+                **{
+                    "key": "stage-1",
+                    "name": "Stage 1",
+                    "progress": {"status": "not_started"},
+                },
+                "accuracyEvals": [{"name": "GPQA Diamnd"}],
+            }
+        ],
     }
     path = tmp_path / "bad-eval.json"
     path.write_text(json.dumps(doc))
@@ -238,3 +247,67 @@ def test_validation_accepts_the_off_catalog_requirements_model(
     args = _run_py_args(monkeypatch, "--workflow", "release")
     runtime_config, model_spec = run.resolve_runtime(args)
     validate_runtime_args(model_spec, runtime_config)
+
+
+# --- the llm-gauntlet misfile guard ----------------------------------------
+#
+# CI synthesizes the document path from the model under test
+# (specs/<customer>/<org>/<model> or specs/<customer>/<model>), so a document
+# filed under the wrong folder would gate one model's endpoint on another
+# model's criteria.
+
+
+def _doc_named(name: str):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(model=SimpleNamespace(name=name))
+
+
+@pytest.mark.parametrize(
+    "folder, model_name",
+    [
+        ("Qwen/Qwen3-32B", "Qwen/Qwen3-32B"),
+        ("moonshotai/Kimi-K2.7-Code", "moonshotai/Kimi-K2.7-Code"),
+        # The bare model name, without the org folder, also matches.
+        ("Qwen3-32B", "Qwen/Qwen3-32B"),
+        # Case drift in the folder is not a misfile.
+        ("qwen/qwen3-32b", "Qwen/Qwen3-32B"),
+        ("qwen3-32b", "Qwen/Qwen3-32B"),
+        # A document model with no org prefix still matches.
+        ("gpt-oss-120b", "gpt-oss-120b"),
+    ],
+)
+def test_folder_matching_the_document_model_is_not_misfiled(folder, model_name):
+    from workflows.requirements_cli import misfiled_gauntlet_document
+
+    path = f"/clone/specs/tt-internal/{folder}/x.json"
+
+    assert misfiled_gauntlet_document(path, _doc_named(model_name)) is None
+
+
+def test_folder_disagreeing_with_the_document_model_is_reported():
+    from workflows.requirements_cli import misfiled_gauntlet_document
+
+    path = "/clone/specs/tt-internal/Qwen/Qwen3-32B/x.json"
+
+    message = misfiled_gauntlet_document(path, _doc_named("moonshotai/Kimi-K2.7-Code"))
+
+    # Both halves must be named: the message is the only signal an operator gets.
+    assert message is not None
+    assert "moonshotai/Kimi-K2.7-Code" in message
+    assert "Qwen/Qwen3-32B" in message
+
+
+def test_a_plain_path_is_never_checked_for_misfiling(monkeypatch):
+    """The folder convention belongs to llm-gauntlet, not to every path.
+
+    The fixture lives in a `requirements/` directory and names gpt-oss-120b, so
+    it would fail the folder check -- loading it must not apply one.
+    """
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        _argv("--workflow", "benchmarks", "--requirements-json", str(_FIXTURE)),
+    )
+
+    assert run_workflows.parse_args().requirements_doc is not None

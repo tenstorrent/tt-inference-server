@@ -20,6 +20,28 @@
             }
         ]
     },
+    "Qwen/Qwen3.8-27B": {
+        "p300x2": [
+            {
+                "_comment": "QB2 128/128 target measured by the dedicated Qwen3.8 demo.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 62.0,
+                        "tput_user": 41.0,
+                        "tput": 41.0
+                    }
+                }
+            }
+        ]
+    },
     "Qwen/Qwen3-VL-32B-Instruct": {
         "t3k": [
             {
@@ -689,6 +711,72 @@
                         "ttft_ms": 30.0,
                         "tput_user": 37.0,
                         "tput": 37.0
+                    }
+                }
+            }
+        ],
+        "p300x2": [
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 28.56452900596196,
+                        "tput_user": 131.33333944432843,
+                        "tput": 128.54095972855552,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 118.30671374627855,
+                        "tput_user": 124.4585693916049,
+                        "tput": 112.35282654083353,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 572.5038492601016,
+                        "tput_user": 116.03800663797645,
+                        "tput": 76.72195272153921,
+                        "tolerance": 0.05
+                    }
+                }
+            },
+            {
+                "impl": "llama31_8b_qb2",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 32,
+                "task_type": "text",
+                "targets": {
+                    "measured": {
+                        "ttft_ms": 3434.264019902912,
+                        "tput_user": 86.02750749207902,
+                        "tput": 833.3898513096682,
+                        "tolerance": 0.05
                     }
                 }
             }
@@ -6971,6 +7059,247 @@
             }
         ]
     },
+    "google/gemma-4-31B-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 26.74,
+                        "tput": 26.2
+                    },
+                    "measured": {
+                        "ttft_ms": 129.6,
+                        "tput_user": 26.74,
+                        "tput": 26.2,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 20.17,
+                        "tput": 435.3
+                    },
+                    "measured": {
+                        "ttft_ms": 3112.4,
+                        "tput_user": 20.17,
+                        "tput": 435.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 25.56,
+                        "tput": 23.1
+                    },
+                    "measured": {
+                        "ttft_ms": 581.9,
+                        "tput_user": 25.56,
+                        "tput": 23.1,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 25.37,
+                        "tput": 16.6
+                    },
+                    "measured": {
+                        "ttft_ms": 2726.3,
+                        "tput_user": 25.37,
+                        "tput": 16.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 24.62,
+                        "tput": 6.5
+                    },
+                    "measured": {
+                        "ttft_ms": 14420.4,
+                        "tput_user": 24.62,
+                        "tput": 6.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769767325 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 25.41,
+                        "tput": 25.0
+                    },
+                    "measured": {
+                        "ttft_ms": 118.2,
+                        "tput_user": 25.41,
+                        "tput": 25.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 18.73,
+                        "tput": 1804.4
+                    },
+                    "measured": {
+                        "ttft_ms": 2285.9,
+                        "tput_user": 18.73,
+                        "tput": 1804.4,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 24.47,
+                        "tput": 22.3
+                    },
+                    "measured": {
+                        "ttft_ms": 546.7,
+                        "tput_user": 24.47,
+                        "tput": 22.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 23.5,
+                        "tput": 16.5
+                    },
+                    "measured": {
+                        "ttft_ms": 2351.0,
+                        "tput_user": 23.5,
+                        "tput": 16.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 20.26,
+                        "tput": 7.5
+                    },
+                    "measured": {
+                        "ttft_ms": 10728.3,
+                        "tput_user": 20.26,
+                        "tput": 7.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769772176 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            }
+        ]
+    },
     "gemma-4-12B-it": {
         "p300x2": [
             {
@@ -7042,6 +7371,247 @@
                         "tput": 700
                     }
                 }
+            }
+        ]
+    },
+    "google/gemma-4-12B-it": {
+        "p300x2": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 45.2,
+                        "tput": 44.4
+                    },
+                    "measured": {
+                        "ttft_ms": 75.8,
+                        "tput_user": 45.2,
+                        "tput": 44.4,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 31.61,
+                        "tput": 717.7
+                    },
+                    "measured": {
+                        "ttft_ms": 1688.6,
+                        "tput_user": 31.61,
+                        "tput": 717.7,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 43.36,
+                        "tput": 39.2
+                    },
+                    "measured": {
+                        "ttft_ms": 332.3,
+                        "tput_user": 43.36,
+                        "tput": 39.2,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 42.9,
+                        "tput": 29.3
+                    },
+                    "measured": {
+                        "ttft_ms": 1402.7,
+                        "tput_user": 42.9,
+                        "tput": 29.3,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 41.31,
+                        "tput": 13.0
+                    },
+                    "measured": {
+                        "ttft_ms": 6736.6,
+                        "tput_user": 41.31,
+                        "tput": 13.0,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37769777681 (2026-10-08, BH-Quietbox-2): prefix cache off per request (cache_salt), server warmed by the prefill ladder, no per-point warmups. Tolerance 0.2."
+            }
+        ],
+        "blackhole_galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 44.19,
+                        "tput": 43.4
+                    },
+                    "measured": {
+                        "ttft_ms": 72.0,
+                        "tput_user": 44.19,
+                        "tput": 43.4,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 30.03,
+                        "tput": 2999.6
+                    },
+                    "measured": {
+                        "ttft_ms": 1219.4,
+                        "tput_user": 30.03,
+                        "tput": 2999.6,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            },
+            {
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 41.99,
+                        "tput": 38.5
+                    },
+                    "measured": {
+                        "ttft_ms": 296.7,
+                        "tput_user": 41.99,
+                        "tput": 38.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            },
+            {
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 39.75,
+                        "tput": 28.7
+                    },
+                    "measured": {
+                        "ttft_ms": 1261.2,
+                        "tput_user": 39.75,
+                        "tput": 28.7,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            },
+            {
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "data_parallel": 4,
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 32.68,
+                        "tput": 13.5
+                    },
+                    "measured": {
+                        "ttft_ms": 5572.9,
+                        "tput_user": 32.68,
+                        "tput": 13.5,
+                        "tolerance": 0.2
+                    }
+                },
+                "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
             }
         ]
     }

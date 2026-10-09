@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple
 
+from utils.pinned_artifacts import get_pinned_revision
 from workflows.log_setup import clean_log_file
 from workflows.multihost_orchestrator import (
     MultiHostOrchestrator,
@@ -560,6 +561,15 @@ def generate_docker_run_command(
         docker_command.extend([
             "--mount", f"type=bind,src={setup_config.host_model_weights_mount_dir},dst={setup_config.container_model_weights_mount_dir},readonly"
         ])
+        # New Hub caches can link repo blobs to a cache-wide sibling store.
+        # Keep that relative link chain valid inside the read-only mounts.
+        if setup_config.host_model_weights_snapshot_dir and get_pinned_revision(model_spec):
+            shared_blobs = setup_config.host_model_weights_mount_dir.parent / "blobs"
+            if shared_blobs.is_dir():
+                container_shared_blobs = setup_config.container_model_weights_mount_dir.parent / "blobs"
+                docker_command.extend([
+                    "--mount", f"type=bind,src={shared_blobs},dst={container_shared_blobs},readonly"
+                ])
 
     if quetzal_package_mount:
         docker_command.extend([
@@ -568,6 +578,13 @@ def generate_docker_run_command(
             f"src={quetzal_package_mount.host_root},"
             f"dst={quetzal_package_mount.runtime_root},readonly",
         ])
+        for auxiliary in quetzal_package_mount.auxiliary:
+            docker_command.extend([
+                "--mount",
+                "type=bind,"
+                f"src={auxiliary.host_root},"
+                f"dst={auxiliary.runtime_root},readonly",
+            ])
 
     if runtime_config.interactive:
         docker_command.append("-itd")
@@ -723,11 +740,11 @@ def run_docker_command(
         docker_log_file_path: Path to the docker log file
 
     Returns:
-        Dict with container_name, container_id, docker_log_file_path, service_port
+        Dict with container identity, foreground process, log path, and service port.
     """
     docker_log_file = open(docker_log_file_path, "w", buffering=1)
     logger.info(f"Running docker container with log file: {docker_log_file_path}")
-    _ = subprocess.Popen(
+    docker_process = subprocess.Popen(
         docker_command, stdout=docker_log_file, stderr=docker_log_file, text=True
     )
 
@@ -784,6 +801,7 @@ def run_docker_command(
     return {
         "container_name": container_name,
         "container_id": container_id,
+        "process": docker_process,
         "docker_log_file_path": str(docker_log_file_path),
         "service_port": runtime_config.service_port,
     }

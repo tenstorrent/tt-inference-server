@@ -8,20 +8,24 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from glob import glob
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 from llm_module import HttpServerController, RemoteOpenAIController
+from llm_module.request_overrides import resolve_request_body
 from llm_module.eval_command import build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
+from utils.pinned_artifacts import get_pinned_revision, resolve_tokenizer
 from workflow_module import accept_blocks
-from workflow_module.engine_types import EvalLimitMode
+from workflow_module.engine_types import EvalLimitMode, WorkflowVenvType
 from workflow_module.proc import run_command
 from workflow_module.target_pack import get_target_pack
 
@@ -34,6 +38,10 @@ logger = logging.getLogger(__name__)
 # value comes from DeviceModelSpec.tensor_cache_timeout (first-compile/warmup for
 # large forge LLMs can exceed 1200s); bump it per model in the model spec.
 _DEFAULT_WAIT_HEALTHY_TIMEOUT_S = 3600.0
+
+
+# `timeout` convention: a process killed at its deadline exits 124.
+_DEADLINE_RC = 124
 
 
 def _limit_mode(ctx: MediaContext):
@@ -74,69 +82,136 @@ def discover_eval_results(output_path, model_spec) -> List[str]:
     return sorted(set(files))
 
 
-def _extract_json(json_path: Path):
+def _extract_json(
+    json_path: Path,
+) -> tuple[str, dict, int | None, dict, dict]:
     with json_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("eval results must be an object")  # noqa: TRY004 -- invalid file data
 
-    results = data.get("results", {})
-    configs = data.get("configs", {})
+    results = data.get("results")
+    configs = data.get("configs")
+    if not isinstance(results, dict) or not results:
+        raise ValueError("results must be a non-empty object")
+    if not isinstance(configs, dict) or not configs:
+        raise ValueError("configs must be a non-empty object")
+    if any(not isinstance(config, dict) for config in configs.values()):
+        raise ValueError("each task config must be an object")
 
-    first_key = list(results.keys())[0]
+    task_name = next(iter(results))
+    metrics = results[task_name]
+    if not isinstance(metrics, dict):
+        raise ValueError(f"metrics for {task_name} must be an object")  # noqa: TRY004 -- invalid file data
+    config = configs.get(task_name, {})
+    if config.get("task", task_name) != task_name:
+        raise ValueError(f"task name mismatch for {task_name}")
+    first_config = next(iter(configs.values()))
+    if "dataset_path" not in first_config or any(
+        config.get("dataset_path") != first_config["dataset_path"]
+        for config in configs.values()
+    ):
+        raise ValueError("task configs must share a dataset_path")
 
-    first_results = results[first_key]
-    extracted_metrics = {
-        k: v
-        for k, v in first_results.items()
-        if "alias" not in k and "_stderr" not in k
+    metrics = {
+        k: v for k, v in metrics.items() if "alias" not in k and "_stderr" not in k
     }
-    extracted = [{first_key: extracted_metrics}]
-
-    config = configs.get(first_key, {})
-    task_name = config.get("task", first_key)
-
-    dataset_path = list(configs.values())[0]["dataset_path"]
-    for config in configs.values():
-        assert dataset_path == config.get("dataset_path")
-    assert task_name == first_key, f"Task name mismatch: {task_name} != {first_key}"
-
-    return extracted, {"task_name": task_name, "dataset_path": dataset_path}
-
-
-def merge_eval_results(files) -> dict:
-    """Merge per-task lm-eval result files into one {task_name: metrics} dict."""
-    files = sorted(files, key=lambda f: Path(f).stat().st_mtime, reverse=True)
-    results: dict = {}
-    for json_file in files:
-        res, _meta = _extract_json(Path(json_file))
-        for task_dict in res:
-            for specific_task_name, metrics in task_dict.items():
-                results.setdefault(specific_task_name, metrics)
-    return results
+    sample_counts = data.get("n-samples")
+    sample_info = (
+        sample_counts.get(task_name) if isinstance(sample_counts, dict) else None
+    )
+    count = sample_info.get("effective") if isinstance(sample_info, dict) else None
+    if not isinstance(count, int) or isinstance(count, bool):
+        count = None
+    # A group task (e.g. leaderboard_math_hard) writes its subtasks as sibling
+    # entries in the same file; score_multilevel_keys_mean reads them by name.
+    subtasks = {
+        name: {k: v for k, v in sub.items() if "alias" not in k and "_stderr" not in k}
+        for name, sub in results.items()
+        if name != task_name and isinstance(sub, dict)
+    }
+    entry_counts = _entry_sample_counts(data)
+    if count is None:
+        count = entry_counts.get(task_name)
+    return task_name, metrics, count, subtasks, entry_counts
 
 
-def collect_sample_counts(files) -> dict:
-    """Map task_name -> effective sample count from lm-eval result JSONs.
+def _effective_count(info) -> Optional[int]:
+    count = info.get("effective") if isinstance(info, dict) else None
+    if isinstance(count, int) and not isinstance(count, bool) and count > 0:
+        return count
+    return None
 
-    Used for the sample-count-aware acceptance check on CI/limit-mode subsets.
-    lm-eval writes ``n-samples: {task: {original, effective}}``; ``effective`` is
-    the count actually scored (after ``--limit``). Returns ``{}`` for formats
-    without this field (e.g. some lmms-eval outputs), in which case scoring falls
-    back to the ratio check.
+
+def _entry_sample_counts(data: dict) -> dict:
+    """Effective sample count of every results entry whose count is known.
+
+    lm-eval writes ``n-samples`` for leaf tasks only. A group's count is the
+    sum of its leaves (walked through ``group_subtasks``), and only when every
+    leaf's count is known; otherwise the group is left out, never guessed.
     """
-    counts: dict = {}
+    raw = data.get("n-samples")
+    counts = {}
+    if isinstance(raw, dict):
+        for name, info in raw.items():
+            count = _effective_count(info)
+            if count is not None:
+                counts[name] = count
+    groups = data.get("group_subtasks")
+    if not isinstance(groups, dict):
+        return counts
+
+    def leaf_total(name, seen):
+        if name in counts:
+            return counts[name]
+        children = groups.get(name)
+        if not isinstance(children, list) or not children or name in seen:
+            return None
+        totals = [leaf_total(child, seen | {name}) for child in children]
+        if any(total is None for total in totals):
+            return None
+        return sum(totals)
+
+    for group in groups:
+        total = leaf_total(group, frozenset())
+        if total is not None:
+            counts.setdefault(group, total)
+    return counts
+
+
+def load_eval_results(files) -> tuple[dict, dict]:
+    """Read each file once; use the newest valid metrics and count for each task.
+
+    Missing sample counts stay absent so scoring can use its ratio fallback.
+    Invalid files are skipped without preventing other tasks from running.
+    """
+    loaded = []
     for json_file in files:
         try:
-            with Path(json_file).open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, json.JSONDecodeError):
+            path = Path(json_file)
+            modified = path.stat().st_mtime
+            loaded.append((modified, _extract_json(path)))
+        except (OSError, ValueError) as exc:
+            logger.warning("Skipping invalid eval results %s: %s", json_file, exc)
+
+    results: dict = {}
+    counts: dict = {}
+    for _, (task_name, metrics, count, subtasks, entry_counts) in sorted(
+        loaded, key=lambda item: item[0], reverse=True
+    ):
+        if task_name in results:
             continue
-        for task_name, info in (data.get("n-samples", {}) or {}).items():
-            if task_name in counts or not isinstance(info, dict):
+        results[task_name] = metrics
+        if count is not None:
+            counts[task_name] = count
+        for name, sub_metrics in subtasks.items():
+            if name in results:
                 continue
-            eff = info.get("effective")
-            if isinstance(eff, int):
-                counts[task_name] = eff
-    return counts
+            # A subtask's metrics and its count come from the same file.
+            results[name] = sub_metrics
+            if name in entry_counts:
+                counts.setdefault(name, entry_counts[name])
+    return results, counts
 
 
 # --- scoring one task's results into Block(kind="evals") ---------------------
@@ -149,24 +224,184 @@ def _target_keys(task, results: dict) -> List[str]:
     return sorted(k for k in results if k.startswith(prefix))
 
 
+def _multilevel_key_resolves(results: dict, keys: tuple) -> bool:
+    """A tuple result key (score_multilevel_keys_mean) is a path walked from
+    the top-level results, e.g. ("leaderboard_math_algebra_hard",
+    "exact_match,none") -- not a key of the group's own entry."""
+    node = results
+    for key in keys:
+        if not isinstance(node, dict) or key not in node:
+            return False
+        node = node[key]
+    return True
+
+
+# --- noise-aware acceptance for low-baseline accuracy tasks ------------------
+#
+# The ratio rule (score / reference >= 1 - tolerance, tolerance 0.05) is a
+# relative bar. For a task whose reference is in the single digits, 5% of the
+# reference is smaller than the sampling noise of the score itself: Llama-3.2-3B
+# leaderboard_ifeval scored 9.43 then 8.32 on the same 541 prompts (about 1 SE)
+# and the ratio went 1.02 -> 0.90. So a task also PASSES when its shortfall is
+# within NOISE_Z binomial standard errors of the reference:
+#
+#     reference - score <= NOISE_Z * 100 * sqrt(p * (1 - p) / n),
+#     p = reference / 100
+#
+# NOISE_Z is fixed in advance at 1.96 (two-sided 95%, one-sided 97.5%) and is
+# never fitted to observed scores. Only the reference's own sampling error is
+# counted, not the run's, so the bar is the stricter of the two natural
+# choices (a two-sample test would widen it by sqrt(2)). For a high-baseline
+# task the term is small next to 5% of the reference, so the ratio rule still
+# decides there.
+#
+# The binomial model is valid only where every sample scores 0 or 1, so the
+# rule applies only when:
+#   * the unit is percent and every configured metric is one of
+#     BINOMIAL_METRICS (per-sample correct/incorrect), and
+#   * n is known: the scored entry's effective sample count (a group's count is
+#     the sum of its leaves), or, for an unweighted mean of k subtask
+#     proportions (score_multilevel_keys_mean, e.g. leaderboard_math_hard), the
+#     effective n of that mean, k**2 / sum(1 / n_i), with p taken at the
+#     reference for every subtask.
+# Everything else is graded by the ratio rule alone. That excludes continuous
+# per-sample metrics (LongBench F1 / ROUGE / "score", ANLS, WER, relaxed
+# accuracy) and instruction-level IFEval accuracy, whose unit is the
+# instruction while n counts prompts. For a [0, 1]-bounded per-sample metric
+# the binomial SE is only an upper bound on the true SE (Bhatia-Davis), so
+# using it there would loosen the bar by an unknown amount.
+NOISE_Z = 1.96
+
+BINOMIAL_METRICS = frozenset(
+    {
+        "acc",
+        "acc_norm",
+        "exact_match",
+        "prompt_level_strict_acc",
+        "prompt_level_loose_acc",
+        "pass_at_1",
+        "pass@1",
+    }
+)
+
+RULE_RATIO = "ratio"
+RULE_WITHIN_NOISE = "within_noise"
+RULE_FAIL = "fail"
+RULE_NA = "na"
+
+
+def _metric_name(key) -> str:
+    return str(key).split(",", 1)[0]
+
+
+def binomial_noise_n(
+    result_keys, t_key: str, sample_counts: Optional[dict]
+) -> Optional[float]:
+    """The n of a binomial-eligible score, or None when the rule does not apply.
+
+    ``result_keys`` are the score function's configured keys: one plain metric
+    key on ``t_key`` (n is ``t_key``'s count), or (subtask, metric) paths whose
+    unweighted mean is the score (n is k**2 / sum(1 / n_i)). Any other shape --
+    a mean of several metrics on one entry, a non-binomial metric, an unknown
+    count -- returns None.
+    """
+    counts = sample_counts or {}
+    keys = list(result_keys or [])
+    if not keys:
+        return None
+
+    def known(count) -> bool:
+        return isinstance(count, int) and not isinstance(count, bool) and count > 0
+
+    if all(isinstance(k, str) for k in keys):
+        if len(keys) != 1 or _metric_name(keys[0]) not in BINOMIAL_METRICS:
+            return None
+        count = counts.get(t_key)
+        return float(count) if known(count) else None
+    if all(isinstance(k, tuple) and len(k) == 2 for k in keys):
+        if any(_metric_name(metric) not in BINOMIAL_METRICS for _, metric in keys):
+            return None
+        sizes = [counts.get(name) for name, _ in keys]
+        if not all(known(size) for size in sizes):
+            return None
+        return len(sizes) ** 2 / sum(1.0 / size for size in sizes)
+    return None
+
+
+def noise_aware_check(
+    ratio_pass: Optional[bool],
+    score: float,
+    reference: Optional[float],
+    n: Optional[float],
+    z: float = NOISE_Z,
+) -> Tuple[Optional[bool], str, Optional[float]]:
+    """Apply the noise-aware rule on top of the ratio rule's verdict.
+
+    Returns ``(passed, rule, se)``: ``rule`` is ``ratio`` when the ratio rule
+    passed, ``within_noise`` when only the noise rule passed, ``fail`` when
+    neither did, and ``na`` when there is no reference to grade against.
+    ``se`` is the binomial SE in percentage points at the reference, or None
+    when the rule does not apply (no n, or a reference outside (0, 100]).
+    """
+    if ratio_pass is None:
+        return None, RULE_NA, None
+    se = None
+    if n and reference is not None and 0 < reference <= 100:
+        p = reference / 100.0
+        se = 100.0 * math.sqrt(p * (1.0 - p) / n)
+    if ratio_pass:
+        return True, RULE_RATIO, se
+    if se is not None and reference - score <= z * se:
+        return True, RULE_WITHIN_NOISE, se
+    return False, RULE_FAIL, se
+
+
 def _score_one(
-    task, results: dict, t_key: str, ref: dict, n_total=None
+    task,
+    results: dict,
+    t_key: str,
+    ref: dict,
+    n_total=None,
+    sample_counts: Optional[dict] = None,
 ) -> Tuple[float, Union[float, str], Union[float, str], ReportCheckTypes]:
     """Compute (score, ratio_to_published, ratio_to_reference, accuracy_check)
-    for one task/subtask. Real copy of the v1 evals_release scoring.
+    for one task/subtask. See ``_grade_one`` for the arguments."""
+    score, ratio_pub, ratio_ref, check, _ = _grade_one(
+        task, results, t_key, ref, n_total=n_total, sample_counts=sample_counts
+    )
+    return score, ratio_pub, ratio_ref, check
+
+
+def _grade_one(
+    task,
+    results: dict,
+    t_key: str,
+    ref: dict,
+    n_total=None,
+    sample_counts: Optional[dict] = None,
+) -> Tuple[float, Union[float, str], Union[float, str], ReportCheckTypes, dict]:
+    """Compute (score, ratio_to_published, ratio_to_reference, accuracy_check,
+    noise_evidence) for one task/subtask. Real copy of the v1 evals_release
+    scoring, plus the noise-aware rule above.
 
     ``ref`` is the resolved reference dict from
     ``evals.eval_config.resolve_eval_reference`` (full-set or, under a limit
     mode, the matching subset reference). ``n_total`` is the effective sample
     count, used for the sample-count-aware acceptance check on subset
-    references."""
+    references. ``sample_counts`` maps results entries to effective sample
+    counts, for the noise-aware rule's n; ``{t_key: n_total}`` when omitted."""
     # Shallow-copy so kwargs["task_name"] = t_key doesn't mutate the shared
     # config dict for subsequent tasks in this process.
     kwargs = dict(task.score.score_func_kwargs)
     kwargs["task_name"] = t_key
     configured_keys = kwargs.get("result_keys", [])
     actual_data = results.get(t_key, {})
-    key_found = any(k in actual_data for k in configured_keys)
+    key_found = any(
+        _multilevel_key_resolves(results, k)
+        if isinstance(k, tuple)
+        else k in actual_data
+        for k in configured_keys
+    )
     if not key_found:
         valid_candidates = [
             k
@@ -180,10 +415,12 @@ def _score_one(
                 valid_candidates[0],
             )
             kwargs["result_keys"] = [valid_candidates[0]]
+    scoring_failed = False
     try:
         score = task.score.score_func(results, task_name=t_key, kwargs=kwargs)
     except Exception as e:
         logger.warning("  Could not calculate score for %s: %s", t_key, e)
+        scoring_failed = True
         # WER=100 is worst-case; score=0.0 would invert to 100 and wrongly pass.
         score = 100.0 if kwargs.get("unit") == "WER" else 0.0
     if kwargs.get("unit") == "WER":
@@ -202,19 +439,36 @@ def _score_one(
     if reference:
         ratio_to_reference: Union[float, str] = score / reference
         # Sample-count-aware for subset references, ratio for full-set.
-        accuracy_check = ReportCheckTypes.from_result(
-            get_target_pack().accept_eval_score(ref, score, n_total=n_total)
-        )
+        ratio_pass = get_target_pack().accept_eval_score(ref, score, n_total=n_total)
+        graded_against = reference
     else:
         ratio_to_reference = "N/A"
         if published:
-            accuracy_check = ReportCheckTypes.from_result(
-                ratio_to_published >= (1.0 - tolerance)
-            )
+            ratio_pass = ratio_to_published >= (1.0 - tolerance)
+            graded_against = published
         else:
-            accuracy_check = ReportCheckTypes.NA
+            ratio_pass = None
+            graded_against = None
 
-    return score, ratio_to_published, ratio_to_reference, accuracy_check
+    if sample_counts is None:
+        sample_counts = {t_key: n_total} if n_total else {}
+    # The noise rule needs a real binomial score in percent; a substituted
+    # score from a scoring error must fail on the ratio rule alone.
+    noise_n = (
+        binomial_noise_n(kwargs.get("result_keys"), t_key, sample_counts)
+        if kwargs.get("unit") == "percent" and not scoring_failed
+        else None
+    )
+    passed, rule, se = noise_aware_check(ratio_pass, score, graded_against, noise_n)
+    accuracy_check = ReportCheckTypes.from_result(passed)
+    evidence = {
+        "accuracy_rule": rule,
+        "noise_n": noise_n,
+        "noise_se": se,
+        "noise_z": NOISE_Z if se is not None else None,
+        "scoring_error": scoring_failed,
+    }
+    return score, ratio_to_published, ratio_to_reference, accuracy_check, evidence
 
 
 def blocks_for_task(
@@ -265,8 +519,13 @@ def blocks_for_task(
 
     blocks: List[Block] = []
     for t_key in target_keys:
-        score, ratio_pub, ratio_ref, accuracy_check = _score_one(
-            task, results, t_key, ref, n_total=sample_counts.get(t_key)
+        score, ratio_pub, ratio_ref, accuracy_check, evidence = _grade_one(
+            task,
+            results,
+            t_key,
+            ref,
+            n_total=sample_counts.get(t_key),
+            sample_counts=sample_counts,
         )
         data = {
             "task_name": t_key,
@@ -279,6 +538,7 @@ def blocks_for_task(
             "ratio_to_published": ratio_pub,
             "ratio_to_reference": ratio_ref,
             "accuracy_check": accuracy_check,
+            **evidence,
             "priority": getattr(task, "priority", "must"),
         }
         if mean_seconds_per_task is not None:
@@ -352,15 +612,32 @@ def _status_block(ctx: MediaContext, task, status: TestStatus, reason: str) -> B
 # --- running one task --------------------------------------------------------
 
 
-def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
+def _prepare_eval_tokenizer(ctx, task, output_path: Path):
+    if (
+        task.task_name.startswith("longbench_")
+        and task.workflow_venv_type == WorkflowVenvType.EVALS_COMMON
+        and get_pinned_revision(ctx.model_spec)
+    ):
+        return resolve_tokenizer(
+            ctx.model_spec,
+            output_path / f"eval_{ctx.model_spec.model_id}" / "longbench_protocol",
+        )
+    return None
+
+
+def _run_eval_task(
+    ctx: MediaContext, task, auth_token: str, *, output_path: Path
+) -> int:
+    tokenizer = _prepare_eval_tokenizer(ctx, task, output_path)
     cmd = build_eval_command(
         task,
         ctx.model_spec,
         _device_label(ctx),
-        ctx.output_path,
+        output_path,
         ctx.server_port,
         runtime_config=ctx.runtime_config,
         deploy_url=ctx.server_host,
+        tokenizer_path=tokenizer,
     )
     env = dict(os.environ)
     if auth_token:
@@ -384,7 +661,33 @@ def _run_eval_task(ctx: MediaContext, task, auth_token: str) -> int:
             "task=%s will preserve reasoning_content in sample logs.", task.task_name
         )
     logger.info("Running eval task=%s", task.task_name)
-    return run_command(command=cmd, logger=logger, env=env)
+    if (
+        getattr(task, "request_body", None)
+        or getattr(task, "thinking", None) is not None
+    ):
+        logger.info(
+            "Eval task=%s per-request overrides: thinking=%s request_body=%s",
+            task.task_name,
+            task.thinking,
+            resolve_request_body(task),
+        )
+    # Bound the whole subprocess tree when the task declares a deadline.
+    # Without passing this through, wall_clock_timeout_seconds is validated and
+    # documented but never reaches proc.run_command, so the bounded path is
+    # unreachable and the field has no effect at all.
+    timeout_seconds = getattr(task, "wall_clock_timeout_seconds", None)
+    if timeout_seconds is None:
+        return run_command(command=cmd, logger=logger, env=env)
+    logger.info(
+        "task=%s bounded at %ss wall clock; exceeding it yields rc=%d and an "
+        "incomplete task, never a score.",
+        task.task_name,
+        timeout_seconds,
+        _DEADLINE_RC,
+    )
+    return run_command(
+        command=cmd, logger=logger, env=env, timeout_seconds=timeout_seconds
+    )
 
 
 def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
@@ -422,10 +725,11 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
         )
         or _DEFAULT_WAIT_HEALTHY_TIMEOUT_S
     )
+    envelope = _envelope(ctx)
     if not server.wait_for_healthy(timeout=health_timeout):
         logger.error("⛔ inference server not healthy; aborting evals.")
         blocks = [_fail_block(ctx, t, "inference server not healthy") for t in tasks]
-        _accept(ctx, blocks)
+        _accept(blocks, envelope)
         return blocks
 
     # Trace capture is skipped for evals (it's a perf warm-up; eval correctness
@@ -433,10 +737,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     device_max_context = getattr(
         getattr(ctx.model_spec, "device_model_spec", None), "max_context", None
     )
-    ran_tasks = []
-    rc_by_task = {}
-    elapsed_seconds_by_task = {}
-    skipped_blocks: List[Block] = []
+    # Each task is scored and accepted as soon as it finishes: accepting is what
+    # checkpoints the report, so a job cancelled during task N keeps 1..N-1.
+    blocks: List[Block] = []
     for task in tasks:
         min_ctx = getattr(task, "min_context_required", None)
         if min_ctx and device_max_context and device_max_context < min_ctx:
@@ -445,7 +748,9 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 f"{device_max_context}"
             )
             logger.warning("⏭  Skipping %s: %s.", task.task_name, reason)
-            skipped_blocks.append(_status_block(ctx, task, TestStatus.SKIP, reason))
+            task_blocks = [_status_block(ctx, task, TestStatus.SKIP, reason)]
+            _accept(task_blocks, envelope)
+            blocks.extend(task_blocks)
             continue
         health = server.get_health()
         if getattr(health, "status_code", 200) != 200:
@@ -453,49 +758,80 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
                 "⛔ server unhealthy mid-eval (status %s); aborting.",
                 getattr(health, "status_code", "?"),
             )
-            rc_by_task[task.task_name] = 1
-            ran_tasks.append(task)
-            break
-        started_at = time.perf_counter()
-        rc_by_task[task.task_name] = _run_eval_task(ctx, task, auth_token)
-        elapsed_seconds_by_task[task.task_name] = time.perf_counter() - started_at
-        ran_tasks.append(task)
-
-    result_files = discover_eval_results(ctx.output_path, ctx.model_spec)
-    results = merge_eval_results(result_files)
-    sample_counts = collect_sample_counts(result_files)
-    blocks: List[Block] = list(skipped_blocks)
-    for task in ran_tasks:
-        task_blocks = blocks_for_task(
-            ctx,
-            task,
-            results,
-            sample_counts,
-            elapsed_seconds=elapsed_seconds_by_task.get(task.task_name),
-        )
-        if task_blocks:
+            task_blocks = [_fail_block(ctx, task, "inference server not healthy")]
+            _accept(task_blocks, envelope)
             blocks.extend(task_blocks)
+            break
+        # Keep each attempt's raw outputs, but never grade files from an older
+        # attempt when this subprocess fails or produces malformed results.
+        output_path = Path(ctx.output_path) / f"eval-attempt-{uuid.uuid4().hex}"
+        output_path.mkdir(parents=True)
+        started_at = time.perf_counter()
+        rc = _run_eval_task(ctx, task, auth_token, output_path=output_path)
+        elapsed_seconds = time.perf_counter() - started_at
+        if rc == _DEADLINE_RC:
+            # A task killed at its deadline is incomplete, not a score. Never
+            # let it reach the scorer: whatever partial result files landed on
+            # disk would otherwise be graded as if the run had finished.
+            failure = _fail_block(
+                ctx,
+                task,
+                f"execution deadline exceeded; incomplete (rc={rc}); "
+                "partial files preserved",
+            )
+            failure.data["subprocess_rc"] = rc
+            task_blocks = [failure]
         else:
-            # Ran but scored nothing (command failed or results unparseable) —
-            # v1's report path silently drops these; we surface a FAIL block.
-            rc = rc_by_task.get(task.task_name)
-            blocks.append(_fail_block(ctx, task, f"no eval results parsed (rc={rc})"))
+            task_blocks = _score_task(
+                ctx,
+                task,
+                output_path=output_path,
+                rc=rc,
+                elapsed_seconds=elapsed_seconds,
+            )
+        _accept(task_blocks, envelope)
+        blocks.extend(task_blocks)
 
-    _accept(ctx, blocks)
     return blocks
 
 
-def _accept(ctx: MediaContext, blocks: List[Block]) -> None:
+def _score_task(
+    ctx: MediaContext,
+    task,
+    *,
+    output_path: Path,
+    rc: int,
+    elapsed_seconds: Optional[float],
+) -> List[Block]:
+    """Score one finished task using only its current attempt's result files."""
+    result_files = discover_eval_results(output_path, ctx.model_spec)
+    results, sample_counts = load_eval_results(result_files)
+    task_blocks = blocks_for_task(
+        ctx,
+        task,
+        results,
+        sample_counts,
+        elapsed_seconds=elapsed_seconds,
+    )
+    if task_blocks:
+        return task_blocks
+    # Ran but scored nothing (command failed or results unparseable) —
+    # v1's report path silently drops these; we surface a FAIL block.
+    return [_fail_block(ctx, task, f"no eval results parsed (rc={rc})")]
+
+
+def _envelope(ctx: MediaContext) -> dict:
+    return {
+        **report_model_fields(ctx.model_spec),
+        "device": _device_label(ctx),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _accept(blocks: List[Block], envelope: dict) -> None:
     if not blocks:
         return
-    accept_blocks(
-        blocks,
-        envelope={
-            **report_model_fields(ctx.model_spec),
-            "device": _device_label(ctx),
-            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        },
-    )
+    accept_blocks(blocks, envelope=envelope)
 
 
 __all__ = ["run_llm_eval"]

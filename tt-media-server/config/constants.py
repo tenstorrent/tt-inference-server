@@ -513,6 +513,63 @@ def wan22_target_resolution(mesh_shape: Tuple[int, int]) -> Resolution:
     return WAN22_RESOLUTION_SMALL_MESH
 
 
+# --- LTX-2.3 distilled inference shape policy ---------------------------------
+# Served shape for the (4, 8) Galaxy ring: 1080p, 153 frames (6.12s, the nearest
+# 8k+1 count to 6s) at 25 fps. H/W must be %64 and (num_frames-1)%8 == 0.
+# fps conditions the model (audio latent length, A/V cross-PE), so it must reach
+# create_pipeline, not only generate(), or lip sync drifts.
+# 153f relies on the latent T=20 conv3d blocking entries in
+# models/tt_dit/utils/conv3d.py; without them decode is ~2x slower.
+# The shape is baked into the captured traces, so a request may only ask for the
+# shape this process serves; see ltx_served_shape().
+
+
+class VideoShapeConfig(NamedTuple):
+    """One servable video generation shape. Fixed at pipeline construction."""
+
+    num_frames: int
+    height: int
+    width: int
+    fps: float
+
+
+# Mirrors TEMPORAL_COMPRESSION in models/tt_dit/utils/ltx.py. tt-metal does not
+# assert 8k+1 frame counts (others silently truncate), hence snap_num_frames.
+LTX_TEMPORAL_COMPRESSION = 8
+# LTXDistilledPipeline.generate() asserts height % 64 == 0 and width % 64 == 0.
+LTX_SPATIAL_MULTIPLE = 64
+
+LTX_SHAPE_1080P_6S_25FPS = VideoShapeConfig(
+    num_frames=153, height=1088, width=1920, fps=25.0
+)
+
+# Shapes the pipeline may be built with; ltx_served_shape() is the one this process
+# has traces for, and is what requests are validated against.
+LTX_ACCEPTED_SHAPES = frozenset({LTX_SHAPE_1080P_6S_25FPS})
+
+LTX_NUM_FRAMES = LTX_SHAPE_1080P_6S_25FPS.num_frames
+LTX_HEIGHT = LTX_SHAPE_1080P_6S_25FPS.height
+LTX_WIDTH = LTX_SHAPE_1080P_6S_25FPS.width
+LTX_FPS = LTX_SHAPE_1080P_6S_25FPS.fps
+
+# Fixed by the distilled sigma schedules (8 stage-1 + 3 stage-2 steps); the
+# pipeline takes no step count.
+LTX_NUM_INFERENCE_STEPS = 11
+
+
+def ltx_served_shape() -> VideoShapeConfig:
+    """The shape this process's pipeline was built with (and captured traces for)."""
+    return LTX_SHAPE_1080P_6S_25FPS
+
+
+def snap_num_frames(n: int) -> int:
+    """Snap a frame count to the nearest legal LTX value, i.e. (n - 1) % 8 == 0."""
+    if n < 1:
+        return 1
+    k = round((n - 1) / LTX_TEMPORAL_COMPRESSION)
+    return k * LTX_TEMPORAL_COMPRESSION + 1
+
+
 AUDIO_RESPONSE_FORMATS = frozenset(e.value for e in AudioResponseFormat)
 
 # TTS formats that require ffmpeg for encoding (WAV does not)
@@ -1019,6 +1076,14 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 5000,
     },
+    # BH Galaxy is 32 chips, same one-worker-per-mesh layout as WH Galaxy.
+    (ModelRunners.TT_WAN_2_2, DeviceTypes.BLACKHOLE_GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
     # One device-id group -> one worker -> requests serialise on the mesh.
     (ModelRunners.TT_MINIMAX_H3_T2VA, DeviceTypes.GALAXY): {
         "device_mesh_shape": (4, 8),
@@ -1058,6 +1123,13 @@ ModelConfigs = {
         "request_processing_timeout_seconds": 5000,
     },
     (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.GALAXY): {
+        "device_mesh_shape": (4, 8),
+        "is_galaxy": False,
+        "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
+        "max_batch_size": 1,
+        "request_processing_timeout_seconds": 5000,
+    },
+    (ModelRunners.TT_WAN_2_2_I2V, DeviceTypes.BLACKHOLE_GALAXY): {
         "device_mesh_shape": (4, 8),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
@@ -1135,8 +1207,8 @@ ModelConfigs = {
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_32_GROUP.value,
         "max_batch_size": 1,
-        # LTX 1080p ~6s AV generation (145 frames) plus first-request trace
-        # capture during warmup; give it a generous ceiling.
+        # LTX 1080p ~6s AV generation (153 frames @ 25 fps) plus first-request
+        # trace capture during warmup; give it a generous ceiling.
         "request_processing_timeout_seconds": 7200,
     },
     (ModelRunners.SP_RUNNER, DeviceTypes.N150): {
@@ -1634,35 +1706,42 @@ ModelConfigs = {
         "max_batch_size": 1,
         "request_processing_timeout_seconds": 1500,
     },
+    # Training runners download their own weights: from_pretrained(repo_id) fetches into
+    # $HF_HOME/hub on first load, so a startup download would only add an unused copy.
     (ModelRunners.TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_2.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P150): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
     (ModelRunners.TRAINER_TRAINING_LORA, DeviceTypes.P300X2): {
         "device_mesh_shape": (1, 1),
         "is_galaxy": False,
         "device_ids": DeviceIds.DEVICE_IDS_1.value,
         "max_batch_size": 1,
+        "download_weights_from_service": False,
     },
 }
 

@@ -184,6 +184,9 @@ constexpr const char* SENTRY_ENVIRONMENT = "development";
 // Empty = label events with the server version passed to telemetry::init().
 constexpr const char* SENTRY_RELEASE = "";
 constexpr bool SENTRY_DEBUG = false;
+// server_name tag override (e.g. a deployment or pod name). Empty falls back
+// to POD_NAME, then the OS hostname (a random container ID under Docker).
+constexpr const char* SENTRY_SERVER_NAME = "";
 
 // Text-to-speech scheduler defaults.
 constexpr size_t TTS_MAX_BATCH_SIZE = 1;
