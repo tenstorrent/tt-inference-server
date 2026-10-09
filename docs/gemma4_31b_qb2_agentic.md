@@ -368,6 +368,7 @@ measures official Terminal or SWE rewards.
 The [C2 fixed-five SWE Verified run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962800664)
 completed all five cases without case errors on the Metal-main image and
 inference-server `ebb2cf2870b86df3edd5b6636a1503f1e9426c1d`. Its
+test job lasted about **49 minutes** including runner/server preparation;
 evaluation wall was **2,006 seconds (33.4 minutes)** and its five case clocks
 sum to 3,623 seconds, or 1.81 active cases on average. It resolved **1/5**,
 the same count as the September fixed-five run, but the solved case changed
@@ -401,3 +402,8 @@ The same fixed-five SWE suite is queued at C4 in
 on the Metal-main image and inference-server
 `7e6ac75afa416ae28274d8a663809a039ddc3c44`; compare its suite wall,
 all five rewards, running/waiting counts and KV occupancy with C1 and C2.
+Once a physical batch size and context are selected, a single
+`tb2.0,swebench` dispatch can run both suites against one warmed server,
+amortizing startup. Separate jobs remain useful for parallel exploratory
+measurements and independent failure isolation. The Shield partition change
+accepts that combined selector; no combined result exists yet.
