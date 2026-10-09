@@ -29,6 +29,12 @@ commits, task lists, or agent policies are kept separate.
   calls. It is not a device prefill/decode profiler and is specific to the
   older Metal run. The separate September 24 cases give 26.69 seconds/1,000
   output tokens on 37 matched requests, reinforcing that direction.
+- CompCert's first two trajectory response gaps were 1,363 and 2,735 seconds,
+  while their first two recorded API calls were only 47 and 59 seconds. Those
+  two intervals alone contain about 3,992 seconds outside the API. The trace
+  does not separate shell execution from environment/setup and agent overhead,
+  but it explains why parallel agents could hide a substantial part of this
+  case's elapsed time.
 - That Terminal server logged 409 model-trace warm/capture cycles. Matched
   warm-to-capture intervals sum to 119.8 seconds (median 0.157 seconds, p95
   0.440 seconds), so trace recapture alone is a small part of its 7.84-hour
