@@ -458,6 +458,12 @@ def build_eval_command(
             os.chdir(task_venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
+    # Only when the task sets it: None leaves the harness default (on under
+    # --apply_chat_template) and the command line unchanged.
+    if getattr(task, "fewshot_as_multiturn", None) is not None:
+        cmd.extend(
+            ["--fewshot_as_multiturn", "true" if task.fewshot_as_multiturn else "false"]
+        )
 
     # Add metadata parameter if specified (needed for tasks like RULER)
     if getattr(task, "custom_dataset_kwargs", None):
