@@ -4,6 +4,22 @@ Updated 2026-10-09 UTC. This file tracks the dedicated `gemma4-31b-qb2`
 implementation on the four-chip P300X2 QuietBox. Results from different model
 commits, task lists, or agent policies are kept separate.
 
+## Current readout
+
+| Current-main measurement | Result | Limit |
+| --- | --- | --- |
+| SWE fixed five, C1 | 1/5 solved, 54.9 min evaluation | Full-set H100 target is 64.8%, not comparable to five cases |
+| SWE fixed five, C2 | 1/5 solved, 33.4 min evaluation | Different solved case and 34% fewer output tokens than C1 |
+| C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
+| C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
+| C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
+| Terminal fixed five | C1, C2, C4 and C2/192K running | Do not choose a serving policy before rewards and case clocks |
+
+All current-main rows above pin Metal
+`2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
+KV-hook row, which uses a separate image built from that commit plus the
+isolated sizing change. Details, artifacts and acceptance explanations follow.
+
 ## Existing evidence
 
 - The [September 21 baseline](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/35667712636)
