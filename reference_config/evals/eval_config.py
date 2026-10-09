@@ -7202,7 +7202,7 @@ _eval_config_list = [
                 # mmlu_pro is a group of 14 subtasks and lm-eval applies an int
                 # limit PER SUBTASK: 3 -> 42 questions nightly, 1 -> 14 smoke.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.CI_NIGHTLY: 25,  # TEMP for one CI run: ci-long value (revert)
                     EvalLimitMode.CI_LONG: 25,  # 25 per subject -> 350 (+/-2.3 pts)
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
@@ -7248,7 +7248,7 @@ _eval_config_list = [
                     "top_k": 128,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 problems * 0.2 = 6
+                    EvalLimitMode.CI_NIGHTLY: 30,  # TEMP for one CI run: ci-long value (revert)
                     EvalLimitMode.CI_LONG: 30,  # all 30 problems, one pass (+/-4 pts)
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
                 },
@@ -7292,7 +7292,7 @@ _eval_config_list = [
                     "top_k": 128,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 40 of 198
+                    EvalLimitMode.CI_NIGHTLY: 198,  # TEMP for one CI run: ci-long value (revert)
                     EvalLimitMode.CI_LONG: 198,  # full GPQA Diamond (+/-2.8 pts)
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
