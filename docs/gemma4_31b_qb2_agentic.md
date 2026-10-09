@@ -386,6 +386,9 @@ change from 256K was **0.12%**; the largest was 1.77% at 10K/1024 C2.
 
 Peak sampled KV usage increased from **59.0% to 72.3%** with the smaller
 pool; each sweep had a peak of two running and one waiting request. The
+192K server also showed waiting samples at only 21.8% KV usage, so those
+samples cannot be explained by exhaustion of its allocated KV pages alone;
+prefill/scheduler admission remains a candidate. The
 10K/1024 C2 outlier reproduced almost exactly: the first pair's TTFTs were
 13.1 and 27.5 seconds at 192K versus 13.8 and 29.0 seconds at 256K; the
 second pair was about 2.6 and 3.3 seconds in both. This points to a repeatable
