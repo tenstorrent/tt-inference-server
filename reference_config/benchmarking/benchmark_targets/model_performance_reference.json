@@ -179,8 +179,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 160,
-                        "tput_user": 34
+                        "ttft_ms": 170,
+                        "tput_user": 28
                     }
                 }
             },
@@ -192,8 +192,8 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 1100,
-                        "tput_user": 34,
-                        "tput": 850
+                        "tput_user": 28,
+                        "tput": 700
                     }
                 }
             }
@@ -9366,8 +9366,8 @@
                 "num_prompts": 8,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 160,
-                        "tput_user": 34
+                        "ttft_ms": 170,
+                        "tput_user": 28
                     }
                 }
             },
@@ -9379,8 +9379,8 @@
                 "targets": {
                     "theoretical": {
                         "ttft_ms": 1100,
-                        "tput_user": 34,
-                        "tput": 850
+                        "tput_user": 28,
+                        "tput": 700
                     }
                 }
             }
