@@ -808,40 +808,37 @@ TtsConfig ttsEngineConfig() {
     }
     // Qwen3-TTS tokenizes in its own Python front-end, so it needs neither
     // the TTS-2 tokenizer nor its BOS.
-    cfg.tokenizerPath =
-        isQwen3 ? std::string()
-                : envString("TTS_TOKENIZER_PATH",
-                            tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
+    if (!isQwen3) {
+      cfg.tokenizerPath =
+          envString("TTS_TOKENIZER_PATH",
+                    tokenizerPath(ModelType::LLAMA_3_1_8B_INSTRUCT));
 
-    // Resolve the prompt-leading BOS from the tokenizer_config.json beside the
-    // tokenizer, the same source the LLM tokenizers use
-    if (isQwen3) {
-      // Nothing to resolve.
-    } else if (!cfg.tokenizerPath.empty()) {
-      const std::filesystem::path configPath =
-          std::filesystem::path(cfg.tokenizerPath).parent_path() /
-          "tokenizer_config.json";
-      try {
-        const auto tokenizerCfg =
-            utils::tokenizers::getTokenizerConfig(configPath.string());
-        if (tokenizerCfg.add_bos_token) {
-          cfg.bosToken = tokenizerCfg.bos_token;
+      // Resolve the prompt-leading BOS from the tokenizer_config.json beside
+      // the tokenizer, the same source the LLM tokenizers use
+      if (!cfg.tokenizerPath.empty()) {
+        const std::filesystem::path configPath =
+            std::filesystem::path(cfg.tokenizerPath).parent_path() /
+            "tokenizer_config.json";
+        try {
+          const auto tokenizerCfg =
+              utils::tokenizers::getTokenizerConfig(configPath.string());
+          if (tokenizerCfg.add_bos_token) {
+            cfg.bosToken = tokenizerCfg.bos_token;
+          }
+        } catch (const std::exception& e) {
+          TT_LOG_WARN("[Config] TTS BOS lookup failed ({}): {}",
+                      configPath.string(), e.what());
         }
-      } catch (const std::exception& e) {
-        TT_LOG_WARN("[Config] TTS BOS lookup failed ({}): {}",
-                    configPath.string(), e.what());
       }
-    }
-    if (isQwen3) {
-      // No BOS to report.
-    } else if (cfg.bosToken.empty()) {
-      TT_LOG_WARN(
-          "[Config] TTS prompt has no leading BOS; the reference compiler "
-          "prepends one (e.g. <|begin_of_text|>). Check bos_token / "
-          "add_bos_token in the tokenizer_config.json next to {}",
-          cfg.tokenizerPath);
-    } else {
-      TT_LOG_INFO("[Config] TTS prompt BOS = '{}'", cfg.bosToken);
+      if (cfg.bosToken.empty()) {
+        TT_LOG_WARN(
+            "[Config] TTS prompt has no leading BOS; the reference compiler "
+            "prepends one (e.g. <|begin_of_text|>). Check bos_token / "
+            "add_bos_token in the tokenizer_config.json next to {}",
+            cfg.tokenizerPath);
+      } else {
+        TT_LOG_INFO("[Config] TTS prompt BOS = '{}'", cfg.bosToken);
+      }
     }
     cfg.voiceSampleRateHz = static_cast<uint32_t>(envUlong(
         "TTS_VOICE_SAMPLE_RATE_HZ", defaults::TTS_VOICE_SAMPLE_RATE_HZ));
