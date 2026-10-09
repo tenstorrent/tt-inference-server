@@ -270,8 +270,12 @@ appends these exact IDs after the first five and is ready for dispatch when
 the current-main five-case comparison supports expansion.
 
 A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
-is queued in [QB2 run 37969856863](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37969856863)
-on the Metal-main image with inference-server `202fa984`. It changes only the per-case agent
+is queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970041530)
+on the Metal-main image with inference-server
+`202fa984f759d43aac5e927cf66f2989cd028e2f`. The first
+[dispatch 37969856863](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37969856863)
+used an abbreviated SHA and failed during checkout, before model work.
+The pilot changes only the per-case agent
 deadline from three hours to one hour. In the archived five-case run, COBOL
 passed in nine minutes while the other four failed after 64–171 minutes, so
 the shorter limit could remove long unsuccessful tails. Current main may take
