@@ -73,6 +73,11 @@ SECS_BASELINES = (BASELINE_DEFAULT_VOICE, BASELINE_CROSS_SPEAKER)
 # garbage audio scores mean 0.30-0.55 against the reference clips (erratic,
 # not near zero — single pairs reach 0.91), so 0.65 sits above the worst
 # garbage mean and well below the working mean (0.877).
+#
+# These defaults belong to the default_voice baseline. The cross_speaker
+# baseline has its own scale (another real speaker sits closer to the
+# reference than a default voice does); its Qwen3-TTS calibration lives with
+# that model's EvalConfig in reference_config/evals/eval_config.py.
 DEFAULT_SECS_FLOOR = 0.65
 DEFAULT_MARGIN_THRESHOLD = 0.05
 DEFAULT_DATASET_SPLIT = "test.clean"

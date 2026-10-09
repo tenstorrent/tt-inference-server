@@ -23,7 +23,7 @@ from test_module._test_common import ReportCheckTypes
 from test_module._test_common import TestConfig as _TestConfig
 from test_module.eval_tests import tts_eval_tests, tts_naturalness_test
 from test_module.eval_tests import tts_speaker_similarity_test as secs_mod
-from test_module.eval_tests.tts_client import SynthesizedAudio
+from test_module.eval_tests.tts_client import SynthesizedAudio, make_tts_client
 from test_module.eval_tests.tts_eval_tests import (
     DEFAULT_WER_THRESHOLD,
     _intelligibility_score,
@@ -312,3 +312,32 @@ class TestTaskTargets:
         ctx = SimpleNamespace(base_url="http://fake")
         tts_eval_tests._run_tts_secs_eval(ctx, task)
         assert seen["targets"] == {"tts_api": "qwen3_cpp", "secs_floor": 0.7}
+
+
+class TestQwen3EvalConfig:
+    def _tasks(self, repo):
+        # EVAL_CONFIGS only holds repos of the active (prod by default) model
+        # catalog; Qwen3-TTS is in the dev catalog, so read the full map.
+        from reference_config.evals.eval_config import _eval_config_map
+
+        return {t.task_name: t for t in _eval_config_map[repo].tasks}
+
+    def test_base_registers_secs_and_naturalness_on_clones(self):
+        tasks = self._tasks("Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+        assert set(tasks) == {"tts_speaker_similarity", "tts_naturalness"}
+        for task in tasks.values():
+            targets = tts_eval_tests._task_targets(task)
+            client = make_tts_client(targets)
+            assert client.can_clone and not client.has_default_voice
+            assert task.task_name in tts_eval_tests._TASK_RUNNERS
+        secs = tts_eval_tests._task_targets(tasks["tts_speaker_similarity"])
+        assert secs["secs_baseline"] == "cross_speaker"
+        assert 0 < secs["margin_threshold"] < secs["secs_floor"] < 1
+
+    def test_custom_voice_registers_naturalness_with_a_fixed_speaker(self):
+        tasks = self._tasks("Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
+        assert set(tasks) == {"tts_naturalness"}
+        targets = tts_eval_tests._task_targets(tasks["tts_naturalness"])
+        client = make_tts_client(targets)
+        assert client.has_default_voice and client.speaker
+        assert 1.0 < targets["utmos_threshold"] < 5.0
