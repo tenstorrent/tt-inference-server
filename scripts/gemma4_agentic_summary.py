@@ -164,21 +164,41 @@ def summarize_task(path):
         reward = ((item.get("verifier_result") or {}).get("rewards") or {}).get(
             "reward"
         )
-        cases.append(
-            {
-                "id": item.get("task_name", case_path.parent.name),
-                "reward": reward,
-                "wall_s": wall,
-                "api_s": api_s,
-                "non_api_s": wall - api_s
-                if wall is not None and api_s is not None
-                else None,
-                "requests": len(request_ms) if request_ms else None,
-                "input_tokens": agent.get("n_input_tokens"),
-                "output_tokens": agent.get("n_output_tokens"),
-                "exception": (item.get("exception_info") or {}).get("exception_type"),
-            }
-        )
+        case = {
+            "id": item.get("task_name", case_path.parent.name),
+            "reward": reward,
+            "wall_s": wall,
+            "api_s": api_s,
+            "non_api_s": wall - api_s
+            if wall is not None and api_s is not None
+            else None,
+            "requests": len(request_ms) if request_ms else None,
+            "input_tokens": agent.get("n_input_tokens"),
+            "output_tokens": agent.get("n_output_tokens"),
+            "exception": (item.get("exception_info") or {}).get("exception_type"),
+        }
+        if path.parent.name.startswith("swe_bench_verified"):
+            mini_path = case_path.parent / "agent" / "mini-swe-agent.trajectory.json"
+            if mini_path.exists():
+                mini = json.loads(mini_path.read_text())
+                case["api_calls"] = (
+                    (mini.get("info") or {}).get("model_stats") or {}
+                ).get("api_calls")
+                prompt_counts = [
+                    usage["prompt_tokens"]
+                    for message in mini.get("messages") or []
+                    if (
+                        usage := (
+                            ((message.get("extra") or {}).get("response") or {}).get(
+                                "usage"
+                            )
+                            or {}
+                        )
+                    ).get("prompt_tokens")
+                    is not None
+                ]
+                case["max_prompt_tokens"] = max(prompt_counts, default=None)
+        cases.append(case)
         trajectory_path = case_path.parent / "agent" / "trajectory.json"
         if path.parent.name == "terminal_bench_2" and trajectory_path.exists():
             trajectory = json.loads(trajectory_path.read_text())

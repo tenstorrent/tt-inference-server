@@ -478,13 +478,15 @@ above, not a test execution check.
 | Solved | 1/5 Django | 1/5 Matplotlib | Different case |
 | Total input tokens | 3.122M | 3.358M | +7.6% |
 | Total output tokens | 68,495 | 45,256 | −33.9% |
+| Model API calls | 220 | 240 | +9.1% |
+| Largest prompt | 32,253 tokens | 34,040 tokens | Both below 192K |
 | Peak / p95 KV sampled | 31.9% / 28.1% | 35.7% / 33.0% | No sustained pressure |
 | Samples with waiting | 0/330 | 1/201 | No sustained queue |
 | Trace warm-to-capture time | 68.8 s / 220 | 72.7 s / 242 | Small relative to suite |
 
 The observed suite/job speedups are real for these two runs but **are not a
-controlled batching speedup**: at temperature 1.0 C2 generated 23,239 fewer
-tokens, and different code/tool trajectories changed case clocks and solved
+controlled batching speedup**: at temperature 1.0 C2 made 20 more API calls
+but generated 23,239 fewer output tokens, and different code/tool trajectories changed case clocks and solved
 identities. The synthetic same-server 128/128 C1/C2 point isolates a nearly
 2× aggregate short-context throughput effect more cleanly; repeated fixed
 case runs and the pending C4 result are needed for an end-to-end policy.
