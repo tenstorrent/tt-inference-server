@@ -95,6 +95,11 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
 ## Current-main baseline setup
 
 - Metal main pinned at `2c1e1ebdd638886821f35113a5fd0d6335d71608`.
+- Dispatch through `tt-agentic-bringup-qb2` wrapper ref
+  `mvasiljevic/granite-kv-overlay-ci`, whose manual workflow exposes the
+  `agentic` workflow and partition selector. It calls Shield's reusable
+  `on-dispatch.yml` at `47e4089ff4833fb5f44a531470f8124217cad388`;
+  the optional Granite overlay job is skipped for every Gemma run.
 - The inference-server [baseline branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-baseline)
   adds tool-call parsing to the dedicated dev catalog entry and restores the
   original five fixed Terminal-Bench 2.0 and SWE-bench Verified cases. It keeps
