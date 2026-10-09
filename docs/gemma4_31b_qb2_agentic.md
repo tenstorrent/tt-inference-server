@@ -19,6 +19,16 @@ commits, task lists, or agent policies are kept separate.
   HTML filtering accounted for much of that remainder. Overlapping another
   agent's inference with these activities is a concrete reason to test C2,
   even if per-user token speed falls slightly.
+- For 127 Terminal requests whose trajectory token counts align one-to-one
+  with API timings, a linear fit gives **5.30 seconds/request + 0.147 seconds
+  per 1,000 prompt tokens + 26.28 seconds per 1,000 output tokens**
+  (R²=0.996). CompCert's 53 API timings versus 50 trajectory steps are
+  excluded rather than guessed into alignment. The 127 matched requests used
+  2.83 million prompt and 438 thousand output tokens, with 12,598 API seconds.
+  This observational fit suggests decode and output length dominate those API
+  calls. It is not a device prefill/decode profiler and is specific to the
+  older Metal run. The separate September 24 cases give 26.69 seconds/1,000
+  output tokens on 37 matched requests, reinforcing that direction.
 - That Terminal server logged 409 model-trace warm/capture cycles. Matched
   warm-to-capture intervals sum to 119.8 seconds (median 0.157 seconds, p95
   0.440 seconds), so trace recapture alone is a small part of its 7.84-hour
@@ -36,7 +46,12 @@ commits, task lists, or agent policies are kept separate.
   batch 1 and 5.847 requests/s with 32 concurrent requests. At 1024/128,
   batch-32 per-user decode dropped to 21.00 tokens/s from batch-1's 44.27.
   Agentic prompts are much longer, so those burst measurements do not choose
-  the best agent concurrency.
+  the best agent concurrency. This dedicated implementation explicitly rejects
+  prefix caching, so the 4.61 million repeated agent input tokens cannot be
+  accelerated by enabling a server flag alone. The main catalog's separate
+  `tt_transformers` implementation has a different cache path and should be
+  measured as its own implementation if C2/C4 leaves prefill dominant; the
+  historical request fit currently points more strongly to decode.
 - Granite's [fixed-five timing analysis](https://github.com/tenstorrent/tt-metal/blob/533b81b7bbd/models/autoports/ibm_granite_granite_4_2_30b/doc/agentic_evals/TERMINAL_BENCH_TIME_BREAKDOWN.md)
   measured 79.3% of accumulated agent execution inside model API calls at C2;
   other agent work overlaps another case's inference. Its thinking-off pilot
@@ -121,7 +136,10 @@ five-case or full-set target.
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
 The script emits only case IDs, numeric timings/tokens/rewards and server
-counts; it omits prompts, patches, shell transcripts and model responses.
+counts; it omits prompts, patches, shell transcripts and model responses. Its
+Terminal request fit reads token counts from trajectories but drops the
+messages; any case with unequal trajectory-step and API-timing counts is
+reported as unmatched and excluded from that fit.
 
 The current model uses one physical decode batch equal to the server's
 `max_num_seqs`, warmed at startup. It does not switch physical batch sizes

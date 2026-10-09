@@ -72,6 +72,53 @@ def summarize_server(root):
     }
 
 
+def fit_request_latency(rows):
+    """Fit API seconds to intercept, prompt kilotokens and output kilotokens."""
+    if len(rows) < 4:
+        return None
+    normal = [[0.0] * 4 for _ in range(3)]
+    for prompt, output, elapsed in rows:
+        features = (1.0, prompt / 1000, output / 1000)
+        for i in range(3):
+            for j in range(3):
+                normal[i][j] += features[i] * features[j]
+            normal[i][3] += features[i] * elapsed
+    for i in range(3):
+        pivot = max(range(i, 3), key=lambda row: abs(normal[row][i]))
+        normal[i], normal[pivot] = normal[pivot], normal[i]
+        if abs(normal[i][i]) < 1e-10:
+            return None
+        factor = normal[i][i]
+        normal[i] = [value / factor for value in normal[i]]
+        for j in range(3):
+            if j != i:
+                factor = normal[j][i]
+                normal[j] = [a - factor * b for a, b in zip(normal[j], normal[i])]
+    intercept, prompt_s_per_ktok, output_s_per_ktok = (row[3] for row in normal)
+    mean = sum(row[2] for row in rows) / len(rows)
+    residual = sum(
+        (
+            elapsed
+            - intercept
+            - prompt_s_per_ktok * prompt / 1000
+            - output_s_per_ktok * output / 1000
+        )
+        ** 2
+        for prompt, output, elapsed in rows
+    )
+    variance = sum((row[2] - mean) ** 2 for row in rows)
+    return {
+        "matched_requests": len(rows),
+        "input_tokens": sum(row[0] for row in rows),
+        "output_tokens": sum(row[1] for row in rows),
+        "api_s": sum(row[2] for row in rows),
+        "intercept_s": intercept,
+        "prompt_s_per_1000_tokens": prompt_s_per_ktok,
+        "output_s_per_1000_tokens": output_s_per_ktok,
+        "r_squared": 1 - residual / variance if variance else None,
+    }
+
+
 def summarize_task(path):
     summary = json.loads(path.read_text())
     stats = summary.get("stats") or {}
@@ -80,7 +127,7 @@ def summarize_task(path):
         ((evals[0].get("reward_stats") or {}).get("reward") or {}) if evals else {}
     )
     case_paths = sorted(p for p in path.parent.glob("*/result.json") if p != path)
-    cases = []
+    cases, request_rows, unmatched_cases = [], [], []
     for case_path in case_paths:
         item = json.loads(case_path.read_text())
         agent = item.get("agent_result") or {}
@@ -101,6 +148,23 @@ def summarize_task(path):
                 "exception": (item.get("exception_info") or {}).get("exception_type"),
             }
         )
+        trajectory_path = case_path.parent / "agent" / "trajectory.json"
+        if path.parent.name == "terminal_bench_2" and trajectory_path.exists():
+            trajectory = json.loads(trajectory_path.read_text())
+            metrics = [
+                step["metrics"]
+                for step in trajectory.get("steps") or []
+                if isinstance(step.get("metrics"), dict)
+                and "prompt_tokens" in step["metrics"]
+                and "completion_tokens" in step["metrics"]
+            ]
+            if len(metrics) == len(request_ms):
+                request_rows.extend(
+                    (metric["prompt_tokens"], metric["completion_tokens"], ms / 1000)
+                    for metric, ms in zip(metrics, request_ms)
+                )
+            else:
+                unmatched_cases.append(item.get("task_name", case_path.parent.name))
     if path.parent.name == "swe_bench_verified":
         trajectories = path.parent / "mini_sweagent"
         for item in summary.get("trial_results") or []:
@@ -122,7 +186,7 @@ def summarize_task(path):
                     "exit_status": info.get("exit_status"),
                 }
             )
-    return {
+    result = {
         "task": path.parent.name,
         "result_path": str(path),
         "wall_s": seconds_between(
@@ -140,6 +204,10 @@ def summarize_task(path):
         "output_tokens": stats.get("n_output_tokens"),
         "cases": cases,
     }
+    if path.parent.name == "terminal_bench_2":
+        result["request_latency_fit"] = fit_request_latency(request_rows)
+        result["unmatched_request_cases"] = unmatched_cases
+    return result
 
 
 def main():
