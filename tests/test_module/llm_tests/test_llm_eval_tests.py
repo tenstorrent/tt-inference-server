@@ -127,6 +127,54 @@ def _command_model_kwargs(command):
 # --- eval command and model-specific request contracts -----------------------
 
 
+def test_fewshot_as_multiturn_none_keeps_the_command_line_unchanged():
+    """An unset fewshot_as_multiturn passes no flag, so every existing config
+    builds exactly the command it built before the field existed."""
+    from dataclasses import replace
+
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5)
+    assert task.fewshot_as_multiturn is None
+    baseline = [str(part) for part in _build_eval_test_command(task)]
+    assert "--fewshot_as_multiturn" not in baseline
+    assert "--apply_chat_template" in baseline
+    explicit_none = replace(task, fewshot_as_multiturn=None)
+    assert [str(part) for part in _build_eval_test_command(explicit_none)] == baseline
+
+
+@pytest.mark.parametrize("value, flag", [(False, "false"), (True, "true")])
+def test_fewshot_as_multiturn_is_passed_when_set(value, flag):
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5, fewshot_as_multiturn=value)
+    command = [str(part) for part in _build_eval_test_command(task)]
+    assert command[command.index("--fewshot_as_multiturn") + 1] == flag
+    baseline = [
+        str(part)
+        for part in _build_eval_test_command(
+            EvalTask(task_name="mmlu_pro", num_fewshot=5)
+        )
+    ]
+    assert [p for p in command if p not in ("--fewshot_as_multiturn", flag)] == baseline
+
+
+def test_mistral_7b_mmlu_pro_runs_single_turn():
+    """Mistral's template rejects consecutive user turns, which mmlu_pro's
+    multiturn few-shot layout produces (its examples carry the answer in the
+    user turn); only that task opts out."""
+    tasks = {
+        t.task_name: t
+        for t in _eval_config_map["mistralai/Mistral-7B-Instruct-v0.3"].tasks
+    }
+    assert tasks["mmlu_pro"].fewshot_as_multiturn is False
+    assert tasks["ifeval"].fewshot_as_multiturn is None
+    others = [
+        (repo, t.task_name)
+        for repo, cfg in _eval_config_map.items()
+        for t in cfg.tasks
+        if getattr(t, "fewshot_as_multiturn", None) is not None
+        and repo != "mistralai/Mistral-7B-Instruct-v0.3"
+    ]
+    assert others == []
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])
