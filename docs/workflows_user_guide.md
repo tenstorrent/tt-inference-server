@@ -64,6 +64,7 @@ python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workf
 - [Server Spec Tests](#server-spec-tests)
 - [API Parameter Tests](#api-parameter-tests)
 - [Tool-Call Schema Tests](#tool-call-schema-tests)
+- [MiniMax Provider Verifier](#minimax-provider-verifier)
 - [Stress Tests](#stress-tests)
 - [Logs](#logs)
 - [Additional Documentation](#additional-documentation)
@@ -412,6 +413,75 @@ Settings go in the test case's `test_config`; `TOOL_CALL_SCHEMA_<KEY>` overrides
 | `non_blocking` / `non_blocking_reason` | off | `test_config` only, no env override |
 
 The run logs a `[tool-call-schema progress] N/M done` line every ~5% of cases. To run the suite directly with pytest, see [Running vLLM parameter tests](run_vllm_param_tests.md#tool-call-schema-suite).
+
+## MiniMax Provider Verifier
+
+> **Internal.** Runs as part of `spec_tests` for MiniMax models only (`test_module/test_suites/llm.json`, `super_cluster`).
+
+`MiniMaxProviderVerifierTest` runs [MiniMax-Provider-Verifier](https://github.com/MiniMax-AI/MiniMax-Provider-Verifier), MiniMax's own check of a third-party deployment. The verifier's tests run unchanged. The grading (metrics, thresholds, pass/fail) is done here, in `test_module/llm_tests/minimax_verifier_grading.py`, so thresholds are set per model in `llm.json` like the other spec tests'. One test case runs one suite and reports one block:
+
+| Suite | What it checks | Graded on | MiniMax-M3 | MiniMax-M2.7 |
+|---|---|---|---|---|
+| `verify` | `verify.py` replays 102 recorded agentic conversations | 7 tool-call metrics, each against a threshold (below) | blocking | blocking |
+| `text` / `stream` / `image` / `video` | `m3_format_check` pytest suites: the chat-completions contract, SSE streaming, image and video input | pass rate (skipped and xfailed tests excluded) ≥ `pass_rate_threshold`, 100% by default | non-blocking | — |
+
+Non-blocking suites are reported in full, but acceptance waives their FAIL (an ERROR still blocks).
+
+The `verify` metrics and their default thresholds come from the verifier README. A test case's `targets` override any of them by key, e.g. `"targets": {"tool_calls_schema_accuracy": 0.97}`:
+
+| Key | Metric | Default |
+|---|---|---|
+| `query_success_rate` | Query-Success-Rate | ≥ 100% |
+| `tool_calls_match_rate` | ToolCalls-Match-Rate | ≥ 97% |
+| `tool_calls_trigger_similarity` | ToolCalls-Trigger-Similarity: F1 of "made a tool call" against MiniMax's official deployment (`verify_baseline`); not graded without one | ≥ 98% |
+| `tool_calls_schema_accuracy` | ToolCalls-Schema-Accuracy | ≥ 98% |
+| `error_only_reasoning_rate` | Error-Only-Reasoning-Rate | ≤ 0% |
+| `language_following_success_rate` | Language-Following-Success-Rate | ≥ 40% |
+| `scenario_check_pass_rate` | Scenario-Check-Pass-Rate | ≥ 100% |
+
+Per-model targets follow the same method as the tool-call schema tests. For ToolCalls-Match-Rate, Trigger-Similarity and Schema-Accuracy, the target is the mean minus 3 sample standard deviations over 10 `verify.py` runs on GPU vLLM, and a single run is graded against it. MiniMax-M3's targets were set this way; the derivation is in `_comment_threshold` in `llm.json`. MiniMax-M3's Scenario-Check is reported but not gated (target 0): it is a single case, and GPU vLLM fails it in 2 of 10 runs. The other metrics keep the README gates, because they show no variance or are graded on only 2 cases. A model without measured targets uses the README thresholds, which are calibrated on means of 10 runs of MiniMax's official deployment.
+
+The verifier is not vendored. The `MINIMAX_VERIFIER` venv (Python 3.12, `requirements/minimax-verifier.txt`) exports it from the branch set in `workflows/workflow_venvs.py` (`MINIMAX_VERIFIER_REPO` / `MINIMAX_VERIFIER_BRANCH`). Every run resolves the branch head with `git ls-remote` and re-exports only when the head has moved. If GitHub can't be reached, the existing export is used.
+
+The export is plain files, without `.git`. Only the paths in `MINIMAX_VERIFIER_SPARSE_PATHS` are downloaded, through a blob-less sparse clone: about 340 MB on disk instead of the full 870 MB tree. The exported commit is recorded in `.source_commit` and reported as `verifier_commit` in each block.
+
+To enroll another model, point its `verify_baseline` at `output-dir/<model>/loop_01` and add that path to the sparse paths.
+
+```bash
+python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \
+  --server-url <endpoint> --skip-system-sw-validation
+```
+
+A full run executes every enrolled suite. To run only some of them, set `MINIMAX_VERIFIER_SUITES` to a comma-separated list; the other cases report SKIP, which doesn't block:
+
+```bash
+MINIMAX_VERIFIER_SUITES=verify python3 run.py ...        # verify only
+MINIMAX_VERIFIER_SUITES=text,stream python3 run.py ...   # two format checks
+```
+
+Settings go in the test case's `test_config`. `MINIMAX_VERIFIER_<KEY>` overrides one for a single run, and it applies to every suite:
+
+| Key | Default | |
+|---|---|---|
+| `suite` | `verify` | `verify`, `text`, `stream`, `image`, `video`, `reasoning_effort`; `test_config` only, no env override |
+| `workers` | `20` | pytest-xdist workers (`verify`: request concurrency) |
+| `include_slow` | `true` | run the cases marked slow (512k/1M-token prompts, long videos) |
+| `verify_loops` / `verify_limit` | `1` / all | run `verify.py` N times and grade the mean; only the first N cases |
+| `verify_baseline` | none | checkout directory holding the official deployment's `*_results.jsonl` |
+| `pass_rate_threshold` | `1.0` | pytest suites; `targets` overrides it per model |
+| `waived_tests` | none | `{"<test-id regex>": "<reason>"}`: matching pytest failures are listed but not graded |
+| `pytest_args` | none | extra arguments for the pytest suites, e.g. `-k basic` |
+| `non_blocking` / `non_blocking_reason` | off | `test_config` only, no env override |
+
+For a quick check, set `MINIMAX_VERIFIER_VERIFY_LIMIT=10 MINIMAX_VERIFIER_INCLUDE_SLOW=0`.
+
+Each suite's raw output is kept under `<output>/minimax_verifier/<suite>/`, replaced on every run:
+- `verify_results.jsonl` and `verify_summary.json`
+- the JUnit XML
+- the per-request logs
+- the full process log
+
+The bearer token is the one the other chat-completions suites send: `OPENAI_API_KEY` / `API_KEY`, else a JWT from `JWT_SECRET`. Without one, the endpoint is tested unauthenticated and the 401 checks are waived.
 
 ## Stress Tests
 
