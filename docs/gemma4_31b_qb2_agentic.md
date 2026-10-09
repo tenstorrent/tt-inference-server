@@ -1181,6 +1181,12 @@ fewer calls and remained unsolved. This is a meaningful output-volume and
 wall reduction, not evidence of a faster decode kernel. The thinking-off
 request-time fit has low R² (0.689) and should not be used for a per-token
 speed claim. No AICLK warning or server preemption appeared in its logs.
+Across the suite, model calls changed only from 126 to 119, while average
+output per call fell from about 3,167 to 452 tokens. Average recorded API
+time per call fell from 96.5 to 26.4 seconds. This supports shorter model
+responses as the principal wall-time mechanism; it does not establish that
+the agent performed equivalent reasoning or that a different case set
+would retain its rewards.
 
 To check whether the quality result survives a larger fixed denominator,
 the [C2 ten-case thinking-off branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-thinkoff)
