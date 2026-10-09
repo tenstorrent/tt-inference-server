@@ -289,3 +289,48 @@ the old run's measured recapture time makes this a lower priority than
 decoding, task parallelism and KV admission. Any future dynamic-bucket change
 must retain warmed traces for each bucket and verify cache/table identity
 before replay.
+
+## First current-main throughput sweep (C2, 9 October)
+
+The [C2 benchmark run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962976771)
+used Metal main `2c1e1ebdd638886821f35113a5fd0d6335d71608`, the
+dedicated `gemma4-31b-qb2` implementation, inference-server
+`ebb2cf2870b86df3edd5b6636a1503f1e9426c1d`, two warmed decode rows,
+and 256K context. All 23 synthetic points that were attempted completed
+without request errors. The run is marked failed by the release threshold at
+128/128 C2: measured output 72.56 tokens/s against a 217.65 tokens/s
+`complete` threshold. The threshold is a release acceptance gate, not the
+observed speed of this implementation. Use the raw points for this batch
+comparison; do not report the failed run as a passed release benchmark.
+
+| Input/output tokens | C1 output tok/s | C2 output tok/s | C2/C1 | C1/C2 mean TTFT (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| 128/128 | 36.98 | 72.56 | 1.96 | 72 / 133 |
+| 128/1024 | 36.74 | 72.82 | 1.98 | 72 / 134 |
+| 2,048/128 | 33.50 | 61.57 | 1.84 | 303 / 591 |
+| 8,192/128 | 26.75 | 42.12 | 1.57 | 1,244 / 2,471 |
+| 8,192/1024 | 34.35 | 64.93 | 1.89 | 1,256 / 2,474 |
+| 10,000/1024 | 33.87 | 45.19 | 1.33 | 1,627 / 12,173 |
+| 16,384/128 | 20.50 | 28.44 | 1.39 | 2,670 / 4,009 |
+| 32,768/128 | 13.38 | 16.23 | 1.21 | 5,928 / 8,990 |
+| 65,536/128 | 6.99 | 7.70 | 1.10 | 14,537 / 21,922 |
+
+The table compares serial C1/C2 test points within the **same C2 server**,
+so C1 here means one active request on its warmed two-row trace, not a
+separate one-row server. Decode per-user TPOT at 128/128 was 26.7 ms for
+both; the nearly doubled short-context aggregate output came from serving
+two users together. Long-prompt C2 advantage shrank, and the 10K/1024 C2
+point was anomalously slow to first token. The server log shows two active
+requests, no waiting requests, low KV occupancy, and about 20 seconds of
+near-zero generation around that point; two brief trace captures cannot by
+themselves explain it. Investigate long-prefill scheduling with a repeat.
+At 65K/128 C2 the server logged
+one waiting request in some samples despite reported KV usage below 60%,
+consistent with admission or logical-token constraints being relevant as
+well as physical page occupancy. This is not yet proof of the exact cause;
+review the C4 and 192K sweeps and agentic timing before selecting concurrency.
+
+The complete raw benchmark JSON and server log are downloaded locally under
+`/home/mvasiljev/build/gemma-c2-benchmark-main/`. The C4 and C2/192K
+sweeps are queued/running respectively. None of these synthetic points
+measures official Terminal or SWE rewards.
