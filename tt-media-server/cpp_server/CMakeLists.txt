@@ -1421,6 +1421,23 @@ target_include_directories(tts_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
+# Qwen3TtsRunner against a fake tt-metal Python package written by the test
+# itself (no device): task intake, cancels, PCM16 chunking, the terminal
+# message and worker metrics. The counterpart of blaze_tts_runner_test, but
+# built without ENABLE_BLAZE because the Qwen3 runner always is.
+add_executable(qwen3_tts_runner_test
+    tests/integration/runners/qwen3_tts_runner_test.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp
+    src/runtime/runners/qwen3_tts/qwen3_tts_runner_support.cpp
+    src/runtime/worker/single_process_worker_metrics.cpp
+    src/runtime/worker/worker_metrics_shm.cpp
+)
+target_link_libraries(qwen3_tts_runner_test PRIVATE
+    llm_runner_lib pybind11::embed GTest::gtest_main)
+target_include_directories(qwen3_tts_runner_test PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 # Common server-stack sources shared by every integration-test executable.
 # Each integration binary boots the full stack in-process and differs only by
 # its test-entry .cpp (and the MODEL it pins), so the source list is shared here
@@ -1629,6 +1646,7 @@ gtest_discover_tests(qwen3_tts_config_test)
 gtest_discover_tests(qwen3_tts_settings_test)
 gtest_discover_tests(qwen3_tts_request_test)
 gtest_discover_tests(tts_audio_ipc_test)
+gtest_discover_tests(qwen3_tts_runner_test)
 gtest_discover_tests(voice_sample_cache_test)
 gtest_discover_tests(conversation_hasher_test)
 gtest_discover_tests(cancel_queue_test)
