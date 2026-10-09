@@ -457,6 +457,14 @@ expected active-count/prefill signatures before concluding that C4 is safe
 for tight latency deadlines. The raw artifact and numeric summary are under
 `/home/mvasiljev/build/gemma-c4-benchmark-main/` and
 `/home/mvasiljev/build/gemma-c4-benchmark-main-summary.json`.
+One source-level clue: the vLLM scheduler caps each prefill step at 8,192
+tokens, while the model processes those steps row by row and uses internal
+6,656-token full-attention or 1,024-token sliding chunks. A 10K prompt needs
+an approximately 1,808-token continuation after the first 8,192; 8K and 16K
+benchmark prompts do not create that tail shape. The repeated first-wave
+delay is consistent with a cold partial-chunk program or scheduling path,
+but the retained logs do not time kernel compilation or device operations,
+so this remains a hypothesis for a targeted warm/cold profile.
 
 ## First current-main SWE result (C2, 9 October)
 
