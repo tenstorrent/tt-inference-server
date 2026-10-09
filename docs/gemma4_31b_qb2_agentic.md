@@ -326,10 +326,15 @@ all-ten rewards separately for both variants. After the successful C8
 synthetic sweep, the
 [C8 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c8-ten)
 and [QB2 dispatch 37994423239](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37994423239)
-use those same ten SWE IDs at physical batch eight; its server-type check
-passed and the hardware job is queued. Compare rewards, wall, waits and
-per-case clocks before choosing C8 for agentic work. A ten-case Terminal
-expansion awaits the remaining C1/192K controls and batch-policy choice.
+use those same ten SWE IDs at physical batch eight; its hardware test is
+running. Compare rewards, wall, waits and per-case clocks before choosing C8
+for agentic work. Matched ten-case Terminal expansions are now running at
+[C2](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996976665)
+and [C4](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996981703)
+with the same pinned Metal-main image and ten IDs used for SWE. Their first
+five are the original fixed-five control; score that subset separately from
+all ten, and compare case wall and token volume alongside total wall. These
+jobs retain the three-hour per-case deadline and temperature 1.0.
 
 A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
 was queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970041530),
