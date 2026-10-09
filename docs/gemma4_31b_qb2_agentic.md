@@ -66,7 +66,11 @@ commits, task lists, or agent policies are kept separate.
   These have no model scores.
 - The corrected [Terminal 2.0 baseline](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37955350355)
   passes Shield's server-type resolution and is building its current-main
-  image. The SWE baseline will use that image to avoid a second build.
+  image. The SWE baseline will use that image to avoid a second build. Shield
+  invokes `run.py --dev-mode`, which passes the checked-out branch's model spec
+  into Docker and mounts its source/config directories; this permits C1/C2/C4
+  catalog experiments on the same Metal-main image without silently reusing
+  the image's baked C1 catalog. The Metal KV-hook candidate needs a new image.
 
 ## Candidates and acceptance
 
@@ -90,7 +94,10 @@ commits, task lists, or agent policies are kept separate.
    The candidate requires device proof: startup/allocation, high page IDs,
    long prefill/decode, 1- and 2-request quality checks, and an agentic run
    without KV preemption before it can be selected. One host-side budget test
-   and Ruff/pre-commit pass; no device claim is made yet.
+   and Ruff/pre-commit pass; no device claim is made yet. Its
+   [benchmark dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37956805379)
+   is building a separate image from Metal `6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94`
+   and inference-server `84c126298977df6f3d90ff2ea1313c7a255ec4c8`.
 
 Use the same five case IDs and official verifier rewards for all timing
 comparisons. Record completed/errored/cancelled counts, per-case wall and model
@@ -107,7 +114,11 @@ counts; it omits prompts, patches, shell transcripts and model responses.
 
 The current model uses one physical decode batch equal to the server's
 `max_num_seqs`, warmed at startup. It does not switch physical batch sizes
-while serving. A new prefill signature can retire and recapture that trace;
+while serving; one C2 server can handle one or two active requests on its
+already-warmed physical batch. Changing the physical batch between C1, C2 and
+C4 requires a server restart, so startup and warmup are recorded separately
+from steady-state throughput. A new prefill signature can retire and recapture
+that trace;
 the old run's measured recapture time makes this a lower priority than
 decoding, task parallelism and KV admission. Any future dynamic-bucket change
 must retain warmed traces for each bucket and verify cache/table identity
