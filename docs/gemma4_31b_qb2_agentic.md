@@ -323,8 +323,10 @@ awaits the current-main full-deadline result.
 A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
 was queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970041530),
 then cancelled before model work to prioritize the C4 SWE comparison on the
-clean runners. Re-dispatch after the main C1/C2/C4 and KV evidence is in. It
-uses the Metal-main image with inference-server
+clean runners. After the C2 and C4 full-deadline fixed-five results, the
+[same one-hour pilot was re-dispatched](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37991526452)
+and passed server-type resolution; its hardware test is queued. It uses
+the Metal-main image with inference-server
 `202fa984f759d43aac5e927cf66f2989cd028e2f`. The first
 [dispatch 37969856863](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37969856863)
 used an abbreviated SHA and failed during checkout, before model work.
