@@ -4,8 +4,9 @@
 
 """Naturalness (predicted MOS) eval for TTS.
 
-Synthesizes a fixed battery of LibriTTS-R sentences (default voice, seeded)
-and scores each clip with UTMOS22-strong, a neural MOS predictor trained on
+Synthesizes a fixed battery of LibriTTS-R sentences (default voice, seeded;
+or, on a server that cannot speak without a clip, cloned from LibriTTS-R
+speakers) and scores each clip with UTMOS22-strong, a neural MOS predictor trained on
 human listening-test ratings of synthesized speech. Covers the failure class
 WER and SECS are both blind to: output that is intelligible and keeps the
 speaker's timbre but sounds degraded (vocoder buzz, broken prosody, clipping).
@@ -16,15 +17,12 @@ either changes.
 """
 
 import asyncio
-import base64
-import io
 import logging
 import time
 
-import aiohttp
-
 from .._libritts import iter_speaker_clips
 from .._test_common import BaseTest
+from .tts_client import SynthesizedAudio, VoiceClip, make_tts_client
 
 # Pinned MOS predictor: torch.hub repo tag + entrypoint.
 MOS_PREDICTOR_REPO = "tarepan/SpeechMOS:v1.2.0"
@@ -36,11 +34,20 @@ DEFAULT_UTMOS_THRESHOLD = 3.7
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
-    "accept": "application/json",
-    "Content-Type": "application/json",
-    "Authorization": "Bearer your-secret-key",
-}
+
+def naturalness_battery(clips, cloned: bool):
+    """Return ``[(text, voice_or_None)]`` for the synthesis battery.
+
+    Default voice: each clip's own transcript, no clip. Cloned (servers with
+    no default voice): speaker i's clip reads speaker i+1's transcript, so
+    the battery is the same set of texts and never a clip's own words.
+    """
+    if not cloned:
+        return [(text, None) for _, _, text in clips]
+    return [
+        (clips[(i + 1) % len(clips)][2], VoiceClip(wav, transcript))
+        for i, (_, wav, transcript) in enumerate(clips)
+    ]
 
 
 class TTSNaturalnessTest(BaseTest):
@@ -50,7 +57,7 @@ class TTSNaturalnessTest(BaseTest):
     TASK_TYPE = "audio"
 
     def __init__(self, config, targets=None, **kwargs):
-        super().__init__(config, targets, **kwargs)
+        super().__init__(config, targets or {}, **kwargs)
         self._predictor = None
 
     async def _run_specific_test_async(self):
@@ -59,17 +66,41 @@ class TTSNaturalnessTest(BaseTest):
         sample_count = self.targets.get("sample_count", DEFAULT_SAMPLE_COUNT)
         threshold = self.targets.get("utmos_threshold", DEFAULT_UTMOS_THRESHOLD)
         split = self.targets.get("dataset_split", DEFAULT_DATASET_SPLIT)
+        client = make_tts_client(self.targets)
+        # A server without a default voice (Qwen3-TTS Base) is scored on clones.
+        cloned = not client.has_default_voice
+        logger.info(f"Naturalness: client={client.describe()}, cloned={cloned}")
 
-        texts = [t for _, _, t in iter_speaker_clips(split, sample_count)]
-        if not texts:
+        clips = list(
+            iter_speaker_clips(
+                split,
+                sample_count,
+                min_seconds=self.targets.get("min_reference_seconds"),
+                max_seconds=self.targets.get("max_reference_seconds"),
+            )
+        )
+        if not clips or (cloned and len(clips) < 2):
             return {"success": False, "error": "could not load eval texts"}
+        battery = naturalness_battery(clips, cloned)
 
         self._load_predictor()
         try:
             results = []
-            for i, text in enumerate(texts):
-                mos = await self._sample_mos(i, text)
-                results.append({"index": i, "utmos": mos})
+            for i, (text, voice) in enumerate(battery):
+                audio = await client.synthesize(self.url, text, seed=i, voice=voice)
+                if audio is None:
+                    logger.error(f"Synthesis failed for sample {i}")
+                    mos = None
+                else:
+                    mos = await asyncio.to_thread(self._score, audio)
+                results.append(
+                    {
+                        "index": i,
+                        "utmos": mos,
+                        "speaker": clips[i][0] if cloned else None,
+                        "audio_seconds": audio.seconds if audio else None,
+                    }
+                )
                 logger.info(
                     f"Sample {i}: UTMOS=" + (f"{mos:.3f}" if mos is not None else "N/A")
                 )
@@ -89,25 +120,12 @@ class TTSNaturalnessTest(BaseTest):
             "success": success,
             "mean_utmos": mean_utmos,
             "utmos_threshold": threshold,
+            "client": client.describe(),
+            "cloned": cloned,
             "valid_samples": len(valid),
             "sample_count": len(results),
             "per_sample": results,
         }
-
-    async def _sample_mos(self, index, text):
-        """Synthesize one seeded text with the default voice and score it."""
-        payload = {"text": text, "response_format": "json", "seed": index}
-        timeout = aiohttp.ClientTimeout(total=300)
-        async with aiohttp.ClientSession(headers=HEADERS, timeout=timeout) as session:
-            async with session.post(self.url, json=payload) as response:
-                if response.status != 200:
-                    logger.error(
-                        f"Synthesis failed for sample {index}: HTTP {response.status}"
-                    )
-                    return None
-                result = await response.json()
-        wav_bytes = base64.b64decode(result["audio"])
-        return await asyncio.to_thread(self._score, wav_bytes)
 
     def _load_predictor(self):
         import torch
@@ -118,15 +136,15 @@ class TTSNaturalnessTest(BaseTest):
         )
         self._predictor.eval()
 
-    def _score(self, wav_bytes):
-        import soundfile as sf
+    def _score(self, audio: SynthesizedAudio):
         import torch
 
-        data, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
-        if data.ndim > 1:
-            data = data.mean(axis=1)
         with torch.no_grad():
-            return float(self._predictor(torch.from_numpy(data).unsqueeze(0), sr))
+            return float(
+                self._predictor(
+                    torch.from_numpy(audio.samples).unsqueeze(0), audio.sample_rate
+                )
+            )
 
 
-__all__ = ["TTSNaturalnessTest"]
+__all__ = ["TTSNaturalnessTest", "naturalness_battery"]

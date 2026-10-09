@@ -37,8 +37,10 @@ TTS_SECS_DEPS = TTS_QUALITY_DEPS + ("soundfile",)
 TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 
 # EvalConfig task names this runner knows how to execute. A model's EvalConfig
-# lists the subset that applies to it: WER for every TTS model, SECS only for
-# voice-cloning models (the request must support ``reference_audio``).
+# lists the subset that applies to it: SECS only for voice-cloning
+# deployments. WER (TTSQualityTest) speaks only the Python media server's
+# verbose_json contract; SECS and naturalness go through tts_client and also
+# speak Qwen3-TTS on the C++ server.
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
 TASK_NATURALNESS = "tts_naturalness"
@@ -73,6 +75,24 @@ def _resolve_eval_tasks(ctx: MediaContext) -> list:
     """Return all eval tasks for this model ([] if none is registered)."""
     tasks = getattr(ctx.all_params, "tasks", None)
     return list(tasks) if tasks else []
+
+
+# EvalTask.model_kwargs keys that are not eval targets. EVALS_META tasks get
+# add_bos_token injected for lm-eval; the TTS evals have no lm-eval model.
+_NON_TARGET_MODEL_KWARGS = frozenset({"add_bos_token"})
+
+
+def _task_targets(task) -> dict:
+    """Eval targets for a SECS/naturalness task, from its ``model_kwargs``.
+
+    A TTS task has no lm-eval model to configure, so ``model_kwargs`` carries
+    the eval client's targets instead: the request adapter (``tts_api`` and
+    its options, see ``tts_client.make_tts_client``) and the model's
+    calibrated thresholds. Empty for models that rely on the module defaults
+    (the Python media server contract and #5196's calibration).
+    """
+    kwargs = getattr(task, "model_kwargs", None) or {}
+    return {k: v for k, v in kwargs.items() if k not in _NON_TARGET_MODEL_KWARGS}
 
 
 def _missing_deps(deps) -> List[str]:
@@ -237,11 +257,12 @@ def _run_wer_task(ctx: MediaContext, task) -> Block:
     )
 
 
-def _run_tts_secs_eval(ctx: MediaContext) -> dict:
+def _run_tts_secs_eval(ctx: MediaContext, task) -> dict:
     """Run ``TTSSpeakerSimilarityTest`` against the live server (lazy imports)."""
     from .._test_common import TestConfig
     from .tts_speaker_similarity_test import TTSSpeakerSimilarityTest
 
+    targets = _task_targets(task)
     test = TTSSpeakerSimilarityTest(
         TestConfig(
             {
@@ -251,18 +272,23 @@ def _run_tts_secs_eval(ctx: MediaContext) -> dict:
                 "break_on_failure": False,
             }
         ),
-        targets={},
+        targets=targets,
         ctx=ctx,
     )
-    logger.info("Running TTSSpeakerSimilarityTest: base_url=%s", ctx.base_url)
+    logger.info(
+        "Running TTSSpeakerSimilarityTest: base_url=%s targets=%s",
+        ctx.base_url,
+        targets,
+    )
     return dict(test.run_tests().data)
 
 
 def _run_secs_task(ctx: MediaContext, task) -> Block:
     """Speaker-similarity eval (task_name=tts_speaker_similarity) -> one Block.
 
-    Applicability is config-driven: register the task only for models whose
-    request path supports ``reference_audio`` voice cloning.
+    Applicability is config-driven: register the task only for deployments
+    that can clone a voice (``reference_audio`` on the Python media server, a
+    Base release of Qwen3-TTS on the C++ server).
     """
     missing = _missing_deps(TTS_SECS_DEPS)
     if missing:
@@ -278,7 +304,7 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
         )
 
     try:
-        result = _run_tts_secs_eval(ctx)
+        result = _run_tts_secs_eval(ctx, task)
     except Exception as e:
         reason = f"TTS speaker-similarity eval failed to run: {type(e).__name__}: {e}"
         logger.exception(reason)
@@ -321,11 +347,12 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
     )
 
 
-def _run_tts_naturalness_eval(ctx: MediaContext) -> dict:
+def _run_tts_naturalness_eval(ctx: MediaContext, task) -> dict:
     """Run ``TTSNaturalnessTest`` against the live server (lazy imports)."""
     from .._test_common import TestConfig
     from .tts_naturalness_test import TTSNaturalnessTest
 
+    targets = _task_targets(task)
     test = TTSNaturalnessTest(
         TestConfig(
             {
@@ -335,10 +362,12 @@ def _run_tts_naturalness_eval(ctx: MediaContext) -> dict:
                 "break_on_failure": False,
             }
         ),
-        targets={},
+        targets=targets,
         ctx=ctx,
     )
-    logger.info("Running TTSNaturalnessTest: base_url=%s", ctx.base_url)
+    logger.info(
+        "Running TTSNaturalnessTest: base_url=%s targets=%s", ctx.base_url, targets
+    )
     return dict(test.run_tests().data)
 
 
@@ -358,7 +387,7 @@ def _run_naturalness_task(ctx: MediaContext, task) -> Block:
         )
 
     try:
-        result = _run_tts_naturalness_eval(ctx)
+        result = _run_tts_naturalness_eval(ctx, task)
     except Exception as e:
         reason = f"TTS naturalness eval failed to run: {type(e).__name__}: {e}"
         logger.exception(reason)

@@ -44,13 +44,35 @@ def disable_audio_decode(dataset):
     return dataset
 
 
-def iter_speaker_clips(split: str, count: int):
+def wav_seconds(wav_bytes: bytes) -> float:
+    """Duration of a WAV file given as bytes (needs ``soundfile``)."""
+    import io
+
+    import soundfile as sf
+
+    return sf.info(io.BytesIO(wav_bytes)).duration
+
+
+def iter_speaker_clips(
+    split: str,
+    count: int,
+    *,
+    min_seconds: float = None,
+    max_seconds: float = None,
+):
     """Yield ``(speaker_id, wav_bytes, text)`` for ``count`` distinct speakers.
 
     Streams the dataset with audio decode disabled, so ``wav_bytes`` is the
     row's original (soundfile-readable) file content — ready to base64 into a
     TTS ``reference_audio`` field without any audio backend. One clip per
     speaker, first come first served, deterministic for a fixed split.
+    ``text`` is the clip's normalized transcript.
+
+    ``min_seconds``/``max_seconds`` skip clips outside that duration (a
+    speaker whose first clip is skipped can still contribute a later one).
+    Cloning wants a few seconds of speech, and some servers cap the clip
+    length; the bounds also bound the length of the texts, since each text is
+    a clip's transcript.
     """
     from datasets import load_dataset
 
@@ -68,6 +90,12 @@ def iter_speaker_clips(split: str, count: int):
         wav_bytes = audio.get("bytes")
         if not wav_bytes:
             continue
+        if min_seconds is not None or max_seconds is not None:
+            seconds = wav_seconds(wav_bytes)
+            if (min_seconds is not None and seconds < min_seconds) or (
+                max_seconds is not None and seconds > max_seconds
+            ):
+                continue
         seen.add(speaker)
         yield (
             speaker,
@@ -83,4 +111,5 @@ __all__ = [
     "resolve_split",
     "disable_audio_decode",
     "iter_speaker_clips",
+    "wav_seconds",
 ]
