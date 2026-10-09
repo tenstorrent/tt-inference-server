@@ -61,14 +61,18 @@ rm -rf "$CTX/tis"
 fi
 du -sh "$CTX"
 
+# DOCKER_HOST selects the daemon (e.g. a private dockerd with its data-root on a big disk).
+# BUILD_NETWORK=host is needed when that daemon runs with --bridge=none.
+BUILD_JOBS=${BUILD_JOBS:-16}
+BUILD_NETWORK=${BUILD_NETWORK:-default}
 # ---- 2. base (toolchain) image from the tt-metal export's own dockerfile/docker-bake.hcl ----
 if [[ $SKIP_BASE == 0 ]] && ! docker image inspect "$BASE_TAG" >/dev/null 2>&1; then
     (cd "$CTX/tt-metal" && UBUNTU_VERSION=22.04 docker buildx bake -f dockerfile/docker-bake.hcl \
-        --set "ci-build.tags=$BASE_TAG" --load ci-build)
+        --set "ci-build.tags=$BASE_TAG" --set "*.network=$BUILD_NETWORK" --load ci-build)
 fi
 
 # ---- 3. the image ----
-docker build -t "$IMAGE" -f "$CTX/Dockerfile" \
+docker build --network "$BUILD_NETWORK" --build-arg BUILD_JOBS="$BUILD_JOBS" -t "$IMAGE" -f "$CTX/Dockerfile" \
     --build-arg TT_METAL_DOCKERFILE_URL="$BASE_TAG" \
     --build-arg TT_METAL_COMMIT_SHA_OR_TAG="$METAL_SHA" \
     --build-arg TT_METAL_SCM_VERSION="0.0.0.dev0+g${METAL_SHA:0:11}" \
