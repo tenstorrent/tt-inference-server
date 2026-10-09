@@ -97,6 +97,14 @@ commits, task lists, or agent policies are kept separate.
 
 ## Candidates and acceptance
 
+| Variant | Decode rows | Agent trials | Context | Thinking | Metal |
+|---|---:|---:|---:|---|---|
+| Current-main baseline | 1 | 1 | 256K | On | `2c1e1ebd` |
+| C2 | 2 | 2 | 256K | On | `2c1e1ebd` |
+| C4 | 4 | 4 | 256K | On | `2c1e1ebd` |
+| C2/192K KV | 2 | 2 | 192K | On | `6b70d126` |
+| C2 thinking-off pilot | 2 | 2 | 256K | Off | `2c1e1ebd` |
+
 1. [C2 catalog branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2):
    two physical decode rows and two concurrent agents, with unchanged fixed
    tasks, request policy, timeout, scorer and 256K context. This is the first
@@ -121,6 +129,13 @@ commits, task lists, or agent policies are kept separate.
    [benchmark dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37956805379)
    is building a separate image from Metal `6b70d1267a5a16410d5aa5c7ec8e851b7ad47f94`
    and inference-server `84c126298977df6f3d90ff2ea1313c7a255ec4c8`.
+3. [C2 thinking-off pilot](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-thinkoff):
+   changes only the server's `enable_thinking` default. Granite's fixed-case
+   pilot reduced output volume markedly, and Gemma's archived latency fit
+   makes output reduction promising. Run the same five cases and compare
+   rewards, token counts, per-case clocks and API calls; treat it as a distinct
+   quality policy, not a reference-equivalent speed result. Do not select it
+   solely on a faster wall clock or a five-case score tie.
 
 Use the same five case IDs and official verifier rewards for all timing
 comparisons. Record completed/errored/cancelled counts, per-case wall and model
