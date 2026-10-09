@@ -269,7 +269,14 @@ the fixed-five result visible and avoid comparing a ten-case percentage to a
 five-case or full-set target. The
 [C2 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten)
 appends these exact IDs after the first five and is ready for dispatch when
-the current-main five-case comparison supports expansion.
+the current-main five-case comparison supports expansion. With C2 SWE's
+33.4-minute fixed-five evaluation and 1/5 solved count, the ten-case **SWE
+only** expansion is queued in
+[QB2 run 37971863336](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37971863336)
+on Metal main, inference-server `3bb48bc36c9d47848de6cf01208e3bc6063acb34`.
+The first five remain identical to the C2 control; report both the first-five
+and all-ten rewards. Terminal expansion still awaits the current-main
+full-deadline result.
 
 A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
 was queued in [QB2 run 37970041530](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37970041530),
