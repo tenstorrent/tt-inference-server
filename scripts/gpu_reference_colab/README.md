@@ -38,7 +38,7 @@ The driver runs these steps in order: preflight, start the VM, upload the token,
 
 Each poll is a short kernel execution, so polling also keeps the session alive.
 
-Every check, VM snippet and parser lives in `gpuref.py`. `remote_runner.sh` runs on the VM: it clones TTIS at the exact sha, installs pinned vLLM, and serves and evaluates one model at a time.
+Checks and parsers live in `gpuref.py`, and the code the driver sends with `colab exec` lives in `snippets/`. `remote_runner.sh` runs on the VM: it clones TTIS at the exact sha, installs pinned vLLM, and serves and evaluates one model at a time.
 
 **Re-attach and stop.** Re-run the same command to re-attach: it attaches to a running runner, downloads a finished one, or relaunches a dead one. Use `--keep` if you want to detach. `colab sessions` lists the VMs and `colab stop -s <session>` stops one by hand.
 

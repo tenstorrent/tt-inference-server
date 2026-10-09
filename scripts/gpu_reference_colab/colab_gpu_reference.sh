@@ -8,8 +8,8 @@
 #   1 preflight   2 start VM   3 upload token   4 launch runner
 #   5 poll        6 download + summary          7 stop (EXIT trap, unless --keep)
 #
-# Only the `colab` calls and this flow live here; every check, snippet and
-# parser is in gpuref.py. The HF token goes up as a 0600 temp file through
+# Only the `colab` calls and this flow live here: checks and parsers are in
+# gpuref.py, VM code in snippets/. The HF token goes up as a 0600 temp file through
 # `colab upload`: never on a command line, in a log, or in code sent with exec.
 
 set -euo pipefail
@@ -82,9 +82,14 @@ if python3 -c 'import yaml' 2>/dev/null; then PYRUN=(python3)
 elif command -v uv >/dev/null 2>&1; then PYRUN=(uv run --no-project --quiet --with pyyaml python)
 else die "need python3 with PyYAML, or uv"; fi
 gpuref() { "${PYRUN[@]}" "${SCRIPT_DIR}/gpuref.py" "$@"; }
-remote_exec() {   # NAME TIMEOUT [RUNNER ARGS...]: run a gpuref.py snippet on the VM
-    local name="$1" timeout="$2"; shift 2
-    gpuref snippet "${name}" -- "$@" > "${LOCAL_TMP}/${name}.py" || die "could not render snippet ${name}"
+remote_exec() {   # NAME TIMEOUT [RUNNER ARGS...]: run snippets/NAME.py on the VM
+    local name="$1" timeout="$2" arg; shift 2
+    if [[ $# -gt 0 ]]; then   # launch: prepend the runner's argv (validated values only)
+        printf 'ARGS = [' > "${LOCAL_TMP}/${name}.py"
+        for arg in "$@"; do printf "'%s', " "${arg}" >> "${LOCAL_TMP}/${name}.py"; done
+        printf ']\n' >> "${LOCAL_TMP}/${name}.py"
+    else : > "${LOCAL_TMP}/${name}.py"; fi
+    cat "${SCRIPT_DIR}/snippets/${name}.py" >> "${LOCAL_TMP}/${name}.py"
     [[ "${DRY_RUN}" -eq 1 ]] && { colab_cmd exec -s "${SESSION}" -f "${LOCAL_TMP}/${name}.py" --timeout "${timeout}"; return; }
     # Hard deadline: a lost kernel websocket can hang `colab exec` past --timeout.
     perl -e 'alarm shift; exec @ARGV' $((timeout + 120)) \

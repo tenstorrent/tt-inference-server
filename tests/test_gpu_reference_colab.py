@@ -277,21 +277,6 @@ def test_gpu_verdicts_fit_cap_and_no():
     assert set(gpuref.gpu_verdicts(weights_only, 131072).values()) == {"no"}
 
 
-def test_params_from_config_llama_3_2_1b():
-    config = {
-        "hidden_size": 2048,
-        "num_attention_heads": 32,
-        "num_key_value_heads": 8,
-        "head_dim": 64,
-        "intermediate_size": 8192,
-        "vocab_size": 128256,
-        "num_hidden_layers": 16,
-        "tie_word_embeddings": True,
-    }
-    # Llama-3.2-1B has 1,235,814,400 parameters; norms are the only omission.
-    assert gpuref.params_from_config(config) == pytest.approx(1_235_814_400, rel=1e-3)
-
-
 def test_summary_empty(tmp_path):
     assert gpuref.summary_rows(tmp_path) == []
     assert gpuref.format_summary([]) == "No TTIS eval reports found."
@@ -300,30 +285,38 @@ def test_summary_empty(tmp_path):
 # --- provenance helpers ------------------------------------------------------
 
 
-def test_lm_eval_commit_pinned_matches_requirements():
-    commit = gpuref.lm_eval_commit_pinned(REPO_ROOT)
-    assert commit is not None and len(commit) == 40
-    assert commit in (REPO_ROOT / "requirements" / "evals-common.txt").read_text()
-
-
-def test_lm_eval_commit_installed_reads_hidden_venv(tmp_path):
-    dist = (
-        tmp_path
-        / ".workflow_venvs"
-        / ".venv_evals_common"
-        / "lib"
-        / "python3.10"
-        / "site-packages"
-        / "lm_eval-0.4.8.dist-info"
+def test_provenance_records_pinned_and_installed_lm_eval(tmp_path):
+    """The installed commit lives in a hidden .venv_* dir, which glob.glob
+    would skip; build_provenance must still find it."""
+    ttis = tmp_path / "ttis"
+    (ttis / "requirements").mkdir(parents=True)
+    (ttis / "requirements" / "evals-common.txt").write_text(
+        "git+https://github.com/x/lm-evaluation-harness.git@"
+        + "e" * 40
+        + "#egg=lm-eval\n"
     )
+    dist = ttis / ".workflow_venvs" / ".venv_evals_common" / "lib" / "python3.10"
+    dist = dist / "site-packages" / "lm_eval-0.4.8.dist-info"
     dist.mkdir(parents=True)
     (dist / "direct_url.json").write_text(
-        json.dumps(
-            {"url": "https://github.com/x/y.git", "vcs_info": {"commit_id": "f" * 40}}
-        )
+        json.dumps({"vcs_info": {"commit_id": "f" * 40}})
     )
-    assert gpuref.lm_eval_commit_installed(tmp_path) == "f" * 40
-    assert gpuref.lm_eval_commit_installed(tmp_path / "missing") is None
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps({"model_id": "id_x", "vllm_serve_args": ["serve", "a/b"]})
+    )
+    out = tmp_path / "provenance.json"
+    gpuref.main(
+        ["provenance", "--out", str(out), "--model", "a/b", "--ttis-dir", str(ttis),
+         "--plan", str(plan), "--vllm-python", sys.executable, "--vllm-bin", "vllm",
+         "--status", "ok", "--started-at", "t0", "--finished-at", "t1",
+         "--max-model-len-cap", "22960"]
+    )  # fmt: skip
+    prov = json.loads(out.read_text())
+    assert prov["lm_eval_commit_pinned"] == "e" * 40
+    assert prov["lm_eval_commit_installed"] == "f" * 40
+    assert prov["max_model_len_cap"] == 22960
+    assert prov["vllm_serve_command"] == ["vllm", "serve", "a/b"]
 
 
 def test_hf_token_never_in_argv():
@@ -407,32 +400,51 @@ def test_preflight_access_and_spec_failures():
     assert not gpuref.preflight([_row("a/m", {}, memory=None)], ["H100"])[1]
 
 
+SNIPPETS = SCRIPT_DIR / "snippets"
+
+
+def _snippet(name, args=None):
+    """What the driver sends: snippets/NAME.py, with launch's ARGS prepended
+    the way colab_gpu_reference.sh writes it."""
+    head = "ARGS = [" + "".join(f"'{a}', " for a in args) + "]\n" if args else ""
+    return head + (SNIPPETS / f"{name}.py").read_text()
+
+
 @pytest.mark.parametrize(
     "name", ["prepare", "install_token", "launch", "status", "pack"]
 )
-def test_snippets_compile_and_never_carry_a_token(name, monkeypatch):
-    monkeypatch.setenv("HF_TOKEN", "hf_SECRET_SHOULD_NOT_APPEAR")
-    src = gpuref.render_snippet(name, ["--ttis-sha", "a" * 40, "org/model"])
+def test_snippets_compile_and_never_carry_a_token(name):
+    args = ["--ttis-sha", "a" * 40, "org/model"] if name == "launch" else None
+    src = _snippet(name, args)
     compile(src, name, "exec")
-    assert src.startswith("W = '/content/gpuref'")
-    assert "SECRET" not in src and "HF_TOKEN" not in src
+    assert 'W = "/content/gpuref"' in src
+    assert "HF_TOKEN" not in src
 
 
-def test_launch_snippet_embeds_runner_args_and_detaches():
-    src = gpuref.render_snippet("launch", ["--ttis-sha", "b" * 40, "org/model"])
-    assert "ARGS = ['--ttis-sha', '" + "b" * 40 + "', 'org/model']" in src
+def test_launch_snippet_detaches_with_runner_args():
+    src = _snippet("launch", ["--ttis-sha", "b" * 40, "org/model"])
+    assert src.startswith("ARGS = ['--ttis-sha', '" + "b" * 40 + "', 'org/model', ]")
     assert "start_new_session=True" in src
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    assert 'printf "\'%s\', " "${arg}"' in driver
 
 
 def test_status_snippet_reports_state(tmp_path):
-    src = gpuref.render_snippet("status").replace("/content/gpuref", str(tmp_path))
+    src = _snippet("status").replace("/content/gpuref", str(tmp_path))
+
+    def state():
+        out = subprocess.run(
+            [sys.executable, "-c", src], capture_output=True, text=True, check=True
+        )
+        return gpuref.parse_status(out.stdout)
+
+    assert state()[0] == "ABSENT"
+    (tmp_path / "runner.pid").write_text("999999")  # launched; no such process
+    assert state()[0] == "DIED"
     (tmp_path / "FAILED").write_text("x")
     (tmp_path / "runner.log").write_text("line1\nline2\n")
-    out = subprocess.run(
-        [sys.executable, "-c", src], capture_output=True, text=True, check=True
-    )
-    state, lines = gpuref.parse_status(out.stdout)
-    assert state == "FAILED" and "  | line2" in lines
+    status, lines = state()
+    assert status == "FAILED" and "  | line2" in lines
 
 
 def test_parse_status_and_balance():
@@ -455,8 +467,11 @@ def test_runner_helpers(tmp_path):
         "a/b": {"status": "ok", "note": None},
         "c/d": {"status": "failed", "note": "run.py exited 1"},
     }
-    assert gpuref.served_models({"data": [{"id": "a/b"}]}) == ["a/b"]
-    assert gpuref.served_models({}) == []
+    for body, rc in (('{"data": [{"id": "a/b"}]}', 0), ("{}", 1), ("<html>", 1)):
+        served = subprocess.run(
+            [sys.executable, str(GPUREF_PATH), "served", "a/b"], input=body, text=True
+        )
+        assert served.returncode == rc
 
 
 # --- request-length evidence for capped runs ---------------------------------
@@ -475,12 +490,6 @@ def _write_samples(path, rows):
 
 
 def test_request_token_stats_per_task(tmp_path):
-    assert (
-        gpuref.sample_task_name(
-            Path("samples_mmlu_pro_law_2026-10-09T00-14-03.525271.jsonl")
-        )
-        == "mmlu_pro_law"
-    )
     _write_samples(
         tmp_path / "samples_mmlu_pro_law_2026-10-09T00-14-03.525271.jsonl",
         [("a b c", "d e"), ("a", "")],
@@ -508,30 +517,3 @@ def test_cap_bound_needs_clean_logs_and_headroom(tmp_path):
     assert gpuref.rejection_lines([log, tmp_path / "missing.log"]) == [
         "run.log: This model's maximum context length is 22960 tokens"
     ]
-
-
-def test_snippet_cli_accepts_runner_options_after_double_dash():
-    """The driver renders `launch` as `gpuref.py snippet launch -- --ttis-sha ...`;
-    without the `--`, argparse would read the runner's options as its own."""
-    out = subprocess.run(
-        [
-            sys.executable,
-            str(GPUREF_PATH),
-            "snippet",
-            "launch",
-            "--",
-            "--ttis-sha",
-            "c" * 40,
-            "org/m",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert f"ARGS = ['--ttis-sha', '{'c' * 40}', 'org/m']" in out.stdout
-    assert (
-        "--"
-        in (SCRIPT_DIR / "colab_gpu_reference.sh")
-        .read_text()
-        .split('gpuref snippet "${name}"')[1][:4]
-    )
