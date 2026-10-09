@@ -386,6 +386,11 @@ templates:
       # Per-system max concurrent requests (the sweep's loaded corner). The
       # graded targets in model_performance_reference.json are authored at this
       # concurrency: decode tput is 29.0 x 32 = 928.0.
+      # The first batched generator decodes every request slot in one step.
+      # Caches are pooled per mesh row (four slots per row), supporting 32
+      # slots at 16K context. Larger contexts require implementation changes.
+      max_concurrency: 32
+      # Inherited reference notes; runtime settings follow below.
       # Full native context. max_position_embeddings in the HF config.json
       # text_config is 1048576.
       # Device KV-token pool for the concurrency sweep: 32 concurrent requests at
@@ -402,11 +407,6 @@ templates:
       # [TBD — Performance: replace with the measured 32-chip pool once
       # available. If the real pool is smaller, the top graded input lengths must
       # come down with it — see docs/rfp/m0-target-convention.md.]
-      # The initial generator keeps one state and one pair of decode captures
-      # per request slot, each sized to max_context. It initially serves two
-      # slots at 16K context; larger contexts and more concurrent slots require
-      # subsequent implementation changes.
-      max_concurrency: 2
       # 3 * 5120: a multiple of the prefill chunk, within the decode step's
       # 16,384-row candidate budget, above the c1 points' isl 8192 + osl 128.
       max_context: 15360
@@ -433,6 +433,9 @@ templates:
         TT_V41_CHECKPOINT: "/data/huggingface/hub/models--deepseek-ai--DeepSeek-V4.1-Flash/snapshots/dba1be0a40aa45a94ad051997016db3960a90277"
         TT_V41_WEIGHT_CACHE: "/data2/ttnn-cache"
         TT_V41_ENGRAM_MMAP: "0"
+        # Prefill states (traced per state and prompt length): requests
+        # prefill through them into their decode slot.
+        TT_V41_PREFILL_SLOTS: "2"
         # 5120, not 8192: a chunk is padded to its full size and the device
         # time of a mostly padded chunk exceeds a full one's
         # so the c1 points up to isl 4096 run in one
