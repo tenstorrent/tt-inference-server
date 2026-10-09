@@ -7150,47 +7150,22 @@ _eval_config_list = [
     # CoT EN 80.1). No GPU reference run exists yet (tt-agentic-bringup-qb2#76).
     # Chat API so the server renders the native template and the kolibri1
     # reasoning parser separates thinking from the final answer.
+    #
+    # ci-long is the productization set: MMLU-Pro 25/subject (350), AIME full
+    # (30, one pass), GPQA Diamond full (198) at a 64K thinking budget. Measured
+    # on the 32-slot QB2 server (CI run 37777268044): long thinking generations
+    # decode at ~95-130 tok/s whatever the concurrency, so full GPQA at 64K is
+    # ~4M tokens, 10.5-12.5 h on its own. tt-shield cancels the job at 1080 min
+    # with no artifacts, hence: short tasks first, GPQA last and bounded by
+    # wall_clock_timeout_seconds so the run always finishes with the other two
+    # scored. Per-request timeouts cover a single 64K generation at long
+    # context (up to ~3.5 h), not just the 2 h default.
     # =========================================================================
     EvalConfig(
         hf_model_repo="Aleph-Alpha/Kolibri-1-BF16",
         tasks=[
-            EvalTask(
-                task_name="r1_gpqa_diamond",
-                score=EvalTaskScore(
-                    published_score=84.8,
-                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
-                    score_func=score_task_single_key,
-                    score_func_kwargs={
-                        "result_keys": [
-                            "exact_match,none",
-                        ],
-                        "unit": "percent",
-                    },
-                ),
-                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                use_chat_api=True,
-                model_kwargs={
-                    "max_length": 262144,
-                    "timeout": 7200,
-                },
-                # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
-                # stream=false is required by lm-eval's chat-completions parser.
-                gen_kwargs={
-                    "stream": "false",
-                    "max_gen_toks": 32768,
-                    "until": [],
-                    "do_sample": "true",
-                    "temperature": 1.0,
-                    "top_p": 0.97,
-                    "top_k": 128,
-                },
-                limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,
-                    EvalLimitMode.SMOKE_TEST: 0.01,
-                },
-            ),
+            # Order matters: tasks run sequentially and GPQA (bounded, longest)
+            # goes last so MMLU-Pro and AIME are always scored.
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
@@ -7211,7 +7186,7 @@ _eval_config_list = [
                 use_chat_api=True,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 7200,
+                    "timeout": 14400,
                 },
                 # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
                 # stream=false is required by lm-eval's chat-completions parser.
@@ -7228,6 +7203,7 @@ _eval_config_list = [
                 # limit PER SUBTASK: 3 -> 42 questions nightly, 1 -> 14 smoke.
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 3,
+                    EvalLimitMode.CI_LONG: 25,  # 25 per subject -> 350 (+/-2.3 pts)
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
@@ -7258,7 +7234,7 @@ _eval_config_list = [
                 max_concurrent=16,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 7200,
+                    "timeout": 21600,  # a 65K solution at 16 concurrent is up to ~2.5 h
                 },
                 # Model-card sampling; a 64K generation budget because AIME
                 # solutions regularly exceed the 32K that empties GPQA answers.
@@ -7273,7 +7249,52 @@ _eval_config_list = [
                 },
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 problems * 0.2 = 6
+                    EvalLimitMode.CI_LONG: 30,  # all 30 problems, one pass (+/-4 pts)
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=84.8,
+                    published_score_ref="https://huggingface.co/Aleph-Alpha/Kolibri-1-BF16",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # Task bound (13 h): leaves room for the two short tasks above
+                # inside tt-shield's 1080-minute job cap. Exceeding it marks GPQA
+                # incomplete (rc=124) instead of losing the whole run.
+                wall_clock_timeout_seconds=46800,
+                model_kwargs={
+                    "max_length": 262144,
+                    "timeout": 21600,  # one 64K generation at long context is up to ~3.5 h
+                },
+                # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
+                # stream=false is required by lm-eval's chat-completions parser.
+                # 64K budget: at 32K, 9 of 40 nightly answers came back empty
+                # (thinking truncated) in CI runs 37616282707 and 37777268044.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.97,
+                    "top_k": 128,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 40 of 198
+                    EvalLimitMode.CI_LONG: 198,  # full GPQA Diamond (+/-2.8 pts)
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
