@@ -232,10 +232,12 @@ templates:
         trace_region_size: 100000000
         fabric_config: FABRIC_1D_RING
   # Benchmark guards: the reference points (benchmark_targets/model_performance_reference.json) are the
-  # decode/TTFT figures measured on this commit; "complete" must hold 85% of them, "functional" 50%.
+  # decode/TTFT figures measured on this commit; "complete" must hold 80% of them, "functional" 50%.
+  # 80% covers the spread between CI hosts of one device class (T3K llmbox: 28 ms vs 35 ms decode at
+  # 32 users for the same build), which is host-side, not model-side.
   perf_targets_map:
     functional: 0.5
-    complete: 0.85
+    complete: 0.8
     target: 1.0
   status: COMPLETE
   env_vars:
@@ -291,10 +293,12 @@ templates:
         trace_region_size: 100000000
         fabric_config: FABRIC_1D_RING
   # Benchmark guards: the reference points (benchmark_targets/model_performance_reference.json) are the
-  # decode/TTFT figures measured on this commit; "complete" must hold 85% of them, "functional" 50%.
+  # decode/TTFT figures measured on this commit; "complete" must hold 80% of them, "functional" 50%.
+  # 80% covers the spread between CI hosts of one device class (T3K llmbox: 28 ms vs 35 ms decode at
+  # 32 users for the same build), which is host-side, not model-side.
   perf_targets_map:
     functional: 0.5
-    complete: 0.85
+    complete: 0.8
     target: 1.0
   status: COMPLETE
   env_vars:
