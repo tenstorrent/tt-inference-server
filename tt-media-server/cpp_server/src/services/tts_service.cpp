@@ -7,11 +7,32 @@
 #include <cstdint>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "utils/logger.hpp"
+#include "utils/tts_traffic_log.hpp"
 
 namespace tt::services {
+
+namespace {
+
+// Outcome label for a traffic record. Kept here rather than on the enum: it is
+// a wire string that analysis scripts match on, so it should change only when
+// someone means to change the capture format.
+const char* finishReasonName(domain::tts::TtsFinishReason reason) {
+  switch (reason) {
+    case domain::tts::TtsFinishReason::Completed:
+      return "completed";
+    case domain::tts::TtsFinishReason::Cancelled:
+      return "cancelled";
+    case domain::tts::TtsFinishReason::Error:
+      return "error";
+  }
+  return "unknown";
+}
+
+}  // namespace
 
 TtsService::TtsService(config::TtsConfig config,
                        std::unique_ptr<tt::worker::WorkerManager> workerManager,
@@ -134,18 +155,34 @@ bool TtsService::generate(domain::tts::TtsRequest request,
       "voiceWavPcm={}",
       task.task_id, task.promptTokens.size(), task.voiceWavPcm.size());
 
+  // Built before admission so a rejected request is still described by the
+  // same fields as an accepted one; inflight is filled in under the lock.
+  utils::tts_traffic::ArrivalInfo arrival;
+  arrival.taskId = task.task_id;
+  arrival.text = &request.text;
+  arrival.description = request.description.has_value() ? &*request.description : nullptr;
+  arrival.promptSpeechIds = request.promptSpeechIds.size();
+  arrival.promptTokens = task.promptTokens.size();
+  arrival.capacity = capacityLimit();
+
   {
     std::lock_guard<std::mutex> lock(mutex);
+    arrival.inflightOnArrival = callbacks.size();
     if (callbacks.size() >= capacityLimit()) {
+      utils::tts_traffic::onRejected(arrival, "rejected_capacity");
       throw QueueFullException{};
     }
     callbacks.emplace(task.task_id, std::move(callback));
   }
+  utils::tts_traffic::onArrival(arrival);
 
   if (!queueManager->taskQueue->tryPush(
           tt::ipc::tts::TtsIpcTask::fromDomainTask(task))) {
-    std::lock_guard<std::mutex> lock(mutex);
-    callbacks.erase(task.task_id);
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      callbacks.erase(task.task_id);
+    }
+    utils::tts_traffic::onFinish(task.task_id, "rejected_task_queue");
     throw QueueFullException{};
   }
   return true;
@@ -169,6 +206,9 @@ void TtsService::cancel(uint32_t taskId) {
     }
   }
   if (callback) {
+    // cancel() answers the client itself rather than going through
+    // finishRequest, so the record has to be closed here or it leaks.
+    utils::tts_traffic::onFinish(taskId, "cancelled");
     callback(domain::tts::TtsFinishReason::Cancelled);
   }
 }
@@ -217,6 +257,10 @@ bool TtsService::deliverEvent(uint32_t taskId,
     }
     callback = it->second;
   }
+  if (const auto* chunk = std::get_if<domain::tts::TtsAudioChunk>(&event)) {
+    utils::tts_traffic::onChunk(taskId, chunk->chunkIndex,
+                                chunk->samplesBf16.size(), chunk->sampleRateHz);
+  }
   callback(event);
   return true;
 }
@@ -233,6 +277,7 @@ void TtsService::finishRequest(uint32_t taskId,
     callback = std::move(it->second);
     callbacks.erase(it);
   }
+  utils::tts_traffic::onFinish(taskId, finishReasonName(reason));
   if (callback) {
     callback(reason);
   }

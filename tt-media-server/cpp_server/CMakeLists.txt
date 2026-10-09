@@ -1226,6 +1226,7 @@ add_executable(llm_service_test
     src/services/embedding_service.cpp
     src/services/image_service.cpp
     src/services/tts_service.cpp
+    src/utils/tts_traffic_log.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/services/model_service_registration.cpp
@@ -1300,6 +1301,7 @@ set(INTEGRATION_TEST_COMMON_SOURCES
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
     src/services/tts_service.cpp
+    src/utils/tts_traffic_log.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
@@ -1788,6 +1790,7 @@ set(SOURCES
     src/runtime/runners/sdxl/sdxl_python_helpers.cpp
     src/services/image_service.cpp
     src/services/tts_service.cpp
+    src/utils/tts_traffic_log.cpp
     src/services/tts_request_preprocessor.cpp
     src/services/media_worker_scheduler.cpp
     src/utils/image_codec.cpp
