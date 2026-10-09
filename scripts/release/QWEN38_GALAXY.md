@@ -7,7 +7,23 @@ per-request context limit and 1,050,592 configured KV tokens per replica. The
 Weights are mounted read-only from local host disk. Compilation and tensor caches
 are separate, removable host-local data.
 
-This is **not a qualified release**. The eight-replica native-recurrence G0 check
+This is **not a qualified release**. The current all-BFP8 candidate completed
+corrected full GPQA at **176/198 (88.89%)**, with zero output-budget truncations,
+in 50m49s on October 9, 2026 UTC. The user accepted GPQA; the original strict
+177/198 gate remains recorded as missed. The actual image's TTIS startup handoff
+passed after fixing the probe to supply the required `--model` and `--tt-device`
+arguments. This probe intercepted the final server launch and opened no devices;
+container inference, current-policy agentic evaluation, SJC3 Helm and release CI
+still require qualification.
+
+The current BFP8 image manifest is
+`sha256:79f7b4469a6ec2bcce5204399b37b2aeced8be7f260dd98f7007ad41f8813055`,
+with model source `20619e008a236aaf393937b222a60a5b03e49cdc`. Its startup and
+identity receipts are in [the release evidence directory](evidence/qwen38-20261009/).
+The historical native-policy image and build example below are separate artifacts.
+Use the all-BFP8 preparation instructions and its G0 receipt for the current candidate.
+
+Historical controls: the eight-replica native-recurrence G0 check
 passed on October 9, 2026 UTC. Native-control full GPQA finished **170/198
 (85.86%)**, including one output-budget cutoff counted incorrect. The bounded
 Tau3 pilot completed 3/12 successes. Six attempts hit task, request or step
@@ -123,6 +139,18 @@ imported native v5 image on Oct 9; its runtime/startup probes remain separate.
 
 ## Helm handoff
 
+Before Helm qualification, `scripts/release/run_qwen38_container_smoke.py` can
+run the immutable image after an owned hardware queue. It requires the exact
+predecessor service invocation and a completed cleanup receipt, validates frozen
+API-test sources and the successful image-startup receipt, then obtains the
+hardware lock. It resets once, checks all eight workers, and tests streaming,
+multi-turn chat, concurrency 128 and a tool round trip. Optional
+`--evaluation-command /path/to/argv.json --evaluation-timeout 9000` runs a bounded
+evaluation while the same container remains loaded. The command is an explicit
+JSON argv list, never shell text. Use a persistent service with task-owned Docker
+cleanup as recorded in the [v2 launch receipt](evidence/qwen38-20261009/image-hardware-control-v2/launch.json).
+These tests are queued, not yet reported as passed.
+
 Publish the built image to the intended registry, record its **actual digest**,
 and retain its manifest, Python-package inventory and build log. No image digest
 is claimed by this preparation step. The BusyBox init image is already pinned;
@@ -147,7 +175,8 @@ Regenerate older bundles with the current preparation script, or set
 This is a Helm configuration correction; it does not change the image or claim
 container hardware qualification.
 
-For release promotion, retain all 198 GPQA questions and the existing score gate,
+For release promotion, retain all 198 GPQA questions and the original score gate
+alongside the explicit user acceptance of 176/198,
 report output-budget cutoffs explicitly, review the bounded Tau3 outcomes, and validate
 chat, multi-turn tool calls and measured throughput through the built container.
 Only publish qualification claims that the final image and configuration actually
@@ -156,10 +185,10 @@ reproduce.
 ## Preparing an alternate precision policy
 
 The BFP8/HiFi2-head experiment completed 166/198 and did not qualify. The full
-BFP8 decoder passed eight-replica G0 on Oct 9 and has a full GPQA job in progress.
+BFP8 decoder passed eight-replica G0 and completed corrected GPQA at 176/198 on Oct 9.
 Its immutable runtime is `20619e008a236aaf393937b222a60a5b03e49cdc`, on
 `anatarajan/qwen38-bfp8-control-runtime-20261009`; runtime/config bytes match
-the tested source. This remains an experiment, not accuracy qualification.
+the tested source. GPQA is accepted by the user; release qualification remains incomplete.
 Prepare an experimental bundle using its own exact G0 receipt:
 
 ```bash

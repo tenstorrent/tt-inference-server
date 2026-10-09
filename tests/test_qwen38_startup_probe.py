@@ -2,10 +2,28 @@
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
 import json
+import sys
 
 import pytest
 
-from scripts.release.probe_qwen38_startup import argument_values, verify_handoff
+from scripts.release.probe_qwen38_startup import (
+    argument_values,
+    verify_handoff,
+    wrapper_arguments,
+)
+from tests.test_run_vllm_api_server import run_vllm_api_server_module  # noqa: F401
+
+
+def test_probe_arguments_pass_the_actual_entrypoint_parser(
+    monkeypatch,
+    run_vllm_api_server_module,  # noqa: F811
+):
+    spec = {"model_name": "Qwen3.8-27B", "device_type": "BLACKHOLE_GALAXY"}
+    monkeypatch.setattr(sys, "argv", wrapper_arguments("entrypoint.py", spec))
+    args, remaining = run_vllm_api_server_module.parse_args()
+    assert args.model == "Qwen3.8-27B"
+    assert args.tt_device == "blackhole_galaxy"
+    assert remaining == []
 
 
 @pytest.fixture

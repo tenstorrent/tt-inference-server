@@ -71,6 +71,17 @@ def verify_handoff(spec, argv, environment):
     }
 
 
+def wrapper_arguments(entrypoint, spec):
+    """Exercise the same required model/device arguments as the Helm launch."""
+    return [
+        str(entrypoint),
+        "--model",
+        spec["model_name"],
+        "--tt-device",
+        spec["device_type"].lower(),
+    ]
+
+
 def probe(entrypoint, spec_path):
     if Path("/dev/tenstorrent").exists():
         raise RuntimeError("Run this probe in a container without TT devices")
@@ -97,7 +108,7 @@ def probe(entrypoint, spec_path):
     module.runpy = SimpleNamespace(run_module=capture)
     old_argv = sys.argv
     try:
-        sys.argv = [str(entrypoint)]
+        sys.argv = wrapper_arguments(entrypoint, spec)
         module.main()
     finally:
         sys.argv = old_argv
@@ -114,6 +125,7 @@ def probe(entrypoint, spec_path):
         "server_started": False,
         "weights_contents_verified": False,
         "checkpoint_path": str(weights),
+        "wrapper_arguments": wrapper_arguments(entrypoint, spec),
         **handoffs[0],
     }
 
