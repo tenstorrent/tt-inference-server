@@ -54,7 +54,9 @@ commits, task lists, or agent policies are kept separate.
   top-p 0.95, top-k 20 and the earlier bounded output settings. It retains the
   recorded full-set H100 targets (Terminal 44.94%, SWE 64.80%) for context;
   five-case percentages are discrete diagnostics and the smaller request
-  budgets prevent direct full-set H100 comparison.
+  budgets prevent direct full-set H100 comparison. Two published-score fields
+  copied from a Qwen entry were cleared; the Gemma H100 reference targets were
+  retained.
 - The first [Terminal 2.1 dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37954905591)
   and [SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37954917274)
   stopped before running tests because the older TTI tool branch lacked the
@@ -106,6 +108,15 @@ preemptions, trace recapture count and server identity. Increase to ten cases
 only after the five-case results preserve at least the baseline's solved cases
 and show a useful wall-time gain. The full-set H100 targets remain recorded;
 do not turn a missing reward or smaller denominator into a passing score.
+
+The predeclared second five from September's separate exploratory run are
+Terminal `cancel-async-tasks`, `git-multibranch`, `password-recovery`,
+`regex-log`, `sqlite-db-truncate`; SWE `django__django-11820`,
+`psf__requests-2317`, `pylint-dev__pylint-4970`, `sphinx-doc__sphinx-8265`,
+`sympy__sympy-16597`. That Terminal group previously scored 3/5, so a
+ten-case aggregate containing it may be easier than the original five. Keep
+the fixed-five result visible and avoid comparing a ten-case percentage to a
+five-case or full-set target.
 
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
