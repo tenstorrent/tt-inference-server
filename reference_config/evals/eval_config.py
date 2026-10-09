@@ -9233,7 +9233,11 @@ _eval_config_list = [
                     n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
-                    override_cpus=32,
+                    # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
+                    # limit above the host count ("range of CPUs is from 0.01 to 16.00"), which
+                    # failed all five trials at 32 on P300X2 (runs 37769777681, 37830840345)
+                    # while the Galaxy runner scored 4/5. 16 matches the other entries.
+                    override_cpus=16,
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     agent_kwargs={
