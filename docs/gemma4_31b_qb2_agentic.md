@@ -11,6 +11,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE fixed five, C1 | 1/5 solved, 54.9 min evaluation | Full-set H100 target is 64.8%, not comparable to five cases |
 | SWE fixed five, C2 | 1/5 solved, 33.4 min evaluation | Different solved case and 34% fewer output tokens than C1 |
 | SWE fixed five, C4 | 2/5 solved, 29.6 min evaluation | Retained both previously solved cases; 800 MHz AICLK warning on this runner |
+| SWE expanded ten, C2 | 3/10 solved, 61.5 min evaluation | First five 3/5; second five 0/5; AICLK warning |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -795,6 +796,47 @@ network throughput. The independent C2 benchmark on runner
 ran on `qb2-120-p05t02`. Both were separate server starts and runner hosts;
 these logs show repeated snapshot cost, though not whether each byte came
 from the network rather than a lower-level cache.
+
+### C2 ten-case SWE expansion
+
+The [C2 ten-case SWE run, attempt two](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37971863336)
+completed all ten cases with zero case errors on pinned-main Metal. It
+resolved **3/10**: Django 11299, Matplotlib 25332 and scikit-learn 14629.
+The **original first five scored 3/5** in this run, and the predeclared
+second five scored **0/5**. The earlier separate C2 fixed-five run scored
+1/5 on the same first task IDs. The changed solved set demonstrates how
+unstable a single temperature-1 five-case score can be; it does not prove
+that adding cases improved the model. The generic CI accuracy gate failed
+because it compared this ten-case 30% with the full 500-case H100 target
+of 64.8%.
+
+| First-five SWE case | Reward | Second-five SWE case | Reward |
+| --- | ---: | --- | ---: |
+| Astropy 14096 | 0 | Django 11820 | 0 |
+| Django 11299 | 1 | requests 2317 | 0 |
+| Matplotlib 25332 | 1 | pylint 4970 | 0 |
+| scikit-learn 14629 | 1 | Sphinx 8265 | 0 |
+| Sympy 13551 | 0 | Sympy 16597 | 0 |
+
+The ten-case evaluation wall was **61.54 minutes**, with 119.58 minutes
+of summed case clocks and observed active-case parallelism **1.94**. Its
+full test job lasted 67.85 minutes. The run made 403 model API calls,
+using 5.749M input and 76,692 output tokens; the largest prompt was
+40,005 tokens. The first five contributed 188 calls, 2.131M input,
+40,079 output tokens and 47.87 minutes of summed case clocks. Those case
+clocks should not be interpreted as an isolated first-five suite wall
+because all ten cases shared two agent slots.
+
+Server samples reached two running requests, peak/p95 KV 38.1%/31.2%,
+and four waiting samples out of 370; 401 trace warm/capture pairs summed
+to 97.0 seconds. There was no sustained KV queue. The run used the
+warm-weight host `120-qb2-p04t05`, whose server again logged two startup
+AICLK warnings with 800 MHz observed versus 1350 MHz expected. Thus its
+wall time should not be treated as a normalized speed comparison with the
+healthy-host C2 fixed-five control or forthcoming C4 ten-case run. Raw
+artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c2-ten-main/` and
+`/home/mvasiljev/build/gemma-swe-c2-ten-main-summary.json`.
 
 ## Current-main Terminal fixed-five result at C2
 
