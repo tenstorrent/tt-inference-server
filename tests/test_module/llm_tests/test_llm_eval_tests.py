@@ -852,6 +852,84 @@ def test_harness_window_keeps_a_block_of_headroom_below_max_context():
     assert max_length == 131072 - 64
 
 
+def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
+    # leaderboard_math_hard is scored as the mean of per-subtask paths. The
+    # group entry itself carries an aggregate exact_match, which the
+    # metric-mismatch auto-detect used to substitute as a bare string --
+    # score_multilevel_keys_mean then asserted and the task scored 0.
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = [
+        "leaderboard_math_algebra_hard",
+        "leaderboard_math_counting_and_prob_hard",
+        "leaderboard_math_geometry_hard",
+        "leaderboard_math_intermediate_algebra_hard",
+        "leaderboard_math_num_theory_hard",
+        "leaderboard_math_prealgebra_hard",
+        "leaderboard_math_precalculus_hard",
+    ]
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
+    )
+    results = {"leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"}}
+    results.update({name: {"exact_match,none": 0.02} for name in subtasks})
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, ratio, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
+    assert ratio == pytest.approx(2.0 / task.score.published_score)
+    assert check == ReportCheckTypes.PASS
+
+
+def test_group_task_subtasks_survive_loading_and_score(tmp_path):
+    # leaderboard_math_hard's results file lists the group first and its seven
+    # subtasks as siblings. The loader used to keep only the first entry, so
+    # score_multilevel_keys_mean never saw the subtasks and the task scored 0.
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = ["leaderboard_math_algebra_hard", "leaderboard_math_geometry_hard"]
+    payload = {
+        "results": {
+            "leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"},
+            **{
+                name: {"alias": f" - {name}", "exact_match,none": 0.02}
+                for name in subtasks
+            },
+        },
+        "configs": {
+            name: {"task": name, "dataset_path": "math"}
+            for name in ["leaderboard_math_hard", *subtasks]
+        },
+    }
+    path = tmp_path / "results_2026-10-05T10-17-59.json"
+    path.write_text(json.dumps(payload))
+    results, _ = mod.load_eval_results([str(path)])
+    assert set(subtasks) <= set(results)
+
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
+    )
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, _, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
+    assert check == ReportCheckTypes.PASS
+
+
 @pytest.mark.parametrize("impl_id", ["tt_transformers", "llama31_8b_qb2"])
 def test_llama31_longbench_preserves_generation_settings(
     impl_id, tmp_path, monkeypatch
@@ -992,3 +1070,94 @@ def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
             mod._prepare_eval_tokenizer(
                 SimpleNamespace(model_spec=spec), task, tmp_path
             )
+
+
+class TestEvalRequestOverrides:
+    """request_body / thinking / capture_reasoning route through the
+    lm-eval request-overrides wrapper; the command carries the override."""
+
+    @staticmethod
+    def _wrapper_args(command):
+        assert command[1].endswith("llm_module/lm_eval_request_overrides.py")
+        assert command[0].endswith("/bin/python")
+        sep = command.index("--")
+        return command[2:sep], command[sep + 1 :]
+
+    def test_thinking_off_is_a_request_level_chat_template_kwarg(self):
+        task = EvalTask(task_name="r1_gpqa_diamond", use_chat_api=True, thinking=False)
+        command = _build_eval_test_command(task)
+        ours, theirs = self._wrapper_args(command)
+        assert ours == [
+            "--request-body",
+            '{"chat_template_kwargs": {"enable_thinking": false}}',
+        ]
+        assert theirs[0] == "--tasks" and "r1_gpqa_diamond" in theirs
+        # the server-side gen_kwargs string is untouched
+        assert "chat_template_kwargs" not in command[command.index("--gen_kwargs") + 1]
+
+    def test_explicit_request_body_and_seed_drop_share_the_wrapper(self):
+        task = EvalTask(
+            task_name="model_owned",
+            use_chat_api=True,
+            request_body={"top_k": 20},
+            propagate_seed_to_gen_kwargs=False,
+        )
+        ours, _ = self._wrapper_args(_build_eval_test_command(task))
+        assert ours == ["--request-body", '{"top_k": 20}', "--drop-server-seed"]
+
+    def test_capture_reasoning_alone_keeps_the_old_launch_path(self):
+        # Existing entries with capture_reasoning=True must not change
+        # behaviour until they opt into request overrides.
+        command = _build_eval_test_command(
+            EvalTask(
+                task_name="r1_gpqa_diamond", use_chat_api=True, capture_reasoning=True
+            )
+        )
+        assert command[0].endswith("/bin/lm_eval")
+
+    def test_capture_reasoning_rides_along_with_an_override(self):
+        task = EvalTask(
+            task_name="r1_gpqa_diamond",
+            use_chat_api=True,
+            thinking=False,
+            capture_reasoning=True,
+        )
+        ours, _ = self._wrapper_args(_build_eval_test_command(task))
+        assert ours[-1] == "--preserve-reasoning"
+
+    def test_default_task_keeps_the_plain_lm_eval_entry_point(self):
+        command = _build_eval_test_command(EvalTask(task_name="plain"))
+        assert command[0].endswith("/bin/lm_eval")
+
+    def test_thinking_needs_the_chat_api(self):
+        with pytest.raises(ValueError, match="use_chat_api=True"):
+            _build_eval_test_command(
+                EvalTask(task_name="r1_gpqa_diamond", thinking=False)
+            )
+
+    def test_lmms_eval_tasks_are_rejected(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
+        task = EvalTask(
+            task_name="vision_task",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            request_body={"top_k": 20},
+        )
+        with pytest.raises(ValueError, match="request-overrides"):
+            _build_eval_test_command(task)
+
+    def test_mismatched_serving_switch_warns(self, caplog):
+        task = EvalTask(task_name="r1_gpqa_diamond", use_chat_api=True, thinking=False)
+        model_spec = SimpleNamespace(
+            model_id="m",
+            model_name="m",
+            hf_model_repo="org/m",
+            device_model_spec=SimpleNamespace(
+                max_context=32768,
+                max_concurrency=1,
+                eval_max_retries=0,
+                vllm_args={"default-chat-template-kwargs": '{"thinking": true}'},
+            ),
+        )
+        with caplog.at_level("WARNING"):
+            build_eval_command(task, model_spec, "P300x2", "/tmp/evals", 8000)
+        assert "set thinking_kwarg to match" in caplog.text
