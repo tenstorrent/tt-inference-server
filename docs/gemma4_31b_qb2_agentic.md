@@ -352,3 +352,37 @@ zero failed requests, peak two running/one waiting request, and peak 59% KV
 usage. The C4 and C2/192K
 sweeps are queued/running respectively. None of these synthetic points
 measures official Terminal or SWE rewards.
+
+## First current-main SWE result (C2, 9 October)
+
+The [C2 fixed-five SWE Verified run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962800664)
+completed all five cases without case errors on the Metal-main image and
+inference-server `ebb2cf2870b86df3edd5b6636a1503f1e9426c1d`. Its
+evaluation wall was **2,006 seconds (33.4 minutes)** and its five case clocks
+sum to 3,623 seconds, or 1.81 active cases on average. It resolved **1/5**,
+the same count as the September fixed-five run, but the solved case changed
+from Django to Matplotlib. The stochastic path means this is not proof of
+score equivalence; compare the pending current-main C1 control and repeat
+before attributing a solved-case change to concurrency.
+
+| Fixed SWE case | C2 reward | Case wall (s) | Input / output tokens |
+| --- | ---: | ---: | ---: |
+| astropy 14096 | 0 | 807 | 283K / 9.0K |
+| django 11299 | 0 | 695 | 765K / 9.0K |
+| matplotlib 25332 | 1 | 922 | 641K / 9.6K |
+| scikit-learn 14629 | 0 | 584 | 1,084K / 9.0K |
+| sympy 13551 | 0 | 616 | 585K / 8.5K |
+
+The 201 ten-second server samples reached two running requests, 35.7% KV
+usage (p95 33.0%), and one sample with a waiting request. There were 242
+trace warm/capture pairs totaling 72.7 seconds from warm log to capture log;
+this is around 3.6% of evaluation wall, though it is not a device-time
+measurement. Prompt throughput was positive in 80.1% of samples and
+generation in 92.5%; those sampled intervals overlap. The raw artifacts
+and numeric summary are under `/home/mvasiljev/build/gemma-swe-c2-main/` and
+`/home/mvasiljev/build/gemma-swe-c2-main-summary.json`.
+
+CI marked this run **FAIL** only because its generic acceptance criterion
+compares the five-case 20% score with the full 500-case H100 reference of
+64.8%. Preserve that full-set reference target; do not interpret this
+five-case acceptance gate as a model error or claim that 20% meets 64.8%.
