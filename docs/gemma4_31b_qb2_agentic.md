@@ -269,6 +269,15 @@ five-case or full-set target. The
 appends these exact IDs after the first five and is ready for dispatch when
 the current-main five-case comparison supports expansion.
 
+A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
+is prepared but has not been dispatched. It changes only the per-case agent
+deadline from three hours to one hour. In the archived five-case run, COBOL
+passed in nine minutes while the other four failed after 64–171 minutes, so
+the shorter limit could remove long unsuccessful tails. Current main may take
+different paths and solve cases later; keep the full-deadline run as the
+quality control and compare all five rewards before selecting this budget.
+Schedule the pilot when clean runner capacity returns.
+
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
 The script emits only case IDs, numeric timings/tokens/rewards and server
