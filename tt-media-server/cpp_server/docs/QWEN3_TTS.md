@@ -125,7 +125,8 @@ env PYTHONPATH= \
   ./build/tt_media_server_cpp -p 8000
 ```
 
-`/health` reports `runner_in_use: tt-qwen3-tts`. Each worker reports ready
+`/health` reports `runner_in_use: tt_qwen3_tts` (the `MODEL_RUNNER_TYPE`
+value, as for `tt_tts` and `mock_tts`). Each worker reports ready
 after its warmup utterance, which compiles the kernels; the first requests of a
 new prompt length or audio length still compile a little more.
 
