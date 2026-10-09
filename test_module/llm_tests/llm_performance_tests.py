@@ -85,9 +85,15 @@ def run_llm_performance(
                 auth_token=auth_token,
             )
 
+    # The health-wait budget is the model spec's tensor_cache_timeout, as the eval tests use it (a
+    # model whose start-up reads large host tables or compiles for long can exceed the 1200 s default).
+    health_timeout = getattr(
+        getattr(ctx.model_spec, "device_model_spec", None), "tensor_cache_timeout", None
+    )
     runner = LLMPerformanceRunner(
         driver=driver,
         server_controller=server_controller,
+        **({"wait_healthy_timeout_s": float(health_timeout)} if health_timeout else {}),
     )
     result = runner.run(configs, server, context)
 

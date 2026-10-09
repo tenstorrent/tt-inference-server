@@ -411,6 +411,10 @@ templates:
       # 16,384-row candidate budget, above the c1 points' isl 8192 + osl 128.
       max_context: 15360
       default_impl: true
+      # Health-wait budget: the model build reads the two 123 GB Engram tables
+      # into host RAM, 10 to 15 minutes from the NVMe when the page cache is
+      # cold, plus the warm-up captures.
+      tensor_cache_timeout: 3600.0
       env_vars:
         # Fixed 4x8 2D torus mesh graph descriptor (RFP D.2). Not a partner choice.
         # Inherited reference notes; runtime settings follow below.
