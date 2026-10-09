@@ -15,7 +15,8 @@ commits, task lists, or agent policies are kept separate.
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
 | C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
-| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C1 and C2/192K pending; paths and token volume differ |
+| Terminal fixed five, C1 | 0/5 solved, 270.1 min evaluation | Sampling paths differ from C2/C4; full-set target remains 44.94% |
+| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C2/192K pending; paths and token volume differ |
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
 
 All current-main rows above pin Metal
@@ -833,7 +834,8 @@ sampled trajectories. HTML still lasted about 171 minutes; CompCert fell
 from 162 to 121, FEAL from 64 to 29, and QEMU from 64 to 17 minutes.
 The case-clock sum fell about 26% while suite wall fell about 63%, directly
 supporting overlap as a major contributor without assigning it an isolated
-causal speedup. A same-main C1 control is still running.
+causal speedup. The same-main C1 control completed later and is compared
+below.
 
 The C2 server reached two running requests with **zero waiting samples**
 among 1,056 ten-second samples. Sampled KV usage peaked at 52.6% (p95
@@ -906,3 +908,65 @@ host `qb2-120-p05t05` did not log an AICLK clamp; the Hugging Face model
 snapshot was warm and API readiness took about 4 min 54 s. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-terminal-c4-main/`
 and `/home/mvasiljev/build/gemma-terminal-c4-main-summary.json`.
+
+### Same-main C1 control and batch-policy comparison
+
+The [C1 fixed-five Terminal control](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963232263)
+completed all five cases with zero case errors on the **same pinned Metal
+image** and identical task IDs, scorer, sampling settings and three-hour
+deadline. It resolved **0/5**. COBOL, the case solved by C2/C4 and the
+older September run, failed on this stochastic C1 path; one trajectory
+does not establish that concurrency caused the score difference. Its generic
+CI accuracy gate failed against the full-set 44.94% H100 reference, as did
+the 1/5 C2 and C4 subsets.
+
+| Same-main Terminal measure | C1 | C2 | C4 |
+| --- | ---: | ---: | ---: |
+| Evaluation wall, min | 270.06 | 175.87 | 170.60 |
+| Full test job, min | 284.52 | 182.57 | 177.08 |
+| Sum of case clocks, min | 270.06 | 347.12 | 460.68 |
+| Observed active-case parallelism | 1.00 | 1.97 | 2.70 |
+| Solved | 0/5 | 1/5 COBOL | 1/5 COBOL |
+| API calls | 124 | 126 | 142 |
+| Input / output tokens | 2.378M / 442K | 2.717M / 399K | 3.091M / 410K |
+| Sum API / other case time, min | 210.29 / 59.77 | 202.61 / 144.51 | 247.66 / 213.02 |
+| Peak / p95 sampled KV | 38.9% / 16.1% | 52.6% / 34.4% | 50.5% / 34.3% |
+| Samples with waiting | 0/1,621 | 0/1,056 | 0/1,024 |
+
+C2's observed evaluation wall was **1.54× shorter** than C1's and C4's
+**1.58× shorter**, despite their **29% and 71% longer summed case clocks**.
+Their agents overlapped substantially. This is end-to-end evidence that
+parallel trials can shorten a fixed suite even when individual case paths
+grow; it is not a controlled per-request model-speed estimate. C4 only
+improved the observed C2 wall by 3%, with FEAL setting a 170.6-minute
+tail. The equal C2/C4 solved count and different C1 outcome deserve a
+same-configuration repeat or larger denominator before a quality claim.
+
+| Fixed Terminal case wall, min | C1 | C2 | C4 |
+| --- | ---: | ---: | ---: |
+| HTML filter | 142.2 | 171.3 | 168.3 |
+| COBOL modernization | 11.4 | 9.6 | 14.7 |
+| CompCert | 75.3 | 120.5 | 84.3 |
+| FEAL | 37.6 | 28.8 | 170.6 |
+| QEMU startup | 3.6 | 17.0 | 22.7 |
+
+The C1 request fit across 124 matched calls is 4.17 seconds/call + 0.216
+seconds/1K prompt tokens + **26.23 seconds/1K output tokens** (R² 0.996),
+nearly identical in output slope to September's older-Metal C1 fit of
+26.28 seconds/1K. Its 2.378M input and 442K output tokens occupied
+210.29 minutes of recorded API time and 59.77 minutes of other case time.
+The September C1 had about 557K output tokens, 270.8 minutes of API time
+and 199.7 minutes outside the API; current-main C1's 270.1-minute suite
+versus September's 470.5 minutes is therefore dominated in these artifacts
+by different output volume and residual work, not a demonstrated per-token
+decode acceleration. The runs differ in Metal source and prefill policy,
+so the fit comparison remains observational.
+
+The C1 server reached one running request, no sampled waiting, and 38.9%
+peak KV; 131 trace warm/capture intervals summed to 55.4 seconds. Its
+runner `qb2-120-p05t06` showed no AICLK warning. This was a cold model
+snapshot (7 min 45 s) and about 12 min 27 s to API readiness, explaining
+why its full test-job wall is 14.5 minutes above evaluation wall. Raw
+artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c1-main/` and
+`/home/mvasiljev/build/gemma-terminal-c1-main-summary.json`.
