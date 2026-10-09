@@ -180,3 +180,41 @@ def test_combined_content_finish_and_usage_is_valid(monkeypatch):
     assert result.success, result.error
     assert result.ttft == 3
     assert result.latency == 5
+
+
+def test_install_gives_every_token_timing_request_its_own_cache_salt(monkeypatch):
+    """Review (#5341): the adapter's own request function bypassed the per-request
+    salt wrapper, so a token-timing run sent the driver's single base salt on every
+    request, test request included."""
+    import dataclasses
+
+    seen = []
+
+    @dataclasses.dataclass
+    class Input:
+        extra_body: dict
+
+    class Endpoint:
+        ASYNC_REQUEST_FUNCS = {}
+
+    endpoint = Endpoint()
+    serve = SimpleNamespace(calculate_metrics=lambda *a, **k: None)
+    monkeypatch.setattr(
+        vllm_token_timing,
+        "make_chat_request_func",
+        lambda ep: lambda inp, *a, **k: _record(seen, inp),
+    )
+    vllm_token_timing.install(endpoint, serve)
+
+    func = endpoint.ASYNC_REQUEST_FUNCS["openai-chat"]
+    assert getattr(func, "__wrapped__", None) is not None
+    for _ in range(3):
+        asyncio.run(func(Input(extra_body={"cache_salt": "base"})))
+    salts = [body["cache_salt"] for body in seen]
+    assert all(s.startswith("base-") for s in salts) and len(set(salts)) == 3
+    assert serve.calculate_metrics is not None
+
+
+async def _record(seen, inp):
+    seen.append(dict(inp.extra_body))
+    return None
