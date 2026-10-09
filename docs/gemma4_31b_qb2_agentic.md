@@ -281,7 +281,9 @@ appears below.
    solely on a faster wall clock or a five-case score tie. Its
    [fixed-five dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37965857157)
    was cancelled before model work to prioritize the C4 SWE comparison;
-   re-dispatch when clean runner capacity returns. It uses inference-server
+   the [same fixed-five pilot](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37991891787)
+   was then re-dispatched after the C2/C4 full-deadline results and passed
+   server-type resolution. Its hardware job is queued. It uses inference-server
    `d55d5fb55308109b303a85d14ea2832c679b9888` on the Metal-main image.
 
 Use the same five case IDs and official verifier rewards for all timing
