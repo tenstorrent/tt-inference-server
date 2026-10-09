@@ -309,15 +309,28 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
 
   engine_tts::TtsSchedulerParams params;
   params.max_users = static_cast<uint32_t>(config.maxUsers);
-  // Chunk ramp. first_chunk_tokens was previously aliased to chunk_tokens, so
-  // every chunk was the same size; the engine has always modelled the first
-  // one separately. The second chunk is transitional and has no engine field
-  // yet -- see the note below.
-  params.chunk_tokens = config.chunkTokens;
+  // Chunk ramp, three tiers. The engine renamed chunk_tokens -> tc_chunk_tokens
+  // and added sc_chunk_tokens when it took the v2 customer requirements
+  // (nanicic-TTS-llm-engine f1cda64), so these names are not interchangeable
+  // with the pre-f1cda64 field set.
+  //
+  //   17 tok -> 0.22 s returned -> next chunk due in 180 ms
+  //   32 tok -> 0.40 s returned -> next chunk due in 400 ms
+  //   48 tok -> 0.72 s returned -> next chunk due in 720 ms
   params.first_chunk_tokens = config.firstChunkTokens;
-  // TODO(ramp): the engine exposes only first/steady. Until it carries a
-  // second-chunk size, config.secondChunkTokens is applied by the scheduler
-  // wrapper by chunk index; the engine still sees one size per call.
+  params.sc_chunk_tokens = config.secondChunkTokens;
+  params.tc_chunk_tokens = config.chunkTokens;
+
+  // Deadlines and FC targets, ms here -> us in the engine. The server's
+  // defaults are derived from the chunk sizes above, and the engine's own
+  // defaults are the same 180/400/720 + 100/125, so the two agree unless
+  // someone overrides one side.
+  params.sc_deadline_us = static_cast<uint64_t>(config.scP99Ms) * 1000;
+  params.tc_deadline_us = static_cast<uint64_t>(config.tcP99Ms) * 1000;
+  params.fourth_plus_deadline_us = static_cast<uint64_t>(config.tc4P99Ms) * 1000;
+  params.fc_p50_target_us = static_cast<uint64_t>(config.fcP50Ms) * 1000;
+  params.fc_p99_target_us = static_cast<uint64_t>(config.fcP99Ms) * 1000;
+
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
   // Rows per fused H2D page (m), a separate lever from max_batch_size (B). B
   // caps how many chunks are mid-flight; m caps how many distinct users ride
