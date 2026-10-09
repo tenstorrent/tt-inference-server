@@ -58,6 +58,15 @@ class LLMRunConfig:
     # Tool-neutral SLO bars (see llm_module.goodput); each driver renders its
     # own vocabulary. None = not measured.
     goodput: Optional[GoodputSlo] = field(default=None, compare=False)
+    # Per-request prefix-cache isolation. Benchmarks measure prefill, not the
+    # prefix cache, but the serving entries keep prefix caching on, and vLLM's
+    # random dataset makes prompt i at a longer ISL an extension of prompt i at
+    # a shorter ISL (same seed), so later sweep points would otherwise report
+    # cache-assisted TTFTs. vLLM scopes a request's cache keys by its
+    # ``cache_salt``; the driver sends one unique to this sweep point and
+    # driver invocation, so no benchmark request can hit blocks from another
+    # point, an earlier run, or the evals. None = generate; set to pin.
+    cache_salt: Optional[str] = None
 
 
 @dataclass(frozen=True)
