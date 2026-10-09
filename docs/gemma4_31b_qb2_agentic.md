@@ -241,7 +241,10 @@ is queued for a clean runner.
    makes output reduction promising. Run the same five cases and compare
    rewards, token counts, per-case clocks and API calls; treat it as a distinct
    quality policy, not a reference-equivalent speed result. Do not select it
-   solely on a faster wall clock or a five-case score tie.
+   solely on a faster wall clock or a five-case score tie. Its
+   [fixed-five dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37965857157)
+   is queued behind the thinking-on comparison and uses inference-server
+   `d55d5fb55308109b303a85d14ea2832c679b9888` on the Metal-main image.
 
 Use the same five case IDs and official verifier rewards for all timing
 comparisons. Record completed/errored/cancelled counts, per-case wall and model
