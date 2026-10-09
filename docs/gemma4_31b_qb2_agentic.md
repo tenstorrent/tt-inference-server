@@ -12,7 +12,10 @@ commits, task lists, or agent policies are kept separate.
   on each. Terminal ran 7.84 hours (5,646.8 seconds per case), with 4.61
   million input and 557 thousand
   output tokens across the five cases. SWE ran 2.00 hours. These are
-  historical outcomes, not scores for current Metal main.
+  historical outcomes, not scores for current Metal main. That server logged
+  whole-prompt prefill (`enable_chunked_prefill=False`, batched-token budget
+  262144); the current main catalog enables chunked prefill at 8192. This
+  serving-policy change is another reason to obtain a new C1 baseline.
 - The five Terminal case clocks summed to 28,230 seconds. Their recorded model
   API requests summed to 16,248 seconds (**57.6%**); the 11,982-second
   remainder includes shell work, tools, setup and verification. CompCert and
