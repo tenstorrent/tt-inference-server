@@ -150,9 +150,43 @@ def helm_values(spec, weights_host_path):
     }
 
 
+def verify_committed_source(source, model_sha, source_hashes, precision):
+    """Require qualified runtime bytes to be reproducible from MODEL_SHA alone."""
+    model_relative = Path("models/demos/qwen38_27b_qb2")
+    for name, expected in source_hashes.items():
+        relative = model_relative / (
+            "config/" + precision if name == "effective_precision_override" else name
+        )
+        try:
+            content = subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    str(source),
+                    "show",
+                    f"{model_sha}:{relative.as_posix()}",
+                ],
+                stderr=subprocess.PIPE,
+            )
+        except subprocess.CalledProcessError as error:
+            raise ValueError(
+                f"Qualified file is absent from the recorded model commit: {relative}"
+            ) from error
+        if hashlib.sha256(content).hexdigest() != expected:
+            raise ValueError(
+                f"Qualified file differs from the recorded model commit: {relative}"
+            )
+
+
 def prepare(args):
     if not args.weights_host_path.is_absolute() or args.weights_host_path == Path("/"):
         raise ValueError("Weights host path must be an absolute checkpoint directory")
+    if Path(args.precision).name != args.precision or not args.precision.endswith(
+        ".json"
+    ):
+        raise ValueError(
+            "Precision must name a JSON file in the model config directory"
+        )
     source = args.model_source.resolve()
     model_sha = subprocess.check_output(
         ["git", "-C", str(source), "rev-parse", "HEAD"], text=True
@@ -186,6 +220,7 @@ def prepare(args):
     receipt_bytes = args.qualification.read_bytes()
     receipt = json.loads(receipt_bytes)
     contract.verify_qualified_source(receipt, model)
+    verify_committed_source(source, model_sha, receipt["source_sha256"], args.precision)
     spec = runtime_spec(contract, receipt, model_sha, args.precision)
     output = args.output.resolve()
     output.mkdir()

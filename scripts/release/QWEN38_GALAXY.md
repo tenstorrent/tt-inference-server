@@ -54,6 +54,9 @@ The complete G0 receipt must report eight physical replicas and a passing
 concurrent-versus-isolated timing comparison. Preparation rejects different
 runtime files or precision. The physical chip grouping is host-specific; another
 Galaxy needs its own G0 receipt before this configuration is qualified there.
+Every qualified runtime file and the selected precision policy must also exist
+with identical bytes in the recorded model commit. A locally passing receipt
+cannot qualify an untracked or ignored policy for a SHA-pinned image build.
 
 From a clean checkout of this TTIS branch with Python workflow dependencies:
 
@@ -117,3 +120,23 @@ report output-budget cutoffs explicitly, review the bounded Tau3 outcomes, and v
 chat, multi-turn tool calls and measured throughput through the built container.
 Only publish qualification claims that the final image and configuration actually
 reproduce.
+
+## Preparing an alternate precision policy
+
+The queued BFP8/HiFi2-head experiment requires its own passing G0 receipt and
+full GPQA result. If it qualifies, commit the exact tested runtime and policy to
+a separate model-source revision, then prepare a new bundle:
+
+```bash
+python scripts/release/prepare_qwen38_galaxy.py \
+  --model-source /path/to/committed-head-control-checkout \
+  --qualification /path/to/head-control/native-g0/receipts/full-model.json \
+  --precision precision_accurate_decode_bfp8_head.json \
+  --weights-host-path /absolute/host/checkpoint-directory \
+  --output qwen38-head-bundle
+```
+
+Use the new manifest's `MODEL_SHA` when building. The selected policy is preserved
+through the runtime ModelSpec, TTIS wrapper and Helm pod environment. Rebuild and
+qualify that new image; the existing native-policy image does not inherit later
+head-control results.
