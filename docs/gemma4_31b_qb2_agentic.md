@@ -106,7 +106,12 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
   at `71ec7d17192ece0c8b2a864aff2bca3208bd1a98` adds the TB2.0 alias.
   The separate [Gemma QB2 wrapper](https://github.com/tenstorrent/tt-agentic-bringup-qb2/tree/mvasiljevic/gemma-tb2-ci)
   at `0352933a1e7b1f9b6b7d8a55924f7b17df2bb972` pins that Shield commit;
-  use this wrapper ref for Terminal 2.0 dispatches.
+  use this wrapper ref for Terminal 2.0 dispatches. Its later
+  [read-only occupied-runner hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963641492)
+  landed on `120-qb2-p04t07`, the host that repeatedly failed the ownership
+  check due to a stopped container. The hold leaves that container and
+  hardware untouched while clean hosts accept the queued Gemma jobs; cancel
+  it after those jobs are assigned.
 - The inference-server [baseline branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-baseline)
   adds tool-call parsing to the dedicated dev catalog entry and restores the
   original five fixed Terminal-Bench 2.0 and SWE-bench Verified cases. It keeps
@@ -155,13 +160,20 @@ use the new wrapper, identical Metal-main image and fixed five cases. Their
 inference-server SHAs are respectively `fb5b77a4e26af79c455af2893babf1a9928bfc08`,
 `ebb2cf2870b86df3edd5b6636a1503f1e9426c1d`, and
 `7e6ac75afa416ae28274d8a663809a039ddc3c44`.
+The first corrected C2 and C4 runs also landed on the occupied host and
+stopped before model work. Their
+[C2 retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963842946)
+and [C4 retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963848727)
+are queued behind active clean-host jobs, with the occupied host held aside.
 The [C2 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962976771)
 and [C4 throughput sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37962982690)
 reuse that image as separate benchmark jobs. Compare matching input/output
 lengths and both per-user latency and aggregate throughput; short synthetic
 bursts alone do not establish the fastest agentic suite wall time. The first
 C4 benchmark attempt stopped before testing on the same occupied host as the
-failed C2 Terminal attempt; retry it on a clean runner.
+failed C2 Terminal attempt. The
+[C4 benchmark retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963865248)
+is queued for a clean runner.
 
 ## Candidates and acceptance
 
