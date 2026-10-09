@@ -12,12 +12,13 @@ commits, task lists, or agent policies are kept separate.
 | SWE fixed five, C2 | 1/5 solved, 33.4 min evaluation | Different solved case and 34% fewer output tokens than C1 |
 | SWE fixed five, C4 | 2/5 solved, 29.6 min evaluation | Retained both previously solved cases; 800 MHz AICLK warning on this runner |
 | SWE expanded ten, C2 | 3/10 solved, 61.5 min evaluation | First five 3/5; second five 0/5; AICLK warning |
+| SWE expanded ten, C4 | 3/10 solved, 55.9 min evaluation | First five 2/5; second five 1/5; 21% more output than C2 |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
-| C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
+| C2/192K versus 256K | Median absolute synthetic rate change 0.12%; live Terminal 1/5 at both sizes | 192K had one timeout and no measured wall advantage |
 | Terminal fixed five, C1 | 0/5 solved, 270.1 min evaluation | Sampling paths differ from C2/C4; full-set target remains 44.94% |
-| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C2/192K pending; paths and token volume differ |
+| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | 192K live run also 1/5, with more output and a timeout |
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
 
 All current-main rows above pin Metal
@@ -842,6 +843,41 @@ healthy-host C2 fixed-five control or forthcoming C4 ten-case run. Raw
 artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c2-ten-main/` and
 `/home/mvasiljev/build/gemma-swe-c2-ten-main-summary.json`.
+
+### C4 ten-case SWE expansion
+
+The [matched C4 run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37985892182)
+completed **10/10 cases with zero case errors** on pinned-main Metal and
+solved **3/10**. The original first five scored **2/5** (Django 11299 and
+Matplotlib 25332); the added five scored **1/5** (requests 2317).
+C2/ten also scored 3/10, but solved scikit-learn 14629 instead of requests
+2317. A single temperature-1 trajectory cannot establish that C4 preserves
+per-case accuracy, even though the aggregate reward is equal. The generic
+64.8% full-set H100 gate again failed on this ten-case 30% subset.
+
+| Ten-case SWE measure | C2 | C4 |
+| --- | ---: | ---: |
+| Evaluation wall, min | 61.54 | 55.90 |
+| Sum of case clocks, min | 119.58 | 203.20 |
+| Observed case parallelism | 1.94 | 3.64 |
+| Solved first five / added five | 3 / 0 | 2 / 1 |
+| Model API calls | 403 | 450 |
+| Input / output tokens | 5.749M / 76.7K | 7.574M / 92.7K |
+| Peak / p95 sampled KV | 38.1% / 31.2% | 49.0% / 42.7% |
+| Waiting samples | 4/370 | 10/337 |
+
+C4 shortened observed evaluation wall by **9.2%** while its summed case
+clocks grew **70%** and output grew **21%**. Four overlapping trials hid much
+of the extra work, but their changed paths prevent interpreting the wall
+difference as isolated model throughput. In particular, the original first
+five used 3.918M input tokens and 56,880 output tokens at C4 versus 2.131M
+and 40,079 at C2. The C2 run's runner logged an 800 MHz AICLK warning; the
+C4 runner `qb2-120-p05t05` did not, so host clocks also confound the wall
+comparison. C4 reached four running requests, and its 10 waiting samples
+out of 337 did not indicate sustained KV saturation. Its 444 trace
+warm/capture intervals summed to 105.1 seconds. Raw artifacts and numeric
+summary are under `/home/mvasiljev/build/gemma-swe-c4-ten-main/` and
+`/home/mvasiljev/build/gemma-swe-c4-ten-main-summary.json`.
 
 ## Current-main Terminal fixed-five result at C2
 
