@@ -443,6 +443,10 @@ templates:
         # isl plus the 4 tokens the chat template adds. Any other length runs
         # eagerly; keep this list in step with the points and the template.
         TT_V41_TRACE_PREFILL_LENGTHS: "1028,2052,4100,8196"
+        # Compressed-KV rows in the checkpoint's own fp8 format (528 B a row,
+        # against 1,024 in bf16): 1.6x less cache memory per context token on
+        # every chip.
+        TT_V41_KV_FORMAT: "scaled_fp8"
         HF_HUB_OFFLINE: "1"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"
       override_tt_config:
