@@ -494,12 +494,17 @@ class TestGalaxyQuadDevice:
     def test_galaxy_is_still_4x8(self, monkeypatch):
         assert self._settings(monkeypatch, "galaxy").device_mesh_shape == (4, 8)
 
-    def test_fl2va_lightx2v_on_blackhole_galaxy_is_4x8(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "model, runner",
+        [
+            ("MiniMax-H3-FL2VA-LightX2V", "tt-minimax-h3-fl2va-lightx2v"),
+            ("MiniMax-H3-Ref2VA-LightX2V", "tt-minimax-h3-ref2va-lightx2v"),
+        ],
+    )
+    def test_lightx2v_on_blackhole_galaxy_is_4x8(self, monkeypatch, model, runner):
         # run.py sends DEVICE=blackhole_galaxy for a BLACKHOLE_GALAXY spec.
-        settings = self._settings(
-            monkeypatch, "blackhole_galaxy", model="MiniMax-H3-FL2VA-LightX2V"
-        )
-        assert settings.model_runner == "tt-minimax-h3-fl2va-lightx2v"
+        settings = self._settings(monkeypatch, "blackhole_galaxy", model=model)
+        assert settings.model_runner == runner
         assert settings.device_mesh_shape == (4, 8)
         assert settings.max_batch_size == 1
         assert settings.request_processing_timeout_seconds == 5000

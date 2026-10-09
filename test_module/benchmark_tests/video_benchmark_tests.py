@@ -49,10 +49,14 @@ VIDEO_INFERENCE_STEPS = {
     "Wan-AI/Wan2.2-I2V-A14B-Diffusers": 40,
     # Pinned by the runner and refused in the request; labels the rows only.
     "MiniMaxAI/MiniMax-H3-FL2VA-LightX2V": 4,
+    "MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V": 4,
 }
-# MiniMax-H3 rejects num_inference_steps and negative_prompt (422), so its deployments get
-# their own request shape. Keyed by the served model name (the container's MODEL).
-MINIMAX_H3_FL2VA_MODEL_NAMES = frozenset({"MiniMax-H3-FL2VA-LightX2V"})
+# MiniMax-H3 rejects num_inference_steps and negative_prompt (422), and each deployment serves
+# one route, so H3 gets its own request shape. Keyed by the served model name (the MODEL env).
+MINIMAX_H3_SUBMIT_ENDPOINTS = {
+    "MiniMax-H3-FL2VA-LightX2V": VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT,
+    "MiniMax-H3-Ref2VA-LightX2V": "v1/videos/generations/ref2va",
+}
 MINIMAX_H3_DURATION_SECONDS = 5
 # 16:9; an explicit canvas keeps the clip shape independent of the keyframe's aspect ratio.
 MINIMAX_H3_HEIGHT, MINIMAX_H3_WIDTH = 768, 1344
@@ -60,19 +64,26 @@ MINIMAX_H3_HEIGHT, MINIMAX_H3_WIDTH = 768, 1344
 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS = 1800
 
 
-def is_minimax_h3_fl2va_model(model_name: str) -> bool:
-    return model_name in MINIMAX_H3_FL2VA_MODEL_NAMES
+def is_minimax_h3_model(model_name: str) -> bool:
+    return model_name in MINIMAX_H3_SUBMIT_ENDPOINTS
 
 
-def _minimax_h3_fl2va_payload(prompt: str, image_b64: str) -> dict:
-    return {
+def _minimax_h3_payload(model_name: str, prompt: str, image_b64: str) -> dict:
+    payload = {
         "prompt": prompt,
         "duration": MINIMAX_H3_DURATION_SECONDS,
-        "height": MINIMAX_H3_HEIGHT,
-        "width": MINIMAX_H3_WIDTH,
         "seed": 0,
-        "image_prompts": [{"image": image_b64, "frame_pos": 0}],
     }
+    if MINIMAX_H3_SUBMIT_ENDPOINTS[model_name] == VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT:
+        payload.update(
+            height=MINIMAX_H3_HEIGHT,
+            width=MINIMAX_H3_WIDTH,
+            image_prompts=[{"image": image_b64, "frame_pos": 0}],
+        )
+    else:
+        # The Ref2VA adapter is 544p-trained; let the server pick the canvas for 16:9.
+        payload.update(aspect_ratio="16:9", references={"images": [{"b64": image_b64}]})
+    return payload
 
 
 VIDEO_JOB_STATUS_COMPLETED = "completed"
@@ -162,10 +173,10 @@ def _generate_video(
 ) -> tuple[bool, float, str, str]:
     logger.info(f"🎬 Generating video with prompt: {prompt}")
     model_name = ctx.model_spec.model_name
-    h3_fl2va = is_minimax_h3_fl2va_model(model_name)
+    h3 = is_minimax_h3_model(model_name)
     submit_endpoint = (
-        VIDEO_GENERATION_I2V_SUBMIT_ENDPOINT
-        if h3_fl2va
+        MINIMAX_H3_SUBMIT_ENDPOINTS[model_name]
+        if h3
         else get_video_generation_submit_endpoint(model_name)
     )
     headers = {
@@ -173,9 +184,9 @@ def _generate_video(
         "Authorization": "Bearer your-secret-key",
         "Content-Type": "application/json",
     }
-    if h3_fl2va:
-        payload = _minimax_h3_fl2va_payload(
-            prompt, image_b64 or _load_fixture_image_base64()
+    if h3:
+        payload = _minimax_h3_payload(
+            model_name, prompt, image_b64 or _load_fixture_image_base64()
         )
     else:
         payload = build_video_generation_payload(
@@ -211,7 +222,7 @@ def _generate_video(
             headers,
             timeout=(
                 MINIMAX_H3_VIDEO_TIMEOUT_SECONDS
-                if h3_fl2va
+                if h3
                 else DEFAULT_VIDEO_TIMEOUT_SECONDS
             ),
         )
@@ -238,7 +249,7 @@ def _run_video_generation_benchmark(
     logger.info(f"Inference steps: {inference_steps}")
 
     # For I2V models load the conditioning image once and reuse it across calls.
-    needs_image = is_i2v_video_model(model_name) or is_minimax_h3_fl2va_model(
+    needs_image = is_i2v_video_model(model_name) or is_minimax_h3_model(
         ctx.model_spec.model_name
     )
     image_b64 = _load_fixture_image_base64() if needs_image else None

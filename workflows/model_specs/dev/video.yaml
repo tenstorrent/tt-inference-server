@@ -311,3 +311,55 @@ templates:
         ARCH_NAME: blackhole
         MESH_DEVICE: "(4, 8)"
   status: EXPERIMENTAL
+
+# MiniMax-H3 omni-reference-to-video-and-audio with the lightx2v Ref2VA Turbo 4-step adapter, on
+# one Blackhole Galaxy. Same layout as the FL2VA entry above, except that ref2va loads
+# transformer_ref/ instead of transformer/ and only POST /generations/ref2va is served.
+- weights:
+    - MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V
+  impl: tt_transformers
+  min_disk_gb: 300
+  min_ram_gb: 64
+  model_type: VIDEO
+  inference_engine: MEDIA
+  hf_weights_repo: MiniMaxAI/MiniMax-H3
+  env_vars:
+    MODEL_RUNNER: tt-minimax-h3-ref2va-lightx2v
+    USE_ASYNC_VIDEO: "true"
+    MAX_QUEUE_SIZE: "2"
+    TT_DIT_CACHE_DIR: /home/container_app_user/cache_root/tt_dit_cache
+    MINIMAX_H3_MODEL_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V
+    MINIMAX_H3_LORA_PATH: /home/container_app_user/cache_root/weights/MiniMax-H3-Ref2VA-LightX2V/lightx2v/minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors
+    MINIMAX_H3_VAE_OUTPUT: yuv420
+    TT_METAL_FABRIC_ROUTER_SYNC_TIMEOUT_MS: "120000"
+    VIDEO_REQUEST_TIMEOUT_SECONDS: "3000"
+  metadata:
+    MiniMaxAI/MiniMax-H3-Ref2VA-LightX2V:
+      hf_download_excludes:
+        - "FL2VA/*"
+        - "Ref2VA/*"
+        - "transformer/*"
+        - "assets/*"
+        - "docs/*"
+        - "scripts/*"
+      hf_required_globs:
+        - "model_index.json"
+        - "transformer_ref/config.json"
+        - "transformer_ref/*.safetensors"
+        - "text_encoder/*"
+        - "tokenizer/*"
+        - "vae/*"
+        - "audio_vae/*"
+      hf_extra_files:
+        - repo: lightx2v/Minimax-h3-Turbo
+          filename: minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors
+          local_subdir: lightx2v
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 1
+      max_context: 65536
+      default_impl: true
+      env_vars:
+        ARCH_NAME: blackhole
+        MESH_DEVICE: "(4, 8)"
+  status: EXPERIMENTAL
