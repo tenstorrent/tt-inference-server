@@ -121,7 +121,11 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
   landed on `120-qb2-p04t07`, the host that repeatedly failed the ownership
   check due to a stopped container. The hold leaves that container and
   hardware untouched while clean hosts accept the queued Gemma jobs; cancel
-  it after those jobs are assigned.
+  it after those jobs are assigned. A
+  [second queued hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37973784755)
+  can take the same occupied host when the first hold expires; move queued
+  model jobs behind it before that handoff so the dirty runner does not take
+  one. Cancel the hold once all model jobs have clean runner assignments.
 - The inference-server [baseline branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-baseline)
   adds tool-call parsing to the dedicated dev catalog entry and restores the
   original five fixed Terminal-Bench 2.0 and SWE-bench Verified cases. It keeps
