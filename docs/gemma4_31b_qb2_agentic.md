@@ -448,6 +448,10 @@ gate failed at 128/128 C4: 131.48 output tokens/s versus its 217.65
 `complete` threshold. The one-active-user points on the warmed C4 server
 were a median **1.29% slower** than on the warmed C2 server, so keeping four
 physical rows did not impose a large idle-row decode penalty in this sweep.
+If live C4 rewards and KV admission hold up, one already-warmed C4 physical
+trace can cover logical active counts one through four at single-request
+granularity without switching model processes; the synthetic single-user
+penalty is small enough to make that simpler policy plausible.
 
 | Input/output tokens | C2 active-two output tok/s | C4 active-four output tok/s | C4/C2 |
 | --- | ---: | ---: | ---: |
