@@ -4253,8 +4253,11 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
-                    gpu_reference_score=29.12,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    # Re-measured single-turn on the pinned harness (vLLM 0.13.0 bf16, A100, 12,032 samples). The
+                    # previous 29.12 (#248) predates the harness auto-enabling multiturn few-shot, under which this
+                    # task now errors on Mistral's template (see fewshot_as_multiturn above).
+                    gpu_reference_score=32.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
