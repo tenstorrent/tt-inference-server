@@ -15,6 +15,9 @@ from pathlib import Path
 KV_SAMPLE = re.compile(
     r"Running: (\d+) reqs, Waiting: (\d+) reqs, GPU KV cache usage: ([\d.]+)%"
 )
+THROUGHPUT_SAMPLE = re.compile(
+    r"Avg prompt throughput: ([\d.]+) tokens/s, Avg generation throughput: ([\d.]+) tokens/s"
+)
 TRACE_WARM = re.compile(r"\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d\.\d+).*Warming model trace")
 TRACE_CAPTURE = re.compile(
     r"\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d\.\d+).*Capturing model trace"
@@ -37,7 +40,7 @@ def time_of_day(value):
 
 def summarize_server(root):
     logs = sorted(root.rglob("docker_server/*.log"))
-    samples, warmups, captures = [], [], []
+    samples, throughput, warmups, captures = [], [], [], []
     seen = set()
     for path in logs:
         for line in path.open(errors="replace"):
@@ -48,6 +51,9 @@ def summarize_server(root):
                 if key not in seen:
                     seen.add(key)
                     samples.append((int(sample[1]), int(sample[2]), float(sample[3])))
+                    rate = THROUGHPUT_SAMPLE.search(line)
+                    if rate:
+                        throughput.append((float(rate[1]), float(rate[2])))
             warm = TRACE_WARM.search(line)
             if warm:
                 warmups.append(time_of_day(warm[1]))
@@ -55,11 +61,33 @@ def summarize_server(root):
             if capture:
                 captures.append(time_of_day(capture[1]))
     kv = sorted(s[2] for s in samples)
+    running_counts = {
+        str(count): sum(row[0] == count for row in samples)
+        for count in sorted({row[0] for row in samples})
+    }
     intervals = [b - a for a, b in zip(warmups, captures) if 0 <= b - a < 3600]
     return {
         "log_files": [str(p.relative_to(root)) for p in logs],
         "samples": len(samples),
         "running_peak": max((s[0] for s in samples), default=None),
+        "running_counts": running_counts,
+        "prompt_positive_fraction": sum(row[0] > 0 for row in throughput)
+        / len(throughput)
+        if throughput
+        else None,
+        "generation_positive_fraction": sum(row[1] > 0 for row in throughput)
+        / len(throughput)
+        if throughput
+        else None,
+        "both_positive_fraction": sum(row[0] > 0 and row[1] > 0 for row in throughput)
+        / len(throughput)
+        if throughput
+        else None,
+        "median_positive_generation_tps": statistics.median(
+            row[1] for row in throughput if row[1] > 0
+        )
+        if any(row[1] > 0 for row in throughput)
+        else None,
         "waiting_positive_fraction": sum(s[1] > 0 for s in samples) / len(samples)
         if samples
         else None,

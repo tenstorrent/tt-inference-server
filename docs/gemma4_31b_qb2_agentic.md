@@ -41,7 +41,12 @@ commits, task lists, or agent policies are kept separate.
   Terminal evaluation. The first warmup was much slower and cold startup must
   be kept separate. Its 3,545 roughly ten-second KV samples reached 28.7%
   maximum and 19.7% p95; no sample showed a waiting request. These samples
-  cannot establish a safe smaller pool under higher concurrency.
+  cannot establish a safe smaller pool under higher concurrency. Across the
+  combined Terminal and SWE server lifetime, 75.9% of the ten-second samples
+  had positive generation throughput, 9.4% positive prompt throughput, and
+  every prompt-positive sample was also generation-positive. Median positive
+  generation throughput was 37.4 tokens/s. These are activity indicators over
+  sampling windows, not exclusive prefill/decode device-time fractions.
 - The separate [September 24 exploratory cases](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/35986956766)
   scored 3/5 Terminal and 1/5 SWE on **different task IDs**. Terminal used
   72,817 output tokens and 3.62 hours; peak sampled KV was 13.4%. The differing
@@ -191,7 +196,8 @@ the current-main five-case comparison supports expansion.
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
 The script emits only case IDs, numeric timings/tokens/rewards and server
-counts; it omits prompts, patches, shell transcripts and model responses. Its
+counts/throughput samples; it omits prompts, patches, shell transcripts and
+model responses. Its
 Terminal request fit reads token counts from trajectories but drops the
 messages; any case with unequal trajectory-step and API-timing counts is
 reported as unmatched and excluded from that fit.
