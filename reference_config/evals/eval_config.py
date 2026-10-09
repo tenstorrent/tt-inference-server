@@ -7233,8 +7233,8 @@ _eval_config_list = [
     ),
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
     # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
-    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
-    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-4B-Base",
         tasks=[
@@ -7244,8 +7244,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=37.71,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7262,8 +7262,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=22.69,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -7296,8 +7296,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=51.08,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7315,8 +7315,8 @@ _eval_config_list = [
     ),
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
     # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
-    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
-    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-8B-Base",
         tasks=[
@@ -7326,8 +7326,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=34.94,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7344,8 +7344,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=26.19,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -7378,8 +7378,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=56.13,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7397,8 +7397,9 @@ _eval_config_list = [
     ),
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); base checkpoint;
     # tasks and apply_chat_template=False copied from meta-llama/Llama-3.2-1B (base).
-    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
-    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 22960 on the A100; no request exceeded 4033 tokens (#5353).
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-14B-Base",
         tasks=[
@@ -7408,8 +7409,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=41.4,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7426,8 +7427,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=26.72,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -7460,8 +7461,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=61.59,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7480,8 +7481,9 @@ _eval_config_list = [
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); chat checkpoint
     # without a TTIS sibling; tasks copied from the non-Meta chat rows (upstage/SOLAR-10.7B-Instruct-v1.0,
     # chat template applied).
-    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
-    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 48896 on the A100; no request exceeded 3894 tokens (#5353).
     EvalConfig(
         hf_model_repo="NousResearch/Hermes-3-Llama-3.1-8B",
         tasks=[
@@ -7490,8 +7492,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=57.67,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7507,8 +7509,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=8.8,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -7540,8 +7542,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=41.12,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7633,8 +7635,9 @@ _eval_config_list = [
     ),
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); reasoning
     # checkpoint; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-8B.
-    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
-    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353). vLLM served it at
+    # max_model_len 57408 on the A100; no request exceeded 32942 tokens (#5353).
     EvalConfig(
         hf_model_repo="nvidia/Llama-3.1-Nemotron-Nano-8B-v1",
         tasks=[
@@ -7643,8 +7646,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=53.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7670,8 +7673,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=51.52,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7692,8 +7695,8 @@ _eval_config_list = [
     ),
     # Quetzal candidate deferred from the wave18 list (no like-for-like published reference); reasoning
     # checkpoint; tasks copied from deepseek-ai/DeepSeek-R1-Distill-Llama-8B.
-    # Every task grades NA (published_score=None, gpu_reference_score=None) until a GPU reference from
-    # scripts/gpu_reference_colab/ is reviewed and filled in (issue #5353).
+    # No published reference: gpu_reference_score is a full-sample GPU run of these exact tasks
+    # (scripts/gpu_reference_colab/, A100-SXM4-40GB, vLLM 0.13.0 bf16; issue #5353).
     EvalConfig(
         hf_model_repo="open-thoughts/OpenThinker-7B",
         tasks=[
@@ -7702,8 +7705,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=33.33,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -7729,8 +7732,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=44.44,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
