@@ -47,7 +47,7 @@ commits, task lists, or agent policies are kept separate.
   72,817 output tokens and 3.62 hours; peak sampled KV was 13.4%. The differing
   tasks and trajectories prevent reading its shorter wall time as a serving
   speed improvement over the September 21 fixed-case run.
-- The dedicated model's [README](https://github.com/tenstorrent/tt-metal/blob/main/models/demos/gemma4_31b_qb2/README.md)
+- The dedicated model's [README](https://github.com/tenstorrent/tt-metal/blob/2c1e1ebdd638886821f35113a5fd0d6335d71608/models/demos/gemma4_31b_qb2/README.md)
   supports batch 1–32. Its measured 128/128 case completed 0.357 requests/s at
   batch 1 and 5.847 requests/s with 32 concurrent requests. At 1024/128,
   batch-32 per-user decode dropped to 21.00 tokens/s from batch-1's 44.27.
@@ -57,7 +57,12 @@ commits, task lists, or agent policies are kept separate.
   accelerated by enabling a server flag alone. The main catalog's separate
   `tt_transformers` implementation has a different cache path and should be
   measured as its own implementation if C2/C4 leaves prefill dominant; the
-  historical request fit currently points more strongly to decode.
+  historical request fit currently points more strongly to decode. Its
+  [Gemma4 README](https://github.com/tenstorrent/tt-metal/blob/2c1e1ebdd638886821f35113a5fd0d6335d71608/models/demos/gemma4/README.md)
+  reports 22.68 tokens/s for a warm QB2 31B batch-1 metal demo at 4K input.
+  That is a different measurement path from the dedicated server's 44.27
+  tokens/s at 1K input, so it is only a reason to prioritize the dedicated
+  C2/C4 measurements, not a controlled implementation comparison.
 - Granite's [fixed-five timing analysis](https://github.com/tenstorrent/tt-metal/blob/533b81b7bbd/models/autoports/ibm_granite_granite_4_2_30b/doc/agentic_evals/TERMINAL_BENCH_TIME_BREAKDOWN.md)
   measured 79.3% of accumulated agent execution inside model API calls at C2;
   other agent work overlaps another case's inference. Its thinking-off pilot
