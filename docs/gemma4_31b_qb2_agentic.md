@@ -8,14 +8,14 @@ commits, task lists, or agent policies are kept separate.
 
 - The [September 21 baseline](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/35667712636)
   used an older Metal implementation and the fixed first five Terminal-Bench 2.0
-  and SWE-bench Verified cases. It scored **1/5** on each. The Terminal mean was
-  5,646.8 seconds per case, with 4.61 million input and 557 thousand output
-  tokens across the five cases. These are historical outcomes, not scores for
-  current Metal main.
+  and SWE-bench Verified cases. It scored **1/5** on each. Terminal ran 7.84
+  hours (5,646.8 seconds per case), with 4.61 million input and 557 thousand
+  output tokens across the five cases. SWE ran 2.00 hours. These are
+  historical outcomes, not scores for current Metal main.
 - That Terminal server logged 409 model-trace warm/capture cycles. Matched
   warm-to-capture intervals sum to 119.8 seconds (median 0.157 seconds, p95
-  0.440 seconds), so trace recapture alone is a small part of its multi-hour
-  evaluation. The first warmup was much slower and cold startup must
+  0.440 seconds), so trace recapture alone is a small part of its 7.84-hour
+  Terminal evaluation. The first warmup was much slower and cold startup must
   be kept separate. Its 3,545 roughly ten-second KV samples reached 28.7%
   maximum and 19.7% p95; no sample showed a waiting request. These samples
   cannot establish a safe smaller pool under higher concurrency.

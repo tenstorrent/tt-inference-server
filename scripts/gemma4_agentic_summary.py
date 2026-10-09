@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Summarize retained Gemma4 agentic CI artifacts without copying task text."""
+
+import argparse
+import json
+import re
+import statistics
+from datetime import datetime
+from pathlib import Path
+
+
+KV_SAMPLE = re.compile(r"Running: (\d+) reqs, Waiting: (\d+) reqs, GPU KV cache usage: ([\d.]+)%")
+TRACE_WARM = re.compile(r"\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d\.\d+).*Warming model trace")
+TRACE_CAPTURE = re.compile(r"\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d\.\d+).*Capturing model trace")
+
+
+def seconds_between(start, end):
+    if not start or not end:
+        return None
+    return (datetime.fromisoformat(end.replace("Z", "+00:00")) - datetime.fromisoformat(start.replace("Z", "+00:00"))).total_seconds()
+
+
+def time_of_day(value):
+    hour, minute, second = value.split(":")
+    return int(hour) * 3600 + int(minute) * 60 + float(second)
+
+
+def summarize_server(root):
+    logs = sorted(root.rglob("docker_server/*.log"))
+    samples, warmups, captures = [], [], []
+    seen = set()
+    for path in logs:
+        for line in path.open(errors="replace"):
+            sample = KV_SAMPLE.search(line)
+            if sample:
+                # CI can append the same Docker log more than once.
+                key = (line[:40], sample.group(0))
+                if key not in seen:
+                    seen.add(key)
+                    samples.append((int(sample[1]), int(sample[2]), float(sample[3])))
+            warm = TRACE_WARM.search(line)
+            if warm:
+                warmups.append(time_of_day(warm[1]))
+            capture = TRACE_CAPTURE.search(line)
+            if capture:
+                captures.append(time_of_day(capture[1]))
+    kv = sorted(s[2] for s in samples)
+    intervals = [b - a for a, b in zip(warmups, captures) if 0 <= b - a < 3600]
+    return {
+        "log_files": [str(p.relative_to(root)) for p in logs],
+        "samples": len(samples),
+        "running_peak": max((s[0] for s in samples), default=None),
+        "waiting_positive_fraction": sum(s[1] > 0 for s in samples) / len(samples) if samples else None,
+        "kv_peak_pct": max(kv) if kv else None,
+        "kv_p95_pct": kv[int(0.95 * (len(kv) - 1))] if kv else None,
+        "trace_warmups": len(warmups),
+        "trace_captures": len(captures),
+        "warm_to_capture_total_s": sum(intervals) if intervals else None,
+        "warm_to_capture_median_s": statistics.median(intervals) if intervals else None,
+    }
+
+
+def summarize_task(path):
+    summary = json.loads(path.read_text())
+    stats = summary.get("stats") or {}
+    evals = list((stats.get("evals") or {}).values())
+    rewards = ((evals[0].get("reward_stats") or {}).get("reward") or {}) if evals else {}
+    case_paths = sorted(p for p in path.parent.glob("*/result.json") if p != path)
+    cases = []
+    for case_path in case_paths:
+        item = json.loads(case_path.read_text())
+        agent = item.get("agent_result") or {}
+        request_ms = (agent.get("metadata") or {}).get("api_request_times_msec") or []
+        wall = seconds_between(item.get("started_at"), item.get("finished_at"))
+        reward = ((item.get("verifier_result") or {}).get("rewards") or {}).get("reward")
+        cases.append(
+            {
+                "id": item.get("task_name", case_path.parent.name),
+                "reward": reward,
+                "wall_s": wall,
+                "api_s": sum(request_ms) / 1000 if request_ms else None,
+                "requests": len(request_ms) if request_ms else None,
+                "input_tokens": agent.get("n_input_tokens"),
+                "output_tokens": agent.get("n_output_tokens"),
+                "exception": (item.get("exception_info") or {}).get("exception_type"),
+            }
+        )
+    return {
+        "task": path.parent.name,
+        "result_path": str(path),
+        "wall_s": seconds_between(summary.get("started_at"), summary.get("finished_at")),
+        "trials": stats.get("n_completed_trials", evals[0].get("n_trials") if evals else None),
+        "errors": stats.get("n_errored_trials", evals[0].get("n_errors") if evals else None),
+        "rewarded": len(rewards.get("1.0", [])),
+        "zero_reward": len(rewards.get("0.0", [])),
+        "input_tokens": stats.get("n_input_tokens"),
+        "output_tokens": stats.get("n_output_tokens"),
+        "cases": cases,
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", type=Path, help="directory extracted by gh run download")
+    parser.add_argument("--output", type=Path, help="write compact JSON here")
+    args = parser.parse_args()
+    root = args.root.resolve()
+    paths = sorted(
+        p for p in root.rglob("result.json")
+        if p.parent.name.startswith(("terminal_bench_2", "swe_bench_verified"))
+        and "stats" in json.loads(p.read_text())
+    )
+    result = {"root": str(root), "server": summarize_server(root), "tasks": [summarize_task(p) for p in paths]}
+    rendered = json.dumps(result, indent=2) + "\n"
+    if args.output:
+        args.output.write_text(rendered)
+    else:
+        print(rendered, end="")
+
+
+if __name__ == "__main__":
+    main()
