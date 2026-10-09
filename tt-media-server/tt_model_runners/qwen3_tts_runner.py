@@ -241,9 +241,16 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
         )
         self.config = api.TTSConfig(max_new_tokens=max_new)
         self.config.greedy = False
+        # Sampling as the reference qwen-tts generate() (HF generation_config.json):
+        # repetition penalty 1.05, codec control ids masked for code 0, EOS allowed from
+        # the 3rd frame. 1.15 and the missing mask let short texts run to max_new_tokens.
         self.config.repetition_penalty = float(
-            os.environ.get("TT_QWEN3_REP_PENALTY", "1.15")
+            os.environ.get("TT_QWEN3_REP_PENALTY", "1.05")
         )
+        self.config.suppress_special_codec = (
+            os.environ.get("TT_QWEN3_SUPPRESS_SPECIAL", "1") == "1"
+        )
+        self.config.min_new_tokens = int(os.environ.get("TT_QWEN3_MIN_NEW_TOKENS", "2"))
         self.config.hidden_size = talker_config.hidden_size
 
         # Host-only (reference codes come from the CPU encoder / refcache), so it can
@@ -645,11 +652,21 @@ class TTQwen3TTSRunner(BaseMetalDeviceRunner):
 
         total_ms = (_time.perf_counter() - t_total) * 1000
         rtf = (total_ms / 1000.0) / duration_s if duration_s > 0 else float("inf")
+        # Code-0 ids at or above the 2048 audio codes are codec control ids: the decoder
+        # cannot render them. Logged so a runaway or garbled request can be traced.
+        ctrl_ids = int((codes[:, 0] >= 2048).sum())
+        hit_cap = len(codes) >= self.config.max_new_tokens
         self.logger.info(
             f"Device {self.device_id}: voice={voice_id} lang={language} "
             f"frames={len(codes)} audio={duration_s:.2f}s "
-            f"total={total_ms:.0f}ms RTF={rtf:.3f}"
+            f"total={total_ms:.0f}ms RTF={rtf:.3f} ctrl_ids={ctrl_ids} hit_cap={hit_cap}"
         )
+        if hit_cap:
+            self.logger.warning(
+                f"Device {self.device_id}: output stopped at max_new_tokens="
+                f"{self.config.max_new_tokens} ({self.config.max_new_tokens / 12.5:.2f}s); "
+                "text may be cut"
+            )
         return TextToSpeechResponse(
             audio=b64_audio,
             duration=duration_s,
