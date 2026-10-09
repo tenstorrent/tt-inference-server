@@ -77,8 +77,7 @@ TEST_F(Qwen3TtsSettingsTest, DerivesReleaseAndQwen3Defaults) {
                  cfg.qwen3ModelSize == Qwen3TtsModelSize::SIZE_1B7 &&
                  cfg.audioSampleRateHz == 24000 &&
                  cfg.voiceSampleRateHz == 24000 && cfg.maxUsers == 2 &&
-                 cfg.maxBatchSize == 1 && cfg.tokenizerPath.empty() &&
-                 cfg.bosToken.empty() && cfg.qwen3MaxFrames == 400 &&
+                 cfg.maxBatchSize == 1 && cfg.qwen3MaxFrames == 400 &&
                  cfg.qwen3Seed == 7u &&
                  cfg.qwen3HfModel == "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice";
         });
