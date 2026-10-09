@@ -14,7 +14,7 @@ commits, task lists, or agent policies are kept separate.
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C2/192K versus 256K | Median absolute rate change 0.12% across 23 shapes | Terminal reward and live KV check pending |
-| Terminal fixed five | C1, C2, C4 and C2/192K running | Do not choose a serving policy before rewards and case clocks |
+| Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | C1, C4 and C2/192K pending; paths and token volume differ |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -733,3 +733,54 @@ network throughput. The independent C2 benchmark on runner
 ran on `qb2-120-p05t02`. Both were separate server starts and runner hosts;
 these logs show repeated snapshot cost, though not whether each byte came
 from the network rather than a lower-level cache.
+
+## Current-main Terminal fixed-five result at C2
+
+The [C2 fixed-five Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963842946)
+completed all five official Terminal-Bench 2.0 cases with zero case errors
+on the pinned-main Metal image and inference-server
+`ebb2cf2870b86df3edd5b6636a1503f1e9426c1d`. It resolved **1/5**,
+COBOL modernization, the same case resolved by the September C1 run.
+The generic CI accuracy gate marked the five-case 20% score as a failure
+against the full 89-case H100 target of 44.94%; that does not make the
+executed cases invalid or establish target parity.
+
+| Terminal case | Reward | Wall min | Model API min | Other min | Calls | Output tokens |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| HTML filter | 0 | 171.3 | 99.8 | 71.5 | 50 | 199,608 |
+| COBOL modernization | 1 | 9.6 | 9.2 | 0.4 | 6 | 19,663 |
+| CompCert | 0 | 120.5 | 68.5 | 52.0 | 50 | 125,230 |
+| FEAL | 0 | 28.8 | 13.3 | 15.5 | 6 | 28,917 |
+| QEMU startup | 0 | 17.0 | 11.8 | 5.2 | 14 | 25,672 |
+
+The evaluation wall was **175.87 minutes** and the five case clocks sum to
+347.12 minutes, an observed active-case parallelism of **1.97**. Its full
+test job lasted **182.57 minutes**. The 126 matched model calls used 2.717M
+input and 399,090 output tokens; summed API time was 202.61 minutes
+(58.4% of the case-clock sum), with 144.51 minutes outside the API. The
+request timing fit is 7.20 seconds/call + 0.166 seconds/1K prompt tokens +
+27.06 seconds/1K output tokens (R² 0.980). This fit is observational,
+not device profiling. The older C1 matched-call fit gave 26.28 seconds/1K
+output tokens, so these artifacts do not show a per-output-token decode
+speedup from C2. They do show that output volume and agent overlap matter.
+
+September's older-Metal C1 fixed-five evaluation took **7.84 hours** and
+generated about **557K** output tokens, versus current-main C2's **2.93 hours**
+and **399K** output tokens. The observed suite wall is 2.67× shorter,
+but the runs differ in Metal commit, chunked-prefill policy, concurrency and
+sampled trajectories. HTML still lasted about 171 minutes; CompCert fell
+from 162 to 121, FEAL from 64 to 29, and QEMU from 64 to 17 minutes.
+The case-clock sum fell about 26% while suite wall fell about 63%, directly
+supporting overlap as a major contributor without assigning it an isolated
+causal speedup. A same-main C1 control is still running.
+
+The C2 server reached two running requests with **zero waiting samples**
+among 1,056 ten-second samples. Sampled KV usage peaked at 52.6% (p95
+34.4%); 143 trace warm/capture intervals summed to 61.5 seconds. No
+AICLK-clamp warning appeared in its server log. This was a warm-weight
+restart on the same host as C2 SWE: the Hugging Face snapshot step took
+about 0.2 seconds and server readiness about 4 min 47 s. The result
+supports testing a smaller KV pool, but its peak occupancy alone cannot
+establish safety for four simultaneous long Terminal requests. Raw artifacts
+and numeric summary are under `/home/mvasiljev/build/gemma-terminal-c2-main/`
+and `/home/mvasiljev/build/gemma-terminal-c2-main-summary.json`.
