@@ -249,7 +249,10 @@ API time, token counts, request-running/waiting samples, KV occupancy,
 preemptions, trace recapture count and server identity. Increase to ten cases
 only after the five-case results preserve at least the baseline's solved cases
 and show a useful wall-time gain. The full-set H100 targets remain recorded;
-do not turn a missing reward or smaller denominator into a passing score.
+do not turn a missing reward or smaller denominator into a passing score. At
+temperature 1.0, a changed solved-case set on one trajectory is a reason to
+repeat the same pinned five-case configuration before treating it as a quality
+regression or selecting a new serving policy.
 
 The predeclared second five from September's separate exploratory run are
 Terminal `cancel-async-tasks`, `git-multibranch`, `password-recovery`,
