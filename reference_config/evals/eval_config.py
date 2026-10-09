@@ -8892,6 +8892,94 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=42.9,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=44.94,
+                    gpu_reference_score_ref="run.py --workflow evals terminal_bench_2 full (89), H100 gemma-4-31B-it, 2026-06-17",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    agent="terminus-2",
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=None,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "max_turns": 50,
+                        "model_info": {"max_input_tokens": 64 * 1024, "max_output_tokens": 16 * 1024},
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {"top_k": 20},
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=52.0,
+                    published_score_ref="https://huggingface.co/Qwen/Qwen3.6-27B",
+                    gpu_reference_score=64.80,
+                    gpu_reference_score_ref="run.py --workflow evals swe_bench_verified full (500), H100 gemma-4-31B-it, 2026-06-18",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={"result_keys": ["accuracy"], "unit": "percent"},
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=1,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 8 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
         ],
     ),
     EvalConfig(
