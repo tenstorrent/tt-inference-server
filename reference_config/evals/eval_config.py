@@ -4698,6 +4698,7 @@ _eval_config_list = [
             ),
             EvalTask(
                 task_name="mmlu_pro",
+                gpu_reference_requested="existing GPU ref 28.09 is about half of a fresh like-for-like GPU measurement (57.39, sweep edf41066)",
                 num_fewshot=5,
                 score=EvalTaskScore(
                     published_score=None,

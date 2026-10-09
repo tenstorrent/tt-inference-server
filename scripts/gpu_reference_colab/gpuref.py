@@ -153,7 +153,16 @@ def memory_estimate(
     more sequences only queue), and need = weights + one sequence + overhead.
     Without a readable config.json only the weights are sized."""
     weights = num_params * 2 / GIB
-    per_token = kv_bytes_per_token(config) if config else None
+    # Multimodal and hybrid checkpoints nest the decoder under text_config.
+    config = (
+        config
+        if (config or {}).get("num_attention_heads")
+        else (config or {}).get("text_config")
+    )
+    known = bool(config) and all(
+        k in config for k in ("num_attention_heads", "num_hidden_layers")
+    )
+    per_token = kv_bytes_per_token(config) if known else None
     one_seq = per_token * max_context / GIB if per_token else 0.0
     # Peak MLP activation (gate+up, bf16) for one prefill chunk.
     chunk = min(max_context, GPU_MAX_BATCHED_TOKENS)
@@ -188,6 +197,25 @@ def gpu_verdicts(estimate: Dict[str, Any], max_context: int) -> Dict[str, Any]:
     return verdicts
 
 
+def params_from_config(config: Optional[Dict[str, Any]]) -> Optional[int]:
+    """Dense-decoder parameter count from config.json, for checkpoints with no
+    safetensors metadata on the Hub (e.g. .bin-only TinyLlama_v1.1)."""
+    try:
+        h, layers = int(config["hidden_size"]), int(config["num_hidden_layers"])
+        heads = int(config["num_attention_heads"])
+        kv = int(config.get("num_key_value_heads") or heads)
+        head_dim = int(config.get("head_dim") or h // heads)
+        embed = (
+            int(config["vocab_size"])
+            * h
+            * (1 if config.get("tie_word_embeddings") else 2)
+        )
+        attn = 2 * h * heads * head_dim + 2 * h * kv * head_dim
+        return embed + layers * (attn + 3 * h * int(config["intermediate_size"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def model_facts(
     model: str, plan: Dict[str, Any], token: Optional[str]
 ) -> Dict[str, Any]:
@@ -198,7 +226,9 @@ def model_facts(
     use_token = token if gated is not False else None
     meta = hf_get(f"{HF}/api/models/{model}/revision/{rev}", use_token)
     config = hf_get(f"{HF}/{model}/resolve/{rev}/config.json", use_token)
-    params = ((meta or {}).get("safetensors") or {}).get("total")
+    params = ((meta or {}).get("safetensors") or {}).get("total") or params_from_config(
+        config
+    )
     memory = None
     if params:
         ctx, conc = plan["max_context"], plan["max_concurrency"]
@@ -562,12 +592,13 @@ def catalog_facts(ttis_dir: Path = REPO_ROOT):
     return tasks, rows
 
 
-def select_targets(tasks, rows, refresh: bool = False):
+def select_targets(tasks, rows, refresh: bool = False, audit: frozenset = frozenset()):
     """(targets, skipped). A task is a target when gpu_reference_requested is
     set (a reviewed request to measure, even over an existing reference), when
-    it has neither published_score nor gpu_reference_score, or, with
-    refresh, when it has a gpu_reference_score. It needs an lm-eval
-    (EVALS_COMMON) task and a GPU spec, or a TT row to derive one from."""
+    it has neither published_score nor gpu_reference_score, with refresh when
+    it has a gpu_reference_score, and -- whatever its references -- when its
+    model is in `audit` (every task of every Quetzal-row model). It needs an
+    lm-eval (EVALS_COMMON) task and a GPU spec, or a TT row to derive one."""
     targets, skipped = [], []
     for repo in sorted(tasks):
         model_rows = rows.get(repo, [])
@@ -576,12 +607,12 @@ def select_targets(tasks, rows, refresh: bool = False):
         for t in tasks[repo]:
             if t["requested"]:
                 reason = f"requested: {t['requested']}"
-            elif t["gpu_ref"] is not None:
-                if not refresh:
-                    continue
-                reason = "refresh"
-            elif t["published"] is None:
+            elif t["gpu_ref"] is None and t["published"] is None:
                 reason = "ungated"
+            elif refresh and t["gpu_ref"] is not None:
+                reason = "refresh"
+            elif repo in audit:
+                reason = "audit: Quetzal P300X2 row"
             else:
                 continue
             item = {
@@ -726,9 +757,56 @@ def run_covers(
     ) <= scored
 
 
-def sweep_plan(sha: str, results_root: Path, refresh: bool = False):
+# A100 wall minutes per task for a ~8B model, measured on the 2026-10-08/09 Colab
+# runs (full samples, 32 concurrent); a model's estimate scales with its size
+# (floor 0.5x) and adds ~10 min of serve/startup. Rough, for budgeting only.
+A100_TASK_MINUTES = {
+    "leaderboard_ifeval": 3, "ifeval": 3, "leaderboard_math_hard": 8, "mmlu_pro": 25,
+    "gpqa_diamond_generative_n_shot": 6, "gpqa_diamond_cot_zeroshot": 6, "r1_aime24": 20,
+    "r1_gpqa_diamond": 30, "mbpp_instruct": 5, "humaneval_instruct": 4,
+}  # fmt: skip
+CU_PER_HOUR = {"A100": 5.3, "H100": 18.05}
+
+
+def estimate_hours(task_names: List[str], weights_gib: Optional[float]) -> float:
+    scale = max(0.5, (weights_gib or 15.0) / 15.0)  # 15 GiB ~ an 8B model in bf16
+    minutes = sum(A100_TASK_MINUTES.get(t, 10) for t in task_names) * scale + 10
+    return round(minutes / 60, 2)
+
+
+def quetzal_models(rows, refs: List[str]) -> Dict[str, str]:
+    """Models with a Quetzal P300X2 row: here, and in each git ref's dev
+    catalog (e.g. main and open row PRs). model -> where it was found."""
+    found = {m: "this branch" for m, rs in rows.items()
+             if any(r["impl"] == "quetzal" and r["device"] == "P300X2" for r in rs)}  # fmt: skip
+    for ref in refs:
+        text = run_out(
+            ["git", "show", f"{ref}:workflows/model_specs/dev/llm.yaml"], cwd=REPO_ROOT
+        )
+        try:
+            import yaml
+
+            templates = (yaml.safe_load(text or "") or {}).get("templates") or []
+        except yaml.YAMLError:
+            templates = []
+        for tpl in templates:
+            devices = {d.get("device") for d in tpl.get("device_model_specs") or []}
+            if tpl.get("impl") == "quetzal" and "P300X2" in devices:
+                for model in tpl.get("weights") or []:
+                    found.setdefault(model, ref)
+    return found
+
+
+def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=None):
     tasks, rows = catalog_facts()
-    targets, skipped = select_targets(tasks, rows, refresh)
+    audit: Dict[str, str] = (
+        quetzal_models(rows, audit_refs) if audit_refs is not None else {}
+    )
+    targets, skipped = select_targets(tasks, rows, refresh, frozenset(audit))
+    for model, where in sorted(audit.items()):
+        if model not in tasks:
+            skipped.append({"model": model, "task": "*", "reason": "audit: Quetzal P300X2 row",
+                            "skip": f"row on {where}; no EvalConfig on this branch"})  # fmt: skip
     from workflows.model_spec import DeviceModelSpec, DeviceTypes, get_model_id
 
     yaml_text = (
@@ -770,22 +848,25 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False):
         facts = model_facts(model, plan, token)
         memory = facts["memory"] or {}
         model_tasks = [t["task"] for t in targets if t["model"] == model]
+        # run.py evaluates every lm-eval task of the model, targeted or not.
+        model_tasks_all = {
+            model: [t["task"] for t in tasks[model] if t["venv"] in SWEEP_VENVS]
+        }
         prior = finished.get(model)
         placed[model] = {
             "group": gpu_group(memory.get("verdicts") or {}),
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
+            "est_hours": estimate_hours(model_tasks_all.get(model, []), memory.get("weights_gib")),
             "done": bool(prior) and run_covers(prior[2], prior[1], plan["vllm_serve_args"], model_tasks),
         }  # fmt: skip
     kept = []
     for t in targets:
         info = placed[t["model"]]
         if info["group"] is None:
-            skipped.append(
-                dict(
-                    t, skip="bf16 weights fit no Colab GPU (needs a multi-GPU machine)"
-                )
-            )
+            why = ("bf16 weights fit no Colab GPU (needs a multi-GPU machine)"
+                   if info["need_gib"] else "model size unknown (no Hub parameter count or config)")  # fmt: skip
+            skipped.append(dict(t, skip=why))
             continue
         kept.append(
             dict(t, **info, spec="derived" if t["model"] in derived else "existing")
@@ -797,8 +878,15 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False):
     placeable = {t["model"] for t in kept}
     derived = {m: d for m, d in derived.items() if m in placeable}
     stale = write_derived_specs(yaml_text, derived) != yaml_text
+    estimate = {}
+    for group, models in groups.items():
+        hours = round(sum(placed[m]["est_hours"] for m in models), 1)
+        gpu = group.split(",")[0]
+        estimate[group] = {"models": len(models), "hours": hours,
+                           "cu_at_first_choice": round(hours * CU_PER_HOUR[gpu]),
+                           "cu_at_a100_rate": round(hours * CU_PER_HOUR["A100"])}  # fmt: skip
     return {"sha": sha, "targets": kept, "skipped": skipped, "groups": groups,
-            "derived": derived, "specs_stale": stale}  # fmt: skip
+            "derived": derived, "specs_stale": stale, "estimate": estimate}  # fmt: skip
 
 
 def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) -> str:
@@ -966,6 +1054,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=str(REPO_ROOT / "workflow_logs" / "gpu_reference_colab"),
     )
     p.add_argument("--refresh", action="store_true")
+    p.add_argument("--refresh-quetzal", nargs="*", default=None, metavar="GIT_REF",
+                   help="audit: every task of every model with a Quetzal P300X2 row here "
+                   "and in these refs' catalogs (e.g. origin/main, open row PR heads)")  # fmt: skip
     p.add_argument(
         "--write-specs", action="store_true", help="add derived GPU specs to llm.yaml"
     )
@@ -981,7 +1072,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd == "sweep" and args.action == "plan":
-        plan = sweep_plan(args.sha, Path(args.results_root), args.refresh)
+        plan = sweep_plan(
+            args.sha, Path(args.results_root), args.refresh, args.refresh_quetzal
+        )
         Path(args.plan).write_text(json.dumps(plan, indent=2) + "\n")
         for t in plan["targets"]:
             state = "done" if t["done"] else f"[{t['group']}]"
@@ -1000,6 +1093,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(
                 f"[gpuref]   derived GPU specs written to {yaml_path}", file=sys.stderr
             )
+        for group, est in plan["estimate"].items():
+            print(f"[gpuref]   group {group}: {est['models']} models, ~{est['hours']} h, "
+                  f"~{est['cu_at_first_choice']} CU at {group.split(',')[0]} rates "
+                  f"(~{est['cu_at_a100_rate']} at A100 rates)", file=sys.stderr)  # fmt: skip
         for group, models in plan["groups"].items():
             print(group + "\t" + " ".join(models))
         return 2 if plan["specs_stale"] else 0  # 2: commit specs first

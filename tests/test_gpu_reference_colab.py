@@ -722,3 +722,31 @@ def test_patch_keeps_old_reference_within_noise_but_clears_flag():
     assert (
         "gpu_reference_score=66.07," in new and 'gpu_reference_score_ref="old",' in new
     )
+
+
+def test_quetzal_audit_selects_every_task_of_audited_models():
+    targets, _ = gpuref.select_targets(
+        SWEEP_TASKS, SWEEP_ROWS, audit=frozenset({"org/gpu-model"})
+    )
+    reasons = {t["task"]: t["reason"] for t in targets if t["model"] == "org/gpu-model"}
+    assert (
+        reasons["published"] == "audit: Quetzal P300X2 row"
+    )  # gated by a published score
+    assert (
+        reasons["referenced"] == "audit: Quetzal P300X2 row"
+    )  # already has a GPU reference
+    assert reasons["ungated"] == "ungated" and reasons["flagged"].startswith(
+        "requested"
+    )
+    assert "agentic" not in reasons  # still only lm-eval tasks
+
+
+def test_estimate_hours_and_param_fallback():
+    assert gpuref.estimate_hours(["mmlu_pro"], 15.0) == round((25 + 10) / 60, 2)
+    assert gpuref.estimate_hours(["mmlu_pro"], 60.0) > gpuref.estimate_hours(
+        ["mmlu_pro"], 15.0
+    )
+    tinyllama = {"hidden_size": 2048, "num_hidden_layers": 22, "num_attention_heads": 32,
+                 "num_key_value_heads": 4, "intermediate_size": 5632, "vocab_size": 32000}  # fmt: skip
+    assert gpuref.params_from_config(tinyllama) == pytest.approx(1.1e9, rel=0.02)
+    assert gpuref.params_from_config({}) is None
