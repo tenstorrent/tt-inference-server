@@ -706,9 +706,12 @@ def parse_arguments():
     spec_decode_group.add_argument(
         "--spec-decode-preset",
         type=str,
-        choices=["ci", "full"],
+        choices=["ci", "full", "throughput"],
         default="full",
-        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep.",
+        help="Preset for --spec-decode (default: full). 'ci' is a short regression sweep; "
+        "'throughput' skips the qualitative categories and runs only the throughput grid. "
+        "SPEC_DECODE_ISLS / SPEC_DECODE_CONCURRENCIES (comma-separated env vars) replace "
+        "the preset's throughput ISLs / concurrencies.",
     )
     spec_decode_group.add_argument(
         "--spec-decode-warmup-requests",
