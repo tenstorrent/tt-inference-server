@@ -12,13 +12,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
-#include <limits>
 #include <numbers>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 
 #include "config/defaults.hpp"
+#include "runtime/runners/tts_runner_metrics.hpp"
 #include "runtime/worker/single_process_worker_metrics.hpp"
 #include "runtime/worker/tts_metrics_layout.hpp"
 #include "utils/logger.hpp"
@@ -27,6 +27,9 @@ namespace py = pybind11;
 using namespace py::literals;
 
 namespace tt::runners::qwen3_tts {
+
+using tt::runners::tts::elapsedUsSince;
+using tt::runners::tts::voiceSourceOf;
 
 namespace {
 
@@ -75,15 +78,6 @@ struct TaskCancelled {};
 std::string firstLine(const std::string& s) {
   const auto pos = s.find('\n');
   return pos == std::string::npos ? s : s.substr(0, pos);
-}
-
-uint32_t elapsedUsSince(std::chrono::steady_clock::time_point start) {
-  const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
-                      std::chrono::steady_clock::now() - start)
-                      .count();
-  if (us <= 0) return 0;
-  return static_cast<uint32_t>(
-      std::min<int64_t>(us, std::numeric_limits<uint32_t>::max()));
 }
 
 /** Per-worker process environment; must run before the interpreter starts
@@ -146,16 +140,6 @@ void ensureSysPath() {
 
 py::object optionalStr(const std::optional<std::string>& value) {
   return value ? py::object(py::str(*value)) : py::object(py::none());
-}
-
-tt::worker::tts::VoiceSource voiceSourceOf(const ipc::tts::TtsIpcTask& task) {
-  if (!task.voiceWavPcm.empty()) {
-    return tt::worker::tts::VoiceSource::VoiceSample;
-  }
-  if (task.description.has_value()) {
-    return tt::worker::tts::VoiceSource::Description;
-  }
-  return tt::worker::tts::VoiceSource::Default;
 }
 
 }  // namespace
