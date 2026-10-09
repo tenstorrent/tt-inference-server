@@ -100,6 +100,72 @@ EXPECTED = {
     "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
     "Qwen/Qwen3.5-27B": {"r1_gpqa_diamond": 85.5},
     "microsoft/phi-2": {"leaderboard_ifeval": 21.44, "leaderboard_math_hard": 2.62},
+    # wave18 Quetzal candidates (Open LLM Leaderboard v2, model card or paper citations).
+    "NousResearch/Hermes-3-Llama-3.2-3B": {
+        "leaderboard_ifeval": 31.05,
+        "leaderboard_math_hard": 3.8,
+    },
+    "01-ai/Yi-1.5-6B-Chat": {
+        "leaderboard_ifeval": 45.47,
+        "leaderboard_math_hard": 14.43,
+    },
+    "Qwen/Qwen2-7B-Instruct": {
+        "leaderboard_ifeval": 52.31,
+        "leaderboard_math_hard": 24.77,
+    },
+    "Qwen/Qwen2.5-Math-7B-Instruct": {
+        "leaderboard_ifeval": 20.7,
+        "leaderboard_math_hard": 56.13,
+    },
+    "allenai/Llama-3.1-Tulu-3-8B": {
+        "leaderboard_ifeval": 79.48,
+        "leaderboard_math_hard": 18.84,
+    },
+    "arcee-ai/Llama-3.1-SuperNova-Lite": {
+        "leaderboard_ifeval": 76.89,
+        "leaderboard_math_hard": 16.46,
+    },
+    "01-ai/Yi-1.5-9B": {
+        "leaderboard_ifeval": 23.11,
+        "leaderboard_math_hard": 10.27,
+    },
+    "mistralai/Mistral-Nemo-Instruct-2407": {
+        "leaderboard_ifeval": 58.78,
+        "leaderboard_math_hard": 11.29,
+    },
+    "Qwen/Qwen2.5-Coder-14B": {
+        "leaderboard_ifeval": 27.73,
+        "leaderboard_math_hard": 20.43,
+    },
+    "Qwen/Qwen2.5-Coder-14B-Instruct": {
+        "leaderboard_ifeval": 65.25,
+        "leaderboard_math_hard": 30.51,
+    },
+    "Qwen/Qwen2.5-32B": {
+        "leaderboard_ifeval": 35.49,
+        "leaderboard_math_hard": 33.25,
+    },
+    "Qwen/Qwen2.5-Coder-32B": {
+        "leaderboard_ifeval": 39.19,
+        "leaderboard_math_hard": 28.12,
+    },
+    "01-ai/Yi-1.5-34B-Chat": {
+        "leaderboard_ifeval": 55.27,
+        "leaderboard_math_hard": 24.74,
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B": {
+        "r1_aime24": 55.5,
+        "r1_gpqa_diamond": 49.1,
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": {
+        "r1_aime24": 69.7,
+        "r1_gpqa_diamond": 59.1,
+    },
+    "deepseek-ai/deepseek-coder-6.7b-instruct": {
+        "mbpp_instruct": 65.4,
+        "humaneval_instruct": 78.6,
+    },
+    "Qwen/Qwen3-4B-Thinking-2507": {"r1_gpqa_diamond": 65.8},
 }
 
 # Whether each cited Open LLM Leaderboard v2 run applied a chat template: the
@@ -141,6 +207,20 @@ OLL_CHAT_TEMPLATE = {
     "TinyLlama/TinyLlama_v1.1": False,
     "TinyLlama/TinyLlama-1.1B-Chat-v1.0": False,
     "upstage/SOLAR-10.7B-Instruct-v1.0": True,
+    # wave18 Quetzal candidates.
+    "01-ai/Yi-1.5-34B-Chat": True,
+    "01-ai/Yi-1.5-6B-Chat": True,
+    "01-ai/Yi-1.5-9B": False,
+    "allenai/Llama-3.1-Tulu-3-8B": True,
+    "arcee-ai/Llama-3.1-SuperNova-Lite": True,
+    "mistralai/Mistral-Nemo-Instruct-2407": True,
+    "NousResearch/Hermes-3-Llama-3.2-3B": True,
+    "Qwen/Qwen2-7B-Instruct": True,
+    "Qwen/Qwen2.5-32B": False,
+    "Qwen/Qwen2.5-Coder-14B": True,
+    "Qwen/Qwen2.5-Coder-14B-Instruct": True,
+    "Qwen/Qwen2.5-Coder-32B": False,
+    "Qwen/Qwen2.5-Math-7B-Instruct": True,
 }
 
 # Leaderboard tasks TTIS runs as-is; a citation of any other leaderboard metric
