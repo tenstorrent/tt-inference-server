@@ -149,3 +149,41 @@ Use the new manifest's `MODEL_SHA` when building. The selected policy is preserv
 through the runtime ModelSpec, TTIS wrapper and Helm pod environment. Rebuild and
 qualify that new image; the existing native-policy image does not inherit later
 head-control results.
+
+The separate head-policy image is built at TTIS
+`2485b039be071f75fa29adff6c84ecc87d60359e` and model source
+`d3e8d6021f7aadcb28ba3903d79bd04b288a2819`. Its OCI manifest is
+`sha256:c8ed7a5a17b4b400c84bbb82a52bd125a56b4daf5fbb150b699af62ffee169b1`;
+the preserved archive checksum is
+`dd3bd0e91716870d13bd0ad2d67baf35664272cf946132adec77760ccf71ec25`.
+It passed source/import checks but is **not accuracy-qualified**. At 08:26 UTC,
+the full GPQA run had 166 correct out of 193 completed, with five remaining;
+it can no longer reach 177/198. The image remains an experimental artifact,
+not a release candidate that passed the score gate.
+
+## Check the packaged startup before opening hardware
+
+`scripts/release/probe_qwen38_startup.py` runs the image's actual TTIS `main()`
+through imports, model registration, cache/log setup and argument assembly.
+It intercepts only the final call that would start the vLLM server and compares
+the resulting arguments and declared environment against the bundled ModelSpec.
+This is stronger than `--help`, but it does not load model weights, start HTTP,
+or qualify hardware and accuracy. Run it against an already loaded immutable
+image ID in a disposable container, without devices or network:
+
+```bash
+docker run --rm --network=none --read-only --memory=4g --memory-swap=4g \
+  --cpus=4 --pids-limit=256 \
+  --tmpfs /tmp:rw,size=512m \
+  --tmpfs /home/container_app_user/cache_root:rw,uid=1000,gid=1000,size=512m \
+  --mount type=bind,src=/absolute/path/probe_qwen38_startup.py,dst=/startup-probe.py,readonly \
+  --mount type=bind,src=/absolute/host/checkpoint-directory,dst=/mnt/hf-cache,readonly \
+  --env PYTHONDONTWRITEBYTECODE=1 \
+  --entrypoint /home/container_app_user/tt-metal/python_env/bin/python \
+  sha256:ACTUAL_LOADED_IMAGE_CONFIG_DIGEST /startup-probe.py
+```
+
+Keep stdout and stderr with the image identity. A successful receipt is labeled
+`startup_handoff_passed_unqualified`. The probe is mounted separately, so testing
+it does not replace or rebuild the image being examined. Its argument-validation
+tests pass locally; the actual image startup check remains queued.
