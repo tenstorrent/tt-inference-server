@@ -65,7 +65,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ ${#MODELS[@]} -gt 0 || "${SWEEP}" -eq 1 ]] || { usage >&2; die "at least one MODEL (HF repo id) is required"; }
 [[ ${#MODELS[@]} -eq 0 || "${SWEEP}" -eq 0 ]] || die "--sweep picks its own models from the catalog"
-for m in "${MODELS[@]}"; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "not an HF repo id: $m"; done
+for m in ${MODELS[@]+"${MODELS[@]}"}; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] || die "not an HF repo id: $m"; done
 [[ "${GPU}" =~ ^((T4|L4|G4|H100|A100),)*(T4|L4|G4|H100|A100)$ ]] || die "bad --gpu: ${GPU}"
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
 [[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number"
@@ -149,7 +149,11 @@ if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per 
     [[ "${rc}" -eq 0 ]] || die "sweep plan failed"
     printf 'Sweep at TTIS %s, started %s. Plan: %s\nResume (finished models are skipped, running sessions re-attached):\n  %q' \
         "${TTIS_SHA}" "$(date)" "${SWEEP_DIR}/sweep_plan.json" "$0" > "${ROOT}/RESUME.txt"
-    printf ' %q' "${ORIG_ARGS[@]}" >> "${ROOT}/RESUME.txt"; printf '\n' >> "${ROOT}/RESUME.txt"
+    printf ' %q' ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"} >> "${ROOT}/RESUME.txt"
+    # Pin the sha: "finished" means finished at this sha, so a resume after new
+    # commits must still run (and skip) against the same one.
+    [[ " ${ORIG_ARGS[*]-} " == *" --ttis-ref "* ]] || printf ' --ttis-ref %s' "${TTIS_SHA}" >> "${ROOT}/RESUME.txt"
+    printf '\n' >> "${ROOT}/RESUME.txt"
     child=(--ttis-ref "${TTIS_SHA}" --poll-minutes "${POLL_MINUTES}" --min-balance "${MIN_BALANCE}")
     if [[ -n "${VLLM_VERSION}" ]]; then child+=(--vllm-version "${VLLM_VERSION}"); fi
     if [[ "${KEEP}" -eq 1 ]]; then child+=(--keep); fi
