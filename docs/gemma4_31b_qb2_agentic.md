@@ -13,6 +13,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE fixed five, C4 | 2/5 solved, 29.6 min evaluation | Retained both previously solved cases; 800 MHz AICLK warning on this runner |
 | SWE expanded ten, C2 | 3/10 solved, 61.5 min evaluation | First five 3/5; second five 0/5; AICLK warning |
 | SWE expanded ten, C4 | 3/10 solved, 55.9 min evaluation | First five 2/5; second five 1/5; 21% more output than C2 |
+| SWE expanded ten, C8 | 3/10 solved, 44.4 min evaluation | Same solved cases as C4; 800 MHz AICLK warning; 67.9% peak KV |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -879,6 +880,54 @@ out of 337 did not indicate sustained KV saturation. Its 444 trace
 warm/capture intervals summed to 105.1 seconds. Raw artifacts and numeric
 summary are under `/home/mvasiljev/build/gemma-swe-c4-ten-main/` and
 `/home/mvasiljev/build/gemma-swe-c4-ten-main-summary.json`.
+
+### C8 ten-case SWE expansion
+
+The [matched C8 run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37994423239)
+completed **10/10 cases with zero case errors** on pinned-main Metal. It
+solved **3/10**, exactly the same three cases as C4/ten: Django 11299,
+Matplotlib 25332 and requests 2317. The original first five scored 2/5
+and the added five 1/5. C2/ten also scored 3/10 but solved scikit-learn
+14629 instead of requests 2317. All three still fail the generic CI gate
+against the full-set H100 SWE target of 64.8%; none establishes target
+accuracy on the complete 500-case suite.
+
+| Ten-case SWE measure | C2 | C4 | C8 |
+| --- | ---: | ---: | ---: |
+| Evaluation wall, min | 61.54 | 55.90 | 44.35 |
+| Sum of case clocks, min | 119.58 | 203.20 | 284.38 |
+| Observed case parallelism | 1.94 | 3.64 | 6.41 |
+| Solved first five / added five | 3 / 0 | 2 / 1 | 2 / 1 |
+| Model API calls | 403 | 450 | 425 |
+| Input / output tokens | 5.749M / 76.7K | 7.574M / 92.7K | 5.935M / 82.8K |
+| Peak / p95 sampled KV | 38.1% / 31.2% | 49.0% / 42.7% | 67.9% / 57.4% |
+| Waiting samples | 4/370 | 10/337 | 10/267 |
+
+C8 shortened observed wall **20.7% versus C4** and **27.9% versus C2**.
+Its eight active requests produced 6.41 case-clock minutes per evaluation
+minute; individual case clocks grew with concurrency, but overlap more than
+offset that growth. C8 and C2 ran on the same `120-qb2-p04t05` host, which
+logged the 800 MHz versus 1350 MHz AICLK warning in both runs; C4 used a
+healthy host. C8 still differs in token volume and case paths, so these are
+suite-wall observations, not controlled model-throughput multipliers.
+Ten of 267 server samples had waiting requests, the maximum sampled KV was
+67.9%, and no server preemption was logged. There is capacity margin for
+this ten-case SWE trajectory at 256K, though larger or longer cases need
+their own admission check. The longest C8 case, requests 2317, occupied
+the full 44.35-minute evaluation wall; it remained solved. The 406 trace
+warm/capture intervals summed to 96.9 seconds. A single warmed physical
+eight-row trace handled varying logical active counts without a live
+batch-switch or restart, which is the useful granularity for this SWE
+configuration. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c8-ten-main/` and
+`/home/mvasiljev/build/gemma-swe-c8-ten-main-summary.json`.
+
+With the SWE/ten capacity and reward check complete, a
+[matched C8 Terminal/ten dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38001414052)
+uses the same pinned Metal image and the same Terminal IDs as C2/ten and
+C4/ten. Long-prompt prefill and shared-context admission can limit C8, so
+compare its full suite wall, original first-five rewards, waiting/preemption
+and token volume before preferring it for Terminal.
 
 ## Current-main Terminal fixed-five result at C2
 
