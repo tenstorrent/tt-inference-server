@@ -11,7 +11,6 @@ import statistics
 from datetime import datetime
 from pathlib import Path
 
-
 KV_SAMPLE = re.compile(
     r"Running: (\d+) reqs, Waiting: (\d+) reqs, GPU KV cache usage: ([\d.]+)%"
 )
@@ -161,6 +160,7 @@ def summarize_task(path):
         agent = item.get("agent_result") or {}
         request_ms = (agent.get("metadata") or {}).get("api_request_times_msec") or []
         wall = seconds_between(item.get("started_at"), item.get("finished_at"))
+        api_s = sum(request_ms) / 1000 if request_ms else None
         reward = ((item.get("verifier_result") or {}).get("rewards") or {}).get(
             "reward"
         )
@@ -169,7 +169,10 @@ def summarize_task(path):
                 "id": item.get("task_name", case_path.parent.name),
                 "reward": reward,
                 "wall_s": wall,
-                "api_s": sum(request_ms) / 1000 if request_ms else None,
+                "api_s": api_s,
+                "non_api_s": wall - api_s
+                if wall is not None and api_s is not None
+                else None,
                 "requests": len(request_ms) if request_ms else None,
                 "input_tokens": agent.get("n_input_tokens"),
                 "output_tokens": agent.get("n_output_tokens"),
@@ -259,6 +262,22 @@ def summarize_task(path):
         "output_tokens": stats.get("n_output_tokens"),
         "cases": cases,
     }
+    timed_cases = [case for case in cases if case.get("wall_s") is not None]
+    result["total_case_wall_s"] = (
+        sum(case["wall_s"] for case in timed_cases) if timed_cases else None
+    )
+    result["observed_case_parallelism"] = (
+        result["total_case_wall_s"] / result["wall_s"]
+        if result["wall_s"] and result["total_case_wall_s"] is not None
+        else None
+    )
+    api_cases = [case for case in timed_cases if case.get("api_s") is not None]
+    result["total_api_s"] = (
+        sum(case["api_s"] for case in api_cases) if api_cases else None
+    )
+    result["total_non_api_s"] = (
+        sum(case["non_api_s"] for case in api_cases) if api_cases else None
+    )
     if path.parent.name == "terminal_bench_2":
         result["request_latency_fit"] = fit_request_latency(request_rows)
         result["unmatched_request_cases"] = unmatched_cases

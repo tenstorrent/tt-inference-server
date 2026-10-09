@@ -296,7 +296,10 @@ quality control and compare all five rewards before selecting this budget.
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
 The script emits only case IDs, numeric timings/tokens/rewards and server
-counts/throughput samples; it omits prompts, patches, shell transcripts and
+counts/throughput samples. For Terminal it also sums case wall, model API and
+residual non-API time and reports observed case parallelism; residual time
+includes tools and orchestration and is not a device-idle measurement. It
+omits prompts, patches, shell transcripts and
 model responses. Its
 Terminal request fit reads token counts from trajectories but drops the
 messages; any case with unequal trajectory-step and API-timing counts is
