@@ -1141,6 +1141,9 @@ jobs:
           done < /tmp/helm-matrix.txt
           exit $FAILED
 
+      - name: Verify immutable application and init-container images
+        run: python -m unittest discover -s tests/test_chart -p test_chart_immutable_images.py -v
+
       - name: Verify DRA claim structure, board counts, and safety invariants
         run: |
           set -e

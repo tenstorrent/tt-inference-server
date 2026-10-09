@@ -19,6 +19,11 @@ hfToken: ""
 nameOverride: ""
 fullnameOverride: ""
 
+# Release installs can require immutable image references for every container.
+# Set defaults.image.digest (sha256:...) and initContainerImage (repo@sha256:...).
+requireImageDigests: false
+initContainerImage: busybox
+
 # Optional: override the cache host path (defaults to /opt/cache/<model>-<device>-<impl>)
 cache:
   hostPath: ""

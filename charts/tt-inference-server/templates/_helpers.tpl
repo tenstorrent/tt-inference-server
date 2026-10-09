@@ -125,7 +125,27 @@ Container image string built from resolved config.
 */}}
 {{- define "tt-inference-server.image" -}}
 {{- $cfg := include "tt-inference-server.resolvedConfig" . | fromYaml }}
+{{- $digest := $cfg.image.digest | default "" }}
+{{- if $digest }}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) }}
+{{- fail "image.digest must be sha256: followed by 64 lowercase hex characters" }}
+{{- end }}
+{{- printf "%s@%s" $cfg.image.repository $digest }}
+{{- else }}
+{{- if .Values.requireImageDigests }}
+{{- fail "requireImageDigests requires image.digest for the selected model configuration" }}
+{{- end }}
 {{- printf "%s:%s" $cfg.image.repository $cfg.image.tag }}
+{{- end }}
+{{- end }}
+
+{{/* Both init containers use the same independently pinnable image. */}}
+{{- define "tt-inference-server.initContainerImage" -}}
+{{- $image := .Values.initContainerImage | default "busybox" }}
+{{- if and .Values.requireImageDigests (not (regexMatch "^[^@[:space:]]+@sha256:[0-9a-f]{64}$" $image)) }}
+{{- fail "requireImageDigests requires initContainerImage in repository@sha256:<64 lowercase hex characters> form" }}
+{{- end }}
+{{- $image }}
 {{- end }}
 
 {{/*

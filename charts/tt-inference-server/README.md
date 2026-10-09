@@ -171,7 +171,8 @@ The chart's named templates (all prefixed `tt-inference-server.`), grouped by ro
 
 | Helper | Purpose |
 |---|---|
-| `image` | Container image string `repository:tag`. |
+| `image` | Container image string `repository:tag`, or `repository@digest` when `image.digest` is set. |
+| `initContainerImage` | Shared init-container image, optionally required to be digest-pinned. |
 | `containerEnv` | Container env, merged from spec env, hf-cache env, and `extraEnv` `valueFrom` entries. |
 | `cacheHostPath` | `cache.hostPath` if set, else `/opt/cache/<model>-<device>-<impl>`. |
 | `draDeviceCount` | DRA board count for `device` from `deviceBoardCounts` (fails for unsupported shapes). |
@@ -223,6 +224,24 @@ Any field the resolved impl block does not set falls back to `defaults`.
 
 ---
 
+### Immutable release images
+
+Set `defaults.image.digest` to the published image digest (`sha256:` followed
+by 64 lowercase hex characters). The chart renders `repository@digest` and
+the digest takes precedence over the catalog's tag. A per-model
+`image.digest` overrides the default through the normal configuration merge.
+
+For a release install, set `requireImageDigests=true` and set
+`initContainerImage` to a verified BusyBox-compatible image in
+`repository@sha256:...` form. Both initialization containers use that image.
+Rendering fails if either the inference image or init image is not pinned.
+Existing installs keep their tag-based behavior when this option is disabled.
+
+These options pin the container content. Record the source SHAs and the chart
+artifact digest in the release manifest as well; a SHA-shaped image tag alone
+does not make the image immutable. Rendering is not model qualification or a
+test of the built image on hardware.
+
 ## Values Reference
 
 Set per release, typically via `--set`.
@@ -244,6 +263,8 @@ Set per release, typically via `--set`.
 | `podMonitor.interval` | no | `30s` | Scrape interval. |
 | `podMonitor.path` | no | `/metrics` | Metrics HTTP path (scraped on the `http` port). |
 | `cache.hostPath` | no | `""` | Override the host path used for the ttnn cache volume. Defaults to `/opt/cache/<model>-<device>-<impl>`. |
+| `requireImageDigests` | no | `false` | Require digest-pinned inference and init images at render time. |
+| `initContainerImage` | no | `busybox` | BusyBox-compatible image for both initialization containers. |
 | `nameOverride` | no | `""` | Overrides the chart name component in resource names. |
 | `fullnameOverride` | no | `""` | Fully overrides the resource name prefix. |
 | `models` | — | See [Supported Models](#supported-models) | Per-model catalogue keyed by `<model>.<engine>.<device>.impls.<impl>`. Each impl leaf overrides `defaults`. |
@@ -260,6 +281,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `defaults.updateStrategy` | `RollingUpdate` (maxSurge 0, maxUnavailable 1) | Deployment update strategy. `maxSurge=0` terminates the old Pod before creating its replacement so its board and hugepages are freed first; `maxUnavailable=1` rolls one Pod at a time when `replicaCount > 1`. |
 | `defaults.podAnnotations` | `{}` | Annotations applied to the pod template. |
 | `defaults.podSecurityContext` | `{}` | Pod-level `securityContext`. |
+| `defaults.image.digest` | unset | Immutable `sha256:...` digest; takes precedence over the resolved image tag. |
 | `defaults.image.pullPolicy` | `IfNotPresent` | Image pull policy. |
 | `defaults.image.pullSecrets` | `[]` | Image pull secrets. |
 | `defaults.service.type` | `ClusterIP` | Kubernetes Service type. |
