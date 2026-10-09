@@ -1,0 +1,22 @@
+# MiniMax-H3 single-galaxy RELEASE image (T2VA, mesh (4, 8)), pinned by digest.
+# Built and release-tested by tt-shield run 36065480768 (2026-09-24, MiniMaxAI/MiniMax-H3 | bh-galaxy | release):
+#   tt-metal             d9c2c92d05cbe6cd73f629697d62a58aa02194ed  (main, 2026-09-23)
+#   tt-inference-server  1bc53f28cab8313949079c24e5357b1153400591  (zni/h3-ci-single-galaxy)
+#   image                ghcr.io/tenstorrent/tt-shield/tt-media-inference-server:0.22.0-d9c2c92d05cbe6cd73f629697d62a58aa02194ed-6916480-107694012260
+#   index digest         sha256:488e402f754c78193e91ae612239f55c5e30dccdfb202058b3f6cbf70902a5e0
+# The chart renders "<repository>:<tag>", so the tag carries "@sha256:<digest>": the runtime pulls by digest and the
+# tag stays as documentation. T2VA only — this server commit has no FL2VA/Ref2VA runners.
+#
+# Layer it AFTER the base + pin files:
+#   helm -n wan upgrade --install h3-1 charts/tt-inference-server --set model=MiniMax-H3 --set device=galaxy --set engine=media \
+#     -f .../minimax-h3-aibang/h3-1.yaml -f .../minimax-h3-aibang/h3-1-pin.yaml \
+#     -f .../minimax-h3-aibang/release-0.22.0-d9c2c92d.yaml --set hfToken="$HF_TOKEN"
+models:
+  MiniMax-H3:
+    media:
+      galaxy:
+        impls:
+          tt_transformers:
+            image:
+              repository: ghcr.io/tenstorrent/tt-shield/tt-media-inference-server
+              tag: "0.22.0-d9c2c92d05cbe6cd73f629697d62a58aa02194ed-6916480-107694012260@sha256:488e402f754c78193e91ae612239f55c5e30dccdfb202058b3f6cbf70902a5e0"
