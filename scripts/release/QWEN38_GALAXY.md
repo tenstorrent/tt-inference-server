@@ -10,9 +10,11 @@ are separate, removable host-local data.
 This is **not a qualified release**. The eight-replica native-recurrence G0 check
 passed on October 9, 2026 UTC. Native-control full GPQA finished **170/198
 (85.86%)**, including one output-budget cutoff counted incorrect. The bounded
-Tau3 pilot completed 3/12 successes, including four task timeouts and one
-request timeout among the failed attempts. It is not a matched published
-reference setup, and manual review remains pending. The optimized recurrence's completed full GPQA result was 163/198
+Tau3 pilot completed 3/12 successes. Six attempts hit task, request or step
+limits, and three completed unsuccessfully. Partial review found agent and
+simulator errors plus a reproduced upstream tool-state bug. All failures remain
+in the denominator; the pilot is not a matched published reference setup.
+The optimized recurrence's completed full GPQA result was 163/198
 (82.32%); 15 output-budget cutoffs were included as incorrect. Neither that
 result nor G0 alone meets the accuracy release gate. Container hardware and SJC3
 Helm qualification also remain required.
@@ -113,7 +115,14 @@ The overlay requests 32 `galaxy-blackhole` DRA boards on one node and keeps the
 checkpoint mount read-only. Validate the SJC3 node, DRA visibility/chip numbering,
 weights path and available memory before installation. Do not infer that an image
 build or successful chart render proves that deployment passed. The normal chart
-supports API authentication via `auth.apiKey`.
+supports API authentication via `auth.apiKey`. The Qwen overlay sets startup,
+readiness and liveness probes to `/health`: this route checks engine health
+without a bearer token. The chart's default `/v1/models` liveness route would
+return 401 with API authentication enabled and cause repeated restarts.
+Regenerate older bundles with the current preparation script, or set
+`defaults.probes.liveness.path=/health` when rendering their unchanged values.
+This is a Helm configuration correction; it does not change the image or claim
+container hardware qualification.
 
 For release promotion, retain all 198 GPQA questions and the existing score gate,
 report output-budget cutoffs explicitly, review the bounded Tau3 outcomes, and validate

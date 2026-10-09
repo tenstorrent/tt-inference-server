@@ -98,9 +98,13 @@ def test_runtime_bundle_survives_wrapper(
     assert actual == spec["device_model_spec"]["vllm_args"]["additional_config"]
 
 
-def test_galaxy_chart_claims_full_device_and_keeps_weights_read_only(spec, tmp_path):
+@pytest.mark.parametrize("api_key", ["", "qwen-health-test-only"])
+def test_galaxy_chart_claims_full_device_and_keeps_weights_read_only(
+    spec, tmp_path, api_key
+):
     values = release.helm_values(spec, Path("/host/checkpoint"))
     values["defaults"] = {"image": {"digest": "sha256:" + "1" * 64}}
+    values["auth"] = {"apiKey": api_key}
     path = tmp_path / "values.yaml"
     path.write_text(yaml.safe_dump(values))
     rendered = subprocess.check_output(
@@ -141,6 +145,13 @@ def test_galaxy_chart_claims_full_device_and_keeps_weights_read_only(spec, tmp_p
         * container["startupProbe"]["periodSeconds"]
         == 7200
     )
+    # vLLM guards /v1/models when VLLM_API_KEY is set. Kubernetes probes
+    # carry no bearer credentials; /health checks the engine without auth.
+    for probe in ("startupProbe", "livenessProbe", "readinessProbe"):
+        assert container[probe]["httpGet"] == {"path": "/health", "port": "http"}
+    if api_key:
+        secret = next(doc for doc in documents if doc and doc["kind"] == "Secret")
+        assert secret["stringData"]["VLLM_API_KEY"] == api_key
     claim = next(
         doc for doc in documents if doc and doc["kind"] == "ResourceClaimTemplate"
     )

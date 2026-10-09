@@ -133,6 +133,12 @@ def helm_values(spec, weights_host_path):
                             "qwen38_27b_qb2": {
                                 "image": {"repository": IMAGE_REPOSITORY},
                                 "progressDeadlineSeconds": 7200,
+                                # /v1/models requires a bearer token when API
+                                # auth is enabled; kubelet probes carry none.
+                                "probes": {
+                                    "liveness": {"path": "/health"},
+                                    "readiness": {"path": "/health"},
+                                },
                                 "resources": {
                                     "requests": {"cpu": "24", "memory": "256Gi"},
                                     "limits": {"memory": "384Gi"},
