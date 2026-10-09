@@ -277,6 +277,19 @@ engine_sched::GenerationParams toEngineGeneration(
   out.max_new_tokens = generation.maxNewTokens;
   out.ignore_eos = generation.ignoreEos;
   out.stop_tokens = generation.stopTokens;
+  // Speech sampling. TTS has no per-request sampling knobs, so without this
+  // the engine's default-constructed SamplingParams reaches blaze: temperature
+  // 1.0 with top_k = -1 and top_p = 1.0, i.e. untruncated multinomial sampling
+  // over the 65536-entry FSQ codebook. Every step then carries a long tail of
+  // low-probability codes, which degrades the audio and keeps the model from
+  // converging on <|speech_end|> -- generation runs to max_new_tokens with a
+  // noise tail instead of ending naturally.
+  //
+  // These are the values the reference standalone driver uses, which produces
+  // clean speech on the same weights and terminates at <|speech_end|>.
+  out.sampling.temperature = 0.6F;
+  out.sampling.top_k = 32;
+  out.sampling.top_p = 0.9F;
   return out;
 }
 
@@ -328,8 +341,10 @@ engine_tts::TtsSchedulerParams makeEngineTtsParams(
   params.sc_deadline_us = static_cast<uint64_t>(config.scP99Ms) * 1000;
   params.tc_deadline_us = static_cast<uint64_t>(config.tcP99Ms) * 1000;
   params.fourth_plus_deadline_us = static_cast<uint64_t>(config.tc4P99Ms) * 1000;
-  params.fc_p50_target_us = static_cast<uint64_t>(config.fcP50Ms) * 1000;
-  params.fc_p99_target_us = static_cast<uint64_t>(config.fcP99Ms) * 1000;
+  // fc_p50_target_us / fc_p99_target_us were removed from the engine in
+  // b4e10f8 ("Removing some unused env vars") -- measurement targets the
+  // scheduler never acted on. TTS_FC_P50_MS / TTS_FC_P99_MS are still parsed
+  // into config for the benchmark harness; they just aren't sent any more.
 
   params.max_batch_size = static_cast<uint32_t>(config.maxBatchSize);
   // Rows per fused H2D page (m), a separate lever from max_batch_size (B). B
