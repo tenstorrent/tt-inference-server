@@ -183,6 +183,17 @@ RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
     && cd ${TT_METAL_HOME}/tt-vllm-plugin \
     && uv pip install ."
 
+# MiniMax-H3 dispatch branch only: fix_dependencies.sh installs the latest diffusers (which needs
+# huggingface_hub >= 1.32) and tt-vllm-plugin then pins transformers==4.55.0 (huggingface_hub < 1.0),
+# so importing diffusers fails on huggingface_hub.resolve_revision. Restore the transformers and
+# diffusers pins of the tt-metal this image is built on. The vLLM runners in this image expect the
+# older transformers, so this image serves MiniMax-H3 only.
+RUN /bin/bash -c "source ${PYTHON_ENV_DIR}/bin/activate \
+    && pins=\$(grep -E '^(transformers|diffusers)[[:space:]]*==' ${TT_METAL_HOME}/tt_metal/python_env/requirements-dev.txt | tr -d ' ') \
+    && test \$(echo \"\$pins\" | wc -l) -eq 2 \
+    && uv pip install --no-cache-dir \$pins \
+    && python -c 'import diffusers.utils.hub_utils, huggingface_hub, diffusers, transformers; print(\"huggingface_hub\", huggingface_hub.__version__, \"diffusers\", diffusers.__version__, \"transformers\", transformers.__version__)'"
+
 # Create separate audio venv for whisperx/pyannote (torch 2.7.x)
 # This avoids torch version conflicts with vLLM 0.18.1 which requires torch>=2.10
 ENV AUDIO_VENV_DIR=${TT_METAL_HOME}/audio_venv
