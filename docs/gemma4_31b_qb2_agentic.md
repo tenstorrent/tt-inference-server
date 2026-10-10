@@ -944,7 +944,8 @@ The faster C8 ten-case SWE wall justified a
 on the same C8 server and image. [Inference-server commit `bbe65804`](https://github.com/tenstorrent/tt-inference-server/commit/bbe65804f174d88e3f495e52c9f2f3b287e7c581)
 retains the first ten IDs and appends ten more. The additions were sampled
 with seed `20261010` from the [official SWE-bench Verified 500-case test
-split](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified):
+split](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified/tree/c104f840cc67f8b6eec6f759ebc8b2693d585d4a)
+at dataset revision `c104f840cc67f8b6eec6f759ebc8b2693d585d4a`:
 seven Django, one Sympy, one Sphinx and one pytest. The resulting twenty
 have 9/20 Django cases (45%, versus 46.2% of the full split) and difficulty
 counts 8/10/2 for `<15 min`, `15 min–1 hour`, and `1–4 hours`, close to the
