@@ -27,6 +27,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C2 full deadline | 4/10 solved, 196.7 min evaluation | Original first five 1/5; added five 3/5; HTML timed out at three hours |
 | Terminal expanded ten, C2 one-hour cap | 1/10 solved, 140.3 min evaluation | Four explicit timeouts; lost three solved cases versus full-deadline C2 |
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
+| Terminal expanded ten, C4 repeat | 4/10 solved, 147.8 min evaluation | Different solved cases; HTML failed after 148 min and 50 turns |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
@@ -986,8 +987,10 @@ and `/home/mvasiljev/build/gemma-c10-benchmark-main-summary.json`.
 For that larger live comparison,
 [inference-server commit `3fb20512`](https://github.com/tenstorrent/tt-inference-server/commit/3fb205121ecc63de62470098251df6000b716794)
 combines the same fixed twenty SWE IDs with physical batch ten. Its
-[matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019668697)
-is queued behind the active runs. Compare original ten and added ten
+[second matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019668697)
+was canceled before hardware work at 03:26 for unsafe-host queue control;
+the branch is ready for redispatch after the exact-host reservations are
+confirmed. Compare original ten and added ten
 rewards separately, as well as full wall, case-clock overlap, tokens,
 waiting and peak KV. This is the relevant check for whether two more
 concurrent agents help a twenty-case workload despite the small synthetic
@@ -1047,7 +1050,7 @@ then reserved `p04t07`, and the [named health hold](https://github.com/tenstorre
 reserved `p04t05` without touching containers or devices. A temporary
 healthy-host hold was canceled after the health hold started. The
 [C4/ten repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010466649)
-is running on clean `p05t06`, and the
+completed on clean `p05t06` and is analyzed below; the
 [C8/ten Terminal retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010947583)
 is running on clean `p05t05`. Compare the latter's case rewards and wall
 with C2/C4 ten-case controls once it completes; the canceled attempts
@@ -1063,6 +1066,15 @@ at the links in their experiment sections. The renewal jobs sleep only
 if assigned their named host; they do not stop containers or reset devices.
 Check their runner assignment before allowing a queued model job onto either
 host. The canceled queue entries have no model or score data.
+The first renewal landed on clean `p05t06` after the C4 repeat and exited;
+the C4 thinking-off run then started on that host. The second renewal was
+canceled without an assignment. With C10/SWE20 still queued, it was
+canceled before hardware work and a fresh
+[`p04t07` exact-name hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38020564925)
+was queued ahead of a fresh
+[`p04t05` exact-name hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38020568548).
+The C10/SWE20 job will be reissued only after their actual assignments are
+confirmed; neither canceled C10 job reached model work.
 
 ## Current-main Terminal fixed-five result at C2
 
@@ -1281,11 +1293,47 @@ the fixed-five run, and its median positive generation sample was 88.5
 versus 67.4 tokens/s. More cases kept the four agent slots occupied more
 often, consistent with better batch utilization, while the changed output
 and tool paths prevent assigning a precise speedup to occupancy alone.
-The larger denominator improves the
-reward view, while a matched C2/ten comparison is still needed for batch
-selection. Raw artifacts and numeric summary are under
+The larger denominator improves the reward view. The matched C2/ten control
+and a C4/ten repeat are analyzed on either side of this section. Raw
+artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c4-ten-main/` and
 `/home/mvasiljev/build/gemma-terminal-c4-ten-main-summary.json`.
+
+### C4 ten-case Terminal repeat
+
+The [C4/ten repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010466649)
+used the same pinned Metal image, inference-server commit, ten IDs,
+three-hour deadline and thinking-on policy on clean `qb2-120-p05t06`.
+It again recorded **10/10 official cases with zero case errors and 4/10
+solved**, but took **147.75 minutes** of evaluation (157.75 minutes for
+the full test job). Its original first five scored **1/5** (COBOL); the
+added five scored **3/5** (cancel async tasks, git multibranch and regex).
+Only COBOL and regex were solved in both C4 runs. The generic full-set
+accuracy gate failed on the 40% ten-case score, as before.
+
+| C4 ten-case measure | First run | Repeat |
+| --- | ---: | ---: |
+| Evaluation wall, min | 110.26 | 147.75 |
+| Case-clock sum, min | 350.47 | 482.94 |
+| Observed case parallelism | 3.18 | 3.27 |
+| Solved first five / added five | 2 / 2 | 1 / 3 |
+| Model API calls | 151 | 211 |
+| Input / output tokens | 2.162M / 417.9K | 4.037M / 597.8K |
+| Sum API / other case time, min | 266.07 / 84.40 | 384.33 / 98.61 |
+| Peak / p95 sampled KV | 51.9% / 33.5% | 64.8% / 44.9% |
+| Waiting samples | 2/671 | 2/887 |
+
+The repeat was **34.0% longer** with **43.0% more output** and 60 more
+model calls. HTML filter set its full evaluation wall at **147.75 minutes**,
+failed after 50 turns, and used **203,140 output tokens**; the first C4
+run solved HTML in 88.29 minutes. The repeat's HTML case spent 125.85
+minutes inside recorded API calls and 21.90 outside, so this long tail
+differs from the fixed-five C4 FEAL residual-time outlier. Neither C4/ten
+run showed sustained KV waiting, a logged preemption or an AICLK warning.
+The equal aggregate reward masks four changed case outcomes, and the
+110-minute wall is not a stable per-run expectation. Raw artifacts and
+numeric summary are under `/home/mvasiljev/build/gemma-terminal-c4-ten-repeat/`
+and `/home/mvasiljev/build/gemma-terminal-c4-ten-repeat-summary.json`.
 
 ### Same-main C1 control and batch-policy comparison
 
@@ -1494,7 +1542,7 @@ To isolate whether C4 changes that quality tradeoff,
 [inference-server commit `a86d3a0c`](https://github.com/tenstorrent/tt-inference-server/commit/a86d3a0ce30125d5446b967b225e641f8e39f725)
 changes only the default chat-template flag from the C4/ten branch. Its
 [ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019663471)
-is queued behind the current runner work. Compare all ten rewards and the
+is running on clean `p05t06`. Compare all ten rewards and the
 case errors with both C4 thinking-on runs; C2 thinking-off's missing regex
 solve makes a speed-only comparison insufficient.
 
