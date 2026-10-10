@@ -2160,7 +2160,11 @@ lost three solves on the ten-case control, so it is not a safe substitute.
 The huge archived `recording.cast` and `terminus_2.pane` files in the
 password-recovery case made the workflow ZIP 1.15 GB and uncompressed
 content about 116 GB; the selective extractor kept all numeric records
-without expanding those recordings. Raw logs and numeric summary are
+without expanding those recordings. GitHub's `Upload workflow logs` step
+took **3 minutes 15 seconds** after evaluation, versus 279.8 evaluation
+minutes. Trimming recordings at upload could save some job turnaround,
+but would sacrifice raw terminal evidence and is a smaller opportunity
+than the model and case work measured above. Raw logs and numeric summary are
 under `/home/mvasiljev/build/gemma-terminal-c4-twenty-on/` and
 `/home/mvasiljev/build/gemma-terminal-c4-twenty-on-summary.json`.
 
