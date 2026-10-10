@@ -986,7 +986,7 @@ and `/home/mvasiljev/build/gemma-c10-benchmark-main-summary.json`.
 For that larger live comparison,
 [inference-server commit `3fb20512`](https://github.com/tenstorrent/tt-inference-server/commit/3fb205121ecc63de62470098251df6000b716794)
 combines the same fixed twenty SWE IDs with physical batch ten. Its
-[matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38017041167)
+[matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019668697)
 is queued behind the active runs. Compare original ten and added ten
 rewards separately, as well as full wall, case-clock overlap, tokens,
 waiting and peak KV. This is the relevant check for whether two more
@@ -1052,6 +1052,17 @@ is running on clean `p05t06`, and the
 is running on clean `p05t05`. Compare the latter's case rewards and wall
 with C2/C4 ten-case controls once it completes; the canceled attempts
 remain infrastructure scheduling history, not reward observations.
+
+Those two read-only holds are due to expire around 03:35 and 03:42 UTC on
+10 October. With C4/ten thinking-off and C10/SWE20 still queued at 03:10,
+their first dispatches were canceled **before hardware work** to put
+[a renewed exact-name hold for `p04t07`](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019650309)
+and [one for `p04t05`](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019654212)
+ahead of the model jobs. The full-SHA model dispatches were then reissued
+at the links in their experiment sections. The renewal jobs sleep only
+if assigned their named host; they do not stop containers or reset devices.
+Check their runner assignment before allowing a queued model job onto either
+host. The canceled queue entries have no model or score data.
 
 ## Current-main Terminal fixed-five result at C2
 
@@ -1482,7 +1493,7 @@ optional speed setting, rather than a quality-preserving Terminal default.
 To isolate whether C4 changes that quality tradeoff,
 [inference-server commit `a86d3a0c`](https://github.com/tenstorrent/tt-inference-server/commit/a86d3a0ce30125d5446b967b225e641f8e39f725)
 changes only the default chat-template flag from the C4/ten branch. Its
-[ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38016006193)
+[ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019663471)
 is queued behind the current runner work. Compare all ten rewards and the
 case errors with both C4 thinking-on runs; C2 thinking-off's missing regex
 solve makes a speed-only comparison insufficient.
