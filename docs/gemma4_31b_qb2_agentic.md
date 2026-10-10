@@ -1637,8 +1637,11 @@ changes only the default chat-template flag from the C4/ten branch. Its
 [ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019663471)
 completed all ten cases on clean `p05t06` with **zero errors, 4/10 solved
 and 46.15 minutes evaluation wall**. The solved cases were COBOL, git,
-password recovery and regex (first five 1/5, added five 3/5). Three of
-these four were shared with the first C4 thinking-on run; git replaced
+password recovery and regex (first five 1/5, added five 3/5). The generic
+accuracy gate failed because 40% on ten selected cases is below the
+configured 44.94% full-set H100 reference; the two denominators are not
+directly comparable. Three of these four were shared with the first C4
+thinking-on run; git replaced
 HTML. The C4 thinking-on repeat also scored 4/10 but shared COBOL, git
 and regex instead. The C4 thinking-off solved set does match the earlier
 C2 thinking-on full-deadline set exactly. This is aggregate parity across
