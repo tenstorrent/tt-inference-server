@@ -1770,7 +1770,13 @@ gate failed on this selected ten-case 10% score.
 Git stopped after **7 versus 33** model calls, regex after **2 versus
 3**, and password continued to **50 versus 34** before failing. No
 case timeout, preemption or AICLK warning explains the lost solves;
-the agent trajectories diverged. The shorter repeat made 21% fewer
+the agent trajectories diverged. In the retained git transcript, the
+repeat declared completion without any `git push` tool call, while the
+successful pilot attempted pushes and verified its served branch pages.
+Password reached the agent's 50-turn limit on the repeat. These are
+concrete agent-path failures rather than a verifier or hardware error;
+they do not establish that every thinking-off path will fail. The
+shorter repeat made 21% fewer
 API calls and wrote 14.7% fewer output tokens, which partly explains
 its faster wall; its lower sampled occupancy reflects less active work,
 not a batch-efficiency gain. The two C4 full-thinking ten-case runs both
