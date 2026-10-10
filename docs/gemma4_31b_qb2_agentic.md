@@ -989,8 +989,9 @@ For that larger live comparison,
 combines the same fixed twenty SWE IDs with physical batch ten. Its
 [second matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019668697)
 was canceled before hardware work at 03:26 for unsafe-host queue control;
-the branch is ready for redispatch after the exact-host reservations are
-confirmed. Compare original ten and added ten
+the [third dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38021542688)
+was issued after both exact-host reservations were confirmed. Compare
+original ten and added ten
 rewards separately, as well as full wall, case-clock overlap, tokens,
 waiting and peak KV. This is the relevant check for whether two more
 concurrent agents help a twenty-case workload despite the small synthetic
@@ -1073,8 +1074,10 @@ canceled before hardware work and a fresh
 [`p04t07` exact-name hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38020564925)
 was queued ahead of a fresh
 [`p04t05` exact-name hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38020568548).
-The C10/SWE20 job will be reissued only after their actual assignments are
-confirmed; neither canceled C10 job reached model work.
+The first renewed hold took `p04t07` at 03:37, and the second took
+`p04t05` at 03:43. Both runner names were verified from their job records
+before the C10/SWE20 job was reissued; neither canceled C10 job reached
+model work.
 
 ## Current-main Terminal fixed-five result at C2
 
