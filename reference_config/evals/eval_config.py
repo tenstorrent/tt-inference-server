@@ -7111,6 +7111,8 @@ _eval_config_list = [
             replace(
                 t,
                 gen_kwargs={**t.gen_kwargs, **json.loads(os.getenv("DSV41_GEN_OVERRIDE", "{}"))},
+                # DSV41_EVAL_CONCURRENCY: lm-eval concurrent requests (default: the task's own 32 = the B=32 build; set 16 for a B=16 server)
+                max_concurrent=int(os.getenv("DSV41_EVAL_CONCURRENCY", str(t.max_concurrent))),
                 # DSV41_MMLU_SUBTASKS="biology,law,..." runs only those mmlu_pro subtasks (split of the 14 over hosts)
                 task_name=(
                     ",".join("mmlu_pro_" + x for x in os.getenv("DSV41_MMLU_SUBTASKS").split(","))
