@@ -966,6 +966,21 @@ def block_entries(text: str) -> Dict[str, str]:
     }
 
 
+def handwritten_gpu_models(text: str) -> set:
+    """Models with a GPU spec in llm.yaml outside the generated block (reviewed
+    templates). The generator never derives or keeps an entry for these."""
+    import yaml
+
+    if SPEC_BEGIN in text:
+        end = text.index(SPEC_END) + len(SPEC_END)
+        text = text[: text.index(SPEC_BEGIN)] + text[end:]
+    found = set()
+    for tpl in (yaml.safe_load(text) or {}).get("templates") or []:
+        if any(d.get("device") == "GPU" for d in tpl.get("device_model_specs") or []):
+            found.update(tpl.get("weights") or [])
+    return found
+
+
 def block_models(text: str) -> List[str]:
     """Models whose GPU spec lives in the generated block of llm.yaml."""
     return list(block_entries(text))
@@ -977,9 +992,13 @@ def write_derived_specs(
     """llm.yaml text with `derived` merged into the generated block by model:
     those entries are added or replaced, every other generated entry is kept
     as it is (a sweep selects only the models it measures), unless prune,
-    which drops the entries not in `derived`. Entries are kept sorted."""
+    which drops the entries not in `derived`. Models with a GPU spec outside
+    the block (handwritten_gpu_models) never get one. Entries are kept sorted."""
     entries = {} if prune else block_entries(text)
     entries.update({m: derived_specs_yaml({m: d}) for m, d in derived.items()})
+    # A reviewed GPU template always wins: never add (or keep) a generated copy.
+    for model in handwritten_gpu_models(text) & set(entries):
+        del entries[model]
     body = "\n".join(entries[m] for m in sorted(entries))
     block = f"{SPEC_BEGIN}\n{body}\n{SPEC_END}\n" if entries else ""
     if SPEC_BEGIN in text:
@@ -1099,7 +1118,7 @@ def sweep_plan(
     yaml_text = (
         REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
     ).read_text()
-    generated = set(block_models(yaml_text))
+    generated = set(block_models(yaml_text)) - handwritten_gpu_models(yaml_text)
     token, derived, groups, placed = hf_token(), {}, {}, {}
     finished = finished_models(results_root)
     for model in sorted({t["model"] for t in targets}):
