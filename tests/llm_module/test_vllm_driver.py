@@ -182,3 +182,26 @@ def test_without_custom_dataset_the_sweep_stays_random():
 
     assert cmd[cmd.index("--dataset-name") + 1] == "random"
     assert cmd[cmd.index("--random-input-len") + 1] == "128"
+
+
+def test_bench_env_dataset_and_ignore_eos(monkeypatch):
+    server = ServerConnection(
+        base_url="http://127.0.0.1", service_port=8000, model="m", is_remote=False
+    )
+    monkeypatch.setenv("TT_BENCH_DATASET_PATH", "/data/prompts.jsonl")
+    monkeypatch.setenv("TT_BENCH_IGNORE_EOS", "1")
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm", config=_config(osl=256), server=server,
+        result_filename=_result_path(),
+    )
+    assert cmd[cmd.index("--dataset-name") + 1] == "custom"
+    assert cmd[cmd.index("--dataset-path") + 1] == "/data/prompts.jsonl"
+    assert cmd[cmd.index("--custom-output-len") + 1] == "256"
+    assert "--skip-chat-template" in cmd and "--ignore-eos" in cmd
+    monkeypatch.delenv("TT_BENCH_DATASET_PATH")
+    monkeypatch.delenv("TT_BENCH_IGNORE_EOS")
+    cmd, _ = build_vllm_bench_serve_argv(
+        vllm_binary="vllm", config=_config(), server=server,
+        result_filename=_result_path(),
+    )
+    assert "--ignore-eos" not in cmd and "--dataset-path" not in cmd

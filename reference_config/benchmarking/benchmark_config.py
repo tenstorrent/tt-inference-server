@@ -561,6 +561,21 @@ def cap_benchmark_params(
     return params
 
 
+def _env_int_list(name: str) -> List[int]:
+    value = os.getenv(name, "").strip()
+    return [int(x) for x in value.split(",") if x.strip()] if value else []
+
+
+def _env_isl_osl_pairs() -> List[Tuple[int, int]]:
+    """TT_BENCH_ISL_OSL_PAIRS="1321x256,2048x128" -> [(1321, 256), (2048, 128)]."""
+    value = os.getenv("TT_BENCH_ISL_OSL_PAIRS", "").strip()
+    pairs = []
+    for item in (value.split(",") if value else []):
+        isl, osl = item.lower().split("x")
+        pairs.append((int(isl), int(osl)))
+    return pairs
+
+
 def build_benchmark_config(model_spec) -> BenchmarkConfig:
     """Build benchmark tasks directly from a resolved model spec.
 
@@ -580,6 +595,15 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # devices use the standard pairs. Per-model ``isl + osl <= max_context``
     # filtering still applies below.
     text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
+    # Optional overrides of the text sweep shape (e.g. to benchmark a model on its own
+    # prompt set at a realistic ISL): TT_BENCH_ISL_OSL_PAIRS="1321x256,..." replaces the
+    # generic ISL/OSL pairs, TT_BENCH_CONCURRENCIES="1,2,4,8,16,32" runs each pair at
+    # those concurrencies (capped like the default sweep); num_prompts always comes from
+    # get_num_prompts. TT_BENCH_NO_STRUCTURED=1 drops the structured-output tasks.
+    bench_pairs = _env_isl_osl_pairs()
+    if bench_pairs:
+        text_isl_osl_pairs = bench_pairs
+    bench_concurrencies = _env_int_list("TT_BENCH_CONCURRENCIES")
     sweep_min_num_prompts = 0
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
@@ -655,13 +679,26 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
                         expanded_params
                         for isl, osl in text_isl_osl_pairs
                         if isl + osl <= max_context
-                        for expanded_params in _expand_text_sweep_params(
-                            isl=isl,
-                            osl=osl,
-                            max_context=max_context,
-                            max_tokens_all_users=max_tokens_all_users,
-                            model_max_concurrency=model_max_concurrency,
-                            min_num_prompts=sweep_min_num_prompts,
+                        for expanded_params in (
+                            expand_concurrency_sweep_params(
+                                [BenchmarkTaskParams(isl=isl, osl=osl)],
+                                max_context=max_context,
+                                max_tokens_all_users=max_tokens_all_users,
+                                model_max_concurrency=model_max_concurrency,
+                                model_name=model_spec.model_name,
+                                candidate_concurrencies=bench_concurrencies,
+                                ensure_allowed_max=False,
+                                min_num_prompts=sweep_min_num_prompts,
+                            )
+                            if bench_concurrencies
+                            else _expand_text_sweep_params(
+                                isl=isl,
+                                osl=osl,
+                                max_context=max_context,
+                                max_tokens_all_users=max_tokens_all_users,
+                                model_max_concurrency=model_max_concurrency,
+                                min_num_prompts=sweep_min_num_prompts,
+                            )
                         )
                     ]
                     + (
@@ -691,7 +728,10 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
         tasks.append(benchmark_task_runs)
 
     # Structured-output benchmarks: llms and vlms, can be extended
-    structured_output_eligible = model_spec.model_type in (ModelType.LLM, ModelType.VLM)
+    structured_output_eligible = model_spec.model_type in (
+        ModelType.LLM,
+        ModelType.VLM,
+    ) and not bool(os.getenv("TT_BENCH_NO_STRUCTURED"))
     if structured_output_eligible:
         tasks.append(
             BenchmarkTaskStructuredOutput(
