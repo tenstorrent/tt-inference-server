@@ -36,6 +36,11 @@ def _wait_for_remote_openai_ready(
     if api_key and "Authorization" not in headers:
         headers["Authorization"] = f"Bearer {api_key}"
     start_time = time.time()
+    logger.info(
+        "Waiting for remote OpenAI endpoint at %s (timeout %.0fs)",
+        models_url,
+        timeout,
+    )
     while time.time() - start_time < timeout:
         try:
             response = requests.get(models_url, headers=headers, timeout=interval)
