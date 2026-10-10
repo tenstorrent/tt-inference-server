@@ -100,6 +100,37 @@ class TestChatPromptLengthValidation:
         assert "200" in response.json()["detail"]
 
 
+    @patch("open_ai_api.chat._apply_chat_template", return_value="hello")
+    @patch("open_ai_api.chat._count_tokens", return_value=50)
+    @patch("open_ai_api.chat.settings")
+    def test_max_completion_tokens_counts_toward_the_limit(
+        self, mock_settings, mock_count, mock_template, test_client, mock_service
+    ):
+        """max_completion_tokens (sent by `vllm bench serve`) wins over the max_tokens default."""
+        mock_settings.vllm.max_model_length = 100
+        mock_settings.vllm.model = "test-model"
+        mock_settings.model_weights_path = "test-model"
+        mock_service.process_request = AsyncMock(
+            return_value=Mock(text="response", finish_reason="stop", completion_tokens=3)
+        )
+
+        too_long = test_client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hello"}], "max_completion_tokens": 60},
+        )
+        fits = test_client.post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hello"}], "max_tokens": 4000,
+                  "max_completion_tokens": 40, "ignore_eos": True},
+        )
+
+        assert too_long.status_code == 400
+        assert fits.status_code == 200
+        assert fits.json()["usage"]["completion_tokens"] == 3
+        sent = mock_service.process_request.call_args.args[0]
+        assert sent.max_tokens == 40 and sent.ignore_eos is True
+
+
 class TestCompletionsPromptLengthValidation:
     """Test that /v1/completions rejects prompts exceeding max_model_length."""
 

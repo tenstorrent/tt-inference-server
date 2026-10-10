@@ -7,6 +7,12 @@ import os
 SERVED_MODEL_NAME = os.environ.get("SERVED_MODEL_NAME", "openai/gpt-oss-20b")
 ACCEPTED_MODEL_NAMES = (None, SERVED_MODEL_NAME, SERVED_MODEL_NAME.rsplit("/", 1)[-1])
 CONTEXT_LENGTH = int(os.environ.get("MAX_MODEL_LENGTH", 4096))
+# Only Gemma's batch worker (`--serve-batch`) can ignore end tokens (ignore_eos,
+# a fixed output length for benchmarks), and only from tt-lab ea8a211 (message 3);
+# TT_LAB_IGNORE_EOS=1 declares that the deployed binary has it.
+IGNORE_EOS_SUPPORTED = (os.environ.get("MODEL_RUNNER") == "tt-lab-gemma"
+                        and int(os.environ.get("TT_GEMMA31_SLOTS", "1")) > 1
+                        and os.environ.get("TT_LAB_IGNORE_EOS") == "1")
 
 
 def validate_request(request, tokenizer):
@@ -21,11 +27,14 @@ def validate_request(request, tokenizer):
     if request.repetition_penalty not in (None, 1, 1.0):
         raise ValueError("tt-lab does not support repetition_penalty")
     unsupported = ("echo", "suffix", "logprobs", "use_beam_search", "min_p",
-                   "stop_token_ids", "include_stop_str_in_output", "ignore_eos",
+                   "stop_token_ids", "include_stop_str_in_output",
                    "min_tokens", "allowed_token_ids", "prompt_logprobs")
     for name in unsupported:
         if getattr(request, name, None) not in (None, False, 0, [], ""):
             raise ValueError(f"tt-lab does not support {name}")
+    if getattr(request, "ignore_eos", False) and not IGNORE_EOS_SUPPORTED:
+        raise ValueError("tt-lab supports ignore_eos only for Gemma 31B batch serving "
+                         "(TT_GEMMA31_SLOTS > 1, TT_LAB_IGNORE_EOS=1)")
     tokens = (tokenizer.encode(request.prompt, add_special_tokens=False)
               if isinstance(request.prompt, str) else request.prompt)
     # vLLM semantics: keep only the last k prompt tokens (-1 or None: all).

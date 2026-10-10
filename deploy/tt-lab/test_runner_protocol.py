@@ -2,6 +2,7 @@
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +20,8 @@ def runner():
     instance.timeout = 10
     instance.vocab = 201088
     instance.gemma = False
+    instance.batched = False
+    instance._write_lock = threading.Lock()
     with tempfile.TemporaryFile() as pipe:
         instance.process = SimpleNamespace(stdin=pipe, poll=lambda: None)
         yield instance

@@ -90,6 +90,7 @@ def _build_completion_request(
         n=chat_request.n,
         seed=chat_request.seed,
         adapter=chat_request.adapter,
+        ignore_eos=chat_request.ignore_eos,
     )
 
 
@@ -140,9 +141,12 @@ async def chat_completions(
     max_model_len = settings.vllm.max_model_length
     # Default to 1 when max_tokens is unset; vLLM needs >= 1 output token. Pass
     # explicit values through (incl. 0) so the check matches what the engine sees.
-    output_tokens_needed = (
-        chat_request.max_tokens if chat_request.max_tokens is not None else 1
+    requested_tokens = (
+        chat_request.max_completion_tokens
+        if chat_request.max_completion_tokens is not None
+        else chat_request.max_tokens
     )
+    output_tokens_needed = requested_tokens if requested_tokens is not None else 1
     if prompt_tokens + output_tokens_needed > max_model_len:
         logger.warning(
             f"Rejected prompt: length ({prompt_tokens}) + max_tokens "
@@ -163,8 +167,9 @@ async def chat_completions(
     try:
         if not chat_request.stream:
             result = await service.process_request(completion_request)
+            # Runners that count generated tokens report them; otherwise re-tokenize.
             completion_tokens = getattr(result, "completion_tokens", None)
-            if completion_tokens is None:
+            if not isinstance(completion_tokens, int):
                 completion_tokens = _count_tokens(result.text) if result.text else 0
             response = {
                 "id": completion_id,
@@ -200,7 +205,7 @@ async def chat_completions(
                 accumulated_text += partial.text
                 if partial.finish_reason:
                     finish_reason = partial.finish_reason
-                if getattr(partial, "completion_tokens", None) is not None:
+                if isinstance(getattr(partial, "completion_tokens", None), int):
                     actual_completion_tokens = partial.completion_tokens
                 if not partial.text:
                     continue

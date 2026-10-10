@@ -12,7 +12,14 @@ Gemma 4 31B (MODEL_RUNNER=tt-lab-gemma) runs `tt-lab gemma --native-device`:
   slots, is prefilled alone in it, and decodes together with the other active
   requests through tt-lab's exact batch-decode path. Requests are tagged, so
   several stream at once (the dynamic-batch device worker) and a cancelled
-  stream frees its slot.
+  stream frees its slot. Requests with ignore_eos use the flagged submit
+  (message 3) and always generate max_tokens.
+
+--serve-batch pipe protocol (little-endian int32): submit `1, id, n, limit,
+tokens[n]`; submit with flags `3, id, n, limit, flags, tokens[n]` (flag 1:
+ignore end tokens); cancel `2, id`. Replies are `(id, value)` pairs: a token
+(>= 0), STOPPED, LENGTH or CANCELLED (also for an unknown id); `(READY,
+slots)` once at start.
 """
 import asyncio
 import atexit
@@ -34,6 +41,9 @@ from tt_model_runners.base_device_runner import BaseDeviceRunner
 
 # --serve-batch replies: (id, value) pairs; value is a token or one of these.
 STOPPED, LENGTH, READY, CANCELLED = -1, -2, -3, -4
+# --serve-batch messages.
+SUBMIT, CANCEL, SUBMIT_FLAGS = 1, 2, 3
+FLAG_IGNORE_EOS = 1
 
 
 class TextStream:
@@ -146,7 +156,8 @@ class TTLabRunner(BaseDeviceRunner):
         self._next_id = 0
         self._reader = None
         self._reader_error = None
-        self._slot_limit = None
+        # Slot semaphore per event loop (the device worker runs one loop; tests run several).
+        self._slot_limits = {}
         atexit.register(self.close_device)
 
     def _read_words(self, count, deadline):
@@ -196,11 +207,7 @@ class TTLabRunner(BaseDeviceRunner):
         def watch_child():
             process.wait()
             if not self._closing:
-                # Let the scheduler recover even when the child dies while idle.
-                # Forked workers inherit uvicorn's SIGTERM handler, which only
-                # sets a server flag. Exit directly so multiprocessing observes
-                # the death and the scheduler can replace this worker.
-                os._exit(1)
+                self._child_exited()
         threading.Thread(target=watch_child, daemon=True).start()
         deadline = time.monotonic() + self.timeout
         if self.batched:
@@ -217,6 +224,13 @@ class TTLabRunner(BaseDeviceRunner):
         mode = f", {self.slots} sequences batched" if self.batched else ""
         self.logger.info(f"{served} ready on Blackhole{mode}; persistent tt-lab PID={self.process.pid}")
         return True
+
+    def _child_exited(self):
+        # Let the scheduler recover even when the child dies while idle.
+        # Forked workers inherit uvicorn's SIGTERM handler, which only
+        # sets a server flag. Exit directly so multiprocessing observes
+        # the death and the scheduler can replace this worker.
+        os._exit(1)
 
     # ---- one sequence at a time (GPT-OSS, and Gemma with one slot) ----
 
@@ -266,7 +280,7 @@ class TTLabRunner(BaseDeviceRunner):
             for sink in sinks:
                 sink(exc)
 
-    def _submit(self, tokens, limit, sink):
+    def _submit(self, tokens, limit, sink, ignore_eos=False):
         """Register `sink` for this request's replies and send it to the worker."""
         if not self.health_check():
             raise RuntimeError("tt-lab silicon process is not running")
@@ -274,32 +288,51 @@ class TTLabRunner(BaseDeviceRunner):
             self._next_id = (self._next_id + 1) & 0x7FFFFFFF
             rid = self._next_id
             self._sinks[rid] = sink
-        self._write(struct.pack(f"<4i{len(tokens)}i", 1, rid, len(tokens), limit, *tokens))
+        if ignore_eos:
+            header = struct.pack("<5i", SUBMIT_FLAGS, rid, len(tokens), limit, FLAG_IGNORE_EOS)
+        else:
+            header = struct.pack("<4i", SUBMIT, rid, len(tokens), limit)
+        try:
+            self._write(header + struct.pack(f"<{len(tokens)}i", *tokens))
+        except BaseException:
+            with self._sinks_lock:
+                self._sinks.pop(rid, None)
+            raise
         return rid
 
     def _cancel(self, rid):
         if self.health_check():
-            self._write(struct.pack("<2i", 2, rid))
+            try:
+                self._write(struct.pack("<2i", CANCEL, rid))
+            except OSError:
+                pass  # The worker died; the reader thread fails every request.
+
+    def _slots_for(self, loop):
+        if loop not in self._slot_limits:
+            self._slot_limits[loop] = asyncio.Semaphore(self.slots)
+        return self._slot_limits[loop]
 
     async def _generate_batched(self, request):
         """Stream one request through the batch worker. The slot is held from
         submit until the worker reports this request finished or cancelled."""
         tokens, limit = validate_request(request, self.tokenizer)
         loop = asyncio.get_running_loop()
-        if self._slot_limit is None:
-            self._slot_limit = asyncio.Semaphore(self.slots)
-        slots = self._slot_limit
+        slots = self._slots_for(loop)
         await slots.acquire()
         replies = asyncio.Queue()
 
         def sink(value):
-            # Reader thread: a terminal value also frees the slot.
-            if isinstance(value, Exception) or value < 0:
-                loop.call_soon_threadsafe(slots.release)
-            loop.call_soon_threadsafe(replies.put_nowait, value)
+            # Reader thread: a terminal value also frees the slot. The loop may
+            # already be closed (its consumer gone); never fail the reader thread.
+            try:
+                if isinstance(value, Exception) or value < 0:
+                    loop.call_soon_threadsafe(slots.release)
+                loop.call_soon_threadsafe(replies.put_nowait, value)
+            except RuntimeError:
+                pass
 
         try:
-            rid = self._submit(tokens, limit, sink)
+            rid = self._submit(tokens, limit, sink, getattr(request, "ignore_eos", False))
         except BaseException:
             slots.release()
             raise
@@ -344,11 +377,15 @@ class TTLabRunner(BaseDeviceRunner):
         import queue
         replies = queue.Queue()
         tokens, limit = validate_request(request, self.tokenizer)
-        self._submit(tokens, limit, replies.put)
+        rid = self._submit(tokens, limit, replies.put, getattr(request, "ignore_eos", False))
         stream = TextStream(self.tokenizer, request)
         deadline = time.monotonic() + self.timeout
         while True:
-            value = replies.get(timeout=max(0.0, deadline - time.monotonic()))
+            try:
+                value = replies.get(timeout=max(0.0, deadline - time.monotonic()))
+            except queue.Empty:
+                self._cancel(rid)
+                raise TimeoutError("tt-lab silicon worker timed out") from None
             if isinstance(value, Exception):
                 raise RuntimeError(f"tt-lab silicon worker failed: {value}")
             if value < 0:

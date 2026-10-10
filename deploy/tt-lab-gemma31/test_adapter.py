@@ -6,7 +6,7 @@ import pytest
 
 os.environ.update(MODEL_RUNNER='tt-lab-gemma', MODEL_SERVICE='llm', IS_GALAXY='false', DEVICE_IDS='(0)',
                   MODEL_WEIGHTS_PATH='/home/ttuser/workspace/gemma31-reference',
-                  TT_LAB_SERVED_MODEL='google/gemma-4-31B-it', TT_LAB_CONTEXT='32768')
+                  SERVED_MODEL_NAME='google/gemma-4-31B-it', MAX_MODEL_LENGTH='32768', TT_LAB_CONTEXT='32768')
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tt-media-server'))
 from transformers import AutoTokenizer
 from domain.completion_request import CompletionRequest
@@ -33,7 +33,6 @@ def test_31b_context_limit(tokenizer):
 
 def test_four_cards_refuses_single_card_selection(monkeypatch):
     from tt_model_runners.tt_lab_runner import TTLabRunner
-    monkeypatch.setenv('TT_LAB_FOUR_CARDS', '1')
     monkeypatch.setenv('TT_LAB_DEVICE', '1')
     with pytest.raises(ValueError, match='unset TT_LAB_DEVICE'):
         TTLabRunner('0')
