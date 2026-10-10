@@ -7614,5 +7614,163 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
             }
         ]
-    }
+    },
+        "MiniMaxAI/MiniMax-M3": {
+            "super_cluster": [
+                {
+                    "_comment": [
+                        "SUPER_CLUSTER (remote blaze endpoint, 62 slots, 1M context). Long-context",
+                        "serving points for the AgentX-style workload: ISL at the Claude Code trace",
+                        "context percentiles (60K p25, 140K p50, 310K p75, 550K p90) plus 8K and 100K,",
+                        "all with OSL 1024, at concurrency 1 and the full 62. No targets yet: the rows",
+                        "are informational until a measured block is added, like the default sweep.",
+                        "num_prompts: 2 waves of 62 up to 140K, 1 wave at 310K/550K (prefill volume),",
+                        "4 / 2 at concurrency 1. Run with ONLY_BENCHMARK_TARGETS=1 to skip the default",
+                        "ISL/OSL sweep and run only these."
+                    ],
+                    "isl": 8192,
+                    "osl": 1024,
+                    "max_concurrency": 1,
+                    "num_prompts": 4,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 8192,
+                    "osl": 1024,
+                    "max_concurrency": 62,
+                    "num_prompts": 124,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 61440,
+                    "osl": 1024,
+                    "max_concurrency": 1,
+                    "num_prompts": 2,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 61440,
+                    "osl": 1024,
+                    "max_concurrency": 62,
+                    "num_prompts": 124,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 102400,
+                    "osl": 1024,
+                    "max_concurrency": 1,
+                    "num_prompts": 2,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 102400,
+                    "osl": 1024,
+                    "max_concurrency": 62,
+                    "num_prompts": 124,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 143360,
+                    "osl": 1024,
+                    "max_concurrency": 1,
+                    "num_prompts": 2,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 143360,
+                    "osl": 1024,
+                    "max_concurrency": 62,
+                    "num_prompts": 124,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 317440,
+                    "osl": 1024,
+                    "max_concurrency": 1,
+                    "num_prompts": 2,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 317440,
+                    "osl": 1024,
+                    "max_concurrency": 62,
+                    "num_prompts": 62,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 563200,
+                    "osl": 1024,
+                    "max_concurrency": 1,
+                    "num_prompts": 2,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                },
+                {
+                    "isl": 563200,
+                    "osl": 1024,
+                    "max_concurrency": 62,
+                    "num_prompts": 62,
+                    "task_type": "text",
+                    "data_parallel": null,
+                    "image_height": null,
+                    "image_width": null,
+                    "images_per_prompt": null,
+                    "targets": {}
+                }
+            ]
+        }
 }

@@ -273,6 +273,29 @@ class TestArgumentParsing:
                 assert "--tools" in stderr_output
                 assert "invalid choice" in stderr_output
 
+    @pytest.mark.parametrize("workflow", ["agentic", "release"])
+    def test_agentic_benchmark_allowed_for_agentic_and_release(self, workflow):
+        """--agentic-benchmark narrows the agentic evals under --workflow agentic
+        and under the agentic child of --workflow release."""
+        args = ["--model", "Mistral-7B-Instruct-v0.3", "--workflow", workflow,
+                "--tt-device", "n150", "--agentic-benchmark", "tb2.1,tau3"]
+        with patch("sys.argv", ["run.py"] + args):
+            parsed = parse_arguments()
+        assert parsed.agentic_benchmark == "tb2.1,tau3"
+
+    def test_agentic_benchmark_rejected_for_other_workflows(self):
+        """--agentic-benchmark has no meaning for a workflow without an agentic child."""
+        args = ["--model", "Mistral-7B-Instruct-v0.3", "--workflow", "evals",
+                "--tt-device", "n150", "--agentic-benchmark", "tau3"]
+        with patch("sys.argv", ["run.py"] + args):
+            with patch("sys.stderr") as mock_stderr:
+                with pytest.raises(SystemExit) as exc_info:
+                    parse_arguments()
+                assert exc_info.value.code == 2
+                stderr_output = "".join(str(c) for c in mock_stderr.write.call_args_list)
+                assert "--agentic-benchmark" in stderr_output
+                assert "--workflow agentic or --workflow release" in stderr_output
+
 
 class TestModelSpecCliArgsCompatibility:
     def test_populate_model_spec_cli_args_uses_runtime_config_values(self):
