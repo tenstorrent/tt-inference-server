@@ -1053,6 +1053,11 @@ and 67.6% p95**; **31/504** ten-second samples had a waiting request,
 up from 10/267 on the ten-case run, but no preemption or AICLK warning
 was found. The longest case, requests 2317, took 57.16 minutes, shorter
 than the 83.75-minute suite wall; the larger run had a multi-wave tail.
+If page usage scaled linearly with pool size on this same path, its
+74.8%-of-256K peak would consume about **99.7% of a 192K pool**.
+That is an extrapolation, not a 192K live measurement, but it leaves
+essentially no headroom for more cases or longer prompts and reinforces
+the 256K operational choice for C8 SWE/20.
 Its 836 trace warm/capture intervals summed to 157.6 seconds. The fixed
 20-case set now provides the matched live C8/C10 comparison. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-swe-c8-twenty-main/`
