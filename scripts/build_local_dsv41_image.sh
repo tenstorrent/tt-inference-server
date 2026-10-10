@@ -75,7 +75,10 @@ from workflows.model_spec import MODEL_SPECS, export_model_specs_json
 n = export_model_specs_json(MODEL_SPECS, Path('$CTX/model_spec.json'))
 print('model_spec.json:', n, 'specs')")
 cp "$CTX/tis/vllm-tt-metal/vllm.tt-metal.local.Dockerfile" "$CTX/Dockerfile"
-rm -rf "$CTX/tis"
+# the workflow clients (run.py --workflow evals/benchmarks, run_workflows.py, llm_module, test_module, launchers, requirements) run FROM THE IMAGE
+# against a server (docker run --entrypoint ... python3 run.py ...): keep the tree (without the parts a client does not need) for the last layer
+(cd "$CTX/tis" && rm -rf tt-media-server docs charts mooncake tt-sglang-plugin dynamo_frontend .devcontainer tests test_fixtures)
+mv "$CTX/tis" "$CTX/ttis"
 fi
 du -sh "$CTX"
 
