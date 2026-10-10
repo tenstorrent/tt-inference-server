@@ -17,6 +17,7 @@ commits, task lists, or agent policies are kept separate.
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
+| C10 synthetic 128/128 | 295.09 output tok/s for ten users | Release gate passes; long-prompt gain versus C8 is small and one-active points are slower |
 | C2/192K versus 256K | Median absolute synthetic rate change 0.12%; live Terminal 1/5 at both sizes | 192K had one timeout and no measured wall advantage |
 | Terminal fixed five, C1 | 0/5 solved, 270.1 min evaluation | Sampling paths differ from C2/C4; full-set target remains 44.94% |
 | Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | 192K live run also 1/5, with more output and a timeout |
@@ -934,12 +935,47 @@ configuration. Raw artifacts and numeric summary are under
 A ten-row follow-up uses the same pinned Metal image, 256K pool and fixed
 ten-case lists. [Inference-server commit `15889c19`](https://github.com/tenstorrent/tt-inference-server/commit/15889c19331b16dd45d81fa3bfc62277e044294e)
 changes only the physical decode rows and both agent trial counts from eight
-to ten. Its [synthetic benchmark dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011593208)
-is queued behind the active evaluations. Inspect completion, KV occupancy,
-waiting and long-prompt admission before choosing whether a ten-case live
-SWE or Terminal run is worth the runner time. A first dispatch with an
-abbreviated inference-server SHA was canceled before hardware work; it is
-not a benchmark result.
+to ten. A first dispatch with an abbreviated inference-server SHA was
+canceled before hardware work; it is not a benchmark result.
+
+The [C10 synthetic sweep](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011593208)
+finished **all 23 shapes with zero failed requests**, and its CI release
+throughput gate passed. It used healthy `120-qb2-p05t01`, which also hosted
+the C2/C4 pinned-main synthetic runs; C8 ran on `qb2-120-p05t02`. The full
+test job took **38.48 minutes**. Against C8 on the same Metal image:
+
+| Input/output tokens | C8 active / tok/s | C10 active / tok/s | C10 change |
+| --- | ---: | ---: | ---: |
+| 128/128 | 8 / 273.57 | 10 / 295.09 | +7.9% |
+| 128/1024 | 8 / 311.22 | 10 / 330.41 | +6.2% |
+| 1,024/128 | 8 / 226.11 | 10 / 219.79 | −2.8% |
+| 8,192/128 | 8 / 75.82 | 10 / 76.66 | +1.1% |
+| 8,192/1024 | 8 / 210.43 | 10 / 217.15 | +3.2% |
+| 10,000/1024 | 8 / 79.08 | 10 / 85.83 | +8.5% |
+| 16,384/128 | 8 / 40.83 | 10 / 41.01 | +0.4% |
+| 32,768/128 | 7 / 19.46 | 7 / 19.11 | −1.8% |
+| 65,536/128 | 3 / 8.09 | 3 / 7.88 | −2.6% |
+
+At 32K and 65K the shared-context selector admitted only seven and three
+requests at both physical sizes, so C10 cannot increase simultaneous work
+there. C10 reached ten active, eight waiting and **67.7% peak sampled KV**;
+waiting appeared in **32/193** ten-second samples, versus C8's **27/171**,
+and no preemption was logged. The first C10 10K/1024 wave had TTFT as high
+as **151.8 seconds**, while its second wave was 2.6–6.7 seconds. The cold
+prefill anomaly therefore persists and grows with the wider first burst.
+
+Across 12 matched one-active shapes, C10's median output rate was **14.6%
+below** C8's on different hosts and **8.0% below** C4's on the same
+`p05t01` host. No AICLK warning was found in C10's log. This suggests
+that a ten-row physical trace may impose an idle-row cost, but run-to-run
+host conditions have not been controlled enough to establish the cause.
+For the *ten-case* SWE set, C8's longest case already occupied the entire
+evaluation wall, and the C10 8K gain is only 3.2%; a C10 ten-case live run
+is therefore lower priority than the ongoing C8 twenty-case expansion.
+Use one warmed C8 trace for logical counts one to eight until a larger live
+set shows C10's extra overlap offsets its single-active cost. Raw artifacts
+and numeric summary are under `/home/mvasiljev/build/gemma-c10-benchmark-main/`
+and `/home/mvasiljev/build/gemma-c10-benchmark-main-summary.json`.
 
 The faster C8 ten-case SWE wall justified a
 [twenty-case SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011984043)
