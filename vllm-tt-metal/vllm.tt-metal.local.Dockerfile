@@ -9,10 +9,17 @@
 # This one COPYs git-archive exports of the local (unpushed) checkouts instead; the
 # build context is assembled by scripts/build_local_dsv41_image.sh:
 #
-#   <ctx>/tt-metal            git archive of tt-metal HEAD + its 3 submodules (no .git)
+#   <ctx>/tt-metal            git archive of tt-metal HEAD + its 3 submodules (no .git), WITHOUT models/
+#   <ctx>/tt-metal-models     the models/ tree of that export (python only, copied after the C++ build
+#                             so a models/ change does not invalidate the build layers)
 #   <ctx>/vllm-tt-plugin      git archive of the vllm-tt-plugin worktree HEAD
 #   <ctx>/vllm-tt-metal/...   this repo's vllm-tt-metal/{src,requirements.txt}
-#   <ctx>/utils, VERSION, model_spec.json (generated with MODEL_SPECS_ENV=dev)
+#   <ctx>/utils, VERSION, reference_config, workflows, model_spec.json (generated with MODEL_SPECS_ENV=dev)
+#
+# Layer caching: the builder stage must not see the commit shas (no ARG/ENV of them before
+# the C++ build: an ARG is an implicit env of every later RUN), so a tt-metal commit that
+# only touches models/ (or only tt-inference-server / the plugin) reuses build_metal.sh and
+# create_venv.sh from the cache. The shas are recorded in BUILD_INFO (runtime stage).
 #
 # Runtime layout is identical to the stock image (TT_METAL_HOME, vllm_tt_plugin_dir,
 # app dir with src/ and utils/, same entrypoint). No weights or caches are baked in.
@@ -23,8 +30,6 @@ ARG TT_METAL_DOCKERFILE_URL
 # ==============================================================================
 FROM ${TT_METAL_DOCKERFILE_URL} AS builder
 
-ARG TT_METAL_COMMIT_SHA_OR_TAG
-ARG TT_METAL_SCM_VERSION=0.0.0+local
 ARG TT_SMI_COMMIT_SHA_OR_TAG=v3.1.1
 # cap on compile parallelism (shared build hosts): cmake/ninja and make
 ARG BUILD_JOBS=16
@@ -33,8 +38,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-    SHELL=/bin/bash \
+ENV SHELL=/bin/bash \
     TZ=America/Los_Angeles \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     ARCH_NAME=blackhole \
@@ -91,13 +95,18 @@ ENV UV_HTTP_RETRIES=10 \
 COPY tt-metal ${TT_METAL_HOME}
 RUN /bin/bash -c "cd ${TT_METAL_HOME} \
     && git init -q && git add -A \
-    && git -c user.name=build -c user.email=build@localhost commit -q -m 'local export ${TT_METAL_COMMIT_SHA_OR_TAG}' \
-    && export SETUPTOOLS_SCM_PRETEND_VERSION=${TT_METAL_SCM_VERSION} \
+    && git -c user.name=build -c user.email=build@localhost commit -q -m 'local export' \
+    && export SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0.dev0+local \
     && bash ./build_metal.sh \
     && ( for i in 1 2 3 4 5; do CXX=clang++-17 CC=clang-17 bash ./create_venv.sh && exit 0; echo 'create_venv.sh failed, retrying in 30s'; sleep 30; done; exit 1 ) \
+    && rm -rf ${TT_METAL_HOME}/.git \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
+
+# models/ (python only) after the C++ build and the venv
+COPY tt-metal-models ${TT_METAL_HOME}/models
+RUN /bin/bash -c "cd ${TT_METAL_HOME} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && rm -rf ${TT_METAL_HOME}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # vllm-tt-plugin from the local export; its own docs/install-vllm-tt.sh owns the vLLM
@@ -128,17 +137,13 @@ FROM ${TT_METAL_DOCKERFILE_URL} AS runtime
 LABEL org.opencontainers.image.source=https://github.com/tenstorrent/tt-inference-server \
       org.opencontainers.image.description="DeepSeek-V4.1-Flash on Blackhole Galaxy, built from local (unpushed) tt-metal / tt-inference-server / vllm-tt-plugin sources"
 
-ARG TT_METAL_COMMIT_SHA_OR_TAG
-ARG TT_INFERENCE_SERVER_COMMIT=unknown
-ARG VLLM_TT_PLUGIN_COMMIT=unknown
 ARG CONTAINER_APP_UID=15863
 ARG DEBIAN_FRONTEND=noninteractive
 ARG CONTAINER_APP_USERNAME=container_app_user
 ARG HOME_DIR=/home/${CONTAINER_APP_USERNAME}
 ARG APP_DIR="${HOME_DIR}/app"
 
-ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
-    SHELL=/bin/bash \
+ENV SHELL=/bin/bash \
     TZ=America/Los_Angeles \
     CONTAINER_APP_USERNAME=${CONTAINER_APP_USERNAME} \
     ARCH_NAME=blackhole \
@@ -195,6 +200,11 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "utils" "${APP_DIR}/utils"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "VERSION" "${APP_DIR}/VERSION"
+# eval / model-spec configuration (reference_config/evals/eval_config.py, workflows/model_specs)
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "reference_config" "${APP_DIR}/reference_config"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "workflows" "${APP_DIR}/workflows"
 
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \
@@ -234,6 +244,11 @@ RUN mkdir -p ${CACHE_ROOT} /home/container_app_user/model_specs
 COPY --chown=container_app_user:container_app_user \
     model_spec.json ${MODEL_SPECS_JSON_PATH}
 
+# shas last: an ARG is an implicit env of every later RUN
+ARG TT_METAL_COMMIT_SHA_OR_TAG=unknown
+ARG TT_INFERENCE_SERVER_COMMIT=unknown
+ARG VLLM_TT_PLUGIN_COMMIT=unknown
+ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG}
 RUN printf 'tt-metal=%s\ntt-inference-server=%s\nvllm-tt-plugin=%s\nbuilt=%s\n' \
     "${TT_METAL_COMMIT_SHA_OR_TAG}" "${TT_INFERENCE_SERVER_COMMIT}" "${VLLM_TT_PLUGIN_COMMIT}" "$(date -u +%FT%TZ)" \
     > /home/container_app_user/BUILD_INFO
