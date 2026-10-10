@@ -1583,6 +1583,7 @@ templates:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
+        max_num_batched_tokens: "525312"  # = KV capacity: admit a whole prefill burst in one step so running decodes are not stalled mid-stream (no chunked prefill on TT)
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1073741824
