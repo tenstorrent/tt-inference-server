@@ -1209,6 +1209,14 @@ predeclared thirty additions scored **21/30**. The generic full-set H100
 accuracy gate failed at 58% versus its 64.8% reference and 5% tolerance;
 this selected 50/500 set cannot establish full-set parity or a full-set
 regression.
+Using the official split's difficulty labels, the fifty scored **12/19
+`<15 min fix`, 17/27 `15 min - 1 hour`, and 0/4 `1-4 hours`**. The retained
+twenty scored 3/8, 5/10 and 0/2 across those strata; the new thirty
+scored 9/11, 12/17 and 0/2. The added group did not simply contain a
+much larger share of easy labels. By project, Django scored 14/22 and
+Sympy 2/8; all four pytest cases solved. These tiny, selected subgroups
+show heterogeneous agent outcomes but do not identify a hardware cause or
+provide matched H100 case scores.
 
 | C8 SWE measure | Earlier twenty | Selected fifty |
 | --- | ---: | ---: |
