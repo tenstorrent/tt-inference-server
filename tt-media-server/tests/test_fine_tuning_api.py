@@ -16,7 +16,9 @@ from security.org_id_checker import get_org_id
 
 @pytest.fixture
 def mock_service():
-    return MagicMock()
+    service = MagicMock()
+    service.delete_job = AsyncMock()
+    return service
 
 
 @pytest.fixture
@@ -119,9 +121,9 @@ class TestDeleteJob:
         assert response.status_code == 204
         mock_service.delete_job.assert_called_once_with("job-1", org_id="test-org")
 
-    def test_delete_active_job_returns_conflict(self, client, mock_service):
+    def test_force_delete_failure_returns_conflict(self, client, mock_service):
         mock_service.delete_job.side_effect = ValueError(
-            "Only terminal jobs can be deleted"
+            "Could not force-delete job job-1"
         )
 
         response = client.delete("/jobs/job-1")

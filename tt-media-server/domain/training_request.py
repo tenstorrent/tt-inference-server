@@ -67,6 +67,7 @@ class TrainingRequest(BaseRequest):
     _training_logs: list = PrivateAttr(default=None)
     _training_checkpoints: list = PrivateAttr(default=None)
     _progress_tracker: object = PrivateAttr(default=None)
+    _worker_assignment: object = PrivateAttr(default=None)
     # Worker-local timestamp used to throttle writes to the shared tracker.
     _last_heartbeat_time: float = PrivateAttr(default=0.0)
 

@@ -5,20 +5,28 @@
 import asyncio
 import os
 import time
+from multiprocessing import Event as ProcessEvent
+from multiprocessing import Lock as ProcessLock
 from multiprocessing import Process  # Need multiprocessing queues
 from multiprocessing import Queue as Queue
+from threading import Lock
+from typing import Any
 
-from config.constants import CANARY_TASK_IDS, SHUTDOWN_SIGNAL, QueueType
+from config.constants import CANARY_TASK_IDS, SHUTDOWN_SIGNAL, ModelServices, QueueType
 from config.settings import get_settings
 from device_workers.device_worker import device_worker
 from device_workers.device_worker_dynamic_batch import (
     device_worker as device_worker_dynamic_batch,
 )
+from domain.worker_replacement import WorkerReplacementOutcome
 from fastapi import HTTPException
 from telemetry.multiprocess_setup import mark_worker_dead
 from utils.decorators import log_execution_time
 from utils.logger import TTLogger
 from utils.simple_queue_factory import get_queue, get_task_queue
+
+WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS = 1.0
+WORKER_TERMINATION_GRACE_PERIOD_SECONDS = 5.0
 
 
 class Scheduler:
@@ -26,6 +34,8 @@ class Scheduler:
     def __init__(self):
         self.settings = get_settings()
         self.logger = TTLogger()
+        self._worker_retirement_lock = Lock()
+        self._worker_replacement_lock = Lock()
         self._setup_initial_variables()
         self._start_queues()
 
@@ -178,6 +188,8 @@ class Scheduler:
         When restarting, pass queue_index from the worker's existing info so the
         correct result queue is used (worker_info is not reduced on restart).
         """
+        self._validate_training_worker_configuration()
+
         if worker_id is None:
             worker_id = (
                 self.workers_to_open.pop(0)
@@ -200,6 +212,12 @@ class Scheduler:
         else:
             result_queue = self.result_queues_by_worker[0]
 
+        supports_worker_retirement = (
+            self.settings.model_service == ModelServices.TRAINING.value
+        )
+        retirement_event = ProcessEvent() if supports_worker_retirement else None
+        claim_lock = ProcessLock() if supports_worker_retirement else None
+
         p = Process(
             target=device_worker_dynamic_batch
             if self.settings.use_dynamic_batcher
@@ -215,6 +233,8 @@ class Scheduler:
                 == QueueType.MemoryQueue.value
                 else None,
                 self.cancel_queue,
+                retirement_event,
+                claim_lock,
             ),
             name=f"DeviceWorker-{worker_id}",
         )
@@ -227,46 +247,185 @@ class Scheduler:
             "is_ready": False,
             "error_count": 0,
             "queue_index": worker_index,  # ✅ Track which queue this worker uses
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
         }
 
         self.logger.info(f"Started worker {worker_id} with PID {p.pid}")
 
-    def restart_worker(self, worker_id: str):
-        """Restart a dead worker"""
-        old_info = self.worker_info.get(worker_id, {})
+    def _validate_training_worker_configuration(self) -> None:
+        if self.settings.model_service != ModelServices.TRAINING.value:
+            return
+        if self.settings.use_dynamic_batcher or self.settings.max_batch_size != 1:
+            raise ValueError(
+                "Training workers require use_dynamic_batcher=False and "
+                "max_batch_size=1 so force-deleting one job cannot terminate "
+                "unrelated jobs"
+            )
 
-        if old_info == {}:
-            raise ValueError(f"Worker ID {worker_id} not found in worker info")
-
-        restart_count = old_info.get("restart_count", 0) + 1
-
-        self.logger.warning(
-            f"Restarting dead worker {worker_id} (restart #{restart_count})"
+    def restart_worker(
+        self, worker_id: str, expected_process: Process | None = None
+    ) -> bool:
+        """Restart a failed worker, ignoring stale health-monitor observations."""
+        return self._perform_worker_replacement(
+            worker_id,
+            count_as_failure=True,
+            expected_process=expected_process,
         )
 
-        # Clean up old process if it exists
-        old_pid = None
-        if worker_id in self.worker_info:
+    def replace_worker(
+        self,
+        worker_id: str,
+        expected_pid: int | None = None,
+        worker_assignment: Any = None,
+    ) -> WorkerReplacementOutcome:
+        """Intentionally replace the expected worker without recording a failure."""
+        if worker_assignment is not None:
+            validation_outcome = self._validate_worker_retirement(
+                worker_id, expected_pid, worker_assignment
+            )
+            if validation_outcome is not None:
+                return validation_outcome
+
+        replaced = self._perform_worker_replacement(
+            worker_id,
+            count_as_failure=False,
+            expected_pid=expected_pid,
+        )
+        if replaced:
+            return WorkerReplacementOutcome.REPLACED
+
+        self._clear_expected_worker_assignment(
+            worker_assignment, (worker_id, expected_pid)
+        )
+        return WorkerReplacementOutcome.WORKER_MISMATCH
+
+    def mark_worker_retiring(self, worker_id: str, expected_pid: int) -> bool:
+        """Stop an expected worker from dequeuing more work."""
+        with self._worker_retirement_lock:
+            worker_info = self.worker_info.get(worker_id)
+            if worker_info is None or worker_info["process"].pid != expected_pid:
+                return False
+
+            retirement_event = worker_info.get("retirement_event")
+            if retirement_event is None:
+                return False
+
+            retirement_event.set()
+            return True
+
+    def _validate_worker_retirement(
+        self,
+        worker_id: str,
+        expected_pid: int,
+        worker_assignment: Any,
+    ) -> WorkerReplacementOutcome | None:
+        """Confirm behind the claim barrier that the job still owns the worker."""
+        expected_identity = (worker_id, expected_pid)
+        with self._worker_retirement_lock:
+            worker_info = self.worker_info.get(worker_id)
+            if worker_info is None or worker_info["process"].pid != expected_pid:
+                self._clear_expected_worker_assignment(
+                    worker_assignment, expected_identity
+                )
+                return WorkerReplacementOutcome.WORKER_MISMATCH
+            if (
+                worker_info.get("retirement_event") is None
+                or worker_info.get("claim_lock") is None
+            ):
+                return WorkerReplacementOutcome.RETRY_REQUIRED
+            retirement_event = worker_info["retirement_event"]
+            claim_lock = worker_info["claim_lock"]
+
+        acquired = claim_lock.acquire(timeout=WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS)
+        if not acquired:
+            self.logger.warning(
+                f"Timed out waiting for worker {worker_id} claim to finish; "
+                "leaving it retired so force-delete can retry"
+            )
+            return WorkerReplacementOutcome.RETRY_REQUIRED
+
+        try:
+            with self._worker_retirement_lock:
+                current_info = self.worker_info.get(worker_id)
+                if current_info is not worker_info:
+                    self._clear_expected_worker_assignment(
+                        worker_assignment, expected_identity
+                    )
+                    return WorkerReplacementOutcome.WORKER_MISMATCH
+                if worker_assignment.identity != expected_identity:
+                    retirement_event.clear()
+                    return WorkerReplacementOutcome.ASSIGNMENT_RELEASED
+                return None
+        except Exception:
+            retirement_event.clear()
+            raise
+        finally:
+            claim_lock.release()
+
+    @staticmethod
+    def _clear_expected_worker_assignment(
+        worker_assignment: Any,
+        expected_identity: tuple[str, int | None],
+    ) -> None:
+        if (
+            worker_assignment is not None
+            and worker_assignment.identity == expected_identity
+        ):
+            worker_assignment.identity = None
+
+    def _perform_worker_replacement(
+        self,
+        worker_id: str,
+        count_as_failure: bool,
+        expected_process: Process | None = None,
+        expected_pid: int | None = None,
+    ) -> bool:
+        """Serialize termination and replacement of a worker process."""
+        with self._worker_replacement_lock:
+            old_info = self.worker_info.get(worker_id, {})
+            if not old_info:
+                raise ValueError(f"Worker ID {worker_id} not found in worker info")
+            if (
+                expected_process is not None
+                and old_info["process"] is not expected_process
+            ):
+                return False
+            if expected_pid is not None and old_info["process"].pid != expected_pid:
+                return False
+
+            restart_count = old_info.get("restart_count", 0) + (
+                1 if count_as_failure else 0
+            )
+            action = "Restarting" if count_as_failure else "Replacing"
+            self.logger.warning(f"{action} worker {worker_id}")
+
+            old_process = old_info["process"]
+            old_pid = old_process.pid
             try:
-                old_process = self.worker_info[worker_id]["process"]
-                old_pid = old_process.pid
                 if old_process.is_alive():
                     old_process.terminate()
-                    old_process.join(timeout=5.0)
+                    old_process.join(timeout=WORKER_TERMINATION_GRACE_PERIOD_SECONDS)
+                if old_process.is_alive():
+                    self.logger.warning(
+                        f"Worker {worker_id} did not terminate; killing it"
+                    )
+                    old_process.kill()
+                    old_process.join(timeout=WORKER_TERMINATION_GRACE_PERIOD_SECONDS)
+                if old_process.is_alive():
+                    raise RuntimeError(f"Worker {worker_id} could not be stopped")
             except Exception as e:
                 self.logger.error(f"Error cleaning up old worker {worker_id}: {e}")
-                self.logger.info(f"Old worker {worker_id} process does not exist")
+                raise
 
-        mark_worker_dead(old_pid)
+            mark_worker_dead(old_pid)
 
-        # Use same queue index so worker reuses its result queue
-        existing_queue_index = old_info.get("queue_index")
-
-        # Start new worker
-        self._start_worker(worker_id, queue_index=existing_queue_index)
-        self.worker_info[worker_id]["restart_count"] = restart_count
-        # pass the error count from old worker -1 to give it a chance to recover
-        self.worker_info[worker_id]["error_count"] = old_info.get("error_count", 1) - 1
+            self._start_worker(worker_id, queue_index=old_info.get("queue_index"))
+            self.worker_info[worker_id]["restart_count"] = restart_count
+            self.worker_info[worker_id]["error_count"] = (
+                max(old_info.get("error_count", 1) - 1, 0) if count_as_failure else 0
+            )
+            return True
 
     async def result_listener(self):
         """✅ Read from ALL worker queues in parallel using batch reads"""
@@ -558,18 +717,18 @@ class Scheduler:
         """Monitor worker health and restart dead workers"""
         while self.monitor_running and self.is_ready:
             try:
-                dead_workers = []
+                workers_to_restart = {}
 
                 for worker_id, info in self.worker_info.items():
                     try:
                         process = info["process"]
                         if not process.is_alive():
-                            dead_workers.append(worker_id)
+                            workers_to_restart[worker_id] = process
                     except Exception as e:
                         self.logger.error(
                             f"Error checking worker {worker_id} health: {e}"
                         )
-                        dead_workers.append(worker_id)
+                        workers_to_restart[worker_id] = info["process"]
 
                 # check for any workers that have too many errors
                 for worker_id, info in self.worker_info.items():
@@ -577,22 +736,46 @@ class Scheduler:
                         info.get("error_count", 0)
                         > self.settings.max_worker_restart_count
                     ):
-                        dead_workers.append(worker_id)
+                        workers_to_restart.setdefault(worker_id, info["process"])
                         self.logger.error(
                             f"Worker {worker_id} has too many errors ({info['error_count']}), restarting"
                         )
 
                 self.logger.info(
-                    f"Worker health check: {len(dead_workers)} dead workers found"
+                    f"Worker health check: {len(workers_to_restart)} "
+                    "workers need restart"
                 )
 
                 # Restart dead workers (one failure must not block restarting others)
-                for worker_id in dead_workers:
-                    restart_count = self.worker_info[worker_id].get("restart_count", 0)
+                for worker_id, expected_process in workers_to_restart.items():
+                    worker_info = self.worker_info[worker_id]
+                    restart_count = worker_info.get("restart_count", 0)
+                    retirement_event = worker_info.get("retirement_event")
+                    is_retiring = (
+                        retirement_event is not None and retirement_event.is_set()
+                    )
+
+                    if is_retiring:
+                        try:
+                            await asyncio.to_thread(
+                                self.replace_worker,
+                                worker_id,
+                                expected_pid=expected_process.pid,
+                            )
+                        except Exception as e:
+                            self.logger.error(
+                                f"Failed to replace retired worker {worker_id}: {e}"
+                            )
+                            worker_info["is_ready"] = False
+                        continue
 
                     if restart_count < self.settings.max_worker_restart_count:
                         try:
-                            self.restart_worker(worker_id)
+                            await asyncio.to_thread(
+                                self.restart_worker,
+                                worker_id,
+                                expected_process=expected_process,
+                            )
                         except Exception as e:
                             self.logger.error(
                                 f"Failed to restart worker {worker_id}: {e}"
