@@ -24,6 +24,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
 | Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; ten-case control dispatched |
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
+| Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster with lower reward than C4/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -1256,7 +1257,7 @@ To check whether the quality result survives a larger fixed denominator,
 the [C2 ten-case thinking-off branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-thinkoff)
 changes only that template setting from C2/ten. Its
 [combined Terminal and SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37999680461)
-will reuse one warmed server for the same ten cases in each suite. A first
+reused one warmed server for the same ten cases in each suite. A first
 dispatch with an abbreviated inference-server SHA was canceled before
 hardware work; the linked dispatch pins the full commit. Score original
 first-five and added-five cases separately and require the solved-case set
@@ -1264,6 +1265,68 @@ as well as the total wall before selecting this policy. Raw pilot artifacts
 and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c2-thinkoff/` and
 `/home/mvasiljev/build/gemma-terminal-c2-thinkoff-summary.json`.
+
+### Combined ten-case thinking-off check
+
+The [C2 thinking-off combined run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37999680461)
+completed both ten-case suites with **zero case errors** on one warmed
+server. Its only policy change from C2/ten was
+`default-chat-template-kwargs: {"enable_thinking":false}`; the server log
+confirmed that default, and neither Gemma agent config supplied a
+per-request thinking override. The model image, cases, agent count,
+sampling, deadlines and official verifiers were retained. The generic CI
+accuracy checks failed on the 30% ten-case subsets against the 44.94%
+Terminal and 64.8% SWE full-set H100 targets.
+
+| Terminal/ten case | Thinking-off reward | C4 thinking-on reward |
+| --- | ---: | ---: |
+| HTML filter | 0 | 1 |
+| COBOL modernization | 1 | 1 |
+| CompCert | 0 | 0 |
+| FEAL | 0 | 0 |
+| QEMU startup | 0 | 0 |
+| Cancel async tasks | 0 | 0 |
+| Git multibranch | 1 | 0 |
+| Password recovery | 1 | 1 |
+| Regex log | 0 | 1 |
+| SQLite truncate | 0 | 0 |
+
+Thinking-off Terminal solved **3/10** (first five 1/5, added five 2/5)
+in **54.41 minutes**, with 106.85 summed case-minutes, 82.04 summed API
+minutes, 24.81 other case-minutes, 3.407M input and **98,023 output
+tokens**. The C4 thinking-on run solved 4/10 in 110.26 minutes with 418K
+output tokens; its batch width and trajectories differ, so that comparison
+does not isolate the thinking flag. The matched C2/ten thinking-on control
+is still running. The five-case pilot and this expansion both show large
+Terminal output reduction, but the ten-case reward is lower than C4's and
+the solved-case identities differ. This policy should remain an optional
+speed setting until a larger or repeated quality check shows it maintains
+the required reward.
+
+| SWE/ten measure | C2 thinking on | C2 thinking off | C4 thinking on | C8 thinking on |
+| --- | ---: | ---: | ---: | ---: |
+| Evaluation wall, min | 61.54 | 66.05 | 55.90 | 44.35 |
+| Solved total / original five | 3/10 / 3/5 | 3/10 / 2/5 | 3/10 / 2/5 | 3/10 / 2/5 |
+| Input / output tokens | 5.749M / 76.7K | 5.697M / 95.0K | 7.574M / 92.7K | 5.935M / 82.8K |
+| Sum of case clocks, min | 119.58 | 115.97 | 203.20 | 284.38 |
+
+The thinking-off SWE run solved Django 11299, Matplotlib 25332 and
+requests 2317, the same three as C4/C8 thinking-on; C2 thinking-on solved
+scikit-learn 14629 instead of requests. Thinking-off SWE was **7.3%
+slower** and produced **23.8% more output** than its C2 thinking-on
+comparison. SWE responses were already much shorter than Terminal's under
+thinking-on, and the off run took a different path (389 model calls versus
+403). This experiment gives no reason to enable thinking-off globally for
+SWE, despite the Terminal pilot's speedup.
+
+The shared server reached two active requests, three waiting samples out
+of 726, and 42.5% peak sampled KV across the two suites; no preemption or
+AICLK warning appeared. The 554 trace warm/capture intervals summed to
+119.7 seconds. Its hardware test job lasted 130.3 minutes versus 120.5
+minutes summed evaluation wall, so running both suites on one server paid
+startup/report overhead once. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-agentic-c2-ten-thinkoff/` and
+`/home/mvasiljev/build/gemma-agentic-c2-ten-thinkoff-summary.json`.
 
 ### One-hour fixed-five Terminal deadline pilot
 
