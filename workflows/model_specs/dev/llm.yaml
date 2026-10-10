@@ -5169,6 +5169,7 @@ templates:
       kv_cache_usable_tokens: 149952
     max_tokens_all_users_override: 149952
   status: EXPERIMENTAL
+  docker_image: ghcr.io/tenstorrent/tt-shield/vllm-tt-metal-src-dev-ubuntu-22.04-amd64@sha256:ea7a434631587ce97d36524f52a9c876809d3b381c1664cc3b35f688a81c4378
 
 
 
