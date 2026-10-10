@@ -16,6 +16,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE expanded ten, C8 | 3/10 solved, 44.4 min evaluation | Same solved cases as C4; 800 MHz AICLK warning; 67.9% peak KV |
 | SWE expanded twenty, C8 | 8/20 solved, 83.8 min evaluation | Original ten 4/10, added ten 4/10; zero errors and 74.8% peak KV |
 | SWE expanded twenty, C10 | 10/20 solved, 96.9 min evaluation | Original ten 3/10, added ten 7/10; zero errors, 85.5% peak KV and a 96.8 min unsolved straggler |
+| SWE selected fifty, C8 | 29/50 solved, 181.2 min evaluation | Retained twenty 8/20, new thirty 21/30; one agent exit error and 88.3% peak KV |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -60,13 +61,14 @@ reference scores of 44.94% and 64.8%.
 The larger matched checks in flight are
 [C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
 against the completed thinking-off Terminal/20 list, and
-[C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
-against [C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
+[completed C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
+against [running C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
 on the exact same fifty IDs. A C4 server with eight Terminal trials is
-queued to test scheduling independently of physical decode width; its
+prepared to test scheduling independently of physical decode width; its
 [first dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
 was canceled while queued for the runner-guard refresh, then
 [reissued](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38043892436).
+The retry stopped at fabric startup on `p05t06`, with no case result.
 All pin the same Metal main image.
 
 ## Existing evidence
@@ -1197,6 +1199,52 @@ pins the same Metal image. Score the retained twenty and new thirty
 separately before interpreting its total; a selected fifty-case score
 still does not prove parity with the full-set H100 result.
 
+The [C8 SWE/50 run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
+completed all fifty trial records on clean `p05t06`: **29/50 solved (58%)**,
+**one agent error**, and **181.15 evaluation minutes** (about 189 minutes
+for the hardware job). The original twenty again scored **8/20**, but six
+individual rewards changed: Astropy 14096, requests 2317 and Django 15375
+were lost; Sympy 19783, Sphinx 8638 and pytest 7432 were gained. The
+predeclared thirty additions scored **21/30**. The generic full-set H100
+accuracy gate failed at 58% versus its 64.8% reference and 5% tolerance;
+this selected 50/500 set cannot establish full-set parity or a full-set
+regression.
+
+| C8 SWE measure | Earlier twenty | Selected fifty |
+| --- | ---: | ---: |
+| Solved / errors | 8/20 / 0 | 29/50 / 1 |
+| Evaluation wall, min | 83.75 | 181.15 |
+| Sum of case clocks, min | 568.7 | 1405.1 |
+| Observed case parallelism | 6.79 | 7.76 |
+| Input / output tokens | 14.311M / 182.1K | 35.656M / 452.5K |
+| Mean sampled running rows | 5.78 | 7.07 |
+| Peak / p95 sampled KV | 74.8% / 67.6% | 88.3% / 77.1% |
+| Waiting samples | 31/504 | 77/1088 |
+| Trace warm-to-capture time | 157.6 s | 326.1 s |
+
+The retained twenty accounted for **607.61 summed case-minutes**, 14.464M
+input and 203.3K output tokens; the new thirty accounted for **797.44
+case-minutes**, 21.192M input and 249.2K output. With eight agent trials,
+all eight model rows were running in 498/1088 samples (45.8%), compared
+with the earlier twenty's 5.78 mean running rows. The unsolved Django
+14631 case occupied one trial for **122.2 minutes**, making 123 model calls
+and 35.5K output tokens; it finished five minutes before the suite. The
+last finisher was solved Sympy 19783, which started late and took 35.7
+minutes. These paths and scheduling determine wall time alongside device
+throughput. The server logged no AICLK or preemption warning, while
+77/1088 samples had waiting; warm-to-capture intervals were about 3.0% of
+the suite wall. The **88.3% KV peak** would be about 117.7% of a 192K
+pool under linear scaling, so the earlier smaller-pool candidate is not
+appropriate for this C8 workload.
+
+The sole error, Django 14771, is a `NonZeroAgentExitCodeError` after the
+mini-swe-agent subprocess exited 137 (SIGKILL) at 6.46 minutes and 12 API
+calls. Its artifact does not establish why the process was killed; count it
+as an errored, unsolved trial rather than silently excluding it. Raw
+artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c8-fifty-main/` and
+`/home/mvasiljev/build/gemma-swe-c8-fifty-main-summary.json`.
+
 The matched [C4 SWE/50 commit](https://github.com/tenstorrent/tt-inference-server/commit/04938fc645a5913e35ce88c67ecf2934f27a7ba7)
 keeps all fifty IDs and the same agent, sampling and deadline. It changes
 only the physical decode and concurrent-trial limits from eight to four.
@@ -1961,6 +2009,15 @@ runs reached four active rows in about 40% of server samples. More pending
 agents could hide tool work, but queueing could also raise request latency;
 compare wall, per-case rewards, running/waiting samples and timeouts before
 selecting this policy.
+The retry landed on `qb2-120-p05t06` after the completed C8 SWE/50 job,
+but the model failed before any Terminal task with `TT_FATAL` in
+`topology_mapper.cpp:556`: the four-node logical mesh could not map to the
+discovered four-ASIC fabric topology. The ownership and container checks
+passed, so this is a fabric startup failure, not an agent score. The
+[read-only exact-name guard](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38045128181)
+then reserved `p05t06`; no device reset or unowned-container change was
+performed. Its raw failure logs are in
+`/home/mvasiljev/build/gemma-terminal-c4-a8-twenty-startup-fail/`.
 
 The C4 thinking-off pilot also kept four rows active in 135/278 sampled
 windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
