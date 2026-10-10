@@ -1186,6 +1186,15 @@ pins the same Metal image. Score the retained twenty and new thirty
 separately before interpreting its total; a selected fifty-case score
 still does not prove parity with the full-set H100 result.
 
+The matched [C4 SWE/50 commit](https://github.com/tenstorrent/tt-inference-server/commit/04938fc645a5913e35ce88c67ecf2934f27a7ba7)
+keeps all fifty IDs and the same agent, sampling and deadline. It changes
+only the physical decode and concurrent-trial limits from eight to four.
+Its [dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
+started on clean `p05t05` and uses the same pinned Metal image, so C4 and C8
+can be compared on the
+same larger selected list; stochastic trajectories still need case-level
+review.
+
 For the twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
 lists 89 tasks. Sorting their IDs, excluding the fixed first ten, and
@@ -1915,6 +1924,18 @@ Terminal IDs to the original ten. Its
 will compare case identities and wall directly with the off/20 run.
 This is still a selected 20/89 subset, so a numerical match to the
 44.94% H100 full-set rate would not prove full-set parity.
+
+To separate the benefit of overlapping more agents from the cost of a wider
+physical decode trace, [commit `30ce696b`](https://github.com/tenstorrent/tt-inference-server/commit/30ce696bad400322c04c638387efd5a46ea127a9)
+keeps the full-thinking C4 server and the exact same twenty Terminal IDs,
+but raises concurrent trials from four to eight. Its
+[dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
+is a direct scheduling comparison with the C4/four-trial run. The C8/eight-trial
+ten-case result rarely filled all decode rows, while C4/four-trial ten-case
+runs reached four active rows in about 40% of server samples. More pending
+agents could hide tool work, but queueing could also raise request latency;
+compare wall, per-case rewards, running/waiting samples and timeouts before
+selecting this policy.
 
 The C4 thinking-off pilot also kept four rows active in 135/278 sampled
 windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
