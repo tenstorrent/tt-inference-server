@@ -445,6 +445,11 @@ the useful **current granularity**: C4 for quality-preserving Terminal,
 C8 for speed-first SWE. Retaining multiple physical traces inside a
 single process would matter if these jobs alternated tasks on one live
 server; it is not an evidenced bottleneck in the current workflow.
+For scale, measured warm-to-capture intervals summed to 63.6–72.2 seconds
+in the C4/C8 full-thinking Terminal/ten jobs (0.7–1.0% of suite wall)
+and 157.6–161.1 seconds in C8/C10 SWE/20 (2.8–3.1% of wall). These intervals
+are not a complete trace cost profile, but bound the specific repeated
+warm-to-capture window observed in the server logs.
 
 ## First current-main throughput sweep (C2, 9 October)
 
