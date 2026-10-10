@@ -321,3 +321,13 @@ def test_generative_mmlu_pro_never_cites_loglikelihood_mmlu_pro():
             assert "leaderboard_mmlu_pro" not in ref, repo
             assert "Open LLM Leaderboard" not in ref, repo
             assert not ref.startswith(OLL_RESULTS), repo
+
+
+def test_gpt_oss_deep_reasoning_request_timeout_does_not_preempt_task_deadline():
+    """A request timeout must not turn a partial stream into a scored sample."""
+    tasks = {
+        task.task_name: task for task in _eval_config_map["openai/gpt-oss-120b"].tasks
+    }
+    for name in ("aime25", "gpqa_diamond_cot_zeroshot"):
+        task = tasks[name]
+        assert int(task.model_kwargs["timeout"]) >= task.wall_clock_timeout_seconds
