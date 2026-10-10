@@ -966,9 +966,15 @@ prefill anomaly therefore persists and grows with the wider first burst.
 
 Across 12 matched one-active shapes, C10's median output rate was **14.6%
 below** C8's on different hosts and **8.0% below** C4's on the same
-`p05t01` host. No AICLK warning was found in C10's log. This suggests
-that a ten-row physical trace may impose an idle-row cost, but run-to-run
-host conditions have not been controlled enough to establish the cause.
+`p05t01` host. No AICLK warning was found in C10's log, but that host had
+just completed the 3.4-hour C2 Terminal job before C10 began. A ten-row
+trace cost and changed host conditions are both plausible; these separate
+runs do not establish the cause of the one-active gap.
+Normalizing each run's 128/128 full-batch rate to its own one-active rate
+and physical width gives nearly the same **82.5% (C8) and 82.6% (C10)**
+slot efficiency; at 8K/1024 it is **72.5% and 72.3%**. This argues against
+claiming a new per-slot scaling loss at ten from the cross-host absolute
+rates alone.
 For the *ten-case* SWE set, C8's longest case already occupied the entire
 evaluation wall, and the C10 8K gain is only 3.2%; a C10 ten-case live run
 is therefore lower priority than the ongoing C8 twenty-case expansion.
@@ -976,6 +982,16 @@ Use one warmed C8 trace for logical counts one to eight until a larger live
 set shows C10's extra overlap offsets its single-active cost. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-c10-benchmark-main/`
 and `/home/mvasiljev/build/gemma-c10-benchmark-main-summary.json`.
+
+For that larger live comparison,
+[inference-server commit `3fb20512`](https://github.com/tenstorrent/tt-inference-server/commit/3fb205121ecc63de62470098251df6000b716794)
+combines the same fixed twenty SWE IDs with physical batch ten. Its
+[matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38017041167)
+is queued behind the active runs. Compare original ten and added ten
+rewards separately, as well as full wall, case-clock overlap, tokens,
+waiting and peak KV. This is the relevant check for whether two more
+concurrent agents help a twenty-case workload despite the small synthetic
+long-prompt gain.
 
 The faster C8 ten-case SWE wall justified a
 [twenty-case SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011984043)
