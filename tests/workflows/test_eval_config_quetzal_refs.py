@@ -226,7 +226,14 @@ OLL_CHAT_TEMPLATE = {
 OLL_TASKS = ("leaderboard_ifeval", "leaderboard_math_hard")
 
 # No authoritative source exists for any task, so every task stays NA.
-ALL_NA = ["deepseek-ai/deepseek-math-7b-instruct"]
+ALL_NA = [
+    "deepseek-ai/deepseek-math-7b-instruct",
+    # QB2 business set: card scores are not like-for-like, so every task stays NA
+    # until a GPU reference is measured.
+    "meta-models/Muse-Glimmer-30B",
+    "mistralai/Mistral-Small-4-119B-2603",
+    "IFM/K2-Horizon-MoVA-36B-A4B",
+]
 
 
 @pytest.mark.parametrize("repo", ALL_NA)

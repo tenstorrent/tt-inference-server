@@ -730,6 +730,76 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "meta-llama/Llama-3.1-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "01-ai/Yi-1.5-9B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Coder-14B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-32B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }

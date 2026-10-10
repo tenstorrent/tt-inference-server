@@ -72,6 +72,8 @@ class RuntimeConfig:
     workflow_args: Optional[str] = None
     limit_samples_mode: Optional[str] = None
     eval_samples: Optional[str] = None
+    # Comma-separated task names (full samples); see run.py --eval-tasks.
+    eval_tasks: Optional[str] = None
     sdxl_num_prompts: str = "100"
 
     # Prefix-cache benchmark
@@ -188,6 +190,7 @@ class RuntimeConfig:
             workflow_args=args.workflow_args,
             limit_samples_mode=args.limit_samples_mode,
             eval_samples=args.eval_samples,
+            eval_tasks=getattr(args, "eval_tasks", None),
             sdxl_num_prompts=args.sdxl_num_prompts,
             prefix_cache=getattr(args, "prefix_cache", False),
             prefix_cache_preset=getattr(args, "prefix_cache_preset", "full"),

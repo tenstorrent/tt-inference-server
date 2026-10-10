@@ -328,6 +328,10 @@ class EvalTask:
     seed: int = 42
     use_chat_api: bool = False
     apply_chat_template: bool = True
+    # lm-eval --fewshot_as_multiturn. None keeps the harness default (the
+    # pinned harness turns it on whenever --apply_chat_template is set); set
+    # False/True only where a model's chat template needs the other layout.
+    fewshot_as_multiturn: Optional[bool] = None
     log_samples: bool = True
     # Opt-in: preserve the model's separate reasoning_content trace in the
     # per-sample logs (requires the chat API + a server that returns reasoning
@@ -4193,11 +4197,19 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # mmlu_pro's few-shot examples put the worked answer inside the user turn, so the harness's default
+                # multiturn layout (on under --apply_chat_template) sends system + six consecutive user messages,
+                # which Mistral's chat template rejects ("conversation roles must alternate"). Single-turn renders
+                # all five examples into one user message. Set before the #5353 GPU reference was measured.
+                fewshot_as_multiturn=False,
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
-                    gpu_reference_score=29.12,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/248#issuecomment-2922880818",
+                    # Re-measured single-turn on the pinned harness (vLLM 0.13.0 bf16, A100, 12,032 samples). The
+                    # previous 29.12 (#248) predates the harness auto-enabling multiturn few-shot, under which this
+                    # task now errors on Mistral's template (see fewshot_as_multiturn above).
+                    gpu_reference_score=32.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -8102,6 +8114,250 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) candidate on P300X2: meta-models/Muse-Glimmer-30B (text decoder; business-priority list).
+    # No like-for-like reference exists: the card's scores (GPQA-Diamond 83.5, AIME 2026 94.7, IFBench 77.0) are
+    # Artificial Analysis runs at "High Reasoning", not the TTIS lm-eval task variants, so every task is ungated
+    # (published and GPU reference None) for the Colab GPU-reference sweep to fill (issue #5353). leaderboard_ifeval
+    # is left out: its pinned task caps generation at 1280 tokens, which truncates this reasoning model's thinking.
+    EvalConfig(
+        hf_model_repo="meta-models/Muse-Glimmer-30B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card "Best performance" sampling (temperature 1.0, top_p 0.95, top_k 64; also generation_config.json)
+                # at the chat template's default "Reasoning strength: high".
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card "Best performance" sampling (temperature 1.0, top_p 0.95, top_k 64; also generation_config.json)
+                # at the chat template's default "Reasoning strength: high".
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 64,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2: mistralai/Mistral-Small-4-119B-2603 (business-priority list; no
+    # Quetzal row yet). No like-for-like reference exists: the card's GPQA Diamond 71.2 does not state the lm-eval task
+    # variant or reasoning mode, and its AIME25 / LiveCodeBench / AA-LCR results are charts only. Both tasks are ungated
+    # (published and GPU reference None) until a GPU reference is measured; at 119B (fp8 checkpoint) that is beyond the
+    # single-GPU Colab sweep (issue #5353), so it needs a multi-GPU reference run.
+    EvalConfig(
+        hf_model_repo="mistralai/Mistral-Small-4-119B-2603",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                request_body={"reasoning_effort": "high"},
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card: reasoning_effort="high" for complex tasks, at temperature 0.7.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                request_body={"reasoning_effort": "high"},
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card: reasoning_effort="high" for complex tasks, at temperature 0.7.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.7,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
+    # Quetzal (impl=quetzal) candidate on P300X2: IFM/K2-Horizon-MoVA-36B-A4B (business-priority list; no Quetzal row
+    # yet). No like-for-like reference exists: the card's scores (GPQA Diamond 80.8, Terminal-Bench 2.1 58.6, ...) are
+    # Artificial Analysis Intelligence Index runs, not the TTIS lm-eval task variants. Both tasks are ungated (published
+    # and GPU reference None) until a GPU reference is measured; at 36B bf16 it is above the Colab sweep's 32B A100 cap
+    # (issue #5353), so it needs an H100-class or multi-GPU reference run.
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-MoVA-36B-A4B",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                request_body={"reasoning_effort": "high"},
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card: temperature 1.0, top_p 0.95, reasoning_effort "high" on every request, up to 32768 output tokens.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                request_body={"reasoning_effort": "high"},
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": "3600",
+                },
+                # Card: temperature 1.0, top_p 0.95, reasoning_effort "high" on every request, up to 32768 output tokens.
+                gen_kwargs={
+                    "stream": "true",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     # Quetzal (impl=quetzal) candidate on P300X2. meta_ifeval / meta_gpqa_cot (the Llama-3.1-8B-Instruct tasks) need
     # "<hf_model_repo>-evals", which Meta did not publish for Llama 3, so the scored tasks are the Open LLM Leaderboard v2
     # ones, cited to this checkpoint's OLL v2 results JSON; GPU reference TBD.
@@ -9517,7 +9773,10 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                max_concurrent=32,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
                     # Whole-request budget, NOT an idle timer. The pinned harness builds
                     # its session as ClientTimeout(total=self.timeout)
@@ -9575,7 +9834,9 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                # Sized from Shield run 37996687040 (QB2, limited): 14/15 samples in 10136 s, the 15th ~75k
+                # tokens deep at 19 tok/s, so 15 ~= 12,700 s and the full 30 ~= 25,400 s; x1.4 margin.
+                wall_clock_timeout_seconds=36000,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -9598,7 +9859,10 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                max_concurrent=32,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
                     # Whole-request budget, NOT an idle timer. The pinned harness builds
                     # its session as ClientTimeout(total=self.timeout)
@@ -9650,7 +9914,9 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                # Slower of two measured QB2 rates: 7 samples / 498 s (run 37996687040) and 48/198 in
+                # 8100 s (run 37097968441) -> 0.0059 samples/s, 198 ~= 33,600 s; x1.25 margin.
+                wall_clock_timeout_seconds=42000,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
@@ -9684,6 +9950,8 @@ _eval_config_list = [
                     "max_gen_toks": 64 * 1024,
                     "until": ["</s>"],
                 },
+                # 0.15-limited QB2 run (37996687040) took 2940 s, so full ~= 19,600 s; x1.3 margin.
+                wall_clock_timeout_seconds=25600,
             ),
         ],
     ),
