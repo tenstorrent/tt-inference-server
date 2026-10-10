@@ -1167,6 +1167,14 @@ warning was found. Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c2-ten-main/` and
 `/home/mvasiljev/build/gemma-terminal-c2-ten-main-summary.json`.
 
+C2 had both request slots active in **985/1,181 sampled ten-second windows
+(83.4%)**; its median positive sampled generation rate was **67.6 tokens/s**.
+C4's corresponding median was **88.5 tokens/s**, about 31% higher, much
+smaller than the 43.9% suite-wall reduction. These samples combine
+different prompts and agent phases, so they are activity evidence rather
+than a controlled per-token hardware comparison. More overlap, especially
+of agent work outside model calls, is part of the observed C4 wall gain.
+
 ### C4 ten-case Terminal expansion
 
 The [matched C4/ten Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996981703)
