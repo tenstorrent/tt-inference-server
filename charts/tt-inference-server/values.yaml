@@ -29,6 +29,15 @@ cache:
 # (tt-media-server) env vars are set so each server picks up the name it reads.
 hfCacheDir: ""
 
+# Optional: a pre-resolved runtime model spec — the JSON that `run.py` writes and
+# passes as RUNTIME_MODEL_SPEC_JSON_PATH. When set (vllm engine only), it is
+# rendered into a ConfigMap, mounted read-only into the container, and
+# RUNTIME_MODEL_SPEC_JSON_PATH points at it, so the server runs this spec instead
+# of looking --model/--tt-device up in the catalog baked into the image (e.g. a
+# dev-catalog spec on a release-catalog image). Typically passed with
+#   --set-file runtimeModelSpecJson=runtime_model_spec.json
+runtimeModelSpecJson: ""
+
 # Inference-route authentication. media and forge servers check a literal
 # `Authorization: Bearer $API_KEY` (/health and /v1/models stay open) and fall
 # back to a well-known built-in key when unset, so one of these two is required

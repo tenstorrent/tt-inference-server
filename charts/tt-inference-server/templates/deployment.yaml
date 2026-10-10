@@ -46,6 +46,9 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.runtimeModelSpecJson }}
+        checksum/runtime-model-spec: {{ .Values.runtimeModelSpecJson | sha256sum }}
+        {{- end }}
         {{- with $cfg.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -133,6 +136,12 @@ spec:
               mountPath: /mnt/hf-cache
               readOnly: true
             {{- end }}
+            {{- if .Values.runtimeModelSpecJson }}
+            - name: runtime-model-spec
+              mountPath: {{ include "tt-inference-server.runtimeModelSpecPath" . }}
+              subPath: runtime_model_spec.json
+              readOnly: true
+            {{- end }}
           {{- if or $resources $ttCount }}
           resources:
             {{- with $resources }}
@@ -195,6 +204,11 @@ spec:
           hostPath:
             path: {{ .Values.hfCacheDir | quote }}
             type: Directory
+        {{- end }}
+        {{- if .Values.runtimeModelSpecJson }}
+        - name: runtime-model-spec
+          configMap:
+            name: {{ include "tt-inference-server.fullname" . }}-runtime-model-spec
         {{- end }}
       {{- with $cfg.nodeSelector }}
       nodeSelector:
