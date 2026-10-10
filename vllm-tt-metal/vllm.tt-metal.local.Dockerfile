@@ -14,7 +14,7 @@
 #                             so a models/ change does not invalidate the build layers)
 #   <ctx>/vllm-tt-plugin      git archive of the vllm-tt-plugin worktree HEAD
 #   <ctx>/vllm-tt-metal/...   this repo's vllm-tt-metal/{src,requirements.txt}
-#   <ctx>/utils, VERSION, reference_config, workflows, model_spec.json (generated with MODEL_SPECS_ENV=dev)
+#   <ctx>/utils, VERSION, reference_config, workflows, workflow_module, report_module, model_spec.json (generated with MODEL_SPECS_ENV=dev)
 #
 # Layer caching: the builder stage must not see the commit shas (no ARG/ENV of them before
 # the C++ build: an ARG is an implicit env of every later RUN), so a tt-metal commit that
@@ -102,13 +102,6 @@ RUN /bin/bash -c "cd ${TT_METAL_HOME} \
     && rm -rf ${TT_METAL_HOME}/.git \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
-# models/ (python only) after the C++ build and the venv
-COPY tt-metal-models ${TT_METAL_HOME}/models
-RUN /bin/bash -c "cd ${TT_METAL_HOME} \
-    && source ${PYTHON_ENV_DIR}/bin/activate \
-    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
-    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
-
 # vllm-tt-plugin from the local export; its own docs/install-vllm-tt.sh owns the vLLM
 # pin and dependency overrides (needs PyPI / GitHub raw / download.pytorch.org).
 COPY vllm-tt-plugin ${vllm_tt_plugin_dir}
@@ -116,6 +109,13 @@ RUN /bin/bash -c "cd ${vllm_tt_plugin_dir} \
     && source ${PYTHON_ENV_DIR}/bin/activate \
     && uv pip install --upgrade pip \
     && source docs/install-vllm-tt.sh \
+    && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
+
+# models/ (python only) after the C++ build and the venv
+COPY tt-metal-models ${TT_METAL_HOME}/models
+RUN /bin/bash -c "cd ${TT_METAL_HOME} \
+    && source ${PYTHON_ENV_DIR}/bin/activate \
+    && if [ -f 'models/demos/qwen25_vl/requirements.txt' ]; then uv pip install -r models/demos/qwen25_vl/requirements.txt; fi \
     && { uv cache clean || echo 'WARN: uv cache clean failed'; true; }"
 
 # tt-smi in its own venv (same pinned public tag as the stock image)
@@ -205,6 +205,10 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "reference_config" "${APP_DIR}/reference_config"
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "workflows" "${APP_DIR}/workflows"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "workflow_module" "${APP_DIR}/workflow_module"
+COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
+    "report_module" "${APP_DIR}/report_module"
 
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \
