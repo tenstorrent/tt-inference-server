@@ -31,7 +31,8 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
 | Terminal expanded ten, C4 repeat | 4/10 solved, 147.8 min evaluation | Different solved cases; HTML failed after 148 min and 50 turns |
 | Terminal expanded ten, C8 clean host | 3/10 solved, 180.4 min evaluation | HTML timed out at three hours; eight active in only 2.5% of samples |
-| Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Matches both C4 thinking-on aggregate scores, with a different solved-case set; repeat and twenty-case checks running |
+| Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Fast pilot matched both C4 thinking-on aggregate scores, but the same-host repeat did not |
+| Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, so thinking-off is not a quality-preserving default |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
@@ -39,10 +40,11 @@ All current-main rows above pin Metal
 KV-hook row, which uses a separate image built from that commit plus the
 isolated sizing change. Details, artifacts and acceptance explanations follow.
 
-Current speed choice is one warmed **C8, 256K KV, thinking-on**
+Current evidence-backed choice is one warmed **C8, 256K KV, thinking-on**
 server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
-for Terminal. C4 thinking-off is a promising Terminal speed policy after
-one 4/10, 46-minute pilot; its repeat and twenty-case check are pending.
+for Terminal. C4 thinking-off shortened both Terminal/ten runs but scored
+**4/10 then 1/10** on the same host, so it is not the quality-preserving
+default; its twenty-case check is running.
 The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
 used more KV; C8 thinking-off/Terminal10 is pending. Each server uses one
 startup-warmed physical trace and serves
@@ -1709,8 +1711,9 @@ directly comparable. Three of these four were shared with the first C4
 thinking-on run; git replaced
 HTML. The C4 thinking-on repeat also scored 4/10 but shared COBOL, git
 and regex instead. The C4 thinking-off solved set does match the earlier
-C2 thinking-on full-deadline set exactly. This is aggregate parity across
-three C4 runs, not fixed-case reward parity against either C4 control.
+C2 thinking-on full-deadline set exactly. This pilot showed aggregate
+parity with the two C4 thinking-on runs, but not fixed-case reward
+parity; the thinking-off repeat below did not retain even aggregate parity.
 
 | Terminal/ten measure | C4 thinking on first | C4 thinking on repeat | C4 thinking off |
 | --- | ---: | ---: | ---: |
@@ -1740,15 +1743,44 @@ the full-thinking C8 Terminal/ten run and **5.78** in C8 SWE/20. No
 preemption or AICLK warning appeared. Raw artifacts and
 summary are under `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff/`
 and `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-summary.json`.
-If the repeat and twenty-case run retain this speed/quality pattern,
-profile the now frequent prefill windows and serial per-row prefill path
-before changing trace buckets or cutting the agent deadline. The off
-run still read 4.516M input tokens, so input work did not disappear with
-the output reduction.
+For a future optional speed mode, profile the now frequent prefill
+windows and serial per-row prefill path before changing trace buckets
+or cutting the agent deadline. The off run still read 4.516M input
+tokens, so input work did not disappear with the output reduction.
 
-A [same-config ten-case repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023672022)
-started on the same clean `p05t06` runner as the first C4 thinking-off
-run; it will check stochastic reward and wall with less host variation.
+The [same-config ten-case repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023672022)
+completed on the **same clean `p05t06` runner** with zero case errors,
+but solved only **1/10 (COBOL)** in **35.13 evaluation minutes**; the full
+hardware job lasted **41.82 minutes**. It lost the pilot's git, password
+and regex solves while retaining COBOL. The generic full-set accuracy
+gate failed on this selected ten-case 10% score.
+
+| C4 thinking-off Terminal/ten measure | First | Repeat |
+| --- | ---: | ---: |
+| Solved / case errors | 4/10 / 0 | 1/10 / 0 |
+| Evaluation wall, min | 46.15 | 35.13 |
+| Summed case clocks, min | 170.81 | 104.65 |
+| Summed API / other case time, min | 120.67 / 50.14 | 95.42 / 9.24 |
+| Input / output tokens | 4.516M / 97.1K | 2.928M / 82.8K |
+| Model API calls | 196 | 154 |
+| Mean sampled running rows | 3.13 | 2.39 |
+| Peak / p95 sampled KV | 62.4% / 51.8% | 43.1% / 40.9% |
+| Waiting samples | 8/278 | 6/211 |
+
+Git stopped after **7 versus 33** model calls, regex after **2 versus
+3**, and password continued to **50 versus 34** before failing. No
+case timeout, preemption or AICLK warning explains the lost solves;
+the agent trajectories diverged. The shorter repeat made 21% fewer
+API calls and wrote 14.7% fewer output tokens, which partly explains
+its faster wall; its lower sampled occupancy reflects less active work,
+not a batch-efficiency gain. The two C4 full-thinking ten-case runs both
+solved 4/10, so **thinking-off is not a quality-preserving Terminal
+default** on this evidence. Retain C4 full thinking with the three-hour
+deadline and 256K KV pool as the current choice. Raw repeat artifacts
+and summary are under
+`/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-repeat/` and
+`/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-repeat-summary.json`.
+
 A [C4 thinking-off twenty-case
 dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023703424)
 uses [inference-server commit `93f0f7b5`](https://github.com/tenstorrent/tt-inference-server/commit/93f0f7b576a633e83a9b81b12020eb378a4d2bac),
