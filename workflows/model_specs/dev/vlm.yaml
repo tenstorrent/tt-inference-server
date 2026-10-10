@@ -357,7 +357,7 @@ templates:
   device_model_specs:
     - device: T3K
       max_concurrency: 32
-      max_context: 131072  # 128 * 1024
+      max_context: 65536  # 64 * 1024: the model's KV budget on a 1x8 Wormhole mesh (get_max_tokens_all_users)
       default_impl: true
       vllm_args:
         mm-processor-cache-gb: 0
@@ -365,7 +365,7 @@ templates:
         trace_region_size: 28467200
     - device: GALAXY
       max_concurrency: 128  # 32 * 4 (data_parallel_size=4 lanes of 1x8)
-      max_context: 131072  # 128 * 1024
+      max_context: 65536  # 64 * 1024: per-lane KV budget, as on T3K
       default_impl: true
       env_vars:
         TT_MM_THROTTLE_PERF: 5
