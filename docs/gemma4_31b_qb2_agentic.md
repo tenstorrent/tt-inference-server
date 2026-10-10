@@ -1048,7 +1048,11 @@ evaluation minutes gives **6.79 active cases on average**, versus 6.41
 for the earlier ten-case run. Its wall was **1.89×** the ten-case wall for
 twice as many tasks, with 2.20× the output tokens and 2.41× the input
 tokens. Those paths differ, so this is an observed suite scaling result,
-not a controlled token-throughput ratio. Sampled KV reached **74.8% peak
+not a controlled token-throughput ratio. The server sampled **5.78
+running model rows on average**, lower than 6.79 active cases because
+cases also spend time outside their model API calls; this is the overlap
+that lets eight agents use a single warmed C8 trace effectively.
+Sampled KV reached **74.8% peak
 and 67.6% p95**; **31/504** ten-second samples had a waiting request,
 up from 10/267 on the ten-case run, but no preemption or AICLK warning
 was found. The longest case, requests 2317, took 57.16 minutes, shorter
