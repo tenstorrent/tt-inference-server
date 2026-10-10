@@ -23,6 +23,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
 | Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
 | Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; ten-case control dispatched |
+| Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -1054,6 +1055,49 @@ host `qb2-120-p05t05` did not log an AICLK clamp; the Hugging Face model
 snapshot was warm and API readiness took about 4 min 54 s. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-terminal-c4-main/`
 and `/home/mvasiljev/build/gemma-terminal-c4-main-summary.json`.
+
+### C4 ten-case Terminal expansion
+
+The [matched C4/ten Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996981703)
+completed **10/10 official cases with zero case errors** on the pinned
+Metal-main image and solved **4/10**. The original first five scored
+**2/5** (HTML filter and COBOL); the added five scored **2/5** (password
+recovery and regex log). Its generic CI accuracy gate failed because 40%
+on ten selected cases is below the 44.94% full 89-case H100 target; the
+ten-case score is not an estimate of that full-set score.
+
+| Terminal/ten case | Reward | Wall min | Terminal/ten case | Reward | Wall min |
+| --- | ---: | ---: | --- | ---: | ---: |
+| HTML filter | 1 | 88.29 | Cancel async tasks | 0 | 4.85 |
+| COBOL modernization | 1 | 41.94 | Git multibranch | 0 | 12.81 |
+| CompCert | 0 | 82.80 | Password recovery | 1 | 16.59 |
+| FEAL | 0 | 33.28 | Regex log | 1 | 10.55 |
+| QEMU startup | 0 | 3.85 | SQLite truncate | 0 | 55.51 |
+
+Evaluation wall was **110.26 minutes**, case clocks summed to **350.47**
+minutes (3.18 observed case-clock minutes per evaluation minute), and
+API/other case time summed to **266.07/84.40** minutes. The run made 151
+model calls and consumed 2.162M input and 417,937 output tokens. It
+reached four active requests, two waiting samples out of 671, and 51.9%
+peak sampled KV (p95 33.5%); no preemption or AICLK warning appeared.
+Its 155 trace warm/capture intervals summed to 63.6 seconds.
+
+This ten-case wall was **35.4% shorter** than the earlier C4 fixed-five
+wall of 170.60 minutes, despite twice as many cases. Both runs used the
+same `qb2-120-p05t05` host and the same model/settings, but their sampled
+agent paths differed sharply: FEAL took **33.3 versus 170.6 minutes** and
+HTML **88.3 versus 168.3**, while COBOL grew from 14.7 to 41.9. The
+original first five alone summed to 250.15 case-minutes in the ten-case
+run versus 460.68 in the five-case run; the added five contributed 100.32
+case-minutes. The ten-case run's total output (418K) was near the five-case
+run's 410K, and its non-API case time fell from 213.0 to 84.4 minutes.
+These changes explain why adding cases did not increase this observed wall;
+they are stochastic workload differences, not a claim that C4 made ten
+cases inherently faster than five. The larger denominator improves the
+reward view, while a matched C2/ten comparison is still needed for batch
+selection. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c4-ten-main/` and
+`/home/mvasiljev/build/gemma-terminal-c4-ten-main-summary.json`.
 
 ### Same-main C1 control and batch-policy comparison
 
