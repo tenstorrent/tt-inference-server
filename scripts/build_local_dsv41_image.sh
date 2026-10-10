@@ -65,16 +65,17 @@ du -sh "$CTX"
 # BUILD_NETWORK=host is needed when that daemon runs with --bridge=none.
 BUILD_JOBS=${BUILD_JOBS:-16}
 BUILD_NETWORK=${BUILD_NETWORK:-default}
-NET_SETS=""
-if [[ "$BUILD_NETWORK" != default ]]; then   # "*" does not reach targets pulled in via contexts
+NET_FILES=""
+if [[ "$BUILD_NETWORK" != default ]]; then   # --set *.network does not work: use an override bake file
     for t in ccache clangbuildanalyzer cmake curl dockerfile-frontend doxygen gdb iwyu mold openmpi oras sfpi syft-scanner yq zstd ci-build-venv ci-build; do
-        NET_SETS+=" --set $t.network=$BUILD_NETWORK"
-    done
+        echo "target \"$t\" { network = \"$BUILD_NETWORK\" }"
+    done > "$CTX/netover.hcl"
+    NET_FILES="-f $CTX/netover.hcl --allow network.$BUILD_NETWORK"
 fi
 # ---- 2. base (toolchain) image from the tt-metal export's own dockerfile/docker-bake.hcl ----
 if [[ $SKIP_BASE == 0 ]] && ! docker image inspect "$BASE_TAG" >/dev/null 2>&1; then
     (cd "$CTX/tt-metal" && UBUNTU_VERSION=22.04 docker buildx bake -f dockerfile/docker-bake.hcl \
-        --set "ci-build.tags=$BASE_TAG" $NET_SETS --load ci-build)
+        $NET_FILES --set "ci-build.tags=$BASE_TAG" --load ci-build)
 fi
 
 # ---- 3. the image ----
