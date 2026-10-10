@@ -23,13 +23,14 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C1 | 0/5 solved, 270.1 min evaluation | Sampling paths differ from C2/C4; full-set target remains 44.94% |
 | Terminal fixed five, C2 | 1/5 solved (COBOL), 175.9 min evaluation | 192K live run also 1/5, with more output and a timeout |
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
-| Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
-| Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; ten-case control dispatched |
+| Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; expanded C2 Terminal lost one solved case |
+| Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; expanded C2 control lost three solved cases |
 | Terminal expanded ten, C2 full deadline | 4/10 solved, 196.7 min evaluation | Original first five 1/5; added five 3/5; HTML timed out at three hours |
 | Terminal expanded ten, C2 one-hour cap | 1/10 solved, 140.3 min evaluation | Four explicit timeouts; lost three solved cases versus full-deadline C2 |
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
 | Terminal expanded ten, C4 repeat | 4/10 solved, 147.8 min evaluation | Different solved cases; HTML failed after 148 min and 50 turns |
 | Terminal expanded ten, C8 clean host | 3/10 solved, 180.4 min evaluation | HTML timed out at three hours; eight active in only 2.5% of samples |
+| Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Matches both C4 thinking-on aggregate scores, with a different solved-case set; repeat and twenty-case checks running |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
@@ -980,7 +981,7 @@ claiming a new per-slot scaling loss at ten from the cross-host absolute
 rates alone.
 For the *ten-case* SWE set, C8's longest case already occupied the entire
 evaluation wall, and the C10 8K gain is only 3.2%; a C10 ten-case live run
-is therefore lower priority than the ongoing C8 twenty-case expansion.
+was therefore lower priority than the C8 twenty-case expansion.
 Use one warmed C8 trace for logical counts one to eight until a larger live
 set shows C10's extra overlap offsets its single-active cost. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-c10-benchmark-main/`
@@ -1399,6 +1400,14 @@ batch occupied. KV reached only 58.4% peak and four samples had waiting;
 no preemption or AICLK warning was found. C8's summed case clocks and
 model API time were close to the C4 repeat, but its HTML case alone set
 the 180-minute suite wall; QEMU also took 70.90 minutes on this path.
+Only **17.1%** of C8 Terminal's ten-second samples had positive prompt
+throughput, versus **89.3%** in C8 SWE/20; generation throughput was
+positive in 99.1% and 97.2%, respectively. These activity indicators
+suggest Terminal's long reasoning outputs spend more windows decoding,
+while SWE frequently mixes prompt work into decode windows. They do not
+measure exclusive device time. Along with the low active-row occupancy,
+this explains why wider physical batches can help SWE/20 without yielding
+the same wall improvement in Terminal/10.
 The 210 trace warm/capture intervals summed to 72.0 seconds, far below
 the extra suite time. Different trajectories and hosts prevent a causal
 claim that physical batch eight made the model slower. Operationally,
@@ -1616,9 +1625,50 @@ To isolate whether C4 changes that quality tradeoff,
 [inference-server commit `a86d3a0c`](https://github.com/tenstorrent/tt-inference-server/commit/a86d3a0ce30125d5446b967b225e641f8e39f725)
 changes only the default chat-template flag from the C4/ten branch. Its
 [ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019663471)
-is running on clean `p05t06`. Compare all ten rewards and the
-case errors with both C4 thinking-on runs; C2 thinking-off's missing regex
-solve makes a speed-only comparison insufficient.
+completed all ten cases on clean `p05t06` with **zero errors, 4/10 solved
+and 46.15 minutes evaluation wall**. The solved cases were COBOL, git,
+password recovery and regex (first five 1/5, added five 3/5). Three of
+these four were shared with the first C4 thinking-on run; git replaced
+HTML. The C4 thinking-on repeat also scored 4/10 but shared COBOL, git
+and regex instead. This is aggregate parity across three C4 runs, not
+fixed-case reward parity.
+
+| Terminal/ten measure | C4 thinking on first | C4 thinking on repeat | C4 thinking off |
+| --- | ---: | ---: | ---: |
+| Solved / case errors | 4/10 / 0 | 4/10 / 0 | 4/10 / 0 |
+| Evaluation wall, min | 110.26 | 147.75 | 46.15 |
+| Summed case clocks, min | 350.47 | 482.94 | 170.81 |
+| Summed API / other case time, min | 266.07 / 84.40 | 384.33 / 98.61 | 120.67 / 50.14 |
+| Input / output tokens | 2.162M / 417.9K | 4.037M / 597.8K | 4.516M / 97.1K |
+| Model API calls | 151 | 211 | 196 |
+| Peak / p95 sampled KV | 51.9% / 33.5% | 64.8% / 44.9% | 62.4% / 51.8% |
+| Waiting samples | 2/671 | 2/887 | 8/278 |
+
+Relative to the first and repeated C4 thinking-on paths, the off run
+used **76.8% and 83.8% fewer output tokens** and **58.2% and 68.8%
+less wall time**, respectively. It still made 196 API calls and read
+4.516M input tokens, so the output reduction is the direct speed lead;
+the case-clock and wall changes also reflect different trajectories.
+Its HTML case exhausted 50 turns in 41.02 minutes without solving; the
+first C4 thinking-on run solved HTML, while its repeat failed HTML after
+147.75 minutes. The off server had positive prompt throughput in 60.8%
+of samples versus 23.3% on the C4 thinking-on repeat, consistent with
+shorter decode allowing more frequent prompt work, but these are sample
+activity flags rather than exclusive device-time measurements. It reached
+four active rows in 135/278 samples, 62.4% peak KV, and eight waiting
+samples; no preemption or AICLK warning appeared. Raw artifacts and
+summary are under `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff/`
+and `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-summary.json`.
+
+A [same-config ten-case repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023672022)
+will check stochastic reward and wall. A [C4 thinking-off twenty-case
+dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023703424)
+uses [inference-server commit `93f0f7b5`](https://github.com/tenstorrent/tt-inference-server/commit/93f0f7b576a633e83a9b81b12020eb378a4d2bac),
+retaining the original ten Terminal IDs and appending the ten
+predeclared above. This is the larger sample justified by the 46-minute
+pilot. The [first twenty-case dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023691968)
+used an incorrect inference-server SHA and was canceled before hardware
+work; it is not a result.
 
 | SWE/ten measure | C2 thinking on | C2 thinking off | C4 thinking on | C8 thinking on |
 | --- | ---: | ---: | ---: | ---: |
