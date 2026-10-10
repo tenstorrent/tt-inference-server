@@ -50,11 +50,18 @@ default; its twenty-case check scored **5/20** in 74.8 minutes. C8
 thinking-off scored **3/10** in 90.0 minutes and did not improve the
 Terminal wall over the C4 thinking-off pilots.
 The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
-used more KV; C8 thinking-off/Terminal10 is pending. Each server uses one
+used more KV; C8 thinking-off/Terminal10 scored 3/10 in 90.0 minutes,
+without a useful Terminal wall gain. Each server uses one
 startup-warmed physical trace and serves
 logical request counts up to that width. These small fixed subsets do not
 establish parity with the full 89-task Terminal or 500-instance SWE H100
 reference scores of 44.94% and 64.8%.
+
+The final matched larger checks are
+[C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
+against the completed thinking-off Terminal/20 list, and
+[C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
+with thirty predeclared additions. Both pin the same Metal main image.
 
 ## Existing evidence
 
@@ -1139,6 +1146,20 @@ Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c10-twenty-main/` and
 `/home/mvasiljev/build/gemma-swe-c10-twenty-main-summary.json`.
 
+For a larger check of the selected speed policy against the reference
+target, [inference-server commit `95205f00`](https://github.com/tenstorrent/tt-inference-server/commit/95205f00e7045e82b98a83ad410ba868f42307aa)
+keeps C8 thinking-on and the first twenty SWE IDs, then appends thirty
+predeclared instances from the [official Verified 500-case
+split](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified/tree/c104f840cc67f8b6eec6f759ebc8b2693d585d4a).
+The [exact fifty IDs and selection method](gemma4_31b_swe50_selection.md)
+use seed `20261011` and difficulty strata so the final 50 have 19 easy,
+27 medium and four 1–4-hour cases, close to the full split's
+194/261/42/3 counts. Django makes up 22/50 versus 231/500 in the
+full split. The [SWE/50 dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
+pins the same Metal image. Score the retained twenty and new thirty
+separately before interpreting its total; a selected fifty-case score
+still does not prove parity with the full-set H100 result.
+
 For the twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
 lists 89 tasks. Sorting their IDs, excluding the fixed first ten, and
@@ -1849,6 +1870,15 @@ remains an explicitly lower-quality speed option and has not
 demonstrated the reference target. Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c4-twenty-thinkoff/` and
 `/home/mvasiljev/build/gemma-terminal-c4-twenty-thinkoff-summary.json`.
+
+To check the selected quality policy on the same larger denominator,
+[inference-server commit `1c54245c`](https://github.com/tenstorrent/tt-inference-server/commit/1c54245c51e79aa560727ba71c4cc986c2f6348b)
+retains C4 full thinking and adds exactly the same ten predeclared
+Terminal IDs to the original ten. Its
+[twenty-case full-thinking dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
+will compare case identities and wall directly with the off/20 run.
+This is still a selected 20/89 subset, so a numerical match to the
+44.94% H100 full-set rate would not prove full-set parity.
 
 The C4 thinking-off pilot also kept four rows active in 135/278 sampled
 windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
