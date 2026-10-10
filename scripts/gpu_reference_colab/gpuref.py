@@ -597,6 +597,7 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "max_num_seqs": plan.get("max_num_seqs"),
         "client_concurrency": plan.get("client_concurrency"),
         "concurrency_rule": plan.get("concurrency_rule"),
+        "placement": plan.get("placement"),
         "vllm_serve_command": [args.vllm_bin] + plan.get("vllm_serve_args", []),
         "max_num_batched_tokens": next(
             (
@@ -751,6 +752,34 @@ def gpu_group(verdicts: Dict[str, Any]) -> Optional[str]:
         return verdicts.get(gpu) == "fits" or isinstance(verdicts.get(gpu), dict)
 
     return "A100" if fits("A100") else "H100" if fits("H100") else None
+
+
+def gpu_placement(
+    verdicts: Dict[str, Any],
+    params: Optional[int] = None,
+    estimate: Optional[Dict[str, Any]] = None,
+    row_concurrency: Optional[int] = None,
+):
+    """(group, reason). gpu_group, except that a 10-16B model whose A100 KV
+    room (KV_TOKENS_PER_SEQ per request) is below its row's max_concurrency
+    goes to the H100 group: there it serves up to 128 sequences, at about the
+    same CU in a third of the wall time (cost is why A100 comes first)."""
+    group = gpu_group(verdicts)
+    if group != "A100":
+        return group, None if group is None else "needs an 80 GB GPU"
+    fit = kv_tokens_spare(estimate, GPU_MEMORY_GIB["A100"]) // KV_TOKENS_PER_SEQ
+    if (
+        params
+        and GPU_HIGH_CONCURRENCY_MAX_PARAMS < params <= GPU_MID_CONCURRENCY_MAX_PARAMS
+        and row_concurrency
+        and fit < row_concurrency
+        and gpu_group({"A100": "no", "H100": verdicts.get("H100")}) == "H100"
+    ):
+        return "H100", (
+            f"{params / 1e9:.1f}B params: an A100 holds {fit} sequences of KV "
+            f"(< row {row_concurrency}); an H100 serves up to {GPU_MID_CONCURRENCY}"
+        )
+    return "A100", "fits an A100 (cheapest)"
 
 
 def derive_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -944,7 +973,12 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
             )
         facts = model_facts(model, plan, token)
         memory = facts["memory"] or {}
-        group = gpu_group(memory.get("verdicts") or {})
+        group, placement = gpu_placement(
+            memory.get("verdicts") or {},
+            facts["params"],
+            memory,
+            plan["max_concurrency"],
+        )
         plan = gpu_concurrency(
             plan, facts["params"], memory, GPU_MEMORY_GIB.get(group or "")
         )
@@ -956,6 +990,7 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
         prior = finished.get(model)
         placed[model] = {
             "group": group,
+            "placement": placement,
             "max_num_seqs": plan["max_num_seqs"],
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
@@ -1337,6 +1372,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         gpu_mem = int(mib.splitlines()[0]) / 1024 if mib else None
         plan = gpu_concurrency(plan, params, estimate, gpu_mem)
+        if estimate:
+            verdicts = gpu_verdicts(estimate, plan["max_context"])
+            plan["placement"] = gpu_placement(
+                verdicts, params, estimate, plan["max_concurrency"]
+            )[1]
         print(json.dumps(plan, indent=2))
     elif args.cmd == "plan-argv":
         print("\n".join(load_json(Path(args.plan))["vllm_serve_args"]))

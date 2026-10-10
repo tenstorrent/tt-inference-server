@@ -599,6 +599,25 @@ def test_gpu_group_placement():
     assert gpuref.gpu_group({"A100": "no", "H100": "no"}) is None  # 70B: skipped
 
 
+def test_mid_size_models_short_of_a100_kv_room_go_to_h100():
+    config = {  # Qwen3-14B
+        "num_attention_heads": 40, "num_key_value_heads": 8, "head_dim": 128,
+        "num_hidden_layers": 40, "hidden_size": 5120, "intermediate_size": 17408,
+    }  # fmt: skip
+    est = gpuref.memory_estimate(14_770_000_000, config, 40960, 32)
+    verdicts = gpuref.gpu_verdicts(est, 40960)
+    assert gpuref.gpu_group(verdicts) == "A100"
+    group, why = gpuref.gpu_placement(verdicts, 14_770_000_000, est, 32)
+    assert group == "H100" and "< row 32" in why
+    # Row value already within the A100's room, or outside 9e9-16e9: unchanged.
+    assert gpuref.gpu_placement(verdicts, 14_770_000_000, est, 4)[0] == "A100"
+    assert gpuref.gpu_placement(verdicts, 8_000_000_000, est, 32)[0] == "A100"
+    assert gpuref.gpu_placement(verdicts)[0] == "A100"
+    assert gpuref.gpu_placement({"A100": "no", "H100": "fits"}) == (
+        "H100", "needs an 80 GB GPU",
+    )  # fmt: skip
+
+
 def test_too_big_for_any_gpu_is_skipped_by_verdicts():
     config = {"num_hidden_layers": 80, "num_attention_heads": 64,
               "num_key_value_heads": 8, "hidden_size": 8192, "intermediate_size": 29568}  # fmt: skip
