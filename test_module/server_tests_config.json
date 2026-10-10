@@ -93,7 +93,8 @@
       "meta-llama/Llama-3.1-8B",
       "Qwen/Qwen2.5-Coder-32B",
       "01-ai/Yi-1.5-9B",
-      "Qwen/Qwen2.5-Coder-14B"
+      "Qwen/Qwen2.5-Coder-14B",
+      "Qwen/Qwen2.5-32B"
     ]
   },
   "available_markers": {
@@ -970,6 +971,16 @@
       "id_name": "Qwen--Qwen2.5-Coder-14B",
       "weights": [
         "Qwen/Qwen2.5-Coder-14B"
+      ]
+    },
+    "Qwen/Qwen2.5-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-32B",
+      "weights": [
+        "Qwen/Qwen2.5-32B"
       ]
     }
   },
