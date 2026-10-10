@@ -504,6 +504,13 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+# Custom lm-eval task definitions for IFM/K2-Horizon-7B model-card evals that the
+# pinned lm-eval fork does not ship. Absolute, so it resolves independently of the
+# venv that include_path is normally joined with.
+_K2_HORIZON_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
+)
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -10074,6 +10081,229 @@ _eval_config_list = [
                     EvalLimitMode.CI_LONG: 0.07,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # IFM/K2-Horizon-7B (TP4 autoport, P300X2). Reasoning model: the model card
+    # asks for reasoning_effort=high (the chat template default), temperature
+    # 1.0, top_p 0.95 and >= 32768 output tokens ("truncated reasoning is a
+    # failed response"). The card's Full Results table publishes HMMT Feb 2026,
+    # Terminal-Bench 2.1 and SWE-bench Verified; its FTPO (anti-doom-loop) table
+    # also publishes GPQA Diamond. MMLU-Pro is published nowhere, so it is not
+    # run: a score with neither a published nor a GPU reference is graded NA.
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="IFM/K2-Horizon-7B",
+        tasks=[
+            EvalTask(
+                # R1-style zero-shot reasoning GPQA Diamond; the task's own
+                # extractor scores exact_match,none on the final answer. Chat
+                # API so the server renders the native template and the
+                # k2_horizon reasoning parser separates thinking from content.
+                task_name="r1_gpqa_diamond",
+                # 77.1 is the "7B before" column of the card's FTPO table, i.e. the
+                # pre-anti-doom-loop checkpoint this spec pins (036114ce), measured by
+                # the publisher with a 256K output budget. CI runs 40 docs at 64K and
+                # one sample, so the row is a lower bound (65-80 across CI runs).
+                score=EvalTaskScore(
+                    published_score=77.1,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#anti-doom-loop-training",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 14400,
+                },
+                # 64K output: at 32K, 8/40 GPQA and 13/33 HMMT traces hit the cap with no
+                # final answer (run 36837441412); the card asks for >= 32768.
+                # Model-card sampling. No top_k: served by the model's exact
+                # host sampler (K2_VLLM_ALLOW_HOST_SAMPLING=1 in the spec).
+                # stream=false is required by lm-eval's chat-completions parser.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # CI subset: doc_ids 0-39 (served at up to 32 concurrent users).
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                # HMMT February 2026 (MathArena), the model card's "Math" row (73.3).
+                # Custom task (the pinned lm-eval fork has none): 33 problems graded by
+                # the fork's r1_evals math equivalence checker, as for r1_aime24.
+                task_name="k2_hmmt_feb_2026",
+                include_path=_K2_HORIZON_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=73.3,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                model_kwargs={
+                    "max_length": 524288,
+                    "timeout": 14400,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                # All 33 problems, 1 sample each, nightly. The avg@4 variant
+                # (task k2_hmmt_feb_2026_avg4, same include_path) took 15.5 h at 64K
+                # in CI (run 37253570139), so it is for manual/full runs only.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 33,
+                    EvalLimitMode.SMOKE_TEST: 2,
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1 is the version the model card reports (39.1).
+                # CI runs the 5-task subset shared by the other QB2 configs.
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=39.1,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95, no top_k),
+                    # served by the model's host sampler as for the evals above.
+                    # 32K output is the card's minimum reasoning budget; 128K input
+                    # plus 32K output stays well inside the 524288 context.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 128 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            # qemu-startup dropped: its verifier cannot run (apt-get 404
+                            # for curl in the task image, so curl/uvx are missing and no test
+                            # executes; reward 0 regardless; run 37249479221).
+                            "terminal-bench/nginx-request-logging",
+                            # +5 tasks validated with the oracle agent on the gemma QB2
+                            # exploratory set, for a less noisy K2 signal.
+                            "terminal-bench/fix-git",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/largest-eigenval",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                # SWE-bench Verified: the model card reports 70.6. CI runs the
+                # 5-instance subset shared by the other QB2 configs.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=70.6,
+                    published_score_ref="https://huggingface.co/IFM/K2-Horizon-7B#full-results",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                            # +5 instances (oracle-validated on the gemma QB2 exploratory
+                            # set) from repos the shared list does not cover: the shared 5
+                            # all resolve with the #66 decode fix (run 37249479221).
+                            "astropy__astropy-14598",
+                            "matplotlib__matplotlib-25122",
+                            "pydata__xarray-4075",
+                            "pytest-dev__pytest-7571",
+                            "sphinx-doc__sphinx-8265",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
         ],
     ),

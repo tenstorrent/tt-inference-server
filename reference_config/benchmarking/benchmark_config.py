@@ -121,6 +121,19 @@ SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS = [
 # SUPER_CLUSTER sweep point sends at least this many multiples of the model's
 # batch size (the spec's max_concurrency).
 SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
+# Model-scoped sweep extensions for models whose context exceeds the standard
+# 131072 top point. Keyed by model_name, appended to the standard pairs and
+# still filtered by ``isl + osl <= max_context``. Scoped per model so other
+# long-context specs keep their existing sweeps.
+MODEL_EXTRA_ISL_OSL_PAIRS = {
+    # 512K-context autoport: extend the sweep to its full window.
+    "K2-Horizon-7B": [
+        (196608, 128),  # 192K
+        (262144 - 128, 128),  # 256K
+        (393216, 128),  # 384K
+        (524288 - 128, 128),  # 512K
+    ],
+}
 SMOKE_TEST_BENCHMARK_PAIR = (16, 4)
 
 
@@ -581,6 +594,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     # filtering still applies below.
     text_isl_osl_pairs = list(BENCHMARK_ISL_OSL_PAIRS)
     sweep_min_num_prompts = 0
+    text_isl_osl_pairs += MODEL_EXTRA_ISL_OSL_PAIRS.get(model_spec.model_name, [])
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
         sweep_min_num_prompts = (

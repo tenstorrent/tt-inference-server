@@ -456,6 +456,16 @@ blaze_impl = ImplSpec(
     code_path="tt-media-server/cpp_server",
 )
 
+# IFM/K2-Horizon-7B TP4 on QB2: dedicated implementation under
+# models/demos/k2_horizon_7b_qb2 (architecture TTK2HorizonForCausalLM), produced by
+# the tt-model-bringup pipeline.
+k2_horizon_7b_qb2_impl = ImplSpec(
+    impl_id="k2_horizon_7b_qb2",
+    impl_name="k2-horizon-7b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/k2_horizon_7b_qb2",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -464,6 +474,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gemma4_dflash_contract": gemma4_dflash_contract_impl,
     "gemma4_31b_qb2": gemma4_31b_qb2_impl,
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
+    "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,

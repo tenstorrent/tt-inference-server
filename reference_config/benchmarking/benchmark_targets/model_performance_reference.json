@@ -7300,6 +7300,44 @@
             }
         ]
     },
+    "IFM/K2-Horizon-7B": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries.",
+                    "Decoder + untied LM head = 7.97B params (9.00B minus the 1.03B embedding table) = 15.9 GB bf16,",
+                    "3.98 GB per chip on the 4-chip TP mesh at ~560 GB/s = 7.1 ms per step = 141 t/s/u. The benchmark's TTFT",
+                    "spans prefill plus the first sampled token, so its floor is two step-times (~14 ms, rounded to 15); the",
+                    "deployed BFP8/BFP4 precision policy streams fewer bytes, so the true ceiling is higher. theoretical only",
+                    "sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: CI release runs 36648438691 / 36834542524 / 37290332673 / 37363328572 / 37388038171",
+                    "(tt-agentic-bringup-qb2, bh-qb-ge, 128/128 c1 n=8) gave TTFT 25.4-27.6 ms and 96.3-96.5 t/s/u; values",
+                    "are the worst of those runs."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 15,
+                        "tput_user": 141,
+                        "tput": 141
+                    },
+                    "measured": {
+                        "ttft_ms": 28.0,
+                        "tput_user": 96.0,
+                        "tput": 96.0,
+                        "tolerance": 0.05
+                    }
+                }
+            }
+        ]
+    },
     "gemma-4-12B-it": {
         "p300x2": [
             {
