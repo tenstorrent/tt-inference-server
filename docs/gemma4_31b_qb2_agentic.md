@@ -18,6 +18,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE expanded twenty, C10 | 10/20 solved, 96.9 min evaluation | Original ten 3/10, added ten 7/10; zero errors, 85.5% peak KV and a 96.8 min unsolved straggler |
 | SWE selected fifty, C8 | 29/50 solved, 181.2 min evaluation | Retained twenty 8/20, new thirty 21/30; one agent exit error and 88.3% peak KV |
 | SWE selected fifty, C4 | 27/50 solved, 201.8 min evaluation | Same fifty IDs; retained twenty 7/20, new thirty 20/30; one agent exit error and 57.1% peak KV |
+| SWE second disjoint fifty, C8 | 29/50 solved, 140.2 min evaluation | Combined C8 result 58/100 distinct cases; zero errors and 78.4% peak KV |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -50,7 +51,9 @@ server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
 for Terminal as a provisional reference-policy setting. On the matched
 SWE/50 list, C8 finished 20.6 minutes sooner
 than C4 and solved 29 rather than 27 cases; that reward difference also
-reflects stochastic agent paths. C4 thinking-off shortened both Terminal/ten
+reflects stochastic agent paths. A second disjoint C8 SWE/50 scored 29/50
+in 140.2 minutes, for **58/100 distinct selected cases** across the two
+C8 runs. C4 thinking-off shortened both Terminal/ten
 runs but scored **4/10 then 1/10** on the same host. On the exact
 twenty-case list, thinking-on scored **4/20 in 279.8 minutes** and
 thinking-off **5/20 in 74.8 minutes**. Neither mode has shown the
@@ -1361,9 +1364,52 @@ fifty, seed `20261012` selected 19 easy, 27 medium and four 1–4-hour
 cases. Combined, the two samples cover 100 distinct cases with
 difficulty counts 38/54/8 and 47 Django cases, close to the 500-case
 split's proportions. The [second-fifty dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38051254512)
-was assigned to clean `120-qb2-p05t01`. Its score must be reported separately and
-alongside the first-fifty 29/50; it cannot be treated as a repeat or as
-proof of full-set H100 parity.
+completed on clean `120-qb2-p05t01`: **29/50 solved (58%)**, **zero
+agent errors**, and **140.20 evaluation minutes**. Across the two
+disjoint C8 runs, **58/100 distinct selected cases** solved. Both fifty-case
+scores were 58%, 6.8 percentage points below the configured 64.8% H100
+full-500 reference. The generic full-set accuracy gate failed on each
+selected fifty. These strata-matched but selected subsets do not prove a
+full-set regression or parity, and no matched H100 case outcomes were
+available to isolate a device versus agent-path cause.
+
+| C8 SWE measure | First fifty | Disjoint second fifty |
+| --- | ---: | ---: |
+| Solved / errors | 29/50 / 1 | 29/50 / 0 |
+| Evaluation wall, min | 181.15 | 140.20 |
+| Sum of case clocks, min | 1405.05 | 1066.01 |
+| Observed case parallelism | 7.76 | 7.60 |
+| Input / output tokens | 35.656M / 452.5K | 25.867M / 420.9K |
+| Agent model calls | 2,113 | 1,818 |
+| Agent output / suite second | 41.63 | 50.03 |
+| Mean sampled running rows | 7.07 | 6.85 |
+| Peak / p95 sampled KV | 88.3% / 77.1% | 78.4% / 63.8% |
+| Waiting samples | 77/1088 | 44/843 |
+| Trace warm-to-capture time | 326.1 s | 282.9 s |
+
+The second group had 27.5% fewer input tokens and 7.0% fewer output
+tokens, with a **22.6% shorter wall**. Its median positive generation
+sample was **45.2 tokens/s** versus 40.35 in the first group; no AICLK
+or preemption warning appeared in either server log. Different cases,
+paths and clean hosts prevent attributing the wall change to hardware
+speed. The second run still kept 7.60 case clocks overlapping on average;
+its perfect-packing bound at eight agent slots is 1066.01/8 = **133.25
+minutes**, only 6.95 minutes below measured wall. As on the first group,
+more agent slots alone offer little packing headroom. Its KV peak would
+exceed 192K under linear scaling (78.4% × 256/192 = 104.5%), so the
+combined larger sample supports retaining **256K** for C8.
+
+The second fifty solved **16/19 easy, 13/27 medium and 0/4 1–4-hour**
+cases, versus **12/19, 17/27 and 0/4** in the first. Combined, that is
+**28/38 easy, 30/54 medium and 0/8 1–4-hour**. This heterogeneity
+matters more than a single aggregate score: even with close difficulty
+strata proportions, none of the eight selected harder cases solved.
+The second group solved 15/25 Django cases; the first solved 14/22.
+Its longest case was solved Django 16950 at 55.2 minutes, compared with
+the first group's unsolved Django 14631 at 122.2 minutes. Raw artifacts
+and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c8-second-fifty-main/` and
+`/home/mvasiljev/build/gemma-swe-c8-second-fifty-main-summary.json`.
 
 For the twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
