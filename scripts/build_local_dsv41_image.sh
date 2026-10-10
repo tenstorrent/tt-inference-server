@@ -7,6 +7,10 @@
 # Uses vllm-tt-metal/vllm.tt-metal.local.Dockerfile (COPY of git-archive exports instead
 # of git clone). Needs network (PyPI, GitHub, ghcr.io, download.pytorch.org), no device.
 #
+# The tt-metal build layers are keyed on the tt-metal tree WITHOUT models/ (shas are not build
+# args of the builder stage), so a models/-only, plugin-only or tt-inference-server-only change
+# rebuilds only the cheap layers. Reuse the toolchain base with BASE_TAG=<existing tag>.
+#
 # Usage: scripts/build_local_dsv41_image.sh [--skip-base]
 # Env overrides: TT_METAL_DIR, TTIS_DIR, PLUGIN_DIR, CTX_ROOT, BASE_TAG, IMAGE_REPO
 #
@@ -50,7 +54,9 @@ git -C "$TTIS_DIR" archive "$TTIS_SHA" | tar -x -C "$CTX/tis"
 mkdir -p "$CTX/vllm-tt-metal"
 cp -a "$CTX/tis/vllm-tt-metal/src" "$CTX/vllm-tt-metal/src"
 cp -a "$CTX/tis/vllm-tt-metal/requirements.txt" "$CTX/vllm-tt-metal/"
-cp -a "$CTX/tis/utils" "$CTX/tis/VERSION" "$CTX/"
+cp -a "$CTX/tis/utils" "$CTX/tis/VERSION" "$CTX/tis/reference_config" "$CTX/tis/workflows" "$CTX/"
+# models/ is copied after the C++ build (see the Dockerfile): keep it out of the build layers
+mv "$CTX/tt-metal/models" "$CTX/tt-metal-models"
 (cd "$CTX/tis" && git init -q && MODEL_SPECS_ENV=dev python3 -c "
 from pathlib import Path
 from workflows.model_spec import MODEL_SPECS, export_model_specs_json
@@ -82,7 +88,6 @@ fi
 docker build --network "$BUILD_NETWORK" --build-arg BUILD_JOBS="$BUILD_JOBS" -t "$IMAGE" -f "$CTX/Dockerfile" \
     --build-arg TT_METAL_DOCKERFILE_URL="$BASE_TAG" \
     --build-arg TT_METAL_COMMIT_SHA_OR_TAG="$METAL_SHA" \
-    --build-arg TT_METAL_SCM_VERSION="0.0.0.dev0+g${METAL_SHA:0:11}" \
     --build-arg TT_INFERENCE_SERVER_COMMIT="$TTIS_SHA" \
     --build-arg VLLM_TT_PLUGIN_COMMIT="$PLUGIN_SHA" \
     "$CTX"
