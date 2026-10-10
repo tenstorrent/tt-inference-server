@@ -2466,8 +2466,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=13,
                     published_score_ref="https://artificialanalysis.ai/models?models=minimax-m3",
-                    gpu_reference_score=16.5,
-                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-4922484555",
+                    gpu_reference_score=18.2,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/4376#issuecomment-6040000603",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": ["accuracy"],
@@ -2491,6 +2491,17 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # MiniMax's recommended top_p, as in the other M3 tasks;
+                        # the adapter's build_llm_args() sets only temperature.
+                        # thinking_mode is forced because the adapter resends only
+                        # `content`, and from that history M3's template stops
+                        # thinking after the first few turns.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": (
+                            '{"top_p": 0.95, '
+                            '"chat_template_kwargs": {"thinking_mode": "enabled"}}'
+                        ),
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
