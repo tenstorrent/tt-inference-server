@@ -29,6 +29,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C2 one-hour cap | 1/10 solved, 140.3 min evaluation | Four explicit timeouts; lost three solved cases versus full-deadline C2 |
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
 | Terminal expanded ten, C4 repeat | 4/10 solved, 147.8 min evaluation | Different solved cases; HTML failed after 148 min and 50 turns |
+| Terminal expanded ten, C8 clean host | 3/10 solved, 180.4 min evaluation | HTML timed out at three hours; eight active in only 2.5% of samples |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
@@ -1066,12 +1067,9 @@ logical mesh onto the discovered four ASICs (`topology_mapper.cpp:556`).
 The same host had completed C8 SWE minutes earlier; this run provides no
 Terminal speed or reward evidence. The two startup attempts and server
 logs are preserved under
-`/home/mvasiljev/build/gemma-terminal-c8-ten-startup-fail/`. A retry needs
-a healthy host or a bounded device list/reset/list and mesh-open check by
-the host operator. Do not fold this infrastructure failure into the model
-score denominator. Long-prompt prefill and shared-context admission can
-limit C8, so a successful full suite is still needed before preferring it
-for Terminal.
+`/home/mvasiljev/build/gemma-terminal-c8-ten-startup-fail/`. Do not fold
+this infrastructure failure into the model score denominator. The later
+clean-host retry completed and is analyzed below.
 
 The first [C4/ten repeat dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010281587)
 was canceled during runner setup after assignment to the previously occupied
@@ -1086,8 +1084,7 @@ healthy-host hold was canceled after the health hold started. The
 [C4/ten repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010466649)
 completed on clean `p05t06` and is analyzed below; the
 [C8/ten Terminal retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010947583)
-is running on clean `p05t05`. Compare the latter's case rewards and wall
-with C2/C4 ten-case controls once it completes; the canceled attempts
+completed on clean `p05t05` and is analyzed below. The canceled attempts
 remain infrastructure scheduling history, not reward observations.
 
 Those two read-only holds are due to expire around 03:35 and 03:42 UTC on
@@ -1370,6 +1367,47 @@ The equal aggregate reward masks four changed case outcomes, and the
 110-minute wall is not a stable per-run expectation. Raw artifacts and
 numeric summary are under `/home/mvasiljev/build/gemma-terminal-c4-ten-repeat/`
 and `/home/mvasiljev/build/gemma-terminal-c4-ten-repeat-summary.json`.
+
+### C8 ten-case Terminal on a clean host
+
+The [C8/ten clean-host retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010947583)
+completed all ten official cases on `qb2-120-p05t05` with the same pinned
+Metal image, case list, sampling, thinking-on policy and three-hour case
+deadline. It solved **3/10**: COBOL in the original first five (**1/5**),
+password recovery and regex log in the added five (**2/5**). HTML filter
+raised an `AgentTimeoutError` after **180.38 minutes** and scored zero.
+The evaluation wall was **180.38 minutes**; the full test job lasted
+**194.23 minutes**. The generic full-set H100 accuracy gate failed on
+this selected ten-case score, which does not measure full-set parity.
+
+| Ten-case Terminal measure | C4 first | C4 repeat | C8 clean host |
+| --- | ---: | ---: | ---: |
+| Solved / case errors | 4/10 / 0 | 4/10 / 0 | 3/10 / 1 |
+| Evaluation wall, min | 110.26 | 147.75 | 180.38 |
+| Summed case clocks, min | 350.47 | 482.94 | 504.54 |
+| Observed case parallelism | 3.18 | 3.27 | 2.80 |
+| Model API calls | 151 | 211 | 198 |
+| Input / output tokens | 2.162M / 417.9K | 4.037M / 597.8K | 4.005M / 551.6K |
+| Sum API / other case time, min | 266.07 / 84.40 | 384.33 / 98.61 | 392.71 / 111.82 |
+| Peak / p95 sampled KV | 51.9% / 33.5% | 64.8% / 44.9% | 58.4% / 38.1% |
+| Waiting samples | 2/671 | 2/887 | 4/1,083 |
+
+C8 reached eight running requests, but only in **27/1,083 sampled
+ten-second windows (2.5%)**; one to three were running in **913/1,083
+(84.3%)**. The ten cases and long individual paths did not keep the wide
+batch occupied. KV reached only 58.4% peak and four samples had waiting;
+no preemption or AICLK warning was found. C8's summed case clocks and
+model API time were close to the C4 repeat, but its HTML case alone set
+the 180-minute suite wall; QEMU also took 70.90 minutes on this path.
+The 210 trace warm/capture intervals summed to 72.0 seconds, far below
+the extra suite time. Different trajectories and hosts prevent a causal
+claim that physical batch eight made the model slower. Operationally,
+both C4/ten full-thinking runs finished faster and solved one more case,
+so **C4 with the three-hour deadline and 256K KV pool is the current
+Terminal choice**. C8 remains useful for SWE, where twenty cases kept
+more requests active. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c8-ten-clean/` and
+`/home/mvasiljev/build/gemma-terminal-c8-ten-clean-summary.json`.
 
 ### Same-main C1 control and batch-policy comparison
 
@@ -1670,8 +1708,9 @@ solved after 24.28 minutes on the full-deadline trajectory. Git and regex
 failed *before* the shorter deadline on different stochastic trajectories,
 so their reward changes cannot be assigned to the cap alone. This control
 rejects the one-hour cap as the default Terminal policy for these ten
-cases. The C4 full-deadline run was both faster (**110.26 minutes**) and
-higher scoring (**4/10**) than this C2 capped run; C8 full-deadline is
-still running. Raw artifacts and numeric summary are under
+cases. The first C4 full-deadline run was both faster (**110.26 minutes**)
+and higher scoring (**4/10**) than this C2 capped run and the completed
+C8/ten run (**180.38 minutes**, **3/10**). Raw artifacts and numeric summary
+are under
 `/home/mvasiljev/build/gemma-terminal-c2-ten-60m/` and
 `/home/mvasiljev/build/gemma-terminal-c2-ten-60m-summary.json`.
