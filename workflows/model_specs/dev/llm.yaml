@@ -410,6 +410,10 @@ templates:
       # 3 * 5120: a multiple of the prefill chunk, within the decode step's
       # 16,384-row candidate budget, above the c1 points' isl 8192 + osl 128.
       max_context: 15360
+      # Every slot holds a full context (the pool is per slot, not a shared
+      # token budget); without this the benchmark caps the c32 points to the
+      # concurrency that fits one context.
+      max_tokens_all_users_override: 491520  # 32 * 15360
       default_impl: true
       # Health-wait budget: the model build reads the two 123 GB Engram tables
       # into host RAM, 10 to 15 minutes from the NVMe when the page cache is
