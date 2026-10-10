@@ -1361,7 +1361,7 @@ fifty, seed `20261012` selected 19 easy, 27 medium and four 1–4-hour
 cases. Combined, the two samples cover 100 distinct cases with
 difficulty counts 38/54/8 and 47 Django cases, close to the 500-case
 split's proportions. The [second-fifty dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38051254512)
-is queued for a clean runner. Its score must be reported separately and
+was assigned to clean `120-qb2-p05t01`. Its score must be reported separately and
 alongside the first-fifty 29/50; it cannot be treated as a repeat or as
 proof of full-set H100 parity.
 
@@ -2152,6 +2152,11 @@ nearly continuous generation work, but those are different counting
 windows and cannot isolate decode utilization. Extra agent overlap may
 improve physical-row occupancy; it cannot erase the cost of the much
 longer thinking-on outputs.
+The six highest-output cases (FEAL, HTML, CompCert, QEMU, password recovery
+and Caffe) were all unsolved and accounted for **855.1K/1.052M output
+tokens (81.3%)**. A targeted investigation of repeated unsuccessful
+agent turns could be worthwhile, but the tested blanket one-hour deadline
+lost three solves on the ten-case control, so it is not a safe substitute.
 The huge archived `recording.cast` and `terminus_2.pane` files in the
 password-recovery case made the workflow ZIP 1.15 GB and uncompressed
 content about 116 GB; the selective extractor kept all numeric records
