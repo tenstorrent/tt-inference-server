@@ -34,6 +34,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Fast pilot matched both C4 thinking-on aggregate scores, but the same-host repeat did not |
 | Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, so thinking-off is not a quality-preserving default |
 | Terminal expanded twenty, C4 thinking off | 5/20 solved, 74.8 min evaluation | Original ten 2/10, added ten 3/10; zero errors, 68.8% peak KV; unsolved Caffe task set the wall |
+| Terminal expanded ten, C8 thinking off | 3/10 solved, 90.0 min evaluation | FEAL took 90 min; eight model rows active in only 1.5% of samples |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
@@ -45,7 +46,9 @@ Current evidence-backed choice is one warmed **C8, 256K KV, thinking-on**
 server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
 for Terminal. C4 thinking-off shortened both Terminal/ten runs but scored
 **4/10 then 1/10** on the same host, so it is not the quality-preserving
-default; its twenty-case check scored **5/20** in 74.8 minutes.
+default; its twenty-case check scored **5/20** in 74.8 minutes. C8
+thinking-off scored **3/10** in 90.0 minutes and did not improve the
+Terminal wall over the C4 thinking-off pilots.
 The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
 used more KV; C8 thinking-off/Terminal10 is pending. Each server uses one
 startup-warmed physical trace and serves
@@ -1853,9 +1856,44 @@ rows in only 27/1,083. To test whether shorter outputs make wider
 batching useful, [inference-server commit `6e158834`](https://github.com/tenstorrent/tt-inference-server/commit/6e1588343220d8b29c803030368e1e0e0f7f3319)
 changes only the C8/ten branch's default thinking flag. Its
 [matched C8 thinking-off Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023970653)
-uses the same ten cases and pinned Metal image. Compare reward identity,
-wall, running-row occupancy and KV waiting with C4 thinking-off before
-selecting C8 for short-output Terminal work.
+used the same ten cases and pinned Metal image on clean `p05t01`.
+It completed **10/10 records without errors, 3/10 solved** (COBOL, git
+and password recovery) in **89.96 evaluation minutes** and **98.63
+minutes** for the hardware job. The generic full-set H100 accuracy gate
+failed on the selected ten-case 30% score versus the configured 44.94%
+reference. Full-thinking C8/ten also scored 3/10 but solved regex
+instead of git and took 180.38 evaluation minutes; thinking-off cut its
+observed wall by **50.1%** and output tokens by **74.1%**, with changed
+trajectories.
+
+| Thinking-off Terminal/ten measure | C4 first | C4 repeat | C8 |
+| --- | ---: | ---: | ---: |
+| Solved / case errors | 4/10 / 0 | 1/10 / 0 | 3/10 / 0 |
+| Evaluation wall, min | 46.15 | 35.13 | 89.96 |
+| Summed case clocks, min | 170.81 | 104.65 | 235.95 |
+| Summed API / other case time, min | 120.67 / 50.14 | 95.42 / 9.24 | 163.28 / 72.68 |
+| Input / output tokens | 4.516M / 97.1K | 2.928M / 82.8K | 5.239M / 143.1K |
+| Model API calls | 196 | 154 | 220 |
+| Mean sampled running rows | 3.13 | 2.39 | 1.93 |
+| Peak / p95 sampled KV | 62.4% / 51.8% | 43.1% / 40.9% | 53.1% / 41.0% |
+| Waiting samples | 8/278 | 6/211 | 8/541 |
+
+The unsolved FEAL case alone took **89.96 minutes** and set the C8 wall.
+It made **53 model calls and wrote 63.2K output tokens**, versus four
+calls and 1.9K/9.5K output tokens in the two C4 thinking-off runs.
+HTML took 66.63 minutes and 53 calls at C8, versus 35–41 minutes and
+50 calls at C4. These changed paths explain much of the wall difference;
+the runs do not isolate a physical-batch throughput effect. C8 reached
+all eight running model rows in just **8/541 samples (1.5%)**; its sampled
+mean was 1.93 rows, and 139/541 windows had no running request. There
+was 53.1% peak KV, eight waiting samples, no preemption or AICLK
+warning, and 226 trace warm/capture intervals totaling 75.4 seconds.
+The wider physical trace had too little sustained work in these ten
+Terminal cases to establish a speed advantage, while the off policy
+again scored below both C4 full-thinking ten-case runs. Retain C4 full
+thinking for Terminal. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c8-ten-thinkoff/` and
+`/home/mvasiljev/build/gemma-terminal-c8-ten-thinkoff-summary.json`.
 
 | SWE/ten measure | C2 thinking on | C2 thinking off | C4 thinking on | C8 thinking on |
 | --- | ---: | ---: | ---: | ---: |
