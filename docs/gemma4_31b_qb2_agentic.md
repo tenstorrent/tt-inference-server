@@ -17,6 +17,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE expanded twenty, C8 | 8/20 solved, 83.8 min evaluation | Original ten 4/10, added ten 4/10; zero errors and 74.8% peak KV |
 | SWE expanded twenty, C10 | 10/20 solved, 96.9 min evaluation | Original ten 3/10, added ten 7/10; zero errors, 85.5% peak KV and a 96.8 min unsolved straggler |
 | SWE selected fifty, C8 | 29/50 solved, 181.2 min evaluation | Retained twenty 8/20, new thirty 21/30; one agent exit error and 88.3% peak KV |
+| SWE selected fifty, C4 | 27/50 solved, 201.8 min evaluation | Same fifty IDs; retained twenty 7/20, new thirty 20/30; one agent exit error and 57.1% peak KV |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -58,11 +59,11 @@ logical request counts up to that width. These small fixed subsets do not
 establish parity with the full 89-task Terminal or 500-instance SWE H100
 reference scores of 44.94% and 64.8%.
 
-The larger matched checks in flight are
+The larger matched checks are
 [C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
 against the completed thinking-off Terminal/20 list, and
 [completed C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
-against [running C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
+against [completed C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
 on the exact same fifty IDs. A C4 server with eight Terminal trials is
 prepared to test scheduling independently of physical decode width; its
 [first dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
@@ -1274,10 +1275,52 @@ The matched [C4 SWE/50 commit](https://github.com/tenstorrent/tt-inference-serve
 keeps all fifty IDs and the same agent, sampling and deadline. It changes
 only the physical decode and concurrent-trial limits from eight to four.
 Its [dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
-started on clean `p05t05` and uses the same pinned Metal image, so C4 and C8
-can be compared on the
-same larger selected list; stochastic trajectories still need case-level
-review.
+completed on clean `p05t05` with **27/50 solved**, **one agent error**, and
+**201.77 evaluation minutes**. The retained twenty scored **7/20** and
+the added thirty **20/30**. Its generic full-set accuracy gate failed at
+54% versus the 64.8% full-500 H100 reference; the selected fifty do not
+establish full-set parity or a regression. The same pinned Metal image and
+case list make the runtime comparison useful, while stochastic trajectories
+limit conclusions about the two-case reward difference.
+
+| Matched SWE/50 measure | C4 | C8 |
+| --- | ---: | ---: |
+| Solved / errors | 27/50 / 1 | 29/50 / 1 |
+| Evaluation wall, min | 201.77 | 181.15 |
+| Sum of case clocks, min | 785.59 | 1405.05 |
+| Observed case parallelism | 3.89 | 7.76 |
+| Input / output tokens | 33.269M / 455.0K | 35.656M / 452.5K |
+| Output tokens / suite second | 37.58 | 41.63 |
+| Mean sampled running rows | 3.30 | 7.07 |
+| Peak / p95 sampled KV | 57.1% / 46.4% | 88.3% / 77.1% |
+| Waiting samples | 38/1212 | 77/1088 |
+| Trace warm-to-capture time | 330.6 s | 326.1 s |
+
+C8 shortened the selected-fifty wall by **20.62 minutes (10.2%)**, with
+similar output-token volume, even though each case's elapsed clock often
+grew under higher concurrency. C4's 785.59 summed case-minutes divided by
+four slots gives a 196.40-minute perfect-packing lower bound, only 5.38
+minutes below its wall. Both widths nearly fill their trial slots. C8's
+41.63 output tokens per wall second is 10.8% above C4's 37.58; this
+aggregate includes different input-token volume and agent paths, so it is
+not an isolated device decode gain. The C4 peak would fit 192K by a
+linear occupancy estimate, but C8's peak would not, and C8 is faster on
+this workload. Neither server log contains an AICLK or preemption warning.
+Keep **C8/256K** as the SWE operating point.
+
+Ten of fifty case rewards differ despite identical IDs: C4 alone solved
+Django 13109 and 14631, requests 2317, and pylint 6528; C8 alone solved
+Astropy 14365, Django 15814, pytest 6202, scikit-learn 10908, Sphinx 8638,
+and Sympy 19783. The C4 error was Django 13344, whose agent command exited
+137 and Harbor classified it as `NetworkConnectionError`; the C8 error
+was a different Django case and also exited 137. Neither artifact proves
+why the subprocess was killed. C4's longest case was solved pylint 6528
+at 62.5 minutes; C8's longest was unsolved Django 14631 at 122.2 minutes,
+which C4 solved. These path changes explain why dividing summed case time
+by suite time is more useful than treating each case as a fixed benchmark.
+Raw C4 artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c4-fifty-main/` and
+`/home/mvasiljev/build/gemma-swe-c4-fifty-main-summary.json`.
 
 For the twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
@@ -2043,6 +2086,10 @@ passed, so this is a fabric startup failure, not an agent score. The
 then reserved `p05t06`; no device reset or unowned-container change was
 performed. Its raw failure logs are in
 `/home/mvasiljev/build/gemma-terminal-c4-a8-twenty-startup-fail/`.
+After C4 SWE/50 finished, the same Terminal scheduling candidate was
+[dispatched again](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38048296731)
+and assigned to the clean `qb2-120-p05t05` runner. This is the matched
+eight-agent scheduling check; its result is pending.
 
 The C4 thinking-off pilot also kept four rows active in 135/278 sampled
 windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
