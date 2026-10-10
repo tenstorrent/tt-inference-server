@@ -190,6 +190,24 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
   occupied the same host on its second attempt and later completed after all
   queued model jobs had clean runner assignments. The stopped container was
   not modified by this work.
+- For reproducibility, dispatch a pinned candidate with the following command,
+  replacing the full inference-server commit and choosing `tb2.0` or
+  `swebench` for `agentic-benchmark`. The `mvasiljevic/gemma-tb2-ci` wrapper
+  includes the TB2.0 Shield alias and read-only runner holds; the image is
+  the pinned Metal-main build used throughout the comparable rows.
+
+  ```bash
+  gh workflow run manual-tt-shield-dispatch.yml \
+    --repo tenstorrent/tt-agentic-bringup-qb2 \
+    --ref mvasiljevic/gemma-tb2-ci \
+    -f model=gemma-4-31B-it -f runner-label=bh-qb-ge \
+    -f device-type=p300x2 -f workflow=agentic \
+    -f agentic-benchmark=tb2.0 \
+    -f docker-image=ghcr.io/tenstorrent/tt-agentic-bringup-qb2/vllm-tt-metal-src-dev-ubuntu-22.04-amd64:0.24.0-2c1e1ebdd638886821f35113a5fd0d6335d71608-c62035d-113904451192 \
+    -f tt-metal-git-ref=2c1e1ebdd638886821f35113a5fd0d6335d71608 \
+    -f inference-server-git-ref=FULL_40_CHARACTER_CANDIDATE_SHA \
+    -f impl-of-model=gemma4-31b-qb2
+  ```
 - The inference-server [baseline branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-baseline)
   adds tool-call parsing to the dedicated dev catalog entry and restores the
   original five fixed Terminal-Bench 2.0 and SWE-bench Verified cases. It keeps
@@ -391,6 +409,12 @@ quality control and compare all five rewards before selecting this budget.
 
 For a downloaded Actions artifact directory, run
 `python3 scripts/gemma4_agentic_summary.py ARTIFACT_DIR --output summary.json`.
+Terminal recordings can be enormous: the C8/ten expanded archive used
+216 GB, mostly `recording.cast` and `terminus_2.pane` from CompCert. When
+downloading another Terminal archive, extract the Actions ZIP while excluding
+files ending `.cast` or `.pane`; retain `result.json`, trajectories, server
+logs and the original compressed Actions artifact. The numeric parser does
+not need the terminal recordings.
 The script emits only case IDs, numeric timings/tokens/rewards and server
 counts/throughput samples. For Terminal it also sums case wall, model API and
 residual non-API time and reports observed case parallelism; residual time
