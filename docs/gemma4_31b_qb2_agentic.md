@@ -1641,7 +1641,8 @@ To isolate whether C4 changes that quality tradeoff,
 changes only the default chat-template flag from the C4/ten branch. Its
 [ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019663471)
 completed all ten cases on clean `p05t06` with **zero errors, 4/10 solved
-and 46.15 minutes evaluation wall**. The solved cases were COBOL, git,
+and 46.15 minutes evaluation wall**; the full hardware test job lasted
+**53.08 minutes**. The solved cases were COBOL, git,
 password recovery and regex (first five 1/5, added five 3/5). The generic
 accuracy gate failed because 40% on ten selected cases is below the
 configured 44.94% full-set H100 reference; the two denominators are not
@@ -1680,6 +1681,11 @@ the full-thinking C8 Terminal/ten run and **5.78** in C8 SWE/20. No
 preemption or AICLK warning appeared. Raw artifacts and
 summary are under `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff/`
 and `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-summary.json`.
+If the repeat and twenty-case run retain this speed/quality pattern,
+profile the now frequent prefill windows and serial per-row prefill path
+before changing trace buckets or cutting the agent deadline. The off
+run still read 4.516M input tokens, so input work did not disappear with
+the output reduction.
 
 A [same-config ten-case repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023672022)
 will check stochastic reward and wall. A [C4 thinking-off twenty-case
