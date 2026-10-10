@@ -26,7 +26,12 @@
       "test_cases": [
         {
           "enabled": true,
-          "template": "VLLMParamConformanceTest"
+          "template": "VLLMParamConformanceTest",
+          "test_config": {
+            "chat_template_kwargs": {
+              "enable_thinking": false
+            }
+          }
         }
       ]
     },
@@ -194,6 +199,41 @@
           "enabled": true,
           "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking",
           "test_config": {
+            "tool_choice": "required",
+            "non_blocking": true,
+            "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
+          }
+        }
+      ]
+    },
+    {
+      "models": [
+        "glm_5_3"
+      ],
+      "devices": [
+        "super_cluster"
+      ],
+      "test_cases": [
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice auto (pass rate >= 97.45%; $ref schemas excluded, GLM parser bug)",
+          "_comment": "exclude_ref_schemas: like MiniMax-M3, GLM-5.3's tool-call parser does not follow $ref -> $defs when it converts argument values, so a value typed through $ref comes back as a JSON string (an object as '{\"name\": \"a\"}'). On GPU vLLM, 8 $ref cases failed this way in every one of 10 runs, both modes. Drop the exclusion once the parser resolves $ref.",
+          "_comment_threshold": "pass_rate_threshold = mean - 3 sample std of 10 runs on GPU vLLM ($ref excluded, no retries, 2026-10-07): 99.14% - 3 x 0.57% = 97.45%, i.e. at least 330 of 338.",
+          "test_config": {
+            "exclude_ref_schemas": true
+          },
+          "targets": {
+            "pass_rate_threshold": 0.9745
+          }
+        },
+        {
+          "template": "ToolCallSchemaConformanceTest",
+          "enabled": true,
+          "description": "Tool-call arguments validate against walle JSON Schemas, tool_choice required, non-blocking ($ref schemas excluded, GLM parser bug)",
+          "_comment": "Second run of the suite with tool_choice required; $ref schemas excluded for the reason given on the case above.",
+          "test_config": {
+            "exclude_ref_schemas": true,
             "tool_choice": "required",
             "non_blocking": true,
             "non_blocking_reason": "the tool_choice=required run is informational: reported, never blocking"
@@ -473,6 +513,188 @@
       ],
       "models": [
         "Qwen/Qwen3-1.7B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "deepcogito/cogito-v1-preview-llama-3B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "arcee-ai/Arcee-Spark"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-7B-Instruct-1M"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-1B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-3B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "tiiuae/Falcon3-10B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "deepcogito/cogito-v1-preview-llama-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen3-4B-Instruct-2507"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "upstage/SOLAR-10.7B-Instruct-v1.0"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "meta-llama/Llama-3.2-1B"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "models": [
+        "Qwen/Qwen1.5-0.5B-Chat"
       ],
       "test_cases": [
         {
