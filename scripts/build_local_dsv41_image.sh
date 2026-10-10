@@ -54,6 +54,18 @@ git -C "$TTIS_DIR" archive "$TTIS_SHA" | tar -x -C "$CTX/tis"
 mkdir -p "$CTX/vllm-tt-metal"
 cp -a "$CTX/tis/vllm-tt-metal/src" "$CTX/vllm-tt-metal/src"
 cp -a "$CTX/tis/vllm-tt-metal/requirements.txt" "$CTX/vllm-tt-metal/"
+# git archive expands $Format:%H$ (export-subst) in cmake/version.cmake: a different file per commit, which would
+# invalidate the COPY tt-metal layer and with it the C++ build. Freeze the fallback version to a constant (the real
+# shas are in BUILD_INFO) so the build layers are reused across commits.
+python3 - "$CTX/tt-metal/cmake/version.cmake" <<'PY'
+import re, sys
+p = sys.argv[1]
+s = open(p).read()
+s = re.sub(r'set\(fallbackVersion "[^"]*"\)', 'set(fallbackVersion "v0.80.0-dev20260930-301-g6e04eefa6b0")', s)
+s = re.sub(r'set\(fallbackHash "[^"]*"\)', 'set(fallbackHash "6e04eefa6b0")', s)
+s = re.sub(r'set\(fallbackSha "[^"]*"\)', 'set(fallbackSha "6e04eefa6b028dfdc7a3316dccd23fe933fd1e65")', s)
+open(p, "w").write(s)
+PY
 cp -a "$CTX/tis/utils" "$CTX/tis/VERSION" "$CTX/tis/reference_config" "$CTX/tis/workflows" "$CTX/"
 # models/ is copied after the C++ build (see the Dockerfile): keep it out of the build layers
 mv "$CTX/tt-metal/models" "$CTX/tt-metal-models"
