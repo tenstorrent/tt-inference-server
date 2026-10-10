@@ -1138,6 +1138,19 @@ the case-level timeout is reported separately above.
 | Peak / p95 sampled KV | 44.1% / 23.5% | 51.9% / 33.5% |
 | Waiting samples | 0/1,181 | 2/671 |
 
+| Fixed Terminal case | C2 wall min / reward | C4 wall min / reward |
+| --- | ---: | ---: |
+| HTML filter | 180.38 / 0 (timeout) | 88.29 / 1 |
+| COBOL modernization | 7.68 / 1 | 41.94 / 1 |
+| CompCert | 68.51 / 0 | 82.80 / 0 |
+| FEAL | 48.43 / 0 | 33.28 / 0 |
+| QEMU startup | 16.34 / 0 | 3.85 / 0 |
+| Cancel async tasks | 3.98 / 0 | 4.85 / 0 |
+| Git multibranch | 6.61 / 1 | 12.81 / 0 |
+| Password recovery | 24.28 / 1 | 16.59 / 1 |
+| Regex log | 9.52 / 1 | 10.55 / 1 |
+| SQLite truncate | 25.11 / 0 | 55.51 / 0 |
+
 C4's observed evaluation wall was **43.9% shorter** with the same aggregate
 reward, while the solved cases differed: C4 solved HTML, C2 solved git.
 C2 generated **10.6% more output tokens** and took a different agent path,
