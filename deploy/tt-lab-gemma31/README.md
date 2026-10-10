@@ -13,11 +13,11 @@ Two modes, chosen by the env file:
 |---|---|---|
 | native worker | `gemma --serve` | `gemma --serve-batch` |
 | sequences | one at a time; the others queue | `TT_GEMMA31_SLOTS` (8) at once, continuous batching |
-| prefill | 128-token D64 groups | 32-token groups, one request at a time, between decode steps |
+| prefill | 256-token D64 groups on the matmul grid | the same D64 groups per request (tt-lab round 3, `TT_GEMMA31_D64_SLOTS`; older builds: 32-token groups), one request at a time, between decode steps; chunked (`TT_GEMMA_PREFILL_CHUNK`, 2048) while others decode |
 | decode | single sequence | active sequences together through tt-lab's exact batch-decode path (`forward_batch`) |
 | server worker | serial `device_worker` | dynamic-batch `device_worker` (`USE_DYNAMIC_BATCHER=true`) |
 | cancel | the stream is drained to keep the pipe in sync | a disconnect or stop string sends `cancel`; the slot is freed |
-| prefix caching | `TT_GEMMA_PREFIX_CACHE=1`, against the previous request | `TT_GEMMA_PREFIX_CACHE=1`, per slot; a request goes to the free slot with the longest shared prefix |
+| prefix caching | `TT_GEMMA_PREFIX_CACHE=1`, against the previous request | `TT_GEMMA_PREFIX_CACHE=1`, per slot; a request goes to the free slot with the longest shared prefix. Resumes are on tt-lab's 256-token prefill grid; past 1,088 positions a slot resumes only when its cached end is within one 64-position window block after such a point (the local-attention window cannot roll back) |
 | `ignore_eos` | rejected (HTTP 400) | with `TT_LAB_IGNORE_EOS=1` and a tt-lab build from `ea8a211` on |
 
 The native worker comes from tt-lab branch `work/gemma31-qb2-serve` (the
@@ -31,6 +31,11 @@ accepted kernel flags; see that branch's `docs/gemma31-qb2-*.md`.
   (prompt + `max_tokens`). The runner refuses to start if they differ.
 - `SERVED_MODEL_NAME`: the only accepted `model` field.
 - `TT_GEMMA31_SLOTS` (2..16) selects `--serve-batch`; it must equal `MAX_NUM_SEQS`.
+- `TT_GEMMA_PREFILL_CHUNK` (`--serve-batch`): chunked prefill. A prompt admitted while
+  other requests decode is prefilled this many tokens at a time (chunk ends at positions
+  32 mod 64), one decode step of the others between chunks. Token-identical to whole
+  prefills (each continuation resumes the slot as a prefix-cache hit). The server's
+  `PREFILL_CHUNK_SIZE` applies to vLLM backends only.
 - `TT_LAB_DEVICE` must be unset: the worker owns all four cards. No other tt-lab or
   tt-metal workload may use any card while it runs.
 - `DEVICE_IDS=(0)`: one server worker drives the whole card set.

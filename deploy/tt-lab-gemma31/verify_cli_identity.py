@@ -10,7 +10,7 @@ Two phases, because the native worker owns all four cards:
   check      (server RUNNING) sends the same chat requests to the API, streamed and
              not, sequentially and concurrently, and requires the text and
              completion token count to equal the CLI's. With --server-log it also
-             reads the worker's per-request lines ("reused=N") to confirm prefix
+             reads the worker's per-request lines ("reused=N") and reports prefix
              cache hits on the shared-prefix prompts.
 
   python deploy/tt-lab-gemma31/verify_cli_identity.py reference --env deploy/tt-lab-gemma31/server-batch.env \
@@ -176,7 +176,10 @@ def check(a):
         reused = [int(m.group(1)) for m in (re.search(r"Gemma native request:.*reused=(\d+)", x) for x in lines) if m]
         report["prefix_cache"] = dict(requests_logged=len(reused), hits=sum(r > 0 for r in reused),
                                       reused_tokens=sum(reused))
-        report["passed"] = report["passed"] and report["prefix_cache"]["hits"] > 0
+        # Hits are reported, not required: past 1,088 positions tt-lab can resume a slot only at a
+        # 256-token point within one 64-position window block before its cached end (the local
+        # window cannot roll back), so shared-document prompts with different questions miss.
+        # tt-lab's gemma31_serve_batch_check.py --follow-up checks a hit's tokens natively.
     print(json.dumps({k: v for k, v in report.items() if k != "rows"}, indent=1))
     if a.output:
         Path(a.output).write_text(json.dumps(report, indent=1) + "\n")

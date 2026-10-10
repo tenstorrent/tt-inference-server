@@ -96,7 +96,8 @@ curl -s http://127.0.0.1:8002/tt-liveness | tee $OUT/liveness-start.json
 grep "batch worker ready" $OUT/server.log         # "context=32768, 8 slots"
 ```
 
-To stop it: `kill $(cat $OUT/server.pid)`. The native child has a parent-death
+To stop it: kill the `start.py` processes by PID (`ps -eo pid,args | grep '[s]tart\.py'`); the
+`nohup` PID is not always the server's. The native child has a parent-death
 signal, so it exits with the server. Confirm with `ps -ef | grep tt-lab-serve`
 (read only) before step 2 is ever rerun.
 
