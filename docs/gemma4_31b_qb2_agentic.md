@@ -1324,6 +1324,16 @@ linear occupancy estimate, but C8's peak would not, and C8 is faster on
 this workload. Neither server log contains an AICLK or preemption warning.
 Keep **C8/256K** as the SWE operating point.
 
+The C8 run made **2,113 agent model calls**, averaging about **16.9K input
+and 214 output tokens per call**; C4 made 2,059 calls at about 16.2K input
+and 221 output tokens. This is far from the 128/128 release gate shape.
+The C8 synthetic **16K/128** point produced **40.83 output tokens/s**, near
+the 50-case run's 41.63 agent output tokens per wall second, although the
+request mix and measurement definitions differ. Together with prompt
+throughput being positive in 93.5% of C8 server samples, this makes
+long-prompt prefill and mixed prefill/decode a concrete next profiler target;
+the short-prompt batch throughput alone overstates agentic capacity.
+
 Ten of fifty case rewards differ despite identical IDs: C4 alone solved
 Django 13109 and 14631, requests 2317, and pylint 6528; C8 alone solved
 Astropy 14365, Django 15814, pytest 6202, scikit-learn 10908, Sphinx 8638,
