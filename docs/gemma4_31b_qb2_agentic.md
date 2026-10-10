@@ -400,6 +400,15 @@ the old run's measured recapture time makes this a lower priority than
 decoding, task parallelism and KV admission. Any future dynamic-bucket change
 must retain warmed traces for each bucket and verify cache/table identity
 before replay.
+The later C8/SWE20, C10/SWE20 and two C4 thinking-off Terminal/ten jobs
+each spent about **6–7 minutes** outside evaluation, including server
+startup, model warmup and reporting. Their evaluations took 35–97
+minutes, and the workload was a separate CI job for each physical
+batch/policy. One startup-warmed physical bucket per server is therefore
+the useful **current granularity**: C4 for quality-preserving Terminal,
+C8 for speed-first SWE. Retaining multiple physical traces inside a
+single process would matter if these jobs alternated tasks on one live
+server; it is not an evidenced bottleneck in the current workflow.
 
 ## First current-main throughput sweep (C2, 9 October)
 
