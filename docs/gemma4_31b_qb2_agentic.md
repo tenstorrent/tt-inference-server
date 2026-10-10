@@ -1195,6 +1195,12 @@ arithmetic upper bounds on tokens removed from the recorded paths; a real
 cap changes subsequent agent prompts and rewards. An 8K cap therefore
 cannot plausibly match the observed 86.5% output reduction from
 thinking-off on these trajectories, and was not dispatched as a priority.
+Terminal prefill also stays substantial under thinking-off: the C2 control
+had a 17,091-token median prompt, 46,830-token p90 and 62,787-token
+maximum across its 126 recorded calls; thinking-off had a 20,547-token
+median and 41,642-token maximum across 119 calls. That helps explain why
+short-prompt C8 synthetic scaling should not be projected onto Terminal,
+where per-row prefill and admission matter more.
 
 To check whether the quality result survives a larger fixed denominator,
 the [C2 ten-case thinking-off branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-thinkoff)
