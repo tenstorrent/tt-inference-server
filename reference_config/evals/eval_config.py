@@ -3163,6 +3163,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3198,6 +3199,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3262,6 +3264,16 @@ _eval_config_list = [
                     published_score_ref="https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct#image-benchmark",
                     gpu_reference_score=84.0,
                     gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                    # lmms-eval's --limit takes the first N docs and ChartQA's test split lists its 1250
+                    # human-authored items before the 1250 augmented ones, so the ci-nightly 20% subset is
+                    # human-split only; compare it with the GPU run's relaxed_human_split, not the overall score.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=73.84,
+                            ref="relaxed_human_split of the same H100 run, https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                            tolerance=0.05,
+                        ),
+                    },
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3271,6 +3283,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3306,6 +3319,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3356,6 +3370,155 @@ _eval_config_list = [
             ),
         ],
     ),
+    # olmOCR: fine-tune of Qwen2.5-VL-7B for document OCR
+    # olmOCR-bench overall score: 82.3 (https://huggingface.co/allenai/olmOCR-2-7B-1025)
+    # GPU reference scores from lmms-eval v0.4.0 with qwen2_5_vl model on CUDA (bfloat16).
+    EvalConfig(
+        hf_model_repo="allenai/olmOCR-2-7B-1025",
+        tasks=[
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="chartqa",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=83.0,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=83.0,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    # The ci-nightly 20% subset of ChartQA is human-split only (see the Qwen2.5-VL-7B entry);
+                    # the base model's H100 relaxed_human_split stands in as the subset reference.
+                    mode_reference_scores={
+                        EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
+                            score=73.84,
+                            ref="relaxed_human_split of the Qwen2.5-VL-7B H100 run, https://github.com/tenstorrent/tt-inference-server/issues/391#issuecomment-3423157480",
+                            tolerance=0.05,
+                        ),
+                    },
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["relaxed_overall,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="docvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=93.9,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=93.9,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["anls,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="textvqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=82.05,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=82.05,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                eval_class="openai_compatible",
+                task_name="infovqa_val",
+                workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                apply_chat_template=False,
+                use_chat_api=True,
+                score=EvalTaskScore(
+                    published_score=78.64,
+                    published_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    gpu_reference_score=78.64,
+                    gpu_reference_score_ref="gpu reference: lmms-eval v0.4.0 qwen2_5_vl bfloat16",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["anls,none"],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "num_concurrent": 32,
+                    "max_retries": 1,
+                    "tokenized_requests": "False",
+                    "add_bos_token": "True",
+                    "timeout": "9999",
+                    "eos_string": "<|im_end|>",
+                },
+                gen_kwargs={
+                    "stream": "False",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.05,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen2.5-VL-32B-Instruct",
         tasks=[
@@ -3379,6 +3542,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3414,6 +3578,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3487,6 +3652,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",
@@ -3522,6 +3688,7 @@ _eval_config_list = [
                     },
                 ),
                 model_kwargs={
+                    "num_concurrent": 32,
                     "max_retries": 1,
                     "tokenized_requests": "False",
                     "add_bos_token": "True",

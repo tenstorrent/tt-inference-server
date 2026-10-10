@@ -14,3 +14,6 @@
 # standalone aiperf benchmark venv, and vice versa.
 
 -r llm-aiperf.txt
+# pyarrow 26 requires NumPy 2; this venv resolves numpy 1.26 for aiperf 0.5.0, so cap pyarrow
+# (pyarrow.lib: "requires NumPy 2.0 or newer, found 1.26.4").
+pyarrow<26

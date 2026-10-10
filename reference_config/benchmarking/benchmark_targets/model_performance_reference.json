@@ -171,6 +171,60 @@
                         "tput_user": 538
                     }
                 }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 170,
+                        "tput_user": 28
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1100,
+                        "tput_user": 28,
+                        "tput": 700
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 80,
+                        "tput_user": 27
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1000,
+                        "tput_user": 25,
+                        "tput": 2600
+                    }
+                }
             }
         ]
     },
@@ -7612,6 +7666,64 @@
                     }
                 },
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
+            }
+        ]
+    },
+    "allenai/olmOCR-2-7B-1025": {
+        "t3k": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 170,
+                        "tput_user": 28
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1100,
+                        "tput_user": 28,
+                        "tput": 700
+                    }
+                }
+            }
+        ],
+        "galaxy": [
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 80,
+                        "tput_user": 27
+                    }
+                }
+            },
+            {
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 128,
+                "num_prompts": 1024,
+                "data_parallel": 4,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 1000,
+                        "tput_user": 25,
+                        "tput": 2600
+                    }
+                }
             }
         ]
     }
