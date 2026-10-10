@@ -7091,12 +7091,19 @@ _eval_config_list = [
             ),
         ],
     ),
-    # DeepSeek-V4.1-Flash on Blackhole Galaxy (B=32 build, max_model_len 33280, plain decode).
+    # DeepSeek-V4.1-Flash on Blackhole Galaxy (B=32 build). Context depends on the served
+    # entry: 64k (max_model_len 67584) for the plain-decode server, 40000 for the
+    # speculative-decoding server (the new tasks are sized to fit both).
     # The served chat template is NON-THINKING (encoding.py thinking_mode="chat": the
-    # generation prompt ends in </think>), and 33k context cannot hold long reasoning, so
-    # every task runs non-thinking, sampled with the card's temperature 1.0 / top_p 0.95 (seed 42), chat API, max_gen_toks = remaining 67584 context. Model-card numbers
-    # are not like for like (GPQA: instruct, max reasoning effort; MMLU-Pro/HumanEval/
-    # LongBench-V2: base-model few-shot). DSV41_EVAL_TASKS (comma list) selects tasks.
+    # generation prompt ends in </think>), and 33k-64k context cannot hold long reasoning, so
+    # every task runs non-thinking, sampled with the card's temperature 1.0 / top_p 0.95
+    # (seed 42 via EvalTask.seed, propagated to the request), chat API. The long-answer tasks
+    # use max_gen_toks 64500 (plain 64k server); gsm8k_cot / minerva_math are few-shot with a
+    # small cap (2048 / 4096) that fits the 40000 server too.
+    # Model-card numbers are not like for like (GPQA: instruct, max reasoning effort;
+    # MMLU-Pro/HumanEval/LongBench-V2/GSM8K/MATH: base-model rows of the card, produced with
+    # the card's internal framework). DSV41_EVAL_TASKS (comma list of task_name, e.g.
+    # "gsm8k_cot,minerva_math") selects tasks.
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash",
         tasks=[
@@ -7237,6 +7244,78 @@ _eval_config_list = [
                         "tokenizer_num_proc": 16,
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 4, EvalLimitMode.CI_NIGHTLY: 16},
+                ),
+                # GSM8K 8-shot, exact match. gsm8k_cot is the standard 8-shot chain-of-thought
+                # variant (the 8 Wei et al. exemplars, num_fewshot=8); the plain `gsm8k` task
+                # has 5 train-set shots. 93.0 is the card's BASE-model table value (card's
+                # internal framework, base-model few-shot): not like for like with this
+                # chat-template, sampled lm-eval run.
+                EvalTask(
+                    task_name="gsm8k_cot",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    num_fewshot=8,
+                    use_chat_api=True,
+                    apply_chat_template=True,
+                    max_concurrent=32,
+                    score=EvalTaskScore(
+                        published_score=93.0,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["exact_match,flexible-extract"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "max_length": 40000,
+                        "timeout": 14400,
+                    },
+                    gen_kwargs={
+                        "max_gen_toks": 2048,
+                        # the task's own few-shot stop sequence ("Q:" starts the next exemplar)
+                        "until": ["Q:"],
+                        "do_sample": "true",
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "stream": "true",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 8, EvalLimitMode.CI_NIGHTLY: 64},
+                ),
+                # MATH (Hendrycks) 4-shot, exact match: minerva_math is the 4-shot generative
+                # MATH group (7 subjects, 5000 test problems, Minerva exemplars and
+                # normalisation). 61.1 is the card's BASE-model table value (card's internal
+                # framework): not like for like.
+                EvalTask(
+                    task_name="minerva_math",
+                    workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    num_fewshot=4,
+                    use_chat_api=True,
+                    apply_chat_template=True,
+                    max_concurrent=32,
+                    score=EvalTaskScore(
+                        published_score=61.1,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["exact_match,none"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "tokenizer": "/mnt/tt-data/ssinghal/deepseek-v41-flash",
+                        "max_length": 40000,
+                        "timeout": 14400,
+                    },
+                    gen_kwargs={
+                        "max_gen_toks": 4096,
+                        "until": ["Problem:"],
+                        "do_sample": "true",
+                        "temperature": 1.0,
+                        "top_p": 0.95,
+                        "stream": "true",
+                    },
+                    limit_samples_map={EvalLimitMode.SMOKE_TEST: 2, EvalLimitMode.CI_NIGHTLY: 4}  # per subject (7 subjects),
                 ),
             ]
             if not os.getenv("DSV41_EVAL_TASKS")
