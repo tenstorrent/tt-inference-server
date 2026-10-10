@@ -1670,6 +1670,16 @@ pilot. The [first twenty-case dispatch](https://github.com/tenstorrent/tt-agenti
 used an incorrect inference-server SHA and was canceled before hardware
 work; it is not a result.
 
+The C4 thinking-off pilot also kept four rows active in 135/278 sampled
+windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
+rows in only 27/1,083. To test whether shorter outputs make wider
+batching useful, [inference-server commit `6e158834`](https://github.com/tenstorrent/tt-inference-server/commit/6e1588343220d8b29c803030368e1e0e0f7f3319)
+changes only the C8/ten branch's default thinking flag. Its
+[matched C8 thinking-off Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023970653)
+uses the same ten cases and pinned Metal image. Compare reward identity,
+wall, running-row occupancy and KV waiting with C4 thinking-off before
+selecting C8 for short-output Terminal work.
+
 | SWE/ten measure | C2 thinking on | C2 thinking off | C4 thinking on | C8 thinking on |
 | --- | ---: | ---: | ---: | ---: |
 | Evaluation wall, min | 61.54 | 66.05 | 55.90 | 44.35 |
