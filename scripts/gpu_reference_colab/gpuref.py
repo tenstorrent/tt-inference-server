@@ -51,12 +51,20 @@ GIB = float(1 << 30)
 # chunk that big makes vLLM's activation profiling OOM (cogito-qwen-14B on an
 # A100: 6.75 GiB for 131072 tokens). It only schedules work; outputs match.
 GPU_MAX_BATCHED_TOKENS = 16384
-# GPU throughput policy: the TT row's max_concurrency (often 32) leaves an
-# A100 mostly idle on small models. Up to ~8B parameters, serve with this many
-# sequences and send as many concurrent requests (the runner exports
-# TT_EVAL_CLIENT_CONCURRENCY). Prompts, sampling and scoring are unchanged.
+# GPU throughput policy: the TT row's max_concurrency (often 32) leaves the GPU
+# mostly idle. Up to ~8B parameters, serve with 256 sequences and send as many
+# concurrent requests (the runner exports TT_EVAL_CLIENT_CONCURRENCY); up to
+# 16B, as many as the GPU's spare memory holds at KV_TOKENS_PER_SEQ tokens
+# each, at most 128 (~126 for Qwen3-14B on an 80 GB H100; on an A100-40GB that
+# is below the row's value, which then stays). Larger models keep
+# the row's value. Prompts, sampling and scoring are unchanged.
 GPU_HIGH_CONCURRENCY = 256
 GPU_HIGH_CONCURRENCY_MAX_PARAMS = 9e9
+GPU_MID_CONCURRENCY = 128
+GPU_MID_CONCURRENCY_MAX_PARAMS = 16e9
+# KV tokens one in-flight eval request holds, from Qwen3-0.6B mmlu_pro on an
+# A100 (32 running used 19.6% of a ~300k-token cache: ~1.8k each).
+KV_TOKENS_PER_SEQ = 2048
 REJECTION_PATTERN = re.compile(
     r"maximum context length|truncat|HTTP/1\.1\" 400|400 Bad Request", re.IGNORECASE
 )
@@ -251,15 +259,41 @@ def model_params(meta: Optional[Dict[str, Any]], config: Optional[Dict[str, Any]
     )
 
 
-def gpu_concurrency(plan: Dict[str, Any], params: Optional[int]) -> Dict[str, Any]:
+def kv_tokens_spare(estimate: Optional[Dict[str, Any]], gpu_mem_gib: Optional[float]):
+    """KV-cache tokens left on a GPU after weights, activations and overhead."""
+    per_token = (estimate or {}).get("kv_bytes_per_token")
+    if not per_token or not gpu_mem_gib:
+        return 0
+    spare = gpu_mem_gib * GPU_MEMORY_UTILIZATION - OVERHEAD_GIB
+    spare -= estimate["weights_gib"] + estimate.get("activation_gib", 0.0)
+    return max(0, int(spare * GIB // per_token))
+
+
+def gpu_concurrency(
+    plan: Dict[str, Any],
+    params: Optional[int],
+    estimate: Optional[Dict[str, Any]] = None,
+    gpu_mem_gib: Optional[float] = None,
+) -> Dict[str, Any]:
     """The plan with the GPU throughput policy applied: --max-num-seqs and the
-    eval client's concurrency (recorded as client_concurrency)."""
-    conc = plan["max_concurrency"]
+    eval client's concurrency (client_concurrency), and the rule that chose them."""
+    row = conc = plan["max_concurrency"]
+    rule = "row max_concurrency"
+    kv_fit = kv_tokens_spare(estimate, gpu_mem_gib) // KV_TOKENS_PER_SEQ
     if params and params <= GPU_HIGH_CONCURRENCY_MAX_PARAMS:
-        conc = max(conc, GPU_HIGH_CONCURRENCY)
+        conc, rule = (
+            max(row, GPU_HIGH_CONCURRENCY),
+            f"<= {GPU_HIGH_CONCURRENCY_MAX_PARAMS:.0e} params",
+        )
+    elif params and params <= GPU_MID_CONCURRENCY_MAX_PARAMS and kv_fit > row:
+        conc = min(GPU_MID_CONCURRENCY, kv_fit)
+        rule = f"<= {GPU_MID_CONCURRENCY_MAX_PARAMS:.0e} params, KV fits {kv_fit} x {KV_TOKENS_PER_SEQ} tokens on {gpu_mem_gib:g} GiB"
     argv = list(plan["vllm_serve_args"])
     argv[argv.index("--max-num-seqs") + 1] = str(conc)
-    return dict(plan, vllm_serve_args=argv, max_num_seqs=conc, client_concurrency=conc)
+    return dict(
+        plan, vllm_serve_args=argv, max_num_seqs=conc, client_concurrency=conc,
+        concurrency_rule=rule,
+    )  # fmt: skip
 
 
 def model_facts(
@@ -562,6 +596,7 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # GPU throughput policy (gpu_concurrency); None on older plans.
         "max_num_seqs": plan.get("max_num_seqs"),
         "client_concurrency": plan.get("client_concurrency"),
+        "concurrency_rule": plan.get("concurrency_rule"),
         "vllm_serve_command": [args.vllm_bin] + plan.get("vllm_serve_args", []),
         "max_num_batched_tokens": next(
             (
@@ -908,8 +943,11 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
                 )
             )
         facts = model_facts(model, plan, token)
-        plan = gpu_concurrency(plan, facts["params"])
         memory = facts["memory"] or {}
+        group = gpu_group(memory.get("verdicts") or {})
+        plan = gpu_concurrency(
+            plan, facts["params"], memory, GPU_MEMORY_GIB.get(group or "")
+        )
         model_tasks = [t["task"] for t in targets if t["model"] == model]
         # run.py evaluates every lm-eval task of the model, targeted or not.
         model_tasks_all = {
@@ -917,7 +955,8 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
         }
         prior = finished.get(model)
         placed[model] = {
-            "group": gpu_group(memory.get("verdicts") or {}),
+            "group": group,
+            "max_num_seqs": plan["max_num_seqs"],
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
             "est_hours": estimate_hours(model_tasks_all.get(model, []), memory.get("weights_gib")),
@@ -1285,7 +1324,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         rev, token = plan.get("revision") or "main", hf_token()
         meta = hf_get(f"{HF}/api/models/{args.model}/revision/{rev}", token)
         config = hf_get(f"{HF}/{args.model}/resolve/{rev}/config.json", token)
-        plan = gpu_concurrency(plan, model_params(meta, config))
+        params = model_params(meta, config)
+        estimate = (
+            memory_estimate(
+                params, config, plan["max_context"], plan["max_concurrency"]
+            )
+            if params
+            else None
+        )
+        mib = run_out(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]
+        )
+        gpu_mem = int(mib.splitlines()[0]) / 1024 if mib else None
+        plan = gpu_concurrency(plan, params, estimate, gpu_mem)
         print(json.dumps(plan, indent=2))
     elif args.cmd == "plan-argv":
         print("\n".join(load_json(Path(args.plan))["vllm_serve_args"]))

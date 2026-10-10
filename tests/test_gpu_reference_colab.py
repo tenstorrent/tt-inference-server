@@ -713,6 +713,31 @@ def test_gpu_concurrency_raises_small_models_only():
     assert gpuref.model_params({"safetensors": {"total": 7}}, None) == 7
 
 
+def test_gpu_concurrency_mid_tier_needs_kv_room_for_128_sequences():
+    """10-16B models get as many sequences as fit at KV_TOKENS_PER_SEQ tokens,
+    at most 128: ~126 for Qwen3-14B on an 80 GB H100; on an A100-40GB that is
+    below the row's 32, so the row value stays."""
+    config = {  # Qwen3-14B
+        "num_attention_heads": 40, "num_key_value_heads": 8, "head_dim": 128,
+        "num_hidden_layers": 40, "hidden_size": 5120, "intermediate_size": 17408,
+    }  # fmt: skip
+    params = 14_770_000_000
+    estimate = gpuref.memory_estimate(params, config, 40960, 32)
+    plan = {
+        "max_concurrency": 32,
+        "vllm_serve_args": ["serve", "m", "--max-num-seqs", "32"],
+    }
+    h100 = gpuref.gpu_concurrency(plan, params, estimate, 80.0)
+    assert 64 < h100["max_num_seqs"] == h100["client_concurrency"] <= 128
+    assert "KV fits" in h100["concurrency_rule"]
+    a100 = gpuref.gpu_concurrency(plan, params, estimate, 40.0)
+    assert a100["max_num_seqs"] == 32
+    assert a100["concurrency_rule"] == "row max_concurrency"
+    assert gpuref.gpu_concurrency(plan, params)["max_num_seqs"] == 32  # GPU unknown
+    big = gpuref.gpu_concurrency(plan, 24_000_000_000, estimate, 80.0)
+    assert big["max_num_seqs"] == 32
+
+
 def test_patch_eval_config_sets_reference_and_clears_request():
     text = (
         '    EvalConfig(\n        hf_model_repo="org/m",\n        tasks=[\n'
