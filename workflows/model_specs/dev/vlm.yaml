@@ -209,6 +209,9 @@ templates:
       vllm_args:
         mm-processor-cache-gb: 0
         async-scheduling: true
+        # Automatic prefix caching: the Qwen2.5-VL vLLM wrapper resumes prefill from the cached
+        # blocks and skips the vision tower for images inside the cached prefix.
+        enable-prefix-caching: true
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 60000000
@@ -227,6 +230,7 @@ templates:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
         async-scheduling: true
+        enable-prefix-caching: true
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 100000000
@@ -270,6 +274,9 @@ templates:
       vllm_args:
         mm-processor-cache-gb: 0
         async-scheduling: true
+        # Automatic prefix caching: the Qwen2.5-VL vLLM wrapper resumes prefill from the cached
+        # blocks and skips the vision tower for images inside the cached prefix.
+        enable-prefix-caching: true
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 60000000
@@ -288,6 +295,7 @@ templates:
         data_parallel_size: 4
         mm-processor-cache-gb: 0
         async-scheduling: true
+        enable-prefix-caching: true
       override_tt_config:
         sample_on_device_mode: decode_only
         trace_region_size: 100000000
