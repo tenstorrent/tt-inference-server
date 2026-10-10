@@ -210,6 +210,12 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
 COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} \
     "report_module" "${APP_DIR}/report_module"
 
+# the whole client side of tt-inference-server (run.py, run_workflows.py, llm_module, test_module, launchers, requirements, ...) so that the
+# evals / benchmarks workflows can run from this image against a server; its .git marker (git init in the build script) makes get_repo_root_path work.
+# World-writable so a non-root `docker run --user` can create .workflow_venvs / workflow_logs (or bind-mount host dirs there).
+COPY ttis ${HOME_DIR}/tt-inference-server
+RUN chmod -R a+rwX ${HOME_DIR}/tt-inference-server
+
 # Fix venv symlinks after copy and install additional app requirements
 RUN cd ${PYTHON_ENV_DIR}/bin \
     && rm -f python python3 \
