@@ -23,8 +23,9 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C4 | 1/5 solved (COBOL), 170.6 min evaluation | FEAL became a 170.6 min straggler; no sampled KV waiting |
 | Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
 | Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; ten-case control dispatched |
+| Terminal expanded ten, C2 full deadline | 4/10 solved, 196.7 min evaluation | Original first five 1/5; added five 3/5; HTML timed out at three hours |
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
-| Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster with lower reward than C4/ten, SWE slower than C2/ten |
+| Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
 `2c1e1ebdd638886821f35113a5fd0d6335d71608`, except the 192K
@@ -1112,6 +1113,46 @@ snapshot was warm and API readiness took about 4 min 54 s. Raw artifacts
 and numeric summary are under `/home/mvasiljev/build/gemma-terminal-c4-main/`
 and `/home/mvasiljev/build/gemma-terminal-c4-main-summary.json`.
 
+### C2 full-deadline ten-case Terminal control
+
+The [C2/ten control](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996976665)
+used the same pinned Metal image and ten Terminal IDs as C4/ten. It
+recorded **10/10 case results, 4/10 solved**, with one explicit
+`AgentTimeoutError`: HTML filter reached its three-hour limit and scored
+zero. The original first five solved only COBOL (**1/5**); the added five
+solved git multibranch, password recovery and regex log (**3/5**).
+The test job lasted **203.57 minutes**, including startup/reporting, and
+the evaluation wall was **196.72 minutes**. CI marked the run failed because
+the ten-case 40% score missed its generic full-set H100 44.94% gate;
+this is not a hardware or case-execution failure.
+
+| Ten-case Terminal measure | C2 full deadline | C4 full deadline |
+| --- | ---: | ---: |
+| Evaluation wall, min | 196.72 | 110.26 |
+| Case-clock sum, min | 390.83 | 350.47 |
+| Observed case parallelism | 1.99 | 3.18 |
+| Solved first five / added five | 1 / 3 | 2 / 2 |
+| Model API calls | 173 | 151 |
+| Input / output tokens | 2.390M / 462.3K | 2.162M / 417.9K |
+| Sum API / other case time, min | 252.27 / 138.57 | 266.07 / 84.40 |
+| Peak / p95 sampled KV | 44.1% / 23.5% | 51.9% / 33.5% |
+| Waiting samples | 0/1,181 | 2/671 |
+
+C4's observed evaluation wall was **43.9% shorter** with the same aggregate
+reward, while the solved cases differed: C4 solved HTML, C2 solved git.
+C2 generated **10.6% more output tokens** and took a different agent path,
+so the wall ratio is not a controlled pure model-speed ratio. The case-clock
+sum differed by 11.5%, much less than the wall difference; C4 overlapped
+more case work. On C2, HTML alone ran **180.38 minutes**, including 96.79
+minutes of recorded model API calls and 83.59 minutes outside them, then
+timed out. The four C2 solved cases each completed within 25 minutes;
+that observation motivates the matched one-hour control but does not
+establish its score. C2 had **no sampled waiting or logged preemption**;
+its 191 trace warm/capture intervals summed to 65.8 seconds. No AICLK
+warning was found. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c2-ten-main/` and
+`/home/mvasiljev/build/gemma-terminal-c2-ten-main-summary.json`.
+
 ### C4 ten-case Terminal expansion
 
 The [matched C4/ten Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996981703)
@@ -1352,11 +1393,13 @@ minutes, 24.81 other case-minutes, 3.407M input and **98,023 output
 tokens**. The C4 thinking-on run solved 4/10 in 110.26 minutes with 418K
 output tokens; its batch width and trajectories differ, so that comparison
 does not isolate the thinking flag. The matched C2/ten thinking-on control
-is still running. The five-case pilot and this expansion both show large
-Terminal output reduction, but the ten-case reward is lower than C4's and
-the solved-case identities differ. This policy should remain an optional
-speed setting until a larger or repeated quality check shows it maintains
-the required reward.
+finished **4/10 in 196.72 minutes** with **462,346 output tokens**. It
+solved COBOL, git, password recovery and regex; thinking-off retained the
+first three and lost regex on its stochastic path. With batch, image and
+case list fixed, the thinking-off run used **78.8% fewer output tokens**
+and **72.3% less evaluation wall**, but solved one fewer case. The five-case
+pilot's reward tie therefore did not hold at ten. Keep thinking-off as an
+optional speed setting, rather than a quality-preserving Terminal default.
 
 | SWE/ten measure | C2 thinking on | C2 thinking off | C4 thinking on | C8 thinking on |
 | --- | ---: | ---: | ---: | ---: |
