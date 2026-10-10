@@ -34,7 +34,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C4 repeat | 4/10 solved, 147.8 min evaluation | Different solved cases; HTML failed after 148 min and 50 turns |
 | Terminal expanded ten, C8 clean host | 3/10 solved, 180.4 min evaluation | HTML timed out at three hours; eight active in only 2.5% of samples |
 | Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Fast pilot matched both C4 thinking-on aggregate scores, but the same-host repeat did not |
-| Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, so thinking-off is not a quality-preserving default |
+| Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, showing unstable quality on ten cases |
 | Terminal expanded twenty, C4 thinking off | 5/20 solved, 74.8 min evaluation | Original ten 2/10, added ten 3/10; zero errors, 68.8% peak KV; unsolved Caffe task set the wall |
 | Terminal expanded twenty, C4 thinking on | 4/20 solved, 279.8 min evaluation | Same IDs as off/20; two three-hour case timeouts, 68.1% peak KV |
 | Terminal expanded ten, C8 thinking off | 3/10 solved, 90.0 min evaluation | FEAL took 90 min; eight model rows active in only 1.5% of samples |
@@ -467,8 +467,8 @@ each spent about **6–7 minutes** outside evaluation, including server
 startup, model warmup and reporting. Their evaluations took 35–97
 minutes, and the workload was a separate CI job for each physical
 batch/policy. One startup-warmed physical bucket per server is therefore
-the useful **current granularity**: C4 for quality-preserving Terminal,
-C8 for speed-first SWE. Retaining multiple physical traces inside a
+the useful **current granularity**: C4 for the provisional full-thinking
+Terminal policy, C8 for SWE. Retaining multiple physical traces inside a
 single process would matter if these jobs alternated tasks on one live
 server; it is not an evidenced bottleneck in the current workflow.
 For scale, measured warm-to-capture intervals summed to 63.6–72.2 seconds
@@ -2041,9 +2041,10 @@ shorter repeat made 21% fewer API calls and wrote 14.7% fewer output
 tokens, which partly explains
 its faster wall; its lower sampled occupancy reflects less active work,
 not a batch-efficiency gain. The two C4 full-thinking ten-case runs both
-solved 4/10, so **thinking-off is not a quality-preserving Terminal
-default** on this evidence. Retain C4 full thinking with the three-hour
-deadline and 256K KV pool as the current choice.
+solved 4/10, so **thinking-off was not established as a quality-preserving
+Terminal default** on this ten-case evidence. Retain C4 full thinking with
+the three-hour deadline and 256K KV pool as the provisional reference-policy
+choice; the twenty-case comparison below changes the reward assessment.
 
 Across the three ten-case thinking-off observations at C2/C4, scores
 were **3/10, 4/10 and 1/10**, versus **4/10, 4/10 and 4/10** on the
@@ -2222,7 +2223,9 @@ warning, and 226 trace warm/capture intervals totaling 75.4 seconds.
 The wider physical trace had too little sustained work in these ten
 Terminal cases to establish a speed advantage, while the off policy
 again scored below both C4 full-thinking ten-case runs. Retain C4 full
-thinking for Terminal. Raw artifacts and numeric summary are under
+thinking provisionally for Terminal; the matched twenty-case result below
+does not show a score advantage for it. Raw artifacts and numeric summary
+are under
 `/home/mvasiljev/build/gemma-terminal-c8-ten-thinkoff/` and
 `/home/mvasiljev/build/gemma-terminal-c8-ten-thinkoff-summary.json`.
 
