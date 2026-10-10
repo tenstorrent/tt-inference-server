@@ -1236,6 +1236,23 @@ throughput. The server logged no AICLK or preemption warning, while
 the suite wall. The **88.3% KV peak** would be about 117.7% of a 192K
 pool under linear scaling, so the earlier smaller-pool candidate is not
 appropriate for this C8 workload.
+Holding the observed case clocks fixed, perfect packing into eight agent
+slots would require at least 1405.1/8 = **175.6 minutes**, only **5.5
+minutes (3.0%)** below the measured suite wall. That is a packing bound,
+not a prediction for a changed model policy: case clocks and token paths
+change under new concurrency. It does show that merely admitting more
+agents has little unused scheduling capacity to recover on this run;
+faster per-case inference, prefill or agent work matters more. Raising
+physical width above eight also faces the measured KV pressure, and the
+earlier C10/SWE20 run did not shorten suite wall.
+Generation throughput was positive in **98.7%** of ten-second server
+samples, and prompt throughput was positive in **93.5%**; the median
+positive generation sample was **40.35 tokens/s**, while total agent
+output divided by suite wall was **41.63 tokens/s**. These window flags
+cannot partition device time between prefill and decode, but they show
+nearly continuous mixed model work. The short 128/128 synthetic C8
+throughput of 273.57 output tokens/s is therefore not an estimate of
+this long-prompt agentic run's end-to-end rate.
 
 The sole error, Django 14771, is a `NonZeroAgentExitCodeError` after the
 mini-swe-agent subprocess exited 137 (SIGKILL) at 6.46 minutes and 12 API
