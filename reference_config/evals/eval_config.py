@@ -7151,15 +7151,23 @@ _eval_config_list = [
     # Chat API so the server renders the native template and the kolibri1
     # reasoning parser separates thinking from the final answer.
     #
-    # ci-long is the productization set: MMLU-Pro 25/subject (350), AIME full
-    # (30, one pass), GPQA Diamond full (198) at a 64K thinking budget. Measured
-    # on the 32-slot QB2 server (CI run 37777268044): long thinking generations
-    # decode at ~95-130 tok/s whatever the concurrency, so full GPQA at 64K is
-    # ~4M tokens, 10.5-12.5 h on its own. tt-shield cancels the job at 1080 min
-    # with no artifacts, hence: short tasks first, GPQA last and bounded by
-    # wall_clock_timeout_seconds so the run always finishes with the other two
-    # scored. Per-request timeouts cover a single 64K generation at long
-    # context (up to ~3.5 h), not just the 2 h default.
+    # Nightly (= ci-long; tt-shield's --ci-mode always runs ci-nightly) is the
+    # productization set: MMLU-Pro 25/subject (350), AIME full (30, one pass),
+    # GPQA Diamond 80 at a 64K thinking budget. Measured on the 32-slot QB2 CI
+    # server (runs 37777268044 and 37864081794): MMLU-Pro 3.5K tokens/question
+    # at ~100 tok/s aggregate (350 -> 3.4 h); AIME 25K tokens/question, 16 slots
+    # -> ~54 tok/s (30 -> 3.8 h); GPQA at 64K ~21K+ tokens/question and KV-bound
+    # (the 368K-token KV cache holds ~6 full 64K generations, so 8-20 requests
+    # run instead of 32 and aggregate decode drops from ~114 to ~85 tok/s):
+    # 80 -> ~6-7 h, full 198 -> >= 14.5 h, which does not fit next to anything
+    # in tt-shield's 1080-minute job (run 37864081794 was cancelled at the cap
+    # with GPQA at 142/198 and NO artifacts, losing the two finished scores).
+    # Hence: short tasks first, GPQA last, and EVERY task bounded by
+    # wall_clock_timeout_seconds with setup (~35 min) + sum of bounds < 18 h
+    # (evals workflow: 0.6 + 4 + 4.5 + 8 = 17.1 h). A per-user 64K generation
+    # takes 3.6-5.2 h (3.6-5 tok/s per user) plus queue wait, so the lm-eval
+    # per-request timeout equals the task bound: a timed-out request is re-sent
+    # from scratch (7 times in run 37864081794), pure waste.
     # =========================================================================
     EvalConfig(
         hf_model_repo="Aleph-Alpha/Kolibri-1-BF16",
@@ -7184,9 +7192,11 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
+                # 4 h bound (measured 3h25m for 350 questions).
+                wall_clock_timeout_seconds=14400,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 14400,
+                    "timeout": 14400,  # == wall bound: never retry a request
                 },
                 # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
                 # stream=false is required by lm-eval's chat-completions parser.
@@ -7200,18 +7210,18 @@ _eval_config_list = [
                     "top_k": 128,
                 },
                 # mmlu_pro is a group of 14 subtasks and lm-eval applies an int
-                # limit PER SUBTASK: 3 -> 42 questions nightly, 1 -> 14 smoke.
+                # limit PER SUBTASK: 25 -> 350 questions (+/-2.3 pts), 1 -> 14 smoke.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 3,
-                    EvalLimitMode.CI_LONG: 25,  # 25 per subject -> 350 (+/-2.3 pts)
+                    EvalLimitMode.CI_NIGHTLY: 25,
+                    EvalLimitMode.CI_LONG: 25,
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
-            # Long-generation math sanity check for the batched-decode MoE path
-            # (tt-agentic-bringup-qb2#75). Informational ("should"): 6 problems
-            # nightly cannot resolve the published score, and the model card's
-            # thinking budget is unknown; this just has to produce correct answers
-            # through tens of thousands of decode steps on the grouped/EP path.
+            # Long-generation math check for the batched-decode MoE path
+            # (tt-agentic-bringup-qb2#75). Informational ("should"): one pass over
+            # 30 problems is +/-4 pts, and the model card's thinking budget is
+            # unknown; this has to produce correct answers through tens of
+            # thousands of decode steps on the grouped/EP path.
             EvalTask(
                 task_name="aime25",
                 priority="should",
@@ -7232,9 +7242,12 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
                 max_concurrent=16,
+                # 4.5 h bound (measured 3h50m for 30 problems at 16 slots: the
+                # tail of 64K solutions at ~5 tok/s per user dominates).
+                wall_clock_timeout_seconds=16200,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 21600,  # a 65K solution at 16 concurrent is up to ~2.5 h
+                    "timeout": 16200,  # == wall bound: never retry a request
                 },
                 # Model-card sampling; a 64K generation budget because AIME
                 # solutions regularly exceed the 32K that empties GPQA answers.
@@ -7248,8 +7261,8 @@ _eval_config_list = [
                     "top_k": 128,
                 },
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 30 problems * 0.2 = 6
-                    EvalLimitMode.CI_LONG: 30,  # all 30 problems, one pass (+/-4 pts)
+                    EvalLimitMode.CI_NIGHTLY: 30,  # all 30 problems, one pass (+/-4 pts)
+                    EvalLimitMode.CI_LONG: 30,
                     EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
                 },
             ),
@@ -7270,13 +7283,15 @@ _eval_config_list = [
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 use_chat_api=True,
-                # Task bound (13 h): leaves room for the two short tasks above
-                # inside tt-shield's 1080-minute job cap. Exceeding it marks GPQA
-                # incomplete (rc=124) instead of losing the whole run.
-                wall_clock_timeout_seconds=46800,
+                # 8 h bound for 80 questions (estimate 6-7 h: ~1.8M tokens at
+                # ~85 tok/s KV-bound plus the tail of 64K generations). Exceeding
+                # it marks GPQA incomplete (rc=124) instead of losing the run.
+                # Full GPQA (198) at 64K measured >= 14.5 h alone: it needs its
+                # own run with a >= 16 h bound and nothing else in the job.
+                wall_clock_timeout_seconds=28800,
                 model_kwargs={
                     "max_length": 262144,
-                    "timeout": 21600,  # one 64K generation at long context is up to ~3.5 h
+                    "timeout": 28800,  # == wall bound: never retry a request
                 },
                 # Model-card sampling (temperature 1.0, top_p 0.97, top_k 128).
                 # stream=false is required by lm-eval's chat-completions parser.
@@ -7291,9 +7306,11 @@ _eval_config_list = [
                     "top_p": 0.97,
                     "top_k": 128,
                 },
+                # 80 of 198 (+/-4.5 pts); the first 80 docs, a superset of the
+                # 40 scored in runs 37616282707 / 37777268044.
                 limit_samples_map={
-                    EvalLimitMode.CI_NIGHTLY: 0.2,  # 40 of 198
-                    EvalLimitMode.CI_LONG: 198,  # full GPQA Diamond (+/-2.8 pts)
+                    EvalLimitMode.CI_NIGHTLY: 80,
+                    EvalLimitMode.CI_LONG: 80,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
