@@ -1225,6 +1225,16 @@ The first renewed hold took `p04t07` at 03:37, and the second took
 before the C10/SWE20 job was reissued; neither canceled C10 job reached
 model work.
 
+After those holds completed near 06:28 and 06:34, the larger C4
+Terminal/20 and C8 SWE/50 follow-ups required the same protection.
+The new [fabric-host hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033689251)
+claimed `p04t05`; the [occupied-host hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033842036)
+claimed `p04t07` after three exact-name attempts landed on clean hosts
+and exited. Both were verified in their read-only sleep step before the
+larger tests were dispatched. The C4 Terminal/20 and C8 SWE/50 test jobs
+then started on clean `p05t01` and `p05t06`, respectively. No runner
+reset or unowned-container mutation was performed.
+
 ## Current-main Terminal fixed-five result at C2
 
 The [C2 fixed-five Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963842946)
