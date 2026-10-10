@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "2.0",
+  "id": "tt-lab-gemma31-p150x4",
+  "meta": {
+    "title": "Gemma 4 31B on tt-lab, four P150 cards",
+    "notes": "Off-catalog spec for run.py --requirements-json: the standard serving benchmark at concurrency 1/8/16 against an already running server (deploy/tt-lab-gemma31/DEVICE_TEST_PLAN.md). No targets: measurement only."
+  },
+  "model": {
+    "name": "google/gemma-4-31B-it",
+    "contextLength": 32768
+  },
+  "deployment": {
+    "hardware": "P150X4",
+    "maxConcurrencyPerInstance": 16
+  },
+  "scenarios": [
+    {
+      "id": "chat-1k-128",
+      "kind": "text",
+      "name": "ISL 1024 / OSL 128",
+      "sweep": [
+        {"isl": 1024, "osl": 128, "concurrency": 1},
+        {"isl": 1024, "osl": 128, "concurrency": 8},
+        {"isl": 1024, "osl": 128, "concurrency": 16}
+      ]
+    },
+    {
+      "id": "chat-128-512",
+      "kind": "text",
+      "name": "ISL 128 / OSL 512 (decode bound)",
+      "sweep": [
+        {"isl": 128, "osl": 512, "concurrency": 1},
+        {"isl": 128, "osl": 512, "concurrency": 8},
+        {"isl": 128, "osl": 512, "concurrency": 16}
+      ]
+    }
+  ]
+}
