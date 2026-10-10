@@ -797,7 +797,10 @@ def _selected_eval_tasks(tasks, runtime_config):
     only the venvs the run will actually use (--eval-samples / smoke-test).
     Falls back to all tasks when nothing narrows them (over-provision is safe;
     under-provision would break a task the run still tries to execute)."""
-    names = _eval_samples_task_names(runtime_config)
+    from llm_module.eval_configs import eval_task_names
+
+    names = eval_task_names(runtime_config)
+    names = set(names) if names else _eval_samples_task_names(runtime_config)
     if names:
         sel = [t for t in tasks if t.task_name in names]
         if sel:
