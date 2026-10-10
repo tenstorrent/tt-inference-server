@@ -9761,7 +9761,10 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                max_concurrent=32,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
                     # Whole-request budget, NOT an idle timer. The pinned harness builds
                     # its session as ClientTimeout(total=self.timeout)
@@ -9844,7 +9847,10 @@ _eval_config_list = [
                 ),
                 use_chat_api=True,
                 capture_reasoning=True,
-                max_concurrent=32,
+                # 4, not 32: the wall-clock budget below was measured at 4 clients (Shield run 37996687040,
+                # TTIS ref e5325c11, lm_eval num_concurrent=4). With a 131072-token KV pool about one
+                # 123k-token generation fits resident, so 32 deep-reasoning clients mostly preempt.
+                max_concurrent=4,
                 model_kwargs={
                     # Whole-request budget, NOT an idle timer. The pinned harness builds
                     # its session as ClientTimeout(total=self.timeout)
