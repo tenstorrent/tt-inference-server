@@ -1124,7 +1124,7 @@ solved git multibranch, password recovery and regex log (**3/5**).
 The test job lasted **203.57 minutes**, including startup/reporting, and
 the evaluation wall was **196.72 minutes**. CI marked the run failed because
 the ten-case 40% score missed its generic full-set H100 44.94% gate;
-this is not a hardware or case-execution failure.
+the case-level timeout is reported separately above.
 
 | Ten-case Terminal measure | C2 full deadline | C4 full deadline |
 | --- | ---: | ---: |
@@ -1450,7 +1450,9 @@ failed against the 44.94% full-set H100 reference.
 Wall fell **42.0%** because long unsuccessful paths were stopped. COBOL
 still passed in 9.19 versus 9.58 minutes; FEAL and QEMU remained unsolved
 on different stochastic paths. A one-hour cap can lose cases that need
-later work, so the five-case tie is insufficient for a default change.
+later work: the C4/ten full-deadline run solved HTML filter after **88.29
+minutes**, which a one-hour deadline on that trajectory would have cut off.
+The five-case tie is insufficient for a default change.
 The [C2 ten-case one-hour branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-60m)
 changes only this deadline from C2/ten. Its
 [matched Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38004228585)
