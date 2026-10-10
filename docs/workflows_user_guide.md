@@ -58,7 +58,6 @@ python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workf
 - [Release Workflow](#release-workflow)
   - [Release Return Codes](#release-return-codes)
 - [Performance Benchmarks](#performance-benchmarks)
-  - [Benchmarking Steps](#benchmarking-steps)
 - [Accuracy Evaluations](#accuracy-evaluations)
 - [Reports](#reports)
 - [Server Spec Tests](#server-spec-tests)
@@ -97,7 +96,7 @@ You will need to accept the terms for any specific gated datasets or model repos
 | Option         | Description                                                                                  |
 |----------------|----------------------------------------------------------------------------------------------|
 | `--model`      | Name of the model to run. Available choices are defined in `MODEL_SPECS`. |
-| `--workflow`   | Workflow to run: `benchmarks`, `evals`, `release`, `reports`, `server`, `spec_tests` (internal), `stress_tests` (internal), `tests` (internal). |
+| `--workflow`   | Workflow to run: `server`, `benchmarks`, `evals`, `release`, `spec_tests`, `stress_tests`, `agentic`, `agentic_traces`, `serving_bench`, `prefill_decode`, `training_tests`. Reports are written by every workflow; there is no `reports` workflow. |
 
 ### Model and Device Arguments
 
@@ -148,9 +147,9 @@ See [Host Storage Options](../workflows/README.md#host-storage-options) in the w
 
 ## Serving LLMs with vLLM
 
-You can serve a model with vLLM or another OpenAI API-compatible inference server however you like. The client-side workflows (`evals`, `benchmarks`, `reports`) only send HTTP requests to the inference server, so they work with any compatible server.
+You can serve a model with vLLM or another OpenAI API-compatible inference server however you like. The client-side workflows (`evals`, `benchmarks`, `stress_tests`, `spec_tests`) only send HTTP requests to the inference server, so they work with any compatible server.
 
-For example, if you run vLLM following the docs at https://github.com/tenstorrent/vllm/tree/dev/tt_metal during development, you can run the client-side workflows (`evals`, `benchmarks`, `reports`, or all of them with `release`) against that already running server.
+For example, if you run vLLM with the [Tenstorrent vLLM plugin](../tt-vllm-plugin/README.md) during development, you can run the client-side workflows (or all of them with `release`) against that already running server; use `--server-url` and `--service-port` for a server on another host or port.
 
 This section describes how to use `run.py` automation to also run the inference server.
 
@@ -286,45 +285,21 @@ This is a convenience so that a single run on device executes all workflows requ
 
 ## Performance Benchmarks
 
-The `benchmarks` workflow sends random data prompts to the inference server and profiles throughput and latency.
+The `benchmarks` workflow sends synthetic prompts at a sweep of input lengths, output lengths and concurrencies to the inference server, measures latency and throughput, and grades the results against the model's performance targets.
+
+Start the server, wait for its device warmup to finish (`Background trace capture completed successfully` in the container log), then benchmark it:
 
 ```bash
+python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow server --docker-server
 python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks
 ```
 
-For a quick development smoke test, add `--limit-samples-mode smoke-test`:
+For a quick development smoke test, add `--limit-samples-mode smoke-test`; it runs one tiny point and ignores `--concurrency-sweeps`. `--tools aiperf`, `genai` or `guidellm` selects a client other than the default `vllm bench serve`.
 
-```bash
-python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n300 --workflow benchmarks --limit-samples-mode smoke-test
-```
+The run log streams to `workflow_logs/run_logs/`; the Markdown and JSON report and the raw client output are written under `workflow_logs/reports_output/benchmarks/`.
 
-In smoke-test mode, `benchmarks` selects a reduced single benchmark target and ignores `--concurrency-sweeps`.
-
-### Benchmarking Steps
-
-The benchmarks workflow follows this sequence (visible in the runtime logs streamed to `workflow_logs/run_logs/`):
-
-1. **Set up workflow virtual environments**: `run.py` bootstraps dedicated venvs for benchmark scripts.
-2. **Start workflow**: `run_benchmarks.py` is launched with the runtime model spec JSON.
-3. **Wait for inference server**: Polls the `/health` endpoint until the vLLM server is ready.
-4. **Trace capture**: Sends initial requests at each configured input length to warm up the model and compile traces.
-5. **Run benchmarks**: Executes a sweep of configurations varying input/output sequence length and concurrency, saving results as JSON.
-
-```log
-INFO: Running benchmark Llama-3.2-1B-Instruct: 1/18
-INFO: Running command: .workflow_venvs/.venv_benchmarks_vllm/bin/serve --backend vllm ...
-Starting initial single prompt test run...
-Initial test run completed. Starting main benchmark run...
-100%|██████████| 8/8 [00:17<00:00, 2.18s/it]
-============ Serving Benchmark Result ============
-...
-==================================================
-```
-
-Benchmark output files are saved to `workflow_logs/benchmarks_output/`, for example:
-`benchmark_Llama-3.2-1B-Instruct_n300_<timestamp>_isl-128_osl-128_maxcon-1_n-8.json`
-
-See [benchmarking docs](../reference_config/benchmarking/README.md) for more detail on code.
+- [Performance Benchmarks reference](../reference_config/benchmarking/README.md): the sweep, warmup, targets and grading, the fixed-workload protocol, outputs, and a recommended procedure for acceptance runs.
+- [Benchmarking Tools](benchmarking_tools.md): what each client tool measures and why their numbers differ.
 
 ## Accuracy Evaluations
 
@@ -438,9 +413,8 @@ Log types:
 - **run_logs**: the stdout and stderr output from `run.py`, stored for debugging.
 - **runtime_model_specs**: the serialized `ModelSpec` + `RuntimeConfig` JSON used for each run.
 - **docker_server**: the logs from the Docker container running the vLLM inference server.
-- **benchmarks_output**: the raw data output from the `benchmarks` workflow.
 - **evals_output**: the raw data output from the `evals` workflow.
-- **reports_output**: for each workflow, the markdown (.md) summary output and `/data` summary data. The `release` workflow output has a summary report of both `benchmarks` and `evals` results, used to determine if a model passes release validation. An example report: https://github.com/tenstorrent/tt-inference-server/issues/164.
+- **reports_output**: for each workflow, the markdown (.md) summary output and `/data` summary data; for `benchmarks`, also the raw client output (`llm/`). The `release` workflow output has a summary report of both `benchmarks` and `evals` results, used to determine if a model passes release validation. An example report: https://github.com/tenstorrent/tt-inference-server/issues/164.
 - **spec_tests_output**: JSON and Markdown test reports from the `spec_tests` workflow.
 - **tests_output**: pytest result output from the `tests` workflow.
 - **stress_tests_output**: result data from the `stress_tests` workflow.
@@ -453,10 +427,6 @@ The logs have the following structure:
 
 ```
 ./workflow_logs
-├── benchmarks_output
-│   ├── benchmark_Llama-3.2-1B-Instruct_n300_2025-03-25_04-23-40_isl-128_osl-128_maxcon-1_n-8.json
-│   ├── ...
-│   └── benchmark_Llama-3.2-1B-Instruct_n300_2025-03-25_04-48-11_isl-16000_osl-64_maxcon-32_n-256.json
 ├── docker_server
 │   └── vllm_2025-03-25_20-58-29_Llama-3.2-1B-Instruct_n300_benchmarks.log
 ├── evals_output
@@ -465,9 +435,12 @@ The logs have the following structure:
 │       └── samples_meta_gpqa_2025-03-25T04-57-53.064778.jsonl
 ├── reports_output
 │   ├── benchmarks
-│   │   ├── data
-│   │   │   └── benchmark_stats_Llama-3.2-1B-Instruct_n300.csv
-│   │   └── benchmark_display_Llama-3.2-1B-Instruct_n300.md
+│   │   └── meta-llama__Llama-3.2-1B-Instruct_n300_benchmarks
+│   │       ├── data
+│   │       │   └── report_data_<id>.json
+│   │       ├── llm
+│   │       │   └── benchmark_meta-llama__Llama-3.2-1B-Instruct_<timestamp>_isl-128_osl-128_maxcon-1_n-8.json
+│   │       └── report_<id>.md
 │   ├── evals
 │   │   ├── data
 │   │   │   └── eval_data_Llama-3.2-1B-Instruct_n300.json

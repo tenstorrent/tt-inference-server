@@ -540,8 +540,8 @@ in [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt)), the
 stamped with its ref, so re-running with the same pin skips setup and changing
 the pin forces a re-checkout and reinstall.
 
-`HF_TOKEN` is required even though the workflow is client-side: the Weka trace
-datasets are gated on the Hub.
+`HF_TOKEN` is required for this workflow even though it is client-side; the
+Weka trace datasets themselves are public (Apache-2.0).
 
 ### As part of a release
 
