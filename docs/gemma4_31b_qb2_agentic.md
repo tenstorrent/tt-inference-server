@@ -1093,7 +1093,13 @@ case-minutes. The ten-case run's total output (418K) was near the five-case
 run's 410K, and its non-API case time fell from 213.0 to 84.4 minutes.
 These changes explain why adding cases did not increase this observed wall;
 they are stochastic workload differences, not a claim that C4 made ten
-cases inherently faster than five. The larger denominator improves the
+cases inherently faster than five. The ten-case server also had four active
+requests in **276/671** samples (41.1%) versus **84/1,024** (8.2%) in
+the fixed-five run, and its median positive generation sample was 88.5
+versus 67.4 tokens/s. More cases kept the four agent slots occupied more
+often, consistent with better batch utilization, while the changed output
+and tool paths prevent assigning a precise speedup to occupancy alone.
+The larger denominator improves the
 reward view, while a matched C2/ten comparison is still needed for batch
 selection. Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c4-ten-main/` and
