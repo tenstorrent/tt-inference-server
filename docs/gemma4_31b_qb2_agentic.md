@@ -57,11 +57,15 @@ logical request counts up to that width. These small fixed subsets do not
 establish parity with the full 89-task Terminal or 500-instance SWE H100
 reference scores of 44.94% and 64.8%.
 
-The final matched larger checks are
+The larger matched checks in flight are
 [C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
 against the completed thinking-off Terminal/20 list, and
 [C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
-with thirty predeclared additions. Both pin the same Metal main image.
+against [C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
+on the exact same fifty IDs. A [C4 server with eight Terminal
+trials](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
+is queued to test scheduling independently of physical decode width.
+All pin the same Metal main image.
 
 ## Existing evidence
 
