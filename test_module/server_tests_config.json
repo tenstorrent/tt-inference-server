@@ -91,7 +91,8 @@
       "01-ai/Yi-1.5-9B-Chat",
       "NousResearch/Hermes-3-Llama-3.2-3B",
       "meta-llama/Llama-3.1-8B",
-      "Qwen/Qwen2.5-Coder-32B"
+      "Qwen/Qwen2.5-Coder-32B",
+      "01-ai/Yi-1.5-9B"
     ]
   },
   "available_markers": {
@@ -948,6 +949,16 @@
       "id_name": "Qwen--Qwen2.5-Coder-32B",
       "weights": [
         "Qwen/Qwen2.5-Coder-32B"
+      ]
+    },
+    "01-ai/Yi-1.5-9B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "01-ai--Yi-1.5-9B",
+      "weights": [
+        "01-ai/Yi-1.5-9B"
       ]
     }
   },
