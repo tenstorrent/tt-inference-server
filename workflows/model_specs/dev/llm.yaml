@@ -1578,6 +1578,7 @@ templates:
         MESH_DEVICE: "P150x8"
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p150_x8_mesh_graph_descriptor.textproto"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
       vllm_args:
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
