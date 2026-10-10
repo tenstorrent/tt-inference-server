@@ -132,10 +132,14 @@ def test_serve_plan_from_dev_gpu_spec(model):
         "--max-model-len",
         str(max_context),
         "--max-num-seqs",
-        str(max_concurrency),
+        str(plan["max_num_seqs"]),
         "--dtype",
         "bfloat16",
     ]
+    # Both are small, so the GPU throughput policy raises max_num_seqs -- when
+    # the Hub (or the token, for gated Llama) is reachable to size the model.
+    assert plan["max_num_seqs"] in (max_concurrency, gpuref.GPU_HIGH_CONCURRENCY)
+    assert plan["client_concurrency"] == plan["max_num_seqs"]
     assert argv[argv.index("--revision") + 1] == revision
     assert argv[argv.index("--tokenizer-revision") + 1] == revision
     for dropped in ("--block-size", "--additional-config", "--max-log-len"):
@@ -676,6 +680,37 @@ def test_resume_needs_the_same_serve_args_and_every_task(tmp_path):
     assert not gpuref.run_covers(
         prov, results, ["serve", model, "--x", "1"], ["humaneval"]
     )
+    # --max-num-seqs only schedules requests: a run at another value still counts.
+    prov["vllm_serve_command"] += ["--max-num-seqs", "32"]
+    assert gpuref.run_covers(
+        prov,
+        results,
+        ["serve", model, "--x", "1", "--max-num-seqs", "256"],
+        ["mmlu_pro"],
+    )
+
+
+def test_gpu_concurrency_raises_small_models_only():
+    plan = {
+        "max_concurrency": 32,
+        "vllm_serve_args": [
+            "serve",
+            "m",
+            "--max-num-seqs",
+            "32",
+            "--dtype",
+            "bfloat16",
+        ],
+    }
+    small = gpuref.gpu_concurrency(plan, 8_190_000_000)  # Qwen3-8B
+    assert small["vllm_serve_args"][3] == str(gpuref.GPU_HIGH_CONCURRENCY)
+    assert small["max_num_seqs"] == small["client_concurrency"] == 256
+    assert plan["vllm_serve_args"][3] == "32"  # the input plan is not mutated
+    for params in (14_800_000_000, None):  # Qwen3-14B; unknown size
+        big = gpuref.gpu_concurrency(plan, params)
+        assert big["vllm_serve_args"] == plan["vllm_serve_args"]
+        assert big["max_num_seqs"] == big["client_concurrency"] == 32
+    assert gpuref.model_params({"safetensors": {"total": 7}}, None) == 7
 
 
 def test_patch_eval_config_sets_reference_and_clears_request():

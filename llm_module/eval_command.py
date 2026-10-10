@@ -26,6 +26,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SMOKE_TEST_EVAL_LIMIT = 3
+# Client concurrency override (an int): replaces num_concurrent and its
+# device_model_spec.max_concurrency clamp. See build_eval_command.
+EVAL_CLIENT_CONCURRENCY_ENV = "TT_EVAL_CLIENT_CONCURRENCY"
 
 # Per-request budget reserved for the prompt when clamping max_gen_toks against
 # device_model_spec.max_context. A floor prevents pathological clamps on
@@ -262,7 +265,18 @@ def build_eval_command(
     )
 
     effective_max_concurrent = task.max_concurrent
-    if effective_max_concurrent and device_max_concurrency:
+    # Operator override for bring-your-own-server GPU runs, where the server's
+    # max_num_seqs is set by the operator, not by device_model_spec (the
+    # Colab GPU-reference runner sets both together). It changes only how
+    # many requests are in flight; prompts, sampling and scoring are the same.
+    client_override = os.environ.get(EVAL_CLIENT_CONCURRENCY_ENV)
+    if client_override and effective_max_concurrent:
+        logger.info(
+            f"{EVAL_CLIENT_CONCURRENCY_ENV}={client_override}: {task.task_name} "
+            f"num_concurrent {task.max_concurrent} -> {client_override}"
+        )
+        effective_max_concurrent = int(client_override)
+    elif effective_max_concurrent and device_max_concurrency:
         effective_max_concurrent = min(effective_max_concurrent, device_max_concurrency)
         if effective_max_concurrent != task.max_concurrent:
             logger.info(

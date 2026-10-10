@@ -51,6 +51,12 @@ GIB = float(1 << 30)
 # chunk that big makes vLLM's activation profiling OOM (cogito-qwen-14B on an
 # A100: 6.75 GiB for 131072 tokens). It only schedules work; outputs match.
 GPU_MAX_BATCHED_TOKENS = 16384
+# GPU throughput policy: the TT row's max_concurrency (often 32) leaves an
+# A100 mostly idle on small models. Up to ~8B parameters, serve with this many
+# sequences and send as many concurrent requests (the runner exports
+# TT_EVAL_CLIENT_CONCURRENCY). Prompts, sampling and scoring are unchanged.
+GPU_HIGH_CONCURRENCY = 256
+GPU_HIGH_CONCURRENCY_MAX_PARAMS = 9e9
 REJECTION_PATTERN = re.compile(
     r"maximum context length|truncat|HTTP/1\.1\" 400|400 Bad Request", re.IGNORECASE
 )
@@ -238,6 +244,24 @@ def params_from_config(config: Optional[Dict[str, Any]]) -> Optional[int]:
         return None
 
 
+def model_params(meta: Optional[Dict[str, Any]], config: Optional[Dict[str, Any]]):
+    """Parameter count: the Hub's safetensors total, else from config.json."""
+    return ((meta or {}).get("safetensors") or {}).get("total") or params_from_config(
+        config
+    )
+
+
+def gpu_concurrency(plan: Dict[str, Any], params: Optional[int]) -> Dict[str, Any]:
+    """The plan with the GPU throughput policy applied: --max-num-seqs and the
+    eval client's concurrency (recorded as client_concurrency)."""
+    conc = plan["max_concurrency"]
+    if params and params <= GPU_HIGH_CONCURRENCY_MAX_PARAMS:
+        conc = max(conc, GPU_HIGH_CONCURRENCY)
+    argv = list(plan["vllm_serve_args"])
+    argv[argv.index("--max-num-seqs") + 1] = str(conc)
+    return dict(plan, vllm_serve_args=argv, max_num_seqs=conc, client_concurrency=conc)
+
+
 def model_facts(
     model: str, plan: Dict[str, Any], token: Optional[str]
 ) -> Dict[str, Any]:
@@ -248,15 +272,14 @@ def model_facts(
     use_token = token if gated is not False else None
     meta = hf_get(f"{HF}/api/models/{model}/revision/{rev}", use_token)
     config = hf_get(f"{HF}/{model}/resolve/{rev}/config.json", use_token)
-    params = ((meta or {}).get("safetensors") or {}).get("total") or params_from_config(
-        config
-    )
+    params = model_params(meta, config)
     memory = None
     if params:
         ctx, conc = plan["max_context"], plan["max_concurrency"]
         memory = memory_estimate(params, config, ctx, conc)
         memory["verdicts"] = gpu_verdicts(memory, ctx)
     row = dict(plan, model=model, ok=True, gated=gated, memory=memory, config=config)
+    row["params"] = params
     row.update(needs_token=gated is not False, have_token=token is not None)
     if token and gated is not False:
         row["token_can_read"] = meta is not None
@@ -536,6 +559,9 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "model_revision_sha": resolved.get("sha"),
         "max_context": plan.get("max_context"),
         "max_concurrency": plan.get("max_concurrency"),
+        # GPU throughput policy (gpu_concurrency); None on older plans.
+        "max_num_seqs": plan.get("max_num_seqs"),
+        "client_concurrency": plan.get("client_concurrency"),
         "vllm_serve_command": [args.vllm_bin] + plan.get("vllm_serve_args", []),
         "max_num_batched_tokens": next(
             (
@@ -773,15 +799,24 @@ def run_covers(
     prov: Dict[str, Any], results_dir: Path, argv: List[str], tasks: List[str]
 ) -> bool:
     """A finished run counts for resume only if it served exactly this plan
-    (same vllm serve args: revision, context, flags) and scored every task."""
+    (same vllm serve args: revision, context, flags) and scored every task.
+    --max-num-seqs is ignored: it schedules requests, not what they compute."""
+
+    def semantic(args):
+        args = list(args)
+        if "--max-num-seqs" in args:
+            del args[args.index("--max-num-seqs") : args.index("--max-num-seqs") + 2]
+        return args
+
     scored = {
         r["task"]
         for r in summary_rows(results_dir.parent)
         if r["model"] == prov.get("model")
     }
-    return (prov.get("vllm_serve_command") or [None])[1:] == argv and set(
-        tasks
-    ) <= scored
+    return (
+        semantic((prov.get("vllm_serve_command") or [None])[1:]) == semantic(argv)
+        and set(tasks) <= scored
+    )
 
 
 # A100 wall minutes per task for a ~8B model, measured on the 2026-10-08/09 Colab
@@ -873,6 +908,7 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
                 )
             )
         facts = model_facts(model, plan, token)
+        plan = gpu_concurrency(plan, facts["params"])
         memory = facts["memory"] or {}
         model_tasks = [t["task"] for t in targets if t["model"] == model]
         # run.py evaluates every lm-eval task of the model, targeted or not.
@@ -1246,6 +1282,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0 if cap_bound(load_json(Path(args.evidence)), int(args.cap)) else 1
     if args.cmd == "serve-plan":
         plan = serve_plan(load_gpu_spec(args.model, Path(args.ttis_dir)))
+        rev, token = plan.get("revision") or "main", hf_token()
+        meta = hf_get(f"{HF}/api/models/{args.model}/revision/{rev}", token)
+        config = hf_get(f"{HF}/{args.model}/resolve/{rev}/config.json", token)
+        plan = gpu_concurrency(plan, model_params(meta, config))
         print(json.dumps(plan, indent=2))
     elif args.cmd == "plan-argv":
         print("\n".join(load_json(Path(args.plan))["vllm_serve_args"]))

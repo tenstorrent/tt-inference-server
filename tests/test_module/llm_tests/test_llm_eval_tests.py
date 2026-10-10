@@ -155,6 +155,28 @@ def test_fewshot_as_multiturn_is_passed_when_set(value, flag):
     assert [p for p in command if p not in ("--fewshot_as_multiturn", flag)] == baseline
 
 
+def test_client_concurrency_override_replaces_num_concurrent_and_clamp(monkeypatch):
+    """TT_EVAL_CLIENT_CONCURRENCY (bring-your-own-server GPU runs) sets
+    num_concurrent past the device_model_spec clamp; unset changes nothing."""
+
+    def num_concurrent():
+        command = [
+            str(p) for p in _build_eval_test_command(EvalTask(task_name="mmlu_pro"))
+        ]
+        args = dict(
+            i.split("=", 1)
+            for i in command[command.index("--model_args") + 1].split(",")
+        )
+        return args["num_concurrent"]
+
+    monkeypatch.delenv("TT_EVAL_CLIENT_CONCURRENCY", raising=False)
+    assert num_concurrent() == "1"  # clamped to max_concurrency=1
+    monkeypatch.setenv("TT_EVAL_CLIENT_CONCURRENCY", "")
+    assert num_concurrent() == "1"
+    monkeypatch.setenv("TT_EVAL_CLIENT_CONCURRENCY", "256")
+    assert num_concurrent() == "256"
+
+
 def test_mistral_7b_mmlu_pro_runs_single_turn():
     """Mistral's template rejects consecutive user turns, which mmlu_pro's
     multiturn few-shot layout produces (its examples carry the answer in the

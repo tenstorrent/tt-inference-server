@@ -135,6 +135,8 @@ Before provisioning, the preflight estimates bf16 weights plus the KV cache for 
 
 If vLLM still refuses `max_context`, the runner retries once at vLLM's own estimate. It records `max_model_len_cap` in `provenance.json` and a note in `status.json`, so review those runs. The prefill chunk (`--max-num-batched-tokens`) is capped at 16384 on GPU. The TT default equals `max_context`, and at 131072 that made vLLM's memory profiling run out of memory on an A100. The chunk size only changes how work is scheduled, not the scores. `max_num_seqs` is never reduced: vLLM queues what does not fit.
 
+For models up to about 8B parameters (9e9 or fewer, from the Hub's safetensors count or `config.json`), the runner serves with `--max-num-seqs 256` and exports `TT_EVAL_CLIENT_CONCURRENCY=256`, so the eval client sends 256 concurrent requests instead of the TT row's `max_concurrency` (often 32), which leaves an A100 mostly idle. Prompts, sampling and scoring are unchanged. Larger models keep the row's value. Both values are recorded in `provenance.json` (`max_num_seqs`, `client_concurrency`), and resume ignores `--max-num-seqs`.
+
 ## Outputs
 
 ```

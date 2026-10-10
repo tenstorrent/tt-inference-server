@@ -218,7 +218,12 @@ run_model() {
             status="failed"; note="vLLM did not become ready (vllm_server.log)"
         else
             phase "model ${idx}/${total} ${model}: evals"
-            (cd "${TTIS_DIR}" && python3 run.py --workflow evals --tt-device gpu --model "${model}" --dev-mode) \
+            # The eval client sends as many concurrent requests as vLLM was
+            # given sequences (gpuref.py gpu_concurrency; recorded in provenance).
+            local client_conc
+            client_conc="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("client_concurrency") or "")' "${mdir}/serve_plan.json")"
+            (cd "${TTIS_DIR}" && TT_EVAL_CLIENT_CONCURRENCY="${client_conc}" \
+                python3 run.py --workflow evals --tt-device gpu --model "${model}" --dev-mode) \
                 > "${mdir}/run_py.log" 2>&1 < /dev/null
             evals_rc=$?
             if [[ "${evals_rc}" -ne 0 ]]; then status="failed"; note="run.py exited ${evals_rc} (run_py.log)"
