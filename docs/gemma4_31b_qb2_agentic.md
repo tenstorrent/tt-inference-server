@@ -33,6 +33,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C8 clean host | 3/10 solved, 180.4 min evaluation | HTML timed out at three hours; eight active in only 2.5% of samples |
 | Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Fast pilot matched both C4 thinking-on aggregate scores, but the same-host repeat did not |
 | Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, so thinking-off is not a quality-preserving default |
+| Terminal expanded twenty, C4 thinking off | 5/20 solved, 74.8 min evaluation | Original ten 2/10, added ten 3/10; zero errors, 68.8% peak KV; unsolved Caffe task set the wall |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
 All current-main rows above pin Metal
@@ -44,7 +45,7 @@ Current evidence-backed choice is one warmed **C8, 256K KV, thinking-on**
 server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
 for Terminal. C4 thinking-off shortened both Terminal/ten runs but scored
 **4/10 then 1/10** on the same host, so it is not the quality-preserving
-default; its twenty-case check is running.
+default; its twenty-case check scored **5/20** in 74.8 minutes.
 The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
 used more KV; C8 thinking-off/Terminal10 is pending. Each server uses one
 startup-warmed physical trace and serves
@@ -1805,14 +1806,46 @@ and summary are under
 `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-repeat/` and
 `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-repeat-summary.json`.
 
-A [C4 thinking-off twenty-case
+The [C4 thinking-off twenty-case
 dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023703424)
-uses [inference-server commit `93f0f7b5`](https://github.com/tenstorrent/tt-inference-server/commit/93f0f7b576a633e83a9b81b12020eb378a4d2bac),
+used [inference-server commit `93f0f7b5`](https://github.com/tenstorrent/tt-inference-server/commit/93f0f7b576a633e83a9b81b12020eb378a4d2bac),
 retaining the original ten Terminal IDs and appending the ten
 predeclared above. This is the larger sample justified by the 46-minute
-pilot; it started on clean `p05t05`. The [first twenty-case dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023691968)
+pilot; it completed on clean `p05t05`. The [first twenty-case dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023691968)
 used an incorrect inference-server SHA and was canceled before hardware
 work; it is not a result.
+
+The twenty-case run completed **20/20 cases with zero errors, 5/20
+solved**, in **74.84 evaluation minutes** and **81.33 minutes** for the
+full hardware job. The original ten scored **2/10** (COBOL and git),
+versus 4/10 and 1/10 on the two standalone thinking-off runs. The added
+ten scored **3/10**: headless terminal, merge diff ARC task and model
+extraction. The generic full-set H100 accuracy gate failed on this
+selected twenty-case 25% score versus the configured 44.94% reference;
+the subset cannot establish full-set parity.
+
+| C4 thinking-off Terminal measure | Original ten | Added ten | All twenty |
+| --- | ---: | ---: | ---: |
+| Solved | 2/10 | 3/10 | 5/20 |
+| Summed case clocks, min | 150.69 | 116.47 | 267.17 |
+| Summed API / other case time, min | 101.57 / 49.12 | 64.02 / 52.45 | 165.59 / 101.57 |
+| Input / output tokens | 2.677M / 112.1K | 1.962M / 64.3K | 4.639M / 176.4K |
+| Model API calls | 165 | 117 | 282 |
+
+The unsolved Caffe CIFAR-10 case took **74.84 minutes** and set the
+suite wall; the next longest was git at 55.39 minutes, which scored
+one. Summed case time divided by wall gives **3.57 concurrent cases**
+on average, while server samples had **2.50 running model rows** on
+average because cases also perform non-model work. Sampled KV reached
+**68.8% peak and 52.7% p95**; nine of 450 ten-second samples had
+waiting, with no preemption or AICLK warning. Its 290 trace
+warm/capture intervals summed to 80.1 seconds. The low score across
+twenty cases and variable original-ten outcomes strengthen the decision
+to retain full thinking as Terminal default. The shorter off policy
+remains an explicitly lower-quality speed option and has not
+demonstrated the reference target. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c4-twenty-thinkoff/` and
+`/home/mvasiljev/build/gemma-terminal-c4-twenty-thinkoff-summary.json`.
 
 The C4 thinking-off pilot also kept four rows active in 135/278 sampled
 windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
