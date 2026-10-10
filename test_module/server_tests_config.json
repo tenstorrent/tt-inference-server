@@ -95,7 +95,8 @@
       "01-ai/Yi-1.5-9B",
       "Qwen/Qwen2.5-Coder-14B",
       "Qwen/Qwen2.5-32B",
-      "mistralai/Mistral-7B-Instruct-v0.3"
+      "mistralai/Mistral-7B-Instruct-v0.3",
+      "Qwen/Qwen2.5-Coder-14B-Instruct"
     ]
   },
   "available_markers": {
@@ -992,6 +993,16 @@
       "id_name": "mistralai--Mistral-7B-Instruct-v0.3",
       "weights": [
         "mistralai/Mistral-7B-Instruct-v0.3"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-14B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-14B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-Coder-14B-Instruct"
       ]
     }
   },
