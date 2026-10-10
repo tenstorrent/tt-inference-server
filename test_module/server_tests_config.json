@@ -105,7 +105,8 @@
       "Qwen/Qwen2.5-Coder-32B",
       "01-ai/Yi-1.5-9B",
       "Qwen/Qwen2.5-Coder-14B",
-      "Qwen/Qwen2.5-32B"
+      "Qwen/Qwen2.5-32B",
+      "Qwen/Qwen2.5-Coder-14B-Instruct"
     ]
   },
   "available_markers": {
@@ -1112,6 +1113,16 @@
       "id_name": "Qwen--Qwen2.5-32B",
       "weights": [
         "Qwen/Qwen2.5-32B"
+      ]
+    },
+    "Qwen/Qwen2.5-Coder-14B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Coder-14B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-Coder-14B-Instruct"
       ]
     }
   },
