@@ -1688,7 +1688,9 @@ run still read 4.516M input tokens, so input work did not disappear with
 the output reduction.
 
 A [same-config ten-case repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023672022)
-will check stochastic reward and wall. A [C4 thinking-off twenty-case
+started on the same clean `p05t06` runner as the first C4 thinking-off
+run; it will check stochastic reward and wall with less host variation.
+A [C4 thinking-off twenty-case
 dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023703424)
 uses [inference-server commit `93f0f7b5`](https://github.com/tenstorrent/tt-inference-server/commit/93f0f7b576a633e83a9b81b12020eb378a4d2bac),
 retaining the original ten Terminal IDs and appending the ten
