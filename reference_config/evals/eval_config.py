@@ -7,6 +7,7 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from reference_config.evals.eval_utils import (
@@ -13005,12 +13006,12 @@ _eval_config_list = [
     # generation prompt ends in </think>), and 33k-64k context cannot hold long reasoning, so
     # every task runs non-thinking, sampled with the card's temperature 1.0 / top_p 0.95
     # (seed 42 via EvalTask.seed, propagated to the request), chat API. The long-answer tasks
-    # use max_gen_toks 64500 (plain 64k server); gsm8k_cot / minerva_math are few-shot with a
+    # use max_gen_toks 64500 (plain 64k server); dsv41_gsm8k_cot / minerva_math are few-shot with a
     # small cap (2048 / 4096) that fits the 40000 server too.
     # Model-card numbers are not like for like (GPQA: instruct, max reasoning effort;
     # MMLU-Pro/HumanEval/LongBench-V2/GSM8K/MATH: base-model rows of the card, produced with
     # the card's internal framework). DSV41_EVAL_TASKS (comma list of task_name, e.g.
-    # "gsm8k_cot,minerva_math") selects tasks.
+    # "dsv41_gsm8k_cot,minerva_math") selects tasks.
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-V4.1-Flash",
         tasks=[
@@ -13152,14 +13153,16 @@ _eval_config_list = [
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 4, EvalLimitMode.CI_NIGHTLY: 16},
                 ),
-                # GSM8K 8-shot, exact match. gsm8k_cot is the standard 8-shot chain-of-thought
-                # variant (the 8 Wei et al. exemplars, num_fewshot=8); the plain `gsm8k` task
-                # has 5 train-set shots. 93.0 is the card's BASE-model table value (card's
+                # GSM8K 8-shot, exact match. dsv41_gsm8k_cot is lm-eval's gsm8k_cot (the standard
+                # 8-shot chain-of-thought variant, the 8 Wei et al. exemplars; the plain `gsm8k`
+                # task has 5 train-set shots) copied to lm_eval_tasks/ with the namespaced
+                # openai/gsm8k dataset id (the bare id fails with the venv's huggingface_hub). 93.0 is the card's BASE-model table value (card's
                 # internal framework, base-model few-shot): not like for like with this
                 # chat-template, sampled lm-eval run.
                 EvalTask(
-                    task_name="gsm8k_cot",
+                    task_name="dsv41_gsm8k_cot",
                     workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                    include_path=str(Path(__file__).resolve().parent / "lm_eval_tasks"),
                     num_fewshot=8,
                     use_chat_api=True,
                     apply_chat_template=True,
