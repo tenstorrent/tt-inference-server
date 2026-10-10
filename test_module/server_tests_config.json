@@ -99,7 +99,8 @@
       "01-ai/Yi-1.5-6B-Chat",
       "meta-llama/Llama-3.1-8B",
       "Qwen/QwQ-32B",
-      "mistralai/Mistral-7B-Instruct-v0.3"
+      "mistralai/Mistral-7B-Instruct-v0.3",
+      "Qwen/Qwen2.5-Math-7B-Instruct"
     ]
   },
   "available_markers": {
@@ -1046,6 +1047,16 @@
       "id_name": "mistralai--Mistral-7B-Instruct-v0.3",
       "weights": [
         "mistralai/Mistral-7B-Instruct-v0.3"
+      ]
+    },
+    "Qwen/Qwen2.5-Math-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen2.5-Math-7B-Instruct",
+      "weights": [
+        "Qwen/Qwen2.5-Math-7B-Instruct"
       ]
     }
   },
