@@ -2145,6 +2145,13 @@ running model rows, leaving room for the eight-agent scheduling check
 below. KV reached only 68.1% and 11/1680 samples showed waiting; the
 server logged neither preemption nor an AICLK warning. Trace warm/capture
 intervals summed to only 102.8 seconds, about 0.6% of the suite wall.
+Generation throughput was positive in **97.1%** of ten-second samples.
+The suite's 1.052M agent output tokens divided by wall is **62.65 tokens/s**,
+near the **67.4 tokens/s** median positive server sample. This indicates
+nearly continuous generation work, but those are different counting
+windows and cannot isolate decode utilization. Extra agent overlap may
+improve physical-row occupancy; it cannot erase the cost of the much
+longer thinking-on outputs.
 The huge archived `recording.cast` and `terminus_2.pane` files in the
 password-recovery case made the workflow ZIP 1.15 GB and uncompressed
 content about 116 GB; the selective extractor kept all numeric records
