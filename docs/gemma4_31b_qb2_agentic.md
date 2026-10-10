@@ -1776,13 +1776,19 @@ successful pilot attempted pushes and verified its served branch pages.
 Password reached the agent's 50-turn limit on the repeat. These are
 concrete agent-path failures rather than a verifier or hardware error;
 they do not establish that every thinking-off path will fail. The
-shorter repeat made 21% fewer
-API calls and wrote 14.7% fewer output tokens, which partly explains
+shorter repeat made 21% fewer API calls and wrote 14.7% fewer output
+tokens, which partly explains
 its faster wall; its lower sampled occupancy reflects less active work,
 not a batch-efficiency gain. The two C4 full-thinking ten-case runs both
 solved 4/10, so **thinking-off is not a quality-preserving Terminal
 default** on this evidence. Retain C4 full thinking with the three-hour
-deadline and 256K KV pool as the current choice. Raw repeat artifacts
+deadline and 256K KV pool as the current choice.
+
+Across the three ten-case thinking-off observations at C2/C4, scores
+were **3/10, 4/10 and 1/10**, versus **4/10, 4/10 and 4/10** on the
+corresponding thinking-on C2/C4 observations. This small, path-dependent
+set supports the operational choice but is not a full-set quality estimate.
+Raw repeat artifacts
 and summary are under
 `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-repeat/` and
 `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-repeat-summary.json`.
