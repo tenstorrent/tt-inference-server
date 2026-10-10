@@ -1427,6 +1427,14 @@ and **72.3% less evaluation wall**, but solved one fewer case. The five-case
 pilot's reward tie therefore did not hold at ten. Keep thinking-off as an
 optional speed setting, rather than a quality-preserving Terminal default.
 
+To isolate whether C4 changes that quality tradeoff,
+[inference-server commit `a86d3a0c`](https://github.com/tenstorrent/tt-inference-server/commit/a86d3a0ce30125d5446b967b225e641f8e39f725)
+changes only the default chat-template flag from the C4/ten branch. Its
+[ten-case Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38016006193)
+is queued behind the current runner work. Compare all ten rewards and the
+case errors with both C4 thinking-on runs; C2 thinking-off's missing regex
+solve makes a speed-only comparison insufficient.
+
 | SWE/ten measure | C2 thinking on | C2 thinking off | C4 thinking on | C8 thinking on |
 | --- | ---: | ---: | ---: | ---: |
 | Evaluation wall, min | 61.54 | 66.05 | 55.90 | 44.35 |
