@@ -1556,8 +1556,8 @@ templates:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
 
-# Qwen3.8-27B on the qwen36_blackhole TP implementation (P150x8 / TP=8). Local dev entry.
-# TT_MESH_GRAPH_DESC_PATH: an explicit 8-chip MGD is required to open this mesh as a subset of a BH Galaxy
+# Qwen3.8-27B on the qwen36_blackhole TP implementation: P150x8 (TP=8) and BH Galaxy (TP=8 x DP=4, four (1, 8) column ranks).
+# P150X8 TT_MESH_GRAPH_DESC_PATH: an explicit 8-chip MGD is required to open this mesh as a subset of a BH Galaxy
 # (auto-discovery maps the full 4x8 and fabric router sync then waits on links leaving the subset).
 - weights:
     - Qwen/Qwen3.8-27B
@@ -1586,6 +1586,28 @@ templates:
         max_num_batched_tokens: "525312"  # = KV capacity: admit a whole prefill burst in one step so running decodes are not stalled mid-stream (no chunked prefill on TT)
       override_tt_config:
         fabric_config: FABRIC_1D
+        trace_region_size: 1073741824
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 128
+      max_context: 262144
+      max_tokens_all_users_override: 525312
+      default_impl: true
+      env_vars:
+        TT_QWEN35_TEXT_VER: qwen36_blackhole
+        HF_MODEL: Qwen/Qwen3.8-27B
+        MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
+        QWEN36_MAX_TOKENS_ALL_USERS: "525312"
+        TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
+      vllm_args:
+        data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 128 -> max_num_seqs 32 per rank
+        enable_auto_tool_choice: true
+        reasoning_parser: qwen3
+        tool_call_parser: qwen3_coder
+        max_num_batched_tokens: "525312"  # per-rank KV capacity, as for P150X8
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING  # each rank is a Galaxy column; its Ring CCLs need the column's wrap link
         trace_region_size: 1073741824
         l1_small_size: 24576
         sample_on_device_mode: decode_only
