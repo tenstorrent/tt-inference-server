@@ -641,6 +641,35 @@ def test_write_specs_for_subset_b_keeps_a():
     yaml.safe_load(text)  # the block still loads
 
 
+def test_generator_never_duplicates_a_handwritten_gpu_spec():
+    """A model with a reviewed GPU template outside the generated block gets no
+    generated entry: not added by a merge, and an existing one is dropped."""
+    import yaml
+
+    base = {"impl": "quetzal", "max_context": 4096, "max_concurrency": 32,
+            "revision": "abc", "source": "quetzal P300X2 row"}  # fmt: skip
+    head = (
+        "templates:\n- weights:\n  - org/reviewed\n  impl: quetzal\n"
+        "  device_model_specs:\n  - device: GPU\n    max_context: 2048\n"
+    )
+    assert gpuref.handwritten_gpu_models(head) == {"org/reviewed"}
+    text = gpuref.write_derived_specs(head, {"org/reviewed": base, "org/new": base})
+    assert gpuref.block_models(text) == ["org/new"]
+    # An older block that already holds a copy loses it on the next write.
+    stale = (
+        head
+        + gpuref.SPEC_BEGIN
+        + "\n"
+        + gpuref.derived_specs_yaml({"org/reviewed": base, "org/new": base})
+        + "\n"
+        + gpuref.SPEC_END
+        + "\n"
+    )
+    assert gpuref.handwritten_gpu_models(stale) == {"org/reviewed"}  # block excluded
+    assert gpuref.block_models(gpuref.write_derived_specs(stale, {})) == ["org/new"]
+    yaml.safe_load(text)
+
+
 def test_derive_overrides_disables_dual_chunk_attention_only_when_present():
     assert gpuref.derive_overrides(
         {"dual_chunk_attention_config": {"chunk_size": 262144}}
