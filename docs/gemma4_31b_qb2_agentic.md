@@ -1640,8 +1640,9 @@ and 46.15 minutes evaluation wall**. The solved cases were COBOL, git,
 password recovery and regex (first five 1/5, added five 3/5). Three of
 these four were shared with the first C4 thinking-on run; git replaced
 HTML. The C4 thinking-on repeat also scored 4/10 but shared COBOL, git
-and regex instead. This is aggregate parity across three C4 runs, not
-fixed-case reward parity.
+and regex instead. The C4 thinking-off solved set does match the earlier
+C2 thinking-on full-deadline set exactly. This is aggregate parity across
+three C4 runs, not fixed-case reward parity against either C4 control.
 
 | Terminal/ten measure | C4 thinking on first | C4 thinking on repeat | C4 thinking off |
 | --- | ---: | ---: | ---: |
@@ -1666,7 +1667,9 @@ of samples versus 23.3% on the C4 thinking-on repeat, consistent with
 shorter decode allowing more frequent prompt work, but these are sample
 activity flags rather than exclusive device-time measurements. It reached
 four active rows in 135/278 samples, 62.4% peak KV, and eight waiting
-samples; no preemption or AICLK warning appeared. Raw artifacts and
+samples; its sampled mean was **3.13 running rows**, versus **2.54** in
+the full-thinking C8 Terminal/ten run and **5.78** in C8 SWE/20. No
+preemption or AICLK warning appeared. Raw artifacts and
 summary are under `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff/`
 and `/home/mvasiljev/build/gemma-terminal-c4-ten-thinkoff-summary.json`.
 
