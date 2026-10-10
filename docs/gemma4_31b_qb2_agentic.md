@@ -38,6 +38,16 @@ All current-main rows above pin Metal
 KV-hook row, which uses a separate image built from that commit plus the
 isolated sizing change. Details, artifacts and acceptance explanations follow.
 
+Current operational choice is one warmed **C8, 256K KV, thinking-on**
+server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
+for Terminal. C4 thinking-off is a promising Terminal speed policy after
+one 4/10, 46-minute pilot; its repeat and twenty-case check are pending.
+The matched C10/SWE20 and C8 thinking-off/Terminal10 checks are also
+pending. Each server uses one startup-warmed physical trace and serves
+logical request counts up to that width. These small fixed subsets do not
+establish parity with the full 89-task Terminal or 500-instance SWE H100
+reference scores of 44.94% and 64.8%.
+
 ## Existing evidence
 
 - The [September 21 baseline](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/35667712636)
