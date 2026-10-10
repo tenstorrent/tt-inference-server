@@ -955,6 +955,17 @@ comparison with the full-set 64.8% H100 target. Compare its original first
 ten separately with the earlier C8 run and record the added ten's reward,
 wall, tokens and KV admission.
 
+For a possible twenty-case Terminal extension, the
+[Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
+lists 89 tasks. Sorting their IDs, excluding the fixed first ten, and
+sampling ten with Python `random.Random(20261010)` selected:
+`mteb-leaderboard`, `headless-terminal`, `caffe-cifar-10`, `kv-store-grpc`,
+`model-extraction-relu-logits`, `path-tracing-reverse`,
+`merge-diff-arc-agi-task`, `mteb-retrieve`, `video-processing`, and
+`financial-document-processor`. Keep this list fixed if the completed C8
+Terminal run warrants a larger evaluation; its much longer possible case
+tails make dispatch before that result premature.
+
 With the SWE/ten capacity and reward check complete, a
 [matched C8 Terminal/ten dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38001414052)
 was attempted with the same pinned Metal image and Terminal IDs as C2/ten
