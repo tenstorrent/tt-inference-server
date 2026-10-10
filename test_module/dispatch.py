@@ -19,6 +19,7 @@ test class, runs it, and forwards the resulting Blocks to the accumulator.
 from __future__ import annotations
 
 import importlib
+import inspect
 import logging
 from copy import deepcopy
 from typing import Callable, List, Optional, Tuple
@@ -287,26 +288,53 @@ def _block_status(block: Block) -> TestStatus:
     )
 
 
+def _accepts_ctx(cls) -> bool:
+    """Whether ``cls.__init__`` can take a ``ctx`` keyword."""
+    try:
+        params = inspect.signature(cls.__init__).parameters
+    except (TypeError, ValueError):
+        # Un-introspectable __init__ (C-level, heavily wrapped): assume the
+        # rich form and let a genuine TypeError surface.
+        return True
+    if "ctx" in params:
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+
+
 def _instantiate_spec_test(case: dict, ctx: MediaContext):
     """Import + construct a spec test class from a (filtered) test case dict.
 
     BaseTest accepts ``(config, targets, description="", ctx=None)`` but a
-    handful of test classes (e.g. ImageGenerationEvalsTest) override
-    ``__init__`` with just ``(config, targets)`` — so we try the rich form
-    first and fall back to the minimal one, patching ``description`` on
-    afterward so the summary block can still surface it.
+    handful of test classes override ``__init__`` with just
+    ``(config, targets)``. Those get the minimal form, with ``description``
+    patched on afterward so the summary block can still surface it.
+
+    The choice is made by inspecting the signature rather than by catching
+    ``TypeError`` from the rich call. Catching was wrong twice over: a class
+    that simply forgot ``ctx`` was constructed without it and silently lost
+    ``ctx.service_port``, ``ctx.base_url`` and its report ``block_id``; and a
+    ``TypeError`` raised *inside* a working ``__init__`` was swallowed, so the
+    constructor ran a second time and the error was reported against the
+    wrong call.
     """
     config = TestConfig(case.get("test_config") or {})
     targets = case.get("targets") or {}
     description = case.get("description") or ""
     module = importlib.import_module(case["module"])
     cls = getattr(module, case["name"])
-    try:
+
+    if _accepts_ctx(cls):
         return cls(config, targets, description=description, ctx=ctx)
-    except TypeError:
-        instance = cls(config, targets)
-        instance.description = description
-        return instance
+
+    logger.warning(
+        "%s.__init__ does not accept ctx; constructing without it. This test "
+        "will fall back to SERVICE_PORT/the default deploy URL and its report "
+        "block will have no block_id. Add ctx to its signature.",
+        cls.__name__,
+    )
+    instance = cls(config, targets)
+    instance.description = description
+    return instance
 
 
 def run_spec_tests(ctx: MediaContext) -> Tuple[int, Optional[Block]]:
