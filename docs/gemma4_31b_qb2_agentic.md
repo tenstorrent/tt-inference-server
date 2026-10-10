@@ -15,6 +15,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE expanded ten, C4 | 3/10 solved, 55.9 min evaluation | First five 2/5; second five 1/5; 21% more output than C2 |
 | SWE expanded ten, C8 | 3/10 solved, 44.4 min evaluation | Same solved cases as C4; 800 MHz AICLK warning; 67.9% peak KV |
 | SWE expanded twenty, C8 | 8/20 solved, 83.8 min evaluation | Original ten 4/10, added ten 4/10; zero errors and 74.8% peak KV |
+| SWE expanded twenty, C10 | 10/20 solved, 96.9 min evaluation | Original ten 3/10, added ten 7/10; zero errors, 85.5% peak KV and a 96.8 min unsolved straggler |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -38,12 +39,13 @@ All current-main rows above pin Metal
 KV-hook row, which uses a separate image built from that commit plus the
 isolated sizing change. Details, artifacts and acceptance explanations follow.
 
-Current operational choice is one warmed **C8, 256K KV, thinking-on**
+Current speed choice is one warmed **C8, 256K KV, thinking-on**
 server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
 for Terminal. C4 thinking-off is a promising Terminal speed policy after
 one 4/10, 46-minute pilot; its repeat and twenty-case check are pending.
-The matched C10/SWE20 and C8 thinking-off/Terminal10 checks are also
-pending. Each server uses one startup-warmed physical trace and serves
+The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
+used more KV; C8 thinking-off/Terminal10 is pending. Each server uses one
+startup-warmed physical trace and serves
 logical request counts up to that width. These small fixed subsets do not
 establish parity with the full 89-task Terminal or 500-instance SWE H100
 reference scores of 44.94% and 64.8%.
@@ -1003,12 +1005,11 @@ combines the same fixed twenty SWE IDs with physical batch ten. Its
 [second matched SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38019668697)
 was canceled before hardware work at 03:26 for unsafe-host queue control;
 the [third dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38021542688)
-was issued after both exact-host reservations were confirmed. Compare
-original ten and added ten
-rewards separately, as well as full wall, case-clock overlap, tokens,
-waiting and peak KV. This is the relevant check for whether two more
-concurrent agents help a twenty-case workload despite the small synthetic
-long-prompt gain.
+completed on clean `p05t01` after both exact-host reservations were
+confirmed. Its matched case rewards, wall, case-clock overlap, tokens,
+waiting and peak KV are analyzed below. Two more concurrent agents
+increased case overlap and the sampled KV peak, but the suite wall
+increased on a longer stochastic trajectory.
 
 The faster C8 ten-case SWE wall justified a
 [twenty-case SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011984043)
@@ -1052,8 +1053,8 @@ not a controlled token-throughput ratio. The server sampled **5.78
 running model rows on average**, lower than 6.79 active cases because
 cases also spend time outside their model API calls; this is the overlap
 that lets eight agents use a single warmed C8 trace effectively.
-Sampled KV reached **74.8% peak
-and 67.6% p95**; **31/504** ten-second samples had a waiting request,
+Sampled KV reached **74.8% peak and 67.6% p95**; **31/504** ten-second
+samples had a waiting request,
 up from 10/267 on the ten-case run, but no preemption or AICLK warning
 was found. The longest case, requests 2317, took 57.16 minutes, shorter
 than the 83.75-minute suite wall; the larger run had a multi-wave tail.
@@ -1067,16 +1068,67 @@ Its 836 trace warm/capture intervals summed to 157.6 seconds. The fixed
 and numeric summary are under `/home/mvasiljev/build/gemma-swe-c8-twenty-main/`
 and `/home/mvasiljev/build/gemma-swe-c8-twenty-main-summary.json`.
 
-For a possible twenty-case Terminal extension, the
+### C10 twenty-case SWE on the same host
+
+The [matched C10/SWE20 run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38021542688)
+completed **20/20 cases without errors** on the same clean `p05t01`
+host as C8/SWE20, using the same pinned Metal image, task IDs, agents,
+sampling and deadlines. It solved **10/20** (original ten **3/10**, added
+ten **7/10**) in **96.85 evaluation minutes**; the full hardware job
+lasted **103.27 minutes**. The generic full-set H100 accuracy gate still
+failed on the selected twenty-case 50% score versus the configured 64.8%
+reference; this is not a full-set parity measurement.
+
+| Matched SWE/20 measure | C8 | C10 |
+| --- | ---: | ---: |
+| Solved / case errors | 8/20 / 0 | 10/20 / 0 |
+| Original ten / added ten solved | 4/10 / 4/10 | 3/10 / 7/10 |
+| Evaluation wall, min | 83.75 | 96.85 |
+| Summed case clocks, min | 568.98 | 733.01 |
+| Observed case parallelism | 6.79 | 7.57 |
+| Input / output tokens | 14.311M / 182.1K | 14.398M / 223.7K |
+| Model API calls | 852 | 863 |
+| Mean sampled running rows | 5.78 | 6.68 |
+| Peak / p95 sampled KV | 74.8% / 67.6% | 85.5% / 75.1% |
+| Waiting samples | 31/504 | 25/581 |
+
+C10 gained solved pytest 7432, Sphinx 8638 and Sympy 19783, while
+losing solved Astropy 14096. Seven solved cases overlapped. Its **13.10
+extra evaluation minutes (15.6%)** came with **22.9% more output tokens**
+and **28.8% more summed case time**, despite almost equal input volume
+and API-call count. The unsolved Django 13344 case set the C10 wall at
+**96.8 minutes**, versus 44.6 minutes at C8; it made **75 versus 42**
+model calls, read **1.880M versus 0.737M** input tokens and wrote **38.0K
+versus 11.0K** output tokens. Sphinx 8265 also took 81.4 versus 33.8
+minutes. Those differing trajectories dominate the wall comparison, so
+the live runs do not prove C10 has lower per-token throughput. The
+synthetic C10 gains at relevant long prompts were only 0.4–3.2%, however,
+and this live result does not establish a useful suite-wall gain.
+
+C10 reached ten running rows in 107/581 samples, with 6.68 running rows
+on average. It had **85.5% peak KV**, leaving less admission margin than
+C8's 74.8%, though only 25/581 samples showed waiting and no preemption
+or AICLK warning was found. Its 843 trace warm/capture intervals summed
+to 161.1 seconds, close to C8's 157.6 seconds. For a **speed-first**
+SWE/20 policy, retain the warmed C8/256K server. C10's two additional
+solves are valuable but cannot yet be assigned to batch width rather
+than stochastic case paths; a larger fixed sample or repeat is needed
+before trading the extra wall and KV headroom for that apparent reward.
+Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-swe-c10-twenty-main/` and
+`/home/mvasiljev/build/gemma-swe-c10-twenty-main-summary.json`.
+
+For the twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
 lists 89 tasks. Sorting their IDs, excluding the fixed first ten, and
 sampling ten with Python `random.Random(20261010)` selected:
 `mteb-leaderboard`, `headless-terminal`, `caffe-cifar-10`, `kv-store-grpc`,
 `model-extraction-relu-logits`, `path-tracing-reverse`,
 `merge-diff-arc-agi-task`, `mteb-retrieve`, `video-processing`, and
-`financial-document-processor`. Keep this list fixed if the completed C8
-Terminal run warrants a larger evaluation; its much longer possible case
-tails make dispatch before that result premature.
+`financial-document-processor`. This list was fixed before expanding
+Terminal. The completed full-thinking C8 Terminal run did not justify a
+larger C8 suite, while the 46-minute C4 thinking-off pilot did justify
+the C4 thinking-off twenty-case dispatch described below.
 
 With the SWE/ten capacity and reward check complete, a
 [matched C8 Terminal/ten dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38001414052)
@@ -1699,7 +1751,7 @@ dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/380
 uses [inference-server commit `93f0f7b5`](https://github.com/tenstorrent/tt-inference-server/commit/93f0f7b576a633e83a9b81b12020eb378a4d2bac),
 retaining the original ten Terminal IDs and appending the ten
 predeclared above. This is the larger sample justified by the 46-minute
-pilot. The [first twenty-case dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023691968)
+pilot; it started on clean `p05t05`. The [first twenty-case dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38023691968)
 used an incorrect inference-server SHA and was canceled before hardware
 work; it is not a result.
 
