@@ -5849,14 +5849,14 @@ _eval_config_list = [
                     # a 1-token prefill, and every response comes back empty.
                     "max_gen_toks": 120 * 1024,
                 },
-                # The actual bound, and the only one here that can detect a hung run
-                # without truncating a generation: it bounds the TASK, not the request.
-                # On deadline the owned POSIX process group is killed and the task
-                # reports rc=124 as incomplete -- never scored as a pass -- so the run
-                # continues to the next task and still produces a report, instead of
-                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
-                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                # Shield 37996687040 measured the 15-sample nightly subset: 14/15
+                # responses completed before the old 3h task deadline, while the last
+                # request was still streaming at 18.6 tok/s. Two long requests filled
+                # the shared KV pool and one was preempted for about 36 minutes before
+                # resuming. The server stayed healthy throughout. Preserve enough room
+                # for all 30 samples in a full eval; idle_timeout above still fails a
+                # silent server after one hour instead of burning this whole budget.
+                wall_clock_timeout_seconds=28800,
             ),
             EvalTask(
                 task_name="gpqa_diamond_cot_zeroshot",
@@ -5896,14 +5896,11 @@ _eval_config_list = [
                     "temperature": 1.0,
                     "max_gen_toks": 120 * 1024,
                 },
-                # The actual bound, and the only one here that can detect a hung run
-                # without truncating a generation: it bounds the TASK, not the request.
-                # On deadline the owned POSIX process group is killed and the task
-                # reports rc=124 as incomplete -- never scored as a pass -- so the run
-                # continues to the next task and still produces a report, instead of
-                # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
-                # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                wall_clock_timeout_seconds=10800,
+                # Shield 37996687040 completed the 7-sample nightly subset in 8m12s
+                # (100% exact match, 71.3 mean seconds/sample). Six hours covers the
+                # 198-sample full task at the measured rate with margin. The streamed
+                # idle timeout remains the fast-failure guard for a silent server.
+                wall_clock_timeout_seconds=21600,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
