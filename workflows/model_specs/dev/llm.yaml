@@ -912,7 +912,8 @@ templates:
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         reasoning-parser: gemma4
-        default-chat-template-kwargs: '{"enable_thinking":true}'
+        # Matched ten-case Terminal test of the faster thinking-off policy at C8.
+        default-chat-template-kwargs: '{"enable_thinking":false}'
   status: COMPLETE
   has_builtin_warmup: true
   env_vars:
