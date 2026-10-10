@@ -1592,7 +1592,7 @@ templates:
     - device: BLACKHOLE_GALAXY
       max_concurrency: 128
       max_context: 262144
-      max_tokens_all_users_override: 525312
+      max_tokens_all_users_override: 2101248  # total KV pool: 4 DP ranks x 525312 tokens per rank
       default_impl: true
       env_vars:
         TT_QWEN35_TEXT_VER: qwen36_blackhole
