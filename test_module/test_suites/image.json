@@ -106,6 +106,18 @@
                             }
                         ]
                     }
+                },
+                {
+                    "template": "ImageGenerationLoraRollbackTest",
+                    "enabled": true,
+                    "description": "Sequential baseline -> LoRA -> baseline (verifies clean unload)",
+                    "targets": {
+                        "num_inference_steps": 20,
+                        "lora": {
+                            "lora_path": "artificialguybr/ColoringBookRedmond-V2",
+                            "lora_scale": 1
+                        }
+                    }
                 }
             ]
         },
