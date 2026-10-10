@@ -1,6 +1,6 @@
 # Gemma 4 31B QB2 agentic evaluation and serving experiments
 
-Updated 2026-10-09 UTC. This file tracks the dedicated `gemma4-31b-qb2`
+Updated 2026-10-10 UTC. This file tracks the dedicated `gemma4-31b-qb2`
 implementation on the four-chip P300X2 QuietBox. Results from different model
 commits, task lists, or agent policies are kept separate.
 
@@ -689,7 +689,8 @@ Once a physical batch size and context are selected, a single
 `tb2.0,swebench` dispatch can run both suites against one warmed server,
 amortizing startup. Separate jobs remain useful for parallel exploratory
 measurements and independent failure isolation. The Shield partition change
-accepts that combined selector; no combined result exists yet.
+accepts that combined selector; the C2 thinking-off combined result is
+analyzed below.
 
 ### Same-main C1 versus C2 SWE
 
@@ -927,6 +928,16 @@ batch-switch or restart, which is the useful granularity for this SWE
 configuration. Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c8-ten-main/` and
 `/home/mvasiljev/build/gemma-swe-c8-ten-main-summary.json`.
+
+A ten-row follow-up uses the same pinned Metal image, 256K pool and fixed
+ten-case lists. [Inference-server commit `15889c19`](https://github.com/tenstorrent/tt-inference-server/commit/15889c19331b16dd45d81fa3bfc62277e044294e)
+changes only the physical decode rows and both agent trial counts from eight
+to ten. Its [synthetic benchmark dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011593208)
+is queued behind the active evaluations. Inspect completion, KV occupancy,
+waiting and long-prompt admission before choosing whether a ten-case live
+SWE or Terminal run is worth the runner time. A first dispatch with an
+abbreviated inference-server SHA was canceled before hardware work; it is
+not a benchmark result.
 
 With the SWE/ten capacity and reward check complete, a
 [matched C8 Terminal/ten dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38001414052)
