@@ -14,6 +14,7 @@ commits, task lists, or agent policies are kept separate.
 | SWE expanded ten, C2 | 3/10 solved, 61.5 min evaluation | First five 3/5; second five 0/5; AICLK warning |
 | SWE expanded ten, C4 | 3/10 solved, 55.9 min evaluation | First five 2/5; second five 1/5; 21% more output than C2 |
 | SWE expanded ten, C8 | 3/10 solved, 44.4 min evaluation | Same solved cases as C4; 800 MHz AICLK warning; 67.9% peak KV |
+| SWE expanded twenty, C8 | 8/20 solved, 83.8 min evaluation | Original ten 4/10, added ten 4/10; zero errors and 74.8% peak KV |
 | C2 synthetic 128/128 | 72.56 output tok/s for two users | CI release throughput gate fails at 217.65 |
 | C4 synthetic 128/128 | 131.48 output tok/s for four users | Long-prompt gain is much smaller; gate still fails |
 | C8 synthetic 128/128 | 273.57 output tok/s for eight users | Release gate passes; cold 10K TTFT reaches 135 s |
@@ -1009,9 +1010,41 @@ have 9/20 Django cases (45%, versus 46.2% of the full split) and difficulty
 counts 8/10/2 for `<15 min`, `15 min–1 hour`, and `1–4 hours`, close to the
 full split's 194/261/42; the three `>4 hours` cases are absent. This is a
 fixed exploratory subset, not a statistically precise estimate or a direct
-comparison with the full-set 64.8% H100 target. Compare its original first
-ten separately with the earlier C8 run and record the added ten's reward,
-wall, tokens and KV admission.
+comparison with the full-set 64.8% H100 target.
+
+The C8 twenty-case run completed **20/20 cases with zero errors and 8/20
+solved**, in **83.75 minutes** of evaluation (90.12 minutes for the test
+job). The original first ten scored **4/10**, adding Astropy to the three
+solved in the earlier C8/ten run; the newly selected ten scored **4/10**,
+all four Django cases. The first-ten change demonstrates stochastic
+reward variation even with the same batch and cases. The generic CI gate
+again failed on a selected-subset score against the full 500-case H100
+64.8% target, which remains an unmet reference, not a like-for-like
+twenty-case comparison.
+
+| C8 SWE measure | Original ten in prior run | Original ten in twenty-case run | Added ten |
+| --- | ---: | ---: | ---: |
+| Solved | 3/10 | 4/10 | 4/10 |
+| Summed case clocks, min | 284.38 | 290.86 | 278.12 |
+| Input tokens | 5.935M | 7.316M | 6.995M |
+| Output tokens | 82.8K | 88.1K | 93.9K |
+| Model API calls | 425 | 457 | 395 |
+| Largest prompt, tokens | 33,230 | 43,430 | 48,640 |
+
+The twenty-case run's **568.98 summed case-minutes** divided by 83.75
+evaluation minutes gives **6.79 active cases on average**, versus 6.41
+for the earlier ten-case run. Its wall was **1.89×** the ten-case wall for
+twice as many tasks, with 2.20× the output tokens and 2.41× the input
+tokens. Those paths differ, so this is an observed suite scaling result,
+not a controlled token-throughput ratio. Sampled KV reached **74.8% peak
+and 67.6% p95**; **31/504** ten-second samples had a waiting request,
+up from 10/267 on the ten-case run, but no preemption or AICLK warning
+was found. The longest case, requests 2317, took 57.16 minutes, shorter
+than the 83.75-minute suite wall; the larger run had a multi-wave tail.
+Its 836 trace warm/capture intervals summed to 157.6 seconds. The fixed
+20-case set now provides the matched live C8/C10 comparison. Raw artifacts
+and numeric summary are under `/home/mvasiljev/build/gemma-swe-c8-twenty-main/`
+and `/home/mvasiljev/build/gemma-swe-c8-twenty-main-summary.json`.
 
 For a possible twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
