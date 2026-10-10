@@ -618,6 +618,20 @@ def test_mid_size_models_short_of_a100_kv_room_go_to_h100():
     )  # fmt: skip
 
 
+def test_probe_first_runs_the_costliest_moved_model_first():
+    groups = {"H100": ["a-1m", "b-32b", "c-14b", "d-14b"], "A100": ["e", "f"]}
+    placed = {
+        "a-1m": {"moved_to_h100": True, "est_hours": 1.45},
+        "b-32b": {"moved_to_h100": False, "est_hours": 3.0},
+        "c-14b": {"moved_to_h100": True, "est_hours": 1.85},
+        "d-14b": {"moved_to_h100": True, "est_hours": 0.93},
+        "e": {"moved_to_h100": False, "est_hours": 1.0},
+        "f": {"moved_to_h100": False, "est_hours": 2.0},
+    }
+    gpuref.probe_first(groups, placed)
+    assert groups == {"H100": ["c-14b", "a-1m", "b-32b", "d-14b"], "A100": ["e", "f"]}
+
+
 def test_too_big_for_any_gpu_is_skipped_by_verdicts():
     config = {"num_hidden_layers": 80, "num_attention_heads": 64,
               "num_key_value_heads": 8, "hidden_size": 8192, "intermediate_size": 29568}  # fmt: skip

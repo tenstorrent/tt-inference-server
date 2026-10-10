@@ -991,6 +991,7 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
         placed[model] = {
             "group": group,
             "placement": placement,
+            "moved_to_h100": group != gpu_group(memory.get("verdicts") or {}),
             "max_num_seqs": plan["max_num_seqs"],
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
@@ -1012,6 +1013,7 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
             group = groups.setdefault(info["group"], [])
             if t["model"] not in group:
                 group.append(t["model"])
+    probe_first(groups, placed)
     placeable = {t["model"] for t in kept}
     derived = {m: d for m, d in derived.items() if m in placeable}
     stale = write_derived_specs(yaml_text, derived) != yaml_text
@@ -1024,6 +1026,18 @@ def sweep_plan(sha: str, results_root: Path, refresh: bool = False, audit_refs=N
                            "cu_at_a100_rate": round(hours * CU_PER_HOUR["A100"])}  # fmt: skip
     return {"sha": sha, "targets": kept, "skipped": skipped, "groups": groups,
             "derived": derived, "specs_stale": stale, "estimate": estimate}  # fmt: skip
+
+
+def probe_first(groups: Dict[str, List[str]], placed: Dict[str, Any]) -> None:
+    """Measurement probe first: in each group, the costliest model that
+    gpu_placement moved to the H100 runs first, so its measured CU can decide
+    the rest before they run. The other models keep their order."""
+    for models in groups.values():
+        moved = [m for m in models if placed[m].get("moved_to_h100")]
+        if moved:
+            probe = max(moved, key=lambda m: placed[m]["est_hours"])
+            models.remove(probe)
+            models.insert(0, probe)
 
 
 def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) -> str:
