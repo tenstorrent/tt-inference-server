@@ -939,6 +939,21 @@ SWE or Terminal run is worth the runner time. A first dispatch with an
 abbreviated inference-server SHA was canceled before hardware work; it is
 not a benchmark result.
 
+The faster C8 ten-case SWE wall justified a
+[twenty-case SWE dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38011984043)
+on the same C8 server and image. [Inference-server commit `bbe65804`](https://github.com/tenstorrent/tt-inference-server/commit/bbe65804f174d88e3f495e52c9f2f3b287e7c581)
+retains the first ten IDs and appends ten more. The additions were sampled
+with seed `20261010` from the [official SWE-bench Verified 500-case test
+split](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified):
+seven Django, one Sympy, one Sphinx and one pytest. The resulting twenty
+have 9/20 Django cases (45%, versus 46.2% of the full split) and difficulty
+counts 8/10/2 for `<15 min`, `15 min–1 hour`, and `1–4 hours`, close to the
+full split's 194/261/42; the three `>4 hours` cases are absent. This is a
+fixed exploratory subset, not a statistically precise estimate or a direct
+comparison with the full-set 64.8% H100 target. Compare its original first
+ten separately with the earlier C8 run and record the added ten's reward,
+wall, tokens and KV admission.
+
 With the SWE/ten capacity and reward check complete, a
 [matched C8 Terminal/ten dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38001414052)
 was attempted with the same pinned Metal image and Terminal IDs as C2/ten
