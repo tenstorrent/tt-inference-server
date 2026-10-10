@@ -24,6 +24,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal fixed five, C2 thinking off | 1/5 solved (COBOL), 37.4 min evaluation | 86.5% fewer output tokens; ten-case quality check dispatched |
 | Terminal fixed five, C2 one-hour cap | 1/5 solved (COBOL), 102.1 min evaluation | Two explicit timeouts; ten-case control dispatched |
 | Terminal expanded ten, C2 full deadline | 4/10 solved, 196.7 min evaluation | Original first five 1/5; added five 3/5; HTML timed out at three hours |
+| Terminal expanded ten, C2 one-hour cap | 1/10 solved, 140.3 min evaluation | Four explicit timeouts; lost three solved cases versus full-deadline C2 |
 | Terminal expanded ten, C4 | 4/10 solved, 110.3 min evaluation | Original first five 2/5; added five 2/5; FEAL tail did not recur |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
@@ -1355,6 +1356,10 @@ arithmetic upper bounds on tokens removed from the recorded paths; a real
 cap changes subsequent agent prompts and rewards. An 8K cap therefore
 cannot plausibly match the observed 86.5% output reduction from
 thinking-off on these trajectories, and was not dispatched as a priority.
+The [current official Gemma 4 chat template](https://huggingface.co/google/gemma-4-31B-it/blob/main/chat_template.jinja)
+contains `enable_thinking` but no `thinking_budget`, `low_effort` or
+`reasoning_effort` template parameter; there is no evidenced intermediate
+template setting to test without changing the prompting contract.
 Terminal prefill also stays substantial under thinking-off: the C2 control
 had a 17,091-token median prompt, 46,830-token p90 and 62,787-token
 maximum across its 126 recorded calls; thinking-off had a 20,547-token
@@ -1469,8 +1474,41 @@ The five-case tie is insufficient for a default change.
 The [C2 ten-case one-hour branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-60m)
 changes only this deadline from C2/ten. Its
 [matched Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38004228585)
-has started on clean runner `qb2-120-p05t02`; compare each reward and the
-original/added five separately with the three-hour C2/ten run. Raw pilot
+ran on clean runner `qb2-120-p05t02`; its result is analyzed below. Raw pilot
 artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c2-60m/` and
 `/home/mvasiljev/build/gemma-terminal-c2-60m-summary.json`.
+
+### One-hour ten-case Terminal control
+
+The [matched one-hour C2/ten run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38004228585)
+recorded all ten official cases and solved **1/10, COBOL**, in **140.32
+minutes** of evaluation (147.02 minutes for the full test job). It had
+four explicit `AgentTimeoutError`s at about 60.4 minutes: HTML, CompCert,
+FEAL and password recovery. The original first five scored **1/5**, the
+added five **0/5**. Its generic full-set accuracy gate failed, as did
+the full-deadline control's; these subset scores should not be compared
+as estimates of the 89-case H100 target.
+
+| C2 ten-case Terminal measure | Three-hour cap | One-hour cap |
+| --- | ---: | ---: |
+| Evaluation wall, min | 196.72 | 140.32 |
+| Solved first five / added five | 1 / 3 | 1 / 0 |
+| Case errors / explicit timeouts | 1 / 1 | 4 / 4 |
+| Case-clock sum, min | 390.83 | 279.58 |
+| Model API calls | 173 | 142 |
+| Input / output tokens | 2.390M / 462.3K | 2.013M / 375.8K |
+| Sum API / other case time, min | 252.27 / 138.57 | 183.68 / 95.90 |
+| Peak sampled KV / waiting samples | 44.1% / 0 | 43.3% / 0 |
+
+The observed wall reduction was **28.7%**, but the solved count fell
+from four to one. Password recovery timed out in the one-hour run and had
+solved after 24.28 minutes on the full-deadline trajectory. Git and regex
+failed *before* the shorter deadline on different stochastic trajectories,
+so their reward changes cannot be assigned to the cap alone. This control
+rejects the one-hour cap as the default Terminal policy for these ten
+cases. The C4 full-deadline run was both faster (**110.26 minutes**) and
+higher scoring (**4/10**) than this C2 capped run; C8 full-deadline is
+still running. Raw artifacts and numeric summary are under
+`/home/mvasiljev/build/gemma-terminal-c2-ten-60m/` and
+`/home/mvasiljev/build/gemma-terminal-c2-ten-60m-summary.json`.
