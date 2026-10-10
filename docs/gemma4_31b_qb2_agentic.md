@@ -46,7 +46,10 @@ isolated sizing change. Details, artifacts and acceptance explanations follow.
 
 Current evidence-backed choice is one warmed **C8, 256K KV, thinking-on**
 server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
-for Terminal. C4 thinking-off shortened both Terminal/ten runs but scored
+for Terminal. On the matched SWE/50 list, C8 finished 20.6 minutes sooner
+than C4 and solved 29 rather than 27 cases; that reward difference also
+reflects stochastic agent paths. C4 thinking-off shortened both Terminal/ten
+runs but scored
 **4/10 then 1/10** on the same host, so it is not the quality-preserving
 default; its twenty-case check scored **5/20** in 74.8 minutes. C8
 thinking-off scored **3/10** in 90.0 minutes and did not improve the
@@ -217,6 +220,16 @@ to 11,713 tokens per case. Their archived summary lacks per-case wall timings.
     -f inference-server-git-ref=FULL_40_CHARACTER_CANDIDATE_SHA \
     -f impl-of-model=gemma4-31b-qb2
   ```
+- Terminal workflow artifacts can contain enormous `.cast` and `.pane`
+  recordings. For numeric analysis, download the `workflow_logs` artifact ZIP
+  through the GitHub artifacts API, then run
+  `scripts/gemma4_extract_agentic_logs.py ARCHIVE.zip
+  OUTPUT/workflow_logs_agentic_gemma-4-31B-it_bh-qb-ge_gemma4-31b-qb2`.
+  It omits only terminal recordings. Run
+  `scripts/gemma4_agentic_summary.py OUTPUT --output SUMMARY.json` to parse
+  the case and server records. A check on the completed C4 thinking-off
+  Terminal/20 ZIP reproduced its 5/20 score, 4,490.50-second suite wall,
+  and exact input/output-token totals.
 - The inference-server [baseline branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-baseline)
   adds tool-call parsing to the dedicated dev catalog entry and restores the
   original five fixed Terminal-Bench 2.0 and SWE-bench Verified cases. It keeps
@@ -1298,7 +1311,10 @@ limit conclusions about the two-case reward difference.
 
 C8 shortened the selected-fifty wall by **20.62 minutes (10.2%)**, with
 similar output-token volume, even though each case's elapsed clock often
-grew under higher concurrency. C4's 785.59 summed case-minutes divided by
+grew under higher concurrency. Across the same fifty IDs, the median
+C8/C4 case-clock ratio was **1.88**, while the median output-token ratio
+was **0.99**; path and host differences prevent attributing the clock
+change solely to device contention. C4's 785.59 summed case-minutes divided by
 four slots gives a 196.40-minute perfect-packing lower bound, only 5.38
 minutes below its wall. Both widths nearly fill their trial slots. C8's
 41.63 output tokens per wall second is 10.8% above C4's 37.58; this
