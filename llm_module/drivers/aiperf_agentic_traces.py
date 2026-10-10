@@ -42,9 +42,9 @@ logger = logging.getLogger(__name__)
 
 # vLLM partitions the prompt tokens it scheduled by where they came from, one
 # series per ``source`` label: ``local_cache_hit`` is the GPU prefix cache,
-# ``external_kv_transfer`` a KV-offload tier, ``local_compute`` the rest.
+# ``external_kv_transfer`` a KV-offload tier or a peer worker's KV connector,
+# ``local_compute`` the rest.
 PROMPT_TOKENS_BY_SOURCE_ALIASES: Tuple[str, ...] = ("vllm:prompt_tokens_by_source",)
-_CACHE_HIT_TOKEN_SOURCE = "local_cache_hit"
 
 
 @dataclass(frozen=True)
@@ -553,11 +553,14 @@ def parse_aiperf_output(
     # writes no usable series -- or no ``server_metrics_export.json`` at all --
     # so fall back to the server's per-response usage accounting, which every
     # OpenAI-compatible endpoint reports as ``prompt_tokens_details``.
-    engine_metrics = _parse_prefix_cache_metrics(artifact_dir, metrics_urls)
-    if engine_metrics:
-        metrics.update(engine_metrics)
-    else:
-        metrics.update(_usage_cache_hit_metrics(summary))
+    # A Dynamo frontend's own cached-token histogram is the last resort, for
+    # responses that carry no ``prompt_tokens_details``.
+    export = _load_server_metrics_export(artifact_dir)
+    metrics.update(
+        _parse_prefix_cache_metrics(export, metrics_urls)
+        or _usage_cache_hit_metrics(summary)
+        or _dynamo_frontend_cache_hit_metrics(export)
+    )
 
     return metrics
 
@@ -585,7 +588,10 @@ def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
     if pct is None:
         return {}
 
-    metrics: Dict[str, Any] = {"measured_prefix_cache_hit_pct": pct}
+    metrics: Dict[str, Any] = {
+        "measured_prefix_cache_hit_pct": pct,
+        "prefix_cache_hit_source": "response_usage",
+    }
     if cached is not None:
         metrics["prefix_cache_hit_tokens_measured"] = cached
     if prompt is not None:
@@ -593,8 +599,53 @@ def _usage_cache_hit_metrics(summary: Mapping[str, Any]) -> Dict[str, Any]:
     return metrics
 
 
+def _load_server_metrics_export(artifact_dir: Path) -> Dict[str, Any]:
+    """The run's ``server_metrics_export.json``, or ``{}`` when there is none."""
+    candidates: List[Path] = [artifact_dir / "server_metrics_export.json"]
+    candidates.extend(sorted(artifact_dir.rglob("*server_metrics_export.json")))
+    export_path = next((p for p in candidates if p.exists()), None)
+    if export_path is None:
+        logger.debug("No server_metrics_export.json under %s.", artifact_dir)
+        return {}
+    export = load_json(export_path) or {}
+    return export if isinstance(export, dict) else {}
+
+
+def _dynamo_frontend_cache_hit_metrics(export: Mapping[str, Any]) -> Dict[str, Any]:
+    """Hit rate from a Dynamo frontend's per-request cached/input histograms.
+
+    These observe the same per-response counts as usage. The router's
+    ``router_kv_hit_rate`` is not used: it is an overlap estimate averaged per
+    routing decision, not a measurement.
+    """
+    series_by_metric = export.get("metrics")
+    if not isinstance(series_by_metric, Mapping):
+        return {}
+
+    def _sum(name: str) -> Optional[float]:
+        values = [
+            s["stats"]["sum"]
+            for s in (series_by_metric.get(name) or {}).get("series") or []
+            if isinstance(s, Mapping)
+            and isinstance(s.get("stats"), Mapping)
+            and isinstance(s["stats"].get("sum"), (int, float))
+        ]
+        return float(sum(values)) if values else None
+
+    cached = _sum("dynamo_frontend_cached_tokens")
+    prompt = _sum("dynamo_frontend_input_sequence_tokens")
+    if cached is None or not prompt:
+        return {}
+    return {
+        "measured_prefix_cache_hit_pct": 100.0 * min(cached, prompt) / prompt,
+        "prefix_cache_hit_source": "dynamo_frontend",
+        "prefix_cache_hit_tokens_measured": cached,
+        "prefix_cache_prompt_tokens_measured": prompt,
+    }
+
+
 def _parse_prefix_cache_metrics(
-    artifact_dir: Path, metrics_urls: Sequence[str] = ()
+    export: Mapping[str, Any], metrics_urls: Sequence[str] = ()
 ) -> Dict[str, Any]:
     """Measure the engine's prefix-cache hit rate from its own counters.
 
@@ -619,18 +670,6 @@ def _parse_prefix_cache_metrics(
     Returns ``{}`` when the counters are absent, so the report drops the column
     rather than publishing a misleading 0%.
     """
-    candidates: List[Path] = [artifact_dir / "server_metrics_export.json"]
-    candidates.extend(sorted(artifact_dir.rglob("*server_metrics_export.json")))
-    export_path = next((p for p in candidates if p.exists()), None)
-    if export_path is None:
-        logger.debug(
-            "No server_metrics_export.json under %s; measured prefix-cache hit "
-            "rate unavailable.",
-            artifact_dir,
-        )
-        return {}
-
-    export = load_json(export_path) or {}
     series_by_metric = export.get("metrics")
     if not isinstance(series_by_metric, Mapping):
         return {}
@@ -666,9 +705,11 @@ def _parse_prefix_cache_metrics(
                 return float(sum(values))
         return None
 
-    def _counter_total_by_label(aliases: Sequence[str], label: str) -> Dict[str, float]:
-        """Sum one counter per distinct value of ``label``, across endpoints."""
-        totals: Dict[str, float] = {}
+    def _counter_total_by_label(
+        aliases: Sequence[str], label: str
+    ) -> Dict[str, Dict[str, float]]:
+        """Sum one counter per ``label`` value, keyed by endpoint."""
+        totals: Dict[str, Dict[str, float]] = {}
         for alias in aliases:
             metric = series_by_metric.get(alias)
             if not isinstance(metric, Mapping):
@@ -683,7 +724,8 @@ def _parse_prefix_cache_metrics(
                 value = stats.get("total")
                 key = labels.get(label)
                 if isinstance(value, (int, float)) and isinstance(key, str):
-                    totals[key] = totals.get(key, 0.0) + float(value)
+                    by_label = totals.setdefault(str(s.get("endpoint_url") or ""), {})
+                    by_label[key] = by_label.get(key, 0.0) + float(value)
             if totals:
                 return totals
         return totals
@@ -700,23 +742,34 @@ def _parse_prefix_cache_metrics(
             metrics["prefix_cache_metrics_endpoints"] = [str(e) for e in counted]
         return metrics
 
-    # Preferred, and what InferenceX's own aggregation reports
-    # (``utils/agentic/aggregation/backends/vllm.py``): the engine partitions the
-    # prompt tokens it scheduled by origin, so the cache's share is a share of a
-    # whole and cannot exceed 100%. The hits/queries pair below is its fallback,
-    # and is only equivalent while nothing queues -- a queued request is
+    # Preferred: the engine partitions the prompt tokens it scheduled by origin,
+    # so the cache's share is a share of a whole and cannot exceed 100%. The
+    # hits/queries pair below is its fallback, and is only equivalent while
+    # nothing queues -- a queued request is
     # re-queried on every scheduling attempt, which inflated the denominator to
     # 10.8x the tokens actually prefilled on a concurrency-8 replay and reported
     # 8.9% for a cache serving 41.1%.
-    by_source = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
-    prefilled_tokens = sum(by_source.values())
-    if prefilled_tokens > 0:
-        cached = by_source.get(_CACHE_HIT_TOKEN_SOURCE, 0.0)
+    #
+    # On a disaggregated deployment the decoder re-reports every prompt token as
+    # ``external_kv_transfer``, so summing all workers would count each prompt
+    # twice and halve the rate. ``external_kv_transfer`` therefore only counts
+    # on workers that also recorded local hits (a prefiller's offload tier);
+    # ``local_compute`` counts everywhere, since a token is computed at most
+    # once in the cluster.
+    by_endpoint = _counter_total_by_label(PROMPT_TOKENS_BY_SOURCE_ALIASES, "source")
+    prefilling = [s for s in by_endpoint.values() if s.get("local_cache_hit", 0.0) > 0]
+    computed = sum(s.get("local_compute", 0.0) for s in by_endpoint.values())
+    cached = sum(
+        s.get("local_cache_hit", 0.0) + s.get("external_kv_transfer", 0.0)
+        for s in prefilling
+    )
+    if prefilling and cached + computed > 0:
         return _with_endpoints(
             {
-                "measured_prefix_cache_hit_pct": 100.0 * cached / prefilled_tokens,
+                "measured_prefix_cache_hit_pct": 100.0 * cached / (cached + computed),
+                "prefix_cache_hit_source": "engine_token_sources",
                 "prefix_cache_hit_tokens_measured": cached,
-                "prefix_cache_prompt_tokens_measured": prefilled_tokens,
+                "prefix_cache_prompt_tokens_measured": cached + computed,
             }
         )
 
@@ -725,10 +778,9 @@ def _parse_prefix_cache_metrics(
     if hits is None or queries is None:
         logger.warning(
             "Prefix-cache counters (tt_prefix_cache_* / vllm:prefix_cache_*) not "
-            "found in %s%s; the measured hit rate is omitted. Reachable endpoints "
-            "were %s -- point --agentic-traces-metrics-url at a worker that "
-            "exports them.",
-            export_path,
+            "found in the server metrics%s; falling back to response usage. "
+            "Reachable endpoints were %s -- point --agentic-traces-metrics-url at "
+            "a worker that exports them.",
             f" for the requested endpoint(s) {sorted(wanted)}" if wanted else "",
             (export.get("summary") or {}).get("endpoints_successful") or "none",
         )
@@ -742,6 +794,7 @@ def _parse_prefix_cache_metrics(
     return _with_endpoints(
         {
             "measured_prefix_cache_hit_pct": 100.0 * min(hits, queries) / queries,
+            "prefix_cache_hit_source": "engine_hit_counters",
             "prefix_cache_hits_measured": hits,
             "prefix_cache_queries_measured": queries,
         }
@@ -902,9 +955,11 @@ def _log_run_summary(run: AgenticTracesRun, metrics: Mapping[str, Any]) -> None:
     )
     measured_cache = metrics.get("measured_prefix_cache_hit_pct")
     logger.info(
-        "[agentic-traces]   prefix-cache hit measured/theoretical = %s/%.1f%%",
+        "[agentic-traces]   prefix-cache hit measured/theoretical = %s/%.1f%% "
+        "(source: %s)",
         f"{float(measured_cache):.1f}%" if measured_cache is not None else "n/a",
         float(metrics.get("theoretical_prefix_cache_hit_pct", 0) or 0),
+        metrics.get("prefix_cache_hit_source") or "none",
     )
 
     # Context overflow means traces were truncated against --max-context-length,
