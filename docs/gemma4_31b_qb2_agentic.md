@@ -1185,6 +1185,16 @@ time per call fell from 96.5 to 26.4 seconds. This supports shorter model
 responses as the principal wall-time mechanism; it does not establish that
 the agent performed equivalent reasoning or that a different case set
 would retain its rewards.
+Granite also tested a bounded 8K full-thinking response. In Gemma's C2
+fixed-five Terminal trajectory, only **6/126** responses exceeded 8,192
+tokens, and clipping their excess at that boundary would remove about
+**2.1%** of recorded output tokens (C4: 5/139 matched steps, about 2.4%).
+A 4,096-token boundary would touch 38/126 C2 calls and remove at most
+17.6% of recorded output tokens, with material truncation risk. These are
+arithmetic upper bounds on tokens removed from the recorded paths; a real
+cap changes subsequent agent prompts and rewards. An 8K cap therefore
+cannot plausibly match the observed 86.5% output reduction from
+thinking-off on these trajectories, and was not dispatched as a priority.
 
 To check whether the quality result survives a larger fixed denominator,
 the [C2 ten-case thinking-off branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-ten-thinkoff)
