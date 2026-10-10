@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from llm_module.agentic.local_datasets import local_task_pattern
 from llm_module.agentic.progress import (
     TIMEOUT_EXIT_CODE,
     make_terminal_bench_probe,
@@ -106,6 +107,10 @@ class HarborRunConfig:
     # as a child of the WORKFLOW_RUN_SCRIPT engine and must reach harbor explicitly.
     venv_python: Optional[Path] = None
     harbor_timeout_sec: Optional[float] = None
+    # Locally generated copy of ``dataset`` (see ``local_datasets``). When set,
+    # Harbor runs these task directories instead of resolving ``dataset`` in
+    # the registry.
+    dataset_path: Optional[Path] = None
 
 
 def _apply_mini_swe_agent_defaults(
@@ -202,13 +207,22 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config_path = config.jobs_dir / f"{config.task_name}_harbor_config.json"
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_config: dict[str, Any] = {"name": config.dataset}
+    task_names = config.task_names
+    exclude_task_names = config.exclude_task_names
+    if config.dataset_path is not None:
+        dataset_config: dict[str, Any] = {"path": str(config.dataset_path)}
+        task_names = [local_task_pattern(config.dataset, p) for p in task_names]
+        exclude_task_names = [
+            local_task_pattern(config.dataset, p) for p in exclude_task_names
+        ]
+    else:
+        dataset_config = {"name": config.dataset}
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
-    if config.task_names:
-        dataset_config["task_names"] = config.task_names
-    if config.exclude_task_names:
-        dataset_config["exclude_task_names"] = config.exclude_task_names
+    if task_names:
+        dataset_config["task_names"] = task_names
+    if exclude_task_names:
+        dataset_config["exclude_task_names"] = exclude_task_names
 
     environment_config: dict[str, Any] = {"type": config.environment_type}
     if _mini_swe_needs_host_gateway(config):
@@ -286,6 +300,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _mini_swe_needs_host_gateway(config)
+        or config.dataset_path is not None
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
