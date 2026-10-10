@@ -328,6 +328,16 @@ class EvalTask:
     seed: int = 42
     use_chat_api: bool = False
     apply_chat_template: bool = True
+    # lm-eval --fewshot_as_multiturn. None keeps the harness default (the
+    # pinned harness turns it on whenever --apply_chat_template is set); set
+    # False/True only where a model's chat template needs the other layout.
+    fewshot_as_multiturn: Optional[bool] = None
+    # Why this task needs a (new) GPU reference from
+    # scripts/gpu_reference_colab/ --sweep, e.g. the published number measures a
+    # different checkpoint or setting. The sweep selects every task that sets it
+    # (even one with a gpu_reference_score) plus every ungated task; recording
+    # the reference clears it. Data only: never read when grading.
+    gpu_reference_requested: Optional[str] = None
     log_samples: bool = True
     # Opt-in: preserve the model's separate reasoning_content trace in the
     # per-sample logs (requires the chat API + a server that returns reasoning
@@ -4193,6 +4203,11 @@ _eval_config_list = [
             EvalTask(
                 task_name="mmlu_pro",
                 num_fewshot=5,
+                # mmlu_pro's few-shot examples put the worked answer inside the user turn, so the harness's default
+                # multiturn layout (on under --apply_chat_template) sends system + six consecutive user messages,
+                # which Mistral's chat template rejects ("conversation roles must alternate"). Single-turn renders
+                # all five examples into one user message. Set before the #5353 GPU reference was measured.
+                fewshot_as_multiturn=False,
                 score=EvalTaskScore(
                     published_score=23.06,
                     published_score_ref="https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard#/?search=mistralai%2FMistral-7B-Instruct-v0.3&official=true",
