@@ -357,18 +357,19 @@ remain identical to the C2 control. After C4 fixed-five completed faster
 and retained both previously solved SWE cases, the
 [C4 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c4-ten)
 and [QB2 dispatch 37985892182](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37985892182)
-use the same ten SWE IDs at physical batch four. Report the first-five and
-all-ten rewards separately for both variants. After the successful C8
+used the same ten SWE IDs at physical batch four. The first-five and
+all-ten rewards are reported separately below. After the successful C8
 synthetic sweep, the
 [C8 ten-case branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c8-ten)
 and [QB2 dispatch 37994423239](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37994423239)
 used those same ten SWE IDs at physical batch eight and completed; results
-appear below. Matched ten-case Terminal expansions are running at
+appear below. Matched ten-case Terminal expansions completed at
 [C2](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996976665)
 and [C4](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37996981703)
 with the same pinned Metal-main image and ten IDs used for SWE. Their first
-five are the original fixed-five control; score that subset separately from
-all ten, and compare case wall and token volume alongside total wall. These
+five are the original fixed-five control; the analysis below scores that
+subset separately from all ten and compares case wall and token volume
+alongside total wall. These
 jobs retain the three-hour per-case deadline and temperature 1.0.
 
 A [C2 one-hour Terminal pilot branch](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c2-60m)
@@ -511,7 +512,8 @@ prefill/scheduler admission remains a candidate. The
 second pair was about 2.6 and 3.3 seconds in both. This points to a repeatable
 cold first-pair effect at that shape, unrelated to the 192K change. The
 smaller KV allocation therefore reserves fewer pages without a measured synthetic
-throughput penalty; selection still depends on concurrent Terminal results.
+throughput penalty. The later live Terminal and twenty-case SWE results
+favor 256K for admission headroom without an observed 192K speed gain.
 Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-c2-benchmark-kv192/` and
 `/home/mvasiljev/build/gemma-c2-benchmark-kv192-summary.json`.
@@ -551,10 +553,10 @@ but cannot provide the same gain when prompt processing dominates. Terminal
 trajectories build large prompts; this scaling curve argues against assuming
 that C8 will double Terminal throughput. A
 [C8 catalog candidate](https://github.com/tenstorrent/tt-inference-server/tree/mvasiljevic/gemma4-31b-agentic-c8)
-is prepared for a benchmark on a clean runner after the active evaluation
-queue, to locate that limit before spending hours on C8 agentic cases. Its
+was benchmarked on a clean runner before C8 agentic cases to locate that
+limit. Its
 [pinned-main dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37984140248)
-uses the same Metal image and full inference-server commit
+used the same Metal image and full inference-server commit
 `5f0374c51d6d883767f48af4c63a5027c2883437`. The first setup dispatch
 with a short checkout SHA was canceled; the next failed server-type resolution
 because its implementation ID used underscores instead of the catalog's
