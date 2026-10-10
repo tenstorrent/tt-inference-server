@@ -37,7 +37,8 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Fast pilot matched both C4 thinking-on aggregate scores, but the same-host repeat did not |
 | Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, showing unstable quality on ten cases |
 | Terminal expanded twenty, C4 thinking off | 5/20 solved, 74.8 min evaluation | Original ten 2/10, added ten 3/10; zero errors, 68.8% peak KV; unsolved Caffe task set the wall |
-| Terminal expanded twenty, C4 thinking on | 4/20 solved, 279.8 min evaluation | Same IDs as off/20; two three-hour case timeouts, 68.1% peak KV |
+| Terminal expanded twenty, C4 thinking on, four agents | 4/20 solved, 279.8 min evaluation | Same IDs as off/20; two three-hour case timeouts, 68.1% peak KV |
+| Terminal expanded twenty, C4 thinking on, eight agents | 6/20 solved, 216.2 min evaluation | Same IDs and physical width as four-agent control; one timeout, 86.7% peak KV |
 | Terminal expanded ten, C8 thinking off | 3/10 solved, 90.0 min evaluation | FEAL took 90 min; eight model rows active in only 1.5% of samples |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
@@ -47,40 +48,44 @@ KV-hook row, which uses a separate image built from that commit plus the
 isolated sizing change. Details, artifacts and acceptance explanations follow.
 
 Current evidence-backed choice is one warmed **C8, 256K KV, thinking-on**
-server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
-for Terminal as a provisional reference-policy setting. On the matched
-SWE/50 list, C8 finished 20.6 minutes sooner
-than C4 and solved 29 rather than 27 cases; that reward difference also
+server for SWE and one warmed **C4, 256K KV, thinking-on, eight-agent,
+three-hour deadline** server for Terminal as a provisional reference-policy
+setting. These operating points improved live job wall while retaining the
+full-thinking Terminal reference policy. Neither selected score has
+demonstrated full-set H100 quality parity. The eight-agent Terminal/20
+run scored 6/20 in 216.2 minutes,
+versus four-agent 4/20 in 279.8 minutes on the same IDs. On the matched
+SWE/50 list, C8 finished 20.6 minutes sooner than C4 and solved 29 rather
+than 27 cases; that reward difference also
 reflects stochastic agent paths. A second disjoint C8 SWE/50 scored 29/50
 in 140.2 minutes, for **58/100 distinct selected cases** across the two
-C8 runs. C4 thinking-off shortened both Terminal/ten
-runs but scored **4/10 then 1/10** on the same host. On the exact
-twenty-case list, thinking-on scored **4/20 in 279.8 minutes** and
-thinking-off **5/20 in 74.8 minutes**. Neither mode has shown the
-full-set Terminal reference target, and a repeat is needed before claiming
-one preserves more reward. C8
-thinking-off scored **3/10** in 90.0 minutes and did not improve the
-Terminal wall over the C4 thinking-off pilots.
-The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
-used more KV; C8 thinking-off/Terminal10 scored 3/10 in 90.0 minutes,
-without a useful Terminal wall gain. Each server uses one
-startup-warmed physical trace and serves
-logical request counts up to that width. These small fixed subsets do not
-establish parity with the full 89-task Terminal or 500-instance SWE H100
-reference scores of 44.94% and 64.8%.
+C8 runs. C4 thinking-off shortened Terminal substantially but scored
+**4/10 then 1/10** in two same-host ten-case runs and **5/20 in 74.8
+minutes** on the larger list. The full-thinking eight-agent result scored
+**6/20** on that list; these stochastic selected subsets do not establish
+that either thinking policy preserves the full-89 H100 quality target.
+The matched C10/SWE20 scored two more cases than C8 but took 13.1 more
+minutes and used more KV. Each server uses one startup-warmed physical
+trace and serves logical request counts up to that width. The selected
+Terminal and SWE subsets do not establish parity with the full 89-task
+and 500-instance H100 references of 44.94% and 64.8%.
 
 The larger matched checks include
 [completed C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
 against the completed thinking-off Terminal/20 list, and
 [completed C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
 against [completed C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
-on the exact same fifty IDs. A C4 server with eight Terminal trials is
-prepared to test scheduling independently of physical decode width; its
+on the exact same fifty IDs. A
+[second disjoint C8 SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38051254512)
+broadens coverage to 100 distinct cases. A
+[completed C4/eight-agent Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38048296731)
+isolates agent scheduling from physical decode width. Its
 [first dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
 was canceled while queued for the runner-guard refresh, then
 [reissued](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38043892436).
-The retry stopped at fabric startup on `p05t06`, with no case result.
-All pin the same Metal main image.
+That retry stopped at fabric startup on `p05t06`, with no case result;
+the completed scheduling run used clean `p05t05`. All scored runs pin
+the same Metal main image.
 
 ## Existing evidence
 
@@ -1371,7 +1376,10 @@ scores were 58%, 6.8 percentage points below the configured 64.8% H100
 full-500 reference. The generic full-set accuracy gate failed on each
 selected fifty. These strata-matched but selected subsets do not prove a
 full-set regression or parity, and no matched H100 case outcomes were
-available to isolate a device versus agent-path cause.
+available to isolate a device versus agent-path cause. Two disjoint
+strata-matched groups both scoring 58% are nevertheless a substantive
+quality signal below the configured 64.8% reference; more speed tuning
+alone does not establish that the target is maintained.
 
 | C8 SWE measure | First fifty | Disjoint second fifty |
 | --- | ---: | ---: |
@@ -2226,10 +2234,10 @@ after exact-name read-only guards again reserved both known unhealthy hosts.
 This is a direct scheduling comparison
 with the C4/four-trial run. The C8/eight-trial
 ten-case result rarely filled all decode rows, while C4/four-trial ten-case
-runs reached four active rows in about 40% of server samples. More pending
-agents could hide tool work, but queueing could also raise request latency;
-compare wall, per-case rewards, running/waiting samples and timeouts before
-selecting this policy.
+runs reached four active rows in about 40% of server samples. This made
+additional agent overlap worth testing while holding physical width fixed;
+the completed comparison below includes wall, rewards, running/waiting
+samples and timeouts.
 The retry landed on `qb2-120-p05t06` after the completed C8 SWE/50 job,
 but the model failed before any Terminal task with `TT_FATAL` in
 `topology_mapper.cpp:556`: the four-node logical mesh could not map to the
@@ -2241,8 +2249,72 @@ performed. Its raw failure logs are in
 `/home/mvasiljev/build/gemma-terminal-c4-a8-twenty-startup-fail/`.
 After C4 SWE/50 finished, the same Terminal scheduling candidate was
 [dispatched again](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38048296731)
-and assigned to the clean `qb2-120-p05t05` runner. This is the matched
-eight-agent scheduling check; its result is pending.
+and completed on clean `qb2-120-p05t05`: **6/20 solved** (3/10 original,
+3/10 added), **one HTML agent timeout**, and **216.16 evaluation minutes**.
+It retained all four solves from the four-agent run and added git
+multibranch and KV store gRPC. Its generic full-set accuracy gate failed
+at 30% versus the 44.94% H100 full-89 reference; the selected 20 tasks
+cannot establish parity.
+
+| Matched full-thinking Terminal/20 measure | C4, four agents | C4, eight agents |
+| --- | ---: | ---: |
+| Solved / errors | 4/20 / 2 | 6/20 / 1 |
+| Evaluation wall, min | 279.78 | 216.16 |
+| Sum of case clocks, min | 894.34 | 1421.87 |
+| Observed case parallelism | 3.20 | 6.58 |
+| Sum of API / other case time, min | 656.90 / 237.44 | 1197.11 / 224.77 |
+| Input / output tokens | 8.379M / 1.052M | 10.854M / 982.1K |
+| Agent model calls | 401 | 454 |
+| Agent output / suite second | 62.65 | 75.72 |
+| Mean sampled running rows | 2.57 | 3.62 |
+| Samples with all four rows running | 445/1680 | 998/1297 |
+| Samples with a waiting request | 11/1680 | 1039/1297 |
+| Peak / p95 sampled KV | 68.1% / 43.0% | 86.7% / 61.1% |
+| Trace warm-to-capture time | 102.8 s | 118.5 s |
+
+Eight agents shortened wall by **63.62 minutes (22.7%)** while physical
+decode width stayed four. Case clocks grew because more agents contended
+for that same model, but the server had all four rows running in **76.9%**
+of samples, versus **26.5%** with four agents. Median positive generation
+throughput rose from 67.4 to **95.65 tokens/s**; agent output divided by
+suite wall rose 20.9%, despite 6.6% fewer output tokens and 29.5% more
+input tokens on different trajectories. The larger trial pool both hid
+tool work and exposed more simultaneous model work. It also left waiting
+requests in **80.1%** of samples, versus 0.7%, and raised KV peak to
+86.7%. That occupancy would be about **115.6%** of a 192K pool under
+linear scaling, reinforcing the 256K choice for this setting. The server
+logged no preemption or AICLK warning, so eight
+agents were supported on this sample with less admission headroom.
+Increasing trials again would need a separate margin check; the existing
+evidence does not favor a wider physical batch for Terminal.
+
+The four-agent FEAL case started **99 minutes** after the first wave and
+timed out after 180.5 minutes, finishing last. With eight agents FEAL
+started **37 minutes** after the first wave, used 81.7 minutes, and did
+not time out. QEMU, the last eight-agent finisher, started **92 minutes**
+after the first wave and ran 124.2 minutes; on four agents it started
+about 150 minutes after the first wave and ran 122.4 minutes. The roughly
+58-minute earlier QEMU admission explains much of the 63.6-minute suite
+gain, while the case-clock and token changes show that this is not an
+isolated device-speed measurement. The eight-agent run had a single
+three-hour HTML timeout. One changed reward trajectory cannot prove a
+quality improvement, but this run did not lose any of the four-agent
+solves. **C4 physical batch, eight agent trials, 256K KV, full thinking
+and the three-hour deadline** is the best measured Terminal speed policy
+under the reference agent settings. Its 6/20 selected score remains below
+the full-set target, which has not been demonstrated.
+
+The password-recovery case again produced a very large terminal capture:
+the workflow ZIP was **3.22 GB** and its archived contents about **347 GB**,
+almost entirely `.cast` and `.pane` files. The selective extractor kept
+the numeric evidence without expanding them. GitHub's workflow-log upload
+took **11 minutes** after the test step, versus 3 minutes 15 seconds for
+the 1.15 GB four-agent archive. Making giant terminal recordings a separate
+optional artifact could shorten full-job turnaround while retaining the
+case and server records by default; it is a workflow change, not an
+inference speedup. Raw logs and summary are
+under `/home/mvasiljev/build/gemma-terminal-c4-a8-twenty/` and
+`/home/mvasiljev/build/gemma-terminal-c4-a8-twenty-summary.json`.
 
 The C4 thinking-off pilot also kept four rows active in 135/278 sampled
 windows, unlike full-thinking C8 Terminal/ten, which occupied all eight
@@ -2285,8 +2357,9 @@ warning, and 226 trace warm/capture intervals totaling 75.4 seconds.
 The wider physical trace had too little sustained work in these ten
 Terminal cases to establish a speed advantage, while the off policy
 again scored below both C4 full-thinking ten-case runs. Retain C4 full
-thinking provisionally for Terminal; the matched twenty-case result below
-does not show a score advantage for it. Raw artifacts and numeric summary
+thinking provisionally for Terminal; the four-trial matched twenty-case
+result below did not show a score advantage over thinking-off, while the
+later eight-trial result did. Raw artifacts and numeric summary
 are under
 `/home/mvasiljev/build/gemma-terminal-c8-ten-thinkoff/` and
 `/home/mvasiljev/build/gemma-terminal-c8-ten-thinkoff-summary.json`.
@@ -2385,3 +2458,32 @@ C8/ten run (**180.38 minutes**, **3/10**). Raw artifacts and numeric summary
 are under
 `/home/mvasiljev/build/gemma-terminal-c2-ten-60m/` and
 `/home/mvasiljev/build/gemma-terminal-c2-ten-60m-summary.json`.
+
+## Remaining quality and performance work
+
+The selected C8 SWE samples each scored 29/50 and combined to 58/100;
+the best measured full-thinking Terminal setting scored 6/20. Both are
+below the configured H100 full-set targets on different denominators.
+Before asserting reference quality, obtain matched H100 case outcomes
+or run a matched GPU subset with the same task IDs, agent version,
+prompt/template, sampling settings and deadlines. Inspect changed
+trajectories and the few agent exits separately from model inference.
+
+For model speed, profile long-prompt prefill and mixed prefill/decode on
+the warmed C8 SWE server. Its first fifty averaged 16.9K input tokens
+per model call and showed prompt activity in 93.5% of samples; short
+128/128 throughput overstates its agentic rate. For Terminal, the six
+highest-output unsolved cases used 81.3% of full-thinking output tokens.
+Investigate repeated unsuccessful turns without shortening the benchmark's
+deadline by default: the tested one-hour cap lost three solves on ten
+cases. Keep the warmed physical C4/eight-agent and C8/eight-agent job
+granularity until a controlled trace-switch or batching experiment shows
+a gain; current trace warm/capture intervals account for under 1% of
+Terminal and about 3% of SWE wall.
+
+Keep 256K KV for these settings. Sampled peaks reached 86.7% on
+C4/eight-agent Terminal and 88.3% on C8/SWE50, so 192K lacks headroom
+under linear occupancy scaling. The 3.22 GB Terminal artifact took
+11 minutes to upload; separating giant terminal recordings from the
+default numeric/log artifact would reduce full-job turnaround while
+preserving failure evidence as an optional artifact.
