@@ -944,6 +944,23 @@ score denominator. Long-prompt prefill and shared-context admission can
 limit C8, so a successful full suite is still needed before preferring it
 for Terminal.
 
+The first [C4/ten repeat dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010281587)
+was canceled during runner setup after assignment to the previously occupied
+`p04t07` host. A second [C8/ten Terminal dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010505443)
+was likewise canceled during setup after assignment to the host with the
+fabric mapping failure; neither reached model work. Wrapper commit
+`a375735` added a read-only exact-runner hold to the existing dispatch
+workflow. The [occupied-host hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010437751)
+then reserved `p04t07`, and the [named health hold](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010838406)
+reserved `p04t05` without touching containers or devices. A temporary
+healthy-host hold was canceled after the health hold started. The
+[C4/ten repeat](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010466649)
+is running on clean `p05t06`, and the
+[C8/ten Terminal retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38010947583)
+is running on clean `p05t05`. Compare the latter's case rewards and wall
+with C2/C4 ten-case controls once it completes; the canceled attempts
+remain infrastructure scheduling history, not reward observations.
+
 ## Current-main Terminal fixed-five result at C2
 
 The [C2 fixed-five Terminal run](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/37963842946)
