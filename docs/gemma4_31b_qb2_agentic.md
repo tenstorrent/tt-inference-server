@@ -1114,7 +1114,10 @@ the extra and longer case work offset that advantage in the suite wall.
 It had **85.5% peak KV**, leaving less admission margin than
 C8's 74.8%, though only 25/581 samples showed waiting and no preemption
 or AICLK warning was found. Its 843 trace warm/capture intervals summed
-to 161.1 seconds, close to C8's 157.6 seconds. For a **speed-first**
+to 161.1 seconds, close to C8's 157.6 seconds. A linear pool-size
+extrapolation would put this C10 peak at about **114% of a 192K pool**;
+that is not a live 192K test but makes shrinking the pool unsuitable
+for this twenty-case shape. For a **speed-first**
 SWE/20 policy, retain the warmed C8/256K server. C10's two additional
 solves are valuable but cannot yet be assigned to batch width rather
 than stochastic case paths; a larger fixed sample or repeat is needed
