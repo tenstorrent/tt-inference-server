@@ -62,9 +62,11 @@ The larger matched checks in flight are
 against the completed thinking-off Terminal/20 list, and
 [C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
 against [C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
-on the exact same fifty IDs. A [C4 server with eight Terminal
-trials](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
-is queued to test scheduling independently of physical decode width.
+on the exact same fifty IDs. A C4 server with eight Terminal trials is
+queued to test scheduling independently of physical decode width; its
+[first dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
+was canceled while queued for the runner-guard refresh, then
+[reissued](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38043892436).
 All pin the same Metal main image.
 
 ## Existing evidence
@@ -1276,6 +1278,15 @@ and exited. Both were verified in their read-only sleep step before the
 larger tests were dispatched. The C4 Terminal/20 and C8 SWE/50 test jobs
 then started on clean `p05t01` and `p05t06`, respectively. No runner
 reset or unowned-container mutation was performed.
+When those holds approached their three-hour expiry, the first queued
+C4/eight-trial Terminal/20 scheduling check was canceled before hardware
+work. [New exact-name `p04t05`](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38042229930)
+and [`p04t07`](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38042234212)
+guards were queued ahead of its retry. Each claimed its intended host as
+the old hold finished and entered the read-only sleep step; the
+[model retry](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38043892436)
+was dispatched only after both assignments were verified. The priority
+model jobs on `p05t01`, `p05t06` and `p05t05` were not interrupted.
 
 ## Current-main Terminal fixed-five result at C2
 
@@ -1939,7 +1950,12 @@ physical decode trace, [commit `30ce696b`](https://github.com/tenstorrent/tt-inf
 keeps the full-thinking C4 server and the exact same twenty Terminal IDs,
 but raises concurrent trials from four to eight. Its
 [dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38036249274)
-is a direct scheduling comparison with the C4/four-trial run. The C8/eight-trial
+was canceled while queued, before model work, ahead of the read-only
+runner-guard refresh. The same commit was
+[reissued](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38043892436)
+after exact-name read-only guards again reserved both known unhealthy hosts.
+This is a direct scheduling comparison
+with the C4/four-trial run. The C8/eight-trial
 ten-case result rarely filled all decode rows, while C4/four-trial ten-case
 runs reached four active rows in about 40% of server samples. More pending
 agents could hide tool work, but queueing could also raise request latency;
