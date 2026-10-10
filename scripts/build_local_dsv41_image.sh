@@ -66,7 +66,7 @@ s = re.sub(r'set\(fallbackHash "[^"]*"\)', 'set(fallbackHash "6e04eefa6b0")', s)
 s = re.sub(r'set\(fallbackSha "[^"]*"\)', 'set(fallbackSha "6e04eefa6b028dfdc7a3316dccd23fe933fd1e65")', s)
 open(p, "w").write(s)
 PY
-cp -a "$CTX/tis/utils" "$CTX/tis/VERSION" "$CTX/tis/reference_config" "$CTX/tis/workflows" "$CTX/"
+cp -a "$CTX/tis/utils" "$CTX/tis/VERSION" "$CTX/tis/reference_config" "$CTX/tis/workflows" "$CTX/tis/workflow_module" "$CTX/tis/report_module" "$CTX/"
 # models/ is copied after the C++ build (see the Dockerfile): keep it out of the build layers
 mv "$CTX/tt-metal/models" "$CTX/tt-metal-models"
 (cd "$CTX/tis" && git init -q && MODEL_SPECS_ENV=dev python3 -c "
