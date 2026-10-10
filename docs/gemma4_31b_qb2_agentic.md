@@ -36,6 +36,7 @@ commits, task lists, or agent policies are kept separate.
 | Terminal expanded ten, C4 thinking off | 4/10 solved, 46.2 min evaluation | Fast pilot matched both C4 thinking-on aggregate scores, but the same-host repeat did not |
 | Terminal expanded ten, C4 thinking off repeat | 1/10 solved, 35.1 min evaluation | Same clean host and zero errors; lost three pilot solves, so thinking-off is not a quality-preserving default |
 | Terminal expanded twenty, C4 thinking off | 5/20 solved, 74.8 min evaluation | Original ten 2/10, added ten 3/10; zero errors, 68.8% peak KV; unsolved Caffe task set the wall |
+| Terminal expanded twenty, C4 thinking on | 4/20 solved, 279.8 min evaluation | Same IDs as off/20; two three-hour case timeouts, 68.1% peak KV |
 | Terminal expanded ten, C8 thinking off | 3/10 solved, 90.0 min evaluation | FEAL took 90 min; eight model rows active in only 1.5% of samples |
 | Combined ten each, C2 thinking off | Terminal 3/10 in 54.4 min; SWE 3/10 in 66.1 min | One warmed server; Terminal faster but one fewer solved case than matched C2/ten, SWE slower than C2/ten |
 
@@ -46,12 +47,15 @@ isolated sizing change. Details, artifacts and acceptance explanations follow.
 
 Current evidence-backed choice is one warmed **C8, 256K KV, thinking-on**
 server for SWE and one warmed **C4, 256K KV, three-hour deadline** server
-for Terminal. On the matched SWE/50 list, C8 finished 20.6 minutes sooner
+for Terminal as a provisional reference-policy setting. On the matched
+SWE/50 list, C8 finished 20.6 minutes sooner
 than C4 and solved 29 rather than 27 cases; that reward difference also
 reflects stochastic agent paths. C4 thinking-off shortened both Terminal/ten
-runs but scored
-**4/10 then 1/10** on the same host, so it is not the quality-preserving
-default; its twenty-case check scored **5/20** in 74.8 minutes. C8
+runs but scored **4/10 then 1/10** on the same host. On the exact
+twenty-case list, thinking-on scored **4/20 in 279.8 minutes** and
+thinking-off **5/20 in 74.8 minutes**. Neither mode has shown the
+full-set Terminal reference target, and a repeat is needed before claiming
+one preserves more reward. C8
 thinking-off scored **3/10** in 90.0 minutes and did not improve the
 Terminal wall over the C4 thinking-off pilots.
 The matched C10/SWE20 scored two more cases but took 13.1 more minutes and
@@ -62,8 +66,8 @@ logical request counts up to that width. These small fixed subsets do not
 establish parity with the full 89-task Terminal or 500-instance SWE H100
 reference scores of 44.94% and 64.8%.
 
-The larger matched checks are
-[C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
+The larger matched checks include
+[completed C4 full-thinking Terminal/20](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
 against the completed thinking-off Terminal/20 list, and
 [completed C8 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033929827)
 against [completed C4 thinking-on SWE/50](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38035988741)
@@ -1348,6 +1352,19 @@ Raw C4 artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-swe-c4-fifty-main/` and
 `/home/mvasiljev/build/gemma-swe-c4-fifty-main-summary.json`.
 
+To broaden the accuracy sample without repeating the same fifty IDs,
+[C8 second-fifty commit `ca831e0b`](https://github.com/tenstorrent/tt-inference-server/commit/ca831e0bcf9357ff18626f25dd72ce2827b2eeed)
+keeps the same thinking-on C8 server, agent and Metal image but replaces
+the task list with [fifty disjoint Verified IDs](gemma4_31b_swe50_selection.md#second-disjoint-fifty).
+The official split was pinned at `c104f840`; after excluding the first
+fifty, seed `20261012` selected 19 easy, 27 medium and four 1–4-hour
+cases. Combined, the two samples cover 100 distinct cases with
+difficulty counts 38/54/8 and 47 Django cases, close to the 500-case
+split's proportions. The [second-fifty dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38051254512)
+is queued for a clean runner. Its score must be reported separately and
+alongside the first-fifty 29/50; it cannot be treated as a repeat or as
+proof of full-set H100 parity.
+
 For the twenty-case Terminal extension, the
 [Harbor Terminal-Bench 2.0 task catalog](https://hub.harborframework.com/datasets/terminal-bench/terminal-bench-2/latest?tab=tasks)
 lists 89 tasks. Sorting their IDs, excluding the fixed first ten, and
@@ -2071,10 +2088,10 @@ average because cases also perform non-model work. Sampled KV reached
 **68.8% peak and 52.7% p95**; nine of 450 ten-second samples had
 waiting, with no preemption or AICLK warning. Its 290 trace
 warm/capture intervals summed to 80.1 seconds. The low score across
-twenty cases and variable original-ten outcomes strengthen the decision
-to retain full thinking as Terminal default. The shorter off policy
-remains an explicitly lower-quality speed option and has not
-demonstrated the reference target. Raw artifacts and numeric summary are under
+twenty cases and variable original-ten outcomes do not establish that the
+shorter off policy preserves full-thinking reference quality. The matched
+thinking-on run below also scored poorly, so neither policy has
+demonstrated the full-set target. Raw artifacts and numeric summary are under
 `/home/mvasiljev/build/gemma-terminal-c4-twenty-thinkoff/` and
 `/home/mvasiljev/build/gemma-terminal-c4-twenty-thinkoff-summary.json`.
 
@@ -2083,9 +2100,56 @@ To check the selected quality policy on the same larger denominator,
 retains C4 full thinking and adds exactly the same ten predeclared
 Terminal IDs to the original ten. Its
 [twenty-case full-thinking dispatch](https://github.com/tenstorrent/tt-agentic-bringup-qb2/actions/runs/38033924660)
-will compare case identities and wall directly with the off/20 run.
-This is still a selected 20/89 subset, so a numerical match to the
-44.94% H100 full-set rate would not prove full-set parity.
+completed on `120-qb2-p05t01`: **4/20 solved**, **two agent timeouts**
+(HTML filter and FEAL), **279.78 evaluation minutes**. The first ten
+scored 2/10 (COBOL and regex) and the added ten 2/10 (headless terminal
+and merge diff ARC task). The off run scored 5/20 in 74.84 minutes on
+the same IDs. Both runs failed the generic full-set accuracy gate;
+their selected 20/89 subset cannot establish full-set parity with the
+44.94% H100 target.
+
+| Matched Terminal/20 measure | C4 thinking on | C4 thinking off |
+| --- | ---: | ---: |
+| Solved / errors | 4/20 / 2 | 5/20 / 0 |
+| Evaluation wall, min | 279.78 | 74.84 |
+| Sum of case clocks, min | 894.34 | 267.17 |
+| Sum of model API / other time, min | 656.90 / 237.44 | 165.59 / 101.57 |
+| Input / output tokens | 8.379M / 1.052M | 4.639M / 176.4K |
+| Model API calls | 401 | 282 |
+| Mean sampled running rows | 2.57 | 2.50 |
+| Peak / p95 sampled KV | 68.1% / 43.0% | 68.8% / 52.7% |
+| Waiting samples | 11/1680 | 9/450 |
+| Trace warm-to-capture time | 102.8 s | 80.1 s |
+
+Thinking-on generated **5.96 times** as many output tokens and took
+**3.74 times** the suite wall, yet solved one fewer case. Both modes
+solved COBOL, headless terminal and merge diff ARC task. Thinking-on
+alone solved regex; thinking-off alone solved git multibranch and model
+extraction. The first ten tied 2/10 while the added ten differed 2/10
+versus 3/10. FEAL and HTML each reached the three-hour agent timeout in
+the thinking-on run; their case clocks were 180.5 and 180.4 minutes, and
+neither solved. The long paths included 252.0K and 182.8K output tokens.
+The Harbor records show FEAL started at 09:03 UTC, roughly 99 minutes
+after the 07:24 first wave, and finished last at 12:03. QEMU started at
+09:54 and ran 122.4 minutes, finishing six minutes before FEAL. Thus
+the 279.8-minute suite wall includes a scheduling tail as well as slow
+inference; starting long cases earlier could shorten the suite even if
+their individual runtimes do not change.
+The shorter policy therefore offers a large measured speed gain, but
+the ten-case same-host repeat showed a three-solve swing, so a single
+20-case reward difference cannot prove it preserves the target score.
+
+Thinking-on averaged 3.20 overlapping case clocks but only 2.57 sampled
+running model rows, leaving room for the eight-agent scheduling check
+below. KV reached only 68.1% and 11/1680 samples showed waiting; the
+server logged neither preemption nor an AICLK warning. Trace warm/capture
+intervals summed to only 102.8 seconds, about 0.6% of the suite wall.
+The huge archived `recording.cast` and `terminus_2.pane` files in the
+password-recovery case made the workflow ZIP 1.15 GB and uncompressed
+content about 116 GB; the selective extractor kept all numeric records
+without expanding those recordings. Raw logs and numeric summary are
+under `/home/mvasiljev/build/gemma-terminal-c4-twenty-on/` and
+`/home/mvasiljev/build/gemma-terminal-c4-twenty-on-summary.json`.
 
 To separate the benefit of overlapping more agents from the cost of a wider
 physical decode trace, [commit `30ce696b`](https://github.com/tenstorrent/tt-inference-server/commit/30ce696bad400322c04c638387efd5a46ea127a9)

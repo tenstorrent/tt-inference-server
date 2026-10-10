@@ -1,4 +1,4 @@
-# Gemma 4 31B SWE Verified 50-case selection
+# Gemma 4 31B SWE Verified staged case selection
 
 Source: [SWE-bench Verified test split at revision
 `c104f840`](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Verified/tree/c104f840cc67f8b6eec6f759ebc8b2693d585d4a),
@@ -69,3 +69,64 @@ are Django. The full split has 194/261/42/3 difficulty counts and
 - `django__django-14011`
 - `django__django-14631`
 
+
+## Second disjoint fifty
+
+Exclude all fifty IDs above from the same pinned 500-case split. Within each
+difficulty stratum, sort the remaining IDs, then use one
+`random.Random(20261012)` instance to sample 19 `<15 min fix`, 27
+`15 min - 1 hour`, and four `1-4 hours` IDs in that order. This second
+sample has 25 Django cases and no overlap with the first fifty. The
+combined 100 have difficulty counts 38/54/8/0 and 47 Django cases.
+The list was fixed before the second C8 dispatch.
+
+- `psf__requests-5414`
+- `astropy__astropy-7166`
+- `django__django-11433`
+- `astropy__astropy-14309`
+- `django__django-11179`
+- `sphinx-doc__sphinx-9230`
+- `sphinx-doc__sphinx-7889`
+- `sympy__sympy-22714`
+- `django__django-11880`
+- `django__django-14855`
+- `psf__requests-1142`
+- `django__django-14089`
+- `django__django-14999`
+- `sphinx-doc__sphinx-8721`
+- `django__django-15104`
+- `django__django-11964`
+- `sympy__sympy-14711`
+- `sphinx-doc__sphinx-8475`
+- `sympy__sympy-19637`
+- `django__django-14559`
+- `django__django-16661`
+- `django__django-11848`
+- `sphinx-doc__sphinx-7985`
+- `mwaskom__seaborn-3069`
+- `django__django-12050`
+- `django__django-11477`
+- `sympy__sympy-22080`
+- `django__django-15161`
+- `sympy__sympy-20428`
+- `django__django-14122`
+- `pydata__xarray-6938`
+- `pydata__xarray-4695`
+- `scikit-learn__scikit-learn-26323`
+- `scikit-learn__scikit-learn-10297`
+- `django__django-16901`
+- `pylint-dev__pylint-6386`
+- `django__django-11211`
+- `django__django-14238`
+- `scikit-learn__scikit-learn-25931`
+- `sphinx-doc__sphinx-7757`
+- `django__django-11728`
+- `django__django-11532`
+- `django__django-15973`
+- `django__django-16950`
+- `psf__requests-2931`
+- `django__django-15103`
+- `django__django-11138`
+- `django__django-15957`
+- `astropy__astropy-14369`
+- `astropy__astropy-13398`
