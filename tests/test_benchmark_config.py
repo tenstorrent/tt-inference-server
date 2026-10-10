@@ -442,3 +442,26 @@ def test_non_super_cluster_sweep_has_no_min_num_prompts_floor(monkeypatch):
         * spec_max_concurrency
     )
     assert any(p.num_prompts < super_cluster_floor for p in text_params)
+
+
+def test_env_isl_osl_and_concurrency_override(monkeypatch):
+    from workflows.model_spec import ModelSpec  # noqa: F401
+
+    monkeypatch.setenv("TT_BENCH_ISL_OSL_PAIRS", "1321x256")
+    monkeypatch.setenv("TT_BENCH_CONCURRENCIES", "1,2,4,8")
+    monkeypatch.setenv("TT_BENCH_NO_STRUCTURED", "1")
+    bc = _import_benchmark_config(monkeypatch)
+    model_id = next(iter(MODEL_SPECS))
+    cfg = bc.get_benchmark_config(MODEL_SPECS[model_id])
+    points = [
+        (p.isl, p.osl, p.max_concurrency, p.num_prompts)
+        for t in cfg.tasks
+        for params in t.param_map.values()
+        for p in params
+        if p.isl == 1321
+    ]
+    assert points and all(isl == 1321 and osl == 256 for isl, osl, _, _ in points)
+    assert all(n == bc.get_num_prompts(1321, 256, c) for _, _, c, n in points)
+    assert not any(
+        t.__class__.__name__ == "BenchmarkTaskStructuredOutput" for t in cfg.tasks
+    )

@@ -114,13 +114,21 @@ def build_vllm_bench_serve_argv(
             ]
         )
 
-    if config.custom_dataset_path is not None:
+    # TT_BENCH_DATASET_PATH: JSONL of the model's own prompts (``{"prompt": ...}`` per line, raw chat
+    # content: the server applies its chat template once) used instead of random tokens, e.g. few-shot
+    # task prompts. Needs config.isl >= the longest prompt (the request truncates to isl tokens).
+    dataset_path = config.custom_dataset_path or (
+        Path(os.environ["TT_BENCH_DATASET_PATH"])
+        if os.environ.get("TT_BENCH_DATASET_PATH")
+        else None
+    )
+    if dataset_path is not None:
         cmd.extend(
             [
                 "--dataset-name",
                 "custom",
                 "--dataset-path",
-                str(config.custom_dataset_path),
+                str(dataset_path),
                 "--custom-output-len",
                 str(config.osl),
                 "--disable-shuffle",
@@ -174,6 +182,10 @@ def build_vllm_bench_serve_argv(
         value = os.environ.get(env_name)
         if value not in (None, ""):
             cmd.extend([flag, value])
+
+    # TT_BENCH_IGNORE_EOS=1: every request generates exactly OSL tokens (steady load).
+    if os.environ.get("TT_BENCH_IGNORE_EOS") not in (None, "", "0"):
+        cmd.append("--ignore-eos")
 
     # vllm bench serve defines --header with nargs="*"; pass all headers on one flag.
     cmd.extend(["--header", *headers])
