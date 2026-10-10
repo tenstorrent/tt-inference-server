@@ -38,6 +38,12 @@ hfCacheDir: ""
 #   --set-file runtimeModelSpecJson=runtime_model_spec.json
 runtimeModelSpecJson: ""
 
+# Optional: also expose the inference port on the node's IP at this port
+# (container hostPort), e.g. for per-host tunnels/LBs that target <node-ip>:<port>.
+# 0 disables. Only one Pod per Node can bind a given hostPort, so use it with
+# devices that take a whole node (e.g. a galaxy).
+hostPort: 0
+
 # Inference-route authentication. media and forge servers check a literal
 # `Authorization: Bearer $API_KEY` (/health and /v1/models stay open) and fall
 # back to a well-known built-in key when unset, so one of these two is required

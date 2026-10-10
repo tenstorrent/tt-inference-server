@@ -115,6 +115,9 @@ spec:
             - name: http
               containerPort: {{ $cfg.service.targetPort }}
               protocol: TCP
+              {{- if .Values.hostPort }}
+              hostPort: {{ .Values.hostPort | int }}
+              {{- end }}
           envFrom:
             - configMapRef:
                 name: {{ include "tt-inference-server.configmapName" . }}
