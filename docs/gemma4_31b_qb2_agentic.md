@@ -1106,7 +1106,10 @@ synthetic C10 gains at relevant long prompts were only 0.4–3.2%, however,
 and this live result does not establish a useful suite-wall gain.
 
 C10 reached ten running rows in 107/581 samples, with 6.68 running rows
-on average. It had **85.5% peak KV**, leaving less admission margin than
+on average, 0.90 more than C8; observed case parallelism also rose from
+6.79 to 7.57. The wider server did overlap more work as intended, but
+the extra and longer case work offset that advantage in the suite wall.
+It had **85.5% peak KV**, leaving less admission margin than
 C8's 74.8%, though only 25/581 samples showed waiting and no preemption
 or AICLK warning was found. Its 843 trace warm/capture intervals summed
 to 161.1 seconds, close to C8's 157.6 seconds. For a **speed-first**
