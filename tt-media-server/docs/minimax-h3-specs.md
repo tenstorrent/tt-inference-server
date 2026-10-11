@@ -21,12 +21,28 @@ These apply to every mode.
 | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | `prompt`          | Yes      | Non-empty; at most 3008 tokens                                                                                                                                                             | —                                                           |
 | `duration`        | No       | Whole seconds, 4 to 15                                                                                                                                                                     | 5                                                           |
-| `aspect_ratio`    | No       | One of `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`. Ignored if `height` and `width` are set. In FL2VA, also ignored if a keyframe is sent                                                  | `16:9`                                                      |
-| `height`, `width` | No       | The exact output resolution. Set both or neither. Each must be a multiple of 32, `height × width` must be at most 1,032,192 (768 × 1344), and `width : height` must be between 1:4 and 4:1 | Computed from `aspect_ratio`, or in FL2VA from the keyframe |
+| `aspect_ratio`    | No       | One of `21:9`, `16:9`, `4:3`, `1:1`, `3:4`, `9:16`. Ignored if `height` and `width` are set. In FL2VA, also ignored if a keyframe is sent. See [Output resolution](#output-resolution) | `16:9`                                                      |
+| `height`, `width` | No       | Set both or neither. Each must be a multiple of 32, `height × width` must be at most 1,032,192 (768 × 1344), and `width : height` must be between 1:4 and 4:1. Any ratio in that range is accepted, not only the `aspect_ratio` values. These set the shape of the output, not its exact size; see [Output resolution](#output-resolution) | Computed from `aspect_ratio`, or in FL2VA from the keyframe |
 | `seed`            | No       | Integer                                                                                                                                                                                    | 0                                                           |
 
 
+### Output resolution
 
+The output resolution is derived from one of the following, in this order:
+
+- `height` and `width`, if set
+- in FL2VA, the first keyframe, or the last keyframe if only the last is sent
+- `aspect_ratio`
+
+It is then resized:
+
+- The short side is scaled to 768 pixels, up or down.
+- If the area is then above about 1,032,192 pixels (768 × 1344), both sides are scaled down to fit.
+- Each side is rounded to a multiple of 32, so the output aspect ratio can differ slightly from the
+requested one, and the area can be slightly above the cap.
+
+For example, `16:9` gives 1344 × 768, `21:9` gives 1536 × 672, and `height: 480, width: 832`
+also gives 1344 × 768.
 
 ## FL2VA: keyframes
 
@@ -41,15 +57,7 @@ These apply to every mode.
 | Aspect ratio | 1:4 to 4:1                                                                                                               |
 
 
-If `height` and `width` are not set, the output resolution is derived from the first frame,
-or from the last frame if only the last frame is sent:
-
-- The short side is capped at 768 pixels.
-- The area is capped at about 1,032,192 pixels (768 × 1344). Wider or taller frames are scaled
-down to fit.
-- Each side is rounded to a multiple of 32, so the output aspect ratio may differ slightly from the keyframe's.
-
-Each keyframe is then resized to the output resolution:
+Each keyframe is resized to the output resolution:
 
 - The first frame is stretched to fit, so it may be distorted if its aspect ratio is different from the output's. If only the last frame is sent, the same applies to it.
 - If both frames are sent, the last frame is resized to fill the output, keeping its aspect

@@ -912,6 +912,11 @@ class TestVideoGenerateRequestValidation:
                 num_inference_steps=MAX_VIDEO_INFERENCE_STEPS + 1,
             )
 
+    @pytest.mark.parametrize("prompt", ["", "   "])
+    def test_empty_prompt_rejected(self, prompt):
+        with pytest.raises(ValidationError, match="prompt must not be empty"):
+            VideoGenerateRequest(prompt=prompt)
+
 
 class TestLTXShapeValidation:
     """VideoGenerateRequest shape validation against the served LTX config."""
@@ -1108,7 +1113,7 @@ class TestMiniMaxH3NumInferenceSteps:
         ],
     )
     @patch("open_ai_api.video.settings.use_async_video", True)
-    async def test_job_echo_omits_unread_fields(self, runner):
+    async def test_job_echo_omits_unread_fields(self, runner, h3_admission):
         from open_ai_api.video import _submit_video_request
 
         mock_service = MagicMock()
@@ -1157,51 +1162,35 @@ class TestMiniMaxH3NumInferenceSteps:
             )
 
 
-class TestMiniMaxH3DurationAdmission:
-    """H3 duration 4-15 must 422 at parse time, including on sp_runner.
+@pytest.fixture
+def h3_admission():
+    """Stub the tt-metal admission re-exports; the unit tests run without tt-metal."""
+    import tt_model_runners.minimax_h3_policy as policy
 
-    A 30s request that reaches the worker is counted as a worker error and
-    can restart the process to death. Other models keep the shared field's range.
-    """
+    stubs = {
+        "admit_request": MagicMock(),
+        "check_reference_kinds": MagicMock(),
+        "MiniMaxH3ReferenceInfo": lambda **fields: fields,
+        "MINIMAX_H3_KEYFRAME_MIN_SIDE": 256,
+        "MINIMAX_H3_KEYFRAME_MAX_SIDE": 5760,
+    }
+    for name, value in stubs.items():
+        setattr(policy, name, value)
+    yield stubs["admit_request"]
+    for name in stubs:
+        delattr(policy, name)
 
-    @pytest.fixture(autouse=True)
-    def _stub_h3_duration_allowlist(self):
-        import tt_model_runners.minimax_h3_policy as policy
 
-        policy.MINIMAX_H3_DURATIONS_S = tuple(range(4, 16))
-        yield
-        delattr(policy, "MINIMAX_H3_DURATIONS_S")
+def _decoded_size(size):
+    image_manager = MagicMock()
+    image_manager.return_value.base64_to_pil_image.return_value.size = size
+    return patch("open_ai_api.video.ImageManager", image_manager)
 
-    @pytest.mark.parametrize(
-        "runner",
-        [
-            "tt-minimax-h3-t2va",
-            "tt-minimax-h3-fl2va",
-            "tt-minimax-h3-ref2va",
-            "tt-minimax-h3-fasth3",
-            "tt-minimax-h3-fl2va-lightx2v",
-            "tt-minimax-h3-ref2va-lightx2v",
-        ],
-    )
-    @patch("domain.video_generate_request.get_settings")
-    def test_in_process_runner_rejects_duration_30(self, mock_settings, runner):
-        from pydantic import ValidationError
 
-        mock_settings.return_value.model_runner = runner
-        with pytest.raises(ValidationError, match="duration"):
-            VideoGenerateRequest(prompt="a fox", duration=30)
-
-    @pytest.mark.parametrize(
-        "runner",
-        ["tt-minimax-h3-t2va", "tt-minimax-h3-fasth3"],
-    )
-    @patch("domain.video_generate_request.get_settings")
-    def test_in_process_runner_rejects_fractional_duration(self, mock_settings, runner):
-        from pydantic import ValidationError
-
-        mock_settings.return_value.model_runner = runner
-        with pytest.raises(ValidationError, match="whole number"):
-            VideoGenerateRequest(prompt="a fox", duration=5.5)
+class TestMiniMaxH3Admission:
+    """MiniMax-H3 requests are admitted at submit against the model's served
+    envelope, so an unserved one is a 422 rather than a 202 and a failed job.
+    Other models are not admitted."""
 
     @pytest.mark.parametrize(
         "runner",
@@ -1215,10 +1204,33 @@ class TestMiniMaxH3DurationAdmission:
         ],
     )
     @patch("domain.video_generate_request.get_settings")
-    def test_in_process_runner_accepts_duration_5(self, mock_settings, runner):
+    def test_in_process_runner_is_admitted(self, mock_settings, runner, h3_admission):
+        from open_ai_api.video import _check_request_media
+
         mock_settings.return_value.model_runner = runner
-        request = VideoGenerateRequest(prompt="a fox", duration=5)
-        assert request.duration == 5
+        request = VideoGenerateRequest(
+            prompt="a fox", aspect_ratio="2:1", duration=30, height=768, width=1344
+        )
+        _check_request_media(request)
+        h3_admission.assert_called_once_with(
+            aspect_ratio="2:1",
+            duration_s=30,
+            height=768,
+            width=1344,
+            keyframe_sizes={},
+            references=None,
+        )
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_refusal_is_a_422(self, mock_settings, h3_admission):
+        from open_ai_api.video import _check_request_media
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-t2va"
+        h3_admission.side_effect = ValueError("duration must be a whole number")
+        with pytest.raises(HTTPException) as exc_info:
+            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
+        assert exc_info.value.status_code == 422
+        assert "whole number" in exc_info.value.detail
 
     @pytest.mark.parametrize(
         "model",
@@ -1232,27 +1244,177 @@ class TestMiniMaxH3DurationAdmission:
         ],
     )
     @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_with_h3_model_rejects_duration_30(self, mock_settings, model):
-        from pydantic import ValidationError
+    def test_sp_runner_with_h3_model_is_admitted(
+        self, mock_settings, model, h3_admission
+    ):
+        from open_ai_api.video import _check_request_media
 
         mock_settings.return_value.model_runner = "sp_runner"
         with patch.dict(os.environ, {"MODEL": model}):
-            with pytest.raises(ValidationError, match="duration"):
-                VideoGenerateRequest(prompt="a fox", duration=30)
+            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
+        h3_admission.assert_called_once()
 
     @patch("domain.video_generate_request.get_settings")
-    def test_sp_runner_without_model_keeps_generic_range(self, mock_settings):
+    def test_sp_runner_without_model_is_not_admitted(self, mock_settings, h3_admission):
+        from open_ai_api.video import _check_request_media
+
         mock_settings.return_value.model_runner = "sp_runner"
         with patch.dict(os.environ, {}, clear=True):
-            request = VideoGenerateRequest(prompt="a fox", duration=30)
-        assert request.duration == 30
+            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
+        h3_admission.assert_not_called()
 
     @patch("domain.video_generate_request.get_settings")
-    def test_wan_runner_ignores_stale_h3_model_env(self, mock_settings):
+    def test_wan_runner_ignores_stale_h3_model_env(self, mock_settings, h3_admission):
+        from open_ai_api.video import _check_request_media
+
         mock_settings.return_value.model_runner = "tt-wan2.2"
         with patch.dict(os.environ, {"MODEL": "MiniMax-H3-FL2VA"}):
-            request = VideoGenerateRequest(prompt="a fox", duration=30)
-        assert request.duration == 30
+            _check_request_media(VideoGenerateRequest(prompt="a fox", duration=30))
+        h3_admission.assert_not_called()
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_keyframe_sizes_are_admitted(self, mock_settings, h3_admission):
+        from open_ai_api.video import _check_request_media
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va"
+        request = VideoI2VGenerateRequest(
+            prompt="a fox",
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        with _decoded_size((1344, 768)):
+            _check_request_media(request)
+        assert h3_admission.call_args.kwargs["keyframe_sizes"] == {
+            "image_prompts[0]": (1344, 768)
+        }
+
+    @pytest.mark.parametrize("size", [(255, 300), (5761, 3000)])
+    @patch("domain.video_generate_request.get_settings")
+    def test_keyframe_outside_side_limits_is_a_422(
+        self, mock_settings, size, h3_admission
+    ):
+        from open_ai_api.video import _check_request_media
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-fl2va"
+        request = VideoI2VGenerateRequest(
+            prompt="a fox",
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        with _decoded_size(size), pytest.raises(HTTPException) as exc_info:
+            _check_request_media(request)
+        assert exc_info.value.status_code == 422
+        assert "each side must be from 256 to 5760" in exc_info.value.detail
+        h3_admission.assert_not_called()
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_wan_keyframe_has_no_side_limits(self, mock_settings, h3_admission):
+        from open_ai_api.video import _check_request_media
+
+        mock_settings.return_value.model_runner = "tt-wan2.2"
+        request = VideoI2VGenerateRequest(
+            prompt="a fox",
+            image_prompts=[ImagePromptEntry(image=_tiny_png_base64(), frame_pos=0)],
+        )
+        with _decoded_size((1, 1)):
+            _check_request_media(request)
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_references_are_probed_and_admitted(self, mock_settings, h3_admission):
+        from domain.video_ref2va_generate_request import (
+            MediaSource,
+            MultimodalReferences,
+            VideoRef2VAGenerateRequest,
+        )
+        from open_ai_api.video import _check_request_media
+        from tt_model_runners.minimax_h3_policy import ReferenceMediaProbe
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
+        request = VideoRef2VAGenerateRequest(
+            prompt="a fox",
+            references=MultimodalReferences(
+                images=[MediaSource(b64=_tiny_png_base64())],
+                videos=[MediaSource(b64="AAAA")],
+                audios=[MediaSource(b64="AAAA")],
+            ),
+        )
+        probes = [
+            ReferenceMediaProbe(5.0, (1280, 720), 30.0, 2),
+            ReferenceMediaProbe(4.0, None, None, 1),
+        ]
+        with _decoded_size((1024, 1024)), patch(
+            "tt_model_runners.minimax_h3_policy.probe_reference_media",
+            side_effect=probes,
+        ):
+            _check_request_media(request)
+        assert h3_admission.call_args.kwargs["references"] == [
+            {"name": "references.images[0]", "kind": "image", "size": (1024, 1024)},
+            {
+                "name": "references.videos[0]",
+                "kind": "video",
+                "size": (1280, 720),
+                "fps": 30.0,
+                "audio_channels": 2,
+            },
+            {"name": "references.audios[0]", "kind": "audio", "audio_channels": 1},
+        ]
+
+    @patch("domain.video_generate_request.get_settings")
+    def test_unreadable_reference_clip_is_a_422(self, mock_settings, h3_admission):
+        from domain.video_ref2va_generate_request import (
+            MediaSource,
+            MultimodalReferences,
+            VideoRef2VAGenerateRequest,
+        )
+        from open_ai_api.video import _check_request_media
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
+        request = VideoRef2VAGenerateRequest(
+            prompt="a fox",
+            references=MultimodalReferences(
+                images=[MediaSource(b64=_tiny_png_base64())],
+                videos=[MediaSource(b64="AAAA")],
+            ),
+        )
+        with _decoded_size((1024, 1024)), patch(
+            "tt_model_runners.minimax_h3_policy.probe_reference_media",
+            side_effect=ValueError("media could not be probed"),
+        ), pytest.raises(HTTPException) as exc_info:
+            _check_request_media(request)
+        assert exc_info.value.status_code == 422
+        assert "references.videos[0] could not be read" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    @patch("domain.video_generate_request.get_settings")
+    async def test_reference_counts_are_checked_before_downloads(
+        self, mock_settings, h3_admission
+    ):
+        from domain.video_ref2va_generate_request import (
+            MediaSource,
+            MultimodalReferences,
+            VideoRef2VAGenerateRequest,
+        )
+        from open_ai_api.video import _submit_video_request
+        from tt_model_runners import minimax_h3_policy
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
+        request = VideoRef2VAGenerateRequest(
+            prompt="a fox",
+            references=MultimodalReferences(
+                images=[MediaSource(url="https://example.com/a.png")],
+                videos=[MediaSource(url="https://example.com/v.mp4")] * 4,
+            ),
+        )
+        check_kinds = minimax_h3_policy.check_reference_kinds
+        check_kinds.side_effect = ValueError(
+            "H3 accepts at most 3 video references, got 4"
+        )
+        with patch(
+            "open_ai_api.video._download_to_b64", new_callable=AsyncMock
+        ) as download, pytest.raises(HTTPException) as exc_info:
+            await _submit_video_request(request, MagicMock())
+        assert exc_info.value.status_code == 422
+        assert "at most 3 video" in exc_info.value.detail
+        check_kinds.assert_called_once_with(["image"] + ["video"] * 4)
+        download.assert_not_awaited()
 
 
 class TestResponseContent:
@@ -1502,26 +1664,24 @@ class TestVideoI2VGenerateRequestValidation:
         entry = ImagePromptEntry(image=prefixed, frame_pos=0)
         assert entry.image == prefixed
 
-    def test_invalid_base64_rejected(self):
-        """Garbage string that isn't valid base64 should fail validation."""
-        from pydantic import ValidationError
+    @pytest.mark.parametrize(
+        "image",
+        [
+            "not-a-real-image!!!",
+            "aGVsbG8gd29ybGQgdGhpcyBpcyBub3QgYW4gaW1hZ2U=",
+        ],
+    )
+    def test_undecodable_image_rejected_at_submit(self, image):
+        """Garbage, or valid base64 of non-image bytes, is a 422 at submit."""
+        from open_ai_api.video import _check_request_media
 
-        with pytest.raises(
-            ValidationError, match="could not be decoded to a valid PIL image"
-        ):
-            ImagePromptEntry(image="not-a-real-image!!!", frame_pos=0)
-
-    def test_valid_base64_non_image_rejected(self):
-        """Valid base64 encoding of non-image bytes should fail validation."""
-        import base64
-
-        from pydantic import ValidationError
-
-        fake = base64.b64encode(b"hello world this is not an image").decode()
-        with pytest.raises(
-            ValidationError, match="could not be decoded to a valid PIL image"
-        ):
-            ImagePromptEntry(image=fake, frame_pos=0)
+        request = VideoI2VGenerateRequest(
+            prompt="A cat", image_prompts=[ImagePromptEntry(image=image, frame_pos=0)]
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _check_request_media(request)
+        assert exc_info.value.status_code == 422
+        assert "image_prompts[0] is not a decodable image" in exc_info.value.detail
 
     def test_raw_base64_png_accepted(self):
         """Raw base64 PNG without data URI prefix should pass."""

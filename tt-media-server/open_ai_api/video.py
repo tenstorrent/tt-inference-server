@@ -413,16 +413,6 @@ async def _resolve_image_prompt_urls(request: VideoGenerateRequest) -> None:
                     f"chars, over the {MAX_BASE64_IMAGE_LEN}-char image cap"
                 ),
             )
-        try:
-            ImageManager().base64_to_pil_image(image_b64)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Downloaded media is not a decodable image "
-                    "(supported formats: PNG, JPEG, WebP, etc.)"
-                ),
-            ) from exc
         entry.image = image_b64
 
 
@@ -476,57 +466,158 @@ def _enforce_inline_media_total(request: VideoGenerateRequest) -> None:
         )
 
 
+def _check_reference_counts(request: VideoGenerateRequest) -> None:
+    references = getattr(request, "references", None)
+    if references is None:
+        return
+    from tt_model_runners.minimax_h3_policy import check_reference_kinds
+
+    try:
+        check_reference_kinds(
+            ["image"] * len(references.images)
+            + ["video"] * len(references.videos)
+            + ["audio"] * len(references.audios)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 async def _resolve_media_source_urls(request: VideoGenerateRequest) -> None:
     """Download ``references`` URL sources to b64 before the job is enqueued."""
     references = getattr(request, "references", None)
     if references is None:
         return
     deadline = _time.monotonic() + settings.media_url_timeout_seconds
-    for group_name, group, cap in (
-        ("images", references.images, MAX_BASE64_IMAGE_LEN),
-        ("videos", references.videos, MAX_BASE64_MEDIA_LEN),
-        ("audios", references.audios, MAX_BASE64_AUDIO_LEN),
+    for group, cap in (
+        (references.images, MAX_BASE64_IMAGE_LEN),
+        (references.videos, MAX_BASE64_MEDIA_LEN),
+        (references.audios, MAX_BASE64_AUDIO_LEN),
     ):
         for source in group:
             if source.url is None:
                 continue
             source.b64 = await _download_to_b64(source.url, deadline, max_b64_len=cap)
             source.url = None
-            if group_name == "images":
-                try:
-                    ImageManager().base64_to_pil_image(source.b64)
-                except Exception as exc:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="Downloaded reference image is not a decodable image",
-                    ) from exc
 
 
-def _enforce_ref2va_clip_durations(request: VideoGenerateRequest) -> None:
+def _decoded_image_size(b64: str, name: str) -> tuple[int, int]:
+    try:
+        return ImageManager().base64_to_pil_image(b64).size
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{name} is not a decodable image "
+                "(supported formats: PNG, JPEG, WebP, etc.)"
+            ),
+        ) from exc
+
+
+def _probe_reference_clips(sources, group: str) -> list:
+    from tt_model_runners.minimax_h3_policy import probe_reference_media
+
+    probes = []
+    for index, source in enumerate(sources):
+        try:
+            probes.append(probe_reference_media(base64.b64decode(source.b64)))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"references.{group}[{index}] could not be read ({exc})",
+            ) from exc
+    return probes
+
+
+def _check_request_media(request: VideoGenerateRequest) -> None:
+    """Decode and probe the request's media once, after URL downloads, and admit it.
+
+    Every image is decoded and every reference clip probed here, so an
+    unreadable asset is a 422 at submit rather than a failed job. On
+    MiniMax-H3 the request is then admitted against the model's served
+    envelope from that metadata.
+    """
+    keyframe_sizes = {
+        f"image_prompts[{index}]": _decoded_image_size(
+            entry.image, f"image_prompts[{index}]"
+        )
+        for index, entry in enumerate(getattr(request, "image_prompts", None) or [])
+    }
     references = getattr(request, "references", None)
-    if references is None:
+    reference_infos = None
+    if references is not None:
+        from tt_model_runners.minimax_h3_policy import check_reference_clip_durations
+
+        image_sizes = [
+            _decoded_image_size(source.b64, f"references.images[{index}]")
+            for index, source in enumerate(references.images)
+        ]
+        videos = _probe_reference_clips(references.videos, "videos")
+        audios = _probe_reference_clips(references.audios, "audios")
+        try:
+            check_reference_clip_durations(
+                video_durations=[probe.duration_s for probe in videos],
+                audio_durations=[probe.duration_s for probe in audios],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if not _is_minimax_h3():
         return
     from tt_model_runners.minimax_h3_policy import (
-        check_reference_clip_durations,
-        probe_media_duration_seconds,
+        MINIMAX_H3_KEYFRAME_MAX_SIDE,
+        MINIMAX_H3_KEYFRAME_MIN_SIDE,
+        MiniMaxH3ReferenceInfo,
+        admit_request,
     )
 
-    def _durations(sources):
-        out = []
-        for source in sources:
-            try:
-                out.append(probe_media_duration_seconds(base64.b64decode(source.b64)))
-            except ValueError as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"could not probe duration of a reference clip ({exc})",
-                ) from exc
-        return out
-
+    for name, (width, height) in keyframe_sizes.items():
+        if not (
+            MINIMAX_H3_KEYFRAME_MIN_SIDE <= min(width, height)
+            and max(width, height) <= MINIMAX_H3_KEYFRAME_MAX_SIDE
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{name} is {width}x{height}; each side must be from "
+                    f"{MINIMAX_H3_KEYFRAME_MIN_SIDE} to "
+                    f"{MINIMAX_H3_KEYFRAME_MAX_SIDE} pixels"
+                ),
+            )
+    if references is not None:
+        reference_infos = (
+            [
+                MiniMaxH3ReferenceInfo(
+                    name=f"references.images[{index}]", kind="image", size=size
+                )
+                for index, size in enumerate(image_sizes)
+            ]
+            + [
+                MiniMaxH3ReferenceInfo(
+                    name=f"references.videos[{index}]",
+                    kind="video",
+                    size=probe.size,
+                    fps=probe.fps,
+                    audio_channels=probe.audio_channels,
+                )
+                for index, probe in enumerate(videos)
+            ]
+            + [
+                MiniMaxH3ReferenceInfo(
+                    name=f"references.audios[{index}]",
+                    kind="audio",
+                    audio_channels=probe.audio_channels,
+                )
+                for index, probe in enumerate(audios)
+            ]
+        )
     try:
-        check_reference_clip_durations(
-            video_durations=_durations(references.videos),
-            audio_durations=_durations(references.audios),
+        admit_request(
+            aspect_ratio=request.aspect_ratio,
+            duration_s=request.duration,
+            height=request.height,
+            width=request.width,
+            keyframe_sizes=keyframe_sizes,
+            references=reference_infos,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -548,6 +639,7 @@ async def _submit_video_request(
         )
 
     _enforce_inline_media_total(request)
+    _check_reference_counts(request)
     # Echo the request as the client sent it: resolution below swaps URLs for
     # their downloaded base64, which must not be returned on every job poll.
     client_parameters = request.model_dump(
@@ -555,7 +647,7 @@ async def _submit_video_request(
     )
     await _resolve_image_prompt_urls(request)
     await _resolve_media_source_urls(request)
-    _enforce_ref2va_clip_durations(request)
+    _check_request_media(request)
 
     try:
         # Synchronous mode: process and return video directly
@@ -689,10 +781,9 @@ async def submit_generate_video_i2v_upload(
     _validate_image_content_type(image)
     image_bytes = await _read_capped_upload(image)
     image_b64 = base64.b64encode(image_bytes).decode("ascii")
-    # A file with an allowed image content-type but non-decodable bytes fails the
-    # ImagePromptEntry image validator during this manual construction. Unlike the
-    # JSON /i2v path (where FastAPI parses the body and returns 422), that error
-    # would surface as an unhandled 500 here — so translate it to a 422.
+    # Unlike the JSON /i2v path (where FastAPI parses the body and returns 422),
+    # a validation error in this manual construction would surface as an
+    # unhandled 500 — so translate it to a 422.
     try:
         request_kwargs = dict(
             prompt=prompt,

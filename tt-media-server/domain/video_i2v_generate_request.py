@@ -24,8 +24,6 @@ from config.constants import WAN22_NUM_FRAMES, ModelNames, ModelRunners
 from config.settings import get_settings
 from domain.video_generate_request import VideoGenerateRequest
 from pydantic import BaseModel, Field, field_validator
-from utils.image_manager import ImageManager
-from utils.media_downloader import is_media_url
 
 # MiniMax video_generation_input per-file cap, as a base64 length.
 MAX_IMAGE_BYTES = 30_000_000
@@ -39,33 +37,10 @@ class ImagePromptEntry(BaseModel):
     already resolves negatives; MiniMax-H3 FL2VA accepts only ``{0, -1}``.
     """
 
+    # Base64 or an http(s) URL; decoded once at submit, after URL downloads
+    # (open_ai_api/video.py).
     image: str = Field(min_length=1, max_length=MAX_BASE64_IMAGE_LEN)
     frame_pos: int = Field(default=0, ge=-1, lt=WAN22_NUM_FRAMES)
-
-    @field_validator("image")
-    @classmethod
-    def validate_decodable_image(cls, v: str) -> str:
-        """Ensure the base64 string decodes to a valid PIL image via ImageManager."""
-
-        if is_media_url(v):
-            # Remote asset (e.g. presigned S3 URL): downloaded, decoded, and
-            # policy-checked at the API layer before enqueue
-            # (open_ai_api/video.py), where failures map to real HTTP
-            # statuses instead of a blanket 422 here.
-            return v
-
-        try:
-            img = ImageManager().base64_to_pil_image(v)
-        except Exception as exc:
-            raise ValueError(
-                "image could not be decoded to a valid PIL image "
-                "(supported formats: PNG, JPEG, WebP, etc.)"
-            ) from exc
-        if img.size[0] < 1 or img.size[1] < 1:
-            raise ValueError(
-                "image has invalid dimensions (width and height must be >= 1)"
-            )
-        return v
 
 
 class VideoI2VGenerateRequest(VideoGenerateRequest):

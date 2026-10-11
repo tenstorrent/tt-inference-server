@@ -30,6 +30,13 @@ class VideoGenerateRequest(BaseRequest):
     # Required fields
     prompt: str
 
+    @field_validator("prompt")
+    @classmethod
+    def _prompt_not_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("prompt must not be empty")
+        return value
+
     # Optional fields
     negative_prompt: Optional[str] = None
     # None = the model's default; resolved in _validate_shape.
@@ -44,8 +51,8 @@ class VideoGenerateRequest(BaseRequest):
     # Output shape. Both are model-specific and both are optional: a model that serves one fixed
     # shape ignores them, and MiniMax-H3 t2va resolves them against its published working points
     # (see `minimax_h3_parse_aspect_ratio` / `MINIMAX_H3_DURATIONS_S`). Left as free-form here
-    # rather than an enum so a per-model validator can reject with a message naming what it does
-    # serve -- a 422 from pydantic on a shared field cannot say that.
+    # rather than an enum so MiniMax-H3's admission at submit can reject with a message naming what
+    # it does serve -- a 422 from pydantic on a shared field cannot say that.
     aspect_ratio: Optional[str] = Field(default=None, examples=["16:9", "9:16", "1:1"])
 
     # TODO: Make generic for all video models, and remove model specific logic
@@ -70,36 +77,6 @@ class VideoGenerateRequest(BaseRequest):
                 "or `height`/`width`."
             )
         return data
-
-    # TODO: Make generic for all video models, and remove model specific logic
-    # Admission-time validation. The device worker validates too (it owns the shape it warmed),
-    # but that happens after the request is queued, so the client would get a 202 and a failed job
-    # instead of a straight refusal. These run at parse time and surface as a 422 naming what is
-    # served. Guarded on the runner so nothing here changes Wan's behaviour.
-    @field_validator("aspect_ratio")
-    @classmethod
-    def _validate_aspect_ratio(cls, value):
-        if value is None or not _is_minimax_h3():
-            return value
-        from tt_model_runners.minimax_h3_policy import minimax_h3_parse_aspect_ratio
-
-        minimax_h3_parse_aspect_ratio(value)  # raises with the supported list
-        return value
-
-    # TODO: Make generic for all video models, and remove model specific logic
-    @field_validator("duration")
-    @classmethod
-    def _validate_h3_duration(cls, value):
-        if value is None or not _is_minimax_h3():
-            return value
-        from tt_model_runners.minimax_h3_policy import MINIMAX_H3_DURATIONS_S
-
-        if value != int(value) or int(value) not in MINIMAX_H3_DURATIONS_S:
-            raise ValueError(
-                f"duration must be a whole number of seconds from {min(MINIMAX_H3_DURATIONS_S)} "
-                f"to {max(MINIMAX_H3_DURATIONS_S)}; got {value:g}"
-            )
-        return value
 
     # Shape. None = use the served config; see _validate_shape.
     # MiniMax-H3: an explicit height/width canvas overrides `aspect_ratio`. Left unset, the
