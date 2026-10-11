@@ -688,6 +688,12 @@ def test_multimodal_checkpoints_are_served_text_only():
     assert flags[flags.index("--limit-mm-per-prompt") + 1] == '{"image": 0, "video": 0}'
 
 
+def test_runner_serves_without_flashinfer_jit():
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    assert "export VLLM_USE_FLASHINFER_SAMPLER=0" in runner
+    assert 'PATH="${VENV}/bin:${PATH}" setsid "${VENV}/bin/vllm"' in runner
+
+
 def test_runner_and_driver_take_a_transformers_pin():
     runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
     driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
