@@ -331,3 +331,13 @@ def test_gpt_oss_deep_reasoning_request_timeout_does_not_preempt_task_deadline()
     for name in ("aime25", "gpqa_diamond_cot_zeroshot"):
         task = tasks[name]
         assert int(task.model_kwargs["timeout"]) >= task.wall_clock_timeout_seconds
+
+
+def test_gpt_oss_full_gpqa_budget_covers_measured_qb2_runtime():
+    """Run 38102340802 needed more than 42,000s for the full 198 samples."""
+    tasks = {
+        task.task_name: task for task in _eval_config_map["openai/gpt-oss-120b"].tasks
+    }
+    gpqa = tasks["gpqa_diamond_cot_zeroshot"]
+    assert gpqa.wall_clock_timeout_seconds == 129600
+    assert int(gpqa.model_kwargs["timeout"]) == 129600
