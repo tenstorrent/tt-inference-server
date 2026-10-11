@@ -10533,7 +10533,7 @@ _eval_config_list = [
                     # Match the task budget for the same reason as AIME above: the task
                     # deadline must report a hang as incomplete before lm-eval can score
                     # a timeout's partial streamed output.
-                    "timeout": "129600",
+                    "timeout": "42000",
                 },
                 gen_kwargs={
                     "stream": "true",
@@ -10549,10 +10549,9 @@ _eval_config_list = [
                 # continues to the next task and still produces a report, instead of
                 # reaching on-dispatch.yml's 1080-minute cap and being cancelled with no
                 # verdict and no artifacts (35299987641, 35656042558, 36374616815).
-                # Full Shield run 38102340802 completed 86/198 samples in 42,000 s while
-                # the server remained healthy and generating. Linear completion is about
-                # 96,700 s; allow 129,600 s (36 h) for the observed long-tail requests.
-                wall_clock_timeout_seconds=129600,
+                # Slower of two measured QB2 rates: 7 samples / 498 s (run 37996687040) and 48/198 in
+                # 8100 s (run 37097968441) -> 0.0059 samples/s, 198 ~= 33,600 s; x1.25 margin.
+                wall_clock_timeout_seconds=42000,
             ),
             EvalTask(
                 task_name="mmlu_generative",  # base MMLU task in lm-eval-harness uses loglikelihood evaluation
