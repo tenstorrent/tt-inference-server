@@ -1566,6 +1566,8 @@ templates:
   model_type: LLM
   supported_modalities:
     - text
+    - image
+    - video
   device_model_specs:
     - device: P150X8
       max_concurrency: 32
@@ -1600,12 +1602,17 @@ templates:
         MESH_DEVICE: "BH-Galaxy"  # plugin DP discovery opens the parent as (4, 8); each DP rank gets one (1, 8) Galaxy column
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
+        VLLM_IMAGE_FETCH_TIMEOUT: "30"
       vllm_args:
         data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 128 -> max_num_seqs 32 per rank
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
         max_num_batched_tokens: "525312"  # per-rank KV capacity, as for P150X8
+        limit-mm-per-prompt: '{"image": 1, "video": 1}'
+        mm-processor-cache-gb: "0"
+        mm-processor-kwargs: '{"max_pixels": 1048576}'
+        media-io-kwargs: '{"video": {"num_frames": 16}}'
       override_tt_config:
         fabric_config: FABRIC_1D_RING  # each rank is a Galaxy column; its Ring CCLs need the column's wrap link
         trace_region_size: 1073741824
