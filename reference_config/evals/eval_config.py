@@ -514,6 +514,13 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+# Custom lm-eval task definitions for the meta-models/Muse-Glimmer-30B model-card evals
+# that the pinned lm-eval fork does not ship (AIME 2026). Absolute, so it resolves
+# independently of the venv that include_path is joined with.
+_MUSE_GLIMMER_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "muse_glimmer_30b"
+)
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -11629,6 +11636,158 @@ _eval_config_list = [
                 ),
                 limit_samples_map={
                     EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+        ],
+    ),
+    # =========================================================================
+    # meta-models/Muse-Glimmer-30B (TP4 autoport, P300X2). Reasoning model; the
+    # model card evaluates at "High Reasoning" (the chat template's default and
+    # it is appended to any caller system prompt) and generation_config.json
+    # samples with temperature 1.0, top_p 0.95, top_k 64. The device sampler
+    # covers top_k <= 32, so top_k 64 takes the adapter's host path
+    # (MUSE_VLLM_ALLOW_HOST_SAMPLING=1 in the dev spec), as in the bring-up's
+    # stage-11 accuracy runs. Chat API so the server renders the native template
+    # and the muse_glimmer reasoning parser separates thinking from the answer.
+    #
+    # Sized for one QB2 CI job (tt-shield cap 1080 min; Kolibri-1 lesson: a
+    # cancelled job uploads NO artifacts). Short tasks first, GPQA last, every
+    # task bounded: setup ~0.6 h + 4 + 5 + 5 = 14.6 h. The lm-eval per-request
+    # timeout equals the task bound, since a timed-out request is re-sent from
+    # scratch. Measured stage-11 serving speed (4096-token prompts): 1 user
+    # 58 tok/s, 32 users 141 tok/s aggregate (5.5 tok/s per user).
+    # =========================================================================
+    EvalConfig(
+        hf_model_repo="meta-models/Muse-Glimmer-30B",
+        tasks=[
+            EvalTask(
+                task_name="mmlu_pro",
+                num_fewshot=5,
+                score=EvalTaskScore(
+                    # The model card reports no MMLU / MMLU-Pro score.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,custom-extract",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                # 4 h bound (Kolibri-1: 350 questions took 3h25m at ~100 tok/s).
+                wall_clock_timeout_seconds=14400,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 14400,  # == wall bound: never retry a request
+                },
+                # Model-card sampling. stream=false is required by lm-eval's
+                # chat-completions parser.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 64,
+                },
+                # mmlu_pro is a group of 14 subtasks and lm-eval applies an int
+                # limit PER SUBTASK: 25 -> 350 questions (+/-2.3 pts), 1 -> 14 smoke.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 25,
+                    EvalLimitMode.CI_LONG: 25,
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+            EvalTask(
+                # MathArena AIME 2026, one pass over all 30 problems (+/-4 pts).
+                task_name="muse_aime_2026",
+                include_path=_MUSE_GLIMMER_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    published_score=94.7,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B#benchmarks",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=16,
+                # 5 h bound: 30 problems at 16 slots is two waves, and a 64K
+                # solution at ~8 tok/s per user takes ~2.2 h.
+                wall_clock_timeout_seconds=18000,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 18000,  # == wall bound: never retry a request
+                },
+                # 64K budget: AIME solutions at high reasoning regularly exceed 32K.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 64,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 30,
+                    EvalLimitMode.CI_LONG: 30,
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=83.5,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B#benchmarks",
+                    # Like-for-like H100 reference at these exact settings (r1 task,
+                    # 32K output, temperature 1.0, top_p 0.95, top_k 64), measured for
+                    # the Quetzal Muse-Glimmer candidate; not yet on main.
+                    gpu_reference_score=82.83,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/pull/5371 (commit 343a1321)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=16,
+                # 5 h bound for 80 questions (~10K tokens each at ~140 tok/s
+                # plus the tail of 32K generations). Exceeding it marks GPQA
+                # incomplete (rc=124) instead of losing the run.
+                wall_clock_timeout_seconds=18000,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 18000,  # == wall bound: never retry a request
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 64,
+                },
+                # 80 of 198 (+/-4.5 pts), the first 80 documents.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 80,
+                    EvalLimitMode.CI_LONG: 80,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
