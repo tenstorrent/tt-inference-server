@@ -1405,3 +1405,12 @@ def test_vm_steps_retry_a_lost_connection_but_never_double_launch():
         '[[ "${name}" == "launch" ]] && remote_state && [[ "${STATE}" == "RUNNING" ]]'
         in step
     )
+
+
+def test_provenance_records_the_client_concurrency_actually_used(tmp_path):
+    log = tmp_path / "run_py.log"
+    log.write_text(
+        "lm_eval --model_args base_url=x,num_concurrent=32,max_retries=0\n" * 2
+    )
+    assert gpuref.client_concurrency_used(log) == [32]
+    assert gpuref.client_concurrency_used(tmp_path / "missing.log") == []
