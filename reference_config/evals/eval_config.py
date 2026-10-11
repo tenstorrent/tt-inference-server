@@ -11790,6 +11790,67 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # Terminal-Bench 2.1 with terminus-2: the model card reports 51.7.
+                # CI runs the 10-task list validated for the K2-Horizon-7B QB2 runs
+                # (oracle-checked; qemu-startup excluded, its verifier cannot run).
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=51.7,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B#benchmarks",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 10 tasks at 5 concurrent = two waves of <= 3 h: <= ~7.5 h with
+                    # setup and per-task overhead, inside the 1080-minute job.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95); top_k is
+                    # left to the server default (device sampler). 96K input plus
+                    # 32K output fits the 131072 context.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/largest-eigenval",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
         ],
     ),
 ]
