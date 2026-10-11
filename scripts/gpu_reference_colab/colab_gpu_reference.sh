@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RESULTS_ROOT="${GPUREF_RESULTS_ROOT:-${REPO_ROOT}/workflow_logs/gpu_reference_colab}"
 REMOTE_REL="content/gpuref"   # /content/gpuref on the VM, for upload/download
 GPU="H100" HIGH_MEM=0 TTIS_REF="HEAD" OUT_DIR="" KEEP=0 SESSION="" POLL_MINUTES=5
-VLLM_VERSION="" TRANSFORMERS_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=()
+VLLM_VERSION="" TRANSFORMERS_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=() TASK_ARGS=()
 SWEEP=0 REFRESH=0 WRITE_SPECS=0 PRUNE=0 TT_REPORTS="" AUDIT_REFS="" ORIG_ARGS=("$@")
 NEW_ATTEMPTS=3 NEW_RETRY_SECONDS="${GPUREF_NEW_RETRY_SECONDS:-120}"   # per GPU type, on 503 (no capacity)
 RETRY_CAPACITY="" DETACH=0             # --retry-capacity MINUTES,HOURS; --detach
@@ -45,6 +45,8 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
   --min-balance CU    stop (keeping partial results) below this compute-unit balance
   --vllm-version V    override every model's serving-stack vLLM (default: per model)
   --transformers-version V  override every model's transformers pin
+  --task MODEL=T[,T]  run only these lm-eval tasks of MODEL (each in full); repeatable,
+                      explicit runs only. Default: all of the model's tasks
   --retry-capacity M,H  when no GPU is free (503) or the concurrent-session limit
                       is hit (412), retry every M minutes for up to H hours, then
                       exit 75; a sweep moves on to other groups and retries later
@@ -76,6 +78,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run) DRY_RUN=1; shift ;;         -h|--help) usage; exit 0 ;;
         --retry-capacity) RETRY_CAPACITY="$2"; shift 2 ;;
         --detach) DETACH=1; shift ;;
+        --task) TASK_ARGS+=("$2"); shift 2 ;;
         --sweep) SWEEP=1; shift ;;             --refresh) REFRESH=1; shift ;;
         --refresh-quetzal) AUDIT_REFS="$2"; shift 2 ;;
         --write-specs) WRITE_SPECS=1; shift ;; --emit-patch) shift ;;  # always written now
@@ -93,6 +96,11 @@ for m in ${MODELS[@]+"${MODELS[@]}"}; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9.
 [[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number"
 [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --vllm-version"
 [[ -z "${TRANSFORMERS_VERSION}" || "${TRANSFORMERS_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --transformers-version"
+[[ ${#TASK_ARGS[@]} -eq 0 || "${SWEEP}" -eq 0 ]] || die "--task is for explicit runs; a sweep picks its own tasks"
+for t in ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}; do
+    [[ "$t" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+=[A-Za-z0-9_]+(,[A-Za-z0-9_]+)*$ ]] || die "--task is MODEL=TASK[,TASK]: $t"
+    [[ " ${MODELS[*]} " == *" ${t%%=*} "* ]] || die "--task names a model that is not being run: ${t%%=*}"
+done
 [[ -z "${RETRY_CAPACITY}" || "${RETRY_CAPACITY}" =~ ^[1-9][0-9]*,[0-9]+([.][0-9]+)?$ ]] || die "--retry-capacity is MINUTES,HOURS (e.g. 15,8)"
 if [[ "${DETACH}" -eq 1 && "${DRY_RUN}" -eq 0 ]]; then   # re-run in the background, own session
     mkdir -p "${RESULTS_ROOT}"
@@ -259,6 +267,11 @@ STATUS_FILE="${OUT_DIR}/driver_status.json"
 log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; session ${SESSION}; out ${OUT_DIR}"
 status STARTING "models=${#MODELS[@]}"
 usable="$(gpuref preflight --gpus "${GPU}" "${MODELS[@]}")" || die "preflight failed (see above)"
+# --task: fail fast against this checkout's EvalConfigs (the runner re-checks at --ttis-ref).
+for t in ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}; do
+    sel="$(gpuref task-selection "${t%%=*}" "${t#*=}")" || die "--task ${t} (see above)"
+    log "${t%%=*}: only ${sel} (each task in full)"
+done
 read -r -a GPUS <<< "${usable}"
 [[ ${#GPUS[@]} -gt 0 ]] || die "no usable GPU type"
 HAVE_TOKEN=0; [[ -n "${HF_TOKEN:-}" || -s "${HOME}/.cache/huggingface/token" ]] && HAVE_TOKEN=1
@@ -328,6 +341,7 @@ if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then
     runner_args=(--ttis-sha "${TTIS_SHA}" --work-dir "/${REMOTE_REL}")
     [[ -n "${VLLM_VERSION}" ]] && runner_args+=(--vllm-version "${VLLM_VERSION}")
     [[ -n "${TRANSFORMERS_VERSION}" ]] && runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")
+    for t in ${TASK_ARGS[@]+"${TASK_ARGS[@]}"}; do runner_args+=(--task "$t"); done
     remote_step launch 60 GPUREF_LAUNCHED "${runner_args[@]}" "${MODELS[@]}"
     STATE="RUNNING"
 fi
