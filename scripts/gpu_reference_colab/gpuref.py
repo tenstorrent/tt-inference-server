@@ -603,11 +603,56 @@ SCORE_FIELDS = (
 )  # fmt: skip
 
 
-def runner_vllm_version() -> Optional[str]:
-    """The runner's default vLLM pin (VLLM_VERSION= in remote_runner.sh)."""
-    text = (Path(__file__).parent / "remote_runner.sh").read_text()
-    found = re.search(r'^VLLM_VERSION="([^"]+)"', text, re.M)
-    return found.group(1) if found else None
+# Serving stack per model: the vLLM (and optionally transformers) a GPU
+# reference is measured with, plus the server environment. The default is
+# TTIS's own vLLM client pin. An architecture that vLLM 0.13.0 cannot serve
+# maps to the minimum vLLM release that supports it, and to the transformers
+# the TT side lowers it with. The runner builds one venv per stack, so a sweep
+# with mixed stacks runs in one session. Provenance and the eval fingerprint
+# record the stack.
+DEFAULT_STACK = {
+    "vllm": "0.13.0",
+    "transformers": None,  # what vLLM resolves
+    # FlashInfer's top-k/top-p sampler JIT-compiles at warmup and needs ninja
+    # and a matching nvcc, which the Colab VM lacks; vLLM's PyTorch sampler
+    # draws from the same distribution.
+    "env": {"VLLM_USE_FLASHINFER_SAMPLER": "0"},
+}
+ARCH_STACKS = {
+    # vllm-project/vllm#51655 (first in v0.28.0); TT side lowers with 5.15.0.
+    "MuseGlimmerForConditionalGeneration": {"vllm": "0.28.0", "transformers": "5.15.0"},
+    "MuseGlimmerForCausalLM": {"vllm": "0.28.0", "transformers": "5.15.0"},
+    # gemma4 / gemma4_mm (first in v0.20.0); TT side lowers with 5.15.0.
+    "Gemma4ForConditionalGeneration": {"vllm": "0.20.0", "transformers": "5.15.0"},
+    "Gemma4ForCausalLM": {"vllm": "0.20.0", "transformers": "5.15.0"},
+}  # fmt: skip
+
+
+def serving_stack(
+    config: Optional[Dict[str, Any]],
+    vllm: Optional[str] = None,
+    transformers: Optional[str] = None,
+) -> Dict[str, Any]:
+    """The stack for a model from its HF config's architectures (ARCH_STACKS,
+    else DEFAULT_STACK). vllm/transformers override it (--vllm-version etc.)."""
+    stack = dict(DEFAULT_STACK, env=dict(DEFAULT_STACK["env"]))
+    for arch in (config or {}).get("architectures") or []:
+        if arch in ARCH_STACKS:
+            stack.update(ARCH_STACKS[arch])
+            break
+    if vllm:
+        stack["vllm"] = vllm
+    if transformers:
+        stack["transformers"] = transformers
+    return stack
+
+
+def stack_installed(stack: Dict[str, Any], packages: Dict[str, Any]) -> bool:
+    """True if the installed packages are the requested stack."""
+    return packages.get("vllm") == stack.get("vllm") and (
+        not stack.get("transformers")
+        or packages.get("transformers") == stack.get("transformers")
+    )
 
 
 def pinned_lm_eval_commit(ttis_dir: Path = REPO_ROOT) -> Optional[str]:
@@ -632,14 +677,15 @@ def _canon(value: Any) -> Any:
 def eval_fingerprint(
     model: str,
     lm_eval_commit: Optional[str],
-    vllm_version: Optional[str],
+    stack: Optional[Dict[str, Any]],
     ttis_dir: Path = REPO_ROOT,
 ) -> Optional[str]:
     """sha256 over everything that decides this model's GPU scores: the
     score-affecting fields of each lm-eval task (GPU overrides applied), its
-    scorer, the lm-eval commit and the vLLM version. A run counts for resume
-    and for the report only when its fingerprint equals the plan's."""
-    if not (lm_eval_commit and vllm_version):
+    scorer, the lm-eval commit and the serving stack (vLLM, transformers pin,
+    server env). A run counts for resume and for the report only when its
+    fingerprint equals the plan's."""
+    if not (lm_eval_commit and stack and stack.get("vllm")):
         return None
     sys.path.insert(0, str(ttis_dir))
     from reference_config.evals.eval_config import (
@@ -662,7 +708,9 @@ def eval_fingerprint(
         tasks.append(entry)
     blob = json.dumps(
         {"tasks": sorted(tasks, key=lambda t: t["task_name"]),
-         "lm_eval": lm_eval_commit, "vllm": vllm_version},
+         "lm_eval": lm_eval_commit,
+         "stack": {"vllm": stack["vllm"], "transformers": stack.get("transformers"),
+                   "env": dict(sorted((stack.get("env") or {}).items()))}},
         sort_keys=True, default=str,
     )  # fmt: skip
     return hashlib.sha256(blob.encode()).hexdigest()
@@ -705,8 +753,8 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "finished_at": args.finished_at,
         "gpu": dict(zip(["name", "driver", "memory_total"], gpu + [None] * 3)),
         "packages": packages,
-        # Server environment the runner sets (remote_runner.sh).
-        "vllm_env": {k: os.environ.get(k) for k in ("VLLM_USE_FLASHINFER_SAMPLER",)},
+        # Server environment from the stack (set by remote_runner.sh).
+        "vllm_env": (plan.get("stack") or {}).get("env") or {},
         "ttis_sha": run_out(["git", "rev-parse", "HEAD"], cwd=ttis),
         "model_revision_pinned": plan.get("revision"),
         "model_revision_sha": resolved.get("sha"),
@@ -747,10 +795,14 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         ],  # fmt: skip
         "lm_eval_commit_pinned": pinned.group(1) if pinned else None,
         "lm_eval_commit_installed": lm_eval_installed,
-        # What actually ran: this checkout's eval settings with the installed
-        # lm-eval and vLLM (None if either is unknown). See eval_fingerprint.
-        "eval_fingerprint": eval_fingerprint(
-            args.model, lm_eval_installed, packages.get("vllm"), ttis
+        # The requested serving stack, and the fingerprint of what ran: this
+        # checkout's eval settings, the installed lm-eval and that stack, but
+        # only if the installed packages are that stack (else None).
+        "stack": plan.get("stack"),
+        "eval_fingerprint": (
+            eval_fingerprint(args.model, lm_eval_installed, plan.get("stack"), ttis)
+            if plan.get("stack") and stack_installed(plan["stack"], packages)
+            else None
         ),
         "note": args.note,
         "request_evidence": load_json(Path(args.evidence)) if args.evidence else None,
@@ -1154,7 +1206,7 @@ def sweep_plan(
     prune: bool = False,
 ):
     tasks, rows = catalog_facts()
-    lm_eval, vllm = pinned_lm_eval_commit(), vllm_version or runner_vllm_version()
+    lm_eval = pinned_lm_eval_commit()
     audit: Dict[str, str] = (
         quetzal_models(rows, audit_refs) if audit_refs is not None else {}
     )
@@ -1227,7 +1279,8 @@ def sweep_plan(
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
             "est_hours": estimate_hours(model_tasks_all.get(model, []), memory.get("weights_gib")),
-            "eval_fingerprint": (fp := eval_fingerprint(model, lm_eval, vllm)),
+            "stack": (stack := serving_stack(facts.get("config"), vllm_version)),
+            "eval_fingerprint": (fp := eval_fingerprint(model, lm_eval, stack)),
             "done": bool(prior) and run_covers(prior[2], prior[1], plan["vllm_serve_args"], model_tasks, fp),
         }  # fmt: skip
     kept = []
@@ -1258,7 +1311,7 @@ def sweep_plan(
                            "cu_at_a100_rate": round(hours * CU_PER_HOUR["A100"])}  # fmt: skip
     return {"sha": sha, "targets": kept, "skipped": skipped, "groups": groups,
             "derived": derived, "specs_stale": stale, "estimate": estimate,
-            "lm_eval_commit": lm_eval, "vllm_version": vllm, "prune": prune,
+            "lm_eval_commit": lm_eval, "vllm_override": vllm_version, "prune": prune,
             "legacy_runs": sorted(m for m in placed if m in finished
                                   and not finished[m][2].get("eval_fingerprint"))}  # fmt: skip
 
@@ -1609,8 +1662,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("status-view")
     add("balance-below", "floor")
     add("summary", "dir")
-    add("serve-plan", model=req, ttis_dir={"default": str(REPO_ROOT)})
+    add("serve-plan", model=req, ttis_dir={"default": str(REPO_ROOT)},
+        vllm_version={}, transformers_version={})  # fmt: skip
     add("plan-argv", "plan")
+    p = sub.add_parser("plan-stack", help="a serve plan's stack: 'VLLM [TRANSFORMERS]'")
+    p.add_argument("plan")
+    p.add_argument(
+        "--env", action="store_true", help="print its env as KEY=VALUE lines"
+    )
     add("served", "model")
     add("record-status", "file", "model", "status", "note")
     add("request-evidence", model=req, revision={}, samples_root=req, out=req,
@@ -1700,8 +1759,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         Path(args.plan).write_text(json.dumps(plan, indent=2) + "\n")
         for t in plan["targets"]:
             state = "done" if t["done"] else f"[{t['group']}]"
+            stack = t.get("stack") or {}
             print(f"[gpuref]   {state:12} {t['model']} {t['task']}: {t['reason']}"
-                  f" (spec {t['spec']}, need ~{t['need_gib']} GiB)", file=sys.stderr)  # fmt: skip
+                  f" (spec {t['spec']}, need ~{t['need_gib']} GiB, vLLM {stack.get('vllm')}"
+                  f"{' / transformers ' + stack['transformers'] if stack.get('transformers') else ''})",
+                  file=sys.stderr)  # fmt: skip
         for t in plan["skipped"]:
             print(
                 f"[gpuref]   skipped      {t['model']} {t['task']}: {t['skip']}",
@@ -1818,12 +1880,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         gpu_mem = int(mib.splitlines()[0]) / 1024 if mib else None
         plan = gpu_concurrency(plan, params, estimate, gpu_mem)
+        plan["stack"] = serving_stack(
+            config, args.vllm_version, args.transformers_version
+        )
         if estimate:
             verdicts = gpu_verdicts(estimate, plan["max_context"])
             plan["placement"] = gpu_placement(
                 verdicts, params, estimate, plan["max_concurrency"]
             )[1]
         print(json.dumps(plan, indent=2))
+    elif args.cmd == "plan-stack":
+        stack = (load_json(Path(args.plan)) or {}).get("stack") or DEFAULT_STACK
+        if args.env:
+            print(
+                "\n".join(
+                    f"{k}={v}" for k, v in sorted((stack.get("env") or {}).items())
+                )
+            )
+        else:
+            print(f"{stack['vllm']} {stack.get('transformers') or ''}".rstrip())
     elif args.cmd == "plan-argv":
         print("\n".join(load_json(Path(args.plan))["vllm_serve_args"]))
     elif args.cmd == "record-status":

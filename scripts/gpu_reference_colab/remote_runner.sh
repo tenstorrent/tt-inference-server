@@ -25,24 +25,17 @@
 
 set -uo pipefail
 
-# Pinned vLLM. 0.13.0 is the version TTIS already pins for its vLLM client
-# venvs (requirements/llm-vllm.txt, benchmarks-vllm.txt), its CUDA 12 wheels
-# run on Colab's H100 driver, and it serves all three first targets natively:
-# SOLAR-10.7B and Llama-3.2-1B (LlamaForCausalLM, incl. llama3 rope scaling)
-# and Qwen1.5-0.5B-Chat (Qwen2ForCausalLM). Its transformers<5 cap is fine for
-# these tokenizers. Override with --vllm-version only to work around a VM issue.
-VLLM_VERSION="0.13.0"
-# Optional transformers pin for the vLLM venv (e.g. the version the TT side
-# lowers the model with). Empty: whatever vLLM resolves. Recorded in provenance.
-TRANSFORMERS_VERSION=""
+# Serving stack per model (vLLM, transformers pin, server env): gpuref.py
+# serving_stack, from the model's architecture (default vLLM 0.13.0, TTIS's
+# own client pin). Each model's serve plan carries its stack; the runner keeps
+# one venv per stack under ${WORK_DIR}/venvs, built on first use, so a sweep
+# with mixed stacks runs in one session. --vllm-version / --transformers-version
+# override every model's stack (explicit runs only).
+VLLM_OVERRIDE=""
+TRANSFORMERS_OVERRIDE=""
 TTIS_REPO_URL="https://github.com/tenstorrent/tt-inference-server.git"
 WORK_DIR="/content/gpuref"
 TTIS_SHA=""
-# vLLM's FlashInfer top-k/top-p sampler JIT-compiles at warmup (vLLM >= 0.28
-# with sampling tasks) and needs ninja and a matching nvcc, which the Colab VM
-# lacks. vLLM's PyTorch sampler draws from the same distribution. Recorded in
-# provenance.json (vllm_env).
-export VLLM_USE_FLASHINFER_SAMPLER=0
 SERVER_TIMEOUT=2700   # seconds to wait for /v1/models (download + load + graphs)
 PORT=8000
 MODELS=()
@@ -57,8 +50,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --ttis-sha) TTIS_SHA="$2"; shift 2 ;;
         --work-dir) WORK_DIR="$2"; shift 2 ;;
-        --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
-        --transformers-version) TRANSFORMERS_VERSION="$2"; shift 2 ;;
+        --vllm-version) VLLM_OVERRIDE="$2"; shift 2 ;;
+        --transformers-version) TRANSFORMERS_OVERRIDE="$2"; shift 2 ;;
         --server-timeout) SERVER_TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -71,7 +64,8 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GPUREF="${SCRIPT_DIR}/gpuref.py"
 TTIS_DIR="${WORK_DIR}/tt-inference-server"
-VENV="${WORK_DIR}/vllm-venv"
+VENV=""            # this model's stack venv (ensure_stack)
+SERVER_ENV=()      # this model's stack env, KEY=VALUE
 RESULTS="${WORK_DIR}/results"
 SERVER_PID=""
 
@@ -120,8 +114,9 @@ stop_server() {
 start_server() {
     local logfile="$1"; shift
     log "${VENV}/bin/vllm $*"
-    # The venv's bin (ninja and other tools vLLM may shell out to) on PATH.
-    PATH="${VENV}/bin:${PATH}" setsid "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    # The stack's server env, and its venv's bin (tools vLLM may shell out to) on PATH.
+    PATH="${VENV}/bin:${PATH}" setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
+        "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
     SERVER_PID=$!
 }
 
@@ -177,15 +172,23 @@ setup() {
     python3 -c 'import yaml' 2>/dev/null || python3 -m pip install -q pyyaml || return 1
     command -v uv >/dev/null 2>&1 || python3 -m pip install -q uv || return 1
 
-    phase "setup: vllm==${VLLM_VERSION}"
-    # A dedicated venv keeps vLLM's torch away from Colab's preinstalled one.
+}
+
+# ensure_stack VLLM [TRANSFORMERS]: sets VENV to that stack's venv, building it
+# on first use. A dedicated venv keeps vLLM's torch away from Colab's own.
+ensure_stack() {
+    local vllm="$1" tf="${2:-}"
+    VENV="${WORK_DIR}/venvs/vllm-${vllm}${tf:+-transformers-${tf}}"
+    [[ -x "${VENV}/bin/vllm" && -e "${VENV}/.ready" ]] && return 0
+    phase "setup: vllm==${vllm}${tf:+ transformers==${tf}}"
+    rm -rf "${VENV}"
     uv venv -q --python 3.12 "${VENV}" \
-        && uv pip install -q --python "${VENV}/bin/python" "vllm==${VLLM_VERSION}" || return 1
-    if [[ -n "${TRANSFORMERS_VERSION}" ]]; then
-        phase "setup: transformers==${TRANSFORMERS_VERSION}"
-        uv pip install -q --python "${VENV}/bin/python" "transformers==${TRANSFORMERS_VERSION}" || return 1
+        && uv pip install -q --python "${VENV}/bin/python" "vllm==${vllm}" || return 1
+    if [[ -n "${tf}" ]]; then
+        uv pip install -q --python "${VENV}/bin/python" "transformers==${tf}" || return 1
     fi
     "${VENV}/bin/python" -c 'import vllm, torch; print("vllm", vllm.__version__, "torch", torch.__version__, "cuda", torch.cuda.is_available())' || return 1
+    touch "${VENV}/.ready"
 }
 
 run_model() {
@@ -197,12 +200,20 @@ run_model() {
     started="$(now)"
 
     phase "model ${idx}/${total} ${model}: plan"
-    if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}") \
+    local -a overrides=()
+    [[ -n "${VLLM_OVERRIDE}" ]] && overrides+=(--vllm-version "${VLLM_OVERRIDE}")
+    [[ -n "${TRANSFORMERS_OVERRIDE}" ]] && overrides+=(--transformers-version "${TRANSFORMERS_OVERRIDE}")
+    local stack_vllm="" stack_tf=""
+    if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}" ${overrides[@]+"${overrides[@]}"}) \
             > "${mdir}/serve_plan.json" 2> "${mdir}/serve_plan.err"; then
         status="failed"; note="GPU spec did not resolve (serve_plan.err)"
     elif ! python3 "${GPUREF}" materialize-hf-config "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
         status="failed"; note="could not write the edited config.json (serve_plan.err)"
+    elif ! read -r stack_vllm stack_tf < <(python3 "${GPUREF}" plan-stack "${mdir}/serve_plan.json") \
+            || ! ensure_stack "${stack_vllm}" "${stack_tf}"; then
+        status="failed"; note="serving stack vllm==${stack_vllm} ${stack_tf:+transformers==${stack_tf} }did not install (runner.log)"
     else
+        mapfile -t SERVER_ENV < <(python3 "${GPUREF}" plan-stack --env "${mdir}/serve_plan.json")
         local -a serve_args=()
         mapfile -t serve_args < <(python3 "${GPUREF}" plan-argv "${mdir}/serve_plan.json")
         phase "model ${idx}/${total} ${model}: vllm serve"
@@ -281,7 +292,7 @@ run_model() {
 main() {
     mkdir -p "${RESULTS}"
     rm -f "${WORK_DIR}/DONE" "${WORK_DIR}/FAILED"
-    log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; vllm ${VLLM_VERSION}; transformers ${TRANSFORMERS_VERSION:-vllm default}"
+    log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; stack per model${VLLM_OVERRIDE:+ (override vllm ${VLLM_OVERRIDE})}${TRANSFORMERS_OVERRIDE:+ (override transformers ${TRANSFORMERS_OVERRIDE})}"
     if ! setup; then
         finish FAILED "setup failed at: $(cat "${WORK_DIR}/phase")"
         exit 1
