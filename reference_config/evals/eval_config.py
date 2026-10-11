@@ -6252,8 +6252,10 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=22.65,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    # Like-for-like GPU reference (A100, vLLM 0.13.0 bf16, full 1324 samples, TTIS da2a4d20): the
+                    # OLL v2 published 22.65 is not reproduced by the pinned harness on GPU.
+                    gpu_reference_score=20.92,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6109341330",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
