@@ -670,6 +670,33 @@ def test_generator_never_duplicates_a_handwritten_gpu_spec():
     yaml.safe_load(text)
 
 
+def test_multimodal_checkpoints_are_served_text_only():
+    import yaml
+
+    assert gpuref.derive_text_only({"vision_config": {}, "text_config": {}}) == {
+        "image": 0,
+        "video": 0,
+    }
+    assert gpuref.derive_text_only({"hidden_size": 8}) is None
+    d = {"impl": "quetzal", "max_context": 4096, "max_concurrency": 32,
+         "revision": "abc", "source": "row",
+         "limit_mm_per_prompt": {"image": 0, "video": 0}}  # fmt: skip
+    entry = yaml.safe_load("templates:\n" + gpuref.derived_specs_yaml({"org/mm": d}))
+    args = entry["templates"][0]["device_model_specs"][0]["vllm_args"]
+    assert args["limit_mm_per_prompt"] == {"image": 0, "video": 0}
+    flags = gpuref.vllm_flags(args)
+    assert flags[flags.index("--limit-mm-per-prompt") + 1] == '{"image": 0, "video": 0}'
+
+
+def test_runner_and_driver_take_a_transformers_pin():
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    assert '--transformers-version) TRANSFORMERS_VERSION="$2"' in runner
+    assert '"transformers==${TRANSFORMERS_VERSION}"' in runner
+    assert 'runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver
+    assert 'child+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver
+
+
 def test_derive_overrides_disables_dual_chunk_attention_only_when_present():
     assert gpuref.derive_overrides(
         {"dual_chunk_attention_config": {"chunk_size": 262144}}
