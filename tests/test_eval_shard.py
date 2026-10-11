@@ -540,3 +540,70 @@ def test_build_eval_command_refuses_random_few_shot(tmp_path, monkeypatch):
             8000,
             runtime_config=rc,
         )
+
+
+# --- the per-task deadline bounds each shard -----------------------------------
+
+
+def _shard_eval_ctx(tmp_path, eval_shard):
+    from unittest.mock import MagicMock
+
+    ctx = MagicMock()
+    ctx.model_spec.model_name = "m"
+    ctx.model_spec.hf_model_repo = "org/m"
+    ctx.model_spec.device_model_spec.max_context = 131072
+    ctx.device.name = "P300X2"
+    ctx.output_path = str(tmp_path)
+    ctx.remote_server = False
+    ctx.server_host = "http://127.0.0.1"
+    ctx.server_port = 8000
+    ctx.model_spec.device_model_spec.tensor_cache_timeout = 1
+    ctx.runtime_config = SimpleNamespace(
+        eval_shard=eval_shard, eval_samples=None, limit_samples_mode=None
+    )
+    return ctx
+
+
+@pytest.mark.parametrize("eval_shard", [None, "0/4", "3/4"])
+def test_each_shard_carries_the_task_deadline_unchanged(
+    tmp_path, monkeypatch, eval_shard
+):
+    # wall_clock_timeout_seconds is per run, so per shard: sharding never
+    # divides or stretches it, and a shard gets the whole budget as written.
+    from reference_config.evals.eval_config import EvalTask
+
+    seen = {}
+    monkeypatch.setattr(mod, "build_eval_command", lambda *a, **k: ["echo", "x"])
+    monkeypatch.setattr(mod, "run_command", lambda **kw: seen.update(kw) or 0)
+    task = EvalTask(task_name="gpqa_x", wall_clock_timeout_seconds=50400)
+    rc = mod._run_eval_task(
+        _shard_eval_ctx(tmp_path, eval_shard), task, "", output_path=tmp_path
+    )
+    assert rc == 0
+    assert seen["timeout_seconds"] == 50400
+
+
+def test_a_shard_past_its_deadline_is_incomplete_not_partial(tmp_path, monkeypatch):
+    # A shard killed at its deadline is a FAIL (incomplete), never a PARTIAL
+    # measurement: its partial per-sample logs must not look mergeable.
+    from reference_config.evals.eval_config import EvalTask
+
+    task = EvalTask(task_name="gpqa_x", wall_clock_timeout_seconds=60)
+    ctx = _shard_eval_ctx(tmp_path, "1/4")
+    server = SimpleNamespace(
+        wait_for_healthy=lambda timeout: True,
+        get_health=lambda: SimpleNamespace(status_code=200),
+    )
+    monkeypatch.setattr(mod, "get_llm_eval_tasks", lambda *a, **k: [task])
+    monkeypatch.setattr(mod, "HttpServerController", lambda **kw: server)
+    monkeypatch.setattr(mod, "_run_eval_task", lambda *a, **k: mod._DEADLINE_RC)
+    monkeypatch.setattr(
+        mod, "_score_task", lambda *a, **k: pytest.fail("a timed-out shard was scored")
+    )
+    blocks = [b for b in mod.run_llm_eval(ctx) if b.kind == "evals"]
+    assert blocks, "the timed-out shard must still emit a block"
+    for block in blocks:
+        assert block.data["accuracy_check"] == mod.ReportCheckTypes.FAIL
+        assert block.data.get("status") != TestStatus.PARTIAL.value
+        assert "deadline" in block.data["error"]
+        assert block.data["subprocess_rc"] == mod._DEADLINE_RC
