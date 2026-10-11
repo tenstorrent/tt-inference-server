@@ -722,6 +722,15 @@ def eval_fingerprint(
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+def client_concurrency_used(run_log: Path) -> List[int]:
+    """Distinct num_concurrent values the lm-eval commands in run_py.log used."""
+    try:
+        text = run_log.read_text(errors="replace")
+    except OSError:
+        return []
+    return sorted({int(n) for n in re.findall(r"num_concurrent=(\d+)", text)})
+
+
 def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
     ttis = Path(args.ttis_dir)
     plan = load_json(Path(args.plan)) or {}
@@ -769,6 +778,12 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # GPU throughput policy (gpu_concurrency); None on older plans.
         "max_num_seqs": plan.get("max_num_seqs"),
         "client_concurrency": plan.get("client_concurrency"),
+        # What the eval client actually used per task (num_concurrent in the
+        # lm-eval commands): lower than client_concurrency when the pinned
+        # commit predates TT_EVAL_CLIENT_CONCURRENCY. Scheduling only.
+        "client_concurrency_effective": client_concurrency_used(
+            Path(args.plan).parent / "run_py.log"
+        ),
         "concurrency_rule": plan.get("concurrency_rule"),
         "placement": plan.get("placement"),
         "vllm_serve_command": [args.vllm_bin] + plan.get("vllm_serve_args", []),
