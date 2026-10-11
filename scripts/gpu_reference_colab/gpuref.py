@@ -703,6 +703,8 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "finished_at": args.finished_at,
         "gpu": dict(zip(["name", "driver", "memory_total"], gpu + [None] * 3)),
         "packages": packages,
+        # Server environment the runner sets (remote_runner.sh).
+        "vllm_env": {k: os.environ.get(k) for k in ("VLLM_USE_FLASHINFER_SAMPLER",)},
         "ttis_sha": run_out(["git", "rev-parse", "HEAD"], cwd=ttis),
         "model_revision_pinned": plan.get("revision"),
         "model_revision_sha": resolved.get("sha"),
