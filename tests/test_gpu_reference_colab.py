@@ -387,15 +387,15 @@ def test_status_snippet_reports_state(tmp_path):
     (tmp_path / "results" / "status.json").write_text(
         json.dumps({"a/b": {"status": "ok"}, "c/d": {"status": "failed"}})
     )
-    status, lines, done = state()
+    status, lines, done, _ = state()
     assert status == "FAILED" and "  | line2" in lines and done == 2
 
 
 def test_parse_status_and_balance():
-    state, lines, done = gpuref.parse_status(
+    state, lines, done, phase = gpuref.parse_status(
         "noise\nGPUREF_STATE=RUNNING\nGPUREF_DONE=1\nGPUREF_PHASE=model 1/3 x: evals\nGPUREF_LOG| hello\n"
     )
-    assert state == "RUNNING" and done == 1
+    assert state == "RUNNING" and done == 1 and phase == "model 1/3 x: evals"
     assert lines == ["  phase: model 1/3 x: evals", "  | hello"]
     assert gpuref.parse_status("garbage")[0] is None
     usage = "Current balance: 4988.40 compute units\nUsage rate: 5.30/hr\n"
@@ -1106,3 +1106,146 @@ def test_run_out_times_out_and_never_uses_a_shell():
 def test_prepare_snippet_does_not_chmod():
     text = (SCRIPT_DIR / "snippets" / "prepare.py").read_text()
     assert "chmod" not in text.split("print(")[0] and "mode=0o700" in text
+
+
+# --- unattended runs: status, capacity, publish -------------------------------
+
+
+def test_status_view_prints_state_done_and_phase():
+    out = subprocess.run(
+        [sys.executable, str(GPUREF_PATH), "status-view"],
+        input="GPUREF_STATE=RUNNING\nGPUREF_DONE=2\nGPUREF_PHASE=model 3/9 org/m: evals\n",
+        capture_output=True, text=True, check=True,
+    )  # fmt: skip
+    state, done, phase = out.stdout.strip().split(" ", 2)
+    assert (state, done, phase) == ("RUNNING", "2", "model 3/9 org/m: evals")
+
+
+def test_driver_status_writes_json_and_one_log_line(tmp_path):
+    path, log = tmp_path / "s" / "driver_status.json", tmp_path / "gpuref_status.log"
+    gpuref.main([
+        "driver-status", str(path), "--log", str(log), "state=RUNNING",
+        "session=gpuref-x", "phase=model 1/2 org/m: evals", "note=",
+    ])  # fmt: skip
+    record = json.loads(path.read_text())
+    assert record["state"] == "RUNNING" and record["session"] == "gpuref-x"
+    assert "note" not in record and record["updated_at"].endswith("Z")
+    gpuref.main(["driver-status", str(path), "--log", str(log), "state=DONE"])
+    lines = log.read_text().splitlines()
+    assert len(lines) == 2 and "state=RUNNING" in lines[0]
+    assert "phase=model_1/2_org/m:_evals" in lines[0]  # one token per field
+    assert json.loads(path.read_text())["state"] == "DONE"
+
+
+def test_driver_capacity_retry_and_group_fallback_are_wired():
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    assert "EX_NO_CAPACITY=75" in driver
+    assert (
+        'grep -qiE "Precondition Failed|\\b412\\b"' in driver
+    )  # concurrent-session limit
+    assert (
+        'status NO_CAPACITY "gpus=${GPU}"' in driver
+        and 'exit "${EX_NO_CAPACITY}"' in driver
+    )
+    assert '"${grc}" -eq "${EX_NO_CAPACITY}"' in driver  # sweep defers that group
+    assert (
+        'run_group "${gpus}" "${models}" "${RETRY_CAPACITY}"' in driver
+    )  # retried last
+    assert (
+        'gpuref "${publish[@]}"' in driver
+        and "--post" not in driver.split("publish=(")[1].split(")")[0]
+    )
+
+
+def test_driver_rejects_a_malformed_retry_capacity():
+    out = subprocess.run(
+        ["bash", str(SCRIPT_DIR / "colab_gpu_reference.sh"), "--retry-capacity", "15", "org/m"],
+        capture_output=True, text=True,
+    )  # fmt: skip
+    assert out.returncode == 1 and "MINUTES,HOURS" in out.stderr
+
+
+def _results_with_solar(tmp_path):
+    session = tmp_path / "gpuref-x"
+    data = session / "workflow_logs" / "reports_output" / "evals" / "data"
+    data.mkdir(parents=True)
+    report = json.loads(FIXTURE.read_text())
+    (data / "report_data_x.json").write_text(json.dumps(report))
+    model = report["metadata"]["model_repo"]
+    mdir = session / "results" / model.replace("/", "__")
+    mdir.mkdir(parents=True)
+    prov = {"model": model, "status": "ok", "finished_at": "2026-10-11T00:00:00Z",
+            "eval_fingerprint": "fp", "packages": {"vllm": "0.28.0", "transformers": "5.15.0"},
+            "vllm_env": {"VLLM_USE_FLASHINFER_SAMPLER": "0"}}  # fmt: skip
+    (mdir / "provenance.json").write_text(json.dumps(prov))
+    return model
+
+
+def test_publish_explicit_models_renders_comment_and_patch(tmp_path):
+    model = _results_with_solar(tmp_path)
+    config = tmp_path / "eval_config.py"
+    config.write_text(
+        f'    EvalConfig(\n        hf_model_repo="{model}",\n        tasks=[\n'
+        '            EvalTask(\n                task_name="mmlu_pro",\n'
+        "                score=EvalTaskScore(\n                    gpu_reference_score=None,\n"
+        '                    gpu_reference_score_ref="TBD",\n'
+    )
+    out = tmp_path / "pub"
+    result = gpuref.render_publication(
+        out, tmp_path, models=[model], eval_config=config, ref_url="URL"
+    )
+    assert result["finished"] >= 1
+    md = (out / "sweep_5353.md").read_text()
+    assert "vLLM 0.28.0 / transformers 5.15.0, VLLM_USE_FLASHINFER_SAMPLER=0" in md
+    patch = (out / "eval_config.patch").read_text()
+    assert '+                    gpu_reference_score_ref="URL",' in patch
+    assert config.read_text().count("TBD") == 1  # never applied
+
+
+def test_publish_post_needs_gh_once_and_refuses_tokens(tmp_path, monkeypatch):
+    model = _results_with_solar(tmp_path)
+    config = tmp_path / "eval_config.py"
+    config.write_text(
+        f'    EvalConfig(\n        hf_model_repo="{model}",\n        tasks=[\n'
+        '            EvalTask(\n                task_name="mmlu_pro",\n'
+        "                score=EvalTaskScore(\n                    gpu_reference_score=None,\n"
+        '                    gpu_reference_score_ref="TBD",\n'
+    )
+    out = tmp_path / "pub"
+
+    def render(url):
+        return gpuref.render_publication(
+            out, tmp_path, models=[model], eval_config=config, ref_url=url
+        )
+
+    render("URL")
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout="https://github.com/o/r/issues/5353#issuecomment-1\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(gpuref.subprocess, "run", fake_run)
+    url = gpuref.post_publication(out, 5353, render)
+    assert url.endswith("#issuecomment-1")
+    assert (
+        calls[0][:4] == ["gh", "issue", "comment", "5353"] and "--body-file" in calls[0]
+    )
+    assert "#issuecomment-1" in (out / "eval_config.patch").read_text()
+    with pytest.raises(SystemExit, match="already posted"):
+        gpuref.post_publication(out, 5353, render)
+    (out / "publish.json").unlink()
+    (out / "sweep_5353.md").write_text("leak hf_" + "a" * 30)
+    with pytest.raises(SystemExit, match="token-like"):
+        gpuref.post_publication(out, 5353, render)
+    assert len(calls) == 1
+
+
+def test_publish_cli_needs_a_plan_or_models(tmp_path):
+    with pytest.raises(SystemExit):
+        gpuref.main(["publish", "--results-root", str(tmp_path)])
