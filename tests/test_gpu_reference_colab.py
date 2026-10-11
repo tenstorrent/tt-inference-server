@@ -897,6 +897,27 @@ def test_patch_eval_config_sets_reference_and_clears_request():
     assert 'gpu_reference_score_ref="TBD"' in new  # task b untouched
 
 
+def test_patch_adds_reference_fields_a_task_omits():
+    text = (
+        '    EvalConfig(\n        hf_model_repo="org/m",\n        tasks=[\n'
+        '            EvalTask(\n                task_name="a",\n'
+        "                score=EvalTaskScore(\n"
+        "                    published_score=None,\n"
+        "                    published_score_ref=None,\n"
+        "                    score_func=f,\n"
+        '            EvalTask(\n                task_name="b",\n'
+    )
+    row = {"model": "org/m", "task": "a", "score": 46.578, "verdict": "new"}
+    new = gpuref.patch_eval_config(text, [row], "URL")
+    assert (
+        "                    published_score_ref=None,\n"
+        "                    gpu_reference_score=46.58,\n"
+        '                    gpu_reference_score_ref="URL",\n'
+        "                    score_func=f,\n"
+    ) in new
+    assert new.count("gpu_reference_score=") == 1  # task b untouched
+
+
 def test_reference_verdict_uses_the_noise_rule():
     assert gpuref.reference_verdict(None, 40.0, 541) == "new"
     # mmlu_pro-sized n: SE at 66.07 is ~0.43 pts, so 66.5 is within noise.
