@@ -43,6 +43,10 @@
         "llama_70b_family",
         "gpt_oss_20b"
       ],
+      "_exclude_impls_note": "quetzal rows get their own generated VLLMParamConformanceTest matrix (with their chat_template_kwargs), so this generic one must not also apply to them",
+      "exclude_impls": [
+        "quetzal"
+      ],
       "devices": [
         "n150",
         "n300",
