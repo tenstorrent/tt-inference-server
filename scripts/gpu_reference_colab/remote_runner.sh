@@ -32,6 +32,9 @@ set -uo pipefail
 # and Qwen1.5-0.5B-Chat (Qwen2ForCausalLM). Its transformers<5 cap is fine for
 # these tokenizers. Override with --vllm-version only to work around a VM issue.
 VLLM_VERSION="0.13.0"
+# Optional transformers pin for the vLLM venv (e.g. the version the TT side
+# lowers the model with). Empty: whatever vLLM resolves. Recorded in provenance.
+TRANSFORMERS_VERSION=""
 TTIS_REPO_URL="https://github.com/tenstorrent/tt-inference-server.git"
 WORK_DIR="/content/gpuref"
 TTIS_SHA=""
@@ -41,7 +44,7 @@ MODELS=()
 
 usage() {
     cat <<EOF
-Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--server-timeout S] MODEL...
+Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] MODEL...
 EOF
 }
 
@@ -50,6 +53,7 @@ while [[ $# -gt 0 ]]; do
         --ttis-sha) TTIS_SHA="$2"; shift 2 ;;
         --work-dir) WORK_DIR="$2"; shift 2 ;;
         --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
+        --transformers-version) TRANSFORMERS_VERSION="$2"; shift 2 ;;
         --server-timeout) SERVER_TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -171,6 +175,10 @@ setup() {
     # A dedicated venv keeps vLLM's torch away from Colab's preinstalled one.
     uv venv -q --python 3.12 "${VENV}" \
         && uv pip install -q --python "${VENV}/bin/python" "vllm==${VLLM_VERSION}" || return 1
+    if [[ -n "${TRANSFORMERS_VERSION}" ]]; then
+        phase "setup: transformers==${TRANSFORMERS_VERSION}"
+        uv pip install -q --python "${VENV}/bin/python" "transformers==${TRANSFORMERS_VERSION}" || return 1
+    fi
     "${VENV}/bin/python" -c 'import vllm, torch; print("vllm", vllm.__version__, "torch", torch.__version__, "cuda", torch.cuda.is_available())' || return 1
 }
 
@@ -267,7 +275,7 @@ run_model() {
 main() {
     mkdir -p "${RESULTS}"
     rm -f "${WORK_DIR}/DONE" "${WORK_DIR}/FAILED"
-    log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; vllm ${VLLM_VERSION}"
+    log "models: ${MODELS[*]}; ttis ${TTIS_SHA}; vllm ${VLLM_VERSION}; transformers ${TRANSFORMERS_VERSION:-vllm default}"
     if ! setup; then
         finish FAILED "setup failed at: $(cat "${WORK_DIR}/phase")"
         exit 1

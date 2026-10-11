@@ -920,12 +920,24 @@ def derive_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def derive_text_only(config: Dict[str, Any]) -> Optional[Dict[str, int]]:
+    """vLLM limit_mm_per_prompt for a multimodal checkpoint: zero images and
+    videos. The TT row serves the text decoder and the evals send text only,
+    so the GPU server skips the vision encoder's memory profiling. Text
+    prompts are processed identically."""
+    if "vision_config" in config:
+        return {"image": 0, "video": 0}
+    return None
+
+
 def derived_vllm_args(d: Dict[str, Any]) -> Dict[str, Any]:
     args: Dict[str, Any] = {}
     if d.get("revision"):
         args.update(revision=d["revision"], tokenizer_revision=d["revision"])
     if d.get("hf_overrides"):
         args["hf_overrides"] = d["hf_overrides"]
+    if d.get("limit_mm_per_prompt"):
+        args["limit_mm_per_prompt"] = d["limit_mm_per_prompt"]
     return args
 
 
@@ -945,6 +957,9 @@ def derived_specs_yaml(derived: Dict[str, Dict[str, Any]]) -> str:
                 out.append(
                     "      # standard attention, as the TT (HF graph) side runs it"
                 )
+                value = json.dumps(value)
+            elif key == "limit_mm_per_prompt":
+                out.append("      # text only, as the TT row serves the text decoder")
                 value = json.dumps(value)
             out.append(f"      {key}: {value}")
         out.append("  status: EXPERIMENTAL")
@@ -1138,6 +1153,7 @@ def sweep_plan(
                     hf_get(f"{HF}/api/models/{model}/revision/main", token) or {}
                 ).get("sha")
             d["hf_overrides"] = derive_overrides(config)
+            d["limit_mm_per_prompt"] = derive_text_only(config)
             derived[model] = d
             dms = DeviceModelSpec(device=DeviceTypes.GPU, max_concurrency=d["max_concurrency"],
                                   max_context=d["max_context"], default_impl=True,

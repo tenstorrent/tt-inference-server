@@ -32,6 +32,7 @@ To record a reference:
 | `--poll-minutes N` | `5` | minutes between status polls |
 | `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this |
 | `--vllm-version V` | `0.13.0` | override the runner's vLLM pin |
+| `--transformers-version V` | (vLLM's) | pin transformers in the VM's vLLM venv, e.g. the version the TT side lowers the model with; recorded in `provenance.json` |
 | `--dry-run` | off | local preflight, then print every `colab` command instead of running it |
 | `--sweep` and its sweep options | off | see "Sweep" below |
 
@@ -71,6 +72,8 @@ The report compares the Shield TT score against both the current and the propose
 - models whose bf16 weights fit no Colab GPU.
 
 **GPU specs.** A target model without a GPU spec gets one derived from its TT row: its Quetzal row first, otherwise its default TT rows. It keeps the row's `max_concurrency`, `max_context` is capped at the native `max_position_embeddings`, and the HF revision is pinned.
+
+If the HF config has a `vision_config` (a multimodal checkpoint whose TT row serves the text decoder), the spec sets `limit_mm_per_prompt` to zero images and videos, so vLLM skips the vision encoder's memory profiling; text prompts are processed identically.
 
 If the HF config carries `dual_chunk_attention_config` (the Qwen2.5-*-1M models), the spec adds `hf_overrides` that remove it. Quetzal lowers the HF transformers graph, which ignores that setting, so standard attention on the GPU is the like-for-like reference.
 

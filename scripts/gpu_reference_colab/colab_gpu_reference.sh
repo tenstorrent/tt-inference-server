@@ -21,7 +21,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RESULTS_ROOT="${GPUREF_RESULTS_ROOT:-${REPO_ROOT}/workflow_logs/gpu_reference_colab}"
 REMOTE_REL="content/gpuref"   # /content/gpuref on the VM, for upload/download
 GPU="H100" HIGH_MEM=0 TTIS_REF="HEAD" OUT_DIR="" KEEP=0 SESSION="" POLL_MINUTES=5
-VLLM_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=()
+VLLM_VERSION="" TRANSFORMERS_VERSION="" MIN_BALANCE=0 DRY_RUN=0 MODELS=()
 SWEEP=0 REFRESH=0 WRITE_SPECS=0 PRUNE=0 EMIT_PATCH=0 TT_REPORTS="" AUDIT_REFS="" ORIG_ARGS=("$@")
 NEW_ATTEMPTS=3 NEW_RETRY_SECONDS=120   # per GPU type, on 503 (no capacity)
 
@@ -38,6 +38,7 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
   --poll-minutes N    minutes between polls (default 5)
   --min-balance CU    stop (keeping partial results) below this compute-unit balance
   --vllm-version V    override the runner's vLLM pin
+  --transformers-version V  pin transformers in the VM's vLLM venv
   --dry-run           print every colab command instead of running it
  sweep mode:
   --sweep             measure every ungated or gpu_reference_requested eval task
@@ -61,6 +62,7 @@ while [[ $# -gt 0 ]]; do
         --poll-minutes) POLL_MINUTES="$2"; shift 2 ;;
         --min-balance) MIN_BALANCE="$2"; shift 2 ;;
         --vllm-version) VLLM_VERSION="$2"; shift 2 ;;
+        --transformers-version) TRANSFORMERS_VERSION="$2"; shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;         -h|--help) usage; exit 0 ;;
         --sweep) SWEEP=1; shift ;;             --refresh) REFRESH=1; shift ;;
         --refresh-quetzal) AUDIT_REFS="$2"; shift 2 ;;
@@ -78,6 +80,7 @@ for m in ${MODELS[@]+"${MODELS[@]}"}; do [[ "$m" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9.
 [[ "${POLL_MINUTES}" =~ ^[1-9][0-9]*$ ]] || die "--poll-minutes must be a positive integer"
 [[ "${MIN_BALANCE}" =~ ^[0-9]+([.][0-9]+)?$ ]] || die "--min-balance must be a number"
 [[ -z "${VLLM_VERSION}" || "${VLLM_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --vllm-version"
+[[ -z "${TRANSFORMERS_VERSION}" || "${TRANSFORMERS_VERSION}" =~ ^[0-9A-Za-z.+-]+$ ]] || die "bad --transformers-version"
 
 LOCAL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/gpuref.XXXXXX")"; chmod 700 "${LOCAL_TMP}"
 SESSION_ACTIVE=0
@@ -172,6 +175,7 @@ if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per 
     printf '\n' >> "${ROOT}/RESUME.txt"
     child=(--ttis-ref "${TTIS_SHA}" --poll-minutes "${POLL_MINUTES}" --min-balance "${MIN_BALANCE}")
     if [[ -n "${VLLM_VERSION}" ]]; then child+=(--vllm-version "${VLLM_VERSION}"); fi
+    if [[ -n "${TRANSFORMERS_VERSION}" ]]; then child+=(--transformers-version "${TRANSFORMERS_VERSION}"); fi
     if [[ "${KEEP}" -eq 1 ]]; then child+=(--keep); fi
     if [[ "${HIGH_MEM}" -eq 1 ]]; then child+=(--high-mem); fi
     if [[ "${DRY_RUN}" -eq 1 ]]; then child+=(--dry-run); fi
@@ -247,6 +251,7 @@ if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then
     colab_cmd upload -s "${SESSION}" "${SCRIPT_DIR}/gpuref.py" "${REMOTE_REL}/gpuref.py"
     runner_args=(--ttis-sha "${TTIS_SHA}" --work-dir "/${REMOTE_REL}")
     [[ -n "${VLLM_VERSION}" ]] && runner_args+=(--vllm-version "${VLLM_VERSION}")
+    [[ -n "${TRANSFORMERS_VERSION}" ]] && runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")
     remote_step launch 60 GPUREF_LAUNCHED "${runner_args[@]}" "${MODELS[@]}"
     STATE="RUNNING"
 fi
