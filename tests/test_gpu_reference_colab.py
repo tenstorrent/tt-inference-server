@@ -10,6 +10,7 @@ syntax check of the two shell scripts. Nothing here talks to Colab.
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -1249,3 +1250,53 @@ def test_publish_post_needs_gh_once_and_refuses_tokens(tmp_path, monkeypatch):
 def test_publish_cli_needs_a_plan_or_models(tmp_path):
     with pytest.raises(SystemExit):
         gpuref.main(["publish", "--results-root", str(tmp_path)])
+
+
+def test_no_capacity_exits_75_with_status(tmp_path):
+    """A fake `colab` that always answers 503: with --retry-capacity the driver
+    makes one more pass, records WAITING_CAPACITY then NO_CAPACITY, and exits 75."""
+    if shutil.which("git") is None:
+        pytest.skip("needs git")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "colab").write_text(
+        "#!/bin/bash\n"
+        'case "$1" in\n'
+        '  new) echo "ColabRequestError: ... accelerator=A100: Service Unavailable" >&2; exit 1 ;;\n'
+        "  sessions) exit 0 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n"
+    )
+    (bin_dir / "colab").chmod(0o755)
+    home = tmp_path / "home"
+    (home / ".config" / "colab-cli").mkdir(parents=True)
+    (home / ".config" / "colab-cli" / "token.json").write_text("{}")
+    root = tmp_path / "results"
+    env = dict(
+        os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", HOME=str(home),
+        GPUREF_RESULTS_ROOT=str(root), GPUREF_NEW_RETRY_SECONDS="0",
+    )  # fmt: skip
+    driver = SCRIPT_DIR / "colab_gpu_reference.sh"
+    text = driver.read_text()
+    # Isolate the capacity loop: run it with the preflight stubbed out.
+    start = text.index("# 2 start VM (or re-attach)")
+    end = text.index('    log "allocated ${gpu}')
+    head = text[: text.index("# 1 preflight")]
+    script = tmp_path / "capacity.sh"
+    script.write_text(
+        head
+        + f'SCRIPT_DIR="{SCRIPT_DIR}"\n'
+        + 'TTIS_SHA=deadbeefdeadbeef SESSION=gpuref-test OUT_DIR="${RESULTS_ROOT}/gpuref-test"\n'
+        + 'STATUS_FILE="${OUT_DIR}/driver_status.json" GPUS=(A100) SESSIONS_OUT=""\n'
+        + text[start:end]
+        + "    exit 0\nfi\n"
+    )
+    out = subprocess.run(
+        ["bash", str(script), "--retry-capacity", "1,0", "--gpu", "A100", "org/m"],
+        capture_output=True, text=True, env=env, timeout=120,
+    )  # fmt: skip
+    assert out.returncode == 75, out.stderr
+    record = json.loads((root / "gpuref-test" / "driver_status.json").read_text())
+    assert record["state"] == "NO_CAPACITY"
+    assert "state=NO_CAPACITY" in (root / "gpuref_status.log").read_text()
+    assert out.stderr.count("creating 'gpuref-test' on A100") == 3
