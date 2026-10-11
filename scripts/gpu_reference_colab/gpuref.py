@@ -357,8 +357,14 @@ def check_models(models: List[str]) -> List[Dict[str, Any]]:
         try:
             plan = serve_plan(load_gpu_spec(model))
         except Exception as exc:  # the resolver raises ValueError
-            rows.append({"model": model, "ok": False, "error": f"no GPU spec: {exc}"})
-            continue
+            # No GPU spec at this commit: the runner derives one from the TT row.
+            d = derive_entry(model, catalog_facts()[1].get(model, []), token)
+            if d is None:
+                rows.append(
+                    {"model": model, "ok": False, "error": f"no GPU spec: {exc}"}
+                )
+                continue
+            plan = dict(derived_plan(model, d), derived_gpu_spec=d)
         rows.append(model_facts(model, plan, token))
     return rows
 
@@ -799,6 +805,9 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         # checkout's eval settings, the installed lm-eval and that stack, but
         # only if the installed packages are that stack (else None).
         "stack": plan.get("stack"),
+        # Set when the pinned commit had no GPU spec and the runner derived one
+        # from that commit's TT row (into the VM's clone only).
+        "derived_gpu_spec": load_json(Path(args.plan).parent / "derived_gpu_spec.json"),
         "eval_fingerprint": (
             eval_fingerprint(args.model, lm_eval_installed, plan.get("stack"), ttis)
             if plan.get("stack") and stack_installed(plan["stack"], packages)
@@ -952,6 +961,61 @@ def derive_gpu_spec(model_rows, native_ctx: Optional[int]) -> Optional[Dict[str,
         "source": f"{row['impl']} {row['device']} row max_context {row['max_context']}, "
         f"native {native_ctx}",
     }  # fmt: skip
+
+
+def derive_entry(
+    model: str, model_rows, token: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """A derived GPU spec entry for a model from its TT rows and HF config:
+    derive_gpu_spec, the pinned revision, hf_overrides and text-only serving."""
+    rev = next((r["revision"] for r in model_rows if r["impl"] == "quetzal"), None)
+    config = hf_get(f"{HF}/{model}/resolve/{rev or 'main'}/config.json", token) or {}
+    native = config.get("max_position_embeddings") or (
+        config.get("text_config") or {}
+    ).get("max_position_embeddings")
+    d = derive_gpu_spec(model_rows, native)
+    if d is None:
+        return None
+    if not d["revision"]:  # pin the Hub's current main
+        d["revision"] = (
+            hf_get(f"{HF}/api/models/{model}/revision/main", token) or {}
+        ).get("sha")
+    d["hf_overrides"] = derive_overrides(config)
+    d["limit_mm_per_prompt"] = derive_text_only(config)
+    return d
+
+
+def derived_plan(model: str, d: Dict[str, Any]) -> Dict[str, Any]:
+    """The serve plan a derived entry gives (as if it were in the catalog)."""
+    from workflows.model_spec import DeviceModelSpec, DeviceTypes, get_model_id
+
+    dms = DeviceModelSpec(device=DeviceTypes.GPU, max_concurrency=d["max_concurrency"],
+                          max_context=d["max_context"], default_impl=True,
+                          vllm_args=derived_vllm_args(d))  # fmt: skip
+    dms.vllm_args.setdefault("model", model)
+    model_id = get_model_id(d["impl"].replace("_", "-"), model.split("/")[-1], "gpu")
+    return serve_plan(
+        SimpleNamespace(device_model_spec=dms, hf_model_repo=model, model_id=model_id)
+    )
+
+
+def ensure_gpu_spec(model: str, ttis_dir: Path) -> Optional[Dict[str, Any]]:
+    """Make the checkout at ttis_dir serve `model` on GPU: if its catalog has no
+    GPU spec, derive one from that checkout's TT row and merge it into its
+    llm.yaml (the VM's clone only). Returns the derived entry, or None when a
+    spec already existed. Raises ValueError when there is no row to derive from."""
+    try:
+        load_gpu_spec(model, ttis_dir)
+        return None
+    except Exception:
+        pass
+    _, rows = catalog_facts(ttis_dir)
+    d = derive_entry(model, rows.get(model, []), hf_token())
+    if d is None:
+        raise ValueError(f"{model}: no GPU spec and no TT row to derive one from")
+    path = Path(ttis_dir) / "workflows" / "model_specs" / "dev" / "llm.yaml"
+    path.write_text(write_derived_specs(path.read_text(), {model: d}))
+    return d
 
 
 def gpu_group(verdicts: Dict[str, Any]) -> Optional[str]:
@@ -1215,8 +1279,6 @@ def sweep_plan(
         if model not in tasks:
             skipped.append({"model": model, "task": "*", "reason": "audit: Quetzal P300X2 row",
                             "skip": f"row on {where}; no EvalConfig on this branch"})  # fmt: skip
-    from workflows.model_spec import DeviceModelSpec, DeviceTypes, get_model_id
-
     yaml_text = (
         REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
     ).read_text()
@@ -1228,32 +1290,9 @@ def sweep_plan(
         if has_gpu and model not in generated:
             plan = serve_plan(load_gpu_spec(model))
         else:  # (re)derive: no GPU spec yet, or one this sweep generated
-            rev = next(
-                (r["revision"] for r in rows[model] if r["impl"] == "quetzal"), None
-            )
-            config = (
-                hf_get(f"{HF}/{model}/resolve/{rev or 'main'}/config.json", token) or {}
-            )
-            d = derive_gpu_spec(rows[model], config.get("max_position_embeddings"))
-            if not d["revision"]:  # pin the Hub's current main
-                d["revision"] = (
-                    hf_get(f"{HF}/api/models/{model}/revision/main", token) or {}
-                ).get("sha")
-            d["hf_overrides"] = derive_overrides(config)
-            d["limit_mm_per_prompt"] = derive_text_only(config)
+            d = derive_entry(model, rows[model], token)
             derived[model] = d
-            dms = DeviceModelSpec(device=DeviceTypes.GPU, max_concurrency=d["max_concurrency"],
-                                  max_context=d["max_context"], default_impl=True,
-                                  vllm_args=derived_vllm_args(d))  # fmt: skip
-            dms.vllm_args.setdefault("model", model)
-            model_id = get_model_id(
-                d["impl"].replace("_", "-"), model.split("/")[-1], "gpu"
-            )
-            plan = serve_plan(
-                SimpleNamespace(
-                    device_model_spec=dms, hf_model_repo=model, model_id=model_id
-                )
-            )
+            plan = derived_plan(model, d)
         facts = model_facts(model, plan, token)
         memory = facts["memory"] or {}
         group, placement = gpu_placement(
@@ -1665,6 +1704,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("serve-plan", model=req, ttis_dir={"default": str(REPO_ROOT)},
         vllm_version={}, transformers_version={})  # fmt: skip
     add("plan-argv", "plan")
+    add("ensure-gpu-spec", model=req, ttis_dir=req, out=req)
     p = sub.add_parser("plan-stack", help="a serve plan's stack: 'VLLM [TRANSFORMERS]'")
     p.add_argument("plan")
     p.add_argument(
@@ -1889,6 +1929,18 @@ def main(argv: Optional[List[str]] = None) -> int:
                 verdicts, params, estimate, plan["max_concurrency"]
             )[1]
         print(json.dumps(plan, indent=2))
+    elif args.cmd == "ensure-gpu-spec":
+        try:
+            d = ensure_gpu_spec(args.model, Path(args.ttis_dir))
+        except ValueError as exc:
+            print(f"[gpuref] {exc}", file=sys.stderr)
+            return 1
+        if d is not None:
+            Path(args.out).write_text(json.dumps(d, indent=2) + "\n")
+            print(
+                f"[gpuref] derived a GPU spec for {args.model} from its TT row",
+                file=sys.stderr,
+            )
     elif args.cmd == "plan-stack":
         stack = (load_json(Path(args.plan)) or {}).get("stack") or DEFAULT_STACK
         if args.env:
