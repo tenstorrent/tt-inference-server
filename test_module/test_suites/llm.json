@@ -6,6 +6,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "openai/gpt-oss-120b"
       ],
@@ -19,6 +22,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen3.8-27B"
@@ -249,6 +255,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "tiiuae/Falcon3-3B-Base"
       ],
@@ -262,6 +271,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "tiiuae/Falcon3-7B-Base"
@@ -277,6 +289,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3-4B"
       ],
@@ -290,6 +305,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen3-14B"
@@ -305,6 +323,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3-8B"
       ],
@@ -318,6 +339,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-Coder-7B"
@@ -333,6 +357,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen2.5-Coder-7B-Instruct"
       ],
@@ -346,6 +373,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "TinyLlama/TinyLlama_v1.1"
@@ -361,6 +391,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
       ],
@@ -374,6 +407,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "stabilityai/stablelm-2-1_6b"
@@ -389,6 +425,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "tiiuae/Falcon3-1B-Base"
       ],
@@ -402,6 +441,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "EleutherAI/pythia-70m"
@@ -417,6 +459,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "microsoft/phi-1_5"
       ],
@@ -430,6 +475,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "microsoft/phi-1"
@@ -445,6 +493,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen2.5-14B-Instruct-1M"
       ],
@@ -458,6 +509,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "meta-llama/Llama-3.1-8B-Instruct"
@@ -473,6 +527,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "HuggingFaceTB/SmolLM2-1.7B-Instruct"
       ],
@@ -486,6 +543,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "meta-llama/Llama-3.2-3B-Instruct"
@@ -501,6 +561,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3-0.6B"
       ],
@@ -514,6 +577,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen3-1.7B"
@@ -529,6 +595,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "deepcogito/cogito-v1-preview-llama-3B"
       ],
@@ -542,6 +611,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "arcee-ai/Arcee-Spark"
@@ -557,6 +629,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen2.5-7B-Instruct"
       ],
@@ -570,6 +645,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-7B-Instruct-1M"
@@ -585,6 +663,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "tiiuae/Falcon3-1B-Instruct"
       ],
@@ -598,6 +679,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "tiiuae/Falcon3-3B-Instruct"
@@ -613,6 +697,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "tiiuae/Falcon3-10B-Instruct"
       ],
@@ -626,6 +713,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "deepcogito/cogito-v1-preview-llama-8B"
@@ -641,6 +731,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen3-4B-Instruct-2507"
       ],
@@ -654,6 +747,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
@@ -669,6 +765,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "upstage/SOLAR-10.7B-Instruct-v1.0"
       ],
@@ -682,6 +781,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "meta-llama/Llama-3.2-1B"
@@ -697,6 +799,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen1.5-0.5B-Chat"
       ],
@@ -710,6 +815,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "01-ai/Yi-1.5-9B-Chat"
@@ -725,6 +833,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "NousResearch/Hermes-3-Llama-3.2-3B"
       ],
@@ -738,6 +849,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "meta-llama/Llama-3.1-8B"
@@ -753,6 +867,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen2.5-Coder-32B"
       ],
@@ -766,6 +883,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "01-ai/Yi-1.5-9B"
@@ -781,6 +901,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "Qwen/Qwen2.5-Coder-14B"
       ],
@@ -794,6 +917,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-32B"
@@ -809,6 +935,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "mistralai/Mistral-7B-Instruct-v0.3"
       ],
@@ -822,6 +951,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-Coder-14B-Instruct"
@@ -837,6 +969,9 @@
       "devices": [
         "p300x2"
       ],
+      "impls": [
+        "quetzal"
+      ],
       "models": [
         "01-ai/Yi-1.5-34B-Chat"
       ],
@@ -850,6 +985,9 @@
     {
       "devices": [
         "p300x2"
+      ],
+      "impls": [
+        "quetzal"
       ],
       "models": [
         "Qwen/Qwen2.5-7B"
