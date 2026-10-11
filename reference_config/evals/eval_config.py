@@ -6213,8 +6213,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=28.28,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=28.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6109341330",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -6234,8 +6234,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=22.65,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=20.92,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6109341330",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
