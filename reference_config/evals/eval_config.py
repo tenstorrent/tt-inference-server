@@ -11790,6 +11790,59 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # tau3-bench banking (knowledge domain, BM25 retrieval): the model card
+                # reports 23.5. NOT like-for-like: here the simulated user and the NL
+                # assertion judge are Muse-Glimmer itself on the same server.
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=23.5,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B#benchmarks",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # One served instance is shared by the agent, the simulated user
+                    # and the NL verifier: 8 trials keep ~16 streams on 32 slots.
+                    n_concurrent_trials=8,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        "max_steps": 200,
+                        # A reasoning user-sim turn under load can exceed the 120 s
+                        # default and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    # Literal values: the Harbor container gets these verbatim.
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/meta-models/Muse-Glimmer-30B",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/meta-models/Muse-Glimmer-30B",
+                    },
+                ),
+                # 24 of 97 tasks (+/-9 pts): three waves of 8 at <= 1 h each.
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 24,
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
         ],
     ),
 ]
