@@ -11790,6 +11790,60 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
+            EvalTask(
+                # SWE-bench Verified with mini-swe-agent: the model card reports 76.0.
+                # CI runs the 10-instance list validated for the K2-Horizon-7B QB2 runs.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=76.0,
+                    published_score_ref="https://huggingface.co/meta-models/Muse-Glimmer-30B#benchmarks",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    # 10 instances at 5 concurrent = two waves of <= 3 h.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                            "astropy__astropy-14598",
+                            "matplotlib__matplotlib-25122",
+                            "pydata__xarray-4075",
+                            "pytest-dev__pytest-7571",
+                            "sphinx-doc__sphinx-8265",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
         ],
     ),
 ]
