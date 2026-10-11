@@ -478,8 +478,12 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
 
     plan = {"leaves": {"gpqa_x": _leaf(10)}, "groups": {}}
 
-    def fake_run(cmd, check):
+    planned = []
+
+    def fake_run(cmd, **kwargs):
+        planned.append(cmd)
         Path(cmd[cmd.index("--out") + 1]).write_text(json.dumps(plan))
+        return SimpleNamespace(returncode=0, stderr="")
 
     monkeypatch.setattr(eval_command.subprocess, "run", fake_run)
     monkeypatch.setattr(eval_command, "_ttis_ref", lambda: "deadbeef")
@@ -497,7 +501,9 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
             known_issues=[],
         ),
     )
-    task = EvalTask(task_name="gpqa_x")
+    task = EvalTask(
+        task_name="gpqa_x", custom_dataset_kwargs={"max_seq_lengths": [4096]}
+    )
     rc = SimpleNamespace(eval_shard="1/3", eval_samples=None, limit_samples_mode=None)
     cmd = eval_command.build_eval_command(
         task, model_spec, "P300X2", str(tmp_path), 8000, runtime_config=rc
@@ -508,6 +514,17 @@ def test_build_eval_command_plans_and_passes_the_shard(tmp_path, monkeypatch):
     assert record["shard"] == "1/3"
     assert record["provenance"]["package_manifest_sha256"] == "man"
     assert record["provenance"]["ttis_ref"] == "deadbeef"
+    # The planner sees the eval's own lm_eval arguments verbatim, so the
+    # harness resolves the same doc set: --metadata (merged with --model_args
+    # by lm-eval) and --tasks reach it exactly as they reach the run.
+    (plan_cmd,) = planned
+    forwarded = plan_cmd[plan_cmd.index("--") + 1 :]
+    run_args = cmd[: cmd.index("--samples")]
+    assert run_args[-len(forwarded) :] == forwarded
+    assert forwarded[forwarded.index("--metadata") + 1] == json.dumps(
+        {"max_seq_lengths": [4096]}
+    )
+    assert "--model_args" in forwarded and "--tasks" in forwarded
 
 
 def test_build_eval_command_refuses_random_few_shot(tmp_path, monkeypatch):
@@ -515,13 +532,12 @@ def test_build_eval_command_refuses_random_few_shot(tmp_path, monkeypatch):
     from reference_config.evals.eval_config import EvalTask
 
     plan = {"leaves": {"t": _leaf(10, 5, "default")}, "groups": {}}
-    monkeypatch.setattr(
-        eval_command.subprocess,
-        "run",
-        lambda cmd, check: Path(cmd[cmd.index("--out") + 1]).write_text(
-            json.dumps(plan)
-        ),
-    )
+
+    def fake_run(cmd, **kwargs):
+        Path(cmd[cmd.index("--out") + 1]).write_text(json.dumps(plan))
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(eval_command.subprocess, "run", fake_run)
     model_spec = SimpleNamespace(
         model_id="m",
         model_name="m",
@@ -607,3 +623,233 @@ def test_a_shard_past_its_deadline_is_incomplete_not_partial(tmp_path, monkeypat
         assert block.data.get("status") != TestStatus.PARTIAL.value
         assert "deadline" in block.data["error"]
         assert block.data["subprocess_rc"] == mod._DEADLINE_RC
+
+
+# --- review #5378: group config shape, dataset metadata, harness capability ----
+
+
+def _harness_shaped_group(aggregate_metric_list):
+    """A stand-in with the pinned harness's ConfigurableGroup shape (be23028b).
+
+    ``ConfigurableGroup.config`` returns ``GroupConfig.to_dict()``, i.e.
+    ``dataclasses.asdict``: a dict whose aggregate entries are dicts, never
+    objects with attributes.
+    """
+    from dataclasses import asdict, dataclass, field
+
+    @dataclass
+    class AggMetricConfig:
+        metric: str = None
+        aggregation: str = "mean"
+        weight_by_size: bool = False
+        filter_list: list = field(default_factory=lambda: ["none"])
+
+    @dataclass
+    class GroupConfig:
+        group: str = None
+        task: list = None
+        aggregate_metric_list: list = None
+
+    class ConfigurableGroup:
+        def __init__(self, **config):
+            items = config.pop("aggregate_metric_list", None)
+            self._config = GroupConfig(
+                **config,
+                aggregate_metric_list=None
+                if items is None
+                else [AggMetricConfig(**i) for i in items],
+            )
+
+        @property
+        def group_name(self):
+            return self._config.group
+
+        @property
+        def config(self):
+            return asdict(self._config)
+
+    return ConfigurableGroup(
+        group="g", task=["a", "b"], aggregate_metric_list=aggregate_metric_list
+    )
+
+
+def test_group_plan_reads_the_harness_dict_shaped_group_config():
+    from llm_module.eval_shard_plan import build_plan
+
+    group = _harness_shaped_group(
+        [{"metric": "exact_match", "aggregation": "mean", "weight_by_size": True}]
+    )
+    assert isinstance(group.config, dict)
+    leaf = SimpleNamespace(
+        config={"num_fewshot": 0},
+        eval_docs=[0, 1, 2],
+        aggregation=lambda: {"exact_match": "mean"},
+    )
+    plan = build_plan({group: {"a": leaf, "b": leaf}})
+    assert plan["groups"]["g"]["aggregate_metric_list"] == [
+        {
+            "metric": "exact_match",
+            "aggregation": "mean",
+            "weight_by_size": True,
+            "filter_list": ["none"],
+        }
+    ]
+
+
+def test_group_plan_from_the_real_pinned_configurable_group():
+    group_mod = pytest.importorskip("lm_eval.api.group")
+    from llm_module.eval_shard_plan import _group_info
+
+    group = group_mod.ConfigurableGroup(
+        config={
+            "group": "g",
+            "task": ["a"],
+            "aggregate_metric_list": [
+                {"metric": "acc", "aggregation": "mean", "weight_by_size": True}
+            ],
+        }
+    )
+    assert _group_info(group) == [
+        {
+            "metric": "acc",
+            "aggregation": "mean",
+            "weight_by_size": True,
+            "filter_list": ["none"],
+        }
+    ]
+
+
+GROUP_LEAVES = {"sub_a": 6, "sub_b": 3}
+
+
+def _group_plan(aggregates):
+    return {
+        "leaves": {
+            leaf: _leaf(n, aggregations={"exact_match": "mean"})
+            for leaf, n in GROUP_LEAVES.items()
+        },
+        "groups": {
+            "grp": {"subtasks": list(GROUP_LEAVES), "aggregate_metric_list": aggregates}
+        },
+    }
+
+
+def _correct(leaf, doc):
+    return float((doc + len(leaf)) % 2 == 0)
+
+
+def _write_group_shard(root: Path, index: int, count: int, plan):
+    attempt = root / f"run-{index}" / f"eval-attempt-{index}"
+    out = attempt / "eval_x" / "org__model"
+    out.mkdir(parents=True)
+    record = shard_record("grp", plan, index, count, {**PROV, "hf_model_repo": MODEL})
+    (attempt / "eval_shard_grp.json").write_text(json.dumps(record))
+    results = {}
+    for leaf, n_docs in GROUP_LEAVES.items():
+        rows = [
+            {"doc_id": d, "filter": "none", "exact_match": _correct(leaf, d)}
+            for d in shard_indices(n_docs, index, count)
+        ]
+        (out / f"samples_{leaf}_2026-10-11T00-00-00.000000.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in rows) + "\n"
+        )
+        results[leaf] = {
+            "alias": leaf,
+            "exact_match,none": sum(r["exact_match"] for r in rows) / len(rows),
+        }
+    # lm-eval's own group line for this shard: a shard-only value.
+    results["grp"] = {"alias": "grp", "exact_match,none": 0.123456}
+    (out / "results_2026-10-11T00-00-00.000000.json").write_text(
+        json.dumps({"results": results, "groups": {"grp": results["grp"]}})
+    )
+    return root / f"run-{index}"
+
+
+def test_merge_recomputes_the_group_aggregate_from_the_full_set(tmp_path):
+    plan = _group_plan(
+        [{"metric": "exact_match", "aggregation": "mean", "weight_by_size": True}]
+    )
+    dirs = [_write_group_shard(tmp_path, i, 2, plan) for i in range(2)]
+    doc = merge_cli.merge(dirs, "grp")
+    full = {
+        leaf: sum(_correct(leaf, d) for d in range(n)) / n
+        for leaf, n in GROUP_LEAVES.items()
+    }
+    expected = (full["sub_a"] * 6 + full["sub_b"] * 3) / 9
+    for section in ("results", "groups"):
+        assert doc[section]["grp"]["exact_match,none"] == pytest.approx(expected)
+        assert doc[section]["grp"]["exact_match,none"] != 0.123456
+
+
+def test_merge_refuses_a_group_metric_it_cannot_recompute(tmp_path):
+    # What the dict-shaped config bug produced: a group whose aggregate list
+    # came back empty. The merge must refuse, never keep the shard's value.
+    plan = _group_plan([])
+    dirs = [_write_group_shard(tmp_path, i, 2, plan) for i in range(2)]
+    with pytest.raises(ShardError, match="cannot recompute"):
+        merge_cli.merge(dirs, "grp")
+
+
+def test_harness_without_samples_is_refused(monkeypatch):
+    # lm-eval 0.4.4 (the EVALS_META pin) has no doc selection: its
+    # simple_evaluate takes no `samples`. Detected from the harness itself.
+    import sys
+    import types
+
+    from llm_module import eval_shard_plan
+
+    def install(simple_evaluate, version):
+        pkg = types.ModuleType("lm_eval")
+        pkg.__version__ = version
+        evaluator = types.ModuleType("lm_eval.evaluator")
+        evaluator.simple_evaluate = simple_evaluate
+        pkg.evaluator = evaluator
+        monkeypatch.setitem(sys.modules, "lm_eval", pkg)
+        monkeypatch.setitem(sys.modules, "lm_eval.evaluator", evaluator)
+
+    def v044(model, model_args=None, tasks=None, limit=None, log_samples=True):
+        pass
+
+    def pinned(model, model_args=None, tasks=None, limit=None, samples=None):
+        pass
+
+    install(v044, "0.4.4")
+    why = eval_shard_plan.harness_supports_samples()
+    assert why is not None and "0.4.4" in why
+    assert eval_shard_plan.main(["--out", "unused.json", "--", "--tasks", "t"]) == (
+        eval_shard_plan.UNSUPPORTED_HARNESS_RC
+    )
+    install(pinned, "0.4.9")
+    assert eval_shard_plan.harness_supports_samples() is None
+
+
+def test_build_eval_command_refuses_a_venv_whose_harness_lacks_samples(
+    tmp_path, monkeypatch
+):
+    from llm_module import eval_command
+    from reference_config.evals.eval_config import EvalTask
+    from workflow_module.engine_types import WorkflowVenvType
+
+    monkeypatch.setattr(
+        eval_command.subprocess,
+        "run",
+        lambda cmd, **kwargs: SimpleNamespace(
+            returncode=eval_command._SHARD_PLAN_UNSUPPORTED_RC,
+            stderr="eval shard refused: lm-eval 0.4.4 has no doc selection",
+        ),
+    )
+    model_spec = SimpleNamespace(
+        model_id="m",
+        model_name="m",
+        hf_model_repo="org/m",
+        device_model_spec=SimpleNamespace(
+            max_context=8192, max_concurrency=1, eval_max_retries=0
+        ),
+    )
+    rc = SimpleNamespace(eval_shard="0/2", eval_samples=None, limit_samples_mode=None)
+    task = EvalTask(task_name="t", workflow_venv_type=WorkflowVenvType.EVALS_META)
+    with pytest.raises(ShardError, match="EVALS_META.*0.4.4"):
+        eval_command.build_eval_command(
+            task, model_spec, "P300X2", str(tmp_path), 8000, runtime_config=rc
+        )
+    assert not (tmp_path / "eval_shard_t.json").exists()

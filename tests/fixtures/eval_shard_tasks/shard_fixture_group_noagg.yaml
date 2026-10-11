@@ -1,0 +1,5 @@
+group: shard_fixture_group_noagg
+task:
+  - shard_fixture_leaf_a
+metadata:
+  version: 1.0

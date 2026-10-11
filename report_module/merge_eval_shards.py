@@ -121,11 +121,26 @@ def merge(dirs: Sequence[Path], task: str) -> Dict[str, Any]:
         )
     merged = merge_shard_samples(plan, count, shard_rows)
     doc = copy.deepcopy(template)
-    for name, metrics in merged["results"].items():
-        for section in ("results", "groups"):
-            if name in doc.get(section, {}):
-                alias = doc[section][name].get("alias", name)
-                doc[section][name] = {**metrics, "alias": alias}
+    # Every metric lm-eval reported must be recomputed from the full set; a
+    # value left from the template would be one shard's score in a "merged"
+    # result. So each entry is replaced wholesale, and an entry the merge
+    # cannot recompute (e.g. a group aggregate the plan does not describe)
+    # refuses the merge instead of keeping the shard value.
+    recomputed = merged["results"]
+    for section in ("results", "groups"):
+        for name, entry in list(doc.get(section, {}).items()):
+            reported = {key for key in entry if "," in key}
+            if not reported:
+                continue
+            metrics = recomputed.get(name)
+            missing = sorted(reported - set(metrics or {}))
+            if missing:
+                raise ShardError(
+                    f"{section}.{name}: lm-eval reported {missing} but the merge "
+                    "cannot recompute them from the shards' samples and the plan; "
+                    "refusing to keep one shard's values"
+                )
+            doc[section][name] = {**metrics, "alias": entry.get("alias", name)}
     doc["n-samples"] = {
         leaf: {"original": n, "effective": n} for leaf, n in merged["n_samples"].items()
     }

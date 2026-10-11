@@ -240,6 +240,8 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _SHARD_PLAN_SCRIPT = Path(__file__).with_name("eval_shard_plan.py")
+# eval_shard_plan.UNSUPPORTED_HARNESS_RC: the venv's harness has no --samples.
+_SHARD_PLAN_UNSUPPORTED_RC = 3
 
 
 def _ttis_ref() -> Optional[str]:
@@ -309,6 +311,7 @@ def _resolve_eval_shard(
     model_spec,
     device,
     cmd: List[str],
+    lm_eval_args: List[str],
     output_path,
     output_dir_path,
 ) -> Optional[str]:
@@ -317,6 +320,13 @@ def _resolve_eval_shard(
     Plans the task in the eval venv (leaf doc counts, few-shot sampler, metric
     aggregations), refuses a task that cannot shard exactly, and writes the
     shard record next to the lm-eval output for the merge to verify.
+
+    ``lm_eval_args`` are the eval's own lm_eval arguments (everything after the
+    executable or wrapper): the planner loads the tasks through the harness's
+    parser from exactly these, so ``--metadata`` (merged with ``--model_args``),
+    ``--include_path`` and ``--num_fewshot`` select the same doc set as the run.
+    Whether the venv's harness can select docs at all (``--samples``) is checked
+    by the planner from the harness itself, not from the venv's name.
     """
     value = getattr(runtime_config, "eval_shard", None)
     if not value:
@@ -324,29 +334,27 @@ def _resolve_eval_shard(
     index, count = parse_eval_shard(value)
     if getattr(runtime_config, "eval_samples", None):
         raise ShardError("--eval-shard and --eval-samples are mutually exclusive")
-    if task.workflow_venv_type not in (
-        WorkflowVenvType.EVALS_COMMON,
-        WorkflowVenvType.EVALS_META,
-    ):
-        raise ShardError(
-            f"--eval-shard needs lm-eval --samples; {task.task_name} runs on "
-            f"{task.workflow_venv_type.name}, which does not support it"
-        )
     plan_path = Path(output_path) / f"{SHARD_RECORD_PREFIX}{task.task_name}.plan.json"
     plan_cmd = [
         str(task_venv_path / "bin" / "python"),
         str(_SHARD_PLAN_SCRIPT),
-        "--tasks",
-        task.task_name,
         "--out",
         str(plan_path),
+        "--",
+        *[str(a) for a in lm_eval_args],
     ]
-    if "--include_path" in cmd:
-        plan_cmd += ["--include_path", str(cmd[cmd.index("--include_path") + 1])]
-    if task.num_fewshot is not None:
-        plan_cmd += ["--num_fewshot", str(task.num_fewshot)]
     logger.info("Planning %s shard %s: %s", task.task_name, value, plan_cmd)
-    subprocess.run(plan_cmd, check=True)
+    planned = subprocess.run(plan_cmd, stderr=subprocess.PIPE, text=True)
+    if planned.returncode == _SHARD_PLAN_UNSUPPORTED_RC:
+        raise ShardError(
+            f"--eval-shard refused for {task.task_name} on "
+            f"{task.workflow_venv_type.name}: {(planned.stderr or '').strip()}"
+        )
+    if planned.returncode != 0:
+        raise ShardError(
+            f"shard planning failed for {task.task_name} (rc={planned.returncode}): "
+            f"{(planned.stderr or '').strip()[-2000:]}"
+        )
     plan = json.loads(plan_path.read_text())
     samples = shard_samples(plan, index, count)  # refuses inexact plans
     record = shard_record(
@@ -711,6 +719,7 @@ def build_eval_command(
         model_spec=model_spec,
         device=device,
         cmd=[str(c) for c in cmd],
+        lm_eval_args=[str(c) for c in cmd[len(lm_eval_prefix) :]],
         output_path=output_path,
         output_dir_path=output_dir_path,
     )
