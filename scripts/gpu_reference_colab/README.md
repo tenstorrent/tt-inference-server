@@ -33,6 +33,8 @@ To record a reference:
 | `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this |
 | `--vllm-version V` | `0.13.0` | override the runner's vLLM pin |
 | `--transformers-version V` | (vLLM's) | pin transformers in the VM's vLLM venv, e.g. the version the TT side lowers the model with; recorded in `provenance.json` |
+| `--retry-capacity M,H` | off | on 503 (no GPU) or 412 (concurrent-session limit), retry every M minutes for up to H hours, then exit 75 |
+| `--detach` | off | run in the background; see Unattended runs |
 | `--dry-run` | off | local preflight, then print every `colab` command instead of running it |
 | `--sweep` and its sweep options | off | see "Sweep" below |
 
@@ -48,8 +50,8 @@ Checks and parsers live in `gpuref.py`, and the code the driver sends with `cola
 
 ```bash
 scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --dry-run      # targets, why, GPU group
-scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --min-balance 4000 --emit-patch \
-    --tt-reports <dir with Shield report JSONs>
+scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep --min-balance 4000 \
+    --retry-capacity 15,8 --tt-reports <dir with Shield report JSONs> --detach   # unattended
 ```
 
 `--sweep` reads its targets from the catalog; no model list lives in code.
@@ -89,23 +91,74 @@ If the HF config carries `dual_chunk_attention_config` (the Qwen2.5-*-1M models)
 
 Each group runs in one session, named `gpuref-sweep-{a100,h100}-<sha8>`.
 
-**Resume.** Each finished model is downloaded as soon as it completes. Re-running the same command, which is recorded in `workflow_logs/gpu_reference_colab/RESUME.txt`, does two things:
+**Group fallback.** If a group gets no GPU (Colab returns 503, or 412 at the concurrent-session limit), its driver exits 75. The sweep defers that group, runs the others, and retries deferred groups at the end, waiting with `--retry-capacity` when it is set.
+
+**Resume.** Each finished model is downloaded as soon as it completes. Re-running the same command, which is recorded in `workflow_logs/gpu_reference_colab/RESUME.txt` with its sha pinned, does two things:
 
 - skips models whose latest `ok` run used exactly the same `vllm serve` arguments (revision, context, flags; `--max-num-seqs` aside), has a score for every target task, and has the same **eval fingerprint**: a sha256 over each lm-eval task's score-affecting `EvalTask` fields after GPU device overrides (`num_fewshot`, `gen_kwargs`, chat template and few-shot layout, thinking, ...), its scorer, the lm-eval commit and the vLLM version. The runner records the fingerprint of what actually ran (installed lm-eval and vLLM) in `provenance.json`. Runs recorded before fingerprints, or with another one, are re-run, and the report never proposes their scores;
 - re-attaches to a session that is still running.
 
+Resume is idempotent across commits: reuse is decided per model by the fingerprint, not by the sha.
+- **At a newer commit** (`--ttis-ref <new sha>`), a model whose eval settings, lm-eval commit and vLLM version are unchanged keeps its finished run, and a model whose settings changed is re-run.
+- **When not to:** runs recorded by tooling older than fingerprints have none, so a newer commit re-runs every one of them. The plan prints `NOTE: N model(s) have ok runs recorded without an eval fingerprint`. To keep such a sweep's results, finish it, and report on it, with the commit it started at.
+
 `--min-balance` is checked before each group and at every poll. Set `GPUREF_RESULTS_ROOT` to keep results (and `RESUME.txt`) outside the checkout, for example when the checkout sits under a `/tmp` that is cleared on reboot.
 
-**Outputs** (`workflow_logs/gpu_reference_colab/sweep-<sha8>/`):
+**Outputs** (`workflow_logs/gpu_reference_colab/sweep-<sha8>/`, written by `gpuref.py publish` at the end of the sweep):
 
 - `sweep_plan.json`;
 - `sweep_summary.json`: GPU score, samples, TT score, cap and longest request per task;
-- `sweep_5353.md`: ready to paste into #5353;
-- with `--emit-patch`, a proposed `eval_config.patch`. It records new references and clears `gpu_reference_requested`.
+- `sweep_5353.md`: the #5353 comment, including each stack (vLLM, transformers, server env);
+- a proposed `eval_config.patch`. It records new references and clears `gpu_reference_requested`.
   - Where a task already has a GPU reference, the patch replaces it only if the new score differs by more than TTIS's noise rule (1.96 binomial SE at the old score). Otherwise it keeps the old reference and just clears the flag.
   - **It is never applied automatically**: review it, then `git apply` it.
 
 Only whole models can be run, because `run.py` evaluates every task in a config. Any non-target tasks are measured too, but they are not proposed.
+
+## Unattended runs
+
+One command runs a whole sweep in the background, with nothing else to start or watch:
+
+```
+GPUREF_RESULTS_ROOT=~/gpuref-results scripts/gpu_reference_colab/colab_gpu_reference.sh --sweep \
+    --refresh-quetzal origin/main --min-balance 4400 --retry-capacity 15,8 \
+    --tt-reports ~/gpuref-results/shield_reports --detach
+```
+
+- **`--detach`** runs the driver in its own session and returns. Its output goes to `$GPUREF_RESULTS_ROOT/gpuref_run.log`.
+- **`--retry-capacity 15,8`**: when Colab has no GPU free (503) or the concurrent-session limit is hit (412), the driver tries again every 15 minutes for up to 8 hours. Then it exits 75, and a sweep moves on (see Group fallback).
+- **Status, for people and agents.** Read these; there is no need to tail the driver:
+  - `$GPUREF_RESULTS_ROOT/gpuref_status.log`: one line per state change of every driver, as `<time> state=... session=... done=3/26 phase=...`.
+  - `<session dir>/driver_status.json`: the driver's latest state. States are `STARTING`, `WAITING_CAPACITY`, `RUNNING`, `DONE`, `FAILED`, `NO_CAPACITY` and `LOW_BALANCE`.
+  - `sweep-<sha8>/driver_status.json`: the sweep's state, from `SWEEP_PLANNING` and `SWEEP_GROUP` / `DEFERRED` to `SWEEP_DONE` or `SWEEP_INCOMPLETE`.
+  - `<session dir>/results/status.json`: per-model status from the VM.
+- **Exit status:** 0 when everything finished, 75 for no GPU capacity (retry later), 1 otherwise. Partial results are always kept.
+
+**A model on another stack** (for example Muse-Glimmer-30B, which needs vLLM 0.28.0): run it explicitly, from a pushed commit that has its EvalConfig and GPU spec. With the same flags it runs unattended:
+
+```
+scripts/gpu_reference_colab/colab_gpu_reference.sh --gpu H100 --vllm-version 0.28.0 \
+    --transformers-version 5.15.0 --min-balance 4400 --retry-capacity 15,8 --detach \
+    --ttis-ref <sha> meta-models/Muse-Glimmer-30B
+```
+
+## Publishing results
+
+`gpuref.py publish` renders the #5353 comment and the proposed patch from results. It never posts or applies anything unless asked:
+
+```
+# a sweep (strict: only runs whose fingerprint matches the plan)
+python3 scripts/gpu_reference_colab/gpuref.py publish --plan $R/sweep-<sha8>/sweep_plan.json \
+    --results-root $R --tt-reports $R/shield_reports
+# explicit runs, patching the eval_config.py of the branch that will carry them
+python3 scripts/gpu_reference_colab/gpuref.py publish --models meta-models/Muse-Glimmer-30B \
+    --results-root $R --out-dir $R/muse --eval-config <that branch's eval_config.py>
+```
+
+After the references are approved, add **`--post`**. It posts `sweep_5353.md` to #5353 with `gh` and re-renders `eval_config.patch` so every reference cites that comment.
+- It refuses a body containing a token-like string.
+- It refuses a second post; `publish.json` records the URL.
+- The patch still has to be applied by hand.
 
 ## HF token
 

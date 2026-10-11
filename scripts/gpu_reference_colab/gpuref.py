@@ -445,9 +445,11 @@ STATUS_LABELS = {
 
 
 def parse_status(text: str):
-    """(state, display lines, models finished) from snippets/status.py output."""
-    state, lines, done = None, [], 0
+    """(state, display lines, models finished, phase) from snippets/status.py output."""
+    state, lines, done, phase = None, [], 0, ""
     for line in text.splitlines():
+        if line.startswith("GPUREF_PHASE="):
+            phase = line.split("=", 1)[1].strip()
         if line.startswith("GPUREF_STATE="):
             state = line.split("=", 1)[1].strip() or None
         if line.startswith("GPUREF_DONE="):
@@ -455,7 +457,7 @@ def parse_status(text: str):
         for prefix, label in STATUS_LABELS.items():
             if line.startswith(prefix):
                 lines.append(label + line[len(prefix) :])
-    return state, lines, done
+    return state, lines, done, phase
 
 
 def parse_balance(text: str) -> Optional[float]:
@@ -753,6 +755,37 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
         "note": args.note,
         "request_evidence": load_json(Path(args.evidence)) if args.evidence else None,
     }
+
+
+# --- unattended monitoring ----------------------------------------------------
+
+
+def driver_status(
+    path: Path, log: Optional[Path], fields: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Write the driver's state as JSON (atomically) and append one summary line
+    to the shared log, so an agent or person reads state instead of tailing
+    driver output. States: STARTING, WAITING_CAPACITY, RUNNING, DONE, FAILED,
+    NO_CAPACITY, LOW_BALANCE (and DEFERRED / SWEEP_* for a sweep)."""
+    import datetime
+
+    record = {k: v for k, v in fields.items() if v not in (None, "")}
+    record["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+    tmp.replace(path)
+    if log is not None:
+        line = " ".join(
+            f"{k}={str(v).replace(' ', '_')}"
+            for k, v in record.items()
+            if k != "updated_at"
+        )
+        with open(log, "a") as handle:
+            handle.write(f"{record['updated_at']} {line}\n")
+    return record
 
 
 # --- sweep: pick targets from the catalog, place, run, report ----------------
@@ -1225,7 +1258,9 @@ def sweep_plan(
                            "cu_at_a100_rate": round(hours * CU_PER_HOUR["A100"])}  # fmt: skip
     return {"sha": sha, "targets": kept, "skipped": skipped, "groups": groups,
             "derived": derived, "specs_stale": stale, "estimate": estimate,
-            "lm_eval_commit": lm_eval, "vllm_version": vllm, "prune": prune}  # fmt: skip
+            "lm_eval_commit": lm_eval, "vllm_version": vllm, "prune": prune,
+            "legacy_runs": sorted(m for m in placed if m in finished
+                                  and not finished[m][2].get("eval_fingerprint"))}  # fmt: skip
 
 
 def probe_first(groups: Dict[str, List[str]], placed: Dict[str, Any]) -> None:
@@ -1242,13 +1277,18 @@ def probe_first(groups: Dict[str, List[str]], placed: Dict[str, Any]) -> None:
 
 def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) -> str:
     """eval_config.py text with each result's gpu_reference_score/_ref set and
-    its gpu_reference_requested cleared. Proposed only; never applied here."""
+    its gpu_reference_requested cleared. Proposed only; never applied here.
+    A result whose model or task this file does not have is left out."""
     for r in results:
-        start = text.index(f'        hf_model_repo="{r["model"]}",')
+        start = text.find(f'        hf_model_repo="{r["model"]}",')
+        if start < 0:
+            continue
         end = text.find("\n    EvalConfig(", start)
         end = len(text) if end < 0 else end
         block = text[start:end]
-        at = block.index(f'task_name="{r["task"]}"')
+        at = block.find(f'task_name="{r["task"]}"')
+        if at < 0:
+            continue
         nxt = block.find("EvalTask(", at)
         nxt = len(block) if nxt < 0 else nxt
         task = block[at:nxt]
@@ -1273,10 +1313,12 @@ def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) ->
 
 
 def sweep_results(
-    plan, results_root: Path, tt_root: Optional[Path]
+    plan, results_root: Path, tt_root: Optional[Path], strict: bool = True
 ) -> List[Dict[str, Any]]:
     """One row per target: GPU score from the newest ok run of its model, the
-    evidence/cap/GPU from provenance, and the TT score from Shield reports."""
+    evidence/cap/GPU from provenance, and the TT score from Shield reports.
+    strict (a sweep plan): only a run whose eval fingerprint equals the plan's
+    counts. Not strict (explicit models): the newest ok run, as recorded."""
     done = finished_models(results_root)
     tt = {}
     if tt_root:
@@ -1287,7 +1329,11 @@ def sweep_results(
     for t in plan["targets"]:
         row = dict(t, tt_score=tt.get((t["model"], t["task"])), score=None)
         prior = done.get(t["model"])
-        if prior and prior[2].get("eval_fingerprint") != t.get("eval_fingerprint"):
+        if (
+            strict
+            and prior
+            and prior[2].get("eval_fingerprint") != t.get("eval_fingerprint")
+        ):
             # Run with other eval settings, lm-eval or vLLM (or recorded before
             # fingerprints): not a reference for this plan.
             row["note"] = "stale: eval fingerprint differs from the plan"
@@ -1322,6 +1368,8 @@ def sweep_results(
                 cap=prov.get("max_model_len_cap"), gpu=(prov.get("gpu") or {}).get("name"),
                 ttis_sha=prov.get("ttis_sha"), revision=prov.get("model_revision_sha"),
                 vllm=(prov.get("packages") or {}).get("vllm"), results=str(results_dir),
+                transformers=(prov.get("packages") or {}).get("transformers"),
+                vllm_env=prov.get("vllm_env") or {},
             )  # fmt: skip
         row["verdict"] = reference_verdict(
             row.get("old_gpu_ref"), row["score"], row.get("noise_n")
@@ -1424,8 +1472,13 @@ def sweep_markdown(rows: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) ->
         ]
         out += ["", title] + (lines or ["- none"])
     shas = sorted({r["ttis_sha"] for r in rows if r.get("ttis_sha")})
-    out += ["", f"TTIS sha(s): {', '.join(shas) or '-'}; vLLM "
-            f"{', '.join(sorted({r['vllm'] for r in rows if r.get('vllm')})) or '-'} bf16; "
+    stacks = sorted({
+        f"vLLM {r['vllm']} / transformers {r.get('transformers') or '-'}"
+        + "".join(f", {k}={v}" for k, v in sorted((r.get("vllm_env") or {}).items()) if v)
+        for r in rows if r.get("vllm")
+    })  # fmt: skip
+    out += ["", f"TTIS sha(s): {', '.join(shas) or '-'}; "
+            f"{'; '.join(stacks) or 'vLLM -'}; bf16; "
             "full sample counts; per-model provenance.json (HF revision, exact vllm serve "
             "args, request evidence) in each results dir. GPU prefill chunk "
             "(--max-num-batched-tokens) is capped at 16384: it changes scheduling only, "
@@ -1435,6 +1488,106 @@ def sweep_markdown(rows: List[Dict[str, Any]], skipped: List[Dict[str, Any]]) ->
             f"- {s['model']} {s['task']}: {s['skip']}" for s in skipped
         ]
     return "\n".join(out) + "\n"
+
+
+# --- publish: #5353 comment + proposed eval_config.patch ---------------------
+
+ISSUE_REPO = "tenstorrent/tt-inference-server"
+TOKEN_PATTERN = re.compile(r"hf_[A-Za-z0-9]{20,}")
+
+
+def explicit_targets(models: List[str], results_root: Path) -> List[Dict[str, Any]]:
+    """Targets for a run of explicit models (not a sweep plan): every task its
+    newest ok run scored, with the catalog's references when this checkout
+    has the model's EvalConfig (otherwise none, and the ratio rule only)."""
+    try:
+        tasks, _ = catalog_facts()
+    except Exception:  # an exported tree without the catalog imports
+        tasks = {}
+    catalog = {(repo, t["task"]): t for repo, ts in tasks.items() for t in ts}
+    done = finished_models(results_root)
+    targets = []
+    for model in models:
+        if model not in done:
+            continue
+        for row in summary_rows(done[model][1].parent):
+            if row["model"] != model:  # a results dir holds only its GPU runs
+                continue
+            t = catalog.get((model, row["task"]), {})
+            targets.append({
+                "model": model, "task": row["task"], "reason": "explicit run",
+                "old_gpu_ref": t.get("gpu_ref"), "published": t.get("published"),
+                "tolerance": t.get("tolerance", 0.05),
+                "result_keys": t.get("result_keys"), "unit": t.get("unit"),
+            })  # fmt: skip
+    return targets
+
+
+def render_publication(
+    out: Path,
+    results_root: Path,
+    plan: Optional[Dict[str, Any]] = None,
+    models: Optional[List[str]] = None,
+    tt_root: Optional[Path] = None,
+    eval_config: Optional[Path] = None,
+    ref_url: str = ISSUE_URL,
+) -> Dict[str, Any]:
+    """Write sweep_summary.json, the issue comment (sweep_5353.md) and the
+    proposed eval_config.patch (against eval_config, default this checkout's)
+    into out. Nothing is posted or applied."""
+    import difflib
+
+    if plan is not None:
+        rows = sweep_results(plan, results_root, tt_root, strict=True)
+        skipped, sha = plan.get("skipped", []), plan.get("sha")
+    else:
+        targets = explicit_targets(models or [], results_root)
+        rows = sweep_results({"targets": targets}, results_root, tt_root, strict=False)
+        skipped, sha = [], None
+    out.mkdir(parents=True, exist_ok=True)
+    summary = {"sha": sha, "results": rows, "skipped": skipped}
+    (out / "sweep_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    markdown = sweep_markdown(rows, skipped)
+    (out / "sweep_5353.md").write_text(markdown)
+    finished = [r for r in rows if r["score"] is not None]
+    patch_path = out / "eval_config.patch"
+    if finished:
+        path = (
+            eval_config or REPO_ROOT / "reference_config" / "evals" / "eval_config.py"
+        )
+        old = Path(path).read_text()
+        new = patch_eval_config(old, finished, ref_url)
+        name = "reference_config/evals/eval_config.py"
+        diff = difflib.unified_diff(
+            old.splitlines(True), new.splitlines(True), f"a/{name}", f"b/{name}"
+        )
+        patch_path.write_text("".join(diff))
+    return {"rows": rows, "markdown": markdown, "finished": len(finished),
+            "patch": str(patch_path) if finished else None}  # fmt: skip
+
+
+def post_publication(out: Path, issue: int, render) -> str:
+    """Post out/sweep_5353.md as a comment on the issue (gh), then re-render the
+    patch citing that comment. Refuses a token-like string and a second post."""
+    state_path = out / "publish.json"
+    state = load_json(state_path) or {}
+    if state.get("posted_url"):
+        raise SystemExit(f"already posted: {state['posted_url']} (see {state_path})")
+    body = out / "sweep_5353.md"
+    if TOKEN_PATTERN.search(body.read_text()):
+        raise SystemExit(f"refusing to post: {body} contains a token-like string")
+    posted = subprocess.run(
+        ["gh", "issue", "comment", str(issue), "--repo", ISSUE_REPO,
+         "--body-file", str(body)],
+        capture_output=True, text=True, timeout=120,
+    )  # fmt: skip
+    url = posted.stdout.strip().splitlines()[-1] if posted.returncode == 0 else ""
+    if not url.startswith("https://github.com/"):
+        raise SystemExit(f"gh issue comment failed: {posted.stderr.strip()}")
+    render(url)  # the patch now cites the posted comment
+    state.update(posted_url=url, issue=issue)
+    state_path.write_text(json.dumps(state, indent=2) + "\n")
+    return url
 
 
 # --- CLI ----------------------------------------------------------------------
@@ -1463,6 +1616,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("request-evidence", model=req, revision={}, samples_root=req, out=req,
         log={"action": "append", "default": []})  # fmt: skip
     add("cap-bound", "evidence", "cap")
+    p = sub.add_parser("driver-status", help="write driver_status.json + a log line")
+    p.add_argument("file")
+    p.add_argument("--log", default=None)
+    p.add_argument("fields", nargs="*", metavar="KEY=VALUE")
     add("materialize-hf-config", "plan")
     p = sub.add_parser("sweep")
     p.add_argument("action", choices=["plan", "report"])
@@ -1497,8 +1654,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument(
         "--tt-reports", default=None, help="dir with Shield eval report JSONs"
     )
-    p.add_argument("--emit-patch", action="store_true")
+    p.add_argument("--emit-patch", action="store_true", help="(always written now)")
     p.add_argument("--ref-url", default=ISSUE_URL)
+    p = sub.add_parser(
+        "publish",
+        help="render the issue comment and proposed eval_config.patch from results",
+    )
+    p.add_argument("--plan", default=None, help="sweep plan JSON (strict fingerprints)")
+    p.add_argument("--models", nargs="+", default=None, help="explicit runs instead")
+    p.add_argument(
+        "--results-root",
+        default=str(REPO_ROOT / "workflow_logs" / "gpu_reference_colab"),
+    )
+    p.add_argument("--out-dir", default=None)
+    p.add_argument("--tt-reports", default=None)
+    p.add_argument(
+        "--eval-config", default=None, help="eval_config.py to patch (default: here)"
+    )
+    p.add_argument("--ref-url", default=ISSUE_URL)
+    p.add_argument("--issue", type=int, default=int(ISSUE_URL.rsplit("/", 1)[1]))
+    p.add_argument(
+        "--post",
+        action="store_true",
+        help="post the comment with gh (only after approval) and cite it in the patch",
+    )
     add("provenance", out=req, model=req, ttis_dir=req, plan=req, vllm_python=req,
         vllm_bin=req, status=req, evals_rc={"type": int}, started_at=req,
         finished_at=req, note={}, max_model_len_cap={"type": int}, evidence={})  # fmt: skip
@@ -1528,6 +1707,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"[gpuref]   skipped      {t['model']} {t['task']}: {t['skip']}",
                 file=sys.stderr,
             )
+        if plan.get("legacy_runs"):
+            print(f"[gpuref]   NOTE: {len(plan['legacy_runs'])} model(s) have ok runs recorded "
+                  "without an eval fingerprint (older tooling); they count as not done and "
+                  f"will be re-run: {', '.join(plan['legacy_runs'])}", file=sys.stderr)  # fmt: skip
         yaml_path = REPO_ROOT / "workflows" / "model_specs" / "dev" / "llm.yaml"
         if plan["specs_stale"] and args.write_specs:
             yaml_path.write_text(
@@ -1543,34 +1726,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         for group, models in plan["groups"].items():
             print(group + "\t" + " ".join(models))
         return 2 if plan["specs_stale"] else 0  # 2: commit specs first
-    if args.cmd == "sweep":  # report
-        plan = load_json(Path(args.plan))
-        rows = sweep_results(
-            plan,
-            Path(args.results_root),
-            Path(args.tt_reports) if args.tt_reports else None,
-        )
-        out = Path(args.out_dir or Path(args.plan).parent)
-        summary = {"sha": plan["sha"], "results": rows, "skipped": plan["skipped"]}
-        (out / "sweep_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-        (out / "sweep_5353.md").write_text(sweep_markdown(rows, plan["skipped"]))
-        finished = [r for r in rows if r["score"] is not None]
-        if args.emit_patch and finished:
-            import difflib
+    if args.cmd == "sweep" or args.cmd == "publish":  # sweep report == publish --plan
+        plan = load_json(Path(args.plan)) if args.plan else None
+        if args.cmd == "publish" and not (plan or args.models):
+            parser.error("publish needs --plan (a sweep) or --models (explicit runs)")
+        out = Path(args.out_dir or (Path(args.plan).parent if args.plan else "."))
 
-            path = REPO_ROOT / "reference_config" / "evals" / "eval_config.py"
-            old = path.read_text()
-            new = patch_eval_config(old, finished, args.ref_url)
-            name = "reference_config/evals/eval_config.py"
-            diff = difflib.unified_diff(
-                old.splitlines(True), new.splitlines(True), f"a/{name}", f"b/{name}"
-            )
-            (out / "eval_config.patch").write_text("".join(diff))
-        print(sweep_markdown(rows, plan["skipped"]))
-        print(
-            f"{len(finished)}/{len(rows)} targets measured; outputs in {out}",
-            file=sys.stderr,
-        )
+        def render(ref_url):
+            return render_publication(
+                out, Path(args.results_root), plan, getattr(args, "models", None),
+                Path(args.tt_reports) if args.tt_reports else None,
+                Path(args.eval_config) if getattr(args, "eval_config", None) else None,
+                ref_url,
+            )  # fmt: skip
+
+        result = render(args.ref_url)
+        print(result["markdown"])
+        print(f"{result['finished']}/{len(result['rows'])} targets measured; outputs in {out}"
+              + ("" if getattr(args, "post", False) else " (not posted; --post posts after approval)"),
+              file=sys.stderr)  # fmt: skip
+        if getattr(args, "post", False):
+            url = post_publication(out, args.issue, render)
+            print(f"[gpuref] posted {url}; {out / 'eval_config.patch'} now cites it",
+                  file=sys.stderr)  # fmt: skip
+        return 0
+    if args.cmd == "driver-status":
+        fields = dict(f.split("=", 1) for f in args.fields if "=" in f)
+        driver_status(Path(args.file), Path(args.log) if args.log else None, fields)
         return 0
     if args.cmd == "preflight":
         usable, ok, msgs = preflight(check_models(args.models), args.gpus.split(","))
@@ -1578,9 +1760,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(" ".join(usable))
         return 0 if ok else 1
     if args.cmd == "status-view":
-        state, lines, done = parse_status(sys.stdin.read())
+        state, lines, done, phase = parse_status(sys.stdin.read())
         print("\n".join(lines), file=sys.stderr)
-        print(f"{state} {done}" if state else "")
+        print(f"{state} {done} {phase}".rstrip() if state else "")
         return 0 if state else 1
     if args.cmd == "balance-below":
         balance = parse_balance(sys.stdin.read())
