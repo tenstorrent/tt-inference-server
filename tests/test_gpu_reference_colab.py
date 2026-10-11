@@ -689,21 +689,6 @@ def test_multimodal_checkpoints_are_served_text_only():
     assert flags[flags.index("--limit-mm-per-prompt") + 1] == '{"image": 0, "video": 0}'
 
 
-def test_runner_serves_without_flashinfer_jit():
-    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
-    assert "export VLLM_USE_FLASHINFER_SAMPLER=0" in runner
-    assert 'PATH="${VENV}/bin:${PATH}" setsid "${VENV}/bin/vllm"' in runner
-
-
-def test_runner_and_driver_take_a_transformers_pin():
-    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
-    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
-    assert '--transformers-version) TRANSFORMERS_VERSION="$2"' in runner
-    assert '"transformers==${TRANSFORMERS_VERSION}"' in runner
-    assert 'runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver
-    assert 'child+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver
-
-
 def test_derive_overrides_disables_dual_chunk_attention_only_when_present():
     assert gpuref.derive_overrides(
         {"dual_chunk_attention_config": {"chunk_size": 262144}}
@@ -786,9 +771,11 @@ def test_eval_fingerprint_tracks_score_inputs_only(monkeypatch):
         ),
     )  # fmt: skip
 
-    def fp(task, lm="be23028b", vllm="0.13.0"):
+    def fp(task, lm="be23028b", vllm="0.13.0", **stack):
         _patch_eval_config(monkeypatch, model, task)
-        return gpuref.eval_fingerprint(model, lm, vllm)
+        return gpuref.eval_fingerprint(
+            model, lm, dict(gpuref.serving_stack(None), vllm=vllm, **stack)
+        )
 
     f0 = fp(base)
     assert f0 and len(f0) == 64 and fp(base) == f0  # deterministic
@@ -798,6 +785,8 @@ def test_eval_fingerprint_tracks_score_inputs_only(monkeypatch):
     assert fp(replace(base, thinking=False)) != f0
     assert fp(base, lm="deadbeef") != f0
     assert fp(base, vllm="0.14.0") != f0
+    assert fp(base, transformers="5.15.0") != f0  # the whole stack counts
+    assert fp(base, env={}) != f0
     # GPU device overrides are applied before hashing.
     assert fp(replace(base, device_overrides={"GPU": {"use_chat_api": True}})) != f0
     assert fp(replace(base, device_overrides={"GALAXY": {"use_chat_api": True}})) == f0
@@ -806,7 +795,12 @@ def test_eval_fingerprint_tracks_score_inputs_only(monkeypatch):
     assert fp(replace(base, limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.2})) == f0
     # Unknown versions or model: no fingerprint, so nothing can match it.
     assert fp(base, lm=None) is None
-    assert gpuref.eval_fingerprint("org/not-in-catalog", "be23028b", "0.13.0") is None
+    assert (
+        gpuref.eval_fingerprint(
+            "org/not-in-catalog", "be23028b", gpuref.serving_stack(None)
+        )
+        is None
+    )
 
 
 def test_report_ignores_runs_with_another_fingerprint(tmp_path):
@@ -1300,3 +1294,62 @@ def test_no_capacity_exits_75_with_status(tmp_path):
     assert record["state"] == "NO_CAPACITY"
     assert "state=NO_CAPACITY" in (root / "gpuref_status.log").read_text()
     assert out.stderr.count("creating 'gpuref-test' on A100") == 3
+
+
+# --- serving stack per model ---------------------------------------------------
+
+
+def test_serving_stack_follows_the_architecture():
+    default = gpuref.serving_stack({"architectures": ["LlamaForCausalLM"]})
+    assert default == {"vllm": "0.13.0", "transformers": None,
+                       "env": {"VLLM_USE_FLASHINFER_SAMPLER": "0"}}  # fmt: skip
+    muse = gpuref.serving_stack(
+        {"architectures": ["MuseGlimmerForConditionalGeneration"]}
+    )
+    assert (muse["vllm"], muse["transformers"]) == ("0.28.0", "5.15.0")
+    assert muse["env"] == default["env"]
+    gemma = gpuref.serving_stack({"architectures": ["Gemma4ForConditionalGeneration"]})
+    assert (gemma["vllm"], gemma["transformers"]) == ("0.20.0", "5.15.0")
+    assert gpuref.serving_stack(None) == default  # no config: the default
+    forced = gpuref.serving_stack(None, vllm="0.14.1", transformers="4.57.6")
+    assert (forced["vllm"], forced["transformers"]) == ("0.14.1", "4.57.6")
+    gpuref.serving_stack(None)["env"]["X"] = "1"  # callers get a copy
+    assert "X" not in gpuref.DEFAULT_STACK["env"]
+
+
+def test_fingerprint_needs_the_requested_stack_installed():
+    stack = gpuref.serving_stack({"architectures": ["Gemma4ForConditionalGeneration"]})
+    assert gpuref.stack_installed(stack, {"vllm": "0.20.0", "transformers": "5.15.0"})
+    assert not gpuref.stack_installed(
+        stack, {"vllm": "0.20.0", "transformers": "5.16.0"}
+    )
+    assert not gpuref.stack_installed(
+        stack, {"vllm": "0.13.0", "transformers": "5.15.0"}
+    )
+    default = gpuref.serving_stack(None)  # no transformers pin: any resolves
+    assert gpuref.stack_installed(default, {"vllm": "0.13.0", "transformers": "4.57.6"})
+
+
+def test_plan_stack_cli_for_the_runner(tmp_path, capsys):
+    plan = tmp_path / "serve_plan.json"
+    stack = gpuref.serving_stack({"architectures": ["MuseGlimmerForCausalLM"]})
+    plan.write_text(json.dumps({"stack": stack}))
+    gpuref.main(["plan-stack", str(plan)])
+    gpuref.main(["plan-stack", "--env", str(plan)])
+    assert capsys.readouterr().out.splitlines() == [
+        "0.28.0 5.15.0", "VLLM_USE_FLASHINFER_SAMPLER=0",
+    ]  # fmt: skip
+    plan.write_text("{}")  # a plan from older tooling: the default stack
+    gpuref.main(["plan-stack", str(plan)])
+    assert capsys.readouterr().out.strip() == "0.13.0"
+
+
+def test_runner_builds_one_venv_per_stack_and_serves_with_its_env():
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    assert 'VENV="${WORK_DIR}/venvs/vllm-${vllm}${tf:+-transformers-${tf}}"' in runner
+    assert 'ensure_stack "${stack_vllm}" "${stack_tf}"' in runner
+    assert 'plan-stack --env "${mdir}/serve_plan.json"' in runner
+    assert 'setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"}' in runner
+    assert "export VLLM_USE_FLASHINFER_SAMPLER" not in runner  # it is per stack now
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    assert 'runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver

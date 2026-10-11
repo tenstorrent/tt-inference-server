@@ -31,8 +31,8 @@ To record a reference:
 | `--session NAME` | `gpuref-<sha[:8]>` | session name. Re-running with the same name re-attaches. |
 | `--poll-minutes N` | `5` | minutes between status polls |
 | `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this |
-| `--vllm-version V` | `0.13.0` | override the runner's vLLM pin |
-| `--transformers-version V` | (vLLM's) | pin transformers in the VM's vLLM venv, e.g. the version the TT side lowers the model with; recorded in `provenance.json` |
+| `--vllm-version V` | per model | override every model's serving stack vLLM (see Serving stack per model) |
+| `--transformers-version V` | per model | override every model's transformers pin |
 | `--retry-capacity M,H` | off | on 503 (no GPU) or 412 (concurrent-session limit), retry every M minutes for up to H hours, then exit 75 |
 | `--detach` | off | run in the background; see Unattended runs |
 | `--dry-run` | off | local preflight, then print every `colab` command instead of running it |
@@ -134,13 +134,15 @@ GPUREF_RESULTS_ROOT=~/gpuref-results scripts/gpu_reference_colab/colab_gpu_refer
   - `<session dir>/results/status.json`: per-model status from the VM.
 - **Exit status:** 0 when everything finished, 75 for no GPU capacity (retry later), 1 otherwise. Partial results are always kept.
 
-**A model on another stack** (for example Muse-Glimmer-30B, which needs vLLM 0.28.0): run it explicitly, from a pushed commit that has its EvalConfig and GPU spec. With the same flags it runs unattended:
+**Serving stack per model.** Each model gets a stack: a vLLM version, an optional transformers pin, and a server environment. It comes from `gpuref.py serving_stack` and is chosen by the model's HF config `architectures`:
+- **Default:** vLLM 0.13.0 (TTIS's own client pin), transformers unpinned, `VLLM_USE_FLASHINFER_SAMPLER=0`.
+- **`ARCH_STACKS`:** maps an architecture vLLM 0.13.0 cannot serve to the first vLLM release that supports it, and to the transformers the TT side lowers it with. Today:
+  - Muse-Glimmer: vLLM 0.28.0, transformers 5.15.0;
+  - Gemma 4: vLLM 0.20.0, transformers 5.15.0.
 
-```
-scripts/gpu_reference_colab/colab_gpu_reference.sh --gpu H100 --vllm-version 0.28.0 \
-    --transformers-version 5.15.0 --min-balance 4400 --retry-capacity 15,8 --detach \
-    --ttis-ref <sha> meta-models/Muse-Glimmer-30B
-```
+The plan prints each model's stack. The runner builds one venv per stack on first use, so one sweep handles mixed stacks in a single session. The serve plan, `provenance.json` (`stack`, installed `packages`, `vllm_env`) and the eval fingerprint all record the stack. A run's fingerprint is kept only if the installed packages are the requested stack.
+
+To add an architecture, add one `ARCH_STACKS` entry citing the vLLM PR that added it. `--vllm-version` / `--transformers-version` override every model's stack, for a one-off explicit run.
 
 ## Publishing results
 

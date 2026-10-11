@@ -43,8 +43,8 @@ Usage: colab_gpu_reference.sh [options] MODEL [MODEL...]
   --session NAME      session name (default gpuref-<sha[:8]>); same name re-attaches
   --poll-minutes N    minutes between polls (default 5)
   --min-balance CU    stop (keeping partial results) below this compute-unit balance
-  --vllm-version V    override the runner's vLLM pin
-  --transformers-version V  pin transformers in the VM's vLLM venv
+  --vllm-version V    override every model's serving-stack vLLM (default: per model)
+  --transformers-version V  override every model's transformers pin
   --retry-capacity M,H  when no GPU is free (503) or the concurrent-session limit
                       is hit (412), retry every M minutes for up to H hours, then
                       exit 75; a sweep moves on to other groups and retries later
