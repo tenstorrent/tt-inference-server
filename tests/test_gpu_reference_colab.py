@@ -812,19 +812,65 @@ def test_report_ignores_runs_with_another_fingerprint(tmp_path):
     model = report["metadata"]["model_repo"]
     mdir = session / "results" / model.replace("/", "__")
     mdir.mkdir(parents=True)
+    argv = ["serve", model, "--max-model-len", "4096", "--max-num-seqs", "256"]
     prov = {"model": model, "status": "ok", "finished_at": "2026-10-10T00:00:00Z",
-            "eval_fingerprint": "fp-old"}  # fmt: skip
+            "eval_fingerprint": "fp-old", "vllm_serve_command": ["vllm"] + argv}  # fmt: skip
     (mdir / "provenance.json").write_text(json.dumps(prov))
     target = {"model": model, "task": "mmlu_pro", "old_gpu_ref": None,
+              "published": None, "tolerance": 0.05, "vllm_serve_args": argv}  # fmt: skip
+
+    def report(**changes):
+        plan = {"targets": [{**target, "eval_fingerprint": "fp-old", **changes}]}
+        return gpuref.sweep_results(plan, tmp_path, None)[0]
+
+    stale = report(eval_fingerprint="fp-new")
+    assert stale["score"] is None and "eval fingerprint" in stale["note"]
+    assert report()["score"] is not None
+    # Same eval settings, other serving: the old run is not this plan's reference.
+    longer = [a if a != "4096" else "8192" for a in argv]
+    assert "serve args" in report(vllm_serve_args=longer)["note"]
+    assert report(vllm_serve_args=longer)["score"] is None
+    assert report(vllm_serve_args=None)["score"] is None  # plan without them
+    # --max-num-seqs only schedules requests.
+    assert report(vllm_serve_args=argv[:-1] + ["32"])["score"] is not None
+
+
+def test_tt_grade_uses_the_tt_reports_noise_n(tmp_path):
+    """TT 15 vs GPU 20: within noise at the TT run's n=100 (margin ~7.8 pts),
+    a FAIL at the GPU run's n=541 (margin ~3.4 pts). TTIS grades with its own n."""
+    tt = tmp_path / "tt" / "data"
+    tt.mkdir(parents=True)
+    report = json.loads(FIXTURE.read_text())
+    ifeval = next(s for s in report["sections"] if s.get("kind") == "evals")
+    ifeval["data"].update(score=15.0, noise_n=100.0)
+    report["sections"] = [ifeval]
+    (tt / "report_x.json").write_text(json.dumps(report))
+    model = report["metadata"]["model_repo"]
+    target = {"model": model, "task": "leaderboard_ifeval", "old_gpu_ref": 20.0,
               "published": None, "tolerance": 0.05}  # fmt: skip
-    stale = gpuref.sweep_results(
-        {"targets": [dict(target, eval_fingerprint="fp-new")]}, tmp_path, None
-    )
-    assert stale[0]["score"] is None and "stale" in stale[0]["note"]
-    fresh = gpuref.sweep_results(
-        {"targets": [dict(target, eval_fingerprint="fp-old")]}, tmp_path, None
-    )
-    assert fresh[0]["score"] is not None
+    row = gpuref.sweep_results(
+        {"targets": [target]}, tmp_path / "none", tmp_path / "tt"
+    )[0]
+    assert row["tt_score"] == 15.0 and row["tt_noise_n"] == 100.0
+    assert row["tt_now"] == "PASS"
+    assert gpuref.tt_grade(15.0, 20.0, 0.05, 541) == "FAIL"
+    # A report without noise_n (ratio rule only) grades by the ratio alone.
+    ifeval["data"].pop("noise_n")
+    (tt / "report_x.json").write_text(json.dumps(report))
+    row = gpuref.sweep_results(
+        {"targets": [target]}, tmp_path / "none", tmp_path / "tt"
+    )[0]
+    assert row["tt_noise_n"] is None and row["tt_now"] == "FAIL"
+
+
+def test_sweep_planner_gets_the_transformers_override():
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    assert 'plan_args+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver
+    import inspect
+
+    assert "transformers_version" in inspect.signature(gpuref.sweep_plan).parameters
+    stack = gpuref.serving_stack(None, None, "4.57.6")
+    assert stack["transformers"] == "4.57.6"  # what the planner fingerprints
 
 
 def test_gpu_concurrency_raises_small_models_only():
@@ -1188,7 +1234,9 @@ def test_task_selection_runs_only_named_tasks_in_full(monkeypatch):
     model = "org/task-select"
     tasks = [EvalTask(task_name="mmlu_pro"), EvalTask(task_name="r1_gpqa_diamond")]
     monkeypatch.setitem(
-        eval_config._eval_config_map, model, EvalConfig(hf_model_repo=model, tasks=tasks)
+        eval_config._eval_config_map,
+        model,
+        EvalConfig(hf_model_repo=model, tasks=tasks),
     )
     # null = selected, no --samples: lm-eval runs every doc of the task.
     assert gpuref.task_selection(model, ["mmlu_pro"]) == '{"mmlu_pro": null}'
@@ -1202,7 +1250,9 @@ def test_driver_task_flag_is_validated_and_explicit_only():
     driver = SCRIPT_DIR / "colab_gpu_reference.sh"
 
     def run(*argv):
-        return subprocess.run(["bash", str(driver), *argv], capture_output=True, text=True)
+        return subprocess.run(
+            ["bash", str(driver), *argv], capture_output=True, text=True
+        )
 
     out = run("--task", "org/m=mmlu_pro", "--sweep")
     assert out.returncode == 1 and "explicit runs" in out.stderr
