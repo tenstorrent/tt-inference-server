@@ -210,11 +210,19 @@ def _verifier_shim_packages(config: HarborRunConfig) -> tuple[str, ...]:
 
 
 def _site_package_dir(interpreter: Path, package: str) -> Optional[Path]:
-    """Locate ``package`` in the site-packages of the venv owning ``interpreter``."""
-    venv_root = Path(interpreter).resolve().parent.parent
-    for candidate in sorted(venv_root.glob(f"lib/python3*/site-packages/{package}")):
-        if (candidate / "__init__.py").is_file():
-            return candidate
+    """Locate ``package`` in the site-packages of the venv owning ``interpreter``.
+
+    ``<venv>/bin/python`` is usually a symlink to the base interpreter (uv
+    points it at its managed CPython), so the venv root is derived from the
+    unresolved path first and the resolved one only as a fallback."""
+    roots: list[Path] = []
+    for root in (Path(interpreter).absolute().parent.parent, Path(interpreter).resolve().parent.parent):
+        if root not in roots:
+            roots.append(root)
+    for venv_root in roots:
+        for candidate in sorted(venv_root.glob(f"lib/python3*/site-packages/{package}")):
+            if (candidate / "__init__.py").is_file():
+                return candidate
     return None
 
 
