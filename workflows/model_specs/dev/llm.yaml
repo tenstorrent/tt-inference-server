@@ -1501,6 +1501,7 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
+        limit-mm-per-prompt: '{"image": 0, "video": 0}'  # qwen36_blackhole batched serving is text-only: images assert in prefill and kill the engine
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1519,6 +1520,7 @@ templates:
         MESH_DEVICE: "P150x8"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
+        limit-mm-per-prompt: '{"image": 0, "video": 0}'  # qwen36_blackhole batched serving is text-only: images assert in prefill and kill the engine
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1541,6 +1543,7 @@ templates:
         MESH_DEVICE: "P150x4"
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
       vllm_args:
+        limit-mm-per-prompt: '{"image": 0, "video": 0}'  # qwen36_blackhole batched serving is text-only: images assert in prefill and kill the engine
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1580,6 +1583,8 @@ templates:
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
       vllm_args:
+        limit-mm-per-prompt: '{"image": 0, "video": 0}'  # qwen36_blackhole batched serving is text-only: images assert in prefill and kill the engine
+        chat-template: /home/container_app_user/app/src/chat_templates/qwen3_8_merge_system.jinja  # stock template + merge all system messages (no raise)
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
@@ -1601,6 +1606,8 @@ templates:
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
       vllm_args:
+        limit-mm-per-prompt: '{"image": 0, "video": 0}'  # qwen36_blackhole batched serving is text-only: images assert in prefill and kill the engine
+        chat-template: /home/container_app_user/app/src/chat_templates/qwen3_8_merge_system.jinja  # stock template + merge all system messages (no raise)
         data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 128 -> max_num_seqs 32 per rank
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
