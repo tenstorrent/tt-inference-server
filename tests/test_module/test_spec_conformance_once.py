@@ -87,17 +87,9 @@ def test_every_quetzal_row_with_an_enrollment_gets_exactly_one():
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "The quetzal-generated llm-suite matrices (handover/apply_ttis_enrollment) "
-        "carry no impl scope, so they also select for other impls serving the "
-        "same weights on p300x2 (e.g. tt_transformers Llama-3.1-8B-Instruct). "
-        "Fix: emit impls=['quetzal'] from the handover generator. strict=True "
-        "turns this into a failure once that lands, so the marker gets removed."
-    ),
-)
 def test_every_other_impl_gets_at_most_one():
+    # Quetzal-generated matrices carry impls=["quetzal"] (quetzal #254), so
+    # they no longer select for other impls serving the same weights.
     duplicates = _duplicates(skip_impl="quetzal")
     assert not duplicates, f"{TEMPLATE} selected more than once: {duplicates}"
 
