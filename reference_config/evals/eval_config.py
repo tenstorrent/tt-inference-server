@@ -332,6 +332,12 @@ class EvalTask:
     # pinned harness turns it on whenever --apply_chat_template is set); set
     # False/True only where a model's chat template needs the other layout.
     fewshot_as_multiturn: Optional[bool] = None
+    # Why this task needs a (new) GPU reference from
+    # scripts/gpu_reference_colab/ --sweep, e.g. the published number measures a
+    # different checkpoint or setting. The sweep selects every task that sets it
+    # (even one with a gpu_reference_score) plus every ungated task; recording
+    # the reference clears it. Data only: never read when grading.
+    gpu_reference_requested: Optional[str] = None
     log_samples: bool = True
     # Opt-in: preserve the model's separate reasoning_content trace in the
     # per-sample logs (requires the chat API + a server that returns reasoning
