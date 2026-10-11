@@ -38,6 +38,11 @@ TRANSFORMERS_VERSION=""
 TTIS_REPO_URL="https://github.com/tenstorrent/tt-inference-server.git"
 WORK_DIR="/content/gpuref"
 TTIS_SHA=""
+# vLLM's FlashInfer top-k/top-p sampler JIT-compiles at warmup (vLLM >= 0.28
+# with sampling tasks) and needs ninja and a matching nvcc, which the Colab VM
+# lacks. vLLM's PyTorch sampler draws from the same distribution. Recorded in
+# provenance.json (vllm_env).
+export VLLM_USE_FLASHINFER_SAMPLER=0
 SERVER_TIMEOUT=2700   # seconds to wait for /v1/models (download + load + graphs)
 PORT=8000
 MODELS=()
@@ -115,7 +120,8 @@ stop_server() {
 start_server() {
     local logfile="$1"; shift
     log "${VENV}/bin/vllm $*"
-    setsid "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    # The venv's bin (ninja and other tools vLLM may shell out to) on PATH.
+    PATH="${VENV}/bin:${PATH}" setsid "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
     SERVER_PID=$!
 }
 
