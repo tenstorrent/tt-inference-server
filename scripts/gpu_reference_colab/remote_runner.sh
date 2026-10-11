@@ -204,8 +204,13 @@ run_model() {
     [[ -n "${VLLM_OVERRIDE}" ]] && overrides+=(--vllm-version "${VLLM_OVERRIDE}")
     [[ -n "${TRANSFORMERS_OVERRIDE}" ]] && overrides+=(--transformers-version "${TRANSFORMERS_OVERRIDE}")
     local stack_vllm="" stack_tf=""
-    if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}" ${overrides[@]+"${overrides[@]}"}) \
-            > "${mdir}/serve_plan.json" 2> "${mdir}/serve_plan.err"; then
+    # No GPU spec at the pinned commit: derive one from its TT row into this
+    # clone (recorded as derived_gpu_spec.json and in provenance).
+    if ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" ensure-gpu-spec --ttis-dir "${TTIS_DIR}" --model "${model}" --out "${mdir}/derived_gpu_spec.json") \
+            2> "${mdir}/serve_plan.err"; then
+        status="failed"; note="no GPU spec and none derivable from a TT row (serve_plan.err)"
+    elif ! (cd "${TTIS_DIR}" && python3 "${GPUREF}" serve-plan --ttis-dir "${TTIS_DIR}" --model "${model}" ${overrides[@]+"${overrides[@]}"}) \
+            > "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
         status="failed"; note="GPU spec did not resolve (serve_plan.err)"
     elif ! python3 "${GPUREF}" materialize-hf-config "${mdir}/serve_plan.json" 2>> "${mdir}/serve_plan.err"; then
         status="failed"; note="could not write the edited config.json (serve_plan.err)"

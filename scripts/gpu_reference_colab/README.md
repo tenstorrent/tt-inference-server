@@ -73,7 +73,7 @@ The report compares the Shield TT score against both the current and the propose
 - models with no GPU spec and no TT row to derive one from;
 - models whose bf16 weights fit no Colab GPU.
 
-**GPU specs.** A target model without a GPU spec gets one derived from its TT row: its Quetzal row first, otherwise its default TT rows. It keeps the row's `max_concurrency`, `max_context` is capped at the native `max_position_embeddings`, and the HF revision is pinned.
+**GPU specs.** A target model without a GPU spec gets one derived from its TT row: its Quetzal row first, otherwise its default TT rows. It keeps the row's `max_concurrency`, `max_context` is capped at the native `max_position_embeddings`, and the HF revision is pinned. An explicit run (or a sweep) from a pushed commit with no GPU spec for the model also works without committing one: the runner derives the spec on the VM from that commit's TT row, merges it into the VM's clone only, and records it as `derived_gpu_spec` in `provenance.json`. So a model whose row lives on a dispatch branch is one command: `--ttis-ref <that branch> <model>`.
 
 If the HF config has a `vision_config` (a multimodal checkpoint whose TT row serves the text decoder), the spec sets `limit_mm_per_prompt` to zero images and videos, so vLLM skips the vision encoder's memory profiling; text prompts are processed identically.
 

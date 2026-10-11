@@ -1353,3 +1353,44 @@ def test_runner_builds_one_venv_per_stack_and_serves_with_its_env():
     assert "export VLLM_USE_FLASHINFER_SAMPLER" not in runner  # it is per stack now
     driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
     assert 'runner_args+=(--transformers-version "${TRANSFORMERS_VERSION}")' in driver
+
+
+# --- GPU spec derived at run time ---------------------------------------------
+
+
+def test_ensure_gpu_spec_derives_from_the_tt_row_once(tmp_path, monkeypatch):
+    """A pinned commit without a GPU spec gets one derived from its TT row,
+    merged into the checkout's llm.yaml; once present nothing is derived."""
+    import yaml
+
+    spec_dir = tmp_path / "workflows" / "model_specs" / "dev"
+    spec_dir.mkdir(parents=True)
+    llm = spec_dir / "llm.yaml"
+    llm.write_text("templates:\n- weights:\n  - org/other\n")
+    rows = {"org/m": [{"device": "P300X2", "impl": "quetzal", "default": False,
+                       "max_context": 131072, "max_concurrency": 32, "revision": "abc"}]}  # fmt: skip
+
+    def load(model, ttis_dir):
+        if model in gpuref.block_models(llm.read_text()):
+            return object()
+        raise ValueError("no GPU spec")
+
+    monkeypatch.setattr(gpuref, "load_gpu_spec", load)
+    monkeypatch.setattr(gpuref, "catalog_facts", lambda ttis_dir=None: ({}, rows))
+    monkeypatch.setattr(
+        gpuref, "hf_get", lambda url, token=None: {"max_position_embeddings": 32768}
+    )
+    d = gpuref.ensure_gpu_spec("org/m", tmp_path)
+    assert (d["max_context"], d["max_concurrency"], d["revision"]) == (32768, 32, "abc")
+    assert gpuref.block_models(llm.read_text()) == ["org/m"]
+    yaml.safe_load(llm.read_text())
+    assert gpuref.ensure_gpu_spec("org/m", tmp_path) is None  # already there
+    with pytest.raises(ValueError, match="no TT row"):
+        gpuref.ensure_gpu_spec("org/unknown", tmp_path)
+
+
+def test_runner_derives_a_missing_gpu_spec_before_planning():
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    ensure = runner.index('ensure-gpu-spec --ttis-dir "${TTIS_DIR}" --model "${model}"')
+    assert ensure < runner.index('serve-plan --ttis-dir "${TTIS_DIR}"')
+    assert '--out "${mdir}/derived_gpu_spec.json"' in runner
