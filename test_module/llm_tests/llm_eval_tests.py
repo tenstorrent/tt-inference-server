@@ -68,6 +68,23 @@ def _limit_mode(ctx: MediaContext):
     return EvalLimitMode.from_string(mode_str) if mode_str else None
 
 
+def subset_run_reason(ctx) -> Optional[str]:
+    """Why this run graded only part of each task's samples, or None.
+
+    --eval-shard and --eval-samples both select explicit doc subsets; their
+    scores are measurements only. A sharded task passes only through
+    ``python -m report_module.merge_eval_shards`` over all of its shards.
+    """
+    rc = getattr(ctx, "runtime_config", None)
+    shard = getattr(rc, "eval_shard", None)
+    if isinstance(shard, str) and shard:
+        return f"eval shard {shard}; merge all shards to grade"
+    samples = getattr(rc, "eval_samples", None)
+    if isinstance(samples, (str, dict)) and samples:
+        return "explicit --eval-samples subset"
+    return None
+
+
 def _device_label(ctx: MediaContext) -> str:
     return ctx.device.name if hasattr(ctx.device, "name") else str(ctx.device)
 
@@ -410,6 +427,7 @@ def blocks_for_task(
         else None
     )
 
+    subset = subset_run_reason(ctx)
     blocks: List[Block] = []
     for t_key in target_keys:
         score, ratio_pub, ratio_ref, accuracy_check, evidence = _grade_one(
@@ -436,6 +454,12 @@ def blocks_for_task(
         }
         if mean_seconds_per_task is not None:
             data["mean_seconds_per_task"] = mean_seconds_per_task
+        if subset is not None:
+            # A subset is a measurement, never a verdict: explicit PARTIAL
+            # short-circuits grading, and acceptance cannot pass on it.
+            data["status"] = TestStatus.PARTIAL.value
+            data["reason"] = subset
+            data["accuracy_check"] = ReportCheckTypes.NA
         blocks.append(
             Block(
                 kind="evals",
