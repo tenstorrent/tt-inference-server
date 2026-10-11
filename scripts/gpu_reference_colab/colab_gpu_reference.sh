@@ -148,11 +148,19 @@ remote_exec() {   # NAME TIMEOUT [RUNNER ARGS...]: run snippets/NAME.py on the V
         colab exec -s "${SESSION}" -f "${LOCAL_TMP}/${name}.py" --timeout "${timeout}" < /dev/null
 }
 remote_step() {   # NAME TIMEOUT MARKER [ARGS...]: `colab exec` exits 0 even if the code raised
-    local name="$1" timeout="$2" marker="$3" out; shift 3
+    local name="$1" timeout="$2" marker="$3" out attempt; shift 3
     if [[ "${DRY_RUN}" -eq 1 ]]; then remote_exec "${name}" "${timeout}" "$@"; return 0; fi
-    out="$(remote_exec "${name}" "${timeout}" "$@" 2>&1)" || true
-    printf '%s\n' "${out}" | grep "^GPUREF_" >&2 || true
-    printf '%s\n' "${out}" | grep -q "^${marker}" || die "VM step '${name}' failed:"$'\n'"${out}"
+    for attempt in 1 2 3; do
+        out="$(remote_exec "${name}" "${timeout}" "$@" 2>&1)" || true
+        printf '%s\n' "${out}" | grep "^GPUREF_" >&2 || true
+        printf '%s\n' "${out}" | grep -q "^${marker}" && return 0
+        # A lost kernel websocket is transient. Every step but launch is
+        # idempotent; launch may have started the runner, so check first.
+        printf '%s\n' "${out}" | grep -q "Connection was lost" || break
+        if [[ "${name}" == "launch" ]] && remote_state && [[ "${STATE}" == "RUNNING" ]]; then return 0; fi
+        log "VM step '${name}': connection lost (attempt ${attempt}/3); retrying in 30s"; sleep 30
+    done
+    die "VM step '${name}' failed:"$'\n'"${out}"
 }
 has_session() { awk -v want="[${SESSION}]" '$1 == want { f = 1 } END { exit !f }'; }
 remote_state() {   # sets STATE and NDONE (models finished); fails when unreadable

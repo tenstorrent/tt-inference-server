@@ -1394,3 +1394,14 @@ def test_runner_derives_a_missing_gpu_spec_before_planning():
     ensure = runner.index('ensure-gpu-spec --ttis-dir "${TTIS_DIR}" --model "${model}"')
     assert ensure < runner.index('serve-plan --ttis-dir "${TTIS_DIR}"')
     assert '--out "${mdir}/derived_gpu_spec.json"' in runner
+
+
+def test_vm_steps_retry_a_lost_connection_but_never_double_launch():
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    step = driver[driver.index("remote_step() {") : driver.index("has_session() {")]
+    assert "for attempt in 1 2 3; do" in step
+    assert 'grep -q "Connection was lost" || break' in step
+    assert (
+        '[[ "${name}" == "launch" ]] && remote_state && [[ "${STATE}" == "RUNNING" ]]'
+        in step
+    )
