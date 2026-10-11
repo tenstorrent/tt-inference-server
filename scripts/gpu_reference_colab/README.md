@@ -33,6 +33,7 @@ To record a reference:
 | `--min-balance CU` | off | stop, keeping partial results, once `colab usage` falls below this |
 | `--vllm-version V` | per model | override every model's serving stack vLLM (see Serving stack per model) |
 | `--transformers-version V` | per model | override every model's transformers pin |
+| `--task MODEL=T[,T]` | all tasks | explicit runs: run only these lm-eval tasks of MODEL, each in full (e.g. only the tasks missing a reference); repeatable. Passed to run.py as `--eval-samples '{"T": null}'` and recorded in provenance.json (`tasks_selected`) |
 | `--retry-capacity M,H` | off | on 503 (no GPU) or 412 (concurrent-session limit), retry every M minutes for up to H hours, then exit 75 |
 | `--detach` | off | run in the background; see Unattended runs |
 | `--dry-run` | off | local preflight, then print every `colab` command instead of running it |

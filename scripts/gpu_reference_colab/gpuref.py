@@ -722,6 +722,28 @@ def eval_fingerprint(
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+def task_selection(model: str, tasks: List[str], ttis_dir: Path = REPO_ROOT) -> str:
+    """run.py --eval-samples JSON that runs only these tasks of this model, in
+    full: a task mapped to null is selected but gets no --samples, so lm-eval
+    runs every doc (llm_module/eval_configs.py, eval_command.py). Raises
+    ValueError when a task is not one of the model's lm-eval tasks."""
+    sys.path.insert(0, str(ttis_dir))
+    from reference_config.evals.eval_config import _eval_config_map
+
+    cfg = _eval_config_map.get(model)
+    have = sorted(
+        t.task_name
+        for t in (cfg.tasks if cfg else [])
+        if t.workflow_venv_type.name in SWEEP_VENVS
+    )
+    missing = [t for t in tasks if t not in have]
+    if not tasks or missing:
+        raise ValueError(
+            f"{model}: task(s) {missing or tasks} not among its lm-eval tasks {have}"
+        )
+    return json.dumps({t: None for t in tasks}, sort_keys=True)
+
+
 def client_concurrency_used(run_log: Path) -> List[int]:
     """Distinct num_concurrent values the lm-eval commands in run_py.log used."""
     try:
@@ -813,7 +835,9 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
             "--model",
             args.model,
             "--dev-mode",
-        ],  # fmt: skip
+        ] + (["--eval-samples", args.eval_samples] if args.eval_samples else []),  # fmt: skip
+        # Set when the run was restricted to some tasks (--task); each runs in full.
+        "tasks_selected": sorted(json.loads(args.eval_samples)) if args.eval_samples else None,
         "lm_eval_commit_pinned": pinned.group(1) if pinned else None,
         "lm_eval_commit_installed": lm_eval_installed,
         # The requested serving stack, and the fingerprint of what ran: this
@@ -1733,6 +1757,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         vllm_version={}, transformers_version={})  # fmt: skip
     add("plan-argv", "plan")
     add("ensure-gpu-spec", model=req, ttis_dir=req, out=req)
+    add("task-selection", "model", "tasks", ttis_dir={"default": str(REPO_ROOT)})
     p = sub.add_parser("plan-stack", help="a serve plan's stack: 'VLLM [TRANSFORMERS]'")
     p.add_argument("plan")
     p.add_argument(
@@ -1808,7 +1833,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     add("provenance", out=req, model=req, ttis_dir=req, plan=req, vllm_python=req,
         vllm_bin=req, status=req, evals_rc={"type": int}, started_at=req,
-        finished_at=req, note={}, max_model_len_cap={"type": int}, evidence={})  # fmt: skip
+        finished_at=req, note={}, max_model_len_cap={"type": int}, evidence={},
+        eval_samples={})  # fmt: skip
     args = parser.parse_args(argv)
     for name in [getattr(args, "model", None)] + (getattr(args, "models", None) or []):
         if name is not None and not HF_REPO.match(name):
@@ -1970,6 +1996,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f"[gpuref] derived a GPU spec for {args.model} from its TT row",
                 file=sys.stderr,
             )
+    elif args.cmd == "task-selection":
+        try:
+            print(task_selection(args.model, args.tasks.split(","), Path(args.ttis_dir)))
+        except ValueError as exc:
+            print(f"[gpuref] {exc}", file=sys.stderr)
+            return 1
     elif args.cmd == "plan-stack":
         stack = (load_json(Path(args.plan)) or {}).get("stack") or DEFAULT_STACK
         if args.env:

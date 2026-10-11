@@ -1181,6 +1181,40 @@ def test_driver_rejects_a_malformed_retry_capacity():
     assert out.returncode == 1 and "MINUTES,HOURS" in out.stderr
 
 
+def test_task_selection_runs_only_named_tasks_in_full(monkeypatch):
+    from reference_config.evals import eval_config
+    from reference_config.evals.eval_config import EvalConfig, EvalTask
+
+    model = "org/task-select"
+    tasks = [EvalTask(task_name="mmlu_pro"), EvalTask(task_name="r1_gpqa_diamond")]
+    monkeypatch.setitem(
+        eval_config._eval_config_map, model, EvalConfig(hf_model_repo=model, tasks=tasks)
+    )
+    # null = selected, no --samples: lm-eval runs every doc of the task.
+    assert gpuref.task_selection(model, ["mmlu_pro"]) == '{"mmlu_pro": null}'
+    with pytest.raises(ValueError, match="not among"):
+        gpuref.task_selection(model, ["ifeval"])
+    with pytest.raises(ValueError):
+        gpuref.task_selection(model, [])
+
+
+def test_driver_task_flag_is_validated_and_explicit_only():
+    driver = SCRIPT_DIR / "colab_gpu_reference.sh"
+
+    def run(*argv):
+        return subprocess.run(["bash", str(driver), *argv], capture_output=True, text=True)
+
+    out = run("--task", "org/m=mmlu_pro", "--sweep")
+    assert out.returncode == 1 and "explicit runs" in out.stderr
+    out = run("--task", "org/m=mmlu'pro", "org/m")
+    assert out.returncode == 1 and "MODEL=TASK" in out.stderr
+    out = run("--task", "org/other=mmlu_pro", "org/m")
+    assert out.returncode == 1 and "not being run" in out.stderr
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    assert '--task) TASKS["${2%%=*}"]="${2#*=}"' in runner
+    assert 'select=(--eval-samples "${eval_samples}")' in runner
+
+
 def _results_with_solar(tmp_path):
     session = tmp_path / "gpuref-x"
     data = session / "workflow_logs" / "reports_output" / "evals" / "data"

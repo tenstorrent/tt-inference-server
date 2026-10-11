@@ -39,10 +39,11 @@ TTIS_SHA=""
 SERVER_TIMEOUT=2700   # seconds to wait for /v1/models (download + load + graphs)
 PORT=8000
 MODELS=()
+declare -A TASKS=()   # model -> comma-separated tasks (--task); unset = all its tasks
 
 usage() {
     cat <<EOF
-Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] MODEL...
+Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] [--task MODEL=T[,T]]... MODEL...
 EOF
 }
 
@@ -53,6 +54,7 @@ while [[ $# -gt 0 ]]; do
         --vllm-version) VLLM_OVERRIDE="$2"; shift 2 ;;
         --transformers-version) TRANSFORMERS_OVERRIDE="$2"; shift 2 ;;
         --server-timeout) SERVER_TIMEOUT="$2"; shift 2 ;;
+        --task) TASKS["${2%%=*}"]="${2#*=}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
         *) MODELS+=("$1"); shift ;;
@@ -195,7 +197,7 @@ run_model() {
     local model="$1" idx="$2" total="$3"
     local slug="${model//\//__}"
     local mdir="${RESULTS}/${slug}"
-    local started finished evals_rc="" status note="" cap=""
+    local started finished evals_rc="" status="" note="" cap="" eval_samples=""
     mkdir -p "${mdir}"
     started="$(now)"
 
@@ -252,11 +254,26 @@ run_model() {
             # given sequences (gpuref.py gpu_concurrency; recorded in provenance).
             local client_conc
             client_conc="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("client_concurrency") or "")' "${mdir}/serve_plan.json")"
-            (cd "${TTIS_DIR}" && TT_EVAL_CLIENT_CONCURRENCY="${client_conc}" \
-                python3 run.py --workflow evals --tt-device gpu --model "${model}" --dev-mode) \
-                > "${mdir}/run_py.log" 2>&1 < /dev/null
-            evals_rc=$?
-            if [[ "${evals_rc}" -ne 0 ]]; then status="failed"; note="run.py exited ${evals_rc} (run_py.log)"
+            # --task: only these tasks, each in full (gpuref.py task_selection).
+            local -a select=()
+            if [[ -n "${TASKS[${model}]:-}" ]]; then
+                if eval_samples="$(python3 "${GPUREF}" task-selection "${model}" "${TASKS[${model}]}" \
+                        --ttis-dir "${TTIS_DIR}" 2>> "${mdir}/serve_plan.err")"; then
+                    select=(--eval-samples "${eval_samples}")
+                else
+                    eval_samples=""
+                fi
+            fi
+            if [[ -n "${TASKS[${model}]:-}" && ${#select[@]} -eq 0 ]]; then
+                evals_rc=2; status="failed"; note="--task ${TASKS[${model}]} is not this model's lm-eval tasks (serve_plan.err)"
+            else
+                (cd "${TTIS_DIR}" && TT_EVAL_CLIENT_CONCURRENCY="${client_conc}" \
+                    python3 run.py --workflow evals --tt-device gpu --model "${model}" --dev-mode \
+                    ${select[@]+"${select[@]}"}) > "${mdir}/run_py.log" 2>&1 < /dev/null
+                evals_rc=$?
+            fi
+            if [[ "${status}" == "failed" ]]; then :
+            elif [[ "${evals_rc}" -ne 0 ]]; then status="failed"; note="run.py exited ${evals_rc} (run_py.log)"
             # run.py exits 0 even when one task's lm-eval subprocess failed.
             elif grep -q "command failed with return code" "${mdir}/run_py.log"; then status="failed"; note="an eval task failed (run_py.log)"
             else status="ok"; fi
@@ -288,6 +305,7 @@ run_model() {
         --status "${status}" ${evals_rc:+--evals-rc "${evals_rc}"} \
         --started-at "${started}" --finished-at "${finished}" ${note:+--note "${note}"} \
         ${cap:+--max-model-len-cap "${cap}"} --evidence "${evidence}" \
+        ${eval_samples:+--eval-samples "${eval_samples}"} \
         || log "WARNING: provenance.json not written for ${model}"
 
     python3 "${GPUREF}" record-status "${RESULTS}/status.json" "${model}" "${status}" "${note}"
