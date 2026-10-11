@@ -1403,6 +1403,15 @@ def patch_eval_config(text: str, results: List[Dict[str, Any]], ref_url: str) ->
         if r.get("verdict") == "keep":  # matches the old reference within noise
             text = text[:start] + block[:at] + task + block[nxt:] + text[end:]
             continue
+        if "gpu_reference_score=" not in task:
+            # The task omits both fields (dataclass defaults): add them after
+            # published_score_ref, at its indent, so a "record" is not dropped.
+            m = re.search(r"\n(\s*)published_score_ref=[^\n]+,", task)
+            if m is None:
+                continue
+            ind = m.group(1)
+            task = (task[: m.end()] + f"\n{ind}gpu_reference_score=None,"
+                    f"\n{ind}gpu_reference_score_ref=None," + task[m.end():])  # fmt: skip
         task = re.sub(
             r"gpu_reference_score=[^,\n]+,",
             f"gpu_reference_score={r['score']:.2f},",
