@@ -29,6 +29,7 @@ from domain.video_ref2va_generate_request import (
 from fastapi import HTTPException
 from open_ai_api.video import (
     MAX_INLINE_MEDIA_LEN,
+    _check_request_media,
     _enforce_inline_media_total,
     _resolve_image_prompt_urls,
     _submit_video_request,
@@ -63,9 +64,14 @@ class TestImagePromptEntryAcceptsUrls:
         entry = ImagePromptEntry(image=_TINY_PNG_BASE64, frame_pos=0)
         assert entry.image == _TINY_PNG_BASE64
 
-    def test_garbage_string_is_still_rejected(self):
-        with pytest.raises(Exception):
-            ImagePromptEntry(image="not-a-url-and-not-base64!!", frame_pos=0)
+    def test_garbage_string_is_rejected_at_submit(self):
+        request = VideoI2VGenerateRequest(
+            prompt="p",
+            image_prompts=[{"image": "not-a-url-and-not-base64!!", "frame_pos": 0}],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _check_request_media(request)
+        assert exc_info.value.status_code == 422
 
 
 def _ref2va_videos(*sources: MediaSource) -> VideoRef2VAGenerateRequest:
@@ -187,8 +193,9 @@ class TestResolveImagePromptUrls:
             "open_ai_api.video.download_media_url",
             new=AsyncMock(return_value=b"<html>not an image</html>"),
         ):
-            with pytest.raises(HTTPException) as exc_info:
-                await _resolve_image_prompt_urls(request)
+            await _resolve_image_prompt_urls(request)
+        with pytest.raises(HTTPException) as exc_info:
+            _check_request_media(request)
         assert exc_info.value.status_code == 422
 
 

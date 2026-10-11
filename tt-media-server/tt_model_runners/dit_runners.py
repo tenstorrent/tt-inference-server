@@ -87,7 +87,6 @@ from tt_model_runners.base_metal_device_runner import BaseMetalDeviceRunner
 from tt_model_runners.minimax_h3_policy import (
     MINIMAX_H3_DEFAULT_ASPECT_RATIO,
     MINIMAX_H3_DEFAULT_DURATION_S,
-    MINIMAX_H3_DURATIONS_S,
     MINIMAX_H3_NUM_INFERENCE_STEPS,
     minimax_h3_frames_are_aligned,
     minimax_h3_parse_aspect_ratio,
@@ -1726,12 +1725,10 @@ class TTMiniMaxH3Runner(TTDiTRunner):
     def _resolve_shape(
         self, request: VideoGenerateRequest
     ) -> tuple[tuple[int, int], int]:
-        """`(aspect_ratio, num_frames)` for this request, or raise with what is served.
+        """`(aspect_ratio, num_frames)` for this request; admitted at submit, so only resolved here.
 
         The canvas is left to the pipeline, which resolves it from `height`/`width` when given,
-        else from the first keyframe (fl2va) or `aspect_ratio`. Nothing here rounds: an
-        unsupported ratio or duration is refused, because quietly serving a neighbouring shape
-        returns a video the caller did not ask for.
+        else from the first keyframe (fl2va) or `aspect_ratio`.
         """
         from models.tt_dit.pipelines.minimax_h3.policy import get_num_frames
 
@@ -1744,11 +1741,6 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         seconds = getattr(request, "duration", None)
         if seconds is None:
             seconds = MINIMAX_H3_DEFAULT_DURATION_S
-        elif seconds != int(seconds) or int(seconds) not in MINIMAX_H3_DURATIONS_S:
-            raise ValueError(
-                f"duration must be a whole number of seconds from {min(MINIMAX_H3_DURATIONS_S)} "
-                f"to {max(MINIMAX_H3_DURATIONS_S)}; got {seconds:g}"
-            )
         seconds = int(seconds)
 
         num_frames = get_num_frames(seconds)
@@ -1760,10 +1752,6 @@ class TTMiniMaxH3Runner(TTDiTRunner):
             )
         return ratio, num_frames
 
-    def _validate(self, request: VideoGenerateRequest) -> None:
-        """Reject shapes outside the published aspect-ratio/duration set before the request runs."""
-        self._resolve_shape(request)
-
     @log_execution_time(
         f"{dit_runner_log_map[get_settings().model_runner]} inference",
         TelemetryEvent.MODEL_INFERENCE,
@@ -1773,7 +1761,6 @@ class TTMiniMaxH3Runner(TTDiTRunner):
         from utils.video_manager import VideoAudioResult, VideoManager
 
         request = requests[0]
-        self._validate(request)
         aspect_ratio, num_frames = self._resolve_shape(request)
         self.logger.debug(
             f"Device {self.device_id}: Running inference at {num_frames} frames"
@@ -1869,11 +1856,6 @@ class TTMiniMaxH3FL2VARunner(TTMiniMaxH3Runner):
                 first = image
             elif entry.frame_pos == -1:
                 last = image
-            else:
-                raise ValueError(
-                    "MiniMax-H3 FL2VA image_prompts[].frame_pos must be 0 (first) "
-                    f"or -1 (last); got {entry.frame_pos}"
-                )
         if first is None and last is None:
             return {}
         return {"image": first, "last_image": last}
@@ -1906,9 +1888,6 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
             decode_reference_audio,
             reference_from_video_file,
         )
-        from tt_model_runners.minimax_h3_policy import (
-            check_reference_clip_durations,
-        )
 
         if not isinstance(request, VideoRef2VAGenerateRequest):
             raise ValueError(
@@ -1917,8 +1896,6 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
             )
 
         refs = []
-        video_durations: list[float] = []
-        audio_durations: list[float] = []
 
         for source in request.references.images:
             refs.append(
@@ -1933,12 +1910,6 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
                 reference = reference_from_video_file(path)
             finally:
                 os.unlink(path)
-            n_frames = (
-                reference.video.shape[0]
-                if hasattr(reference.video, "shape")
-                else len(reference.video)
-            )
-            video_durations.append(n_frames / float(reference.fps))
             refs.append(reference)
 
         for source in request.references.audios:
@@ -1947,12 +1918,8 @@ class TTMiniMaxH3Ref2VARunner(TTMiniMaxH3Runner):
                 waveform, sample_rate = decode_reference_audio(path)
             finally:
                 os.unlink(path)
-            audio_durations.append(waveform.shape[-1] / float(sample_rate))
             refs.append(MiniMaxH3Reference(audio=waveform, sample_rate=sample_rate))
 
-        check_reference_clip_durations(
-            video_durations=video_durations, audio_durations=audio_durations
-        )
         return {"references": refs}
 
     @staticmethod

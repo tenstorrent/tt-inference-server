@@ -12,13 +12,7 @@ from domain.video_ref2va_generate_request import (
     VideoRef2VAGenerateRequest,
 )
 from pydantic import ValidationError
-from tt_model_runners.minimax_h3_policy import (
-    MINIMAX_H3_MAX_REFERENCE_AUDIOS,
-    MINIMAX_H3_MAX_REFERENCE_IMAGES,
-    MINIMAX_H3_MAX_REFERENCE_VIDEOS,
-    MINIMAX_H3_MAX_REFERENCES,
-    check_reference_clip_durations,
-)
+from tt_model_runners.minimax_h3_policy import check_reference_clip_durations
 
 _TINY_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
@@ -55,42 +49,6 @@ class TestMultimodalReferences:
         refs = MultimodalReferences(images=[MediaSource(b64=_TINY_PNG_BASE64)])
         assert len(refs.images) == 1
 
-    def test_empty_rejected(self):
-        with pytest.raises(ValidationError, match="at least one"):
-            MultimodalReferences()
-
-    def test_audio_alone_rejected(self):
-        with pytest.raises(ValidationError, match="paired"):
-            MultimodalReferences(audios=[MediaSource(b64="AAAA")])
-
-    def test_too_many_images(self):
-        with pytest.raises(ValidationError, match="reference images"):
-            MultimodalReferences(
-                images=[
-                    MediaSource(b64=_TINY_PNG_BASE64)
-                    for _ in range(MINIMAX_H3_MAX_REFERENCE_IMAGES + 1)
-                ]
-            )
-
-    def test_too_many_videos(self):
-        with pytest.raises(ValidationError, match="reference videos"):
-            MultimodalReferences(
-                videos=[
-                    MediaSource(url="https://example.com/v.mp4")
-                    for _ in range(MINIMAX_H3_MAX_REFERENCE_VIDEOS + 1)
-                ]
-            )
-
-    def test_too_many_audios(self):
-        with pytest.raises(ValidationError, match="reference audios"):
-            MultimodalReferences(
-                images=[MediaSource(b64=_TINY_PNG_BASE64)],
-                audios=[
-                    MediaSource(url="https://example.com/a.wav")
-                    for _ in range(MINIMAX_H3_MAX_REFERENCE_AUDIOS + 1)
-                ],
-            )
-
     def test_mixed_accepted(self):
         refs = MultimodalReferences(
             images=[MediaSource(b64=_TINY_PNG_BASE64)],
@@ -100,22 +58,6 @@ class TestMultimodalReferences:
         assert len(refs.images) == 1
         assert len(refs.videos) == 1
         assert len(refs.audios) == 1
-
-    def test_total_at_cap_accepted(self):
-        refs = MultimodalReferences(
-            images=[
-                MediaSource(b64=_TINY_PNG_BASE64)
-                for _ in range(MINIMAX_H3_MAX_REFERENCE_IMAGES)
-            ],
-            videos=[
-                MediaSource(url="https://example.com/v.mp4")
-                for _ in range(MINIMAX_H3_MAX_REFERENCE_VIDEOS)
-            ],
-        )
-        assert (
-            len(refs.images) + len(refs.videos) + len(refs.audios)
-            == MINIMAX_H3_MAX_REFERENCES
-        )
 
     def test_caps_match_minimax_limits(self):
         assert MAX_BASE64_IMAGE_LEN == 40_000_000
@@ -141,23 +83,6 @@ class TestMultimodalReferences:
             audios=[MediaSource(b64="A" * MAX_BASE64_AUDIO_LEN)],
         )
         assert len(refs.audios) == 1
-
-    def test_total_over_cap_rejected(self):
-        with pytest.raises(ValidationError, match="in total"):
-            MultimodalReferences(
-                images=[
-                    MediaSource(b64=_TINY_PNG_BASE64)
-                    for _ in range(MINIMAX_H3_MAX_REFERENCE_IMAGES)
-                ],
-                videos=[
-                    MediaSource(url="https://example.com/v.mp4")
-                    for _ in range(MINIMAX_H3_MAX_REFERENCE_VIDEOS)
-                ],
-                audios=[
-                    MediaSource(url="https://example.com/a.wav")
-                    for _ in range(MINIMAX_H3_MAX_REFERENCE_AUDIOS)
-                ],
-            )
 
 
 class TestVideoRef2VAGenerateRequest:
