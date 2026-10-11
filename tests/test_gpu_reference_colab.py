@@ -1195,6 +1195,14 @@ def test_publish_explicit_models_renders_comment_and_patch(tmp_path):
     patch = (out / "eval_config.patch").read_text()
     assert '+                    gpu_reference_score_ref="URL",' in patch
     assert config.read_text().count("TBD") == 1  # never applied
+    gpuref.render_publication(
+        out, tmp_path, models=[model], eval_config=config, note="Why: run 123."
+    )
+    assert (
+        (out / "sweep_5353.md")
+        .read_text()
+        .startswith("## GPU reference sweep\n\nWhy: run 123.\n\n| model |")
+    )
 
 
 def test_publish_post_needs_gh_once_and_refuses_tokens(tmp_path, monkeypatch):

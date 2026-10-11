@@ -1638,6 +1638,7 @@ def render_publication(
     tt_root: Optional[Path] = None,
     eval_config: Optional[Path] = None,
     ref_url: str = ISSUE_URL,
+    note: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Write sweep_summary.json, the issue comment (sweep_5353.md) and the
     proposed eval_config.patch (against eval_config, default this checkout's)
@@ -1655,6 +1656,9 @@ def render_publication(
     summary = {"sha": sha, "results": rows, "skipped": skipped}
     (out / "sweep_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     markdown = sweep_markdown(rows, skipped)
+    if note:  # context for the reader, after the heading
+        head, _, rest = markdown.partition("\n\n")
+        markdown = f"{head}\n\n{note.strip()}\n\n{rest}"
     (out / "sweep_5353.md").write_text(markdown)
     finished = [r for r in rows if r["score"] is not None]
     patch_path = out / "eval_config.patch"
@@ -1786,6 +1790,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--eval-config", default=None, help="eval_config.py to patch (default: here)"
     )
     p.add_argument("--ref-url", default=ISSUE_URL)
+    p.add_argument("--note", default=None, help="context paragraph for the comment")
     p.add_argument("--issue", type=int, default=int(ISSUE_URL.rsplit("/", 1)[1]))
     p.add_argument(
         "--post",
@@ -1854,7 +1859,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                 out, Path(args.results_root), plan, getattr(args, "models", None),
                 Path(args.tt_reports) if args.tt_reports else None,
                 Path(args.eval_config) if getattr(args, "eval_config", None) else None,
-                ref_url,
+                ref_url, getattr(args, "note", None),
             )  # fmt: skip
 
         result = render(args.ref_url)
