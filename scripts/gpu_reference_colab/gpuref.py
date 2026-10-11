@@ -502,6 +502,9 @@ def summary_rows(root: Path) -> List[Dict[str, Any]]:
             "score": data.get("score"),
             "published_score": data.get("published_score"),
             "gpu_reference_score": data.get("gpu_reference_score"),
+            # The n TTIS graded this score with (None: ratio rule only, or a
+            # report from before the noise rule).
+            "noise_n": data.get("noise_n"),
         }
         for model, (_, meta, evals) in sorted(newest.items())
         for data in (s.get("data") or {} for s in evals)
@@ -835,9 +838,14 @@ def build_provenance(args: argparse.Namespace) -> Dict[str, Any]:
             "--model",
             args.model,
             "--dev-mode",
-        ] + (["--eval-samples", args.eval_samples] if args.eval_samples else []),  # fmt: skip
+        ]
+        + (
+            ["--eval-samples", args.eval_samples] if args.eval_samples else []
+        ),  # fmt: skip
         # Set when the run was restricted to some tasks (--task); each runs in full.
-        "tasks_selected": sorted(json.loads(args.eval_samples)) if args.eval_samples else None,
+        "tasks_selected": sorted(json.loads(args.eval_samples))
+        if args.eval_samples
+        else None,
         "lm_eval_commit_pinned": pinned.group(1) if pinned else None,
         "lm_eval_commit_installed": lm_eval_installed,
         # The requested serving stack, and the fingerprint of what ran: this
@@ -1225,6 +1233,20 @@ def finished_models(results_root: Path) -> Dict[str, Any]:
     return done
 
 
+def serves_plan(prov: Dict[str, Any], argv: Optional[List[str]]) -> bool:
+    """The run served exactly this vllm serve argv (revision, context, flags).
+    --max-num-seqs is ignored: it schedules requests, not what they compute."""
+
+    def semantic(args):
+        args = list(args)
+        if "--max-num-seqs" in args:
+            del args[args.index("--max-num-seqs") : args.index("--max-num-seqs") + 2]
+        return args
+
+    served = (prov.get("vllm_serve_command") or [None])[1:]
+    return argv is not None and semantic(served) == semantic(argv)
+
+
 def run_covers(
     prov: Dict[str, Any],
     results_dir: Path,
@@ -1238,12 +1260,6 @@ def run_covers(
     never count) and has a score for every task. --max-num-seqs is ignored:
     it schedules requests, not what they compute."""
 
-    def semantic(args):
-        args = list(args)
-        if "--max-num-seqs" in args:
-            del args[args.index("--max-num-seqs") : args.index("--max-num-seqs") + 2]
-        return args
-
     scored = {
         r["task"]
         for r in summary_rows(results_dir.parent)
@@ -1252,7 +1268,7 @@ def run_covers(
     return (
         fingerprint is not None
         and prov.get("eval_fingerprint") == fingerprint
-        and semantic((prov.get("vllm_serve_command") or [None])[1:]) == semantic(argv)
+        and serves_plan(prov, argv)
         and set(tasks) <= scored
     )
 
@@ -1307,6 +1323,7 @@ def sweep_plan(
     audit_refs=None,
     vllm_version: Optional[str] = None,
     prune: bool = False,
+    transformers_version: Optional[str] = None,
 ):
     tasks, rows = catalog_facts()
     lm_eval = pinned_lm_eval_commit()
@@ -1357,8 +1374,9 @@ def sweep_plan(
             "max_context": plan["max_context"],
             "need_gib": memory.get("need_gib"),
             "est_hours": estimate_hours(model_tasks_all.get(model, []), memory.get("weights_gib")),
-            "stack": (stack := serving_stack(facts.get("config"), vllm_version)),
+            "stack": (stack := serving_stack(facts.get("config"), vllm_version, transformers_version)),
             "eval_fingerprint": (fp := eval_fingerprint(model, lm_eval, stack)),
+            "vllm_serve_args": plan["vllm_serve_args"],
             "done": bool(prior) and run_covers(prior[2], prior[1], plan["vllm_serve_args"], model_tasks, fp),
         }  # fmt: skip
     kept = []
@@ -1389,7 +1407,8 @@ def sweep_plan(
                            "cu_at_a100_rate": round(hours * CU_PER_HOUR["A100"])}  # fmt: skip
     return {"sha": sha, "targets": kept, "skipped": skipped, "groups": groups,
             "derived": derived, "specs_stale": stale, "estimate": estimate,
-            "lm_eval_commit": lm_eval, "vllm_override": vllm_version, "prune": prune,
+            "lm_eval_commit": lm_eval, "vllm_override": vllm_version,
+            "transformers_override": transformers_version, "prune": prune,
             "legacy_runs": sorted(m for m in placed if m in finished
                                   and not finished[m][2].get("eval_fingerprint"))}  # fmt: skip
 
@@ -1464,10 +1483,11 @@ def sweep_results(
     if tt_root:
         for row in summary_rows(tt_root):
             if row["device"] != "GPU":
-                tt[(row["model"], row["task"])] = row["score"]
+                tt[(row["model"], row["task"])] = (row["score"], row["noise_n"])
     rows = []
     for t in plan["targets"]:
-        row = dict(t, tt_score=tt.get((t["model"], t["task"])), score=None)
+        tt_score, tt_n = tt.get((t["model"], t["task"]), (None, None))
+        row = dict(t, tt_score=tt_score, tt_noise_n=tt_n, score=None)
         prior = done.get(t["model"])
         if (
             strict
@@ -1477,6 +1497,11 @@ def sweep_results(
             # Run with other eval settings, lm-eval or vLLM (or recorded before
             # fingerprints): not a reference for this plan.
             row["note"] = "stale: eval fingerprint differs from the plan"
+            prior = None
+        elif strict and prior and not serves_plan(prior[2], t.get("vllm_serve_args")):
+            # Same eval settings but other serving (revision, context, flags), or
+            # a plan written before it recorded them: re-plan and re-run.
+            row["note"] = "stale: vllm serve args differ from the plan"
             prior = None
         if prior:
             _, results_dir, prov = prior
@@ -1516,9 +1541,11 @@ def sweep_results(
         )
         current = row.get("old_gpu_ref") or row.get("published")
         proposed = current if row["verdict"] in (None, "keep") else row["score"]
-        n, tol = row.get("noise_n"), row.get("tolerance", 0.05)
-        row["tt_now"] = tt_grade(row["tt_score"], current, tol, n)
-        row["tt_proposed"] = tt_grade(row["tt_score"], proposed, tol, n)
+        # The GPU run's n decides the reference (above); a TT score is graded
+        # with the n of its own report, as TTIS grades it.
+        tol = row.get("tolerance", 0.05)
+        row["tt_now"] = tt_grade(row["tt_score"], current, tol, tt_n)
+        row["tt_proposed"] = tt_grade(row["tt_score"], proposed, tol, tt_n)
         rows.append(row)
     return rows
 
@@ -1802,6 +1829,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=None,
         help="vLLM the runner will use (default: remote_runner.sh's pin)",
     )
+    p.add_argument(
+        "--transformers-version",
+        default=None,
+        help="transformers the runner will use (default: each model's stack)",
+    )
     p.add_argument("--out-dir", default=None)
     p.add_argument(
         "--tt-reports", default=None, help="dir with Shield eval report JSONs"
@@ -1850,6 +1882,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             args.refresh_quetzal,
             args.vllm_version,
             args.prune,
+            args.transformers_version,
         )
         Path(args.plan).write_text(json.dumps(plan, indent=2) + "\n")
         for t in plan["targets"]:
@@ -1998,7 +2031,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             )
     elif args.cmd == "task-selection":
         try:
-            print(task_selection(args.model, args.tasks.split(","), Path(args.ttis_dir)))
+            print(
+                task_selection(args.model, args.tasks.split(","), Path(args.ttis_dir))
+            )
         except ValueError as exc:
             print(f"[gpuref] {exc}", file=sys.stderr)
             return 1

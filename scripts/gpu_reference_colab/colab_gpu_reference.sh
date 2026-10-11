@@ -206,8 +206,9 @@ if [[ "${SWEEP}" -eq 1 ]]; then   # plan from the catalog, then one session per 
     fi
     if [[ "${WRITE_SPECS}" -eq 1 ]]; then plan_args+=(--write-specs); fi
     if [[ "${PRUNE}" -eq 1 ]]; then plan_args+=(--prune); fi
-    # The eval fingerprint covers the vLLM version, so plan with the one the runner gets.
+    # The eval fingerprint covers the whole stack, so plan with the one the runner gets.
     if [[ -n "${VLLM_VERSION}" ]]; then plan_args+=(--vllm-version "${VLLM_VERSION}"); fi
+    if [[ -n "${TRANSFORMERS_VERSION}" ]]; then plan_args+=(--transformers-version "${TRANSFORMERS_VERSION}"); fi
     rc=0; gpuref "${plan_args[@]}" > "${SWEEP_DIR}/groups.tsv" || rc=$?
     [[ "${rc}" -ne 2 ]] || die "some targets need derived GPU specs: re-run with --write-specs, review and commit the llm.yaml change, push, and run again"
     [[ "${rc}" -eq 0 ]] || die "sweep plan failed"
