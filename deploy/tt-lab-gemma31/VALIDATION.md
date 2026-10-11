@@ -54,3 +54,28 @@ chunks on the 256-token command grid), SHA-256 `5caddd77`. Logs:
   token of a 1,500-token prompt.
 - Stopping: kill the `start.py` processes by PID (the `nohup` PID is not the server's); do not use
   `pkill -f`/`pgrep -f` with a pattern your own shell command contains.
+
+# Prefix caching past the sliding window — October 11, 2026
+
+Server: `server-batch.env` (8 slots, context 32768, chunked prefill 2048, prefix cache). tt-lab
+`work/gemma31-qb2-serve` `304a6cb` (`work/gemma31-qb2` `0a75317`: prefill v2 phase 1, the
+local-window history), SHA-256 `682bad62`. Logs: `/home/ttuser/workspace/bringup-logs-gemma31/v2/`.
+
+- **Greedy identity through the API** (`verify_cli_identity.py`, the round-3 CLI reference): 40 of
+  40 requests match the CLI. 11 of them now hit the prefix cache (66,304 tokens reused), against 0
+  before.
+- **Native worker:** follow-up turns and branch requests that share a prefix with a longer cached
+  sequence resume and match cold references at 4K and 32K (tt-lab `docs/gemma31-prefill-v2.md` §6).
+- **Warm prefill** (`vllm bench serve --dataset-name prefix_repetition`, suffix 1,024, output 1,024,
+  `--ignore-eos`; cold = `TT_GEMMA_PREFIX_CACHE=0`):
+
+| Prefix | Concurrency | Warm TTFT median | Cold TTFT median | E2EL against cold |
+| ---: | ---: | ---: | ---: | ---: |
+| 3,072 | 1 | 1.32 s | 4.77 s | −11% |
+| 30,000 | 1 | 1.97 s | 38.16 s | −57% |
+| 3,072 | 8 | 2.52 s | 9.64 s | −20% |
+| 30,000 | 8 | 15.8 s | 55.1 s | −49% |
+
+  The spec's warm targets (0.18 s at 4K, 0.20 s at 32K) are not met. The remaining time is the
+  prefill of the 1,024 appended tokens. At concurrency 8 a new prefix is cached in one slot only, so
+  the first wave's other requests prefill cold.

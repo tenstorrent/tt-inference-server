@@ -17,7 +17,7 @@ Two modes, chosen by the env file:
 | decode | single sequence | active sequences together through tt-lab's exact batch-decode path (`forward_batch`) |
 | server worker | serial `device_worker` | dynamic-batch `device_worker` (`USE_DYNAMIC_BATCHER=true`) |
 | cancel | the stream is drained to keep the pipe in sync | a disconnect or stop string sends `cancel`; the slot is freed |
-| prefix caching | `TT_GEMMA_PREFIX_CACHE=1`, against the previous request | `TT_GEMMA_PREFIX_CACHE=1`, per slot; a request goes to the free slot with the longest shared prefix. Resumes are on tt-lab's 256-token prefill grid; past 1,088 positions a slot resumes only when its cached end is within one 64-position window block after such a point (the local-attention window cannot roll back) |
+| prefix caching | `TT_GEMMA_PREFIX_CACHE=1`, against the previous request | `TT_GEMMA_PREFIX_CACHE=1`, per slot; a request goes to the free slot with the longest shared prefix. Resumes are on tt-lab's 256-token prefill grid; since tt-lab `0a75317` each slot keeps the last 4,096 positions its local-attention windows dropped (`TT_GEMMA31_WINDOW_HISTORY`), so a resume within that distance of the cached end rebuilds the window and hits, token-identical to a cold prefill |
 | `ignore_eos` | rejected (HTTP 400) | with `TT_LAB_IGNORE_EOS=1` and a tt-lab build from `ea8a211` on |
 
 The native worker comes from tt-lab branch `work/gemma31-qb2-serve` (the
