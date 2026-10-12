@@ -98,7 +98,8 @@
       "mistralai/Mistral-7B-Instruct-v0.3",
       "Qwen/Qwen2.5-Coder-14B-Instruct",
       "01-ai/Yi-1.5-34B-Chat",
-      "Qwen/Qwen2.5-7B"
+      "Qwen/Qwen2.5-7B",
+      "allenai/Llama-3.1-Tulu-3-8B"
     ]
   },
   "available_markers": {
@@ -1025,6 +1026,16 @@
       "id_name": "Qwen--Qwen2.5-7B",
       "weights": [
         "Qwen/Qwen2.5-7B"
+      ]
+    },
+    "allenai/Llama-3.1-Tulu-3-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "allenai--Llama-3.1-Tulu-3-8B",
+      "weights": [
+        "allenai/Llama-3.1-Tulu-3-8B"
       ]
     }
   },
