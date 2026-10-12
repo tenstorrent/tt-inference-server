@@ -93,6 +93,9 @@ TASK_BLOCKER_PREFIX = "task"
 # is waived with NON_BLOCKING_REASON_KEY as the reason (an ERROR still blocks).
 NON_BLOCKING_KEY = "non_blocking"
 NON_BLOCKING_REASON_KEY = "non_blocking_reason"
+# An eval block whose data sets INCOMPLETE_KEY true did not measure the model
+# (e.g. its requests errored); it blocks whatever the tier or a waiver says.
+INCOMPLETE_KEY = "incomplete"
 
 
 @dataclass(frozen=True)
@@ -106,6 +109,10 @@ class CategoryResult:
     blockers: Dict[str, str] = field(default_factory=dict)
     # Would-be blockers dropped because a model_spec known_issues waiver matched.
     waived: Dict[str, str] = field(default_factory=dict)
+    # The subset of ``waived`` that are must-priority evals: waived by a model
+    # status tier ("informational: EXPERIMENTAL") or a known issue. Acceptance
+    # may pass with these; the strict qualification verdict never does.
+    waived_must: Dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> int:
@@ -326,6 +333,30 @@ def stage_results(
     return results
 
 
+def strict_qualification(
+    accepted: bool, categories: Sequence[CategoryResult]
+) -> Dict[str, Any]:
+    """The verdict a qualification count may use: acceptance with no waived
+    must-eval.
+
+    Acceptance lets a model-status tier (EXPERIMENTAL: "eval failures are
+    informational") or a known issue turn a failed must-eval into a waiver.
+    That is a deployment policy. It is not evidence that the model reproduces
+    its reference, so a pass that rests on such a waiver is never a
+    qualification pass.
+    """
+    waived_must = {
+        key: message
+        for category in categories
+        if category.name == CATEGORY_EVALS
+        for key, message in category.waived_must.items()
+    }
+    return {
+        "strict_pass": bool(accepted) and not waived_must,
+        "waived_must_evals": waived_must,
+    }
+
+
 def build_acceptance_export(
     accepted: bool,
     blockers: Mapping[str, str],
@@ -340,6 +371,7 @@ def build_acceptance_export(
             "enforcement_result": STATUS_PASS if accepted else STATUS_FAIL,
             "model_status": model_status or "",
             "categories": [category.to_dict() for category in categories],
+            "qualification": strict_qualification(accepted, categories),
         },
         "acceptance_summary_markdown": format_acceptance_summary_markdown(
             accepted, blockers, categories, model_status, stages
@@ -362,6 +394,11 @@ def format_acceptance_summary_markdown(
     ]
     if model_status:
         lines.append(f"- Model status: `{model_status}`")
+    strict = strict_qualification(accepted, categories)
+    lines.append(
+        "- Qualification (every must-eval passes unwaived): "
+        f"{_status_badge(STATUS_PASS if strict['strict_pass'] else STATUS_FAIL)}"
+    )
     for category in categories:
         lines.append(
             f"- {category.name}: {_status_badge(category.status)} ({_detail(category)})"
@@ -597,6 +634,7 @@ def _check_evals(
     evals_enforced = _evals_enforced(model_status)
     blockers: Dict[str, str] = {}
     waived: Dict[str, str] = {}
+    waived_must: Dict[str, str] = {}
     failed = 0
     na = 0
     skipped = 0
@@ -608,6 +646,16 @@ def _check_evals(
         # decisive — a test that self-reported failure is a blocker regardless
         # of any accuracy_check value alongside it.
         message: Optional[str] = None
+        if data is not None and data.get(INCOMPLETE_KEY) is True:
+            # Ran but produced no real answers for some samples (every errored
+            # request is scored as a wrong answer). Not a measurement, so no
+            # model-status tier, priority or known issue may waive it.
+            blockers[block_key] = (
+                f"{block.title or block.kind} is incomplete: "
+                f"{data.get('reason') or 'inference errors in its samples'}"
+            )
+            failed += 1
+            continue
         explicit = _explicit_status(block)
         if explicit is not None:
             if explicit.is_blocking:
@@ -619,6 +667,8 @@ def _check_evals(
                     waived[block_key] = (
                         f"{explicit_message} {_informational_suffix(model_status)}"
                     )
+                    if _block_priority(block) != PRIORITY_SHOULD:
+                        waived_must[block_key] = waived[block_key]
                 elif _block_priority(block) == PRIORITY_SHOULD:
                     waived[block_key] = (
                         f"{explicit_message} {_should_priority_suffix()}"
@@ -660,10 +710,14 @@ def _check_evals(
         reason = _find_waiver(known_issues, "EVALS", task_name)
         if reason is not None:
             waived[block_key] = f"{message} (waived: {reason})"
+            if _block_priority(block) != PRIORITY_SHOULD:
+                waived_must[block_key] = waived[block_key]
             continue
 
         if not evals_enforced:
             waived[block_key] = f"{message} {_informational_suffix(model_status)}"
+            if _block_priority(block) != PRIORITY_SHOULD:
+                waived_must[block_key] = waived[block_key]
             continue
 
         # A requirements-driven "should" eval is informational, not a blocker.
@@ -690,6 +744,7 @@ def _check_evals(
         skipped=skipped,
         blockers=blockers,
         waived=waived,
+        waived_must=waived_must,
     )
 
 
