@@ -490,6 +490,15 @@ deepseek_v41_flash_impl = ImplSpec(
     code_path="models/demos/blackhole/deepseek_v41_flash",
 )
 
+# Same tt-metal code as deepseek_v41_flash; a distinct impl_id only so that the vision (VLM) profile gets its own model_id and is selected with
+# `--impl deepseek-v41-flash-vlm` (the text profile stays the default_impl of the model + device).
+deepseek_v41_flash_vlm_impl = ImplSpec(
+    impl_id="deepseek_v41_flash_vlm",
+    impl_name="deepseek-v41-flash-vlm",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/blackhole/deepseek_v41_flash",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -506,6 +515,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "gpt_oss": gpt_oss_impl,
     "deepseek_r1_galaxy": deepseek_r1_galaxy_impl,
     "deepseek_v41_flash": deepseek_v41_flash_impl,
+    "deepseek_v41_flash_vlm": deepseek_v41_flash_vlm_impl,
     "whisper": whisper_impl,
     "speecht5_tts": speecht5_impl,
     "qwen3_tts": qwen3_tts_impl,
