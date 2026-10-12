@@ -230,6 +230,9 @@ def _capture_timing_metrics(ctx: MediaContext, task_name: str, phase: str) -> No
             "vllm:request_inference_time_seconds_",
             "vllm:request_time_per_output_token_seconds_",
             "vllm:time_to_first_token_seconds_",
+            "vllm:request_prompt_tokens_",
+            "vllm:request_generation_tokens_",
+            "vllm:request_success",
         )
         selected = [line for line in lines if line.startswith(names)]
         out = Path(ctx.output_path) / "timing_probe"
