@@ -65,9 +65,7 @@ def test_only_the_listed_paths_are_exported_at_the_head(monkeypatch, tmp_path):
     assert wv.export_repo_branch(dest, "https://github.com/o/r.git", "b", _PATHS)
 
     assert remote.urls == [f"https://codeload.github.com/o/r/tar.gz/{remote.head}"]
-    exported = sorted(
-        str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file()
-    )
+    exported = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file())
     assert exported == [
         wv.SOURCE_COMMIT_FILE,
         "output-dir/MiniMax-M3/loop_01/a.jsonl",
