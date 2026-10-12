@@ -101,7 +101,8 @@
       "Qwen/Qwen2.5-7B",
       "meta-models/Muse-Glimmer-30B",
       "arcee-ai/Llama-3.1-SuperNova-Lite",
-      "Qwen/Qwen2.5-Math-7B-Instruct"
+      "Qwen/Qwen2.5-Math-7B-Instruct",
+      "tiiuae/Falcon3-7B-Instruct"
     ]
   },
   "available_markers": {
@@ -1068,6 +1069,16 @@
       "id_name": "Qwen--Qwen2.5-Math-7B-Instruct",
       "weights": [
         "Qwen/Qwen2.5-Math-7B-Instruct"
+      ]
+    },
+    "tiiuae/Falcon3-7B-Instruct": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "tiiuae--Falcon3-7B-Instruct",
+      "weights": [
+        "tiiuae/Falcon3-7B-Instruct"
       ]
     }
   },
