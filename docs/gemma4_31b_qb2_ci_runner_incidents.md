@@ -1,4 +1,4 @@
-# Gemma 4 31B CI startup failures on QB2 runners
+# QB2 runner issues affecting Gemma 4 31B evaluations
 
 👽 During Gemma 4 31B agentic evaluations on 9–10 October 2026, the shared `bh-qb-ge` pool assigned jobs to hosts where setup failed before evaluation. The same inference-server commits and pinned Metal image completed evaluation on the other hosts linked below. This establishes runner-associated failures, not a proven hardware root cause.
 
