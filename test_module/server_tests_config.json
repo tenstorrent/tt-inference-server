@@ -1069,6 +1069,16 @@
       "weights": [
         "tiiuae/Falcon3-7B-Instruct"
       ]
+    },
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "mistralai--Mistral-Small-3.1-24B-Instruct-2503",
+      "weights": [
+        "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+      ]
     }
   },
   "hardware_defaults": {
