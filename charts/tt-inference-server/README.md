@@ -325,7 +325,7 @@ All fields under `defaults` apply to every model/engine/device/impl unless overr
 | `Z-Image-Turbo` | p300x2 |
 | `bge-large-en-v1.5` | galaxy, n150, n300, t3k |
 | `distil-large-v3` | galaxy, n150, n300, p150, p300x2, t3k |
-| `mochi-1-preview` | galaxy, p150x4, p150x8, p300x2, t3k |
+| `mochi-1-preview` | galaxy, p150x8, t3k |
 | `speecht5_tts` | p150, p300x2 |
 | `stable-diffusion-3.5-large` | galaxy, t3k |
 | `stable-diffusion-xl-base-1.0` | galaxy, n150, n300, t3k |

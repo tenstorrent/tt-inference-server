@@ -2616,25 +2616,6 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
-      p150x4:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-555f240
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 32Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: P150x4
       p150x8:
         defaultImpl: tt_transformers
         impls:
@@ -2654,25 +2635,6 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x8
-      p300x2:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-555f240
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 32Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: P300x2
     defaultEngine: media
   Wan2.2-T2V-A14B-Diffusers:
     media:
