@@ -134,6 +134,19 @@ HEALTH_COLUMNS: List[Tuple[str, str]] = [
     ("error_summary", "Top Errors"),
 ]
 
+# Per-point telemetry charts, written as SVG by
+# ``llm_module.agentic_traces.charts``; the payload carries each one's link
+# relative to the report as ``telemetry_chart_<name>``. Duplicated rather than
+# imported, like the source names above. Order is the order they are shown.
+TELEMETRY_CHART_PREFIX = "telemetry_chart_"
+TELEMETRY_CHARTS: List[Tuple[str, str]] = [
+    ("isl_osl", "Sequence length distribution"),
+    ("latency", "TTFT and end-to-end latency over the run"),
+    ("interactivity", "Interactivity over the run"),
+    ("throughput", "Prefill and decode throughput over the run"),
+    ("load", "Concurrency, tokens in flight and completed requests"),
+]
+
 # Rendered transposed: these are the row labels, not headers.
 CONFIG_FIELDS: List[Tuple[str, str]] = [
     ("label", "Run"),
@@ -443,6 +456,33 @@ def _run_header(row: Mapping[str, Any]) -> str:
     return " ".join(parts)
 
 
+def _telemetry_section(rows: Sequence[Mapping[str, Any]]) -> str:
+    """Link each run's telemetry charts, one subsection per run."""
+    parts: List[str] = []
+    for row in rows:
+        images = [
+            f"**{title}**\n\n![{title} - {_run_header(row)}]({link})"
+            for name, title in TELEMETRY_CHARTS
+            if isinstance(link := row.get(f"{TELEMETRY_CHART_PREFIX}{name}"), str)
+            and link
+        ]
+        if images:
+            parts.append(f"##### {_run_header(row)}\n\n" + "\n\n".join(images))
+    if not parts:
+        return ""
+    intro = (
+        "Drawn from the client's per-request export; times are measured from "
+        "the start of the profiling window. Latency and interactivity show the "
+        "P90 and P75 over a rolling window of 50 requests and the cumulative "
+        "P90, over the individual requests. For interactivity, \"P90\" is the "
+        "tokens/s/user that 90% of requests exceeded, i.e. the slow tail. "
+        "Engine-side views (KV-cache utilisation, prefix-cache hit rate, queue "
+        "depth) come from the serving engine's own metrics and are not drawn "
+        "here."
+    )
+    return "#### Per-point Telemetry\n\n" + intro + "\n\n" + "\n\n".join(parts)
+
+
 def _sort_rows(rows: Sequence[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
     return sorted(
         rows,
@@ -571,6 +611,10 @@ def render_agentic_traces(block: Block, metadata: Mapping[str, Any]) -> str:
             "#### Run Health & Validity\n\n"
             f"**Submission** {_submission_caption(rows)}\n\n{health}"
         )
+
+    telemetry = _telemetry_section(rows)
+    if telemetry:
+        parts.append(telemetry)
 
     config = _vertical_table(rows, CONFIG_FIELDS)
     if config:
