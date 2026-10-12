@@ -10,7 +10,9 @@ import os
 import re
 import runpy
 import shlex
+import shutil
 import sys
+import sysconfig
 from pathlib import Path
 from typing import Optional
 
@@ -1373,6 +1375,31 @@ def main():
     inject_tt_colocated_fabric_config(default_vllm_args)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
     configure_quetzal_provider(model_spec)
+
+    # This proof branch records one completed-request timing line in the
+    # existing Docker server log. Register a tiny vLLM stat-logger plugin in
+    # the container's ephemeral venv so spawned engine processes see it too.
+    # The reference model, requests, and agent policy are unchanged.
+    if (
+        model_spec.get("model_id", "").startswith("id_gemma4-31b-qb2_")
+        and os.getenv("GEMMA_PHASE_PROBE_DISABLE") != "1"
+    ):
+        try:
+            purelib = Path(sysconfig.get_paths()["purelib"])
+            source = Path(__file__).with_name("gemma_phase_probe.py")
+            shutil.copyfile(source, purelib / source.name)
+            dist = purelib / "gemma_phase_probe-0.1.dist-info"
+            dist.mkdir(exist_ok=True)
+            (dist / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: gemma-phase-probe\nVersion: 0.1\n"
+            )
+            (dist / "entry_points.txt").write_text(
+                "[vllm.stat_logger_plugins]\n"
+                "gemma_phase_probe = gemma_phase_probe:GemmaPhaseLogger\n"
+            )
+            logger.info("Enabled proof-only one-record-per-finished-request timing logger")
+        except Exception:
+            logger.warning("Could not enable Gemma request timing probe", exc_info=True)
 
     # Step 5: Start trace capture if needed
     start_trace_capture(
