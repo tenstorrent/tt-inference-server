@@ -1102,6 +1102,9 @@ def test_ensure_weights_available_resumes_partial_download(
     kwargs = run_vllm_api_server_module.snapshot_download.call_args.kwargs
     assert kwargs["repo_id"] == spec["hf_model_repo"]
     assert Path(kwargs["local_dir"]) == weights_path
+    # Meta's duplicate original/ checkpoint is never loaded; skip it like the host
+    # download does.
+    assert kwargs["ignore_patterns"] == ["original/**"]
     assert result == weights_path
     assert os.environ["MODEL_WEIGHTS_DIR"] == str(weights_path)
 
@@ -1279,6 +1282,7 @@ def test_llama_qb2_download_and_tt_model_use_the_same_pinned_snapshot(
         repo_id=spec["hf_model_repo"],
         revision="0e9e39f249a16976918f6564b8830bc894c89659",
         cache_dir=tmp_path / "weights" / "hub",
+        ignore_patterns=["original/**"],
     )
     # Track mutation through monkeypatch so the fixture restores the environment.
     monkeypatch.setenv("HF_MODEL", "stale")

@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_VLLM_SERVER_PORT = "8000"
+# Meta repos ship a second copy of the weights in original/ (Meta's own format, e.g.
+# 141 GB extra for Llama-3.1-70B) that nothing here loads. The host-side download
+# (workflows/setup_host.py) already skips it; keep the container download in line.
+HF_DOWNLOAD_IGNORE_PATTERNS = ["original/**"]
 QUETZAL_IMPL_ID = "quetzal"
 QUETZAL_PROVIDER_ENV = {
     "QUETZAL_VLLM": "1",
@@ -706,6 +710,7 @@ def ensure_weights_available(model_spec: dict) -> Path:
                 repo_id=model_spec["hf_model_repo"],
                 revision=revision,
                 cache_dir=cache_root / "weights" / "hub",
+                ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
             )
         )
         os.environ["MODEL_WEIGHTS_DIR"] = str(weights_path)
@@ -724,7 +729,11 @@ def ensure_weights_available(model_spec: dict) -> Path:
     weights_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"Downloading weights from {hf_repo} to {weights_path}")
     try:
-        snapshot_download(repo_id=hf_repo, local_dir=weights_path)
+        snapshot_download(
+            repo_id=hf_repo,
+            local_dir=weights_path,
+            ignore_patterns=HF_DOWNLOAD_IGNORE_PATTERNS,
+        )
     except Exception as e:
         if any(weights_path.iterdir()):
             logger.warning(

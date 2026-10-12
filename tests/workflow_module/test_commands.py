@@ -534,3 +534,126 @@ class TestServerCommandBootRetry:
         assert result.return_code == 1
         assert len(attempts) == 2
         assert result.error.endswith("server process exited during startup")
+
+
+def _llm_spec(*, version="0.16.0", tensor_cache_timeout=5400.0, engine="vLLM"):
+    return SimpleNamespace(
+        version=version,
+        inference_engine=engine,
+        device_model_spec=SimpleNamespace(tensor_cache_timeout=tensor_cache_timeout),
+    )
+
+
+def _docker_setup(**host_storage):
+    fields = dict.fromkeys(
+        ("host_model_volume_root", "host_hf_cache", "host_weights_dir")
+    )
+    fields.update(host_storage)
+    return SimpleNamespace(**fields)
+
+
+class TestReadinessTimeout:
+    """The readiness wait honours the model's own first-boot budget (#5363)."""
+
+    def test_uses_tensor_cache_timeout_plus_boot_overhead(self, monkeypatch):
+        from workflow_module.commands import _readiness_timeout
+
+        monkeypatch.delenv("TT_SERVER_READY_TIMEOUT_SECONDS", raising=False)
+        # Same deadline the Helm chart gives the deployment.
+        assert _readiness_timeout(_llm_spec(tensor_cache_timeout=5400.0)) == 7200.0
+
+    def test_env_override_wins(self, monkeypatch):
+        from workflow_module.commands import _readiness_timeout
+
+        monkeypatch.setenv("TT_SERVER_READY_TIMEOUT_SECONDS", "900")
+        assert _readiness_timeout(_llm_spec()) == 900.0
+
+    def test_invalid_env_falls_back_to_model_budget(self, monkeypatch):
+        from workflow_module.commands import _readiness_timeout
+
+        monkeypatch.setenv("TT_SERVER_READY_TIMEOUT_SECONDS", "soon")
+        assert _readiness_timeout(_llm_spec(tensor_cache_timeout=3600.0)) == 5400.0
+
+    @pytest.mark.parametrize(
+        "model_spec", ["ms", None, _llm_spec(tensor_cache_timeout=0)]
+    )
+    def test_falls_back_to_one_hour_without_a_usable_budget(
+        self, monkeypatch, model_spec
+    ):
+        from workflow_module.commands import _readiness_timeout
+
+        monkeypatch.delenv("TT_SERVER_READY_TIMEOUT_SECONDS", raising=False)
+        assert _readiness_timeout(model_spec) == 3600.0
+
+
+class TestNoRetryAfterTimeoutOnNonResumableDownload:
+    """A pre-v0.19.0 vLLM image skips the download when the weights dir is
+    non-empty, so retrying a boot the timeout cut off fails on incomplete weights."""
+
+    def _run(self, monkeypatch, *, model_spec, setup_config, ready_error):
+        from workflow_module import commands
+
+        monkeypatch.setenv("TT_SERVER_BOOT_ATTEMPTS", "2")
+        attempts = []
+
+        def launch(*args, **kwargs):
+            attempts.append(1)
+            return {"container_name": None}
+
+        _install_fake_launchers(monkeypatch, docker=launch)
+        monkeypatch.setattr(commands, "_wait_until_ready", lambda *a: ready_error)
+        monkeypatch.setattr(commands, "_teardown_server", lambda *a: None)
+        spec = ServerLaunchSpec(
+            mode=ServerMode.DOCKER,
+            model_spec=model_spec,
+            runtime_config="rc",
+            setup_config=setup_config,
+            json_fpath="/j.json",
+        )
+        return ServerCommand(spec).execute(), attempts
+
+    def test_timeout_on_old_image_with_container_download_is_not_retried(
+        self, monkeypatch
+    ):
+        result, attempts = self._run(
+            monkeypatch,
+            model_spec=_llm_spec(version="0.16.0"),
+            setup_config=_docker_setup(),
+            ready_error="timed out after 7200s waiting for http://127.0.0.1:8000/health",
+        )
+        assert result.return_code == 1
+        assert len(attempts) == 1
+        assert result.error.startswith("server bring-up failed after 1 attempt(s)")
+
+    @pytest.mark.parametrize(
+        "model_spec,setup_config",
+        [
+            # Weights downloaded on the host: resumable, so a retry can succeed.
+            (_llm_spec(version="0.16.0"), _docker_setup(host_model_volume_root="/v")),
+            (_llm_spec(version="0.16.0"), _docker_setup(host_hf_cache="/hf")),
+            # Images from v0.19.0 on resume the download themselves.
+            (_llm_spec(version="0.19.0"), _docker_setup()),
+            # Media images use a different launcher.
+            (_llm_spec(version="0.16.0", engine="media"), _docker_setup()),
+        ],
+    )
+    def test_timeout_is_still_retried_when_the_download_can_resume(
+        self, monkeypatch, model_spec, setup_config
+    ):
+        result, attempts = self._run(
+            monkeypatch,
+            model_spec=model_spec,
+            setup_config=setup_config,
+            ready_error="timed out after 7200s waiting for http://127.0.0.1:8000/health",
+        )
+        assert result.return_code == 1
+        assert len(attempts) == 2
+
+    def test_device_hang_on_old_image_is_still_retried(self, monkeypatch):
+        result, attempts = self._run(
+            monkeypatch,
+            model_spec=_llm_spec(version="0.16.0"),
+            setup_config=_docker_setup(),
+            ready_error="device hang detected during startup ('Timeout detected')",
+        )
+        assert len(attempts) == 2
