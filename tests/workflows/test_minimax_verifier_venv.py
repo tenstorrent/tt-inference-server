@@ -52,6 +52,38 @@ def test_the_branch_head_is_exported_without_git_metadata(monkeypatch, tmp_path)
     assert checkout.endswith("checkout b")
 
 
+def test_a_required_file_the_sparse_checkout_missed_is_checked_out(
+    monkeypatch, tmp_path
+):
+    git = _Git(monkeypatch)
+    run = git.run
+
+    def run_without_root_files(cmd, **kw):
+        rc = run(cmd, **kw)
+        if cmd.startswith("git clone"):
+            (Path(cmd.split()[-1]) / "verify.py").unlink()
+        if "checkout HEAD -- verify.py" in cmd:
+            (Path(cmd.split()[2]) / "verify.py").write_text("")
+        return rc
+
+    monkeypatch.setattr(wv, "run_command", run_without_root_files)
+    dest = tmp_path / "verifier"
+
+    assert wv.export_repo_branch(dest, "url", "b", ["validator"], ["verify.py"])
+
+    assert (dest / "verify.py").exists()
+
+
+def test_an_export_missing_a_required_file_fails(monkeypatch, tmp_path):
+    _Git(monkeypatch)
+    dest = tmp_path / "verifier"
+
+    assert not wv.export_repo_branch(dest, "url", "b", ["validator"], ["sample.jsonl"])
+
+    assert not dest.exists()
+    assert not (tmp_path / "verifier.staging").exists()
+
+
 def test_an_export_at_the_branch_head_is_kept(monkeypatch, tmp_path):
     git = _Git(monkeypatch)
     dest = tmp_path / "verifier"
@@ -97,8 +129,9 @@ def test_a_failed_clone_leaves_no_staging_directory(monkeypatch, tmp_path):
 def test_the_verifier_branch_is_exported(monkeypatch, tmp_path):
     seen = {}
 
-    def export(dest, repo, branch, paths):
+    def export(dest, repo, branch, paths, required_files=()):
         seen.update(dest=dest, repo=repo, branch=branch, paths=paths)
+        seen["required"] = required_files
         return True
 
     monkeypatch.setattr(wv, "export_repo_branch", export)
@@ -108,6 +141,7 @@ def test_the_verifier_branch_is_exported(monkeypatch, tmp_path):
     assert seen["dest"] == tmp_path / "MiniMax-Provider-Verifier"
     assert seen["repo"] == wv.MINIMAX_VERIFIER_REPO
     assert seen["branch"] == wv.MINIMAX_VERIFIER_BRANCH
+    assert seen["required"] == wv.MINIMAX_VERIFIER_REQUIRED_FILES
     # verify.py imports validator/; the pytest suites and fixtures live in
     # m3_format_check/.
     for path in ("validator", "m3_format_check"):

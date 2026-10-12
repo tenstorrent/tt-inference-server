@@ -452,10 +452,11 @@ python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow sp
   --server-url <endpoint> --skip-system-sw-validation
 ```
 
-A full run executes every enrolled suite. To run only some of them, set `MINIMAX_VERIFIER_SUITES` to a comma-separated list; the other cases report SKIP, which doesn't block:
+By default only the `verify` suite runs; the other cases report SKIP, which doesn't block. Set `MINIMAX_VERIFIER_SUITES` to a comma-separated list to pick suites, or to `all` for every enrolled suite:
 
 ```bash
-MINIMAX_VERIFIER_SUITES=verify python3 run.py ...        # verify only
+python3 run.py ...                                        # verify only (default)
+MINIMAX_VERIFIER_SUITES=all python3 run.py ...            # every suite
 MINIMAX_VERIFIER_SUITES=text,stream python3 run.py ...   # two format checks
 ```
 

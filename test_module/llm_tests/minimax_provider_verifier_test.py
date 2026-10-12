@@ -34,7 +34,8 @@ without editing the suite files. ``suite`` and ``non_blocking`` are
 ``test_config`` only: an override would reach every case.
 
 ``MINIMAX_VERIFIER_SUITES`` selects which suites run (comma-separated, e.g.
-``verify``); the other cases report SKIP. Unset, every enrolled suite runs.
+``text,stream``, or ``all``); the other cases report SKIP. Unset, only
+``verify`` runs.
 """
 
 from __future__ import annotations
@@ -98,6 +99,7 @@ NON_BLOCKING_REASON_KEY = "non_blocking_reason"
 
 ENV_PREFIX = "MINIMAX_VERIFIER_"
 SUITES_ENV = "MINIMAX_VERIFIER_SUITES"
+ALL_SUITES = "all"
 _FALSE_STRINGS = ("", "0", "false", "no", "off")
 # tqdm (verify.py) and pytest -q ([ 45%]) progress, relayed at most once per
 # PROGRESS_STEP percent.
@@ -415,14 +417,17 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
     def _skip_unless_selected(suite: str) -> None:
         """SKIP this case when ``MINIMAX_VERIFIER_SUITES`` leaves its suite out."""
         raw = os.environ.get(SUITES_ENV)
-        if raw is None or not raw.strip():
+        selected = (raw or "").replace(",", " ").split() or [VERIFY_SUITE]
+        if ALL_SUITES in selected:
             return
-        selected = raw.replace(",", " ").split()
         unknown = sorted(set(selected) - set(SUITES))
         if unknown:
             raise ValueError(f"{SUITES_ENV} names unknown suites {unknown}")
         if suite not in selected:
-            raise SkipTest(f"suite {suite} not selected ({SUITES_ENV}={raw})")
+            raise SkipTest(
+                f"suite {suite} not selected ({SUITES_ENV}={raw or VERIFY_SUITE}; "
+                f"set {SUITES_ENV}={ALL_SUITES} to run every suite)"
+            )
 
     def _provision_verifier(self) -> Tuple[str, Path]:
         """The MINIMAX_VERIFIER venv's python and the verifier checkout in it."""

@@ -56,14 +56,16 @@ MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
 # The full tree is ~870 MB, mostly official-deployment baselines for every
 # model x 10 loops. The spec test reads only the first loop of each enrolled
 # model, as its ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
-# test_module/test_suites/llm.json). Root files (verify.py, sample.jsonl) are
-# always included.
+# test_module/test_suites/llm.json). Root files are part of a cone, but the
+# spec test cannot run without these two, so the export checks for them
+# and checks them out explicitly when the sparse checkout left them out.
 MINIMAX_VERIFIER_SPARSE_PATHS = (
     "validator",
     "m3_format_check",
     "output-dir/MiniMax-M3/loop_01",
     "output-dir/MiniMax-M2.7/loop_01",
 )
+MINIMAX_VERIFIER_REQUIRED_FILES = ("verify.py", "sample.jsonl")
 # Written next to the exported files: the commit they came from.
 SOURCE_COMMIT_FILE = ".source_commit"
 
@@ -122,7 +124,11 @@ def read_source_commit(dest: Path) -> Optional[str]:
 
 
 def export_repo_branch(
-    dest: Path, repo: str, branch: str, paths: Sequence[str]
+    dest: Path,
+    repo: str,
+    branch: str,
+    paths: Sequence[str],
+    required_files: Sequence[str] = (),
 ) -> bool:
     """Materialize *paths* of *repo* at the head of *branch* in *dest*, as
     plain files: no ``.git``. Returns success.
@@ -135,7 +141,9 @@ def export_repo_branch(
     The export goes through a blob-less, depth-1, sparse clone in a sibling
     directory, so only the files under *paths* (plus the repository root's)
     are downloaded; its ``.git`` is then removed and the directory swapped
-    into place.
+    into place. Each of *required_files* (repository-root paths) must exist in
+    the export: one the sparse checkout left out is checked out explicitly,
+    and the export fails when it is still missing.
     """
     current = read_source_commit(dest) if dest.is_dir() else None
     listing = _git_output("ls-remote", repo, f"refs/heads/{branch}")
@@ -151,7 +159,7 @@ def export_repo_branch(
             return True
         logger.error("Cannot resolve branch %s of %s", branch, repo)
         return False
-    if head == current:
+    if head == current and all((dest / f).exists() for f in required_files):
         logger.info("%s is at %s %s (%s)", dest, repo, branch, head)
         return True
 
@@ -166,6 +174,13 @@ def export_repo_branch(
     for step in steps:
         if run_command(step, logger=logger) != 0:
             logger.error("Failed to export %s %s (%s)", repo, branch, step)
+            shutil.rmtree(staging, ignore_errors=True)
+            return False
+    for name in required_files:
+        if not (staging / name).exists():
+            run_command(f"git -C {staging} checkout HEAD -- {name}", logger=logger)
+        if not (staging / name).exists():
+            logger.error("%s %s has no %s after checkout", repo, branch, name)
             shutil.rmtree(staging, ignore_errors=True)
             return False
     # The branch may have moved since ls-remote; record what was exported.
@@ -366,6 +381,7 @@ def setup_minimax_verifier(
         MINIMAX_VERIFIER_REPO,
         MINIMAX_VERIFIER_BRANCH,
         MINIMAX_VERIFIER_SPARSE_PATHS,
+        MINIMAX_VERIFIER_REQUIRED_FILES,
     )
 
 

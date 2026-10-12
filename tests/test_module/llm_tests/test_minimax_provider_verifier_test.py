@@ -39,6 +39,8 @@ def _no_env_overrides(monkeypatch):
     """Keep a caller's MINIMAX_VERIFIER_* environment out of these tests."""
     for key in _KEYS:
         monkeypatch.delenv(ENV_PREFIX + key.upper(), raising=False)
+    # Most tests exercise the pytest suites, which only run when selected.
+    monkeypatch.setenv("MINIMAX_VERIFIER_SUITES", "all")
 
 
 def _row(index, reason="tool_calls", **extra):
@@ -343,6 +345,26 @@ def test_suites_selection_skips_the_other_cases(fake, tmp_path, monkeypatch):
     assert verify.data["status"] == "pass"
     assert text.data["status"] == "skip"
     assert [c["command"][1] for c in fake.calls] == ["verify.py"]
+
+
+def test_only_verify_runs_by_default(fake, tmp_path, monkeypatch):
+    monkeypatch.delenv("MINIMAX_VERIFIER_SUITES")
+
+    verify = _run(tmp_path, _VERIFY)
+    text = _run(tmp_path, {"suite": "text", "non_blocking": True})
+
+    assert verify.data["status"] == "pass"
+    assert text.data["status"] == "skip"
+    assert [c["command"][1] for c in fake.calls] == ["verify.py"]
+
+
+def test_all_runs_every_suite(fake, tmp_path, monkeypatch):
+    monkeypatch.setenv("MINIMAX_VERIFIER_SUITES", "all")
+
+    text = _run(tmp_path, {"suite": "text", "non_blocking": True})
+
+    assert text.data["status"] != "skip"
+    assert fake.calls[0]["command"][3] == "m3_text_tests.py"
 
 
 def test_an_unknown_selected_suite_is_an_error(fake, tmp_path, monkeypatch):
