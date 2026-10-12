@@ -28,6 +28,7 @@ import logging
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from llm_module.agentic_traces.sweep_export import SOFT_METRICS_KEY, STAGE_KEY
 from llm_module.goodput import AIPERF_GOODPUT_KEYS, GoodputSlo, render_goodput
 from workflow_module.model_catalog import ModelSpecProvider
 from workflow_module.requirements_schema import (
@@ -37,6 +38,8 @@ from workflow_module.requirements_schema import (
     RequirementsDoc,
     Scenario,
     Slo,
+    input_throughput_tps,
+    stated_target,
 )
 from workflow_module.target_pack import TargetPack
 
@@ -61,6 +64,9 @@ _EVAL_NAME_TO_TASK = {
     "tau3-banking benchmark": ("tau3_bench_banking",),
     "tau3-banking": ("tau3_bench_banking",),
     "tau3-bench banking": ("tau3_bench_banking",),
+    "longbench-v2": ("longbench2_generate",),
+    "longbench v2": ("longbench2_generate",),
+    "longbench2": ("longbench2_generate",),
 }
 
 # Scenario scalar-target metric -> PerformanceTarget attribute. Only these
@@ -81,8 +87,10 @@ _REFERENCE_KEY_TO_ATTR = {
     "e2elMs": "e2el_ms",
     "decodeThroughputTps": "tput",
     "totalThroughputTps": "tput_total",
+    "inputThroughputTps": "tput_input",
     "goodputPct": "goodput",
 }
+_INPUT_THROUGHPUT_KEY = "inputThroughputTps"
 
 # The requirements schema declares no benchmark tolerance, so every
 # requirements-driven target — per-point reference or scenario-level gate —
@@ -693,6 +701,13 @@ class RequirementsTargetPack(TargetPack):
                 continue
             params.extend(self._scenario_params(scenario, device, model_spec))
 
+        # Points with a hard (must) target run last, so the informational
+        # sweep stays contiguous ahead of them and reports as one table. Each
+        # group keeps the document's own order.
+        params = [p for p in params if p.priority != PRIORITY_MUST] + [
+            p for p in params if p.priority == PRIORITY_MUST
+        ]
+
         task = BenchmarkTask(
             param_map={device: params},
             workflow_venv_type=select_vllm_benchmark_venv(model_spec),
@@ -758,15 +773,21 @@ class RequirementsTargetPack(TargetPack):
             tier_kwargs: dict = {}
             target_priorities: dict = {}
 
-            # The point's own reference measurements gate it (must): they are
-            # the document's statement of what the reference stack achieves at
-            # exactly this (ISL, OSL, concurrency).
+            # The point's own reference measurements gate it: they are the
+            # document's statement of what the reference stack achieves at
+            # exactly this (ISL, OSL, concurrency). A soft column is reported
+            # but never blocks; a blank one is no target at all.
             for key, attr in _REFERENCE_KEY_TO_ATTR.items():
-                value = (point.reference or {}).get(key)
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                if key == _INPUT_THROUGHPUT_KEY:
+                    value = input_throughput_tps(point.reference or {}, isl=point.isl)
+                else:
+                    value = stated_target(point.reference or {}, key)
+                if value is None:
                     continue
-                tier_kwargs[attr] = float(value)
-                target_priorities[attr] = PRIORITY_MUST
+                tier_kwargs[attr] = value
+                target_priorities[attr] = (
+                    PRIORITY_SHOULD if key in scenario.soft_metrics else PRIORITY_MUST
+                )
 
             # A scenario-level gate attached here overrides the point's
             # reference value for the same metric (the target is contractual;
@@ -856,9 +877,28 @@ class RequirementsTargetPack(TargetPack):
         """
         points: Dict[int, Dict[str, Any]] = {}
         for workload in self._doc.agentic_workloads:
+            # The workload's soft list rides on each point, for the grader.
+            soft = (
+                {SOFT_METRICS_KEY: sorted(workload.soft_metrics)}
+                if workload.soft_metrics
+                else {}
+            )
+            # The grader splits a multi-stage sweep into one targets block per stage.
+            stage = (
+                self._stage_tags().get(workload.stage)
+                if len(self._doc.stages) > 1
+                else None
+            )
+            if stage:
+                soft = {**soft, STAGE_KEY: stage}
             for point in workload.sweep:
-                if point.concurrency > 0:
-                    points.setdefault(point.concurrency, dict(point.reference))
+                if point.concurrency <= 0:
+                    continue
+                expected = {**point.reference, **soft}
+                derived = input_throughput_tps(point.reference)
+                if derived is not None:
+                    expected[_INPUT_THROUGHPUT_KEY] = derived
+                points.setdefault(point.concurrency, expected)
         return [points[c] for c in sorted(points)]
 
     def _agentic_concurrencies(self) -> List[int]:
@@ -956,6 +996,63 @@ class RequirementsTargetPack(TargetPack):
     # --- report metadata (delegated) ---
     def extra_spec_metadata_fields(self):
         return self._delegate.extra_spec_metadata_fields()
+
+    # --- delivery stages ---
+    def stage_of(self, block: Any) -> Optional[Mapping[str, Any]]:
+        """The stage ``block`` belongs to, for a document with several stages.
+
+        Evals map by catalog task, fixed-length points by (ISL, OSL,
+        concurrency). An agentic targets block is built per stage and already
+        carries its own. A single-stage document tags nothing, so its report
+        reads as before.
+        """
+        if len(self._doc.stages) < 2:
+            return None
+        key = None
+        data = block.data if isinstance(block.data, Mapping) else {}
+        if block.kind == "evals":
+            targets = block.targets if isinstance(block.targets, Mapping) else {}
+            task = data.get("task_name") or targets.get("task_name")
+            key = self._stage_by_eval_task().get(str(task)) if task else None
+        elif block.kind == "benchmarks":
+            shape = (
+                data.get("input_sequence_length"),
+                data.get("output_sequence_length"),
+                data.get("concurrency"),
+            )
+            key = self._stage_by_shape().get(shape)
+        return self._stage_tags().get(key) if key else None
+
+    def _stage_tags(self) -> Dict[str, Dict[str, Any]]:
+        return {
+            stage.key: {
+                "key": stage.key,
+                "name": stage.name,
+                "position": stage.position,
+            }
+            for stage in self._doc.stages
+        }
+
+    def _stage_by_eval_task(self) -> Dict[str, str]:
+        """Catalog task name -> stage of the document eval that runs it."""
+        by_task: Dict[str, str] = {}
+        for ae in self._doc.accuracy_evals:
+            candidates = _EVAL_NAME_TO_TASK.get(_normalize_eval_name(ae.name))
+            if candidates and ae.stage:
+                _, task_name = self._find_task_template(candidates)
+                by_task.setdefault(task_name, ae.stage)
+        return by_task
+
+    def _stage_by_shape(self) -> Dict[tuple, str]:
+        """(ISL, OSL, concurrency) -> stage of the scenario that sweeps it."""
+        by_shape: Dict[tuple, str] = {}
+        for scenario in self._doc.scenarios:
+            for point in scenario.sweep:
+                if scenario.stage:
+                    by_shape.setdefault(
+                        (point.isl, point.osl, point.concurrency), scenario.stage
+                    )
+        return by_shape
 
 
 def _repoint_sampling(node: Any, params: Mapping[str, Any], found: set) -> Any:
@@ -1161,8 +1258,8 @@ def _capability_attach_points(scenario: Scenario, gates: dict) -> dict:
         best_val = None
         if key is not None:
             for i, point in enumerate(scenario.sweep):
-                ref = (point.reference or {}).get(key)
-                if isinstance(ref, bool) or not isinstance(ref, (int, float)):
+                ref = stated_target(point.reference or {}, key)
+                if ref is None:
                     continue
                 if best_val is None or (
                     ref < best_val if lower_is_better else ref > best_val
@@ -1241,8 +1338,7 @@ def _scenario_targets_goodput(scenario: Scenario) -> bool:
     if any(st.metric == "request_goodput" for st in scenario.scalar_targets):
         return True
     return any(
-        isinstance((p.reference or {}).get("goodputPct"), (int, float))
-        and not isinstance((p.reference or {}).get("goodputPct"), bool)
+        stated_target(p.reference or {}, "goodputPct") is not None
         for p in scenario.sweep
     )
 

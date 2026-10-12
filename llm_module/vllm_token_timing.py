@@ -151,9 +151,30 @@ def main():
     from vllm.benchmarks import serve
     from vllm.entrypoints.cli.main import main as vllm_main
 
-    endpoint.ASYNC_REQUEST_FUNCS["openai-chat"] = make_chat_request_func(endpoint)
-    serve.calculate_metrics = make_calculate_metrics(serve.calculate_metrics)
+    install(endpoint, serve)
     vllm_main()
+
+
+def _patch_request_funcs():
+    """The per-request prefix-cache salt wrapper (vllm_bench_cache_off.py). Both
+    adapters are launched by path from the benchmark venv, so the sibling module
+    is importable from the script directory; the package import covers tests."""
+    try:
+        from vllm_bench_cache_off import patch_request_funcs
+    except ImportError:
+        from llm_module.vllm_bench_cache_off import patch_request_funcs
+    return patch_request_funcs
+
+
+def install(endpoint, serve) -> None:
+    """Register the timing-aware chat request function and the metrics hook, then
+    give every request its own prefix-cache salt: this adapter builds its payload
+    from ``extra_body`` directly, so without the wrapper the whole run (the
+    untimed test request included) would share the driver's one base salt and
+    the measured prompt 0 could hit the test request's KV blocks."""
+    endpoint.ASYNC_REQUEST_FUNCS["openai-chat"] = make_chat_request_func(endpoint)
+    _patch_request_funcs()(endpoint.ASYNC_REQUEST_FUNCS)
+    serve.calculate_metrics = make_calculate_metrics(serve.calculate_metrics)
 
 
 if __name__ == "__main__":

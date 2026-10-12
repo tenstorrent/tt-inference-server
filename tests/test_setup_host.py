@@ -37,6 +37,7 @@ from workflows.workflow_types import (
     DeviceTypes,
     InferenceEngine,
     ModelSource,
+    ModelType,
 )
 
 # A tiny public HF model (~500KB, no auth required) for testing
@@ -78,6 +79,25 @@ def tiny_model_spec(tiny_impl, tiny_device_model_spec):
         tt_metal_commit="v1.0.0",
         vllm_commit="abc123",
         inference_engine=InferenceEngine.VLLM.value,
+        device_model_spec=tiny_device_model_spec,
+        docker_image="test-image:latest",
+        min_disk_gb=1,
+        min_ram_gb=1,
+    )
+
+
+@pytest.fixture
+def training_model_spec(tiny_impl, tiny_device_model_spec):
+    return ModelSpec(
+        device_type=DeviceTypes.N150,
+        impl=tiny_impl,
+        hf_model_repo=TINY_HF_REPO,
+        model_id=f"id_tt-transformers_{TINY_MODEL_NAME}_n150",
+        model_name=TINY_MODEL_NAME,
+        model_type=ModelType.TRAINING,
+        tt_metal_commit="v1.0.0",
+        vllm_commit="abc123",
+        inference_engine=InferenceEngine.MEDIA.value,
         device_model_spec=tiny_device_model_spec,
         docker_image="test-image:latest",
         min_disk_gb=1,
@@ -346,6 +366,20 @@ class TestSetupHostCombinations:
             host_volume=host_volume,
         )
         assert manager.check_setup() is False
+
+    def test_training_host_volume_check_setup_returns_true(
+        self, training_model_spec, temp_dir
+    ):
+        """Training + host volume: check_setup() returns True (the server's
+        from_pretrained fetches into its own HF cache)."""
+        manager = HostSetupManager(
+            model_spec=training_model_spec,
+            automatic=True,
+            jwt_secret="test_jwt",
+            hf_token="hf_test_token",
+            host_volume=str(temp_dir / "persistent_volume"),
+        )
+        assert manager.check_setup() is True
 
     def test_host_weights_dir_check_setup_with_valid_weights(
         self, tiny_model_spec, temp_dir

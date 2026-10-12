@@ -15,6 +15,7 @@ from scripts.release.build_release_artifacts import (
     resolve_model,
     resolve_configured_scope,
     runner_of,
+    successful_uploader,
     validate_bundle_identity,
     validate_staged_identity_set,
 )
@@ -426,3 +427,117 @@ def test_bundle_names_change_only_where_a_device_ships_two_impls():
         bundle_name(model, "p300x2", "llama31-8b-qb2", shared=True)
         == f"{base}_p300x2_llama31-8b-qb2.zip"
     )
+
+
+# tt-shield run 37448294253 (the v0.24.0 release run) was re-run twice. Each
+# attempt re-uploaded the gemma bundle under the same name; only attempt 3
+# passed. Llama passed in attempt 2, so attempt 3 carried that job over with
+# its original window instead of re-running it.
+RERUN_GEMMA = "google/gemma-4-12B-it"
+RERUN_GEMMA_IDENTITY = (RERUN_GEMMA, "P300X2", "vLLM", "tt_transformers")
+RERUN_GEMMA_BUNDLE = "workflow_logs_release_google__gemma-4-12B-it_bh-qb-ge_default"
+RERUN_LLAMA = "meta-llama/Llama-3.1-8B-Instruct"
+RERUN_LLAMA_BUNDLE = (
+    "workflow_logs_release_meta-llama__Llama-3.1-8B-Instruct_bh-qb-ge_llama31-8b-qb2"
+)
+RERUN_GEMMA_ARTIFACTS = [
+    {
+        "id": 11409517547,
+        "name": RERUN_GEMMA_BUNDLE,
+        "created_at": "2026-10-06T11:20:41Z",
+    },
+    {
+        "id": 11409763936,
+        "name": RERUN_GEMMA_BUNDLE,
+        "created_at": "2026-10-06T11:28:52Z",
+    },
+    {
+        "id": 11428819739,
+        "name": RERUN_GEMMA_BUNDLE,
+        "created_at": "2026-10-06T17:07:59Z",
+    },
+]
+RERUN_LLAMA_ARTIFACT = {
+    "id": 11418755614,
+    "name": RERUN_LLAMA_BUNDLE,
+    "created_at": "2026-10-06T13:51:09Z",
+}
+
+
+def _rerun_latest_jobs(gemma_conclusion="success"):
+    """The run's jobs as list_jobs returns them: the latest attempt only."""
+    return [
+        {
+            "id": 112308063884,
+            "name": "_ / vLLM / run-release-google__gemma-4-12B-it-bh-qb-ge-p300x2",
+            "conclusion": gemma_conclusion,
+            "started_at": "2026-10-06T13:58:05Z",
+            "completed_at": "2026-10-06T17:08:13Z",
+            "run_attempt": 3,
+        },
+        {
+            "id": 112308065616,
+            "name": "_ / vLLM / run-release-meta-llama__Llama-3.1-8B-Instruct"
+            "@llama31-8b-qb2@-bh-qb-ge-p300x2",
+            "conclusion": "success",
+            "started_at": "2026-10-06T11:22:09Z",
+            "completed_at": "2026-10-06T13:51:20Z",
+            "run_attempt": 3,
+        },
+    ]
+
+
+def _resolve_rerun_gemma(tmp_path, monkeypatch, jobs):
+    # Every attempt's bundle carries the same, correct identity.
+    bundle = _bundle(tmp_path, RERUN_GEMMA_IDENTITY, "gemma.zip")
+    monkeypatch.setattr(
+        "scripts.release.build_release_artifacts.download_artifact",
+        lambda repo, artifact, tmp, cache: bundle,
+    )
+    return resolve_model(
+        RERUN_GEMMA,
+        ["p300x2"],
+        RERUN_GEMMA_ARTIFACTS + [RERUN_LLAMA_ARTIFACT],
+        jobs,
+        "org/repo",
+        tmp_path,
+        {},
+        {(RERUN_GEMMA, "p300x2", None): RERUN_GEMMA_IDENTITY},
+        impl=None,
+    )
+
+
+def test_rerun_bundles_resolve_to_the_latest_successful_attempt(
+    tmp_path, monkeypatch, capsys
+):
+    chosen = _resolve_rerun_gemma(tmp_path, monkeypatch, _rerun_latest_jobs())
+
+    assert chosen == {"p300x2": RERUN_GEMMA_ARTIFACTS[2]}
+    note = capsys.readouterr().out
+    assert "using 11428819739" in note and "job 112308063884 (attempt 3)" in note
+    assert "11409517547" in note and "11409763936" in note
+
+
+def test_uploader_is_matched_by_job_name_not_just_time():
+    jobs = _rerun_latest_jobs()
+    cancelled, failed, passed = RERUN_GEMMA_ARTIFACTS
+
+    assert successful_uploader(passed, jobs, RERUN_GEMMA)["id"] == 112308063884
+    assert successful_uploader(cancelled, jobs, RERUN_GEMMA) is None
+    # The failed attempt's bundle (11:28:52) lies inside the carried-over Llama
+    # job's window; it must not be credited to that job.
+    assert successful_uploader(failed, jobs, RERUN_GEMMA) is None
+    llama_job = successful_uploader(RERUN_LLAMA_ARTIFACT, jobs, RERUN_LLAMA)
+    assert llama_job["id"] == 112308065616
+
+
+def test_rerun_bundles_stay_ambiguous_without_a_successful_latest_attempt(
+    tmp_path, monkeypatch
+):
+    with pytest.raises(SystemExit, match="found 3") as exc:
+        _resolve_rerun_gemma(
+            tmp_path, monkeypatch, _rerun_latest_jobs(gemma_conclusion="failure")
+        )
+    message = str(exc.value)
+    assert all(str(a["id"]) in message for a in RERUN_GEMMA_ARTIFACTS)
+    assert "latest attempt" in message

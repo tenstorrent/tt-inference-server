@@ -13,6 +13,10 @@ from pathlib import Path
 import numpy as np
 import ttnn
 from config.constants import (
+    LTX_FPS,
+    LTX_HEIGHT,
+    LTX_NUM_FRAMES,
+    LTX_WIDTH,
     WAN22_ANISORA_NUM_STEPS,
     WAN22_DISTILL_NUM_STEPS,
     WAN22_LIGHTNING_NUM_STEPS,
@@ -1331,12 +1335,9 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 # LTX-2.3 distilled text->audio-video
 # ---------------------------------------------------------------------------
 
-# Proven-good 1080p ~6s AV generation shape for the (4, 8) Galaxy ring config
-# (validated on-device). H/W must be %64 and (num_frames-1)%8 == 0.
-LTX_NUM_FRAMES = 145
-LTX_HEIGHT = 1088
-LTX_WIDTH = 1920
-LTX_FPS = 24
+# The served shape (LTX_NUM_FRAMES etc.) lives in config.constants so the request
+# layer can validate against it without importing tt-metal.
+
 # (4, 8) BH Galaxy ring defaults (mirrors LTXPipeline.create_pipeline's own 4x8
 # device_configs entry): dynamic_load off, Ring topology, 2 links.
 LTX_DYNAMIC_LOAD = False
@@ -1416,6 +1417,7 @@ class TTLTX23DistilledRunner(TTDiTRunner):
                 num_frames=LTX_NUM_FRAMES,
                 height=LTX_HEIGHT,
                 width=LTX_WIDTH,
+                fps=LTX_FPS,
                 image_conditioning=False,
             )
         except Exception as e:
@@ -1441,14 +1443,16 @@ class TTLTX23DistilledRunner(TTDiTRunner):
         LTX_VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(LTX_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
         # generate() writes the AV MP4 to output_path and returns that path.
+        # _validate_shape has pinned these; the fallback covers warmup's
+        # model_construct() request, which skips validation.
         result_path = self.pipeline.generate(
             request.prompt,
             output_path=output_path,
-            num_frames=LTX_NUM_FRAMES,
-            height=LTX_HEIGHT,
-            width=LTX_WIDTH,
+            num_frames=getattr(request, "num_frames", None) or LTX_NUM_FRAMES,
+            height=getattr(request, "height", None) or LTX_HEIGHT,
+            width=getattr(request, "width", None) or LTX_WIDTH,
             seed=int(request.seed or 0),
-            fps=LTX_FPS,
+            fps=getattr(request, "fps", None) or LTX_FPS,
         )
         self.logger.debug(f"Device {self.device_id}: LTX inference completed")
         if self._warming_up:

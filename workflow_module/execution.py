@@ -27,8 +27,10 @@ from report_module import (
     acceptance_criteria_check,
     build_acceptance_export,
     spec_tasks_explained_by_waivers,
+    stage_results,
     task_failure_blockers,
 )
+from report_module.acceptance_criteria import STAGE_TARGET_KEY
 from test_module.task_types import MediaTaskType
 
 if TYPE_CHECKING:
@@ -366,7 +368,21 @@ class WorkflowExecution(ABC):
     def format_results(self) -> Optional[ReportSchema]:
         if not self.accumulator.blocks:
             return None
-        return self.accumulator.build_schema()
+        schema = self.accumulator.build_schema()
+        self._tag_stages(schema)
+        return schema
+
+    def _tag_stages(self, schema: ReportSchema) -> None:
+        """Tag each block with the delivery stage it is graded under, if any."""
+        from .target_pack import get_target_pack
+
+        pack = get_target_pack()
+        for block in schema.sections:
+            if STAGE_TARGET_KEY in block.targets:
+                continue
+            stage = pack.stage_of(block)
+            if stage:
+                block.targets[STAGE_TARGET_KEY] = dict(stage)
 
     def apply_acceptance_criteria(
         self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
@@ -390,8 +406,16 @@ class WorkflowExecution(ABC):
         if crash_blockers:
             blockers = {**blockers, **crash_blockers}
             accepted = False
+        stages = stage_results(
+            schema,
+            blockers,
+            known_issues=self._known_issues(),
+            model_status=model_status,
+        )
         schema.metadata.update(
-            build_acceptance_export(accepted, blockers, categories, model_status)
+            build_acceptance_export(
+                accepted, blockers, categories, model_status, stages
+            )
         )
         self.logger.info(
             "Acceptance: %s (%d blocker(s))",
@@ -428,6 +452,8 @@ class WorkflowExecution(ABC):
         return spec.get("status") if spec else None
 
     def inject_metadata(self, schema: ReportSchema) -> None:
+        # A checkpoint reaches here without format_results; tagging is idempotent.
+        self._tag_stages(schema)
         meta = schema.metadata
         meta["workflow"] = self.name
         meta["report_partial"] = False

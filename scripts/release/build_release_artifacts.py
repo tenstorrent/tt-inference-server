@@ -86,6 +86,7 @@ import sys
 import tempfile
 import time
 import zipfile
+from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -242,14 +243,18 @@ def gh_json_lines(endpoint: str, jq: str) -> list[dict]:
 def list_artifacts(repo: str, run_id: str) -> list[dict]:
     return gh_json_lines(
         f"repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100",
-        ".artifacts[] | {id, name, size_in_bytes, expired}",
+        ".artifacts[] | {id, name, size_in_bytes, expired, created_at}",
     )
 
 
 def list_jobs(repo: str, run_id: str) -> list[dict]:
+    # filter=latest: only the run's most recent attempt. A job that attempt did
+    # not re-execute (it passed earlier) is listed with its original window, so
+    # every job here is the latest execution of its leaf -- which is what
+    # successful_uploader needs to tell re-run bundles apart.
     return gh_json_lines(
-        f"repos/{repo}/actions/runs/{run_id}/jobs?per_page=100",
-        ".jobs[] | {id, name}",
+        f"repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100",
+        ".jobs[] | {id, name, conclusion, started_at, completed_at, run_attempt}",
     )
 
 
@@ -303,15 +308,105 @@ def device_from_jobs(
     the runner label pins its job, so such a run falls back to that name.
     """
     names = [job.get("name", "") for job in jobs]
-    impls = [impl]
-    if impl and not has_leaf_job_names(names):
-        impls.append(None)
-    for candidate in impls:
+    for candidate in _leaf_job_impls(names, impl):
         for name in names:
             device = device_from_ci_job_name(name, kind, model, runner, candidate)
             if device:
                 return device
     return None
+
+
+def _leaf_job_impls(names: list[str], impl: str | None) -> list[str | None]:
+    """Impl spellings to try for a leaf's job name: a run from before
+    ``<model>@<impl>`` job names also gave an impl's job the bare model token."""
+    if impl and not has_leaf_job_names(names):
+        return [impl, None]
+    return [impl]
+
+
+def jobs_for_leaf(
+    jobs: list[dict],
+    model: str,
+    runner: str,
+    kind: str = RELEASE_KIND,
+    impl: str | None = None,
+) -> list[dict]:
+    """The jobs whose name is this (model, runner[, impl]) leaf's job, matched
+    exactly as :func:`device_from_jobs` matches them."""
+    names = [job.get("name", "") for job in jobs]
+    for candidate in _leaf_job_impls(names, impl):
+        found = [
+            job
+            for job in jobs
+            if device_from_ci_job_name(
+                job.get("name", ""), kind, model, runner, candidate
+            )
+        ]
+        if found:
+            return found
+    return []
+
+
+def _parse_ts(value: str | None) -> datetime | None:
+    """A GitHub API timestamp (``2026-10-06T17:07:59Z``) as an aware datetime."""
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def successful_uploader(
+    artifact: dict, jobs: list[dict], model: str, kind: str = RELEASE_KIND
+) -> dict | None:
+    """The successful job that uploaded ``artifact``, or None.
+
+    Re-running a tt-shield run keeps every attempt's artifacts under the one run
+    id, and a re-run job re-uploads its bundle under the same name -- so the
+    name cannot say which attempt (cancelled, failed, passed) a bundle is from.
+    Its upload time can: it falls inside the run window of the job that
+    uploaded it. The job is matched by name as well as time, because parallel
+    jobs overlap and a failed attempt's bundle can land inside another leaf's
+    window. ``jobs`` holds the run's latest attempt only (:func:`list_jobs`).
+    """
+    created = _parse_ts(artifact.get("created_at"))
+    if created is None:
+        return None
+    runner = runner_of(artifact["name"], model, kind)
+    for job in jobs_for_leaf(jobs, model, runner, kind, impl_of(artifact["name"])):
+        start = _parse_ts(job.get("started_at"))
+        end = _parse_ts(job.get("completed_at"))
+        if (
+            job.get("conclusion") == "success"
+            and start is not None
+            and end is not None
+            and start <= created <= end
+        ):
+            return job
+    return None
+
+
+def prefer_latest_successful(
+    bundles: list[dict], jobs: list[dict], model: str, kind_of: dict[str, str]
+) -> list[dict]:
+    """Narrow equally valid bundles of one leaf to the one a successful job of
+    the run's latest attempt uploaded. ``bundles`` comes back unchanged when that
+    does not single one out, so the caller's ambiguity check still fires."""
+    uploaders = {
+        b["id"]: successful_uploader(b, jobs, model, kind_of[b["name"]])
+        for b in bundles
+    }
+    kept = [b for b in bundles if uploaders[b["id"]] is not None]
+    if len(kept) != 1:
+        return bundles
+    job = uploaders[kept[0]["id"]]
+    ignored = ", ".join(
+        f"{b['id']} ({b.get('created_at')})" for b in bundles if b is not kept[0]
+    )
+    print(
+        f"  ~ {len(bundles)} bundles for one leaf (tt-shield re-runs): using "
+        f"{kept[0]['id']} ({kept[0].get('created_at')}) from successful job "
+        f"{job['id']} (attempt {job.get('run_attempt')}); ignoring {ignored}"
+    )
+    return kept
 
 
 def token_in_names(names: list[str], device: str) -> bool:
@@ -485,12 +580,25 @@ def resolve_model(
                 rejected.append(f"{artifact['name']!r}: {exc}")
             else:
                 matching.append(artifact)
+        if len(matching) > 1:
+            matching = prefer_latest_successful(matching, jobs, model, kind_of)
         if len(matching) != 1:
             details = "; ".join(rejected) or "none"
+            found = "".join(
+                f"\n         - {a['id']} {a['name']} "
+                f"(uploaded {a.get('created_at') or 'at an unknown time'})"
+                for a in matching
+            )
+            hint = (
+                "\n       None of them, or more than one, was uploaded by a "
+                "successful job of the tt-shield run's latest attempt."
+                if len(matching) > 1
+                else ""
+            )
             sys.exit(
                 f"ERROR: expected one artifact for exact identity "
                 f"{expected_identity!r}, found {len(matching)}. "
-                f"Rejected candidates: {details}"
+                f"Rejected candidates: {details}{found}{hint}"
             )
         chosen[d] = matching[0]
     return chosen

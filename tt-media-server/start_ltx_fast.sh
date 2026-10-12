@@ -21,6 +21,13 @@ export LTX_YUV_EXPORT="${LTX_YUV_EXPORT:-1}"
 export CANARY_GATE_READINESS="${CANARY_GATE_READINESS:-true}"
 # Console/API display name — decoupled from the checkpoint (settings.model_weights_path).
 export SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-Lightricks/LTX-2.3-Fast}"
+# Persist job records so job ids survive restarts. Absolute path: the default
+# ./jobs.db would resolve against the systemd unit's WorkingDirectory.
+export ENABLE_JOB_PERSISTENCE="${ENABLE_JOB_PERSISTENCE:-true}"
+export JOB_DATABASE_PATH="${JOB_DATABASE_PATH:-/home/rsalman/ltx-media-server-jobs.db}"
+# Public deployment: keep /docs, /redoc and /openapi.json off. Set
+# ENVIRONMENT=development to expose the browser API UI for local debugging.
+export ENVIRONMENT="${ENVIRONMENT:-production}"
 export DEVICE="${DEVICE:-galaxy}"
 export MODEL="${MODEL:-LTX-2.3-distilled}"
 PORT="${PORT:-8000}"

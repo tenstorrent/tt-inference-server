@@ -112,6 +112,10 @@ DISPLAY_NAMES: Dict[str, str] = {
     "ratio_to_published": "Ratio to Published",
     "ratio_to_reference": "Ratio to Reference",
     "accuracy_check": "Accuracy Check",
+    "accuracy_rule": "Accuracy Rule",
+    "noise_n": "Noise n",
+    "noise_se": "Noise SE",
+    "noise_z": "Noise z",
     # Benchmarks report a performance-target verdict, not an accuracy check.
     "target_check": "Target Check",
     # Liveness / infra

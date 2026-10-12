@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, List, Optional
 from utils.url_helpers import build_base_url
 from workflow_module.engine_types import EvalLimitMode
 from workflow_module.engine_types import WorkflowVenvType
+from llm_module.request_overrides import resolve_request_body
 from workflow_module.venv_provisioner import get_venv_provisioner
 
 if TYPE_CHECKING:
@@ -26,6 +27,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 SMOKE_TEST_EVAL_LIMIT = 3
+# Client concurrency override (an int): replaces num_concurrent and its
+# device_model_spec.max_concurrency clamp. See build_eval_command.
+EVAL_CLIENT_CONCURRENCY_ENV = "TT_EVAL_CLIENT_CONCURRENCY"
 
 # Per-request budget reserved for the prompt when clamping max_gen_toks against
 # device_model_spec.max_context. A floor prevents pathological clamps on
@@ -225,6 +229,62 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
     return json.dumps({task.task_name: list(indices)})
 
 
+def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:
+    """request_body / thinking run through the lm-eval request-overrides
+    wrapper, which only the lm-eval adapters support."""
+    if task.workflow_venv_type in [
+        WorkflowVenvType.EVALS_VISION,
+        WorkflowVenvType.EVALS_AUDIO,
+    ]:
+        raise ValueError(
+            f"request_body/thinking on {task.task_name} needs "
+            "the lm-eval request-overrides wrapper, which lmms-eval tasks "
+            "cannot use"
+        )
+    from llm_module.lm_eval_request_overrides import SUPPORTED_EVAL_CLASSES
+
+    if task.eval_class not in SUPPORTED_EVAL_CLASSES:
+        raise ValueError(
+            f"request_body/thinking on {task.task_name}: eval_class "
+            f"{task.eval_class!r} is not one of the lm-eval adapters the "
+            f"request-overrides wrapper patches ({', '.join(SUPPORTED_EVAL_CLASSES)})"
+        )
+    if "chat_template_kwargs" in request_body and not task.use_chat_api:
+        raise ValueError(
+            f"{task.task_name}: chat_template_kwargs (thinking={task.thinking!r}) "
+            "only reach the server on the chat API; the completions API renders "
+            "the chat template client-side. Set use_chat_api=True."
+        )
+    thinking = getattr(task, "thinking", None)
+    if thinking is None:
+        return
+    # Warn when the serving entry's own switch is spelled differently: the
+    # override would then not flip what the server flips by default.
+    vllm_args = (
+        getattr(getattr(model_spec, "device_model_spec", None), "vllm_args", None) or {}
+    )
+    raw_defaults = vllm_args.get("default-chat-template-kwargs")
+    if not raw_defaults:
+        return
+    try:
+        defaults = (
+            json.loads(raw_defaults)
+            if isinstance(raw_defaults, str)
+            else dict(raw_defaults)
+        )
+    except (TypeError, ValueError):
+        return
+    if defaults and task.thinking_kwarg not in defaults:
+        logger.warning(
+            "%s: thinking=%s sets chat_template_kwargs[%r], but the serving entry's "
+            "default-chat-template-kwargs uses %s; set thinking_kwarg to match",
+            task.task_name,
+            thinking,
+            task.thinking_kwarg,
+            sorted(defaults),
+        )
+
+
 def build_eval_command(
     task: "EvalTask",
     model_spec,
@@ -262,7 +322,18 @@ def build_eval_command(
     )
 
     effective_max_concurrent = task.max_concurrent
-    if effective_max_concurrent and device_max_concurrency:
+    # Operator override for bring-your-own-server GPU runs, where the server's
+    # max_num_seqs is set by the operator, not by device_model_spec (the
+    # Colab GPU-reference runner sets both together). It changes only how
+    # many requests are in flight; prompts, sampling and scoring are the same.
+    client_override = os.environ.get(EVAL_CLIENT_CONCURRENCY_ENV)
+    if client_override and effective_max_concurrent:
+        logger.info(
+            f"{EVAL_CLIENT_CONCURRENCY_ENV}={client_override}: {task.task_name} "
+            f"num_concurrent {task.max_concurrent} -> {client_override}"
+        )
+        effective_max_concurrent = int(client_override)
+    elif effective_max_concurrent and device_max_concurrency:
         effective_max_concurrent = min(effective_max_concurrent, device_max_concurrency)
         if effective_max_concurrent != task.max_concurrent:
             logger.info(
@@ -342,9 +413,28 @@ def build_eval_command(
         lm_eval_exec = task_venv_path / "bin" / "lm_eval"
 
     lm_eval_prefix = [str(lm_eval_exec)]
+    request_body = resolve_request_body(task)
+    if request_body:
+        _check_request_overrides_supported(task, request_body, model_spec)
+        # One wrapper covers every payload patch for a task that opts into
+        # request overrides (body, seed drop, reasoning capture). Tasks without
+        # an override keep their existing launch path untouched, including the
+        # capture_reasoning flag, which the plain lm_eval entry point does not
+        # act on.
+        lm_eval_prefix = [
+            str(task_venv_path / "bin" / "python"),
+            str(Path(__file__).with_name("lm_eval_request_overrides.py")),
+            "--request-body",
+            json.dumps(request_body, sort_keys=True),
+        ]
+        if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+            lm_eval_prefix.append("--drop-server-seed")
+        if getattr(task, "capture_reasoning", False):
+            lm_eval_prefix.append("--preserve-reasoning")
+        lm_eval_prefix.append("--")
     # TODO: remove this once diffusiongemma vLLM can ignore the seed gen kwarg
     # https://github.com/tenstorrent/tt-inference-server/issues/4993
-    if not getattr(task, "propagate_seed_to_gen_kwargs", True):
+    elif not getattr(task, "propagate_seed_to_gen_kwargs", True):
         if task.workflow_venv_type in [
             WorkflowVenvType.EVALS_VISION,
             WorkflowVenvType.EVALS_AUDIO,
@@ -458,6 +548,12 @@ def build_eval_command(
             os.chdir(task_venv_path)
     if task.apply_chat_template:
         cmd.append("--apply_chat_template")  # Flag argument (no value)
+    # Only when the task sets it: None leaves the harness default (on under
+    # --apply_chat_template) and the command line unchanged.
+    if getattr(task, "fewshot_as_multiturn", None) is not None:
+        cmd.extend(
+            ["--fewshot_as_multiturn", "true" if task.fewshot_as_multiturn else "false"]
+        )
 
     # Add metadata parameter if specified (needed for tasks like RULER)
     if getattr(task, "custom_dataset_kwargs", None):

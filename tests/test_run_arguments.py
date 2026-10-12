@@ -191,6 +191,20 @@ class TestArgumentParsing:
         assert args.device == "n150"
         assert args.tt_device == "n150"
 
+    def test_ci_mode_keeps_an_explicit_limit_samples_mode(self, base_args):
+        """--ci-mode supplies the ci-nightly default only; an explicit preset wins."""
+        with patch("sys.argv", ["run.py"] + base_args + ["--ci-mode"]):
+            args = parse_arguments()
+        assert args.limit_samples_mode == "ci-nightly"
+        assert args.skip_system_sw_validation is True
+        with patch(
+            "sys.argv",
+            ["run.py"] + base_args + ["--ci-mode", "--limit-samples-mode", "ci-long"],
+        ):
+            args = parse_arguments()
+        assert args.limit_samples_mode == "ci-long"
+        assert args.skip_system_sw_validation is True
+
     @pytest.mark.parametrize(
         "missing_arg,remaining_args",
         [

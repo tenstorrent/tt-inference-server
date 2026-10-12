@@ -51,6 +51,9 @@ bool WorkerProcess::spawn(
   }
 
   if (child == 0) {
+    signal(SIGTERM, SIG_DFL);
+    signal(SIGINT, SIG_DFL);
+    // Close parent ends, run child main.
     reqWrite.reset();
     respRead.reset();
     childMain(reqRead.release(), respWrite.release());

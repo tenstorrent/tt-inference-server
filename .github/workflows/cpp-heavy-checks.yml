@@ -250,6 +250,178 @@ jobs:
             exit 1
           fi
 
+  cpp-server-embedding-mock-bench:
+    name: C++ Server Embedding Mock Benchmark
+    # Exercises the full HTTP -> EmbeddingService -> fork/pipe -> mock runner
+    # -> binary codec -> JSON response path under realistic load (8192-token
+    # text inputs, 32-way concurrency against a single worker). The mock
+    # runner is pure CPU math with no core pinning, so unlike the
+    # mock_pipeline bench this job runs fine on ubuntu-latest and reuses the
+    # cpp-build artifact instead of building in-job.
+    needs: cpp-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      no_proxy: "localhost,127.0.0.1,::1"
+    defaults:
+      run:
+        working-directory: tt-media-server
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download C++ build
+        uses: actions/download-artifact@v7
+        with:
+          name: cpp-server-build
+          path: tt-media-server/cpp_server
+
+      - name: Set up C++ build artifact
+        run: bash cpp_server/scripts/ci/setup_cpp_artifact.sh
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install Python test dependencies
+        run: bash cpp_server/scripts/ci/install_bench_client.sh
+
+      # ── Embedding mock benchmark ─────────────────────────────────────
+      - name: Start C++ server (embedding mock)
+        run: |
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "embedding mock"
+          cd cpp_server/build
+          MODEL_SERVICE=embedding MODEL_RUNNER_TYPE=embedding_mock DEVICE_IDS='(0)' \
+            ./tt_media_server_cpp -p 8000 -t 4 > ../../cpp_server_embedding_mock.log 2>&1 &
+          echo $! > ../../cpp_server.pid
+          cd ../..
+          bash cpp_server/scripts/ci/wait_for_liveness.sh --port 8000 --pid-file cpp_server.pid --label "embedding mock"
+
+      - name: Warm up embedding mock
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'BAAI/bge-large-en-v1.5' \
+            --tokenizer 'cpp_server/tokenizers/BAAI/bge-large-en-v1.5' \
+            --backend openai-embeddings \
+            --endpoint /v1/embeddings \
+            --dataset-name random \
+            --random-input-len 512 \
+            --num-prompts 64 \
+            --max-concurrency 16 \
+            --seed 0 \
+            > /dev/null
+
+      - name: Bench embedding mock
+        env:
+          OPENAI_API_KEY: 'your-secret-key'
+        run: |
+          vllm bench serve \
+            --model 'BAAI/bge-large-en-v1.5' \
+            --tokenizer 'cpp_server/tokenizers/BAAI/bge-large-en-v1.5' \
+            --backend openai-embeddings \
+            --endpoint /v1/embeddings \
+            --dataset-name random \
+            --random-input-len 8192 \
+            --num-prompts 4000 \
+            --max-concurrency 32 \
+            --seed 0 \
+            --save-result \
+            --result-filename "vllm-bench-embedding-mock.json" \
+            2>&1 | tee bench_embedding_mock_output.txt
+
+      # Graceful SIGTERM so EmbeddingService::stop() runs and emits the
+      # "Dispatch summary" line the batching check below parses.
+      - name: Stop embedding mock server
+        if: always()
+        run: |
+          PID="$([ -f cpp_server.pid ] && cat cpp_server.pid || true)"
+          [ -n "$PID" ] && kill "$PID" 2>/dev/null || true
+          [ -n "$PID" ] && bash cpp_server/scripts/ci/wait_for_command.sh \
+            --command "! kill -0 $PID 2>/dev/null" --label "embedding mock exit"
+          bash cpp_server/scripts/ci/wait_for_port_free.sh --port 8000 --label "embedding mock"
+
+      # ── Check thresholds ─────────────────────────────────────────────
+      - name: Check benchmark thresholds
+        run: |
+          CONFIG=cpp_server/scripts/ci/vllm_thresholds.json
+          CHECK=cpp_server/scripts/ci/check_vllm_result.py
+          THRESHOLD_LOG=benchmark_thresholds.log
+          FAIL=0
+          : > "$THRESHOLD_LOG"
+
+          set +e
+          python3 "$CHECK" --config "$CONFIG" --scenario embedding_mock \
+            --result vllm-bench-embedding-mock.json 2>&1 | tee -a "$THRESHOLD_LOG"
+          STATUS=${PIPESTATUS[0]}
+          set -e
+
+          if [[ "$STATUS" -ne 0 ]]; then
+            FAIL=1
+          fi
+          echo "BENCH_FAIL=$FAIL" >> "$GITHUB_ENV"
+          echo "BENCH_THRESHOLD_LOG=$THRESHOLD_LOG" >> "$GITHUB_ENV"
+
+      # The service logs ONE "Dispatch summary" line at shutdown with a batch
+      # size histogram ("batches: 495x8 1x4 ..."). Under 32-way concurrency
+      # against a single worker (max batch 8) the queue must stay deep enough
+      # that most requests ride in full batches — if batching collapsed to
+      # singles the pipeline overhead per request would regress silently even
+      # while latency thresholds still pass.
+      - name: Custom pipelining analysis
+        run: |
+          python3 cpp_server/scripts/ci/analyze_dispatch_summary.py \
+            cpp_server_embedding_mock.log \
+            --expected-max-batch-size 8 \
+            --min-full-batch-share 0.93
+
+      # ── Artifacts & logs ─────────────────────────────────────────────
+      - name: Show server logs
+        if: always()
+        run: |
+          echo "=== Embedding Mock Server Logs ==="
+          [ -f cpp_server_embedding_mock.log ] && cat cpp_server_embedding_mock.log || echo "No log"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: cpp-server-embedding-mock-bench-results
+          path: |
+            tt-media-server/vllm-bench-embedding-mock.json
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Upload server logs
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: cpp-server-embedding-mock-bench-logs
+          path: |
+            tt-media-server/cpp_server_embedding_mock.log
+          retention-days: 1
+          if-no-files-found: warn
+
+      - name: Check benchmark result
+        if: always()
+        run: |
+          if [[ "${BENCH_FAIL:-0}" -ne 0 ]]; then
+            LOG="${BENCH_THRESHOLD_LOG:-benchmark_thresholds.log}"
+            echo "::error::Benchmark threshold check failed. Details from $LOG:"
+            if [[ -f "$LOG" ]]; then
+              cat "$LOG"
+            else
+              echo "No benchmark threshold log found; see the 'Check benchmark thresholds' step."
+            fi
+            exit 1
+          fi
+
   cpp-server-prefill-decode-split:
     name: C++ Server Prefill/Decode Split Test
     # Self-hosted: this job launches 2-4 cpp_server processes (each -t 4)

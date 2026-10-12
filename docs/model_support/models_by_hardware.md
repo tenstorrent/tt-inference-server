@@ -76,12 +76,14 @@ This page lists all supported models organized by hardware type.
 | 🟢 Complete | Video | [Wan2.2-T2V-A14B-Diffusers](video/Wan2.2-T2V-A14B-Diffusers_p300x2.md) |
 | 🟡 Functional | Image | [Z-Image-Turbo](image/Z-Image-Turbo_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.1-8B](llm/Llama-3.1-8B_p300x2.md) |
+| 🟡 Functional | LLM | [Llama-3.1-8B-Instruct](llm/Llama-3.1-8B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Llama-3.3-70B-Instruct](llm/Llama-3.3-70B-Instruct_p300x2.md) |
 | 🟡 Functional | LLM | [Qwen3-32B](llm/Qwen3-32B_p300x2.md) |
 | 🛠️ Experimental | Embedding | [bge-m3](embedding/bge-m3_p300x2.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-0.6B](embedding/Qwen3-Embedding-0.6B_p300x2.md) |
 | 🛠️ Experimental | Embedding | [Qwen3-Embedding-4B](embedding/Qwen3-Embedding-4B_p300x2.md) |
 | 🛠️ Experimental | LLM | [diffusiongemma-26B-A4B-it](llm/diffusiongemma-26B-A4B-it_p300x2.md) |
+| 🛠️ Experimental | LLM | [gemma-4-12B-it](llm/gemma-4-12B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gemma-4-31B-it](llm/gemma-4-31B-it_p300x2.md) |
 | 🛠️ Experimental | LLM | [gpt-oss-120b](llm/gpt-oss-120b_p300x2.md) |
 | 🛠️ Experimental | LLM | [Qwen3.6-27B](llm/Qwen3.6-27B_p300x2.md) |

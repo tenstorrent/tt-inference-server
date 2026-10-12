@@ -3,11 +3,7 @@
 
 from llm_module.benchmark_configs import get_llm_configs
 from reference_config.benchmarking.benchmark_config import get_benchmark_config
-from reference_config.evals.eval_config import (
-    _eval_config_map,
-    accept_eval_score,
-    resolve_eval_reference,
-)
+from reference_config.evals.eval_config import _eval_config_map
 from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import EvalLimitMode, ModelStatusTypes, WorkflowVenvType
@@ -68,23 +64,9 @@ def test_qwen38_release_has_one_result_per_requested_eval_suite():
 
     terminal = tasks[1].agentic_eval_config
     swe = tasks[2].agentic_eval_config
-    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
+    assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 10
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 5
+    assert terminal.n_concurrent_trials == 10
+    assert swe.n_concurrent_trials == 5
     assert terminal.agent_timeout_sec == swe.agent_timeout_sec == 6 * 60 * 60
     assert swe.llm_timeout_sec == 60 * 60
-
-
-def test_qwen38_ci_eval_thresholds_are_exact_integer_counts():
-    tasks = _eval_config_map["Qwen/Qwen3.8-27B"].tasks
-    cases = [
-        (tasks[0], 10, 90.0, 80.0),
-        (tasks[1], 5, 80.0, 60.0),
-        (tasks[2], 5, 60.0, 40.0),
-    ]
-
-    for task, total, passing_score, failing_score in cases:
-        reference = resolve_eval_reference(task.score, EvalLimitMode.CI_NIGHTLY)
-        assert reference["tolerance"] == 0.0
-        assert accept_eval_score(reference, passing_score, n_total=total) is True
-        assert accept_eval_score(reference, failing_score, n_total=total) is False

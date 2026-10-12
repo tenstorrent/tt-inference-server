@@ -32,10 +32,13 @@ from workflows.llm_gauntlet_repo import (
 )
 
 _DOC = {
-    "schemaVersion": "2.7.0",
+    "schemaVersion": "3.1.0",
     "id": "d",
     "model": {"name": "Qwen/Qwen3-32B", "contextLength": 131072},
     "deployment": {"hardware": "WH GLX", "maxConcurrencyPerInstance": 32},
+    "stages": [
+        {"key": "stage-1", "name": "Stage 1", "progress": {"status": "not_started"}}
+    ],
 }
 
 

@@ -818,9 +818,12 @@ def parse_arguments():
 
     # indirectly set additional flags for CI-mode
     if args.ci_mode:
-        if "--limit-samples-mode" not in args:
+        # An explicit --limit-samples-mode (e.g. ci-long) wins; --ci-mode only
+        # supplies the ci-nightly default. (The old membership test checked the
+        # Namespace's attribute names, so it never matched and always overrode.)
+        if not args.limit_samples_mode:
             args.limit_samples_mode = "ci-nightly"
-        if "--skip-system-sw-validation" not in args:
+        if not args.skip_system_sw_validation:
             args.skip_system_sw_validation = True
 
     if args.eval_samples and args.limit_samples_mode:

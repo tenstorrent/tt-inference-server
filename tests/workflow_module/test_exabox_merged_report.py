@@ -428,3 +428,30 @@ def test_a_finished_report_is_not_flagged_partial(tmp_path):
 
     _, stats = merge_reports(tmp_path, tmp_path / "out")
     assert stats["partial_reports"] == []
+
+
+def test_merged_report_grades_each_stage_across_tests(tmp_path):
+    """Stage tags travel on the blocks, so the merge grades stages it never saw a document for."""
+    accuracy = _report("evals")
+    accuracy["sections"][0]["targets"]["stage"] = {
+        "key": "accuracy",
+        "name": "Accuracy",
+        "position": 1,
+    }
+    performance = _report("agentic", task="swe_bench", accuracy_check=3, score=10.0)
+    performance["sections"][0]["targets"]["stage"] = {
+        "key": "performance",
+        "name": "Performance",
+        "position": 2,
+    }
+    _write(tmp_path, "a", "report_evals_0_100.json", accuracy)
+    _write(tmp_path, "b", "report_agentic_0_200.json", performance)
+
+    result, stats = merge_reports(tmp_path, tmp_path / "out")
+
+    merged = json.loads(Path(result.json_path).read_text())
+    assert [(s["key"], s["status"]) for s in merged["acceptance_stages"]] == [
+        ("accuracy", "PASS"),
+        ("performance", "FAIL"),
+    ]
+    assert stats["accepted"] is False

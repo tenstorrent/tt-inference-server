@@ -127,6 +127,76 @@ def _command_model_kwargs(command):
 # --- eval command and model-specific request contracts -----------------------
 
 
+def test_fewshot_as_multiturn_none_keeps_the_command_line_unchanged():
+    """An unset fewshot_as_multiturn passes no flag, so every existing config
+    builds exactly the command it built before the field existed."""
+    from dataclasses import replace
+
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5)
+    assert task.fewshot_as_multiturn is None
+    baseline = [str(part) for part in _build_eval_test_command(task)]
+    assert "--fewshot_as_multiturn" not in baseline
+    assert "--apply_chat_template" in baseline
+    explicit_none = replace(task, fewshot_as_multiturn=None)
+    assert [str(part) for part in _build_eval_test_command(explicit_none)] == baseline
+
+
+@pytest.mark.parametrize("value, flag", [(False, "false"), (True, "true")])
+def test_fewshot_as_multiturn_is_passed_when_set(value, flag):
+    task = EvalTask(task_name="mmlu_pro", num_fewshot=5, fewshot_as_multiturn=value)
+    command = [str(part) for part in _build_eval_test_command(task)]
+    assert command[command.index("--fewshot_as_multiturn") + 1] == flag
+    baseline = [
+        str(part)
+        for part in _build_eval_test_command(
+            EvalTask(task_name="mmlu_pro", num_fewshot=5)
+        )
+    ]
+    assert [p for p in command if p not in ("--fewshot_as_multiturn", flag)] == baseline
+
+
+def test_client_concurrency_override_replaces_num_concurrent_and_clamp(monkeypatch):
+    """TT_EVAL_CLIENT_CONCURRENCY (bring-your-own-server GPU runs) sets
+    num_concurrent past the device_model_spec clamp; unset changes nothing."""
+
+    def num_concurrent():
+        command = [
+            str(p) for p in _build_eval_test_command(EvalTask(task_name="mmlu_pro"))
+        ]
+        args = dict(
+            i.split("=", 1)
+            for i in command[command.index("--model_args") + 1].split(",")
+        )
+        return args["num_concurrent"]
+
+    monkeypatch.delenv("TT_EVAL_CLIENT_CONCURRENCY", raising=False)
+    assert num_concurrent() == "1"  # clamped to max_concurrency=1
+    monkeypatch.setenv("TT_EVAL_CLIENT_CONCURRENCY", "")
+    assert num_concurrent() == "1"
+    monkeypatch.setenv("TT_EVAL_CLIENT_CONCURRENCY", "256")
+    assert num_concurrent() == "256"
+
+
+def test_mistral_7b_mmlu_pro_runs_single_turn():
+    """Mistral's template rejects consecutive user turns, which mmlu_pro's
+    multiturn few-shot layout produces (its examples carry the answer in the
+    user turn); only that task opts out."""
+    tasks = {
+        t.task_name: t
+        for t in _eval_config_map["mistralai/Mistral-7B-Instruct-v0.3"].tasks
+    }
+    assert tasks["mmlu_pro"].fewshot_as_multiturn is False
+    assert tasks["ifeval"].fewshot_as_multiturn is None
+    others = [
+        (repo, t.task_name)
+        for repo, cfg in _eval_config_map.items()
+        for t in cfg.tasks
+        if getattr(t, "fewshot_as_multiturn", None) is not None
+        and repo != "mistralai/Mistral-7B-Instruct-v0.3"
+    ]
+    assert others == []
+
+
 class TestEvalCommand:
     @pytest.mark.parametrize("field", ["wall_clock_timeout_seconds", "max_attempts"])
     @pytest.mark.parametrize("value", [0, -1, True, 1.5])
@@ -522,6 +592,64 @@ class TestResultLoading:
         assert results == {"gpqa": {"acc,none": 0.9}}
         assert counts == ({"gpqa": new_count} if new_count is not None else {})
 
+    def test_mmlu_pro_group_count_feeds_the_noise_rule(self, tmp_path):
+        """lm-eval writes n-samples for mmlu_pro's 14 leaf subjects only. Its
+        group exact_match is the size-weighted mean of the leaves (one binomial
+        over every question), so the group's n is the leaf sum, which
+        _entry_sample_counts derives through group_subtasks and the noise rule
+        then uses for the single-key mmlu_pro score."""
+        subjects = {  # the real MMLU-Pro test split sizes (12,032 questions)
+            "biology": 717, "business": 789, "chemistry": 1132,
+            "computer_science": 410, "economics": 844, "engineering": 969,
+            "health": 818, "history": 381, "law": 1101, "math": 1351,
+            "other": 924, "philosophy": 499, "physics": 1299, "psychology": 798,
+        }  # fmt: skip
+        leaves = {f"mmlu_pro_{name}": n for name, n in subjects.items()}
+        correct = {leaf: n // 9 for leaf, n in leaves.items()}
+        group = sum(correct.values()) / sum(leaves.values())
+        results = {
+            "mmlu_pro": {"exact_match,custom-extract": group, "alias": "mmlu_pro"}
+        }
+        results.update(
+            {
+                leaf: {"exact_match,custom-extract": correct[leaf] / n}
+                for leaf, n in leaves.items()
+            }
+        )
+        path = tmp_path / "results_mmlu_pro.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "results": results,
+                    "configs": {
+                        leaf: {"task": leaf, "dataset_path": "TIGER-Lab/MMLU-Pro"}
+                        for leaf in leaves
+                    },
+                    "group_subtasks": {"mmlu_pro": list(leaves)},
+                    "n-samples": {
+                        leaf: {"original": n, "effective": n}
+                        for leaf, n in leaves.items()
+                    },
+                }
+            )
+        )
+
+        _, counts = mod.load_eval_results([str(path)])
+
+        assert counts["mmlu_pro"] == 12032
+        # Size-weighted: the group score is pooled correct / pooled n.
+        assert group == pytest.approx(
+            sum(
+                results[leaf]["exact_match,custom-extract"] * n
+                for leaf, n in leaves.items()
+            )
+            / 12032
+        )
+        assert (
+            mod.binomial_noise_n(["exact_match,custom-extract"], "mmlu_pro", counts)
+            == 12032.0
+        )
+
 
 # --- orchestration -----------------------------------------------------------
 
@@ -852,6 +980,84 @@ def test_harness_window_keeps_a_block_of_headroom_below_max_context():
     assert max_length == 131072 - 64
 
 
+def test_multilevel_result_keys_are_not_replaced_by_metric_autodetect():
+    # leaderboard_math_hard is scored as the mean of per-subtask paths. The
+    # group entry itself carries an aggregate exact_match, which the
+    # metric-mismatch auto-detect used to substitute as a bare string --
+    # score_multilevel_keys_mean then asserted and the task scored 0.
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = [
+        "leaderboard_math_algebra_hard",
+        "leaderboard_math_counting_and_prob_hard",
+        "leaderboard_math_geometry_hard",
+        "leaderboard_math_intermediate_algebra_hard",
+        "leaderboard_math_num_theory_hard",
+        "leaderboard_math_prealgebra_hard",
+        "leaderboard_math_precalculus_hard",
+    ]
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
+    )
+    results = {"leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"}}
+    results.update({name: {"exact_match,none": 0.02} for name in subtasks})
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, ratio, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
+    assert ratio == pytest.approx(2.0 / task.score.published_score)
+    assert check == ReportCheckTypes.PASS
+
+
+def test_group_task_subtasks_survive_loading_and_score(tmp_path):
+    # leaderboard_math_hard's results file lists the group first and its seven
+    # subtasks as siblings. The loader used to keep only the first entry, so
+    # score_multilevel_keys_mean never saw the subtasks and the task scored 0.
+    from reference_config.evals.eval_utils import score_multilevel_keys_mean
+
+    subtasks = ["leaderboard_math_algebra_hard", "leaderboard_math_geometry_hard"]
+    payload = {
+        "results": {
+            "leaderboard_math_hard": {"exact_match,none": 0.5, "alias": "math"},
+            **{
+                name: {"alias": f" - {name}", "exact_match,none": 0.02}
+                for name in subtasks
+            },
+        },
+        "configs": {
+            name: {"task": name, "dataset_path": "math"}
+            for name in ["leaderboard_math_hard", *subtasks]
+        },
+    }
+    path = tmp_path / "results_2026-10-05T10-17-59.json"
+    path.write_text(json.dumps(payload))
+    results, _ = mod.load_eval_results([str(path)])
+    assert set(subtasks) <= set(results)
+
+    task = SimpleNamespace(
+        task_name="leaderboard_math_hard",
+        score=SimpleNamespace(
+            score_func=score_multilevel_keys_mean,
+            score_func_kwargs={
+                "result_keys": [(name, "exact_match,none") for name in subtasks],
+                "unit": "percent",
+            },
+            published_score=1.87,
+        ),
+    )
+    ref = {"reference_score": None, "tolerance": 0.05}
+    score, _, _, check = mod._score_one(task, results, "leaderboard_math_hard", ref)
+    assert score == pytest.approx(2.0)
+    assert check == ReportCheckTypes.PASS
+
+
 @pytest.mark.parametrize("impl_id", ["tt_transformers", "llama31_8b_qb2"])
 def test_llama31_longbench_preserves_generation_settings(
     impl_id, tmp_path, monkeypatch
@@ -992,3 +1198,126 @@ def test_qb2_longbench_rejects_wrong_tokenizer_before_launch(tmp_path):
             mod._prepare_eval_tokenizer(
                 SimpleNamespace(model_spec=spec), task, tmp_path
             )
+
+
+class TestEvalRequestOverrides:
+    """request_body / thinking / capture_reasoning route through the
+    lm-eval request-overrides wrapper; the command carries the override."""
+
+    @staticmethod
+    def _wrapper_args(command):
+        assert command[1].endswith("llm_module/lm_eval_request_overrides.py")
+        assert command[0].endswith("/bin/python")
+        sep = command.index("--")
+        return command[2:sep], command[sep + 1 :]
+
+    def test_thinking_off_is_a_request_level_chat_template_kwarg(self):
+        task = EvalTask(task_name="r1_gpqa_diamond", use_chat_api=True, thinking=False)
+        command = _build_eval_test_command(task)
+        ours, theirs = self._wrapper_args(command)
+        assert ours == [
+            "--request-body",
+            '{"chat_template_kwargs": {"enable_thinking": false}}',
+        ]
+        assert theirs[0] == "--tasks" and "r1_gpqa_diamond" in theirs
+        # the server-side gen_kwargs string is untouched
+        assert "chat_template_kwargs" not in command[command.index("--gen_kwargs") + 1]
+
+    def test_explicit_request_body_and_seed_drop_share_the_wrapper(self):
+        task = EvalTask(
+            task_name="model_owned",
+            use_chat_api=True,
+            request_body={"top_k": 20},
+            propagate_seed_to_gen_kwargs=False,
+        )
+        ours, _ = self._wrapper_args(_build_eval_test_command(task))
+        assert ours == ["--request-body", '{"top_k": 20}', "--drop-server-seed"]
+
+    def test_capture_reasoning_alone_keeps_the_old_launch_path(self):
+        # Existing entries with capture_reasoning=True must not change
+        # behaviour until they opt into request overrides.
+        command = _build_eval_test_command(
+            EvalTask(
+                task_name="r1_gpqa_diamond", use_chat_api=True, capture_reasoning=True
+            )
+        )
+        assert command[0].endswith("/bin/lm_eval")
+
+    def test_capture_reasoning_rides_along_with_an_override(self):
+        task = EvalTask(
+            task_name="r1_gpqa_diamond",
+            use_chat_api=True,
+            thinking=False,
+            capture_reasoning=True,
+        )
+        ours, _ = self._wrapper_args(_build_eval_test_command(task))
+        assert ours[-1] == "--preserve-reasoning"
+
+    def test_default_task_keeps_the_plain_lm_eval_entry_point(self):
+        command = _build_eval_test_command(EvalTask(task_name="plain"))
+        assert command[0].endswith("/bin/lm_eval")
+
+    def test_thinking_needs_the_chat_api(self):
+        with pytest.raises(ValueError, match="use_chat_api=True"):
+            _build_eval_test_command(
+                EvalTask(task_name="r1_gpqa_diamond", thinking=False)
+            )
+
+    def test_lmms_eval_tasks_are_rejected(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_BASE", "restore-me")
+        task = EvalTask(
+            task_name="vision_task",
+            workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+            request_body={"top_k": 20},
+        )
+        with pytest.raises(ValueError, match="request-overrides"):
+            _build_eval_test_command(task)
+
+    def test_mismatched_serving_switch_warns(self, caplog):
+        task = EvalTask(task_name="r1_gpqa_diamond", use_chat_api=True, thinking=False)
+        model_spec = SimpleNamespace(
+            model_id="m",
+            model_name="m",
+            hf_model_repo="org/m",
+            device_model_spec=SimpleNamespace(
+                max_context=32768,
+                max_concurrency=1,
+                eval_max_retries=0,
+                vllm_args={"default-chat-template-kwargs": '{"thinking": true}'},
+            ),
+        )
+        with caplog.at_level("WARNING"):
+            build_eval_command(task, model_spec, "P300x2", "/tmp/evals", 8000)
+        assert "set thinking_kwarg to match" in caplog.text
+
+
+def test_noise_rule_lives_in_a_dependency_free_module():
+    """llm_eval_tests re-exports the rule from workflow_module.eval_noise, which
+    tools outside the eval venvs (scripts/gpu_reference_colab) import without
+    third-party packages."""
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from test_module.llm_tests import llm_eval_tests as mod
+    from workflow_module import eval_noise
+
+    for name in (
+        "binomial_noise_n",
+        "noise_aware_check",
+        "NOISE_Z",
+        "BINOMIAL_METRICS",
+    ):
+        assert getattr(mod, name) is getattr(eval_noise, name)
+    repo = Path(__file__).resolve().parents[3]
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import workflow_module.eval_noise as m; "
+        "third = {'requests', 'pydantic', 'yaml', 'jinja2', 'numpy'} & set(sys.modules); "
+        "assert not third, third; print(m.NOISE_Z)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-I", "-c", code, str(repo)], capture_output=True, text=True
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "1.96"

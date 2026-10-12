@@ -46,7 +46,7 @@ from llm_module.drivers.swo_bench_agentic_traces import (
 )
 from llm_module.parsers.aiperf_agentic_traces import (
     AIPerfAgenticTracesParser,
-    build_targets_block,
+    build_targets_blocks,
 )
 from llm_module.parsers.swo_bench_agentic_traces import SwoBenchAgenticTracesParser
 from reference_config.agentic_traces.agentic_traces_config import (
@@ -1065,14 +1065,12 @@ class TestBuildTargetsBlock:
         return payload
 
     def test_none_without_expectations(self):
-        block = build_targets_block([self._payload(expected_sweep=None)])
-
-        assert block is None
+        assert build_targets_blocks([self._payload(expected_sweep=None)]) == []
 
     def test_block_shape_and_verdicts(self):
-        block = build_targets_block([self._payload()], device="super_cluster")
+        (block,) = build_targets_blocks([self._payload()], device="super_cluster")
 
-        assert block is not None
+        assert "stage" not in block.targets
         assert block.kind == "agentic_traces_targets"
         assert block.targets["model"] == "moonshotai/Kimi-K2.7-Code"
         assert block.targets["device"] == "super_cluster"
@@ -1090,11 +1088,33 @@ class TestBuildTargetsBlock:
         assert block.data["missing_concurrencies"] == [64]
 
     def test_data_survives_a_json_round_trip(self):
-        block = build_targets_block([self._payload()], device="super_cluster")
+        (block,) = build_targets_blocks([self._payload()], device="super_cluster")
 
         restored = Block.from_dict(json.loads(json.dumps(block.to_dict())))
 
         assert restored.data == block.data
+
+    def test_one_block_per_delivery_stage(self):
+        """A multi-stage document's sweep is graded per stage, each block tagged."""
+        poc = {"key": "poc", "name": "PoC", "position": 1}
+        ga = {"key": "ga", "name": "GA", "position": 2}
+        expected = [
+            {"concurrency": 1, "ttftMeanMs": 800.0, "stage": poc},
+            {"concurrency": 4, "ttftMeanMs": 800.0, "stage": ga},
+        ]
+        payloads = [
+            self._payload(concurrency=1, expected_sweep=expected),
+            self._payload(concurrency=4, expected_sweep=expected),
+        ]
+
+        blocks = build_targets_blocks(payloads, device="super_cluster")
+
+        assert [b.targets["stage"] for b in blocks] == [poc, ga]
+        assert [[p["concurrency"] for p in b.data["points"]] for b in blocks] == [
+            [1],
+            [4],
+        ]
+        assert len({b.id for b in blocks}) == 2
 
     def test_grades_a_partial_sweep(self):
         """A sweep that lost a point still grades the ones that ran."""
@@ -1107,7 +1127,7 @@ class TestBuildTargetsBlock:
             self._payload(concurrency=1, expected_sweep=expected),
             self._payload(concurrency=4, expected_sweep=expected),
         ]
-        block = build_targets_block(payloads)
+        (block,) = build_targets_blocks(payloads)
 
         assert [p["concurrency"] for p in block.data["points"]] == [1, 4]
         assert block.data["missing_concurrencies"] == [64]
@@ -1118,7 +1138,7 @@ class TestBuildTargetsBlock:
             self._payload(concurrency=1),
             self._payload(concurrency=4),
         ]
-        block = build_targets_block(payloads)
+        (block,) = build_targets_blocks(payloads)
 
         assert [p["concurrency"] for p in block.data["points"]] == [1]
 

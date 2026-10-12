@@ -68,6 +68,7 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    stage_results,
     task_failure_blockers,
 )
 from report_module.acceptance_criteria import ACCEPTANCE_EXPORT_KEYS
@@ -509,8 +510,9 @@ def merge_reports(
             "exabox:no_reports": "No mergeable test reports were found for this run.",
         }
 
+    stages = stage_results(schema, blockers, model_status=model_status)
     schema.metadata.update(
-        build_acceptance_export(accepted, blockers, categories, model_status)
+        build_acceptance_export(accepted, blockers, categories, model_status, stages)
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
