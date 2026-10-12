@@ -102,7 +102,8 @@
       "Qwen/Qwen2.5-Math-7B-Instruct",
       "tiiuae/Falcon3-7B-Instruct",
       "NousResearch/Hermes-3-Llama-3.1-8B",
-      "allenai/Llama-3.1-Tulu-3-8B"
+      "allenai/Llama-3.1-Tulu-3-8B",
+      "Qwen/Qwen3-8B-Base"
     ]
   },
   "available_markers": {
@@ -1089,6 +1090,16 @@
       "id_name": "allenai--Llama-3.1-Tulu-3-8B",
       "weights": [
         "allenai/Llama-3.1-Tulu-3-8B"
+      ]
+    },
+    "Qwen/Qwen3-8B-Base": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-8B-Base",
+      "weights": [
+        "Qwen/Qwen3-8B-Base"
       ]
     }
   },
