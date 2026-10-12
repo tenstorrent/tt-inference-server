@@ -3,6 +3,11 @@
 # math equivalence checker (same scorer as r1_aime24 / r1_math500). Scored as avg@4
 # (4 sampled answers per problem, averaged), as MathArena reports HMMT. Manual/full runs only:
 # at 64K output it took 15.5 h in CI (run 37253570139); nightly uses k2_hmmt_feb_2026.
+# lm-eval clones each request `repeats` times and the pinned harness copies its model
+# seed into every OpenAI payload, which would make the 4 samples identical. Run this
+# task from an EvalTask with propagate_seed_to_gen_kwargs=False (the no-server-seed
+# wrapper), as run 37253570139 did: 24 of 33 problems then had 4 distinct traces and
+# the rest were identical only because all their samples hit the output cap (empty).
 task: k2_hmmt_feb_2026_avg4
 dataset_path: MathArena/hmmt_feb_2026
 test_split: train

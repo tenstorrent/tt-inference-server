@@ -6458,8 +6458,8 @@ _eval_config_list = [
                 },
                 # 64K output: at 32K, 8/40 GPQA and 13/33 HMMT traces hit the cap with no
                 # final answer (run 36837441412); the card asks for >= 32768.
-                # Model-card sampling. No top_k: served by the model's exact
-                # host sampler (K2_VLLM_ALLOW_HOST_SAMPLING=1 in the spec).
+                # Model-card sampling (temperature 1.0, top_p 0.95, no top_k), served
+                # by the model's device sampler (sample_on_device_mode: all in the spec).
                 # stream=false is required by lm-eval's chat-completions parser.
                 gen_kwargs={
                     "stream": "false",
@@ -6510,7 +6510,8 @@ _eval_config_list = [
                 },
                 # All 33 problems, 1 sample each, nightly. The avg@4 variant
                 # (task k2_hmmt_feb_2026_avg4, same include_path) took 15.5 h at 64K
-                # in CI (run 37253570139), so it is for manual/full runs only.
+                # in CI (run 37253570139), so it is for manual/full runs only; it must
+                # run with propagate_seed_to_gen_kwargs=False (see the task YAML).
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 33,
                     EvalLimitMode.SMOKE_TEST: 2,
@@ -6542,7 +6543,7 @@ _eval_config_list = [
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     # Model-card sampling (temperature 1.0, top_p 0.95, no top_k),
-                    # served by the model's host sampler as for the evals above.
+                    # served by the model's device sampler as for the evals above.
                     # 32K output is the card's minimum reasoning budget; 128K input
                     # plus 32K output stays well inside the 524288 context.
                     agent_kwargs={
