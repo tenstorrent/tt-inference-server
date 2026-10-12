@@ -4389,6 +4389,18 @@ _eval_config_list = [
                         "unit": "percent",
                     },
                 ),
+                # lm-eval's humaneval_instruct ends the chat with an assistant
+                # gen_prefix ("```python\n<prompt>") to be continued. vLLM's
+                # mistral tokenizer (tokenizer_mode auto -> mistral) refuses
+                # add_generation_prompt=True after a final assistant message, so
+                # every request was a 400 and pass@1 graded 0 (Shield run
+                # 38216483981: 164/164 __INFERENCE_ERROR__, 0.089 s/task). Ask
+                # the server to continue the final message instead, which is
+                # what the prefix means.
+                request_body={
+                    "add_generation_prompt": False,
+                    "continue_final_message": True,
+                },
                 apply_chat_template=True,
                 max_concurrent=8,
                 gen_kwargs={
