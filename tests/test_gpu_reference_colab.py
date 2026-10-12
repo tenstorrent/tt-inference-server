@@ -1501,7 +1501,7 @@ def test_serving_stack_follows_the_architecture():
     assert (muse["vllm"], muse["transformers"]) == ("0.28.0", "5.15.0")
     assert muse["env"] == default["env"]
     gemma = gpuref.serving_stack({"architectures": ["Gemma4ForConditionalGeneration"]})
-    assert (gemma["vllm"], gemma["transformers"]) == ("0.20.0", "5.15.0")
+    assert (gemma["vllm"], gemma["transformers"]) == ("0.20.0", "5.5.3")
     assert gpuref.serving_stack(None) == default  # no config: the default
     forced = gpuref.serving_stack(None, vllm="0.14.1", transformers="4.57.6")
     assert (forced["vllm"], forced["transformers"]) == ("0.14.1", "4.57.6")
@@ -1511,12 +1511,12 @@ def test_serving_stack_follows_the_architecture():
 
 def test_fingerprint_needs_the_requested_stack_installed():
     stack = gpuref.serving_stack({"architectures": ["Gemma4ForConditionalGeneration"]})
-    assert gpuref.stack_installed(stack, {"vllm": "0.20.0", "transformers": "5.15.0"})
+    assert gpuref.stack_installed(stack, {"vllm": "0.20.0", "transformers": "5.5.3"})
     assert not gpuref.stack_installed(
-        stack, {"vllm": "0.20.0", "transformers": "5.16.0"}
+        stack, {"vllm": "0.20.0", "transformers": "5.15.0"}
     )
     assert not gpuref.stack_installed(
-        stack, {"vllm": "0.13.0", "transformers": "5.15.0"}
+        stack, {"vllm": "0.13.0", "transformers": "5.5.3"}
     )
     default = gpuref.serving_stack(None)  # no transformers pin: any resolves
     assert gpuref.stack_installed(default, {"vllm": "0.13.0", "transformers": "4.57.6"})

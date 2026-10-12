@@ -139,7 +139,7 @@ GPUREF_RESULTS_ROOT=~/gpuref-results scripts/gpu_reference_colab/colab_gpu_refer
 - **Default:** vLLM 0.13.0 (TTIS's own client pin), transformers unpinned, `VLLM_USE_FLASHINFER_SAMPLER=0`.
 - **`ARCH_STACKS`:** maps an architecture vLLM 0.13.0 cannot serve to the first vLLM release that supports it, and to the transformers the TT side lowers it with. Today:
   - Muse-Glimmer: vLLM 0.28.0, transformers 5.15.0;
-  - Gemma 4: vLLM 0.20.0, transformers 5.15.0.
+  - Gemma 4: vLLM 0.20.0, transformers 5.5.3 (the version vLLM 0.20.0 is tested with; 5.15.0 fails to start it).
 
 The plan prints each model's stack. The runner builds one venv per stack on first use, so one sweep handles mixed stacks in a single session. The serve plan, `provenance.json` (`stack`, installed `packages`, `vllm_env`) and the eval fingerprint all record the stack. A run's fingerprint is kept only if the installed packages are the requested stack.
 

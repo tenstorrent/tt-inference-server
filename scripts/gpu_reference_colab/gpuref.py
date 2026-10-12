@@ -631,9 +631,12 @@ ARCH_STACKS = {
     # vllm-project/vllm#51655 (first in v0.28.0); TT side lowers with 5.15.0.
     "MuseGlimmerForConditionalGeneration": {"vllm": "0.28.0", "transformers": "5.15.0"},
     "MuseGlimmerForCausalLM": {"vllm": "0.28.0", "transformers": "5.15.0"},
-    # gemma4 / gemma4_mm (first in v0.20.0); TT side lowers with 5.15.0.
-    "Gemma4ForConditionalGeneration": {"vllm": "0.20.0", "transformers": "5.15.0"},
-    "Gemma4ForCausalLM": {"vllm": "0.20.0", "transformers": "5.15.0"},
+    # gemma4 / gemma4_mm (first in v0.20.0), with the transformers v0.20.0 is
+    # tested with (requirements/test/cuda.txt: 5.5.3). Not 5.15.0: its per-layer
+    # configs raise AmbiguousGlobalPerLayerAttributeError on vLLM 0.20.0's
+    # config.head_dim, so the server never starts (gemma-4 run, 2026-10-12).
+    "Gemma4ForConditionalGeneration": {"vllm": "0.20.0", "transformers": "5.5.3"},
+    "Gemma4ForCausalLM": {"vllm": "0.20.0", "transformers": "5.5.3"},
 }  # fmt: skip
 
 
