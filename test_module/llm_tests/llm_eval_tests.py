@@ -710,6 +710,57 @@ def _apply_samples_subset_count(task, runtime_config, sample_counts: dict) -> di
     return counts
 
 
+# The pinned lm-eval API adapters log a request that failed after its retries
+# as this response text, which the task then scores as an (always wrong)
+# answer.
+INFERENCE_ERROR_MARKER = "__INFERENCE_ERROR__"
+
+
+def count_inference_errors(result_files: List[str]) -> tuple[int, int]:
+    """(errored, logged) per-sample rows beside ``result_files``.
+
+    A row is errored when any of its responses is the adapter's inference-error
+    text. Only ``resps``/``filtered_resps`` are read, never the prompt.
+    """
+    errored = logged = 0
+    seen: set = set()
+    for result_file in result_files:
+        for sample_file in sorted(Path(result_file).parent.glob("samples_*.jsonl")):
+            if sample_file in seen:
+                continue
+            seen.add(sample_file)
+            with sample_file.open(encoding="utf-8") as handle:
+                for line in handle:
+                    if not line.strip():
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except ValueError:
+                        continue
+                    logged += 1
+                    answers = json.dumps([row.get("resps"), row.get("filtered_resps")])
+                    if INFERENCE_ERROR_MARKER in answers:
+                        errored += 1
+    return errored, logged
+
+
+def mark_incomplete(blocks: List[Block], errored: int, logged: int) -> None:
+    """An eval with errored requests did not measure the model: FAIL it as
+    incomplete. Acceptance treats ``incomplete`` as non-waivable (no model-
+    status tier, priority or known issue turns it into a pass)."""
+    reason = (
+        f"{errored}/{logged} samples are inference errors "
+        f"({INFERENCE_ERROR_MARKER}); the score is not a measurement"
+    )
+    for block in blocks:
+        block.data["status"] = TestStatus.FAIL.value
+        block.data["incomplete"] = True
+        block.data["accuracy_check"] = ReportCheckTypes.FAIL
+        block.data["inference_error_samples"] = errored
+        block.data["samples_logged"] = logged
+        block.data["reason"] = reason
+
+
 def _score_task(
     ctx: MediaContext,
     task,
@@ -730,6 +781,16 @@ def _score_task(
         elapsed_seconds=elapsed_seconds,
     )
     if task_blocks:
+        errored, logged = count_inference_errors(result_files)
+        if errored:
+            logger.error(
+                "task=%s: %d/%d samples are inference errors; grading it "
+                "incomplete (FAIL), not as a score.",
+                task.task_name,
+                errored,
+                logged,
+            )
+            mark_incomplete(task_blocks, errored, logged)
         return task_blocks
     # Ran but scored nothing (command failed or results unparseable) —
     # v1's report path silently drops these; we surface a FAIL block.
