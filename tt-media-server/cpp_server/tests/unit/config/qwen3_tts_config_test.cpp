@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-//
-// Which Qwen3-TTS release a deployment serves: parsing, reading a checkpoint's
-// config.json, finding it the way tt-metal's weights.checkpoint_dir() would,
-// and the precedence between explicit settings, the file and the hub id.
 
 #include <gtest/gtest.h>
 #include <unistd.h>

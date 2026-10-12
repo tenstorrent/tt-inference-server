@@ -60,20 +60,7 @@ def iter_speaker_clips(
     min_seconds: float = None,
     max_seconds: float = None,
 ):
-    """Yield ``(speaker_id, wav_bytes, text)`` for ``count`` distinct speakers.
-
-    Streams the dataset with audio decode disabled, so ``wav_bytes`` is the
-    row's original (soundfile-readable) file content — ready to base64 into a
-    TTS ``reference_audio`` field without any audio backend. One clip per
-    speaker, first come first served, deterministic for a fixed split.
-    ``text`` is the clip's normalized transcript.
-
-    ``min_seconds``/``max_seconds`` skip clips outside that duration (a
-    speaker whose first clip is skipped can still contribute a later one).
-    Cloning wants a few seconds of speech, and some servers cap the clip
-    length; the bounds also bound the length of the texts, since each text is
-    a clip's transcript.
-    """
+    """Yield ``(speaker_id, wav_bytes, text)`` for ``count`` distinct speakers."""
     from datasets import load_dataset
 
     dataset = load_dataset(

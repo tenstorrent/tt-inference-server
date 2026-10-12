@@ -19,22 +19,11 @@
 namespace tt::runners::qwen3_tts {
 
 namespace detail {
-/** The embedded-Python half (interpreter, ttnn device, pipeline). Kept behind
- *  this declaration so pybind11 types never leak into headers. */
+/** Embedded-Python state, opaque so pybind11 stays out of headers. */
 struct PythonState;
 }  // namespace detail
 
-/**
- * Qwen3-TTS worker runner: drives tt-metal's
- * `models.demos.audio.qwen3_tts.tt.ttnn_qwen3_pipeline` through an embedded
- * interpreter, one utterance at a time (batch 1).
- *
- * Consumes the shared TTS task queue and answers on this worker's audio queue
- * with PCM16 chunks followed by exactly one terminal message (completed, error
- * or cancelled) per task. The codec decodes a whole utterance at once, so all
- * of an utterance's audio arrives together after generation; the cancel queue
- * is polled once per generated frame (12.5 Hz) to abort early.
- */
+/** Qwen3-TTS worker runner: tt-metal's pipeline in embedded Python, batch 1. */
 class Qwen3TtsRunner : public IRunner {
  public:
   Qwen3TtsRunner(config::TtsConfig config, ipc::tts::TtsTaskQueue* taskQueue,
@@ -45,9 +34,7 @@ class Qwen3TtsRunner : public IRunner {
   Qwen3TtsRunner(const Qwen3TtsRunner&) = delete;
   Qwen3TtsRunner& operator=(const Qwen3TtsRunner&) = delete;
 
-  /** Open the device, load the release's weights, check they are the release
-   *  this deployment was configured for, and speak one short utterance so
-   *  kernels compile before the worker reports ready. */
+  /** Load and verify the release, then compile kernels on one utterance. */
   bool warmup() override;
   void stop() override;
   const char* runnerType() const override { return "Qwen3TtsRunner"; }

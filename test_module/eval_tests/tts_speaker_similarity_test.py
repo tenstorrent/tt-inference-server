@@ -2,25 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Speaker-similarity (SECS) eval for voice-cloning TTS.
-
-For each of ``sample_count`` distinct LibriTTS-R speakers: send the speaker's
-clip as the voice to clone, synthesize a text the clip does NOT contain (each
-speaker reads the next speaker's sentence, so content overlap cannot inflate
-the score), embed both the reference clip and the synthesized audio with a
-pinned speaker-verification model, and score their cosine similarity. The gate
-is margin-based — cloned audio must sit measurably closer to the reference
-than a baseline voice saying the same text does (the server's default voice,
-or a clone of another speaker for servers without one) — see the calibration
-comment at the threshold constants below.
-
-The request/response format comes from ``tts_client`` (``tts_api`` target):
-the Python media server by default, or Qwen3-TTS on the C++ server.
-
-WER (tts_quality_test) is blind to identity: cloning could silently fall back
-to the default voice and still transcribe perfectly. SECS is the metric that
-catches that.
-"""
+"""Speaker-similarity (SECS) eval for voice-cloning TTS."""
 
 import asyncio
 import logging
@@ -30,54 +12,18 @@ from .._libritts import iter_speaker_clips
 from .._test_common import BaseTest
 from .tts_client import SynthesizedAudio, VoiceClip, decode_wav_file, make_tts_client
 
-# Pinned speaker-verification encoder. transformers + torch are already eval
-# dependencies, so this adds no new packages; the checkpoint is cached in
-# HF_HOME after the first run.
+# Pinned speaker-verification encoder; transformers + torch are already eval deps.
 SPEAKER_ENCODER_REPO = "microsoft/unispeech-sat-base-plus-sv"
 ENCODER_SAMPLE_RATE = 16000
 
 DEFAULT_SAMPLE_COUNT = 8
 
-# What the cloned output's similarity is compared against (targets key
-# ``secs_baseline``; by default the first one the deployment supports):
-#
-# * default_voice: the same text, same seed, without the reference clip.
-#   Needs a server with a default voice.
-# * cross_speaker: the same text cloned from a DIFFERENT speaker's clip, scored
-#   against the first speaker's clip. For servers that cannot speak without a
-#   clip (a Qwen3-TTS Base deployment). Same seed and text, so the pair again
-#   differs only in conditioning; if cloning ignores the reference the two
-#   outputs are the same voice and the margin collapses to ~0.
+# cross_speaker: clone the same text from another speaker's clip (no default voice).
 BASELINE_DEFAULT_VOICE = "default_voice"
 BASELINE_CROSS_SPEAKER = "cross_speaker"
 SECS_BASELINES = (BASELINE_DEFAULT_VOICE, BASELINE_CROSS_SPEAKER)
 
-# Gate calibration (p300x2, 2026-09-07, 8 LibriTTS-R test.clean speakers,
-# measured on a voice-cloning TTS model no longer carried in this repo).
-# The thresholds below are a starting point, not a universal bar: re-measure
-# them for each model that registers this task (targets ``secs_floor`` and
-# ``margin_threshold``, set from the model's EvalTask.model_kwargs).
-# x-vector cosines are NOT calibrated to an absolute scale — the default
-# (uncloned) voice already scores mean 0.760 (max 0.879) against arbitrary
-# reference clips, while cloned outputs score mean 0.877. An absolute
-# threshold can therefore barely separate working from broken cloning. The
-# primary gate is the MARGIN: for every speaker the eval synthesizes the same
-# text twice (with and without reference_audio, same seed) and requires
-# cloned audio to sit closer to the reference than the default voice does.
-# Measured mean margin +0.117; a cloning regression (output ignores the
-# reference) collapses it to ~0. Ground-truth check: the same clips/texts/seeds
-# through that model's CPU reference implementation scored mean SECS 0.888 /
-# margin +0.130, i.e. the TT deployment was at reference parity.
-#
-# The absolute floor catches degenerate (non-speech) output. Measured:
-# garbage audio scores mean 0.30-0.55 against the reference clips (erratic,
-# not near zero — single pairs reach 0.91), so 0.65 sits above the worst
-# garbage mean and well below the working mean (0.877).
-#
-# These defaults belong to the default_voice baseline. The cross_speaker
-# baseline has its own scale (another real speaker sits closer to the
-# reference than a default voice does); its Qwen3-TTS calibration lives with
-# that model's EvalConfig in reference_config/evals/eval_config.py.
+# default_voice calibration (p300x2, 8 speakers): SECS 0.877, margin +0.117.
 DEFAULT_SECS_FLOOR = 0.65
 DEFAULT_MARGIN_THRESHOLD = 0.05
 DEFAULT_DATASET_SPLIT = "test.clean"
@@ -86,23 +32,14 @@ logger = logging.getLogger(__name__)
 
 
 def cross_speaker_partner(index: int, count: int) -> int:
-    """Speaker whose clone is the cross-speaker baseline for speaker ``index``.
-
-    The previous speaker: never ``index`` itself, and (for count > 2) never
-    the next speaker, whose transcript is the text being spoken.
-    """
+    """Speaker whose clone is the cross-speaker baseline for speaker ``index``."""
     if count < 2:
         raise ValueError("cross-speaker baseline needs at least two speakers")
     return (index - 1) % count
 
 
 def summarize_secs(results, secs_floor: float, margin_threshold: float) -> dict:
-    """Aggregate per-sample ``secs``/``baseline_secs``/``margin`` into the gate.
-
-    A sample counts only when both halves of its pair were scored; the gate
-    needs at least one such sample, a mean SECS at or above the floor and a
-    mean margin at or above the threshold.
-    """
+    """Aggregate per-sample ``secs``/``baseline_secs``/``margin`` into the gate."""
     valid = [r for r in results if r.get("margin") is not None]
     mean_secs = sum(r["secs"] for r in valid) / len(valid) if valid else None
     mean_baseline = (
@@ -191,8 +128,7 @@ class TTSSpeakerSimilarityTest(BaseTest):
         try:
             results = []
             for i, (speaker, _wav, _own_text) in enumerate(clips):
-                # Speak the NEXT speaker's sentence: same text domain, but never
-                # the text of the reference clip itself.
+                # The next speaker's sentence, never the reference clip's own text.
                 text = clips[(i + 1) % len(clips)][2]
                 ref_embedding = await asyncio.to_thread(
                     self._embed, decode_wav_file(voices[i].wav_bytes)
@@ -250,9 +186,7 @@ class TTSSpeakerSimilarityTest(BaseTest):
         }
 
     async def _sample_secs(self, index, ref_embedding, text, voice):
-        """Synthesize ``text`` (in ``voice``, or the default voice when None)
-        and score it against the reference embedding. Same seed either way, so
-        the cloned/baseline pair differs only in conditioning."""
+        """Synthesize ``text`` in ``voice`` (default voice when None) and score it."""
         audio = await self._client.synthesize(self.url, text, seed=index, voice=voice)
         if audio is None:
             logger.error(

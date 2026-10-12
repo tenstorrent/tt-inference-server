@@ -2,14 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Unit coverage for the TTS eval runners.
-
-Focuses on the pure decision logic (WER -> score, WER -> accuracy_check,
-dependency preflight, the SECS baselines and margin gate), the shape of the
-emitted eval Block and the EvalConfig -> eval-target wiring. The heavy
-scoring models (Whisper, the speaker encoder, UTMOS) and live servers are
-exercised on hardware, not here.
-"""
+"""Unit coverage for the TTS eval runners."""
 
 from __future__ import annotations
 
@@ -234,8 +227,6 @@ class TestSecsBaselines:
         result = asyncio.run(test._run_specific_test_async())
 
         assert result["baseline"] == "cross_speaker"
-        # Every request clones, and speaker i's baseline is the previous
-        # speaker's clone of the same text.
         assert all(voice is not None for _, voice in client.calls)
         for i, row in enumerate(result["per_sample"]):
             assert row["baseline_speaker"] == f"spk{(i - 1) % 4}"
@@ -316,8 +307,7 @@ class TestTaskTargets:
 
 class TestQwen3EvalConfig:
     def _tasks(self, repo):
-        # EVAL_CONFIGS only holds repos of the active (prod by default) model
-        # catalog; Qwen3-TTS is in the dev catalog, so read the full map.
+        # EVAL_CONFIGS holds only the active catalog; Qwen3-TTS is in dev.
         from reference_config.evals.eval_config import _eval_config_map
 
         return {t.task_name: t for t in _eval_config_map[repo].tasks}

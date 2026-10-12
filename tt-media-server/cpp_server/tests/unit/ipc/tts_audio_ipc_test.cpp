@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-//
-// The TTS IPC wire after the Qwen3-TTS additions: the task's optional voice
-// fields and the audio message's PCM16 samples survive serialization, messages
-// without them (TTS-2) still round-trip unchanged, the runner's chunks fit the
-// audio queue, and the bytes the WAV writer streams for a PCM16 chunk are its
-// samples, unconverted.
 
 #include <gtest/gtest.h>
 

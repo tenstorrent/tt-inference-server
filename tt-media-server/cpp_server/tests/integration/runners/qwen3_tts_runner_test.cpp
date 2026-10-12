@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-// Qwen3TtsRunner against a fake tt-metal: the runner's embedded interpreter
-// imports a stand-in `ttnn`, `torch` and `models.demos.audio.qwen3_tts`
-// written to a temp directory, so the C++ side of the runner (task intake,
-// cancels, PCM16 chunking, the terminal message, metrics) runs without a
-// device. The counterpart of blaze_tts_runner_test.cpp, whose schedulers play
-// the same role for the Blaze runner.
+// Qwen3TtsRunner against a fake tt-metal Python package, without a device.
 
 #include "runtime/runners/qwen3_tts/qwen3_tts_runner.hpp"
 
@@ -99,8 +94,7 @@ def from_numpy(array):
     return Tensor(array)
 )py";
 
-// The release is a module global so a test can make the checkpoint disagree
-// with the deployment (see setCheckpointRelease()).
+// KIND is a global so setCheckpointRelease() can make it disagree.
 constexpr const char* FAKE_WEIGHTS = R"py(
 KIND = "custom_voice"
 SIZE = "1b7"
@@ -118,9 +112,7 @@ def checkpoint_dir():
     return "/fake/qwen3-tts"
 )py";
 
-// Text drives behaviour: "fail" raises, "silent" ends before the first frame,
-// "slow" generates long enough to be cancelled, anything else speaks
-// FRAMES frames. Every call is recorded in `calls` for the test to inspect.
+// "fail" raises, "silent" yields no frame, "slow" runs long enough to cancel.
 constexpr const char* FAKE_PIPELINE = R"py(
 import time
 
@@ -247,8 +239,7 @@ class RunnerHarness {
     audioQueue.remove();
   }
 
-  /** Every message for `taskId` up to and including its terminal one; empty
-   *  when the terminal message does not arrive in time. */
+  /** Messages for `taskId` through its terminal one; empty on timeout. */
   std::vector<ipc::tts::TtsAudioChunkMessage> collect(uint32_t taskId) {
     std::vector<ipc::tts::TtsAudioChunkMessage> messages;
     const auto deadline =
@@ -278,8 +269,7 @@ class RunnerHarness {
   std::thread thread;
 };
 
-/** One recorded call of the fake pipeline: str() of each argument, "None"
- *  for None. Plain strings, so it outlives the GIL it was read under. */
+/** One recorded fake-pipeline call: str() of each argument. */
 using FakeCall = std::map<std::string, std::string>;
 
 class Qwen3TtsRunnerIntegrationTest : public ::testing::Test {
@@ -291,8 +281,7 @@ class Qwen3TtsRunnerIntegrationTest : public ::testing::Test {
     fakeRoot = fs::temp_directory_path() / uniqueName("qwen3_tts_fake_metal");
     writeFile(fakeRoot / "ttnn" / "__init__.py", FAKE_TTNN);
     writeFile(fakeRoot / "torch" / "__init__.py", FAKE_TORCH);
-    // Regular packages, so they win over tt-metal's namespace `models` even
-    // if a real checkout is also on sys.path.
+    // Regular packages win over tt-metal's namespace `models` on sys.path.
     for (const auto* dir :
          {"models", "models/demos", "models/demos/audio",
           "models/demos/audio/qwen3_tts", "models/demos/audio/qwen3_tts/tt"}) {
@@ -307,13 +296,10 @@ class Qwen3TtsRunnerIntegrationTest : public ::testing::Test {
     ::setenv("TT_METAL_HOME", fakeRoot.c_str(), 1);
     ::setenv("TT_PYTHON_PATH", fakeRoot.c_str(), 1);
 
-    // Started here rather than by the runner so a missing numpy (which the
-    // runner's pybind11 arrays need) skips instead of failing warmup. The
-    // runner supports an interpreter someone else started.
+    // Started here so a missing numpy skips instead of failing warmup.
     py::initialize_interpreter();
     try {
-      // First on sys.path before anything imports `models` or `ttnn`, so the
-      // fakes are what the runner (and this test) get from sys.modules.
+      // Before anything imports `models` or `ttnn`, so the fakes are cached.
       py::module_::import("sys").attr("path").attr("insert")(0,
                                                              fakeRoot.string());
       py::module_::import("numpy");
@@ -334,8 +320,7 @@ class Qwen3TtsRunnerIntegrationTest : public ::testing::Test {
     if (!pythonReady) GTEST_SKIP() << skipReason;
     setCheckpointRelease("custom_voice");
 
-    // Own the segment name so the test never touches a running server's, and
-    // create it main-side before the runner attaches, as WorkerManager does.
+    // A private segment name, so the test never touches a running server's.
     ASSERT_EQ(::setenv("TT_WORKER_METRICS_SHM",
                        uniqueName("qwen3_tts_metrics").c_str(), 1),
               0);
@@ -349,8 +334,7 @@ class Qwen3TtsRunnerIntegrationTest : public ::testing::Test {
     py::module_::import(PIPELINE_MODULE).attr("reset")();
   }
 
-  /** What the fake checkpoint reports as its release
-   *  (weights.model_kind()). */
+  /** What the fake checkpoint's weights.model_kind() reports. */
   static void setCheckpointRelease(const char* kind) {
     py::gil_scoped_acquire gil;
     py::module_::import(WEIGHTS_MODULE).attr("KIND") = kind;
@@ -431,8 +415,6 @@ TEST_F(Qwen3TtsRunnerIntegrationTest, StreamsPcm16ChunksThenOneTerminal) {
   EXPECT_TRUE(terminal.isFinal());
   EXPECT_EQ(terminal.finishReason(), TtsFinishReason::Completed);
   EXPECT_TRUE(terminal.error.empty());
-  // No voice clip and no worker-side prompt compile: both stages report "did
-  // not run", which the parent skips.
   EXPECT_EQ(terminal.voiceEncodeUs, 0u);
   EXPECT_EQ(terminal.promptCompileUs, 0u);
 
@@ -458,8 +440,7 @@ TEST_F(Qwen3TtsRunnerIntegrationTest, PublishesCodecTokensAndVocodedAudio) {
     ASSERT_FALSE(harness.collect(2).empty());
   }
 
-  // One codec token per codebook per frame, under the same voice_source
-  // labels BlazeTtsRunner uses; warmup is not counted.
+  // One codec token per codebook per frame; warmup is not counted.
   EXPECT_EQ(codecTokens(tts_layout::VoiceSource::Default),
             CODEC_TOKENS_PER_UTTERANCE);
   EXPECT_EQ(codecTokens(tts_layout::VoiceSource::Description),
@@ -494,8 +475,7 @@ TEST_F(Qwen3TtsRunnerIntegrationTest, CloneReportsVoiceEncodeTime) {
   auto messages = harness.collect(1);
   ASSERT_FALSE(messages.empty());
   EXPECT_EQ(messages.back().finishReason(), TtsFinishReason::Completed);
-  // Building the clone reference is the worker's voice_encode stage, carried
-  // on the terminal message as BlazeTtsRunner carries its encoder time.
+  // Building the clone reference is the worker's voice_encode stage.
   EXPECT_GT(messages.back().voiceEncodeUs, 0u);
   EXPECT_EQ(messages.back().promptCompileUs, 0u);
   EXPECT_EQ(lastArg("build_clone_reference", "x_vector_only"), "True");
@@ -523,8 +503,6 @@ TEST_F(Qwen3TtsRunnerIntegrationTest, CloneReportsVoiceEncodeTime) {
 TEST_F(Qwen3TtsRunnerIntegrationTest, CancelBeforeDequeueSkipsGeneration) {
   RunnerHarness harness(makeConfig(config::Qwen3TtsRelease::CUSTOM_VOICE));
 
-  // The parent broadcasts a cancel to every worker, possibly before the task
-  // reaches one; the runner must still honour it once the task arrives.
   harness.cancelQueue.push(7);
   auto cancelled = makeTask(7, "never spoken");
   cancelled.speaker = "ryan";

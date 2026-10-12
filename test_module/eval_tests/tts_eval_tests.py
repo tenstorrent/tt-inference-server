@@ -36,11 +36,7 @@ TTS_SECS_DEPS = TTS_QUALITY_DEPS + ("soundfile",)
 # Naturalness scores clips with a torch.hub MOS predictor (needs torchaudio).
 TTS_NATURALNESS_DEPS = TTS_QUALITY_DEPS + ("soundfile", "torchaudio")
 
-# EvalConfig task names this runner knows how to execute. A model's EvalConfig
-# lists the subset that applies to it: SECS only for voice-cloning
-# deployments. WER (TTSQualityTest) speaks only the Python media server's
-# verbose_json contract; SECS and naturalness go through tts_client and also
-# speak Qwen3-TTS on the C++ server.
+# WER speaks only the Python media server's contract; SECS/naturalness use tts_client.
 TASK_WER = "tts_generation"
 TASK_SECS = "tts_speaker_similarity"
 TASK_NATURALNESS = "tts_naturalness"
@@ -77,20 +73,12 @@ def _resolve_eval_tasks(ctx: MediaContext) -> list:
     return list(tasks) if tasks else []
 
 
-# EvalTask.model_kwargs keys that are not eval targets. EVALS_META tasks get
-# add_bos_token injected for lm-eval; the TTS evals have no lm-eval model.
+# EVALS_META injects add_bos_token for lm-eval; it is not a TTS eval target.
 _NON_TARGET_MODEL_KWARGS = frozenset({"add_bos_token"})
 
 
 def _task_targets(task) -> dict:
-    """Eval targets for a SECS/naturalness task, from its ``model_kwargs``.
-
-    A TTS task has no lm-eval model to configure, so ``model_kwargs`` carries
-    the eval client's targets instead: the request adapter (``tts_api`` and
-    its options, see ``tts_client.make_tts_client``) and the model's
-    calibrated thresholds. Empty for models that rely on the module defaults
-    (the Python media server contract and #5196's calibration).
-    """
+    """Eval targets for a SECS/naturalness task, from its ``model_kwargs``."""
     kwargs = getattr(task, "model_kwargs", None) or {}
     return {k: v for k, v in kwargs.items() if k not in _NON_TARGET_MODEL_KWARGS}
 
@@ -284,12 +272,7 @@ def _run_tts_secs_eval(ctx: MediaContext, task) -> dict:
 
 
 def _run_secs_task(ctx: MediaContext, task) -> Block:
-    """Speaker-similarity eval (task_name=tts_speaker_similarity) -> one Block.
-
-    Applicability is config-driven: register the task only for deployments
-    that can clone a voice (``reference_audio`` on the Python media server, a
-    Base release of Qwen3-TTS on the C++ server).
-    """
+    """Speaker-similarity eval (task_name=tts_speaker_similarity) -> one Block."""
     missing = _missing_deps(TTS_SECS_DEPS)
     if missing:
         reason = f"TTS speaker-similarity deps unavailable: {', '.join(missing)}"
@@ -327,8 +310,6 @@ def _run_secs_task(ctx: MediaContext, task) -> Block:
         accuracy_check = (
             ReportCheckTypes.PASS if result.get("success") else ReportCheckTypes.FAIL
         )
-        # Same 0..100 scale as the intelligibility score (cosine is -1..1, but
-        # negatives never occur for speech-vs-speech; clamp for safety).
         score = round(max(0.0, mean_secs) * 100.0, 2)
     logger.info(
         "TTS SECS eval: mean_secs=%s mean_margin=%s valid_samples=%s -> score=%s check=%s",

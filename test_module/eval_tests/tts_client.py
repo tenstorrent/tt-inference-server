@@ -2,30 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Request/response adapters for the TTS evals.
-
-The speaker-similarity and naturalness evals only need one operation from a
-deployment: "say this text, optionally in the voice of this clip, and give me
-the audio". Two server contracts implement it differently:
-
-* ``media_server`` (default): the Python tt-media-server. JSON request with a
-  per-request ``seed`` and the clip as base64 ``reference_audio``; JSON
-  response whose ``audio`` field is a base64 WAV. Every model has a default
-  voice, and cloning is optional.
-* ``qwen3_cpp``: Qwen3-TTS on the C++ tt-media-server. JSON request
-  (``text``/``speaker``/``language``/``description``) or, to clone, a
-  multipart form whose first file part is the clip. The response is a
-  streamed PCM16 WAV (24 kHz mono) whose RIFF/data sizes are 0xFFFFFFFF. One
-  release per deployment decides how the voice is chosen: ``custom_voice``
-  (a built-in ``speaker``), ``base`` (a clip is required, no default voice)
-  or ``voice_design`` (a ``description``). There is no per-request seed:
-  reproducibility comes from the server's ``TTS_QWEN3_SEED``, which reseeds
-  sampling before every request.
-
-The evals pick an adapter with :func:`make_tts_client` from their targets
-(``tts_api`` plus adapter options), which ``tts_eval_tests`` fills from the
-model's ``EvalTask.model_kwargs``.
-"""
+"""Request/response adapters for the TTS evals (media_server, qwen3_cpp)."""
 
 from __future__ import annotations
 
@@ -47,12 +24,10 @@ TTS_API_MEDIA_SERVER = "media_server"
 TTS_API_QWEN3_CPP = "qwen3_cpp"
 
 QWEN3_RELEASES = ("base", "custom_voice", "voice_design")
-# Voice-only clone: the clip's speaker embedding alone. In-context clone: the
-# clip's codec tokens and its transcript are also put in the prompt.
+# in_context also puts the clip's codec tokens and transcript in the prompt.
 QWEN3_CLONE_MODES = ("voice_only", "in_context")
 
-# Output shorter than this is a failed sample: the C++ server reports errors
-# that happen after the 200 by ending the stream early, usually with no audio.
+# Shorter output is a failed sample: post-200 errors end the C++ stream early.
 MIN_AUDIO_SECONDS = 0.3
 
 _STREAMING_SIZE = 0xFFFFFFFF
@@ -114,8 +89,6 @@ class MediaServerTTSClient(TTSClient):
         payload = {
             "text": text,
             "response_format": "json",
-            # Deterministic per sample position so reruns reproduce
-            # bit-identical audio on the same deployment.
             "seed": seed,
         }
         if voice is not None:
@@ -144,11 +117,7 @@ class MediaServerTTSClient(TTSClient):
 
 
 class Qwen3CppTTSClient(TTSClient):
-    """Qwen3-TTS on the C++ media server: JSON or multipart in, streamed WAV out.
-
-    ``seed`` is ignored (the server has none per request; set
-    ``TTS_QWEN3_SEED`` on the server for reproducible runs).
-    """
+    """Qwen3-TTS on the C++ media server: JSON or multipart in, streamed WAV out."""
 
     def __init__(
         self,
@@ -284,12 +253,7 @@ def decode_wav_file(wav_bytes: bytes) -> SynthesizedAudio:
 
 
 def parse_pcm16_wav_header(data: bytes) -> Tuple[int, int, int]:
-    """Walk the RIFF chunks of a PCM16 WAV.
-
-    Returns ``(sample_rate, channels, data_offset)``. Accepts a streaming
-    header whose RIFF and data sizes are 0xFFFFFFFF; the payload is then
-    everything after the data chunk header.
-    """
+    """Return ``(sample_rate, channels, data_offset)`` of a PCM16 WAV."""
     if len(data) < 12 or data[0:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise ValueError("not a RIFF/WAVE stream")
     pos = 12
@@ -320,12 +284,7 @@ def parse_pcm16_wav_header(data: bytes) -> Tuple[int, int, int]:
 
 
 def decode_streamed_wav(data: bytes) -> SynthesizedAudio:
-    """Decode a (possibly streaming-header) PCM16 WAV to mono float32.
-
-    The data chunk's declared size is ignored: a streamed response declares
-    0xFFFFFFFF and simply ends, so the payload is whatever follows the
-    header, truncated to whole frames.
-    """
+    """Decode a (possibly streaming-header) PCM16 WAV to mono float32."""
     import numpy as np
 
     sample_rate, channels, offset = parse_pcm16_wav_header(data)

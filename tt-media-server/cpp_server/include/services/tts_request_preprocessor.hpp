@@ -15,9 +15,6 @@ namespace tt::services {
  *
  * The preprocessor owns request validation, text prompt tokenization, and
  * voice-reference PCM normalization before the task crosses into worker IPC.
- * Qwen3-TTS templates its own prompt in the worker, so for it the
- * preprocessor validates the request against the served release and passes
- * the raw fields through instead of compiling TTS-2 prompt tokens.
  */
 class TtsRequestPreprocessor {
  public:

@@ -11,23 +11,15 @@
 
 #include "ipc/tts_ipc.hpp"
 
-/** The Python-free parts of the Qwen3-TTS runner, split out so they can be
- *  unit tested without an interpreter. */
+/** The Python-free parts of the Qwen3-TTS runner, unit tested on their own. */
 namespace tt::runners::qwen3_tts {
 
-/**
- * Split one utterance's PCM16 samples into audio-queue messages of at most
- * `chunkSamples` samples each, indexed from 0. Empty input yields no message.
- */
+/** Split PCM16 samples into audio-queue messages of <= `chunkSamples`. */
 std::vector<ipc::tts::TtsAudioChunkMessage> splitIntoChunks(
     uint32_t taskId, const std::vector<int16_t>& samples, size_t chunkSamples,
     uint32_t sampleRateHz);
 
-/**
- * Remembers recently cancelled task ids. The parent broadcasts every cancel to
- * every worker, possibly before the task is even dequeued, so the set is
- * bounded: the oldest ids fall out once it is full.
- */
+/** Recent cancels, bounded since the parent broadcasts them to every worker. */
 class CancelledTaskSet {
  public:
   explicit CancelledTaskSet(size_t capacity) : capacity(capacity) {}

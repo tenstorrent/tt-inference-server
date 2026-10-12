@@ -129,9 +129,7 @@ struct TtsAudioChunkMessage {
   uint16_t channels = 0;
   std::vector<uint16_t> samplesBf16;
   std::string error;
-  // PCM16 samples, for runners whose decoder already produces them
-  // (Qwen3-TTS). Mutually exclusive with samplesBf16; the parent writes them to
-  // the client unconverted.
+  // Qwen3-TTS PCM16; mutually exclusive with samplesBf16, sent unconverted.
   std::vector<int16_t> samplesPcm16;
 
   // Worker-side conditioning durations for this task, in microseconds. Carried

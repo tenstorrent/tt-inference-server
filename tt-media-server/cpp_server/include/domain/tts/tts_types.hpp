@@ -34,10 +34,7 @@ struct TtsRequest : tt::domain::BaseRequest {
   std::string text;
   std::optional<std::string> description;
   std::optional<VoiceSample> voiceSample;
-  // Optional voice controls. Which ones a deployment accepts depends on the
-  // model it serves (see qwen3_tts_request_validator.hpp); TTS-2 ignores them.
-  // `speaker` names a built-in voice, `language` the language to speak, and
-  // `referenceText` is the transcript of the voice sample.
+  // Qwen3-TTS voice controls; referenceText is the voice sample's transcript.
   std::optional<std::string> speaker;
   std::optional<std::string> language;
   std::optional<std::string> referenceText;
@@ -55,9 +52,7 @@ struct TtsRequest : tt::domain::BaseRequest {
     return request;
   }
 
-  /** The text fields of a multipart/form-data request (the voice sample is a
-   *  file part, decoded by the controller). `ParamMap` is any string->string
-   *  map with find()/end(), e.g. drogon's MultiPartParser::getParameters(). */
+  /** The text fields of a multipart/form-data request. */
   template <typename ParamMap>
   static TtsRequest fromFormFields(const ParamMap& params, uint32_t taskId) {
     auto field = [&params](const char* name) -> std::optional<std::string> {
@@ -108,16 +103,13 @@ struct TtsTask {
   std::vector<uint32_t> promptTokens;
   std::vector<int16_t> voiceWavPcm;
   TtsGenerationParams generation;
-  // Raw voice controls for runners that template their own prompt (Qwen3-TTS);
-  // empty for TTS-2, which gets promptTokens instead.
+  // Raw voice controls for Qwen3-TTS, which templates its own prompt.
   std::optional<std::string> speaker;
   std::optional<std::string> language;
   std::optional<std::string> referenceText;
 };
 
-/** Audio produced by the decoder for one streamed chunk. Exactly one of the
- *  two sample vectors is filled: BF16 bit patterns (TTS-2) or PCM16 samples
- *  (Qwen3-TTS), which go to the client as they are. */
+/** One streamed chunk; exactly one of the BF16 / PCM16 vectors is filled. */
 struct TtsAudioChunk {
   uint32_t task_id = 0;
   uint32_t chunkIndex = 0;

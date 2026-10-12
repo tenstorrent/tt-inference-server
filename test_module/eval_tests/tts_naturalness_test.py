@@ -2,19 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent AI ULC
 
-"""Naturalness (predicted MOS) eval for TTS.
-
-Synthesizes a fixed battery of LibriTTS-R sentences (default voice, seeded;
-or, on a server that cannot speak without a clip, cloned from LibriTTS-R
-speakers) and scores each clip with UTMOS22-strong, a neural MOS predictor trained on
-human listening-test ratings of synthesized speech. Covers the failure class
-WER and SECS are both blind to: output that is intelligible and keeps the
-speaker's timbre but sounds degraded (vocoder buzz, broken prosody, clipping).
-
-Scores are predictor-relative, not absolute truth: gate against a baseline
-measured for THIS model on THIS predictor version, and re-calibrate when
-either changes.
-"""
+"""Naturalness (predicted MOS, UTMOS22-strong) eval for TTS."""
 
 import asyncio
 import logging
@@ -36,12 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 def naturalness_battery(clips, cloned: bool):
-    """Return ``[(text, voice_or_None)]`` for the synthesis battery.
-
-    Default voice: each clip's own transcript, no clip. Cloned (servers with
-    no default voice): speaker i's clip reads speaker i+1's transcript, so
-    the battery is the same set of texts and never a clip's own words.
-    """
+    """Return ``[(text, voice_or_None)]``; a clone never reads its own clip's words."""
     if not cloned:
         return [(text, None) for _, _, text in clips]
     return [

@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-//
-// The parent-side half of Qwen3-TTS serving: parsing the optional request
-// fields (JSON and multipart), rejecting requests the served release cannot
-// take (each is an HTTP 400 before streaming starts), and the preprocessor
-// passing raw fields through instead of compiling TTS-2 prompt tokens.
 
 #include <gtest/gtest.h>
 #include <json/json.h>
@@ -320,8 +315,7 @@ TEST(Qwen3TtsPreprocessorTest, PassesRawFieldsWithoutCompilingTtsTwoTokens) {
 }
 
 TEST(Qwen3TtsPreprocessorTest, TtsTwoStillCompilesItsPrompt) {
-  // The same text-only request on a TTS-2 deployment goes to the prompt
-  // compiler, which needs the tokenizer this config does not have.
+  // TTS-2 compiles a prompt, which needs the tokenizer this config lacks.
   auto cfg = qwen3Config(Qwen3TtsRelease::CUSTOM_VOICE);
   cfg.runner_type = ModelRunnerType::TT_TTS;
   const tt::services::TtsRequestPreprocessor preprocessor(cfg);

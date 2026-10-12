@@ -11,9 +11,7 @@
 #include "ipc/tts_ipc.hpp"
 #include "runtime/worker/tts_metrics_layout.hpp"
 
-/** Metric attribution shared by the TTS runners (BlazeTtsRunner,
- *  Qwen3TtsRunner), so every TTS runner labels and times requests the same
- *  way. */
+/** Metric attribution shared by the TTS runners. */
 namespace tt::runners::tts {
 
 /** Microseconds elapsed since `start`, saturating at uint32 (~71 min) so a

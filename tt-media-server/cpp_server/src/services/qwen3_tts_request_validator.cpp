@@ -214,9 +214,7 @@ void RequestValidator::validate(const domain::tts::TtsRequest& request) const {
 RequestRules RequestValidator::currentRules() const {
   std::lock_guard<std::mutex> lock(mutex);
   if (!checkpointListsKnown) {
-    // Throttled: until the worker has downloaded the checkpoint, each attempt
-    // is a few failed stat() calls, but there is no reason to repeat them per
-    // request.
+    // Throttled: lookups fail until the worker downloads the checkpoint.
     const auto now = std::chrono::steady_clock::now();
     if (now - lastLookup >= LOOKUP_INTERVAL) {
       lastLookup = now;
@@ -236,8 +234,7 @@ void RequestValidator::loadCheckpointLists() const {
   }
   checkpointListsKnown = true;
   if (checkpoint->release && *checkpoint->release != rules.release) {
-    // The worker refuses to warm up on a mismatch, so this deployment serves
-    // nothing; keep the configured rules rather than adopt the file's.
+    // The worker refuses to warm up on a mismatch; keep the configured rules.
     TT_LOG_ERROR(
         "[Qwen3TtsRequestValidator] {} is a {} checkpoint but this deployment "
         "is configured as {}",

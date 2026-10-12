@@ -201,9 +201,7 @@ inline std::string toClientRunnerName(ModelRunnerType m) {
   return "";
 }
 
-/** Qwen3-TTS release served by a deployment (`tts_model_type` in the
- *  checkpoint's config.json). Each release takes a different kind of voice
- *  input, so the parent validates requests against it. */
+/** Qwen3-TTS release (`tts_model_type` in the checkpoint's config.json). */
 enum class Qwen3TtsRelease {
   BASE,
   CUSTOM_VOICE,

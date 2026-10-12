@@ -107,10 +107,7 @@ _CPP_EMBEDDING_DEVICE_IDS = {
 }
 
 
-# Qwen3-TTS on the cpp_server backend (MODEL_SERVICE=tts). Each release
-# (Base clones a clip, CustomVoice uses built-in speakers) is its own model id
-# and deployment; the C++ server derives the release and size from HF_MODEL.
-# See tt-media-server/cpp_server/docs/QWEN3_TTS.md.
+# One deployment per Qwen3-TTS release; the C++ server derives it from HF_MODEL.
 _CPP_TTS_RUNNER_BY_MODEL_NAME = {
     "Qwen3-TTS-12Hz-1.7B-Base": "tt_qwen3_tts",
     "Qwen3-TTS-12Hz-1.7B-CustomVoice": "tt_qwen3_tts",
@@ -121,12 +118,9 @@ _CPP_TTS_DEVICE_IDS = {
     "n150": "(0)",
 }
 
-# Qwen3-TTS reseeds sampling before every request, so a deployment returns
-# the same audio for the same request; the TTS evals rely on it to compare
-# a cloned utterance with its baseline at the same seed.
+# Reseeded before every request; the TTS evals rely on reproducible audio.
 _CPP_TTS_SEED = "0"
-# Shared-memory queue slots. The server's defaults reserve ~2.5 GB of
-# /dev/shm; batch-1 workers need a handful of slots.
+# Kept small: the server's default queue sizes reserve ~2.5 GB of /dev/shm.
 _CPP_TTS_TASK_QUEUE_CAPACITY = "16"
 _CPP_TTS_AUDIO_QUEUE_CAPACITY = "64"
 _CPP_TTS_CANCEL_QUEUE_CAPACITY = "64"

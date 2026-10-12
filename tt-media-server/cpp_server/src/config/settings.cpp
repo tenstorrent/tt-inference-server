@@ -649,13 +649,11 @@ uint32_t qwen3FixedRate(const char* envName) {
   return rate;
 }
 
-/** The Qwen3-TTS half of ttsEngineConfig(): release, audio format, capacity
- *  and generation knobs. */
+/** The Qwen3-TTS half of ttsEngineConfig(). */
 void applyQwen3TtsConfig(TtsConfig& cfg) {
   namespace qwen3 = tt::config::qwen3_tts;
 
-  // The codec reads and writes 24 kHz mono; a different TTS_* rate would
-  // either resample the clone reference wrongly or mislabel the WAV.
+  // The codec is 24 kHz mono; any other TTS_* rate would mislabel the audio.
   cfg.voiceSampleRateHz = qwen3FixedRate("TTS_VOICE_SAMPLE_RATE_HZ");
   cfg.audioSampleRateHz = qwen3FixedRate("TTS_AUDIO_SAMPLE_RATE_HZ");
   if (cfg.voiceChannels != 1 || cfg.audioChannels != 1) {
@@ -664,9 +662,7 @@ void applyQwen3TtsConfig(TtsConfig& cfg) {
         "TTS_AUDIO_CHANNELS");
   }
 
-  // Batch 1: a worker runs one utterance at a time, so capacity scales with
-  // the DEVICE_IDS groups. TTS_MAX_USERS still overrides, which queues the
-  // excess behind the workers instead of answering 429.
+  // Batch 1: capacity scales with DEVICE_IDS groups; TTS_MAX_USERS overrides.
   if (cfg.maxBatchSize != 1) {
     TT_LOG_WARN(
         "[Config] TTS_MAX_BATCH_SIZE={} ignored: tt_qwen3_tts runs batch 1",

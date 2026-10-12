@@ -135,9 +135,7 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
   status: EXPERIMENTAL
 
-# Qwen3-TTS runs on the cpp_server backend (workflows/run_docker_server.py,
-# _CPP_TTS_RUNNER_BY_MODEL_NAME). Each release is its own deployment: Base
-# clones a voice from a clip, CustomVoice speaks with built-in speakers.
+# Qwen3-TTS on the cpp_server backend: one deployment per release.
 - weights:
     - Qwen/Qwen3-TTS-12Hz-1.7B-Base
   impl: qwen3_tts

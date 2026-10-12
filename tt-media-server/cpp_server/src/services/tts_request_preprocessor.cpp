@@ -126,8 +126,7 @@ tt::domain::tts::TtsTask TtsRequestPreprocessor::processQwen3(
   task.language = qwen3_tts::nonBlank(request.language);
   task.referenceText = qwen3_tts::nonBlank(request.referenceText);
   if (request.voiceSample.has_value()) {
-    // Mono at the codec's 24 kHz (config.voiceSampleRateHz), which is what
-    // build_clone_reference() expects.
+    // Mono 24 kHz, as build_clone_reference() expects.
     task.voiceWavPcm = normalizeVoiceSample(*request.voiceSample).wavPcm;
   }
   return task;

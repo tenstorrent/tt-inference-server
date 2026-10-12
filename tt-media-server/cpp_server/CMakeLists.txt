@@ -1421,10 +1421,7 @@ target_include_directories(tts_service_test PRIVATE
     ${prometheus-cpp_SOURCE_DIR}/core/include
 )
 
-# Qwen3TtsRunner against a fake tt-metal Python package written by the test
-# itself (no device): task intake, cancels, PCM16 chunking, the terminal
-# message and worker metrics. The counterpart of blaze_tts_runner_test, but
-# built without ENABLE_BLAZE because the Qwen3 runner always is.
+# Qwen3TtsRunner against a fake tt-metal Python package (no device, no Blaze).
 add_executable(qwen3_tts_runner_test
     tests/integration/runners/qwen3_tts_runner_test.cpp
     src/runtime/runners/qwen3_tts/qwen3_tts_runner.cpp

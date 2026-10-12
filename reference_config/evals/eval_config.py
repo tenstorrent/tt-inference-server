@@ -5757,38 +5757,7 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Qwen3-TTS on the C++ media server (tts_client "qwen3_cpp" adapter; the
-    # request contract is tt-media-server/cpp_server/docs/QWEN3_TTS.md). A TTS
-    # task's model_kwargs are the eval's targets (tts_eval_tests._task_targets).
-    #
-    # Calibration (N150, 1.7B, 2026-10-09, server TTS_QWEN3_SEED=0, which
-    # reseeds before every request so reruns are bit-identical; the first 8
-    # LibriTTS-R test.clean speakers with a 3-12 s clip; pinned scorers).
-    #
-    # Base, tts_speaker_similarity: Base cannot speak without a clip, so the
-    # baseline is cross_speaker (speaker A's text also cloned from another
-    # speaker's clip, scored against A's clip). Voice-only clone: mean SECS
-    # 0.962 (0.939-0.977), cross-speaker baseline 0.834, mean margin +0.128
-    # (+0.049..+0.271 per speaker: same-gender pairs score high baselines).
-    # 16 speakers: SECS 0.961, margin +0.246 (more mixed-gender pairs). An
-    # in-context clone (with the clip's transcript) measured SECS 0.970 /
-    # margin +0.120, i.e. no better at gating, twice the wall time, and it
-    # needs an exact transcript; voice-only is the more robust default. A
-    # clone that ignores the reference collapses the margin to ~0, so 0.06
-    # (about half the measured margin) separates the two; the floor (0.90)
-    # sits 0.06 below the measured mean and well above the cross-speaker
-    # level (0.834), catching a clone that drifts toward a generic voice.
-    #
-    # tts_naturalness (UTMOS22-strong): Base voice-only clones mean 4.505
-    # (4.456-4.548; in-context 4.474). CustomVoice speaker ryan mean 4.145
-    # (3.315-4.414; one weak sample at this seed), 4.263 in an unseeded run.
-    # Thresholds sit ~0.3 below each seeded mean, as in the original
-    # calibration, and above the predictor's score for silence (3.37).
-    # Device parity: the same clips/texts through the upstream qwen-tts 0.1.1
-    # package (fp32, CPU, torch seed 0 before every request) scored Base SECS
-    # 0.952 / baseline 0.826 / margin +0.125 and UTMOS 4.510, CustomVoice
-    # UTMOS 4.239, i.e. the N150 deployment is at reference parity (the
-    # device and CPU samplers draw different numbers, so compare means).
+    # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145.
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         tasks=[

@@ -60,8 +60,7 @@ std::vector<std::string> lowerKeys(const Json::Value& object) {
   return keys;
 }
 
-/** The snapshot of `repo` in the hub cache holding a config.json; the most
- *  recently written one when several revisions are cached. */
+/** The newest cached snapshot of `repo` that holds a config.json. */
 std::string hubSnapshotConfig(const std::string& repo,
                               const std::string& hubCacheDir) {
   if (repo.empty() || hubCacheDir.empty()) return {};
@@ -206,8 +205,7 @@ ResolvedRelease resolveRelease(const ReleaseInputs& inputs) {
       : !hfModel.empty()
           ? "HF_MODEL=" + hfModel
           : std::string("the default ") + defaults::TTS_QWEN3_DEFAULT_HF_MODEL;
-  // Only a hub id carries the release in its name; a local directory may be
-  // called anything.
+  // Only a hub id carries the release in its name.
   const std::string nameHint =
       !ckpt.empty()     ? std::string()
       : hfModel.empty() ? std::string(defaults::TTS_QWEN3_DEFAULT_HF_MODEL)

@@ -37,15 +37,11 @@ constexpr const char* PIPELINE_MODULE =
     "models.demos.audio.qwen3_tts.tt.ttnn_qwen3_pipeline";
 constexpr const char* WEIGHTS_MODULE = "models.demos.audio.qwen3_tts.weights";
 
-// Device knobs from models/demos/audio/qwen3_tts/demo/demo.py:open_device():
-// the two decode traces need the trace region, the codec's convolutions the
-// L1_SMALL scratch (65536 measured best; smaller starves the codec, larger
-// steals L1 from it).
+// As demo.py:open_device(); L1_SMALL 65536 measured best for the codec.
 constexpr int L1_SMALL_SIZE = 65536;
 constexpr int64_t TRACE_REGION_SIZE = 90'000'000;
 
-// Short warmup utterance: enough to compile prefill, both decode traces and
-// one codec length bucket without holding up readiness for long.
+// Compiles prefill, both decode traces and one codec length bucket.
 constexpr const char* WARMUP_TEXT = "Hello, this is a warm-up.";
 constexpr uint32_t WARMUP_MAX_FRAMES = 32;
 constexpr const char* WARMUP_VOICE_DESCRIPTION =
@@ -54,23 +50,17 @@ constexpr const char* WARMUP_SPEAKER = "ryan";
 constexpr double WARMUP_TONE_SECONDS = 3.0;
 constexpr double WARMUP_TONE_HZ = 220.0;
 
-// Cancels for tasks this worker may never see (the parent broadcasts them to
-// every worker); remembered only this long.
 constexpr size_t CANCELLED_TASK_MEMORY = 4096;
 
 // Same 1 ms cadence as BlazeTtsRunner::step().
 constexpr auto IDLE_POLL = std::chrono::milliseconds(1);
 constexpr auto PUSH_RETRY = std::chrono::milliseconds(1);
 
-// What the language defaults to when a request leaves it out, as
-// models/demos/audio/qwen3_tts/demo/demo_server.py does: a named speaker speaks
-// English unless told otherwise; a clone or a designed voice lets the model
-// infer the language.
+// As demo_server.py: a named speaker defaults to English, others to Auto.
 constexpr const char* DEFAULT_SPEAKER_LANGUAGE = "English";
 constexpr const char* AUTO_LANGUAGE = "Auto";
 
-// Thrown by the per-frame callback; the flag beside it is what tells a cancel
-// apart from a model error once the exception has crossed Python.
+// A flag beside it tells a cancel apart from a model error after Python.
 constexpr const char* CANCELLED_MESSAGE = "qwen3-tts request cancelled";
 
 /** No GIL needed: thrown from C++ code between Python calls. */
@@ -81,16 +71,12 @@ std::string firstLine(const std::string& s) {
   return pos == std::string::npos ? s : s.substr(0, pos);
 }
 
-/** Per-worker process environment; must run before the interpreter starts
- *  and before ttnn reads it. Mirrors embedding_worker_main.cpp: a private
- *  TT_METAL_CACHE (concurrent JIT builds in one directory race) and the
- *  tt-metal checkout as working directory (kernels use relative includes). */
+/** Per-worker env before Python starts; own TT_METAL_CACHE avoids JIT races. */
 void exportWorkerEnvironment(const config::TtsConfig& cfg) {
   if (!cfg.visibleDevices.empty()) {
     setenv("TT_VISIBLE_DEVICES", cfg.visibleDevices.c_str(), 1);
   }
-  // Host work is small (sampling, embeddings, the mel front-end); keep a
-  // worker per chip from oversubscribing the CPU. Overridable.
+  // Host work is small; keep a worker per chip from oversubscribing the CPU.
   setenv("OMP_NUM_THREADS", "2", 0);
   setenv("MKL_NUM_THREADS", "2", 0);
 
@@ -121,8 +107,7 @@ void exportWorkerEnvironment(const config::TtsConfig& cfg) {
       metalCache, metalHome);
 }
 
-/** Put TT_METAL_HOME (models.demos lives there) and TT_PYTHON_PATH on
- *  sys.path, as the SDXL and embedding runners do. */
+/** Put TT_METAL_HOME and TT_PYTHON_PATH on sys.path. */
 void ensureSysPath() {
   py::list sysPath = py::module_::import("sys").attr("path");
   auto prepend = [&sysPath](const char* envName) {
@@ -165,8 +150,7 @@ struct __attribute__((visibility("hidden"))) PythonState {
     return torch.attr("from_numpy")(samples);
   }
 
-  /** Waveform tensor [1, N] (float, 24 kHz) -> PCM16, clamped and truncated
-   *  the way the TTS-2 bf16 path converts. */
+  /** Waveform tensor [1, N] -> PCM16, converted like the TTS-2 bf16 path. */
   std::vector<int16_t> tensorToPcm(const py::object& waveform) const {
     py::object pcm = waveform.attr("reshape")(-1)
                          .attr("float")()
@@ -267,9 +251,7 @@ bool Qwen3TtsRunner::warmup() {
       ensureSysPath();
       python->torch = py::module_::import("torch");
 
-      // The deployment chose a release up front, and the parent has been
-      // validating requests against it; refuse to serve a checkpoint that
-      // turns out to be a different one.
+      // Refuse a checkpoint other than the release the parent validates for.
       py::module_ weights = py::module_::import(WEIGHTS_MODULE);
       const auto kind = weights.attr("model_kind")().cast<std::string>();
       const auto size = weights.attr("model_size")().cast<std::string>();
@@ -310,8 +292,7 @@ bool Qwen3TtsRunner::warmup() {
             std::min(config.qwen3MaxFrames, WARMUP_MAX_FRAMES);
         switch (config.qwen3Release) {
           case config::Qwen3TtsRelease::BASE: {
-            // A synthetic tone, voice-only: compiles the speaker encoder and
-            // the decode path without needing a real clip or transcript.
+            // A synthetic tone compiles the speaker encoder without a clip.
             const auto count = static_cast<size_t>(WARMUP_TONE_SECONDS *
                                                    config.voiceSampleRateHz);
             std::vector<int16_t> tone(count);
@@ -351,8 +332,7 @@ bool Qwen3TtsRunner::warmup() {
             break;
         }
       } catch (const py::error_already_set& e) {
-        // A sampled first frame can be end-of-speech; everything up to it has
-        // compiled, which is what warmup is for.
+        // A sampled first frame can be end-of-speech; that still compiled.
         if (std::string(e.what()).find("end-of-speech before any frame") ==
             std::string::npos) {
           throw;
@@ -377,8 +357,7 @@ bool Qwen3TtsRunner::warmup() {
   }
 
   if (python->ownsInterpreter) {
-    // initialize_interpreter() left this thread holding the GIL; hand it back
-    // so every later section takes it explicitly.
+    // initialize_interpreter() left this thread holding the GIL; release it.
     PyEval_SaveThread();
   }
   return ok;
@@ -471,8 +450,7 @@ void Qwen3TtsRunner::handleTask(const ipc::tts::TtsIpcTask& task) {
           // Voice-only (x-vector) without a transcript, in-context with one.
           const bool xVectorOnly = !task.referenceText.has_value();
           const auto encodeStart = std::chrono::steady_clock::now();
-          // Eager device work beside a live trace hangs the card, and the
-          // previous request left its traces captured.
+          // Eager device work beside a live trace hangs the card.
           pipeline.attr("release")();
           py::object reference =
               python->pipelineModule.attr("build_clone_reference")(

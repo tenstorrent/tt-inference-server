@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
-//
-// ttsEngineConfig() / workerRunnerConfig() for MODEL_RUNNER_TYPE=tt_qwen3_tts.
-// Both cache their answer for the life of the process, so each case runs in a
-// fresh child via a "threadsafe" death test (the child re-executes this binary
-// filtered to that one test) and reports through its exit code.
+
+// Both configs are cached per process, so each case runs in a death-test child.
 
 #include <gtest/gtest.h>
 #include <unistd.h>
@@ -27,8 +24,7 @@ using tt::config::ModelRunnerType;
 using tt::config::Qwen3TtsModelSize;
 using tt::config::Qwen3TtsRelease;
 
-/** Environment shared by every case: TTS service, two workers, and a hub
- *  cache that holds nothing, so only the hub id can name the release. */
+/** TTS, two workers, and an empty hub cache so only the hub id names it. */
 void baseEnv() {
   ::setenv("MODEL_SERVICE", "tts", 1);
   ::setenv("MODEL_RUNNER_TYPE", "tt_qwen3_tts", 1);
@@ -47,8 +43,7 @@ void baseEnv() {
   }
 }
 
-/** Run `check` in this (child) process: exit 0 when it holds, 1 when it does
- *  not, 2 when building the config threw. */
+/** Exit 0 when `check` holds, 1 when it does not, 2 when the config threw. */
 template <typename Check>
 [[noreturn]] void runChild(Check check) {
   try {
