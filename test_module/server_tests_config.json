@@ -101,7 +101,8 @@
       "arcee-ai/Llama-3.1-SuperNova-Lite",
       "Qwen/Qwen2.5-Math-7B-Instruct",
       "tiiuae/Falcon3-7B-Instruct",
-      "NousResearch/Hermes-3-Llama-3.1-8B"
+      "NousResearch/Hermes-3-Llama-3.1-8B",
+      "allenai/Llama-3.1-Tulu-3-8B"
     ]
   },
   "available_markers": {
@@ -1078,6 +1079,16 @@
       "id_name": "NousResearch--Hermes-3-Llama-3.1-8B",
       "weights": [
         "NousResearch/Hermes-3-Llama-3.1-8B"
+      ]
+    },
+    "allenai/Llama-3.1-Tulu-3-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "allenai--Llama-3.1-Tulu-3-8B",
+      "weights": [
+        "allenai/Llama-3.1-Tulu-3-8B"
       ]
     }
   },
