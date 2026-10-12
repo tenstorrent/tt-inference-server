@@ -178,7 +178,9 @@ def _unsharded():
         a, b, c = (leaf[x][key] for x in ("sub_a", "sub_b", "sub_c"))
         inner = (a * 10 + b * 7) / 17
         leaf.setdefault("inner", {})[key] = inner
-        leaf.setdefault("outer", {})[key] = (inner + c) / 2
+        # The harness flattens `outer` to its descendant leaves (sub_a, sub_b,
+        # sub_c) and, unweighted, averages those -- not (inner + sub_c) / 2.
+        leaf.setdefault("outer", {})[key] = (a + b + c) / 3
     return leaf
 
 
@@ -876,3 +878,55 @@ def test_merge_grades_errored_requests_incomplete_not_pass(tmp_path):
     (block,) = report["evals"]
     assert block["data"]["incomplete"] is True
     assert block["data"]["inference_error_samples"] == 1
+
+
+def test_nested_group_flattens_to_leaves_like_the_harness():
+    # The review's example: outer = inner(A, B) + C, unweighted. A and B score
+    # 100%, C 0%. The pinned harness gives (100 + 100 + 0) / 3 = 66.67%, not
+    # the (100 + 0) / 2 = 50% an immediate-children average would give.
+    plan = {
+        "leaves": {name: _leaf(4) for name in ("A", "B", "C")},
+        "groups": {
+            "outer": {
+                "subtasks": ["inner", "C"],
+                "aggregate_metric_list": [
+                    {
+                        "metric": "exact_match",
+                        "aggregation": "mean",
+                        "weight_by_size": False,
+                        "filter_list": ["none"],
+                    }
+                ],
+            },
+            "inner": {"subtasks": ["A", "B"], "aggregate_metric_list": []},
+        },
+    }
+    score = {"A": 1.0, "B": 1.0, "C": 0.0}
+    rows = {
+        i: {
+            leaf: [
+                {"doc_id": d, "filter": "none", "exact_match": score[leaf]}
+                for d in range(4)
+                if d % 2 == i
+            ]
+            for leaf in score
+        }
+        for i in range(2)
+    }
+    merged = merge_shard_samples(plan, 2, rows)
+    assert merged["results"]["outer"]["exact_match,none"] == pytest.approx(2 / 3)
+    assert "inner" not in merged["results"]  # no aggregate list: no group score
+
+
+@pytest.mark.parametrize(
+    "eval_samples, partial",
+    [
+        (json.dumps({TASK: None}), False),  # selected with every sample
+        (json.dumps({"some_other_task": [0, 1]}), False),  # no entry for this task
+        (json.dumps({TASK: [0, 1, 2]}), True),  # a real restriction
+    ],
+)
+def test_partial_follows_the_resolved_sample_set_not_the_option(eval_samples, partial):
+    blocks, accepted, export = _graded(_subset_ctx(eval_samples=eval_samples))
+    assert (blocks[0].data.get("status") == TestStatus.PARTIAL.value) is partial
+    assert accepted is (not partial)

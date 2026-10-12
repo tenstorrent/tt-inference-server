@@ -84,3 +84,119 @@ def test_group_aggregates_come_from_the_real_configurable_group(tmp_path):
 
 def test_this_harness_supports_doc_selection():
     assert _planner().harness_supports_samples() is None
+
+
+def test_merge_matches_the_pinned_harness_group_aggregation():
+    """The merged group score equals the harness's own consolidate_group_results
+    on the same full-set leaf results, for a nested group."""
+    import sys
+
+    sys.path.insert(0, str(ROOT))
+    from lm_eval.api.group import ConfigurableGroup
+    from lm_eval.api.task import Task
+    from lm_eval.evaluator_utils import consolidate_group_results
+
+    from workflows.eval_shard import merge_shard_samples
+
+    class _Leaf(Task):  # only identity matters to consolidate_group_results
+        def __init__(self, name):
+            self._name = name
+
+        @property
+        def task_name(self):
+            return self._name
+
+    _Leaf.__abstractmethods__ = frozenset()  # never run, only identified
+
+    def group(name, weight_by_size):
+        return ConfigurableGroup(
+            config={
+                "group": name,
+                "aggregate_metric_list": [
+                    {
+                        "metric": "exact_match",
+                        "aggregation": "mean",
+                        "weight_by_size": weight_by_size,
+                    }
+                ],
+            }
+        )
+
+    sizes = {"a": 10, "b": 7, "c": 4}
+    score = {
+        leaf: [float((d * 7 + len(leaf) * 3) % 3 == 0) for d in range(n)]
+        for leaf, n in sizes.items()
+    }
+    for weight in (False, True):
+        inner, outer = group("inner", True), group("outer", weight)
+        task_dict = {
+            outer: {inner: {"a": _Leaf("a"), "b": _Leaf("b")}, "c": _Leaf("c")}
+        }
+        results = {}
+        for leaf, values in score.items():
+            mean = sum(values) / len(values)
+            var = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
+            results[leaf] = {
+                "exact_match,none": mean,
+                "exact_match_stderr,none": (var / len(values)) ** 0.5,
+                "samples": len(values),
+                "alias": leaf,
+            }
+        results.update({"inner": {"alias": "inner"}, "outer": {"alias": "outer"}})
+        harness, _, _, _ = consolidate_group_results(results, {}, task_dict)
+
+        plan = {
+            "leaves": {
+                leaf: {
+                    "n_docs": n,
+                    "num_fewshot": 0,
+                    "fewshot_sampler": None,
+                    "aggregations": {"exact_match": "mean"},
+                    "repeats": 1,
+                }
+                for leaf, n in sizes.items()
+            },
+            "groups": {
+                "outer": {
+                    "subtasks": ["inner", "c"],
+                    "aggregate_metric_list": [
+                        {
+                            "metric": "exact_match",
+                            "aggregation": "mean",
+                            "weight_by_size": weight,
+                            "filter_list": ["none"],
+                        }
+                    ],
+                },
+                "inner": {
+                    "subtasks": ["a", "b"],
+                    "aggregate_metric_list": [
+                        {
+                            "metric": "exact_match",
+                            "aggregation": "mean",
+                            "weight_by_size": True,
+                            "filter_list": ["none"],
+                        }
+                    ],
+                },
+            },
+        }
+        rows = {
+            i: {
+                leaf: [
+                    {"doc_id": d, "filter": "none", "exact_match": v}
+                    for d, v in enumerate(values)
+                    if d % 3 == i
+                ]
+                for leaf, values in score.items()
+            }
+            for i in range(3)
+        }
+        merged = merge_shard_samples(plan, 3, rows)["results"]
+        for name in ("inner", "outer"):
+            assert merged[name]["exact_match,none"] == pytest.approx(
+                harness[name]["exact_match,none"]
+            ), (name, weight)
+            assert merged[name]["exact_match_stderr,none"] == pytest.approx(
+                harness[name]["exact_match_stderr,none"]
+            ), (name, weight)

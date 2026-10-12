@@ -287,55 +287,54 @@ def merge_shard_samples(
             ).hexdigest()
         n_samples[leaf] = n_docs
     groups = plan.get("groups", {})
-    done: set = set()
 
-    def aggregate(group: str, stack: Tuple[str, ...] = ()) -> None:
-        if group in done:
-            return
+    def leaves_of(group: str, stack: Tuple[str, ...] = ()) -> List[str]:
+        """Descendant leaf tasks in order, as the harness flattens a group."""
         if group in stack:
             raise ShardError(f"group cycle at {group}")
-        info = groups[group]
-        subtasks = info.get("subtasks") or []
-        for sub in subtasks:
+        out: List[str] = []
+        for sub in groups[group].get("subtasks") or []:
             if sub in groups:
-                aggregate(sub, stack + (group,))
-        done.add(group)
-        aggregates = info.get("aggregate_metric_list") or []
+                out.extend(leaves_of(sub, stack + (group,)))
+            elif sub in leaves:
+                out.append(sub)
+            else:
+                raise ShardError(f"{group}: unknown subtask {sub}")
+        return out
+
+    # The pinned harness (lm_eval/evaluator_utils.py consolidate_group_results,
+    # tstescoTT be23028b) aggregates a group over ALL its descendant leaf tasks
+    # -- a nested subgroup is flattened, never averaged as one child -- using
+    # aggregate_subtask_metrics(metrics, sizes, weight_by_size) over the leaves
+    # that report the metric, and pooled_sample_stderr(stderrs, sizes).
+    for group in sorted(groups):
+        aggregates = groups[group].get("aggregate_metric_list") or []
         if not aggregates:
-            return
+            continue
+        task_list = leaves_of(group)
         entry = results.setdefault(group, {})
         for item in aggregates:
             metric = item["metric"]
             filters = item.get("filter_list") or ["none"]
             for filt in [filters] if isinstance(filters, str) else filters:
                 key = f"{metric},{filt}"
-                values, weights = [], []
-                for sub in subtasks:
-                    if key not in results.get(sub, {}):
-                        raise ShardError(f"{group}: subtask {sub} has no {key}")
-                    values.append(results[sub][key])
-                    weights.append(
-                        _group_size(sub, plan, n_samples)
-                        if item.get("weight_by_size")
-                        else 1
+                stderr_key = f"{metric}_stderr,{filt}"
+                present = [t for t in task_list if key in results.get(t, {})]
+                if not present:
+                    raise ShardError(f"{group}: no leaf task reports {key}")
+                metrics = [results[t][key] for t in present]
+                sizes = [n_samples[t] for t in present]
+                weights = sizes if item.get("weight_by_size") else [1] * len(sizes)
+                entry[key] = sum(m * w for m, w in zip(metrics, weights)) / sum(weights)
+                stderrs = [results[t].get(stderr_key, "N/A") for t in present]
+                if "N/A" in stderrs or sum(sizes) <= len(sizes):
+                    entry[stderr_key] = "N/A"
+                else:
+                    pooled = sum((n - 1) * e**2 * n for n, e in zip(sizes, stderrs)) / (
+                        sum(sizes) - len(sizes)
                     )
-                entry[key] = sum(v * w for v, w in zip(values, weights)) / sum(weights)
-                entry[f"{metric}_stderr,{filt}"] = "N/A"
-
-    for group in sorted(groups):
-        aggregate(group)
+                    entry[stderr_key] = math.sqrt(pooled / sum(sizes))
     return {"results": results, "n_samples": n_samples, "doc_hashes": doc_hashes}
-
-
-def _group_size(
-    name: str, plan: Mapping[str, Any], n_samples: Mapping[str, int]
-) -> int:
-    if name in n_samples:
-        return n_samples[name]
-    group = plan.get("groups", {}).get(name)
-    if not group:
-        raise ShardError(f"unknown subtask {name}")
-    return sum(_group_size(sub, plan, n_samples) for sub in group.get("subtasks") or [])
 
 
 __all__ = [
