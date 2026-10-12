@@ -613,8 +613,7 @@ def build_benchmark_config(model_spec) -> BenchmarkConfig:
     if device == DeviceTypes.SUPER_CLUSTER:
         text_isl_osl_pairs += SUPER_CLUSTER_EXTRA_ISL_OSL_PAIRS
         sweep_min_num_prompts = (
-            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE
-            * benchmark_max_concurrency
+            SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE * benchmark_max_concurrency
         )
 
     vllm_benchmark_venv = select_vllm_benchmark_venv(model_spec)

@@ -932,6 +932,9 @@ templates:
         OMP_NUM_THREADS: "8"
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         GEMMA4_26B_ALLOW_HOST_SAMPLING: "1"
+        TT_METAL_CACHE: /home/container_app_user/cache_root/gemma4_metal_kernel_cache
+        HF_HOME: /home/container_app_user/cache_root/huggingface
+        HF_HUB_CACHE: /home/container_app_user/cache_root/huggingface/hub
       override_tt_config:
         fabric_config: FABRIC_1D
         trace_region_size: 1000000000
@@ -953,6 +956,7 @@ templates:
         no-enable-chunked-prefill: true
         no-enable-prefix-caching: true
         async-scheduling: true
+        seed: 9472
   status: FUNCTIONAL
   has_builtin_warmup: true
   env_vars:

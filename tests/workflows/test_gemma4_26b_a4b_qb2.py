@@ -56,6 +56,10 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
         '{"enable_thinking": true}'
     )
     assert dedicated.device_model_spec.vllm_args["reasoning-parser"] == "gemma4"
+    assert dedicated.device_model_spec.vllm_args["seed"] == 9472
+    assert dedicated.device_model_spec.env_vars["TT_METAL_CACHE"].endswith(
+        "/gemma4_metal_kernel_cache"
+    )
 
 
 def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
@@ -83,6 +87,13 @@ def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
     assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 1
     assert terminal.n_attempts == swe.n_attempts == 1
     assert terminal.override_cpus == 16
+    assert swe.llm_timeout_sec == 30 * 60
+    assert swe.normalize_submission_marker is True
+    assert (
+        swe.agent_kwargs["config"]["environment"]["env"]["CONDA_DEFAULT_ENV"]
+        == "testbed"
+    )
+    assert terminal_task.request_body["seed"] == swe_task.request_body["seed"] == 9472
 
     for task, total, passing_score, failing_score in [
         (gpqa, 10, 80.0, 70.0),
