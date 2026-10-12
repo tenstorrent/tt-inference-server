@@ -7,17 +7,18 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import struct
 
 import aiohttp
 import numpy as np
 import pytest
 
+from test_module.eval_tests import tts_client
 from test_module.eval_tests.tts_client import (
     MIN_AUDIO_SECONDS,
     MediaServerTTSClient,
     Qwen3CppTTSClient,
+    SynthesizedAudio,
     VoiceClip,
     decode_streamed_wav,
     make_tts_client,
@@ -243,14 +244,15 @@ class TestMediaServerSynthesize:
     def test_payload_keeps_the_python_server_contract(self, monkeypatch):
         import base64
 
-        import soundfile as sf
-
-        buf = io.BytesIO()
-        sf.write(buf, np.zeros(1600, dtype=np.float32), 16000, format="WAV")
-        response = _JsonResponse({"audio": base64.b64encode(buf.getvalue()).decode()})
+        response = _JsonResponse({"audio": base64.b64encode(b"wav").decode()})
         calls = []
         monkeypatch.setattr(
             aiohttp, "ClientSession", lambda **kw: _FakeSession(response, calls)
+        )
+        monkeypatch.setattr(
+            tts_client,
+            "decode_wav_file",
+            lambda b: SynthesizedAudio(np.zeros(1600, dtype=np.float32), 16000),
         )
 
         audio = asyncio.run(

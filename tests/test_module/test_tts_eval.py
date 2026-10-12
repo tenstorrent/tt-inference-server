@@ -202,15 +202,20 @@ def _secs_test(monkeypatch, client, targets=None):
     test.base_url = "http://fake"
     monkeypatch.setattr(test, "_load_encoder", lambda: None)
 
-    import torch
-
     def embed(audio):
         # Same speaker -> identical vector; different speakers -> cosine 0.5.
-        vec = torch.full((8,), 0.5)
+        vec = np.full(8, 0.5)
         vec[int(audio.samples[0]) % 8] += 1.0
         return vec
 
+    def secs(ref_embedding, audio):
+        out = embed(audio)
+        return float(
+            ref_embedding @ out / (np.linalg.norm(ref_embedding) * np.linalg.norm(out))
+        )
+
     monkeypatch.setattr(test, "_embed", embed)
+    monkeypatch.setattr(test, "_secs", secs)
     return test
 
 
