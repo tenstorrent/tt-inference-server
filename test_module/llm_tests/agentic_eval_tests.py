@@ -7,8 +7,10 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
+from urllib.request import urlopen
 
 from llm_module import (
     DriverContext,
@@ -208,6 +210,40 @@ def _require_openai_server(ctx: MediaContext) -> None:
     logger.info("Inference server health check passed via %s", endpoint)
 
 
+def _capture_timing_metrics(ctx: MediaContext, task_name: str, phase: str) -> None:
+    """Save vLLM's aggregate request timing counters for this proof run.
+
+    This is read-only and best-effort. The two snapshots bound one scored task;
+    histogram deltas can split completed-request queue/prefill/decode intervals
+    without changing agent requests or evaluation settings.
+    """
+    if ctx.remote_server:
+        return
+    url = f"{ctx.base_url}/metrics"
+    try:
+        with urlopen(url, timeout=10) as response:
+            lines = response.read().decode("utf-8").splitlines()
+        names = (
+            "vllm:request_queue_time_seconds_",
+            "vllm:request_prefill_time_seconds_",
+            "vllm:request_decode_time_seconds_",
+            "vllm:request_inference_time_seconds_",
+            "vllm:request_time_per_output_token_seconds_",
+            "vllm:time_to_first_token_seconds_",
+        )
+        selected = [line for line in lines if line.startswith(names)]
+        out = Path(ctx.output_path) / "timing_probe"
+        out.mkdir(parents=True, exist_ok=True)
+        path = out / f"{task_name}_{phase}.prom"
+        path.write_text(
+            f"# captured_utc {datetime.now(timezone.utc).isoformat()}\n"
+            f"# source {url}\n" + "\n".join(selected) + "\n"
+        )
+        logger.info("Saved %d timing metric lines to %s", len(selected), path)
+    except Exception:
+        logger.warning("Could not capture vLLM timing metrics from %s", url, exc_info=True)
+
+
 def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     """Run every EVALS_AGENTIC task for this model; return one Block per task.
 
@@ -235,7 +271,9 @@ def run_llm_agentic_eval(ctx: MediaContext) -> List[Block]:
     for task in agentic_tasks:
         driver = make_agentic_driver(task, runtime_config=runtime_config)
         logger.info("Running %s task: %s", driver.name, task.task_name)
+        _capture_timing_metrics(ctx, task.task_name, "before")
         outcome = driver.run(placeholder_config, server, driver_context)
+        _capture_timing_metrics(ctx, task.task_name, "after")
 
         if outcome.return_code != 0:
             logger.error(
