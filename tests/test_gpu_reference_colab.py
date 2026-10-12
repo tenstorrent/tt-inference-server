@@ -1276,6 +1276,10 @@ def test_driver_status_writes_json_and_one_log_line(tmp_path):
     assert len(lines) == 2 and "state=RUNNING" in lines[0]
     assert "phase=model_1/2_org/m:_evals" in lines[0]  # one token per field
     assert json.loads(path.read_text())["state"] == "DONE"
+    # Options first, as the driver calls it: the same record.
+    gpuref.main(["driver-status", "--log", str(log), str(path), "state=FAILED", "rc=1"])
+    assert json.loads(path.read_text())["state"] == "FAILED"
+    assert len(log.read_text().splitlines()) == 3
 
 
 def test_driver_capacity_retry_and_group_fallback_are_wired():
