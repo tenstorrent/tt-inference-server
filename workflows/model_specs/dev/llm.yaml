@@ -436,6 +436,9 @@ templates:
         # per-request row gather page-faults for 0.3 to 1.4 s), the prefill chunk.
         TT_V41_CHECKPOINT: "/data/huggingface/hub/models--deepseek-ai--DeepSeek-V4.1-Flash/snapshots/dba1be0a40aa45a94ad051997016db3960a90277"
         TT_V41_WEIGHT_CACHE: "/data2/ttnn-cache"
+        # Routed experts in bfp4 (half the weight bytes: the decode step's
+        # busiest chip reads half as much, 13 GB of DRAM a chip instead of 22).
+        TT_V41_EXPERT_DTYPE: "bfp4"
         TT_V41_ENGRAM_MMAP: "0"
         # Prefill states (traced per state and prompt length): requests
         # prefill through them into their decode slot.
