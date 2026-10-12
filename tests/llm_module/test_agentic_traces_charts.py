@@ -233,3 +233,21 @@ def test_every_chart_has_a_mermaid_twin_for_the_job_summary(tmp_path):
             if line.strip().startswith(("line [", "bar [")):
                 values = line.split("[", 1)[1].rstrip("]").split(", ")
                 assert all(float(v) == float(v) for v in values)
+
+
+def test_rolling_window_shrinks_for_short_runs():
+    from llm_module.agentic_traces.charts import _rolling_window
+
+    assert _rolling_window(20_000) == 50
+    assert _rolling_window(57) == 5
+    assert _rolling_window(300) == 30
+
+
+def test_mermaid_steps_average_rather_than_sample():
+    from llm_module.agentic_traces.charts import _MERMAID_POINTS, _mm_grid
+
+    # A series that is 0 except one spike per step must not read as all zeros.
+    points = [(i / 10, 10.0 if i % 10 == 5 else 0.0) for i in range(_MERMAID_POINTS * 10)]
+    grid = _mm_grid(points, float(_MERMAID_POINTS))
+    # Each step holds about ten points with one spike: ~1.0, never 0.
+    assert all(0.8 < v < 1.2 for v in grid)

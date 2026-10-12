@@ -559,6 +559,16 @@ def _time_ticks(lo: float, hi: float) -> List[Tuple[float, str]]:
     return ticks
 
 
+def _rolling_window(count: int) -> int:
+    """Rolling window in requests: InferenceX's 50 once a run has the volume.
+
+    A short CI point (a few dozen requests) under a 50-request window makes the
+    rolling line the cumulative one, drawn over each other; a tenth of the run,
+    at least 5, keeps it a moving view.
+    """
+    return max(5, min(_ROLLING_WINDOW, count // 10))
+
+
 def _rolling_percentile(
     points: Sequence[Tuple[float, float]], q: float, window: int = _ROLLING_WINDOW
 ) -> List[Tuple[float, float]]:
@@ -700,8 +710,9 @@ def _percentile_stack(
         if not points:
             continue
         q90, q75 = (0.9, 0.75) if sign > 0 else (0.1, 0.25)
-        roll90 = _rolling_percentile(points, q90)
-        roll75 = _rolling_percentile(points, q75)
+        window = _rolling_window(len(points))
+        roll90 = _rolling_percentile(points, q90, window)
+        roll75 = _rolling_percentile(points, q75, window)
         cum90 = _cumulative_percentile(points, q90)
         top = max(v for _, v in roll90 + roll75 + cum90) or 1.0
         ymax = _ticks(0, top * 1.08, 4)[-1]
@@ -723,13 +734,14 @@ def _percentile_stack(
         )
         dots = [p for p in _subsample(points) if p[1] <= ymax]
         panel.scatter(dots, color, [f"t={_duration(x)}  {_fmt(v)}" for x, v in dots], radius=1.6, opacity=0.35)
+        # Cumulative underneath: where the lines meet, the rolling ones stay visible.
+        panel.line(_subsample(cum90, _MAX_LINE_POINTS), "var(--bad)", 2.0)
         panel.line(_subsample(roll75, _MAX_LINE_POINTS), color, 1.6, dash="5 3")
         panel.line(_subsample(roll90, _MAX_LINE_POINTS), color, 2.0)
-        panel.line(_subsample(cum90, _MAX_LINE_POINTS), "var(--bad)", 2.0)
         panel.legend(
             [
-                (f"P90 (rolling {_ROLLING_WINDOW} req)", color, "line"),
-                (f"P75 (rolling {_ROLLING_WINDOW} req)", color, "dash"),
+                (f"P90 (rolling {window} req)", color, "line"),
+                (f"P75 (rolling {window} req)", color, "dash"),
                 ("Cumulative P90", "var(--bad)", "line"),
             ],
             y=4 + index * panel_h + 36,
@@ -910,19 +922,30 @@ _MM_COLORS = {
 
 
 def _mm_num(value: float) -> str:
-    return f"{value:.0f}" if abs(value) >= 100 else f"{value:.2f}"
+    if abs(value) >= 100 or float(value).is_integer():
+        return f"{value:.0f}"
+    return f"{value:.2f}"
 
 
 def _mm_grid(points: Sequence[Tuple[float, float]], tmax: float) -> List[float]:
-    """Resample to ``_MERMAID_POINTS`` even steps (xychart spaces data evenly)."""
+    """Resample to ``_MERMAID_POINTS`` even steps (xychart spaces data evenly).
+
+    Each step is the mean of the points inside it, so a spiky 1 s series is
+    summarised rather than sampled; a step with none carries the last value.
+    """
     ordered = sorted(points)
     out: List[float] = []
-    j = -1
+    j = 0
+    last = ordered[0][1] if ordered else 0.0
     for i in range(_MERMAID_POINTS):
         t = tmax * (i + 1) / _MERMAID_POINTS
-        while j + 1 < len(ordered) and ordered[j + 1][0] <= t:
+        bucket = []
+        while j < len(ordered) and ordered[j][0] <= t:
+            bucket.append(ordered[j][1])
             j += 1
-        out.append(ordered[j][1] if j >= 0 else ordered[0][1])
+        if bucket:
+            last = sum(bucket) / len(bucket)
+        out.append(last)
     return out
 
 
@@ -1005,8 +1028,9 @@ def _mm_percentiles(requests, specs) -> Optional[str]:
         if not points:
             continue
         q90, q75 = (0.9, 0.75) if sign > 0 else (0.1, 0.25)
-        roll90 = _rolling_percentile(points, q90)
-        roll75 = _rolling_percentile(points, q75)
+        window = _rolling_window(len(points))
+        roll90 = _rolling_percentile(points, q90, window)
+        roll75 = _rolling_percentile(points, q75, window)
         cum90 = _cumulative_percentile(points, q90)
         top = max(v for _, v in roll90 + roll75 + cum90) or 1.0
         blocks.append(
@@ -1015,10 +1039,11 @@ def _mm_percentiles(requests, specs) -> Optional[str]:
                 _mm_time_axis(tmax),
                 y_label,
                 _ticks(0, top * 1.08, 4)[-1],
+                # Drawn in order, so cumulative goes underneath.
                 [
-                    (f"P90 (rolling {_ROLLING_WINDOW} req)", strong, "line", _mm_grid(roll90, tmax)),
-                    (f"P75 (rolling {_ROLLING_WINDOW} req)", light, "line", _mm_grid(roll75, tmax)),
                     ("cumulative P90", "violet", "line", _mm_grid(cum90, tmax)),
+                    (f"P75 (rolling {window} req)", light, "line", _mm_grid(roll75, tmax)),
+                    (f"P90 (rolling {window} req)", strong, "line", _mm_grid(roll90, tmax)),
                 ],
             )
         )
