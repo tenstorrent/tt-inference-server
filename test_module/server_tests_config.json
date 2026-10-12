@@ -100,7 +100,8 @@
       "01-ai/Yi-1.5-34B-Chat",
       "Qwen/Qwen2.5-7B",
       "meta-models/Muse-Glimmer-30B",
-      "arcee-ai/Llama-3.1-SuperNova-Lite"
+      "arcee-ai/Llama-3.1-SuperNova-Lite",
+      "NousResearch/Hermes-3-Llama-3.1-8B"
     ]
   },
   "available_markers": {
@@ -1047,6 +1048,16 @@
       "id_name": "arcee-ai--Llama-3.1-SuperNova-Lite",
       "weights": [
         "arcee-ai/Llama-3.1-SuperNova-Lite"
+      ]
+    },
+    "NousResearch/Hermes-3-Llama-3.1-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "NousResearch--Hermes-3-Llama-3.1-8B",
+      "weights": [
+        "NousResearch/Hermes-3-Llama-3.1-8B"
       ]
     }
   },
