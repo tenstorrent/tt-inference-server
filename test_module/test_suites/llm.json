@@ -998,6 +998,23 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen2.5-Math-7B-Instruct"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }
