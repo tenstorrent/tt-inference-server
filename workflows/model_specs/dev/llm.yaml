@@ -920,7 +920,7 @@ templates:
 # canonical tt-transformers profile remains the default for these weights.
 - weights:
     - google/gemma-4-26B-A4B-it
-  impl: gemma4_26b_a4b_qb2
+  impl: tt_vllm_plugin
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2

@@ -36,12 +36,12 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
         specs,
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="gemma4-26b-a4b-qb2",
+        impl="tt-vllm-plugin",
         catalog_name="Shield",
     )
 
     assert default.impl.impl_name == "tt-transformers"
-    assert dedicated.impl.code_path == "models/demos/gemma4_26b_a4b_qb2"
+    assert dedicated.impl.impl_name == "tt-vllm-plugin"
     assert dedicated.status == ModelStatusTypes.FUNCTIONAL
     assert dedicated.device_model_spec.default_impl is False
     assert (
@@ -111,7 +111,7 @@ def test_gemma4_26b_release_includes_near_max_context_and_grades_only_128_128():
         _gemma4_26b_specs(),
         model="google/gemma-4-26B-A4B-it",
         device="p300x2",
-        impl="gemma4-26b-a4b-qb2",
+        impl="tt-vllm-plugin",
         catalog_name="Shield",
     )
     run_configs = get_llm_configs(dedicated, dedicated.device_type)

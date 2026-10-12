@@ -7360,7 +7360,7 @@
             },
             {
                 "_comment": "Ungraded near-256K context validation. ISL 261888 plus OSL 128 leaves 128 tokens for chat-template overhead under the 262144-token model limit.",
-                "impl": "gemma4_26b_a4b_qb2",
+                "impl": "tt_vllm_plugin",
                 "isl": 261888,
                 "osl": 128,
                 "max_concurrency": 1,
