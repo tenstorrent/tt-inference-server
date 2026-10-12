@@ -853,3 +853,26 @@ def test_build_eval_command_refuses_a_venv_whose_harness_lacks_samples(
             task, model_spec, "P300X2", str(tmp_path), 8000, runtime_config=rc
         )
     assert not (tmp_path / "eval_shard_t.json").exists()
+
+
+def test_merge_grades_errored_requests_incomplete_not_pass(tmp_path):
+    # Same as the passing end-to-end case, but one shard's requests errored:
+    # the merged set is not a measurement, whatever the scores add up to.
+    count = 2
+    dirs = [_write_shard(tmp_path, i, count, _ifeval_plan()) for i in range(count)]
+    samples = next((tmp_path / "run-1").rglob(f"samples_{TASK}_*.jsonl"))
+    rows = [json.loads(line) for line in samples.read_text().splitlines() if line]
+    rows[0]["resps"] = [["__INFERENCE_ERROR__: ClientResponseError(status=400)"]]
+    samples.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    out = tmp_path / "merged"
+    assert (
+        merge_cli.main(
+            ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+        )
+        == 1
+    )
+    report = json.loads((out / merge_cli.MERGED_REPORT_NAME).read_text())
+    assert report["acceptance_criteria"] is False
+    (block,) = report["evals"]
+    assert block["data"]["incomplete"] is True
+    assert block["data"]["inference_error_samples"] == 1

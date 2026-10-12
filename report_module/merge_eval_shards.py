@@ -120,6 +120,17 @@ def merge(dirs: Sequence[Path], task: str) -> Dict[str, Any]:
             }
         )
     merged = merge_shard_samples(plan, count, shard_rows)
+    # An errored request is scored as a wrong answer; count them so the grade
+    # can refuse to treat the merged set as a measurement.
+    from test_module.llm_tests.llm_eval_tests import INFERENCE_ERROR_MARKER
+
+    logged = errored = 0
+    for rows_by_leaf in shard_rows.values():
+        for rows in rows_by_leaf.values():
+            for row in rows:
+                logged += 1
+                answers = json.dumps([row.get("resps"), row.get("filtered_resps")])
+                errored += INFERENCE_ERROR_MARKER in answers
     doc = copy.deepcopy(template)
     # Every metric lm-eval reported must be recomputed from the full set; a
     # value left from the template would be one shard's score in a "merged"
@@ -152,6 +163,8 @@ def merge(dirs: Sequence[Path], task: str) -> Dict[str, Any]:
         "provenance": first["provenance"],
         "doc_hashes": merged["doc_hashes"],
         "sources": sources,
+        "inference_error_samples": errored,
+        "samples_logged": logged,
     }
     return doc
 
@@ -166,7 +179,11 @@ def grade(
         build_acceptance_export,
     )
     from report_module.schema import ReportSchema
-    from test_module.llm_tests.llm_eval_tests import blocks_for_task, load_eval_results
+    from test_module.llm_tests.llm_eval_tests import (
+        blocks_for_task,
+        load_eval_results,
+        mark_incomplete,
+    )
 
     config = _eval_config_map.get(model)
     tasks = {t.task_name: t for t in (config.tasks if config else [])}
@@ -186,6 +203,11 @@ def grade(
     )
     results, counts = load_eval_results([str(results_path)])
     blocks = blocks_for_task(ctx, tasks[task_name], results, counts)
+    merge_info = doc["eval_shard_merge"]
+    if merge_info.get("inference_error_samples"):
+        mark_incomplete(
+            blocks, merge_info["inference_error_samples"], merge_info["samples_logged"]
+        )
     for block in blocks:
         block.data["eval_shard_merge"] = {
             "shard_count": doc["eval_shard_merge"]["shard_count"],
