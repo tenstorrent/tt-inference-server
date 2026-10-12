@@ -99,7 +99,8 @@
       "Qwen/Qwen2.5-Coder-14B-Instruct",
       "01-ai/Yi-1.5-34B-Chat",
       "Qwen/Qwen2.5-7B",
-      "meta-models/Muse-Glimmer-30B"
+      "meta-models/Muse-Glimmer-30B",
+      "arcee-ai/Llama-3.1-SuperNova-Lite"
     ]
   },
   "available_markers": {
@@ -1036,6 +1037,16 @@
       "id_name": "meta-models--Muse-Glimmer-30B",
       "weights": [
         "meta-models/Muse-Glimmer-30B"
+      ]
+    },
+    "arcee-ai/Llama-3.1-SuperNova-Lite": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "arcee-ai--Llama-3.1-SuperNova-Lite",
+      "weights": [
+        "arcee-ai/Llama-3.1-SuperNova-Lite"
       ]
     }
   },
