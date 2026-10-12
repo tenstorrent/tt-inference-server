@@ -384,3 +384,58 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+# DeepSeek-V4.1-Flash with image input on Blackhole Galaxy (32x P150, (4,8) mesh). Same tt-metal package as the text entry in dev/llm.yaml
+# (models/demos/blackhole/deepseek_v41_flash); DSV41_VISION=1 builds the device vision tower (ViT + aligner, ~17 MiB/bank) and the image-aware prefill (embedding
+# override, bias_vl routing of image tokens, Engram mask). The text profile stays the default_impl: select this one with `--impl deepseek-v41-flash-vlm`.
+# Images: up to 4 per prompt (limit-mm-per-prompt), <= 1026 tokens each (the checkpoint's image processor shrinks larger ones); chat content parts of type image_url
+# (vllm_config/chat_template.jinja renders them like the checkpoint's encoding.py). Decode: B=16, speculative decoding k=5 (image requests speculate too: the drafter is
+# seeded from the prefill taps), sampling in the trace; max_model_len 131072 (the spec runners' DRAM bound, tt/spec_policy.SPEC_MAX_CTX).
+- weights:
+    - deepseek-ai/DeepSeek-V4.1-Flash
+  impl: deepseek_v41_flash_vlm
+  inference_engine: VLLM
+  model_type: VLM
+  supported_modalities:
+    - text
+    - image
+  device_model_specs:
+    - device: BLACKHOLE_GALAXY
+      max_concurrency: 16  # B=16 build (4 mesh rows x 4 users per row)
+      max_context: 131072
+      default_impl: false
+      tensor_cache_timeout: 7200.0
+      env_vars:
+        HF_MODEL: deepseek-ai/DeepSeek-V4.1-Flash
+        MESH_DEVICE: "(4, 8)"
+        DSV41_LAYERS: "0-39"
+        DSV41_ENGRAM_RAM: "1"
+        DSV41_POOL_DTYPE: fp8
+        DSV41_TRACE_REGION: "1600000000"
+        DSV41_VISION: "1"
+        DSV41_CKPT: /mnt/tt-data/ssinghal/deepseek-v41-flash  # local HF checkpoint dir
+        DSV41_WEIGHT_CACHE: /home/ttuser/ssinghal/tt-metal-cache/weights
+        DSV41_UNIFIED_CACHE: /home/ttuser/ssinghal/tt-metal-cache/unified
+        TT_METAL_CACHE: /home/ttuser/ssinghal/tt-metal-cache/kernels
+        EXTRA_MODELS_DIR: ../../tt-metal/models/demos/blackhole
+      vllm_args:
+        block_size: "128"
+        hf_config_path: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config
+        tokenizer: /mnt/tt-data/ssinghal/deepseek-v41-flash
+        chat_template: ../../tt-metal/models/demos/blackhole/deepseek_v41_flash/vllm_config/chat_template.jinja
+        chat-template-content-format: openai  # the template iterates over the content parts (text / image_url)
+        max_num_seqs: "16"
+        max_model_len: "131072"
+        max_num_batched_tokens: "67584"
+        no-enable-prefix-caching: true
+        limit-mm-per-prompt: '{"image": 4}'
+        mm-processor-cache-gb: 0
+        hf-overrides: '{"architectures":["TTDeepseekV41ForCausalLM"]}'
+        speculative_config: '{"method": "custom_class", "model": "vllm_tt_plugin.model_owned_drafter", "num_speculative_tokens": 5}'
+      override_tt_config:
+        fabric_config: FABRIC_1D_RING
+        l1_small_size: 16384
+        trace_region_size: 1600000000
+        sample_on_device_mode: all
+  status: EXPERIMENTAL
+  has_builtin_warmup: true

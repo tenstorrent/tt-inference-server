@@ -7322,6 +7322,96 @@ _eval_config_list = [
                     },
                     limit_samples_map={EvalLimitMode.SMOKE_TEST: 2, EvalLimitMode.CI_NIGHTLY: 4}  # per subject (7 subjects),
                 ),
+                # Image tasks (lmms-eval through the chat API; need the VLM profile: --impl deepseek-v41-flash-vlm). The model card publishes no ChartQA number.
+                EvalTask(
+                    eval_class="openai_compatible",
+                    task_name="chartqa",
+                    workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                    apply_chat_template=False,
+                    use_chat_api=True,
+                    max_concurrent=16,
+                    score=EvalTaskScore(
+                        published_score=None,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["relaxed_overall,none"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "max_retries": 1,
+                        "tokenized_requests": "False",
+                        "add_bos_token": "False",
+                        "timeout": "9999",
+                        "eos_string": "<｜end▁of▁sentence｜>",
+                    },
+                    gen_kwargs={
+                        "stream": "False",
+                        "max_new_tokens": "512",
+                    },
+                    limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.2, EvalLimitMode.SMOKE_TEST: 0.01},
+                ),
+                # DocVQA validation, ANLS. (The card's 95.6 is a 4-shot LLM-judge score: not the same metric, so it is not used as the published score.)
+                EvalTask(
+                    eval_class="openai_compatible",
+                    task_name="docvqa_val",
+                    workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                    apply_chat_template=False,
+                    use_chat_api=True,
+                    max_concurrent=16,
+                    score=EvalTaskScore(
+                        published_score=None,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["anls,none"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "max_retries": 1,
+                        "tokenized_requests": "False",
+                        "add_bos_token": "False",
+                        "timeout": "9999",
+                        "eos_string": "<｜end▁of▁sentence｜>",
+                    },
+                    gen_kwargs={
+                        "stream": "False",
+                        "max_new_tokens": "128",
+                    },
+                    limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.05, EvalLimitMode.SMOKE_TEST: 0.001},
+                ),
+                # MMMU validation accuracy (the card lists MMMU-Pro 56.5, a different set).
+                EvalTask(
+                    eval_class="openai_compatible",
+                    task_name="mmmu_val",
+                    workflow_venv_type=WorkflowVenvType.EVALS_VISION,
+                    apply_chat_template=False,
+                    use_chat_api=True,
+                    max_concurrent=16,
+                    score=EvalTaskScore(
+                        published_score=None,
+                        published_score_ref="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash",
+                        score_func=score_task_single_key,
+                        score_func_kwargs={
+                            "result_keys": ["mmmu_acc,none"],
+                            "unit": "percent",
+                        },
+                    ),
+                    model_kwargs={
+                        "max_retries": 1,
+                        "tokenized_requests": "False",
+                        "add_bos_token": "False",
+                        "timeout": "9999",
+                        "eos_string": "<｜end▁of▁sentence｜>",
+                    },
+                    gen_kwargs={
+                        "stream": "False",
+                        "max_new_tokens": "1024",
+                    },
+                    limit_samples_map={EvalLimitMode.CI_NIGHTLY: 0.2, EvalLimitMode.SMOKE_TEST: 0.01},
+                ),
             ]
             if not os.getenv("DSV41_EVAL_TASKS")
             or t.task_name in os.getenv("DSV41_EVAL_TASKS").split(",")
