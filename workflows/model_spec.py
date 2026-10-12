@@ -541,6 +541,8 @@ class DeviceModelSpec:
     # where the host prunes /dev/shm under running jobs: vLLM's engine<->worker ring buffers and
     # multiprocessing semaphores live there, and a multi-engine (data-parallel) server attaches to
     # them only after model load.
+    # TODO: address https://github.com/tenstorrent/tt-inference-server/issues/5388 (map this field into the
+    # auto-generated Helm chart values)
     docker_shm_size: Optional[str] = None
     system_requirements: Optional[SystemRequirements] = None
     known_issues: List[KnownIssue] = field(default_factory=list)
