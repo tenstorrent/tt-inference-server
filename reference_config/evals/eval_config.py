@@ -5381,7 +5381,7 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=16,  # concurrency 16: SC12 base Gemma 4 on tt-d-gen, 16 slots, 2026-10-08
+                    n_concurrent_trials=5,  # concurrency 5: GPU reference on 1x H100 NVL (as tt-inference-server #4331), 2026-10-12
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     # QB2 release runners expose only 16 CPUs; docker compose
@@ -5465,7 +5465,7 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=16,  # concurrency 16: SC12 base Gemma 4 on tt-d-gen, 16 slots, 2026-10-08
+                    n_concurrent_trials=5,  # concurrency 5: GPU reference on 1x H100 NVL (as tt-inference-server #4331), 2026-10-12
                     n_attempts=1,
                     n_tasks=None,  # full dataset
                     agent_timeout_sec=2 * 60 * 60,
