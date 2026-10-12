@@ -8,8 +8,11 @@ import logging
 import os
 import shutil
 import subprocess
+import tarfile
+import urllib.error
+import urllib.request
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Callable, Optional, Sequence, Tuple
 
 from workflows.bootstrap_uv import UV_EXEC
@@ -54,18 +57,20 @@ MINIMAX_VERIFIER_REPO = "https://github.com/ipastalTT/MiniMax-Provider-Verifier.
 MINIMAX_VERIFIER_BRANCH = "vendor-test-report"
 MINIMAX_VERIFIER_DIR_NAME = "MiniMax-Provider-Verifier"
 # The full tree is ~870 MB, mostly official-deployment baselines for every
-# model x 10 loops. The spec test reads only the first loop of each enrolled
-# model, as its ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
-# test_module/test_suites/llm.json). Root files are part of a cone, but the
-# spec test cannot run without these two, so the export checks for them
-# and checks them out explicitly when the sparse checkout left them out.
-MINIMAX_VERIFIER_SPARSE_PATHS = (
+# model x 10 loops. Only these paths are extracted (see export_repo_branch):
+# verify.py and its sample, validator/ (imported by verify.py), the
+# m3_format_check pytest suites, and the first loop of each enrolled model,
+# the ToolCalls-Trigger-Similarity baseline (`verify_baseline` in
+# test_module/test_suites/llm.json).
+MINIMAX_VERIFIER_PATHS = (
+    "verify.py",
+    "sample.jsonl",
     "validator",
     "m3_format_check",
     "output-dir/MiniMax-M3/loop_01",
     "output-dir/MiniMax-M2.7/loop_01",
 )
-MINIMAX_VERIFIER_REQUIRED_FILES = ("verify.py", "sample.jsonl")
+TARBALL_TIMEOUT_S = 300
 # Written next to the exported files: the commit they came from.
 SOURCE_COMMIT_FILE = ".source_commit"
 
@@ -123,27 +128,40 @@ def read_source_commit(dest: Path) -> Optional[str]:
         return None
 
 
+def tarball_url(repo: str, commit: str) -> str:
+    """codeload URL of *repo*'s (a github.com URL) tarball at *commit*."""
+    slug = repo.removeprefix("https://github.com/").removesuffix(".git")
+    return f"https://codeload.github.com/{slug}/tar.gz/{commit}"
+
+
+def _wanted_path(
+    member: tarfile.TarInfo, paths: Sequence[str]
+) -> Optional[PurePosixPath]:
+    """*member*'s path without the tarball's top-level dir, when it is a file
+    under (or equal to) one of *paths*."""
+    rel = PurePosixPath(*PurePosixPath(member.name).parts[1:])
+    if not member.isfile() or ".." in rel.parts:
+        return None
+    if any(rel == PurePosixPath(p) or PurePosixPath(p) in rel.parents for p in paths):
+        return rel
+    return None
+
+
 def export_repo_branch(
-    dest: Path,
-    repo: str,
-    branch: str,
-    paths: Sequence[str],
-    required_files: Sequence[str] = (),
+    dest: Path, repo: str, branch: str, paths: Sequence[str]
 ) -> bool:
     """Materialize *paths* of *repo* at the head of *branch* in *dest*, as
-    plain files: no ``.git``. Returns success.
+    plain files. Returns success.
 
     The head is resolved with ``git ls-remote`` on every call and the files
     are re-exported only when it moved (the exported commit is kept in
     ``SOURCE_COMMIT_FILE``). When the remote cannot be reached, an existing
     export is used as is.
 
-    The export goes through a blob-less, depth-1, sparse clone in a sibling
-    directory, so only the files under *paths* (plus the repository root's)
-    are downloaded; its ``.git`` is then removed and the directory swapped
-    into place. Each of *required_files* (repository-root paths) must exist in
-    the export: one the sparse checkout left out is checked out explicitly,
-    and the export fails when it is still missing.
+    The export streams the GitHub tarball at that exact commit and extracts
+    only *paths* (files, or directories taken whole) into a sibling staging
+    directory, swapped into place once every path was found: no clone, so no
+    ``.git`` and no dependence on the local git's sparse-checkout behaviour.
     """
     current = read_source_commit(dest) if dest.is_dir() else None
     listing = _git_output("ls-remote", repo, f"refs/heads/{branch}")
@@ -159,37 +177,39 @@ def export_repo_branch(
             return True
         logger.error("Cannot resolve branch %s of %s", branch, repo)
         return False
-    if head == current and all((dest / f).exists() for f in required_files):
+    if head == current:
         logger.info("%s is at %s %s (%s)", dest, repo, branch, head)
         return True
 
+    url = tarball_url(repo, head)
     staging = dest.with_name(dest.name + ".staging")
     shutil.rmtree(staging, ignore_errors=True)
-    steps = (
-        f"git clone --filter=blob:none --no-checkout --depth 1 --branch {branch} "
-        f"{repo} {staging}",
-        f"git -C {staging} sparse-checkout set --cone {' '.join(paths)}",
-        f"git -C {staging} checkout {branch}",
-    )
-    for step in steps:
-        if run_command(step, logger=logger) != 0:
-            logger.error("Failed to export %s %s (%s)", repo, branch, step)
-            shutil.rmtree(staging, ignore_errors=True)
-            return False
-    for name in required_files:
-        if not (staging / name).exists():
-            run_command(f"git -C {staging} checkout HEAD -- {name}", logger=logger)
-        if not (staging / name).exists():
-            logger.error("%s %s has no %s after checkout", repo, branch, name)
-            shutil.rmtree(staging, ignore_errors=True)
-            return False
-    # The branch may have moved since ls-remote; record what was exported.
-    commit = _git_output("-C", str(staging), "rev-parse", "HEAD") or head
-    shutil.rmtree(staging / ".git")
-    (staging / SOURCE_COMMIT_FILE).write_text(commit + "\n")
+    logger.info("Downloading %s (%s %s) ...", url, branch, head)
+    try:
+        with urllib.request.urlopen(
+            url, timeout=TARBALL_TIMEOUT_S
+        ) as response, tarfile.open(fileobj=response, mode="r|gz") as tar:
+            for member in tar:
+                rel = _wanted_path(member, paths)
+                if rel is None:
+                    continue
+                out = staging / rel
+                out.parent.mkdir(parents=True, exist_ok=True)
+                with tar.extractfile(member) as src, open(out, "wb") as dst:
+                    shutil.copyfileobj(src, dst)
+    except (urllib.error.URLError, tarfile.TarError, OSError) as e:
+        logger.error("Failed to export %s %s from %s: %s", repo, branch, url, e)
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    missing = [p for p in paths if not (staging / p).exists()]
+    if missing:
+        logger.error("%s at %s has no %s", repo, head, ", ".join(missing))
+        shutil.rmtree(staging, ignore_errors=True)
+        return False
+    (staging / SOURCE_COMMIT_FILE).write_text(head + "\n")
     shutil.rmtree(dest, ignore_errors=True)
     staging.rename(dest)
-    logger.info("Exported %s %s (%s) to %s", repo, branch, commit, dest)
+    logger.info("Exported %s %s (%s) to %s", repo, branch, head, dest)
     return True
 
 
@@ -380,8 +400,7 @@ def setup_minimax_verifier(
         venv_config.venv_path / MINIMAX_VERIFIER_DIR_NAME,
         MINIMAX_VERIFIER_REPO,
         MINIMAX_VERIFIER_BRANCH,
-        MINIMAX_VERIFIER_SPARSE_PATHS,
-        MINIMAX_VERIFIER_REQUIRED_FILES,
+        MINIMAX_VERIFIER_PATHS,
     )
 
 

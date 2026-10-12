@@ -285,7 +285,7 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
     def _baseline_path(self, verifier_dir: Path) -> Optional[Path]:
         """The official deployment's results for ToolCalls-Trigger-Similarity:
         the first ``*_results.jsonl`` under ``verify_baseline`` (a directory in
-        the checkout, which must be in its sparse paths)."""
+        the checkout, which must be in MINIMAX_VERIFIER_PATHS)."""
         folder = _setting(self.config, "verify_baseline")
         if not folder:
             return None

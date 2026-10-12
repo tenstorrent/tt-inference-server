@@ -443,9 +443,9 @@ Per-model targets follow the same method as the tool-call schema tests. For Tool
 
 The verifier is not vendored. The `MINIMAX_VERIFIER` venv (Python 3.12, `requirements/minimax-verifier.txt`) exports it from the branch set in `workflows/workflow_venvs.py` (`MINIMAX_VERIFIER_REPO` / `MINIMAX_VERIFIER_BRANCH`). Every run resolves the branch head with `git ls-remote` and re-exports only when the head has moved. If GitHub can't be reached, the existing export is used.
 
-The export is plain files, without `.git`. Only the paths in `MINIMAX_VERIFIER_SPARSE_PATHS` are downloaded, through a blob-less sparse clone: about 340 MB on disk instead of the full 870 MB tree. The exported commit is recorded in `.source_commit` and reported as `verifier_commit` in each block.
+The export is plain files, without `.git`: the GitHub tarball at the resolved head commit is streamed, and only the paths in `MINIMAX_VERIFIER_PATHS` are extracted, about 340 MB on disk instead of the full 870 MB tree. The export fails if any of those paths is missing. The exported commit is recorded in `.source_commit` and reported as `verifier_commit` in each block.
 
-To enroll another model, point its `verify_baseline` at `output-dir/<model>/loop_01` and add that path to the sparse paths.
+To enroll another model, point its `verify_baseline` at `output-dir/<model>/loop_01` and add that path to `MINIMAX_VERIFIER_PATHS`.
 
 ```bash
 python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \

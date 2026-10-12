@@ -4,7 +4,7 @@
 
 """Grading for MiniMax-Provider-Verifier runs.
 
-The verifier's own tests run unchanged from the pinned checkout (``verify.py``
+The verifier's own tests run unchanged from the exported verifier (``verify.py``
 and the ``m3_format_check`` pytest suites); this module turns their raw output
 into a verdict, so thresholds and pass/fail rules live with the other spec
 tests rather than in the verifier:

@@ -5,133 +5,141 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+import io
+import tarfile
+import urllib.error
 from types import SimpleNamespace
 
 import workflows.workflow_venvs as wv
 from workflow_module.engine_types import WorkflowVenvType
 
+_FILES = {
+    "verify.py": "",
+    "sample.jsonl": "",
+    "README.md": "",
+    "validator/__init__.py": "",
+    "output-dir/MiniMax-M3/loop_01/a.jsonl": "",
+    "output-dir/MiniMax-M3/loop_02/a.jsonl": "",
+}
 
-class _Git:
-    """Fakes git: ls-remote returns ``head``; a clone writes the files."""
+
+def _tarball(files):
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        for name, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(f"repo-abc/{name}")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    buf.seek(0)
+    return buf
+
+
+class _Remote:
+    """Fakes the remote: ls-remote returns ``head``; the tarball holds ``files``."""
 
     def __init__(self, monkeypatch, head="a" * 40):
         self.head = head
-        self.commands = []
-        monkeypatch.setattr(wv, "run_command", self.run)
+        self.files = dict(_FILES)
+        self.urls = []
         monkeypatch.setattr(wv, "_git_output", self.output)
+        monkeypatch.setattr(wv.urllib.request, "urlopen", self.urlopen)
 
     def output(self, *args):
-        if args[0] == "ls-remote":
-            return f"{self.head}\trefs/heads/b" if self.head else None
-        return self.head  # rev-parse HEAD
+        return f"{self.head}\trefs/heads/b" if self.head else None
 
-    def run(self, cmd, **kw):
-        self.commands.append(cmd)
-        if cmd.startswith("git clone"):
-            staging = Path(cmd.split()[-1])
-            (staging / ".git").mkdir(parents=True)
-            (staging / "verify.py").write_text("")
-        return 0
+    def urlopen(self, url, timeout=None):
+        self.urls.append(url)
+        if self.files is None:
+            raise urllib.error.URLError("down")
+        return _tarball(self.files)
 
 
-def test_the_branch_head_is_exported_without_git_metadata(monkeypatch, tmp_path):
-    git = _Git(monkeypatch)
+_PATHS = ["verify.py", "validator", "output-dir/MiniMax-M3/loop_01"]
+
+
+def test_only_the_listed_paths_are_exported_at_the_head(monkeypatch, tmp_path):
+    remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
 
-    assert wv.export_repo_branch(dest, "url", "b", ["validator", "m3_format_check"])
+    assert wv.export_repo_branch(dest, "https://github.com/o/r.git", "b", _PATHS)
 
-    assert (dest / "verify.py").exists()
-    assert not (dest / ".git").exists()
-    assert wv.read_source_commit(dest) == git.head
+    assert remote.urls == [f"https://codeload.github.com/o/r/tar.gz/{remote.head}"]
+    exported = sorted(
+        str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file()
+    )
+    assert exported == [
+        wv.SOURCE_COMMIT_FILE,
+        "output-dir/MiniMax-M3/loop_01/a.jsonl",
+        "validator/__init__.py",
+        "verify.py",
+    ]
+    assert wv.read_source_commit(dest) == remote.head
     assert not (tmp_path / "verifier.staging").exists()
-    clone, sparse, checkout = git.commands
-    assert clone.startswith("git clone --filter=blob:none --no-checkout --depth 1 ")
-    assert "--branch b url" in clone
-    assert sparse.endswith("sparse-checkout set --cone validator m3_format_check")
-    assert checkout.endswith("checkout b")
 
 
-def test_a_required_file_the_sparse_checkout_missed_is_checked_out(
-    monkeypatch, tmp_path
-):
-    git = _Git(monkeypatch)
-    run = git.run
-
-    def run_without_root_files(cmd, **kw):
-        rc = run(cmd, **kw)
-        if cmd.startswith("git clone"):
-            (Path(cmd.split()[-1]) / "verify.py").unlink()
-        if "checkout HEAD -- verify.py" in cmd:
-            (Path(cmd.split()[2]) / "verify.py").write_text("")
-        return rc
-
-    monkeypatch.setattr(wv, "run_command", run_without_root_files)
+def test_a_missing_path_fails_the_export(monkeypatch, tmp_path):
+    remote = _Remote(monkeypatch)
+    del remote.files["verify.py"]
     dest = tmp_path / "verifier"
 
-    assert wv.export_repo_branch(dest, "url", "b", ["validator"], ["verify.py"])
-
-    assert (dest / "verify.py").exists()
-
-
-def test_an_export_missing_a_required_file_fails(monkeypatch, tmp_path):
-    _Git(monkeypatch)
-    dest = tmp_path / "verifier"
-
-    assert not wv.export_repo_branch(dest, "url", "b", ["validator"], ["sample.jsonl"])
+    assert not wv.export_repo_branch(dest, "url", "b", _PATHS)
 
     assert not dest.exists()
     assert not (tmp_path / "verifier.staging").exists()
 
 
 def test_an_export_at_the_branch_head_is_kept(monkeypatch, tmp_path):
-    git = _Git(monkeypatch)
+    remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", ["validator"])
-    git.commands.clear()
+    wv.export_repo_branch(dest, "url", "b", _PATHS)
+    remote.urls.clear()
 
-    assert wv.export_repo_branch(dest, "url", "b", ["validator"])
+    assert wv.export_repo_branch(dest, "url", "b", _PATHS)
 
-    assert git.commands == []
+    assert remote.urls == []
 
 
 def test_a_moved_branch_is_exported_again(monkeypatch, tmp_path):
-    git = _Git(monkeypatch)
+    remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", ["validator"])
+    wv.export_repo_branch(dest, "url", "b", _PATHS)
     (dest / "stale.txt").write_text("")
-    git.head = "b" * 40
+    remote.head = "b" * 40
 
-    assert wv.export_repo_branch(dest, "url", "b", ["validator"])
+    assert wv.export_repo_branch(dest, "url", "b", _PATHS)
 
     assert wv.read_source_commit(dest) == "b" * 40
     assert not (dest / "stale.txt").exists()
 
 
 def test_an_unreachable_remote_keeps_an_existing_export(monkeypatch, tmp_path):
-    git = _Git(monkeypatch)
+    remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", ["validator"])
-    git.head = None
+    wv.export_repo_branch(dest, "url", "b", _PATHS)
+    remote.head = None
 
-    assert wv.export_repo_branch(dest, "url", "b", ["validator"])
-    assert not wv.export_repo_branch(tmp_path / "other", "url", "b", ["validator"])
+    assert wv.export_repo_branch(dest, "url", "b", _PATHS)
+    assert not wv.export_repo_branch(tmp_path / "other", "url", "b", _PATHS)
 
 
-def test_a_failed_clone_leaves_no_staging_directory(monkeypatch, tmp_path):
-    _Git(monkeypatch)
-    monkeypatch.setattr(wv, "run_command", lambda cmd, **kw: 1)
+def test_a_failed_download_keeps_the_previous_export(monkeypatch, tmp_path):
+    remote = _Remote(monkeypatch)
+    dest = tmp_path / "verifier"
+    wv.export_repo_branch(dest, "url", "b", _PATHS)
+    remote.head, remote.files = "b" * 40, None
 
-    assert not wv.export_repo_branch(tmp_path / "verifier", "url", "b", ["v"])
+    assert not wv.export_repo_branch(dest, "url", "b", _PATHS)
+
+    assert wv.read_source_commit(dest) == "a" * 40
     assert not (tmp_path / "verifier.staging").exists()
 
 
 def test_the_verifier_branch_is_exported(monkeypatch, tmp_path):
     seen = {}
 
-    def export(dest, repo, branch, paths, required_files=()):
+    def export(dest, repo, branch, paths):
         seen.update(dest=dest, repo=repo, branch=branch, paths=paths)
-        seen["required"] = required_files
         return True
 
     monkeypatch.setattr(wv, "export_repo_branch", export)
@@ -141,10 +149,9 @@ def test_the_verifier_branch_is_exported(monkeypatch, tmp_path):
     assert seen["dest"] == tmp_path / "MiniMax-Provider-Verifier"
     assert seen["repo"] == wv.MINIMAX_VERIFIER_REPO
     assert seen["branch"] == wv.MINIMAX_VERIFIER_BRANCH
-    assert seen["required"] == wv.MINIMAX_VERIFIER_REQUIRED_FILES
     # verify.py imports validator/; the pytest suites and fixtures live in
     # m3_format_check/.
-    for path in ("validator", "m3_format_check"):
+    for path in ("verify.py", "sample.jsonl", "validator", "m3_format_check"):
         assert path in seen["paths"]
 
 
@@ -166,7 +173,7 @@ def test_every_configured_baseline_is_checked_out():
     for baseline in baselines:
         assert any(
             baseline == path or baseline.startswith(path + "/")
-            for path in wv.MINIMAX_VERIFIER_SPARSE_PATHS
+            for path in wv.MINIMAX_VERIFIER_PATHS
         ), baseline
 
 

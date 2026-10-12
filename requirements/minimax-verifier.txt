@@ -8,9 +8,9 @@
 # this venv's python.
 #
 # The verifier itself is NOT installed: setup_minimax_verifier() in
-# workflows/workflow_venvs.py checks it out at a pinned commit. The lists
-# below are its requirements.txt (verify.py) and m3_format_check/
-# requirements.txt (the pytest format-check suites), at that commit.
+# workflows/workflow_venvs.py exports it from MINIMAX_VERIFIER_BRANCH. The
+# lists below are its requirements.txt (verify.py) and m3_format_check/
+# requirements.txt (the pytest format-check suites).
 
 -c constraints.txt
 
