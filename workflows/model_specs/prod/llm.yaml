@@ -1260,9 +1260,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: "e867533"
-  vllm_commit: "22be241"
+  version: "0.16.0"
+  tt_metal_commit: "669d59e"
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -1295,9 +1295,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: "e867533"
-  vllm_commit: "22be241"
+  version: "0.16.0"
+  tt_metal_commit: "669d59e"
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -1330,9 +1330,9 @@ templates:
     kmd:
       specifier: ">=2.5.0"
       mode: STRICT
-  version: "0.10.1"
-  tt_metal_commit: "e867533"
-  vllm_commit: "22be241"
+  version: "0.16.0"
+  tt_metal_commit: "669d59e"
+  vllm_commit: "3334377"
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
@@ -1965,9 +1965,9 @@ templates:
 
 - weights:
     - meta-llama/Llama-3.1-8B
-  version: "0.10.1"
-  tt_metal_commit: "e867533"
-  vllm_commit: "22be241"
+  version: "0.17.0"
+  tt_metal_commit: "8c48a10"
+  vllm_commit: "f52987a"
   impl: tt_transformers
   system_requirements:
     firmware:
@@ -2014,9 +2014,9 @@ templates:
   model_display_name: Llama-3.1-8B
 - weights:
     - meta-llama/Llama-3.1-8B
-  version: "0.10.1"
-  tt_metal_commit: "e867533"
-  vllm_commit: "22be241"
+  version: "0.19.0"
+  tt_metal_commit: "b204341"
+  vllm_commit: "9bd099c"
   impl: tt_transformers
   system_requirements:
     firmware:
