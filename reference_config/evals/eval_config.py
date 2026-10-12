@@ -6458,8 +6458,10 @@ _eval_config_list = [
                 },
                 # 64K output: at 32K, 8/40 GPQA and 13/33 HMMT traces hit the cap with no
                 # final answer (run 36837441412); the card asks for >= 32768.
-                # Model-card sampling (temperature 1.0, top_p 0.95, no top_k), served
-                # by the model's device sampler (sample_on_device_mode: all in the spec).
+                # Model-card sampling (temperature 1.0, top_p 0.95, no top_k). With no
+                # top_k the TT plugin routes sampling to the host (device top-k is capped
+                # at 32), so every K2 eval row runs the host sampling path; only the
+                # greedy benchmarks sample on device (sample_on_device_mode: all).
                 # stream=false is required by lm-eval's chat-completions parser.
                 gen_kwargs={
                     "stream": "false",
@@ -6543,7 +6545,7 @@ _eval_config_list = [
                     override_memory_mb=48 * 1024,
                     agent_timeout_sec=3 * 60 * 60,
                     # Model-card sampling (temperature 1.0, top_p 0.95, no top_k),
-                    # served by the model's device sampler as for the evals above.
+                    # host-sampled as for the evals above.
                     # 32K output is the card's minimum reasoning budget; 128K input
                     # plus 32K output stays well inside the 524288 context.
                     agent_kwargs={
