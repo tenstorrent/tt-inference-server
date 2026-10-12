@@ -18,11 +18,13 @@ Charts, each a separate file so the report can order and caption them:
 * ``latency``        TTFT and end-to-end latency per request over the run
 * ``interactivity``  per-request output tokens/s/user over the run
 * ``throughput``     prefill and decode throughput over the run
-* ``load``           effective concurrency, tokens in flight, completed requests
+* ``load``           effective concurrency, prefix-cache hit rate, completed requests
 
-Not drawn here: KV-cache utilisation, prefix-cache hit rate and queue depth.
-They come from the serving engine's own metrics (``server_metrics_export.json``,
-hundreds of MB), not from the client's per-request records.
+The load chart's cache panel is the prefix-cache hit rate over time, read from
+the serving engine's counters in ``server_metrics_export.json`` (hundreds of MB,
+so streamed, not parsed whole); without that file it falls back to the client's
+tokens-in-flight. KV-cache utilisation and queue depth are in the same file but
+are not drawn.
 """
 
 from __future__ import annotations
@@ -41,6 +43,13 @@ logger = logging.getLogger(__name__)
 
 PROFILE_EXPORT = "profile_export.jsonl"
 TIMESLICES = "profile_export_aiperf_timeslices.csv"
+SERVER_METRICS = "server_metrics_export.json"
+
+# Keys under which the engine-derived hit-rate series ride in the same mapping
+# as the client timeslices.
+HIT_RATE_ROLLING = "Prefix Cache Hit Rate (rolling)"
+HIT_RATE_CUMULATIVE = "Prefix Cache Hit Rate (cumulative)"
+_HIT_RATE_WINDOW_S = 30
 
 # Payload key prefix for a chart's report-relative link (``<prefix><name>``).
 # The report renderer duplicates it: report_module does not import llm_module.
@@ -187,6 +196,94 @@ def load_timeslices(
                 continue
             series[row["Metric"]].append(((mid - origin_ns) / 1e9, value))
     return series
+
+
+def _stream_metric_blocks(path: Path, names: Iterable[str]) -> Dict[str, Dict]:
+    """Pull the named metric blocks out of ``server_metrics_export.json``.
+
+    The export is hundreds of MB (one 1 s timeslice per endpoint per metric), so
+    it is scanned line by line rather than parsed whole. It is written with
+    ``indent=2``: metrics sit at four spaces under ``"metrics"``, and each
+    block closes at the next four-space ``}``. Only the profiling phase
+    (``"metrics"``) is read, and the scan stops at ``"warmup_metrics"``.
+    A file written any other way yields nothing, which just omits the chart.
+    """
+    wanted = {f'    "{name}": {{': name for name in names}
+    found: Dict[str, Dict] = {}
+    in_metrics = False
+    current: Optional[str] = None
+    body: List[str] = []
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if not in_metrics:
+                in_metrics = line.rstrip() == '  "metrics": {'
+                continue
+            if current is None:
+                if line.startswith('  "warmup_metrics"') or len(found) == len(wanted):
+                    break
+                name = wanted.get(line.rstrip())
+                if name is not None:
+                    current, body = name, ["{"]
+                continue
+            if line.rstrip() in ("    },", "    }"):
+                body.append("}")
+                try:
+                    found[current] = json.loads("".join(body))
+                except ValueError:
+                    logger.warning("Could not parse metric %s in %s", current, path)
+                current = None
+            else:
+                body.append(line)
+    return found
+
+
+def _summed_windows(block: Dict, origin_ns: int) -> Dict[float, float]:
+    """Counter increase per 1 s window, summed over the endpoints' series."""
+    out: Dict[float, float] = {}
+    for series in block.get("series") or []:
+        for window in series.get("timeslices") or []:
+            total = window.get("total")
+            if not isinstance(total, (int, float)):
+                continue
+            mid = ((window["start_ns"] + window["end_ns"]) / 2 - origin_ns) / 1e9
+            out[mid] = out.get(mid, 0.0) + total
+    return out
+
+
+def load_prefix_cache_hit_rate(
+    path: Path, origin_ns: int
+) -> Dict[str, List[Tuple[float, float]]]:
+    """Prefix-cache hit rate over time (%), from the engines' own counters.
+
+    Two lines: a trailing ``_HIT_RATE_WINDOW_S`` second window (hits / queries
+    over it) and the cumulative rate since profiling began. A window with no
+    queries has no rate and is skipped rather than drawn as 0%.
+    """
+    blocks = _stream_metric_blocks(path, ("vllm:prefix_cache_hits", "vllm:prefix_cache_queries"))
+    if len(blocks) < 2:
+        return {}
+    hits = _summed_windows(blocks["vllm:prefix_cache_hits"], origin_ns)
+    queries = _summed_windows(blocks["vllm:prefix_cache_queries"], origin_ns)
+    times = sorted(t for t in queries if t >= 0)
+    rolling: List[Tuple[float, float]] = []
+    cumulative: List[Tuple[float, float]] = []
+    window: List[Tuple[float, float]] = []
+    total_hits = total_queries = 0.0
+    for t in times:
+        h, q = hits.get(t, 0.0), queries[t]
+        window.append((h, q))
+        if len(window) > _HIT_RATE_WINDOW_S:
+            window.pop(0)
+        total_hits += h
+        total_queries += q
+        window_queries = sum(w[1] for w in window)
+        if window_queries > 0:
+            rolling.append((t, 100.0 * sum(w[0] for w in window) / window_queries))
+        if total_queries > 0:
+            cumulative.append((t, 100.0 * total_hits / total_queries))
+    if not rolling:
+        return {}
+    return {HIT_RATE_ROLLING: rolling, HIT_RATE_CUMULATIVE: cumulative}
 
 
 # --------------------------------------------------------------------------
@@ -664,22 +761,33 @@ def _chart_interactivity(requests, _slices) -> Optional[str]:
 
 
 def _line_stack(
-    specs: Sequence[Tuple[str, str, Sequence[Tuple[float, float]], str]],
+    specs: Sequence[Tuple],
     tmax: float,
     description: str,
 ) -> Optional[str]:
+    """Stacked line panels. A spec is ``(title, ylabel, points, color[, extra])``.
+
+    ``extra`` is a dict: ``lines`` ``[(label, points, color, dash)]`` drawn over
+    the main line (with a legend), ``main_label`` naming the main line, and
+    ``ymax`` fixing the y range.
+    """
     specs = [s for s in specs if s[2]]
     if not specs:
         return None
     canvas = _Canvas()
     panel_h = 190
     canvas.height = _stack_height(len(specs), panel_h)
-    for index, (title, ylabel, points, color) in enumerate(specs):
-        ymax = _ticks(0, max(v for _, v in points) or 1.0, 4)[-1]
+    for index, spec in enumerate(specs):
+        title, ylabel, points, color = spec[:4]
+        extra = spec[4] if len(spec) > 4 else {}
+        lines = extra.get("lines", [])
+        top = max(v for _, v in points + [p for _, pts, _, _ in lines for p in pts]) or 1.0
+        ymax = extra.get("ymax") or _ticks(0, top, 4)[-1]
+        y0 = 4 + index * panel_h
         panel = _Panel(
             canvas,
             0,
-            4 + index * panel_h,
+            y0,
             _WIDTH,
             panel_h,
             title=title,
@@ -688,8 +796,17 @@ def _line_stack(
             xlabel="time since profiling start" if index == len(specs) - 1 else "",
             ylabel=ylabel,
             xticks=_time_ticks(0, tmax),
+            title_h=38 if lines else _PANEL_TITLE_H,
         )
-        panel.line(points, color)
+        panel.line(_subsample(points, _MAX_LINE_POINTS), color, 1.6, dash=extra.get("main_dash", ""))
+        for _label, pts, line_color, dash in lines:
+            panel.line(_subsample(pts, _MAX_LINE_POINTS), line_color, 2.0, dash=dash)
+        if lines:
+            panel.legend(
+                [(extra.get("main_label", ylabel), color, "dash" if extra.get("main_dash") else "line")]
+                + [(label, c, "dash" if d else "line") for label, _, c, d in lines],
+                y=y0 + 32,
+            )
     return canvas.render(description)
 
 
@@ -719,24 +836,48 @@ def _chart_throughput(requests, slices) -> Optional[str]:
 def _chart_load(requests, slices) -> Optional[str]:
     completed = sorted(r.end for r in requests if r.phase == "profiling" and r.ok)
     cumulative = [(t, float(i + 1)) for i, t in enumerate(completed)]
+    slices = slices or {}
+    rolling_hit_rate = slices.get(HIT_RATE_ROLLING, [])
+    if rolling_hit_rate:
+        # What the cache is doing beats a raw footprint: it says whether the
+        # engine kept the reuse the traces offered.
+        cache_panel = (
+            "Prefix cache hit rate",
+            "Hit rate (%)",
+            rolling_hit_rate,
+            _SERIES[1],
+            {
+                "main_label": f"Rolling {_HIT_RATE_WINDOW_S} s",
+                "lines": [
+                    ("Cumulative", slices.get(HIT_RATE_CUMULATIVE, []), "var(--bad)", "")
+                ],
+                "ymax": 100,
+            },
+        )
+        description = "Concurrency, prefix cache hit rate and completed requests over the run"
+    else:
+        # No engine metrics for this run: fall back to the client's own view of
+        # how many tokens were in flight (the KV footprint).
+        cache_panel = (
+            "Tokens in flight",
+            "Tokens (KV footprint)",
+            slices.get("Tokens In Flight", []),
+            _SERIES[1],
+        )
+        description = "Concurrency, tokens in flight and completed requests over the run"
     return _line_stack(
         [
             (
                 "Effective concurrency",
                 "Requests in flight",
-                (slices or {}).get("Effective Concurrency", []),
+                slices.get("Effective Concurrency", []),
                 _SERIES[0],
             ),
-            (
-                "Tokens in flight",
-                "Tokens (KV footprint)",
-                (slices or {}).get("Tokens In Flight", []),
-                _SERIES[1],
-            ),
+            cache_panel,
             ("Completed requests (cumulative)", "Requests", cumulative, _SERIES[2]),
         ],
         _time_limit(requests),
-        "Concurrency, tokens in flight and completed requests over the run",
+        description,
     )
 
 
@@ -776,6 +917,12 @@ def write_point_charts(artifact_dir: Path, out_dir: Path) -> Dict[str, str]:
             slices = load_timeslices(slices_path, origin_ns, _SLICE_METRICS)
         except Exception:
             logger.exception("Could not read %s", slices_path)
+    metrics_path = artifact_dir / SERVER_METRICS
+    if metrics_path.exists():
+        try:
+            slices.update(load_prefix_cache_hit_rate(metrics_path, origin_ns))
+        except Exception:
+            logger.exception("Could not read %s", metrics_path)
 
     out_dir.mkdir(parents=True, exist_ok=True)
     written: Dict[str, str] = {}

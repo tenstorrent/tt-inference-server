@@ -144,7 +144,7 @@ TELEMETRY_CHARTS: List[Tuple[str, str]] = [
     ("latency", "TTFT and end-to-end latency over the run"),
     ("interactivity", "Interactivity over the run"),
     ("throughput", "Prefill and decode throughput over the run"),
-    ("load", "Concurrency, tokens in flight and completed requests"),
+    ("load", "Concurrency, prefix cache hit rate and completed requests"),
 ]
 
 # Rendered transposed: these are the row labels, not headers.
@@ -476,9 +476,9 @@ def _telemetry_section(rows: Sequence[Mapping[str, Any]]) -> str:
         "P90 and P75 over a rolling window of 50 requests and the cumulative "
         "P90, over the individual requests. For interactivity, \"P90\" is the "
         "tokens/s/user that 90% of requests exceeded, i.e. the slow tail. "
-        "Engine-side views (KV-cache utilisation, prefix-cache hit rate, queue "
-        "depth) come from the serving engine's own metrics and are not drawn "
-        "here."
+        "The prefix cache hit rate comes from the serving engine's own counters "
+        "(a run without them shows tokens in flight instead); KV-cache "
+        "utilisation and queue depth are not drawn."
     )
     return "#### Per-point Telemetry\n\n" + intro + "\n\n" + "\n\n".join(parts)
 

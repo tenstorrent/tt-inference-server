@@ -141,3 +141,77 @@ def test_there_is_no_request_timeline_chart(tmp_path):
     artifacts.mkdir()
     _write_artifacts(artifacts)
     assert "timeline" not in write_point_charts(artifacts, tmp_path / "charts")
+
+
+def _server_metrics(path, hits, queries):
+    """A server_metrics_export.json shaped like AIPerf writes it (indent=2)."""
+
+    def block(name, per_window):
+        return {
+            "type": "counter",
+            "series": [
+                {
+                    "endpoint_url": "http://e:1/metrics",
+                    "timeslices": [
+                        {"start_ns": T0 + i * 10**9, "end_ns": T0 + (i + 1) * 10**9, "total": v}
+                        for i, v in enumerate(per_window)
+                    ],
+                }
+            ],
+        }
+
+    doc = {
+        "summary": {},
+        "metrics": {
+            "aigateway_x": {"type": "gauge", "series": []},
+            "vllm:prefix_cache_hits": block("h", hits),
+            "vllm:prefix_cache_queries": block("q", queries),
+            "zzz_after": {"type": "gauge", "series": []},
+        },
+        "warmup_metrics": {
+            "vllm:prefix_cache_hits": block("h", [999]),
+            "vllm:prefix_cache_queries": block("q", [1]),
+        },
+    }
+    path.write_text(json.dumps(doc, indent=2))
+
+
+def test_prefix_cache_hit_rate_comes_from_the_engine_counters(tmp_path):
+    from llm_module.agentic_traces.charts import (
+        HIT_RATE_CUMULATIVE,
+        HIT_RATE_ROLLING,
+        load_prefix_cache_hit_rate,
+    )
+
+    path = tmp_path / "server_metrics_export.json"
+    _server_metrics(path, hits=[0, 50, 100, 0], queries=[100, 100, 100, 0])
+
+    series = load_prefix_cache_hit_rate(path, T0)
+
+    # Cumulative: 0/100, 50/200, 150/300, then the empty window adds nothing.
+    assert [round(v, 1) for _, v in series[HIT_RATE_CUMULATIVE]] == [0.0, 25.0, 50.0, 50.0]
+    # The warmup phase's counters (999 hits / 1 query) are not mixed in.
+    assert max(v for _, v in series[HIT_RATE_ROLLING]) <= 100.0
+
+
+def test_load_chart_shows_hit_rate_when_the_engine_metrics_exist(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    _write_artifacts(artifacts)
+    _server_metrics(artifacts / "server_metrics_export.json", [10, 20, 30], [40, 40, 40])
+
+    written = write_point_charts(artifacts, tmp_path / "charts")
+
+    svg = (tmp_path / "charts" / written["load"]).read_text()
+    assert "Prefix cache hit rate" in svg and "Tokens in flight" not in svg
+
+
+def test_load_chart_falls_back_to_tokens_in_flight_without_engine_metrics(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    _write_artifacts(artifacts)
+
+    written = write_point_charts(artifacts, tmp_path / "charts")
+
+    svg = (tmp_path / "charts" / written["load"]).read_text()
+    assert "Tokens in flight" in svg and "Prefix cache hit rate" not in svg
