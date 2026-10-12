@@ -1048,6 +1048,16 @@
       "weights": [
         "arcee-ai/Llama-3.1-SuperNova-Lite"
       ]
+    },
+    "Qwen/Qwen3-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--Qwen3-32B",
+      "weights": [
+        "Qwen/Qwen3-32B"
+      ]
     }
   },
   "hardware_defaults": {
