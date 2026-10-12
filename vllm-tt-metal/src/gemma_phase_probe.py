@@ -69,7 +69,7 @@ class GemmaPhaseLogger(StatLoggerBase):
         callback_mono = time.monotonic()
         scheduler = scheduler_stats
         for req in iteration_stats.finished_requests:
-            finish_reason = getattr(req.finish_reason, "value", str(req.finish_reason))
+            finish_reason = getattr(req.finish_reason, "name", str(req.finish_reason)).lower()
             self.records.put({
                 "schema": 1,
                 "request_id": req.request_id,
