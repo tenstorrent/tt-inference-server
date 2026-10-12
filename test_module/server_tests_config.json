@@ -92,7 +92,8 @@
       "meta-models/Muse-Glimmer-30B",
       "arcee-ai/Llama-3.1-SuperNova-Lite",
       "Qwen/Qwen2.5-Math-7B-Instruct",
-      "tiiuae/Falcon3-7B-Instruct"
+      "tiiuae/Falcon3-7B-Instruct",
+      "NousResearch/Hermes-3-Llama-3.1-8B"
     ]
   },
   "available_markers": {
@@ -979,6 +980,16 @@
       "id_name": "mistralai--Mistral-Small-3.1-24B-Instruct-2503",
       "weights": [
         "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
+      ]
+    },
+    "NousResearch/Hermes-3-Llama-3.1-8B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "NousResearch--Hermes-3-Llama-3.1-8B",
+      "weights": [
+        "NousResearch/Hermes-3-Llama-3.1-8B"
       ]
     }
   },
