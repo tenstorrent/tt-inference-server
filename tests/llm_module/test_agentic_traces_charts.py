@@ -215,3 +215,21 @@ def test_load_chart_falls_back_to_tokens_in_flight_without_engine_metrics(tmp_pa
 
     svg = (tmp_path / "charts" / written["load"]).read_text()
     assert "Tokens in flight" in svg and "Prefix cache hit rate" not in svg
+
+
+def test_every_chart_has_a_mermaid_twin_for_the_job_summary(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    _write_artifacts(artifacts)
+    out = tmp_path / "charts"
+
+    written = write_point_charts(artifacts, out)
+
+    for name in written:
+        fragment = (out / f"{name}.mmd").read_text()
+        assert fragment.startswith("```mermaid") and "xychart-beta" in fragment
+        # xychart only accepts plain numbers in its data arrays.
+        for line in fragment.splitlines():
+            if line.strip().startswith(("line [", "bar [")):
+                values = line.split("[", 1)[1].rstrip("]").split(", ")
+                assert all(float(v) == float(v) for v in values)

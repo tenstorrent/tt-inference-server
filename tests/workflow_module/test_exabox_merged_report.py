@@ -478,6 +478,7 @@ def test_charts_are_copied_beside_the_merged_markdown_and_relinked(tmp_path):
     chart = artifact / "workflow_logs" / "reports_output" / "agentic_traces" / link
     chart.parent.mkdir(parents=True)
     chart.write_text("<svg/>")
+    chart.with_suffix(".mmd").write_text("```mermaid\nxychart-beta\n```\n")
     _write(tmp_path / "in", "report_x_1", "report_agentic_traces_0_100.json", _report_with_chart(link))
 
     out = tmp_path / "out"
@@ -485,6 +486,8 @@ def test_charts_are_copied_beside_the_merged_markdown_and_relinked(tmp_path):
 
     relinked = f"telemetry_charts/100/{link}"
     assert (out / relinked).read_text() == "<svg/>"
+    # Its Mermaid twin travels with it, for the CI job summary.
+    assert (out / relinked).with_suffix(".mmd").read_text().startswith("```mermaid")
     assert f"({relinked})" in result.markdown
 
 

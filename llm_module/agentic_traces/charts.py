@@ -45,6 +45,10 @@ PROFILE_EXPORT = "profile_export.jsonl"
 TIMESLICES = "profile_export_aiperf_timeslices.csv"
 SERVER_METRICS = "server_metrics_export.json"
 
+# Each ``<name>.svg`` gets a ``<name>.mmd`` markdown fragment of Mermaid charts:
+# the only chart form a GitHub job summary renders (see "Mermaid twins").
+MERMAID_SUFFIX = ".mmd"
+
 # Keys under which the engine-derived hit-rate series ride in the same mapping
 # as the client timeslices.
 HIT_RATE_ROLLING = "Prefix Cache Hit Rate (rolling)"
@@ -881,6 +885,242 @@ def _chart_load(requests, slices) -> Optional[str]:
     )
 
 
+# --------------------------------------------------------------------------
+# Mermaid twins
+# --------------------------------------------------------------------------
+#
+# A GitHub job summary strips every image it cannot fetch (artifact paths,
+# data: URIs, inline <svg>), but renders ```mermaid blocks. Each chart is
+# therefore also written as a markdown fragment of ``xychart-beta`` blocks
+# (``<name>.mmd`` beside ``<name>.svg``) that the CI summary swaps in for the
+# image. xychart has no legend, dashes or log axis, so series are named in a
+# caption by color and the histograms use log-spaced bins as categories.
+
+_MERMAID_POINTS = 60
+_MM_COLORS = {
+    "blue": "#2a78d6",
+    "orange": "#eb6834",
+    "light orange": "#f5b38f",
+    "green": "#1baf7a",
+    "light green": "#8fd9bd",
+    "light blue": "#93bdec",
+    "violet": "#7c6be0",
+    "gray": "#8a8984",
+}
+
+
+def _mm_num(value: float) -> str:
+    return f"{value:.0f}" if abs(value) >= 100 else f"{value:.2f}"
+
+
+def _mm_grid(points: Sequence[Tuple[float, float]], tmax: float) -> List[float]:
+    """Resample to ``_MERMAID_POINTS`` even steps (xychart spaces data evenly)."""
+    ordered = sorted(points)
+    out: List[float] = []
+    j = -1
+    for i in range(_MERMAID_POINTS):
+        t = tmax * (i + 1) / _MERMAID_POINTS
+        while j + 1 < len(ordered) and ordered[j + 1][0] <= t:
+            j += 1
+        out.append(ordered[j][1] if j >= 0 else ordered[0][1])
+    return out
+
+
+def _mm_block(
+    title: str,
+    x_axis: str,
+    y_label: str,
+    y_max: float,
+    series: Sequence[Tuple[str, str, str, Sequence[float]]],
+    note: str = "",
+) -> str:
+    """One xychart. ``series`` is ``(label, color name, "line"|"bar", values)``."""
+    palette = ", ".join(_MM_COLORS[color] for _, color, _, _ in series)
+    lines = [
+        "```mermaid",
+        '%%{init: {"xyChart": {"width": 900, "height": 300}, '
+        f'"themeVariables": {{"xyChart": {{"plotColorPalette": "{palette}"}}}}}}}}%%',
+        "xychart-beta",
+        f'    title "{title}"',
+        f"    x-axis {x_axis}",
+        f'    y-axis "{y_label}" 0 --> {_mm_num(y_max)}',
+    ]
+    for _, _, kind, values in series:
+        lines.append(f"    {kind} [{', '.join(_mm_num(v) for v in values)}]")
+    lines.append("```")
+    caption = " · ".join(f"{color}: {label}" for label, color, _, _ in series if label)
+    tail = " — ".join(part for part in (caption, note) if part)
+    return "\n".join(lines) + (f"\n\n_{tail}_" if tail else "")
+
+
+def _mm_time_axis(tmax: float) -> str:
+    return f'"minutes since profiling start" 0 --> {max(tmax / 60, 1):.0f}'
+
+
+def _mm_isl_osl(requests, _slices) -> Optional[str]:
+    profiling = [r for r in requests if r.phase == "profiling" and r.ok]
+    blocks = []
+    for name, values, color in (
+        ("Input sequence length", [r.isl for r in profiling], "blue"),
+        ("Output sequence length", [r.osl for r in profiling], "orange"),
+    ):
+        data = sorted(v for v in values if v is not None and v > 0)
+        if not data:
+            continue
+        lo, hi = math.log10(data[0]), math.log10(data[-1])
+        if hi - lo < 1e-9:
+            hi = lo + 1.0
+        bins = 20
+        width = (hi - lo) / bins
+        counts = [0] * bins
+        for v in data:
+            counts[min(int((math.log10(v) - lo) / width), bins - 1)] += 1
+        labels = ", ".join(f'"{_fmt(10 ** (lo + i * width))}"' for i in range(bins))
+        pcts = ", ".join(
+            f"p{int(q * 100)} {_fmt(_percentile(data, q))}" for q in (0.5, 0.75, 0.9, 0.95)
+        )
+        blocks.append(
+            _mm_block(
+                f"{name} (tokens, log bins)",
+                f"[{labels}]",
+                "requests",
+                _ticks(0, max(counts), 4)[-1],
+                [("", color, "bar", counts)],
+                note=f"{len(data):,} requests · {pcts}",
+            )
+        )
+    return "\n\n".join(blocks) or None
+
+
+def _mm_percentiles(requests, specs) -> Optional[str]:
+    profiling = sorted(
+        (r for r in requests if r.phase == "profiling" and r.ok), key=lambda r: r.end
+    )
+    if not profiling:
+        return None
+    tmax = _time_limit(requests)
+    blocks = []
+    for title, y_label, getter, sign, (strong, light) in specs:
+        points = [(r.end, v) for r in profiling if (v := getter(r)) is not None]
+        if not points:
+            continue
+        q90, q75 = (0.9, 0.75) if sign > 0 else (0.1, 0.25)
+        roll90 = _rolling_percentile(points, q90)
+        roll75 = _rolling_percentile(points, q75)
+        cum90 = _cumulative_percentile(points, q90)
+        top = max(v for _, v in roll90 + roll75 + cum90) or 1.0
+        blocks.append(
+            _mm_block(
+                title,
+                _mm_time_axis(tmax),
+                y_label,
+                _ticks(0, top * 1.08, 4)[-1],
+                [
+                    (f"P90 (rolling {_ROLLING_WINDOW} req)", strong, "line", _mm_grid(roll90, tmax)),
+                    (f"P75 (rolling {_ROLLING_WINDOW} req)", light, "line", _mm_grid(roll75, tmax)),
+                    ("cumulative P90", "violet", "line", _mm_grid(cum90, tmax)),
+                ],
+            )
+        )
+    return "\n\n".join(blocks) or None
+
+
+def _mm_latency(requests, _slices) -> Optional[str]:
+    return _mm_percentiles(
+        requests,
+        [
+            ("TTFT over time", "TTFT (s)", lambda r: r.ttft, 1.0, ("orange", "light orange")),
+            ("End-to-end latency over time", "E2EL (s)", lambda r: r.e2el, 1.0, ("blue", "light blue")),
+        ],
+    )
+
+
+def _mm_interactivity(requests, _slices) -> Optional[str]:
+    return _mm_percentiles(
+        requests,
+        [
+            (
+                "Interactivity over time",
+                "tok/s/user",
+                lambda r: r.tps_user,
+                -1.0,
+                ("green", "light green"),
+            )
+        ],
+    )
+
+
+def _mm_lines(
+    tmax: float, specs: Sequence[Tuple[str, str, Sequence[Tuple[str, str, Sequence[Tuple[float, float]]]], Optional[float]]]
+) -> Optional[str]:
+    blocks = []
+    for title, y_label, series, y_max in specs:
+        series = [(label, color, pts) for label, color, pts in series if pts]
+        if not series:
+            continue
+        top = y_max or _ticks(0, max(v for _, _, pts in series for _, v in pts) or 1.0, 4)[-1]
+        blocks.append(
+            _mm_block(
+                title,
+                _mm_time_axis(tmax),
+                y_label,
+                top,
+                [(label, color, "line", _mm_grid(pts, tmax)) for label, color, pts in series],
+            )
+        )
+    return "\n\n".join(blocks) or None
+
+
+def _mm_throughput(requests, slices) -> Optional[str]:
+    slices = slices or {}
+    return _mm_lines(
+        _time_limit(requests),
+        [
+            ("Prefill throughput", "tokens/s", [("", "blue", slices.get("Effective Prefill Throughput", []))], None),
+            ("Decode throughput", "tokens/s", [("", "orange", slices.get("Effective Decode Throughput", []))], None),
+        ],
+    )
+
+
+def _mm_load(requests, slices) -> Optional[str]:
+    slices = slices or {}
+    completed = sorted(r.end for r in requests if r.phase == "profiling" and r.ok)
+    if slices.get(HIT_RATE_ROLLING):
+        cache = (
+            "Prefix cache hit rate",
+            "hit rate (%)",
+            [
+                (f"rolling {_HIT_RATE_WINDOW_S} s", "orange", slices[HIT_RATE_ROLLING]),
+                ("cumulative", "violet", slices.get(HIT_RATE_CUMULATIVE, [])),
+            ],
+            100.0,
+        )
+    else:
+        cache = ("Tokens in flight", "tokens", [("", "orange", slices.get("Tokens In Flight", []))], None)
+    return _mm_lines(
+        _time_limit(requests),
+        [
+            ("Effective concurrency", "requests in flight", [("", "blue", slices.get("Effective Concurrency", []))], None),
+            cache,
+            (
+                "Completed requests (cumulative)",
+                "requests",
+                [("", "green", [(t, float(i + 1)) for i, t in enumerate(completed)])],
+                None,
+            ),
+        ],
+    )
+
+
+_MERMAID: Dict[str, Callable] = {
+    "isl_osl": _mm_isl_osl,
+    "latency": _mm_latency,
+    "interactivity": _mm_interactivity,
+    "throughput": _mm_throughput,
+    "load": _mm_load,
+}
+
+
 _CHARTS: Dict[str, Callable] = {
     "isl_osl": _chart_isl_osl,
     "latency": _chart_latency,
@@ -932,8 +1172,17 @@ def write_point_charts(artifact_dir: Path, out_dir: Path) -> Dict[str, str]:
         except Exception:
             logger.exception("Telemetry chart %r failed for %s", name, artifact_dir)
             continue
-        if svg:
-            filename = f"{name}.svg"
-            (out_dir / filename).write_text(svg, encoding="utf-8")
-            written[name] = filename
+        if not svg:
+            continue
+        filename = f"{name}.svg"
+        (out_dir / filename).write_text(svg, encoding="utf-8")
+        written[name] = filename
+        # The CI job summary's stand-in for this image; optional.
+        try:
+            fragment = _MERMAID[name](requests, slices)
+        except Exception:
+            logger.exception("Mermaid twin of %r failed for %s", name, artifact_dir)
+            fragment = None
+        if fragment:
+            (out_dir / f"{name}{MERMAID_SUFFIX}").write_text(fragment + "\n", encoding="utf-8")
     return written

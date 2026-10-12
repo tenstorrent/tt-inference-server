@@ -315,6 +315,9 @@ TELEMETRY_CHART_PREFIX = "telemetry_chart_"
 #: Directory, beside the merged markdown, that the charts are gathered into.
 TELEMETRY_CHART_DIR = "telemetry_charts"
 
+#: Suffix of a chart's Mermaid twin (``llm_module.agentic_traces.charts``).
+MERMAID_SUFFIX = ".mmd"
+
 
 def _chart_records(block: Any) -> List[Dict[str, Any]]:
     """The mutable record dicts of a block that may carry chart links."""
@@ -367,6 +370,11 @@ def relocate_telemetry_charts(sources: Sequence[SourceReport], output_dir: Path)
                     dest = output_dir / relative
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(found, dest)
+                    # The chart's Mermaid twin, which the CI job summary shows
+                    # in place of the image it cannot load.
+                    twin = found.with_suffix(MERMAID_SUFFIX)
+                    if twin.is_file():
+                        shutil.copyfile(twin, dest.with_suffix(MERMAID_SUFFIX))
                     record[key] = relative.as_posix()
                     copied += 1
     if copied:
