@@ -8946,6 +8946,21 @@ _eval_config_list = [
                             "terminal-bench/mteb-retrieve",
                             "terminal-bench/video-processing",
                             "terminal-bench/financial-document-processor",
+                            # Twelve additional IDs sampled from the 69 remaining
+                            # Terminal-Bench 2.0 tasks with Random(20261012).
+                            # Keep this exact list for the paired C4/C8 run.
+                            "terminal-bench/query-optimize",
+                            "terminal-bench/bn-fit-modify",
+                            "terminal-bench/circuit-fibsqrt",
+                            "terminal-bench/adaptive-rejection-sampler",
+                            "terminal-bench/chess-best-move",
+                            "terminal-bench/configure-git-webserver",
+                            "terminal-bench/sparql-university",
+                            "terminal-bench/distribution-search",
+                            "terminal-bench/git-leak-recovery",
+                            "terminal-bench/build-pmars",
+                            "terminal-bench/count-dataset-tokens",
+                            "terminal-bench/sqlite-with-gcov",
                         ],
                     },
                 ),
