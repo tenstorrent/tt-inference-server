@@ -11826,7 +11826,9 @@ _eval_config_list = [
                         "max_steps": 200,
                         # A reasoning user-sim turn under load can exceed the 120 s
                         # default and trip an MCP request timeout.
-                        "tool_timeout_sec": 900,
+                        # Run 38180874835: 6 of 24 trials died when one simulated-user turn
+                        # took longer than 900 s; still well under the agent timeout.
+                        "tool_timeout_sec": 1800,
                         "read_timeout_sec": 120,
                     },
                     # Literal values: the Harbor container gets these verbatim.
