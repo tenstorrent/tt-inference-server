@@ -140,18 +140,22 @@ class Settings(BaseSettings):
     # and hostname only, so query-string auth passes through untouched.
     media_url_download_enabled: bool = True
     # Comma-separated hostnames, exact ("bucket.s3.us-east-1.amazonaws.com")
-    # or label-anchored wildcards ("*.s3.us-east-1.amazonaws.com"). REQUIRED
-    # for URL downloads: while empty, every URL-valued media field is refused
-    # with 400 — the allowlist is the SSRF guard, and it is checked again on
-    # every redirect hop.
+    # or label-anchored wildcards ("*.s3.us-east-1.amazonaws.com"). Unless
+    # media_url_allow_public_hosts is set, this is REQUIRED for URL downloads:
+    # while empty, every URL-valued media field is refused with 400. It is
+    # checked again on every redirect hop.
     media_url_allowed_domains: str = ""
-    # 7,500,000 bytes base64-encode to exactly MAX_BASE64_IMAGE_LEN
-    # (10,000,000 chars, domain/video_i2v_generate_request.py). A larger
-    # default would pass the endpoint and then fail the field cap when an
-    # SP-runner worker re-validates ImagePromptEntry mid-job.
-    media_url_max_bytes: int = 7_500_000
-    # Total deadline for one asset: covers redirects and the full body read.
-    media_url_timeout_seconds: float = 30.0
+    # Also accept any host outside the allowlist whose resolved addresses are
+    # all public; the connection is pinned to the checked address so DNS
+    # rebinding cannot reach internal networks.
+    media_url_allow_public_hosts: bool = False
+    # Largest MiniMax per-file cap (50 MB reference video). The tighter
+    # image and audio caps are the base64 limits in domain/, checked on
+    # the downloaded bytes before the job is enqueued.
+    media_url_max_bytes: int = 50_000_000
+    # One budget shared by every URL asset in a request, redirects and body
+    # reads included. A full Ref2VA set at the caps is ~420 MB.
+    media_url_timeout_seconds: float = 300.0
     media_url_max_redirects: int = 5
 
     # Telemetry settings
@@ -162,7 +166,9 @@ class Settings(BaseSettings):
     use_async_video: bool = (
         True  # If False, video is generated synchronously and returned directly
     )
-
+    # Encode video results to MP4 on a background thread in the device worker,
+    # so the device starts the next request while ffmpeg runs.
+    video_async_encode: bool = False
     # Preload LoRA adapter at warmup; format "{job_id}/{checkpoint_id}"
     # Currently only supported in LoraSingleChipRunner
     lora_adapter: Optional[str] = None
@@ -362,6 +368,9 @@ class Settings(BaseSettings):
             ModelRunners.TT_WAN_2_2_I2V_LORA.value,
             ModelRunners.TT_WAN_2_2_I2V_LIGHTNING.value,
             ModelRunners.TT_MINIMAX_H3_T2VA.value,
+            ModelRunners.TT_MINIMAX_H3_FL2VA.value,
+            ModelRunners.TT_MINIMAX_H3_REF2VA.value,
+            ModelRunners.TT_MINIMAX_H3_FASTH3.value,
         ]:
             self.default_throttle_level = None
 

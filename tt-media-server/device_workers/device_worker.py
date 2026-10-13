@@ -9,6 +9,7 @@ from typing import Any
 
 from config.constants import SHUTDOWN_SIGNAL, CanaryProbeRequest
 from config.settings import settings
+from device_workers.encode_stage import EncodeStage
 from device_workers.worker_utils import initialize_device_worker, signalJobStart
 from utils.logger import TTLogger
 
@@ -146,6 +147,23 @@ async def _continuous_fan_out(
     return shutdown_seen
 
 
+def _shutdown_worker(
+    device_runner: Any, loop: Any, encode_stage: Any, worker_id: str, logger: Any
+) -> None:
+    """Finish pending encodes, close the device, close the event loop.
+
+    ``close_device`` matters on a multi-host mesh: it is how rank 0 tells the
+    other ranks to exit.
+    """
+    if encode_stage is not None:
+        encode_stage.close()
+    try:
+        device_runner.close_device()
+    except Exception as e:
+        logger.warning(f"Worker {worker_id} close_device failed: {e}")
+    loop.close()
+
+
 def device_worker(
     worker_id: str,
     task_queue,
@@ -166,6 +184,9 @@ def device_worker(
         return
 
     logger.info(f"Worker {worker_id} started with device runner: {device_runner}")
+    encode_stage = EncodeStage.for_runner(
+        device_runner, settings, worker_id, result_queue, error_queue
+    )
     # Signal that this worker is ready after warmup
     try:
         if warmup_signals_queue is not None and not getattr(
@@ -192,7 +213,7 @@ def device_worker(
         # Check for shutdown sentinel
         if requests[0] == SHUTDOWN_SIGNAL:
             logger.info(f"Worker {worker_id} shutting down")
-            loop.close()
+            _shutdown_worker(device_runner, loop, encode_stage, worker_id, logger)
             break
 
         # Canary-monitor probe: the monitor only submits a probe when idle, so
@@ -288,11 +309,15 @@ def device_worker(
                             f"Worker {worker_id} shutting down "
                             f"(SHUTDOWN_SIGNAL observed during continuous batch)"
                         )
-                        loop.close()
+                        _shutdown_worker(
+                            device_runner, loop, encode_stage, worker_id, logger
+                        )
                         break
                     continue
 
                 responses = device_runner.run(requests)
+                if encode_stage is not None:
+                    responses = EncodeStage.normalize_responses(responses)
 
                 if responses is None or len(responses) == 0:
                     for request in requests:
@@ -305,11 +330,16 @@ def device_worker(
                         )
                     continue
 
-                results = [
-                    (worker_id, request._task_id, responses[i])
-                    for i, request in enumerate(requests)
-                ]
-                result_queue.put_many(results, False)
+                if encode_stage is not None:
+                    # Encoded off-thread; the device moves on to the next request.
+                    for i, request in enumerate(requests):
+                        encode_stage.submit(request._task_id, responses[i])
+                else:
+                    results = [
+                        (worker_id, request._task_id, responses[i])
+                        for i, request in enumerate(requests)
+                    ]
+                    result_queue.put_many(results, False)
 
             successful = True
             timeout_timer.cancel()

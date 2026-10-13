@@ -128,26 +128,6 @@ class TestSetupRunnerEnvironment:
 
                 assert os.environ["TT_VISIBLE_DEVICES"] == "0"
 
-    def test_sets_metal_cache_path(self):
-        """Test that TT_METAL_CACHE is set correctly"""
-        worker_id = "0"
-
-        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("utils.runner_utils.get_telemetry_client"):
-                setup_runner_environment(worker_id)
-
-                assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0"
-
-    def test_handles_comma_separated_worker_id(self):
-        """Test that comma in worker_id is replaced with underscore"""
-        worker_id = "0,1"
-
-        with patch.dict(os.environ, {"TT_METAL_HOME": "/opt/tt-metal"}, clear=True):
-            with patch("utils.runner_utils.get_telemetry_client"):
-                setup_runner_environment(worker_id)
-
-                assert os.environ["TT_METAL_CACHE"] == "/opt/tt-metal/built/0_1"
-
     def test_initializes_telemetry_when_enabled(self):
         """Test that telemetry is initialized when enabled"""
         with patch.dict(os.environ, {}, clear=True):

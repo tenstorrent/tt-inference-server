@@ -48,7 +48,8 @@ All API endpoints use the `/v1` prefix to match the OpenAI API standard. Legacy 
 | `/v1/videos/generations/i2v`                                | `/video/generations/i2v`                             | POST   | Image-to-video generation (Wan2.2 I2V)     |
 | `/v1/videos/generations/{job_id}`                           | `/video/generations/{job_id}`                        | GET    | Get video job metadata                     |
 | `/v1/videos/generations/{job_id}/download`                  | `/video/generations/{job_id}/download`               | GET    | Download generated video                   |
-| `/v1/videos/generations/{job_id}/cancel`                    | `/video/generations/{job_id}/cancel`                 | POST   | Cancel video job and assets                |
+| `/v1/videos/generations/{job_id}/cancel`                    | `/video/generations/{job_id}/cancel`                 | POST   | Cancel video job (record is kept)          |
+| `/v1/videos/generations/{job_id}`                           | `/video/generations/{job_id}`                        | DELETE | Delete finished video job and its file     |
 | `/v1/videos/jobs`                                           | `/video/jobs`                                        | GET    | List all video jobs                        |
 | `/v1/cnn/search-image`                                      | `/cnn/search-image`                                  | POST   | CNN image search                           |
 | `/v1/fine_tuning/catalog`                                   | n/a                                                  | GET    | Available fine-tuning catalog              |
@@ -203,13 +204,30 @@ The setup for other supported DiT models is very similar to [Standard SD-3.5 Set
 | qwen-image | galaxy, t3k |
 | qwen-image-2512 | galaxy, t3k |
 | mochi-1-preview | galaxy, t3k |
-| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge |
-| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2 |
+| Wan2.2-T2V-A14B-Diffusers | galaxy, t3k, qbge, galaxy_quad |
+| Wan2.2-I2V-A14B-Diffusers | galaxy, t3k, p150x4, p150x8, p300x2, galaxy_quad |
+| MiniMax-H3 | galaxy, galaxy_quad |
+| MiniMax-H3-FL2VA | galaxy, galaxy_quad |
+| MiniMax-H3-Ref2VA | galaxy, galaxy_quad |
+| MiniMax-H3-FastH3 | galaxy, galaxy_quad |
 
-For example, to run flux.1-dev on t3k
-1. Set the model special env variable e.g ```export MODEL=flux.1-dev```.
-2. Set device special env variable e.g ```export DEVICE=t3k```.
-3. Run the server ```uvicorn main:app --lifespan on --port 8000```.
+## Basic Single Host Deployment
+
+```bash
+MODEL=<MODEL> DEVICE=<DEVICE> uvicorn main:app --lifespan on --port 8000
+```
+
+## Basic Multi-host (tt-run) Deployment
+
+A mesh that spans several hosts (e.g. a 4x32 mesh across four Blackhole Galaxies, "the quad") starts with the same server command as a single host, wrapped in `tt-run`:
+
+```bash
+tt-run --rank-binding <rank_bindings.yaml> \
+       --mpi-args "--host <host0>,<host1>,<host2>,<host3> --rankfile <rankfile> --bind-to none --tag-output" \
+       bash -c "source <env.sh> && source <media-server>/python_env/bin/activate && cd <media-server> && \
+                MODEL=<MODEL> DEVICE=galaxy_quad \
+                uvicorn main:app --host 0.0.0.0 --lifespan on --port 8000"
+```
 
 ## VLLM with TT Plugin Setup
 
@@ -634,6 +652,10 @@ The video API supports both **async** (job-based) and **sync** modes, controlled
 - `USE_ASYNC_VIDEO=True` (default): the server creates a job and returns metadata with a `job_id`. Use the `GET /v1/videos/generations/{job_id}` and `/download` endpoints to track progress and retrieve the video.
 - `USE_ASYNC_VIDEO=False`: the server processes synchronously and streams the MP4 back directly in the same request.
 
+## Input and Output Requirements
+
+- [MiniMax H3](docs/minimax-h3-specs.md)
+
 ## Submit text-to-video generation job
 
 ```bash
@@ -711,13 +733,32 @@ curl -X 'GET' \
   -o output.mp4
 ```
 
-## Cancel video job and assets
+## Cancel video job
+
+Stops a queued or running job. The job record is kept (status moves to `cancelling`, then `cancelled`), so it still appears in `/v1/videos/jobs`.
 
 ```bash
 curl -X 'POST' \
   'http://127.0.0.1:8000/v1/videos/generations/{video_id}/cancel' \
   -H 'accept: application/json' \
   -H 'Authorization: Bearer your-secret-key'
+```
+
+## Delete video job and assets
+
+Permanently removes a **finished** job (`completed`, `failed` or `cancelled`) together with its stored video file. A job that is still queued or running is refused with `409 Conflict`: cancel it first, then delete it once it has reached a terminal state. Unknown ids return `404`.
+
+```bash
+curl -X 'DELETE' \
+  'http://127.0.0.1:8000/v1/videos/generations/{video_id}' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer your-secret-key'
+```
+
+Response:
+
+```json
+{"id": "{video_id}", "object": "video", "deleted": true}
 ```
 
 **Note:** Replace `your-secret-key` with the value of your `API_KEY` environment variable.
@@ -1022,6 +1063,7 @@ These settings configure VLLM-based model runners and are grouped under `setting
 | Environment Variable | Default Value | Description |
 |---------------------|---------------|-------------|
 | `USE_ASYNC_VIDEO` | `True` | When `True`, video generation creates a job and returns metadata; when `False`, the request blocks and the MP4 is streamed back directly |
+| `VIDEO_ASYNC_ENCODE` | `False` | When `True`, the device worker encodes MP4s on a background thread so the device starts the next request while ffmpeg runs. Runners that export inside `run()` (MiniMax-H3, Wan Prodia) hand back raw frames instead |
 | `TT_VIDEO_SHM_INPUT` | `"tt_video_in"` | Name of the shared-memory segment used to send requests to the video runner sub-process |
 | `TT_VIDEO_SHM_OUTPUT` | `"tt_video_out"` | Name of the shared-memory segment used to receive results from the video runner sub-process |
 | `TT_VIDEO_FILE_DIR` | `"/dev/shm"` | Directory used by the video pipeline to write intermediate / output video files |
@@ -1040,7 +1082,6 @@ These environment variables are typically set automatically by the worker bootst
 | `TT_SMI_TIMEOUT` | `30` | Timeout in seconds for `tt-smi` calls performed by `DeviceManager` |
 | `TT_SYSTEM_HEALTH_TIMEOUT` | `60` | Timeout in seconds for `Cluster.ReportSystemHealth` based device discovery |
 | `TT_VISIBLE_DEVICES` | _set per worker_ | Set internally by the worker bootstrap to expose a single device id to a worker process |
-| `TT_METAL_CACHE` | _set per worker_ | Set internally to `${TT_METAL_HOME}/built/<device_ids>` so each worker uses a distinct cache directory |
 | `TT_MM_THROTTLE_PERF` | _runner-dependent_ | Set internally based on `DEFAULT_THROTTLE_LEVEL`; some DiT runners disable throttling automatically |
 | `TT_MESH_GRAPH_DESC_PATH` | _runner-dependent_ | Set internally to point at the correct mesh graph descriptor for the current `device_mesh_shape` |
 

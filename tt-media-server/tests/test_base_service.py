@@ -113,17 +113,22 @@ def base_job_service(mock_scheduler, mock_job_manager, mock_settings):
                         mock_logger = Mock()
                         mock_logger_cls.return_value = mock_logger
                         with patch("model_services.base_service.HuggingFaceUtils"):
-                            # Import inside the patch context
-                            from model_services.base_job_service import BaseJobService
+                            with patch(
+                                "model_services.base_job_service.Manager"
+                            ) as manager_cls:
+                                # Import inside the patch context
+                                from model_services.base_job_service import (
+                                    BaseJobService,
+                                )
 
-                            class ConcreteJobService(BaseJobService):
-                                pass
+                                class ConcreteJobService(BaseJobService):
+                                    pass
 
-                            service = ConcreteJobService()
-                            mockStartEvent = Mock()
-                            mockProcessManager = Mock()
-                            mockProcessManager.Event.return_value = mockStartEvent
-                            service._processManager = mockProcessManager
+                                mockStartEvent = Mock()
+                                mockProcessManager = Mock()
+                                mockProcessManager.Event.return_value = mockStartEvent
+                                manager_cls.return_value = mockProcessManager
+                                service = ConcreteJobService()
                             service._mock_logger = mock_logger
                             service._mockStartEvent = mockStartEvent
                             return service
@@ -273,6 +278,15 @@ class TestWorkerManagement:
         result = base_service.stop_workers()
         mock_scheduler.stop_workers.assert_called_once()
         assert result is True
+
+    def test_job_service_stop_workers_shuts_down_process_manager(
+        self, base_job_service, mock_scheduler
+    ):
+        process_manager = base_job_service._processManager
+        assert base_job_service.stop_workers() is True
+        mock_scheduler.stop_workers.assert_called_once()
+        process_manager.shutdown.assert_called_once()
+        assert base_job_service._processManager is None
 
     @pytest.mark.asyncio
     async def test_deep_reset(self, base_service, mock_scheduler):
