@@ -796,8 +796,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=27.91,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (results.leaderboard_ifeval.prompt_level_strict_acc,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=27.73,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -821,8 +821,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=16.7,
                     published_score_ref="https://huggingface.co/datasets/open-llm-leaderboard/results/blob/main/Qwen/Qwen2.5-Coder-7B/results_2025-02-13T18-27-04.338360.json (mean of results.leaderboard_math_*_hard.exact_match,none)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref="TBD",
+                    gpu_reference_score=16.84,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_multilevel_keys_mean,
                     score_func_kwargs={
                         "result_keys": [
@@ -3762,8 +3762,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=55.9,
                     published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 17: Qwen3-4B (Thinking), GPQA-Diamond)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=58.08,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3806,8 +3806,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=66.64,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3847,8 +3847,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=40.1,
                     published_score_ref="https://arxiv.org/abs/2505.09388 (Qwen3 Technical Report, Table 19: Qwen3-1.7B (Thinking), GPQA-Diamond)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=41.92,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -3890,8 +3890,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=53.72,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -9883,8 +9883,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=None,
                     published_score_ref=None,
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=72.60,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
@@ -9908,8 +9908,8 @@ _eval_config_list = [
                 score=EvalTaskScore(
                     published_score=88.4,
                     published_score_ref="https://arxiv.org/abs/2409.12186 (Qwen2.5-Coder Technical Report, Table 16)",
-                    gpu_reference_score=None,
-                    gpu_reference_score_ref=None,
+                    gpu_reference_score=82.93,
+                    gpu_reference_score_ref="https://github.com/tenstorrent/tt-inference-server/issues/5353#issuecomment-6143292304",
                     score_func=score_task_single_key,
                     score_func_kwargs={
                         "result_keys": [
