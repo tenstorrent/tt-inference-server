@@ -60,7 +60,6 @@
       "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
       "stabilityai/stablelm-2-1_6b",
       "tiiuae/Falcon3-1B-Base",
-      "EleutherAI/pythia-70m",
       "microsoft/phi-1_5",
       "Qwen/Qwen3.8-27B",
       "microsoft/phi-1",
@@ -689,16 +688,6 @@
       "category": "LLM",
       "compatible_devices": [
         "super_cluster"
-      ]
-    },
-    "EleutherAI/pythia-70m": {
-      "category": "LLM",
-      "compatible_devices": [
-        "p300x2"
-      ],
-      "id_name": "EleutherAI--pythia-70m",
-      "weights": [
-        "EleutherAI/pythia-70m"
       ]
     },
     "microsoft/phi-1_5": {
