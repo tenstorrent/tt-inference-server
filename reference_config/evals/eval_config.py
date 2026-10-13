@@ -10878,6 +10878,11 @@ _eval_config_list = [
                 # true}'); client-side apply_chat_template on /v1/completions
                 # would render with the default enable_thinking=false.
                 use_chat_api=True,
+                # Both references are thinking mode. Request it per task rather
+                # than relying on the serving entry's default: a row that keeps
+                # upstream's thinking-off default (the quetzal row) would
+                # otherwise be graded in a different mode than its reference.
+                thinking=True,
                 model_kwargs={
                     "max_length": 131072,
                     # lm-eval default HTTP timeout is 1800s. Under
@@ -10935,6 +10940,10 @@ _eval_config_list = [
                 # chat endpoint with server-side thinking and non-streaming
                 # responses for this 5-shot MMLU-Pro sweep.
                 use_chat_api=True,
+                # Thinking on per request, as for r1_gpqa_diamond above: the run
+                # this matches and the pending GPU reference both think, and a
+                # thinking-off serving default must not change the mode.
+                thinking=True,
                 model_kwargs={
                     "max_length": 49152,
                     "timeout": "3600",
