@@ -3157,6 +3157,8 @@ _eval_config_list = [
                     # lmms-eval's --limit takes the first N docs and ChartQA's test split lists its 1250
                     # human-authored items before the 1250 augmented ones, so the ci-nightly 20% subset is
                     # human-split only; compare it with the GPU run's relaxed_human_split, not the overall score.
+                    # Validated on the full 2500-sample set on Wormhole (2026-10-13): relaxed_overall 83.0 vs 83.6 on
+                    # the H100, human split 71.76 vs 72.56, augmented split 94.24 vs 94.64.
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=72.56,
