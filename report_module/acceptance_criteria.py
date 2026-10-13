@@ -116,6 +116,12 @@ class CategoryResult:
     # status tier ("informational: EXPERIMENTAL") or a known issue. Acceptance
     # may pass with these; the strict qualification verdict never does.
     waived_must: Dict[str, str] = field(default_factory=dict)
+    # Must-priority evals that produced no PASS without failing: SKIP (e.g. the
+    # context was too small to run the task) or NA (no published or reference
+    # score to grade against). Acceptance treats these as non-blocking; the
+    # strict qualification verdict does not, because nothing was measured
+    # against a reference.
+    ungraded_must: Dict[str, str] = field(default_factory=dict)
 
     @property
     def passed(self) -> int:
@@ -339,14 +345,18 @@ def stage_results(
 def strict_qualification(
     accepted: bool, categories: Sequence[CategoryResult]
 ) -> Dict[str, Any]:
-    """The verdict a qualification count may use: acceptance with no waived
-    must-eval.
+    """The verdict a qualification count may use: acceptance with every
+    must-eval graded PASS, none waived and none left ungraded (SKIP or NA).
 
     Acceptance lets a model-status tier (EXPERIMENTAL: "eval failures are
     informational") or a known issue turn a failed must-eval into a waiver.
     That is a deployment policy. It is not evidence that the model reproduces
     its reference, so a pass that rests on such a waiver is never a
     qualification pass.
+
+    Likewise a must-eval that was skipped or had no score to grade against
+    (NA) is not a failure, so acceptance may pass with it, but it is not a
+    measurement either, so it is never a qualification pass.
     """
     waived_must = {
         key: message
@@ -354,9 +364,16 @@ def strict_qualification(
         if category.name == CATEGORY_EVALS
         for key, message in category.waived_must.items()
     }
+    ungraded_must = {
+        key: message
+        for category in categories
+        if category.name == CATEGORY_EVALS
+        for key, message in category.ungraded_must.items()
+    }
     return {
-        "strict_pass": bool(accepted) and not waived_must,
+        "strict_pass": bool(accepted) and not waived_must and not ungraded_must,
         "waived_must_evals": waived_must,
+        "ungraded_must_evals": ungraded_must,
     }
 
 
@@ -647,6 +664,7 @@ def _check_evals(
     blockers: Dict[str, str] = {}
     waived: Dict[str, str] = {}
     waived_must: Dict[str, str] = {}
+    ungraded_must: Dict[str, str] = {}
     failed = 0
     na = 0
     skipped = 0
@@ -699,8 +717,18 @@ def _check_evals(
                 )
             elif explicit is TestStatus.SKIP:
                 skipped += 1
+                if _block_priority(block) != PRIORITY_SHOULD:
+                    ungraded_must[block_key] = (
+                        f"{block.title or block.kind} reported status=skip "
+                        f"({(data or {}).get('reason') or 'not run'})"
+                    )
             elif explicit is TestStatus.NA:
                 na += 1
+                if _block_priority(block) != PRIORITY_SHOULD:
+                    ungraded_must[block_key] = (
+                        f"{block.title or block.kind} reported status=na "
+                        f"({(data or {}).get('reason') or 'no score to grade against'})"
+                    )
             continue
 
         # success=False is decisive — a test that self-reported failure
@@ -720,6 +748,11 @@ def _check_evals(
                     message = "Accuracy check failed."
                 elif state == STATUS_NA:
                     na += 1
+                    if _block_priority(block) != PRIORITY_SHOULD:
+                        ungraded_must[block_key] = (
+                            f"{block.title or block.kind} accuracy_check NA "
+                            "(no published or GPU reference score)"
+                        )
 
         if message is None:
             continue
@@ -768,6 +801,7 @@ def _check_evals(
         blockers=blockers,
         waived=waived,
         waived_must=waived_must,
+        ungraded_must=ungraded_must,
     )
 
 
