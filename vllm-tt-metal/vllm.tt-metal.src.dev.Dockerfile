@@ -45,6 +45,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # Environment variables defined by other env vars
 ENV PYTHONPATH=${TT_METAL_HOME} \
     PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
+    TT_METAL_DEVICE_BUILD=${TT_METAL_HOME}/build \
     LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib \
     PATH="$CARGO_HOME/bin:$PATH"
 
@@ -194,6 +195,7 @@ ENV TT_METAL_COMMIT_SHA_OR_TAG=${TT_METAL_COMMIT_SHA_OR_TAG} \
 # Environment variables defined by other env vars
 ENV PYTHONPATH=${TT_METAL_HOME}:${APP_DIR} \
     PYTHON_ENV_DIR=${TT_METAL_HOME}/python_env \
+    TT_METAL_DEVICE_BUILD=${TT_METAL_HOME}/build \
     LD_LIBRARY_PATH=${TT_METAL_HOME}/build/lib
 
 # Install only runtime dependencies + create IDENTICAL user
