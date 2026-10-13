@@ -79,6 +79,8 @@ def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
     gpqa, terminal_task, swe_task = tasks
     assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
     assert gpqa.max_concurrent == 1
+    assert gpqa.seed == 42
+    assert gpqa.request_body == {"chat_template_kwargs": {"enable_thinking": False}}
 
     terminal = terminal_task.agentic_eval_config
     swe = swe_task.agentic_eval_config

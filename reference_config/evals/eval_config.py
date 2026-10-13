@@ -11164,8 +11164,8 @@ _eval_config_list = [
         hf_model_repo="google/gemma-4-26B-A4B-it",
         tasks=[
             EvalTask(
-                # R1-style zero-shot reasoning GPQA Diamond (see gemma-4-31B-it
-                # note above). Thinking-mode GPQA; scores exact_match,none.
+                # R1-style zero-shot reasoning GPQA Diamond; scores
+                # exact_match,none.
                 # Published/GPU refs are official Gemma 4 model-card scores.
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
@@ -11190,29 +11190,21 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # Use the chat endpoint so the server applies the chat template
-                # (and thus --default-chat-template-kwargs '{"enable_thinking":
-                # true}'); client-side apply_chat_template on /v1/completions
-                # would render with the default enable_thinking=false and
-                # suppress native reasoning (see gemma-4-31B-it note above).
+                # The fixed 10-item release cohort was validated with the
+                # checkpoint's non-thinking chat template and seed 42.
                 use_chat_api=True,
-                seed=9472,
+                seed=42,
                 request_body={
-                    "repetition_detection": {
-                        "min_pattern_size": 16,
-                        "max_pattern_size": 1024,
-                        "min_count": 8,
-                    }
+                    "chat_template_kwargs": {"enable_thinking": False},
                 },
-                # Serialize long-thinking requests to bound per-request
-                # resource use during the release cohort.
+                # Serialize requests to match the validated release run.
                 max_concurrent=1,
                 model_kwargs={
                     "max_length": 131072,
                     "timeout": 7200,
                 },
-                # Thinking-mode sampling (Gemma 4 model card / HF README):
-                # temperature=1.0, top_p=0.95, top_k=20.
+                # Validated release sampling: temperature=1.0, top_p=0.95,
+                # top_k=20, seed=42.
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
