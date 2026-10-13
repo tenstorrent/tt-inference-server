@@ -3,6 +3,8 @@
 
 # Python 3.8
 target-version = "py38"
+# Vendored as-is from h3-stress-kit; kept byte-identical to the kit.
+extend-exclude = ["test_fixtures/h3_stress_kit"]
 
 [tool.ruff.lint]
 ignore = ["E402"]

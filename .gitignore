@@ -97,3 +97,7 @@ default_model_spec.json
 # Requirements documents/validation plans are pulled from llm-gauntlet on
 # demand by --requirements-json "llm-gauntlet;<path>"; a run artifact, not source.
 /llm-gauntlet/
+
+# MiniMax-H3 stress kit (cases, prompts, media) used by the H3 dispatch benchmark.
+!test_fixtures/h3_stress_kit/**
+test_fixtures/h3_stress_kit/**/__pycache__/

@@ -1,0 +1,1301 @@
+{
+ "_doc": [
+  "One entry per request shape. server: fl2va (D23) | ref2va (C12). task: t2va | fl2va | ref2va",
+  "selects the endpoint. expect: ok (202 + playable mp4) | reject (4xx at admission) | probe",
+  "(record whatever happens; an accepted probe is polled to completion like a normal job).",
+  "prompt/negative_prompt name files in assets/prompts; images/videos/audios name files in assets.",
+  "frame_pos (fl2va) defaults to [0] or [0,-1]. extra is merged over the payload last; inside it",
+  "a string '@asset:NAME' is replaced by that file's base64. weight>0 puts the case in the",
+  "sustained-load rotation; tags: core = baseline + recovery, edge = run last (risky shapes),",
+  "det = run twice back to back to check seed determinism."
+ ],
+ "cases": [
+  {
+   "id": "FL-5-1kf-std",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 3,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-10-1kf-city",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 10,
+   "prompt": "bank",
+   "images": [
+    "img_hd_1920x1080_city_day.jpg"
+   ],
+   "expect": "ok",
+   "weight": 2,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-15-1kf-night",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 15,
+   "prompt": "bank",
+   "images": [
+    "img_hd_1920x1080_city_night.jpg"
+   ],
+   "expect": "ok",
+   "weight": 2,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-5-2kf-dawn-noon",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png"
+   ],
+   "expect": "ok",
+   "weight": 3,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-10-2kf-city",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 10,
+   "prompt": "bank",
+   "images": [
+    "img_hd_1920x1080_city_day.jpg",
+    "img_hd_1920x1080_city_night.jpg"
+   ],
+   "expect": "ok",
+   "weight": 2,
+   "tags": []
+  },
+  {
+   "id": "FL-15-2kf-long1500",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 15,
+   "prompt": "prompt_long_1500.txt",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-5-min256",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_min_256_rings.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-10-large5000",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 10,
+   "prompt": "bank",
+   "images": [
+    "img_large_5000x2812_noise.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-portrait-9x16",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "aspect_ratio": "9:16",
+   "images": [
+    "img_portrait_720x1280_lighthouse.jpg"
+   ],
+   "expect": "ok",
+   "weight": 2,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "FL-5-square-1x1",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "aspect_ratio": "1:1",
+   "images": [
+    "img_square_1024_rings.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-webp",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_webp_1280x720_city.webp"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-noise",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_noise_1280x720.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-textcard",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_text_1280x720.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-wide-2.4",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_wide_2400x1000_dusk.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-10-unicode",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 10,
+   "prompt": "prompt_unicode.txt",
+   "images": [
+    "img_hd_1920x1080_city_night.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-lastonly",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "frame_pos": [
+    -1
+   ],
+   "images": [
+    "img_std_1280x720_noon.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-7-odd",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 7,
+   "prompt": "bank",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-12-odd",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 12,
+   "prompt": "bank",
+   "images": [
+    "img_hd_1920x1080_city_day.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-negprompt",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "bank",
+   "negative_prompt": "negative_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "probe",
+   "weight": 0,
+   "tags": [],
+   "note": "negative_prompt: unknown field on the 2026-10-10 build"
+  },
+  {
+   "id": "FL-10-dialogue",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 10,
+   "prompt": "prompt_audio_dialogue.txt",
+   "images": [
+    "img_hd_1920x1080_city_night.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-camera",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_camera_moves.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-newlines",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_newlines.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-minprompt",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_min.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "FL-5-seed-det",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "seed": 7,
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [
+    "det"
+   ]
+  },
+  {
+   "id": "NEG-FL-3kf",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "extra": {
+    "image_prompts": [
+     {
+      "image": "@asset:img_std_1280x720_dawn.png",
+      "frame_pos": 0
+     },
+     {
+      "image": "@asset:img_std_1280x720_noon.png",
+      "frame_pos": -1
+     },
+     {
+      "image": "@asset:img_min_256_rings.png",
+      "frame_pos": 1
+     }
+    ]
+   },
+   "expect": "reject",
+   "note": "3 keyframes / frame_pos 1"
+  },
+  {
+   "id": "NEG-FL-pos5",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "frame_pos": [
+    5
+   ],
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "note": "frame_pos must be 0 or -1"
+  },
+  {
+   "id": "NEG-FL-dup-pos",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "frame_pos": [
+    0,
+    0
+   ],
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png"
+   ],
+   "expect": "reject",
+   "note": "duplicate frame_pos"
+  },
+  {
+   "id": "NEG-FL-tiny180",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_bad_180px_tiny.jpg"
+   ],
+   "expect": "reject",
+   "note": "short edge 180 < 256 | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build",
+   "tags": [
+    "edge"
+   ]
+  },
+  {
+   "id": "NEG-FL-aspect3",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_bad_aspect_3000x1000.jpg"
+   ],
+   "expect": "reject",
+   "note": "image aspect 3.0 > 2.5"
+  },
+  {
+   "id": "FL-5-keyframe-21mb",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_overcap_5700x3200_noise.jpg"
+   ],
+   "expect": "ok",
+   "note": "21 MB keyframe (28.5M b64 chars): accepted on this build; upload stress",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "NEG-FL-garbage-b64",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [],
+   "extra": {
+    "image_prompts": [
+     {
+      "image": "this is not base64 !!!",
+      "frame_pos": 0
+     }
+    ]
+   },
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-FL-no-images",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [],
+   "expect": "reject",
+   "note": "i2v path without image_prompts"
+  },
+  {
+   "id": "NEG-FL-textonly",
+   "server": "fl2va",
+   "task": "t2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "expect": "reject",
+   "note": "text-only create on an FL2VA deployment"
+  },
+  {
+   "id": "NEG-FL-ref2va-body",
+   "server": "fl2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "note": "references on an FL2VA deployment"
+  },
+  {
+   "id": "NEG-FL-blank-prompt",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_bad_blank.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "tags": [
+    "edge"
+   ],
+   "note": " | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build"
+  },
+  {
+   "id": "NEG-FL-bad-aspect",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "aspect_ratio": "foo",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-FL-badkey",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "badkey": true,
+   "expect": "reject",
+   "note": "wrong bearer -> 401"
+  },
+  {
+   "id": "PRB-FL-steps8",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "extra": {
+    "num_inference_steps": 8
+   },
+   "expect": "probe",
+   "note": "is num_inference_steps rejected, ignored, or honoured?"
+  },
+  {
+   "id": "PRB-FL-unknown-field",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "extra": {
+    "bogus_field": 1
+   },
+   "expect": "probe"
+  },
+  {
+   "id": "PRB-FL-aspect-21x9",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "aspect_ratio": "21:9",
+   "images": [
+    "img_wide_2400x1000_dusk.jpg"
+   ],
+   "expect": "probe"
+  },
+  {
+   "id": "PRB-FL-dur1",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 1,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "tags": [],
+   "note": "duration must be a whole number of seconds from 4 to 15"
+  },
+  {
+   "id": "PRB-FL-dur16",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 16,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "tags": [],
+   "note": "duration must be a whole number of seconds from 4 to 15"
+  },
+  {
+   "id": "EDGE-FL-15-max7000-2kf",
+   "server": "fl2va",
+   "task": "fl2va",
+   "duration": 15,
+   "prompt": "prompt_max_7000.txt",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [
+    "edge"
+   ],
+   "note": "long prompt + first+last hung older builds"
+  },
+  {
+   "id": "REF-5-1img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 3,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "REF-5-1vid5",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "videos": [
+    "vid_5s_seascape_dawn.mp4"
+   ],
+   "expect": "ok",
+   "weight": 2,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "REF-10-img-aud5",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 10,
+   "prompt": "bank",
+   "images": [
+    "img_hd_1920x1080_city_day.jpg"
+   ],
+   "audios": [
+    "aud_5s_chirp.wav"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "REF-5-min-bar",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_min.txt",
+   "images": [
+    "img_min_256_rings.png"
+   ],
+   "videos": [
+    "vid_5s_city_night.mp4"
+   ],
+   "audios": [
+    "aud_2s_tone.wav"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [
+    "core"
+   ],
+   "note": "every modality near its minimum"
+  },
+  {
+   "id": "REF-10-3img-2aud",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 10,
+   "prompt": "bank",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png",
+    "img_hd_1920x1080_city_day.jpg"
+   ],
+   "audios": [
+    "aud_2s_tone.wav",
+    "aud_5s_chirp.wav"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": []
+  },
+  {
+   "id": "REF-15-6img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 15,
+   "prompt": "bank",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png",
+    "img_hd_1920x1080_city_day.jpg",
+    "img_hd_1920x1080_city_night.jpg",
+    "img_square_1024_rings.jpg",
+    "img_portrait_720x1280_lighthouse.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "REF-10-9img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 10,
+   "prompt": "bank",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png",
+    "img_hd_1920x1080_city_day.jpg",
+    "img_hd_1920x1080_city_night.jpg",
+    "img_square_1024_rings.jpg",
+    "img_portrait_720x1280_lighthouse.jpg",
+    "img_wide_2400x1000_dusk.jpg",
+    "img_text_1280x720.png",
+    "img_min_256_rings.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [],
+   "note": "9 images = image cap"
+  },
+  {
+   "id": "REF-15-12files",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 15,
+   "prompt": "prompt_long_1500.txt",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_noon.png",
+    "img_hd_1920x1080_city_day.jpg",
+    "img_hd_1920x1080_city_night.jpg",
+    "img_square_1024_rings.jpg",
+    "img_portrait_720x1280_lighthouse.jpg",
+    "img_wide_2400x1000_dusk.jpg",
+    "img_text_1280x720.png",
+    "img_min_256_rings.png"
+   ],
+   "audios": [
+    "aud_2s_tone.wav",
+    "aud_5s_chirp.wav",
+    "aud_7s_chords_stereo.wav"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [],
+   "note": "12 files = total cap; audio 14 s"
+  },
+  {
+   "id": "REF-15-vid15",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 15,
+   "prompt": "bank",
+   "videos": [
+    "vid_15s_fox_snow.mp4"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [],
+   "note": "single 15 s reference video (max)"
+  },
+  {
+   "id": "REF-5-2vid",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "videos": [
+    "vid_5s_seascape_dawn.mp4",
+    "vid_5s_city_night.mp4"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "REF-8-vid8-portrait",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 8,
+   "prompt": "bank",
+   "videos": [
+    "vid_8s_lighthouse.mp4"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [],
+   "note": "portrait reference video, landscape output"
+  },
+  {
+   "id": "REF-5-large-img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_large_5000x2812_noise.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "REF-5-overcap-img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_overcap_5700x3200_noise.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [],
+   "note": "over the keyframe cap but under the reference cap"
+  },
+  {
+   "id": "REF-5-portrait-9x16",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "aspect_ratio": "9:16",
+   "images": [
+    "img_portrait_720x1280_lighthouse.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": [
+    "core"
+   ]
+  },
+  {
+   "id": "REF-10-unicode",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 10,
+   "prompt": "prompt_unicode.txt",
+   "images": [
+    "img_hd_1920x1080_city_night.jpg"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "REF-10-dialogue-aud7",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 10,
+   "prompt": "prompt_audio_dialogue.txt",
+   "images": [
+    "img_hd_1920x1080_city_night.jpg"
+   ],
+   "audios": [
+    "aud_7s_chords_stereo.wav"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": []
+  },
+  {
+   "id": "REF-5-img-aud15",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "audios": [
+    "aud_15s_melody_stereo.wav"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [],
+   "note": "audio exactly at the 15 s cap"
+  },
+  {
+   "id": "REF-5-noise-img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_noise_1280x720.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "REF-5-webp",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "images": [
+    "img_webp_1280x720_city.webp"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "REF-7-odd",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 7,
+   "prompt": "bank",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 1,
+   "tags": []
+  },
+  {
+   "id": "REF-5-negprompt",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "bank",
+   "negative_prompt": "negative_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "probe",
+   "weight": 0,
+   "tags": [],
+   "note": "negative_prompt: unknown field on the 2026-10-10 build"
+  },
+  {
+   "id": "REF-5-seed-det",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "seed": 7,
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [
+    "det"
+   ]
+  },
+  {
+   "id": "PRB-REF-vid10-aud5",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 10,
+   "prompt": "bank",
+   "videos": [
+    "vid_10s_fox_puddle.mp4"
+   ],
+   "audios": [
+    "aud_5s_chirp.wav"
+   ],
+   "expect": "probe",
+   "note": "embedded 10.1 s + 5 s audio: just over 15 s if embedded audio counts | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build",
+   "tags": [
+    "edge"
+   ]
+  },
+  {
+   "id": "NEG-REF-audio-only",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "audios": [
+    "aud_5s_chirp.wav"
+   ],
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-REF-empty",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "expect": "reject",
+   "note": "references with nothing in it"
+  },
+  {
+   "id": "NEG-REF-10img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png",
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "note": "10 > 9 images"
+  },
+  {
+   "id": "NEG-REF-4aud",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "audios": [
+    "aud_2s_tone.wav",
+    "aud_2s_tone.wav",
+    "aud_2s_tone.wav",
+    "aud_2s_tone.wav"
+   ],
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-REF-4vid",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "videos": [
+    "vid_5s_seascape_dawn.mp4",
+    "vid_5s_seascape_dawn.mp4",
+    "vid_5s_seascape_dawn.mp4",
+    "vid_5s_seascape_dawn.mp4"
+   ],
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-REF-aud1s",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "audios": [
+    "aud_bad_1s_short.wav"
+   ],
+   "expect": "reject",
+   "note": "clip under 2 s"
+  },
+  {
+   "id": "NEG-REF-aud20s",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "audios": [
+    "aud_bad_20s_long.wav"
+   ],
+   "expect": "reject",
+   "note": "clip over 15 s"
+  },
+  {
+   "id": "NEG-REF-aud-total17",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "videos": [
+    "vid_10s_fox_puddle.mp4"
+   ],
+   "audios": [
+    "aud_7s_chords_stereo.wav"
+   ],
+   "expect": "reject",
+   "note": "10 s embedded + 7 s file > 15 s | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build",
+   "tags": [
+    "edge"
+   ]
+  },
+  {
+   "id": "NEG-REF-i2v-body",
+   "server": "ref2va",
+   "task": "fl2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "note": "keyframes on a Ref2VA deployment"
+  },
+  {
+   "id": "NEG-REF-textonly",
+   "server": "ref2va",
+   "task": "t2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-REF-both-src",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "extra": {
+    "references": {
+     "images": [
+      {
+       "b64": "@asset:img_std_1280x720_dawn.png",
+       "url": "https://example.com/x.png"
+      }
+     ]
+    }
+   },
+   "expect": "reject",
+   "note": "b64 and url on one source"
+  },
+  {
+   "id": "NEG-REF-bad-url",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "extra": {
+    "references": {
+     "images": [
+      {
+       "url": "ftp://example.com/x.png"
+      }
+     ]
+    }
+   },
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-REF-blank-prompt",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_bad_blank.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject"
+  },
+  {
+   "id": "NEG-REF-badkey",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "badkey": true,
+   "expect": "reject"
+  },
+  {
+   "id": "PRB-REF-tiny-img",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_bad_180px_tiny.jpg"
+   ],
+   "expect": "probe",
+   "note": "does the 256 px floor apply to references? | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build",
+   "tags": [
+    "edge"
+   ]
+  },
+  {
+   "id": "PRB-REF-garbage-vid",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "extra": {
+    "references": {
+     "videos": [
+      {
+       "b64": "bm90IGEgdmlkZW8gYXQgYWxs"
+      }
+     ]
+    }
+   },
+   "expect": "probe",
+   "note": "undecodable video: admission 422 or failed job? | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build",
+   "tags": [
+    "edge"
+   ]
+  },
+  {
+   "id": "PRB-REF-dead-url",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "extra": {
+    "references": {
+     "images": [
+      {
+       "url": "https://example.com/does-not-exist.png"
+      }
+     ]
+    }
+   },
+   "expect": "probe",
+   "tags": [
+    "edge"
+   ],
+   "note": " | admitted then fails in the worker (+1 error_count) on the 2026-10-10 build"
+  },
+  {
+   "id": "PRB-REF-unknown-field",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 5,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "extra": {
+    "bogus_field": 1
+   },
+   "expect": "probe"
+  },
+  {
+   "id": "EDGE-REF-15-max7000",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 15,
+   "prompt": "prompt_max_7000.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "ok",
+   "weight": 0,
+   "tags": [
+    "edge"
+   ]
+  },
+  {
+   "id": "PRB-REF-dur16",
+   "server": "ref2va",
+   "task": "ref2va",
+   "duration": 16,
+   "prompt": "prompt_std.txt",
+   "images": [
+    "img_std_1280x720_dawn.png"
+   ],
+   "expect": "reject",
+   "tags": [],
+   "note": "duration must be a whole number of seconds from 4 to 15"
+  }
+ ]
+}

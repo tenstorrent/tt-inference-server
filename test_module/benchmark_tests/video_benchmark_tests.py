@@ -35,6 +35,7 @@ from .._test_common import (
     run_tiered_check,
 )
 from ..context import MediaContext, require_health
+from .minimax_h3_stress import run_minimax_h3_stress
 from ..test_status import VideoGenerationTestStatus
 
 logger = logging.getLogger(__name__)
@@ -320,6 +321,8 @@ def run_video_benchmark(ctx: MediaContext) -> Block:
             f"supported: {sorted(VIDEO_INFERENCE_STEPS)}"
         )
     require_health(ctx)
+    if is_minimax_h3_model(ctx.model_spec.model_name):
+        return run_minimax_h3_stress(ctx)
 
     try:
         num_calls = get_num_calls(ctx)
