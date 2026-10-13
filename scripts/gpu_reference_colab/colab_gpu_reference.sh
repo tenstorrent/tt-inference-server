@@ -139,7 +139,7 @@ gpuref() { "${PYRUN[@]}" "${SCRIPT_DIR}/gpuref.py" "$@"; }
 status() {   # STATE [KEY=VALUE...]: driver_status.json + one line of gpuref_status.log
     [[ "${DRY_RUN}" -eq 1 || -z "${STATUS_FILE:-}" ]] && return 0
     case "$1" in DONE|FAILED|NO_CAPACITY|SWEEP_DONE|SWEEP_INCOMPLETE) TERMINAL=1 ;; esac
-    gpuref driver-status "${STATUS_FILE}" --log "${RESULTS_ROOT}/gpuref_status.log" \
+    gpuref driver-status --log "${RESULTS_ROOT}/gpuref_status.log" "${STATUS_FILE}" \
         "state=$1" "session=${SESSION:-sweep}" "ttis=${TTIS_SHA:0:8}" "${@:2}" || true
 }
 remote_exec() {   # NAME TIMEOUT [RUNNER ARGS...]: run snippets/NAME.py on the VM

@@ -1798,7 +1798,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     add("request-evidence", model=req, revision={}, samples_root=req, out=req,
         log={"action": "append", "default": []})  # fmt: skip
     add("cap-bound", "evidence", "cap")
-    p = sub.add_parser("driver-status", help="write driver_status.json + a log line")
+    p = driver_status_parser = sub.add_parser(
+        "driver-status", help="write driver_status.json + a log line"
+    )
     p.add_argument("file")
     p.add_argument("--log", default=None)
     p.add_argument("fields", nargs="*", metavar="KEY=VALUE")
@@ -1870,7 +1872,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         vllm_bin=req, status=req, evals_rc={"type": int}, started_at=req,
         finished_at=req, note={}, max_model_len_cap={"type": int}, evidence={},
         eval_samples={})  # fmt: skip
-    args = parser.parse_args(argv)
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["driver-status"]:
+        # FILE --log LOG KEY=VALUE...: older argparse (Python 3.12.3, the system
+        # python on exabox) binds the empty fields list next to FILE and then
+        # rejects every KEY=VALUE after --log, so no status file was written.
+        # 3.12.12 and 3.14 accept it; intermixed parsing works on all of them.
+        args = driver_status_parser.parse_intermixed_args(argv[1:])
+        args.cmd = "driver-status"
+    else:
+        args = parser.parse_args(argv)
     for name in [getattr(args, "model", None)] + (getattr(args, "models", None) or []):
         if name is not None and not HF_REPO.match(name):
             parser.error(f"not a Hugging Face repo id (org/name): {name!r}")
