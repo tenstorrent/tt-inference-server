@@ -1,0 +1,15 @@
+{
+  "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
+  "target_commit": "22468147fed8723c7123c522d6f9b93e501aca5b",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
+      "target": "bd24f538a4bffeece0e9319e5d371f542710ca9646b6a9b24f329e24c81fa5be"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
+      "target": "a50bef641c25046ff708a8f0270ef5ec81d141b145929f20265cbd8af7fd228b"
+    }
+  },
+  "patch_sha256": "bec4ba7976169a609bb6503508bbaca7bf7e4d29abcc05628e8e81096e3f48de"
+}
