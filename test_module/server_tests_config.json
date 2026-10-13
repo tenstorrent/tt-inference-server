@@ -105,7 +105,8 @@
       "NousResearch/Hermes-3-Llama-3.1-8B",
       "allenai/Llama-3.1-Tulu-3-8B",
       "Qwen/Qwen3-8B-Base",
-      "Qwen/Qwen3-4B-Base"
+      "Qwen/Qwen3-4B-Base",
+      "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
     ]
   },
   "available_markers": {
@@ -1122,6 +1123,16 @@
       "id_name": "Qwen--Qwen3-4B-Base",
       "weights": [
         "Qwen/Qwen3-4B-Base"
+      ]
+    },
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "deepseek-ai--DeepSeek-R1-Distill-Qwen-14B",
+      "weights": [
+        "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
       ]
     }
   },
