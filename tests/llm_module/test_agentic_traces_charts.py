@@ -66,6 +66,7 @@ def _write_artifacts(tmp_path, *, slices=True):
                 "Effective Prefill Throughput",
                 "Effective Decode Throughput",
                 "Effective Concurrency",
+                "Effective Prefill Concurrency",
                 "Tokens In Flight",
             ):
                 rows.append(f"{i},{start},{start + 10**9},{metric},x,avg,{i + 1}")
@@ -184,13 +185,13 @@ def test_prefix_cache_hit_rate_comes_from_the_engine_counters(tmp_path):
     from llm_module.agentic_traces.charts import (
         HIT_RATE_CUMULATIVE,
         HIT_RATE_ROLLING,
-        load_prefix_cache_hit_rate,
+        load_engine_metrics,
     )
 
     path = tmp_path / "server_metrics_export.json"
     _server_metrics(path, hits=[0, 50, 100, 0], queries=[100, 100, 100, 0])
 
-    series = load_prefix_cache_hit_rate(path, T0)
+    series = load_engine_metrics(path, T0)
 
     # Cumulative: 0/100, 50/200, 150/300, then the empty window adds nothing.
     assert [round(v, 1) for _, v in series[HIT_RATE_CUMULATIVE]] == [
@@ -214,7 +215,7 @@ def test_load_chart_shows_hit_rate_when_the_engine_metrics_exist(tmp_path):
     written = write_point_charts(artifacts, tmp_path / "charts")
 
     svg = (tmp_path / "charts" / written["load"]).read_text()
-    assert "Prefix cache hit rate" in svg and "Tokens in flight" not in svg
+    assert "Prefix cache hit rate (engine counters)" in svg
 
 
 def test_load_chart_falls_back_to_tokens_in_flight_without_engine_metrics(tmp_path):
@@ -264,3 +265,146 @@ def test_mermaid_steps_average_rather_than_sample():
     grid = _mm_grid(points, float(_MERMAID_POINTS))
     # Each step holds about ten points with one spike: ~1.0, never 0.
     assert all(0.8 < v < 1.2 for v in grid)
+
+
+def _gauge(name, per_engine):
+    return {
+        "type": "gauge",
+        "series": [
+            {
+                "endpoint_url": f"http://e{i}:1/metrics",
+                "labels": {"engine": "0"},
+                "timeslices": [
+                    {
+                        "start_ns": T0 + t * 10**9 + i * 12_000_000,
+                        "end_ns": T0 + (t + 1) * 10**9 + i * 12_000_000,
+                        "avg": v,
+                    }
+                    for t, v in enumerate(values)
+                ],
+            }
+            for i, values in enumerate(per_engine)
+        ],
+    }
+
+
+def test_engine_kv_usage_and_queue_come_from_the_engine_gauges(tmp_path):
+    from llm_module.agentic_traces.charts import (
+        ENGINE_WAITING,
+        KV_USAGE_PREFIX,
+        load_engine_metrics,
+    )
+
+    doc = {
+        "metrics": {
+            "vllm:kv_cache_usage_perc": _gauge("kv", [[0.1, 0.5], [0.2, 0.25]]),
+            "vllm:num_requests_waiting": _gauge("q", [[1, 3], [2, 4]]),
+        },
+        "warmup_metrics": {},
+    }
+    path = tmp_path / "server_metrics_export.json"
+    path.write_text(json.dumps(doc, indent=2))
+
+    series = load_engine_metrics(path, T0)
+
+    # Fractions become percent, one line per engine.
+    assert [v for _, v in series[KV_USAGE_PREFIX + "engine 1"]] == [10.0, 50.0]
+    assert [v for _, v in series[KV_USAGE_PREFIX + "engine 2"]] == [20.0, 25.0]
+    # Two engines scraped a few ms apart still land in the same second: 1+2, 3+4.
+    assert [v for _, v in series[ENGINE_WAITING]] == [3.0, 7.0]
+
+
+def test_many_engines_collapse_to_mean_and_busiest(tmp_path):
+    from llm_module.agentic_traces.charts import KV_USAGE_PREFIX, load_engine_metrics
+
+    doc = {
+        "metrics": {
+            "vllm:kv_cache_usage_perc": _gauge("kv", [[0.1 * i] for i in range(1, 7)])
+        },
+        "warmup_metrics": {},
+    }
+    path = tmp_path / "server_metrics_export.json"
+    path.write_text(json.dumps(doc, indent=2))
+
+    series = load_engine_metrics(path, T0)
+
+    assert sorted(k for k in series if k.startswith(KV_USAGE_PREFIX)) == [
+        KV_USAGE_PREFIX + "busiest engine",
+        KV_USAGE_PREFIX + "mean of engines",
+    ]
+    assert round(series[KV_USAGE_PREFIX + "busiest engine"][0][1]) == 60
+
+
+def _write_usage_slices(directory, cached, prompt):
+    rows = ["Timeslice,Start_NS,End_NS,Metric,Unit,Stat,Value"]
+    for i, (c, p) in enumerate(zip(cached, prompt)):
+        start = T0 + i * 10**9
+        for metric, value in (
+            ("Usage Prompt Cache Read Tokens", c),
+            ("Usage Prompt Tokens", p),
+        ):
+            rows.append(f"{i},{start},{start + 10**9},{metric},tokens,sum,{value}")
+        rows.append(
+            f"{i},{start},{start + 10**9},Tokens In Flight,tokens,avg,{1000 * (i + 1)}"
+        )
+        rows.append(
+            f"{i},{start},{start + 10**9},Effective Prefill Concurrency,requests,avg,{i + 1}"
+        )
+    (directory / TIMESLICES).write_text("\n".join(rows) + "\n")
+
+
+def test_hit_rate_falls_back_to_the_servers_response_usage(tmp_path):
+    from llm_module.agentic_traces.charts import (
+        HIT_RATE_CUMULATIVE,
+        HIT_RATE_SOURCE,
+        load_timeslices,
+        usage_hit_rate,
+    )
+
+    _write_usage_slices(tmp_path, cached=[0, 50, 100], prompt=[100, 100, 100])
+    slices = load_timeslices(
+        tmp_path / TIMESLICES,
+        T0,
+        (),
+        ("Usage Prompt Cache Read Tokens", "Usage Prompt Tokens"),
+    )
+
+    lines = usage_hit_rate(slices)
+
+    assert [round(v, 1) for _, v in lines[HIT_RATE_CUMULATIVE]] == [0.0, 25.0, 50.0]
+    assert HIT_RATE_SOURCE not in lines  # the entry point records the source
+
+
+def test_load_chart_uses_usage_hit_rate_and_client_side_stand_ins(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / PROFILE_EXPORT).write_text(
+        "\n".join([_record(0, 10), _record(5, 25, conv="c2")]) + "\n"
+    )
+    _write_usage_slices(artifacts, cached=[10, 20, 30], prompt=[40, 40, 40])
+
+    written = write_point_charts(artifacts, tmp_path / "charts")
+
+    svg = (tmp_path / "charts" / written["load"]).read_text()
+    assert "Prefix cache hit rate (from response usage)" in svg
+    # No engine metrics: client-side KV demand, and the queue is the client's view.
+    assert "Tokens in flight (client-side KV demand)" in svg
+    assert "Request queue (client view)" in svg
+    assert "waiting in the engine queue" not in svg
+
+
+def test_queue_panel_adds_the_engine_queue_when_scraped(tmp_path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    _write_artifacts(artifacts)
+    doc = {
+        "metrics": {"vllm:num_requests_waiting": _gauge("q", [[1, 3], [2, 4]])},
+        "warmup_metrics": {},
+    }
+    (artifacts / "server_metrics_export.json").write_text(json.dumps(doc, indent=2))
+
+    written = write_point_charts(artifacts, tmp_path / "charts")
+
+    svg = (tmp_path / "charts" / written["load"]).read_text()
+    assert "Request queue (client view and engine)" in svg
+    assert "waiting in the engine queue" in svg

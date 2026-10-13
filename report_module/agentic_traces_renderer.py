@@ -477,9 +477,13 @@ def _telemetry_section(rows: Sequence[Mapping[str, Any]]) -> str:
         "run) and the cumulative "
         'P90, over the individual requests. For interactivity, "P90" is the '
         "tokens/s/user that 90% of requests exceeded, i.e. the slow tail. "
-        "The prefix cache hit rate comes from the serving engine's own counters "
-        "(a run without them shows tokens in flight instead); KV-cache "
-        "utilisation and queue depth are not drawn."
+        "The request queue is the requests sent but still awaiting their first "
+        "token (queued plus prefill), as the client sees them; with engine "
+        "metrics the engine's own waiting count is drawn beside it. The prefix "
+        "cache hit rate comes from the serving engine's counters when the run "
+        "scraped them, else from the cached tokens the server reports in each "
+        "response. KV cache utilisation is an engine-side metric: a run that "
+        "did not scrape it shows the client's tokens in flight instead."
     )
     return "#### Per-point Telemetry\n\n" + intro + "\n\n" + "\n\n".join(parts)
 

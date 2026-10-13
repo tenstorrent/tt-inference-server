@@ -52,6 +52,11 @@ MERMAID_SUFFIX = ".mmd"
 # Keys under which the engine-derived hit-rate series ride in the same mapping
 # as the client timeslices.
 HIT_RATE_ROLLING = "Prefix Cache Hit Rate (rolling)"
+# Where the hit-rate series came from, so the panel can say so.
+HIT_RATE_SOURCE = "Prefix Cache Hit Rate (source)"
+# Engine gauges, keyed ``<prefix><engine label>`` / the summed queue.
+KV_USAGE_PREFIX = "Engine KV Cache Usage::"
+ENGINE_WAITING = "Engine Requests Waiting"
 HIT_RATE_CUMULATIVE = "Prefix Cache Hit Rate (cumulative)"
 _HIT_RATE_WINDOW_S = 30
 
@@ -94,8 +99,13 @@ _SLICE_METRICS = (
     "Effective Prefill Throughput",
     "Effective Decode Throughput",
     "Effective Concurrency",
+    "Effective Prefill Concurrency",
+    "Effective Decode Concurrency",
     "Tokens In Flight",
 )
+# Per-window sums, for the client-side (response usage) cache hit rate.
+_SUM_METRICS = ("Usage Prompt Cache Read Tokens", "Usage Prompt Tokens")
+_SUM_SUFFIX = " [sum]"
 
 _SERIES = ("var(--s1)", "var(--s2)", "var(--s3)")
 _ROLLING_WINDOW = 50
@@ -188,21 +198,35 @@ def load_requests(path: Path) -> Tuple[List[Request], int]:
 
 
 def load_timeslices(
-    path: Path, origin_ns: int, names: Iterable[str]
+    path: Path,
+    origin_ns: int,
+    names: Iterable[str],
+    sum_names: Iterable[str] = (),
 ) -> Dict[str, List[Tuple[float, float]]]:
-    """Read ``avg`` per window for the named metrics as (window midpoint s, value)."""
+    """Read per-window values as (window midpoint s, value).
+
+    ``names`` read the ``avg`` stat; ``sum_names`` read ``sum`` (a count over
+    the requests that finished in the window) and are keyed ``<name> [sum]``.
+    """
     wanted = set(names)
+    summed = set(sum_names)
     series: Dict[str, List[Tuple[float, float]]] = {name: [] for name in wanted}
+    series.update({name + _SUM_SUFFIX: [] for name in summed})
     with open(path, newline="", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
-            if row.get("Stat") != "avg" or row.get("Metric") not in wanted:
+            metric, stat = row.get("Metric"), row.get("Stat")
+            if stat == "avg" and metric in wanted:
+                key = metric
+            elif stat == "sum" and metric in summed:
+                key = metric + _SUM_SUFFIX
+            else:
                 continue
             try:
                 mid = (int(row["Start_NS"]) + int(row["End_NS"])) / 2
                 value = float(row["Value"])
             except (KeyError, ValueError):
                 continue
-            series[row["Metric"]].append(((mid - origin_ns) / 1e9, value))
+            series[key].append((round((mid - origin_ns) / 1e9, 3), value))
     return series
 
 
@@ -245,41 +269,39 @@ def _stream_metric_blocks(path: Path, names: Iterable[str]) -> Dict[str, Dict]:
     return found
 
 
-def _summed_windows(block: Dict, origin_ns: int) -> Dict[float, float]:
-    """Counter increase per 1 s window, summed over the endpoints' series."""
+def _summed_windows(
+    block: Dict, origin_ns: int, field: str = "total"
+) -> Dict[float, float]:
+    """``field`` per 1 s window, summed over the endpoints' series.
+
+    Endpoints scrape a few ms apart, so windows are bucketed to whole seconds
+    (floor, which keeps 1 s-spaced windows distinct) before summing; otherwise
+    two engines would never share a key.
+    """
     out: Dict[float, float] = {}
     for series in block.get("series") or []:
         for window in series.get("timeslices") or []:
-            total = window.get("total")
-            if not isinstance(total, (int, float)):
+            value = window.get(field)
+            if not isinstance(value, (int, float)):
                 continue
             mid = ((window["start_ns"] + window["end_ns"]) / 2 - origin_ns) / 1e9
-            out[mid] = out.get(mid, 0.0) + total
+            key = float(math.floor(mid))
+            out[key] = out.get(key, 0.0) + value
     return out
 
 
-def load_prefix_cache_hit_rate(
-    path: Path, origin_ns: int
+def _hit_rate_lines(
+    hits: Dict[float, float], queries: Dict[float, float]
 ) -> Dict[str, List[Tuple[float, float]]]:
-    """Prefix-cache hit rate over time (%), from the engines' own counters.
+    """Rolling (``_HIT_RATE_WINDOW_S`` s) and cumulative hit rate, in percent.
 
-    Two lines: a trailing ``_HIT_RATE_WINDOW_S`` second window (hits / queries
-    over it) and the cumulative rate since profiling began. A window with no
-    queries has no rate and is skipped rather than drawn as 0%.
+    A window with no queries has no rate and is skipped rather than drawn as 0%.
     """
-    blocks = _stream_metric_blocks(
-        path, ("vllm:prefix_cache_hits", "vllm:prefix_cache_queries")
-    )
-    if len(blocks) < 2:
-        return {}
-    hits = _summed_windows(blocks["vllm:prefix_cache_hits"], origin_ns)
-    queries = _summed_windows(blocks["vllm:prefix_cache_queries"], origin_ns)
-    times = sorted(t for t in queries if t >= 0)
     rolling: List[Tuple[float, float]] = []
     cumulative: List[Tuple[float, float]] = []
     window: List[Tuple[float, float]] = []
     total_hits = total_queries = 0.0
-    for t in times:
+    for t in sorted(t for t in queries if t >= 0):
         h, q = hits.get(t, 0.0), queries[t]
         window.append((h, q))
         if len(window) > _HIT_RATE_WINDOW_S:
@@ -294,6 +316,96 @@ def load_prefix_cache_hit_rate(
     if not rolling:
         return {}
     return {HIT_RATE_ROLLING: rolling, HIT_RATE_CUMULATIVE: cumulative}
+
+
+def usage_hit_rate(
+    slices: Dict[str, List[Tuple[float, float]]],
+) -> Dict[str, List[Tuple[float, float]]]:
+    """Hit rate from the server's per-response usage (``cached_tokens``).
+
+    Needs no engine scrape, only that the server reports cached tokens in its
+    usage block. The client buckets those counts into the window each request
+    finished in, so this is request-weighted by completion time. Windows without
+    the cache field are left out of both numerator and denominator.
+    """
+    cached = dict(slices.get("Usage Prompt Cache Read Tokens" + _SUM_SUFFIX, []))
+    prompt = dict(slices.get("Usage Prompt Tokens" + _SUM_SUFFIX, []))
+    queries = {t: prompt[t] for t in cached if t in prompt}
+    return _hit_rate_lines(cached, queries)
+
+
+# Sources of the hit-rate series, the value of ``HIT_RATE_SOURCE``'s one point.
+SOURCE_ENGINE = 1.0
+SOURCE_USAGE = 2.0
+
+_MAX_ENGINE_LINES = 4
+
+
+def load_engine_metrics(
+    path: Path, origin_ns: int
+) -> Dict[str, List[Tuple[float, float]]]:
+    """Engine-side series from ``server_metrics_export.json``, one pass.
+
+    Prefix-cache hit rate from ``vllm:prefix_cache_hits/queries``, KV-cache
+    utilisation per engine (percent) from ``vllm:kv_cache_usage_perc`` and the
+    summed queue from ``vllm:num_requests_waiting``. Whatever the engine did
+    not export is simply absent.
+    """
+    blocks = _stream_metric_blocks(
+        path,
+        (
+            "vllm:prefix_cache_hits",
+            "vllm:prefix_cache_queries",
+            "vllm:kv_cache_usage_perc",
+            "vllm:num_requests_waiting",
+        ),
+    )
+    out: Dict[str, List[Tuple[float, float]]] = {}
+    if "vllm:prefix_cache_hits" in blocks and "vllm:prefix_cache_queries" in blocks:
+        out.update(
+            _hit_rate_lines(
+                _summed_windows(blocks["vllm:prefix_cache_hits"], origin_ns),
+                _summed_windows(blocks["vllm:prefix_cache_queries"], origin_ns),
+            )
+        )
+        if out:
+            out[HIT_RATE_SOURCE] = [(0.0, SOURCE_ENGINE)]
+    kv = blocks.get("vllm:kv_cache_usage_perc")
+    if kv:
+        engines = []
+        for series in kv.get("series") or []:
+            points = [
+                (
+                    round(((w["start_ns"] + w["end_ns"]) / 2 - origin_ns) / 1e9, 3),
+                    100.0 * w["avg"],
+                )
+                for w in series.get("timeslices") or []
+                if isinstance(w.get("avg"), (int, float))
+            ]
+            if points:
+                engines.append(points)
+        # A big deployment has many engines: past a few, a line each is noise, so
+        # show the mean and the busiest.
+        if len(engines) > _MAX_ENGINE_LINES:
+            by_time: Dict[float, List[float]] = {}
+            for points in engines:
+                for t, v in points:
+                    by_time.setdefault(float(math.floor(t)), []).append(v)
+            out[KV_USAGE_PREFIX + "mean of engines"] = sorted(
+                (t, sum(v) / len(v)) for t, v in by_time.items()
+            )
+            out[KV_USAGE_PREFIX + "busiest engine"] = sorted(
+                (t, max(v)) for t, v in by_time.items()
+            )
+        else:
+            for i, points in enumerate(engines):
+                out[KV_USAGE_PREFIX + f"engine {i + 1}"] = points
+    waiting = blocks.get("vllm:num_requests_waiting")
+    if waiting:
+        summed = _summed_windows(waiting, origin_ns, field="avg")
+        if summed:
+            out[ENGINE_WAITING] = sorted(summed.items())
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -893,60 +1005,155 @@ def _chart_throughput(requests, slices) -> Optional[str]:
     )
 
 
-def _chart_load(requests, slices) -> Optional[str]:
-    completed = sorted(r.end for r in requests if r.phase == "profiling" and r.ok)
-    cumulative = [(t, float(i + 1)) for i, t in enumerate(completed)]
+# One entry per line: (label, points, slot). The slot picks the series color in
+# each renderer (SVG variable / Mermaid hex), so the two charts cannot drift.
+_SLOT_BLUE, _SLOT_ORANGE, _SLOT_GREEN, _SLOT_AMBER, _SLOT_CUMULATIVE = range(5)
+_SLOT_ENGINES = (_SLOT_BLUE, _SLOT_ORANGE, _SLOT_GREEN, _SLOT_AMBER)
+
+LoadPanel = Tuple[
+    str, str, List[Tuple[str, List[Tuple[float, float]], int]], Optional[float]
+]
+
+
+def _load_panels(requests, slices) -> List[LoadPanel]:
+    """The load chart's panels, each ``(title, y label, lines, fixed y max)``.
+
+    Some of what a reader wants (the engine's cache utilisation and queue) is
+    only in the engines' own metrics. A run that did not scrape them gets the
+    closest client-side view instead -- requests awaiting their first token for
+    the queue, tokens in flight for the KV demand -- and the title says which.
+    """
     slices = slices or {}
-    rolling_hit_rate = slices.get(HIT_RATE_ROLLING, [])
-    if rolling_hit_rate:
-        # What the cache is doing beats a raw footprint: it says whether the
-        # engine kept the reuse the traces offered.
-        cache_panel = (
-            "Prefix cache hit rate",
-            "Hit rate (%)",
-            rolling_hit_rate,
-            _SERIES[1],
-            {
-                "main_label": f"Rolling {_HIT_RATE_WINDOW_S} s",
-                "lines": [
-                    (
-                        "Cumulative",
-                        slices.get(HIT_RATE_CUMULATIVE, []),
-                        "var(--bad)",
-                        "",
-                    )
-                ],
-                "ymax": 100,
-            },
+    completed = sorted(r.end for r in requests if r.phase == "profiling" and r.ok)
+    panels: List[LoadPanel] = []
+
+    panels.append(
+        (
+            "Effective concurrency",
+            "Requests in flight",
+            [
+                ("total", slices.get("Effective Concurrency", []), _SLOT_BLUE),
+                (
+                    "decoding",
+                    slices.get("Effective Decode Concurrency", []),
+                    _SLOT_GREEN,
+                ),
+            ],
+            None,
         )
-        description = (
-            "Concurrency, prefix cache hit rate and completed requests over the run"
+    )
+
+    if slices.get(HIT_RATE_ROLLING):
+        engine = slices.get(HIT_RATE_SOURCE, [(0.0, 0.0)])[0][1] == SOURCE_ENGINE
+        panels.append(
+            (
+                "Prefix cache hit rate "
+                + ("(engine counters)" if engine else "(from response usage)"),
+                "Hit rate (%)",
+                [
+                    (
+                        f"rolling {_HIT_RATE_WINDOW_S} s",
+                        slices[HIT_RATE_ROLLING],
+                        _SLOT_ORANGE,
+                    ),
+                    (
+                        "cumulative",
+                        slices.get(HIT_RATE_CUMULATIVE, []),
+                        _SLOT_CUMULATIVE,
+                    ),
+                ],
+                100.0,
+            )
+        )
+
+    kv_lines = [
+        (key[len(KV_USAGE_PREFIX) :], pts, _SLOT_ENGINES[i % len(_SLOT_ENGINES)])
+        for i, (key, pts) in enumerate(
+            sorted((k, v) for k, v in slices.items() if k.startswith(KV_USAGE_PREFIX))
+        )
+    ]
+    if kv_lines:
+        panels.append(
+            ("KV cache utilisation (engine)", "KV cache used (%)", kv_lines, 100.0)
         )
     else:
-        # No engine metrics for this run: fall back to the client's own view of
-        # how many tokens were in flight (the KV footprint).
-        cache_panel = (
-            "Tokens in flight",
-            "Tokens (KV footprint)",
-            slices.get("Tokens In Flight", []),
-            _SERIES[1],
-        )
-        description = (
-            "Concurrency, tokens in flight and completed requests over the run"
-        )
-    return _line_stack(
-        [
+        panels.append(
             (
-                "Effective concurrency",
-                "Requests in flight",
-                slices.get("Effective Concurrency", []),
-                _SERIES[0],
+                "Tokens in flight (client-side KV demand)",
+                "Tokens",
+                [
+                    (
+                        "tokens in flight",
+                        slices.get("Tokens In Flight", []),
+                        _SLOT_ORANGE,
+                    )
+                ],
+                None,
+            )
+        )
+
+    # The queue is always drawn: the client knows how many requests it has sent
+    # that have not yet produced a first token (queued in the engine plus being
+    # prefilled). With engine metrics the engine's own waiting count joins it, so
+    # the part that is pure queueing can be told from prefill.
+    queue_lines = [
+        (
+            "awaiting first token (queued + prefill)",
+            slices.get("Effective Prefill Concurrency", []),
+            _SLOT_ORANGE,
+        )
+    ]
+    if slices.get(ENGINE_WAITING):
+        queue_lines.append(
+            ("waiting in the engine queue", slices[ENGINE_WAITING], _SLOT_AMBER)
+        )
+    panels.append(
+        (
+            "Request queue"
+            + (
+                " (client view and engine)"
+                if len(queue_lines) > 1
+                else " (client view)"
             ),
-            cache_panel,
-            ("Completed requests (cumulative)", "Requests", cumulative, _SERIES[2]),
-        ],
+            "Requests",
+            queue_lines,
+            None,
+        )
+    )
+
+    panels.append(
+        (
+            "Completed requests (cumulative)",
+            "Requests",
+            [("", [(t, float(i + 1)) for i, t in enumerate(completed)], _SLOT_GREEN)],
+            None,
+        )
+    )
+    return [panel for panel in panels if any(pts for _, pts, _ in panel[2])]
+
+
+_SLOT_SVG = ("var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--bad)")
+
+
+def _chart_load(requests, slices) -> Optional[str]:
+    specs = []
+    for title, ylabel, lines, ymax in _load_panels(requests, slices):
+        lines = [line for line in lines if line[1]]
+        label, points, slot = lines[0]
+        extra: Dict = {
+            "lines": [(lbl, pts, _SLOT_SVG[sl], "") for lbl, pts, sl in lines[1:]],
+            "main_label": label,
+        }
+        if ymax:
+            extra["ymax"] = ymax
+        # A legend only where there is more than one line to tell apart.
+        if not extra["lines"]:
+            extra = {"ymax": ymax} if ymax else {}
+        specs.append((title, ylabel, points, _SLOT_SVG[slot], extra))
+    return _line_stack(
+        specs,
         _time_limit(requests),
-        description,
+        "Concurrency, request queue, cache hit rate, KV utilisation and completed requests over the run",
     )
 
 
@@ -970,6 +1177,7 @@ _MM_COLORS = {
     "light green": "#8fd9bd",
     "light blue": "#93bdec",
     "violet": "#7c6be0",
+    "amber": "#eda100",
     "gray": "#8a8984",
 }
 
@@ -1208,41 +1416,17 @@ def _mm_throughput(requests, slices) -> Optional[str]:
 
 
 def _mm_load(requests, slices) -> Optional[str]:
-    slices = slices or {}
-    completed = sorted(r.end for r in requests if r.phase == "profiling" and r.ok)
-    if slices.get(HIT_RATE_ROLLING):
-        cache = (
-            "Prefix cache hit rate",
-            "hit rate (%)",
-            [
-                (f"rolling {_HIT_RATE_WINDOW_S} s", "orange", slices[HIT_RATE_ROLLING]),
-                ("cumulative", "violet", slices.get(HIT_RATE_CUMULATIVE, [])),
-            ],
-            100.0,
-        )
-    else:
-        cache = (
-            "Tokens in flight",
-            "tokens",
-            [("", "orange", slices.get("Tokens In Flight", []))],
-            None,
-        )
+    names = ("blue", "orange", "green", "amber", "violet")
     return _mm_lines(
         _time_limit(requests),
         [
             (
-                "Effective concurrency",
-                "requests in flight",
-                [("", "blue", slices.get("Effective Concurrency", []))],
-                None,
-            ),
-            cache,
-            (
-                "Completed requests (cumulative)",
-                "requests",
-                [("", "green", [(t, float(i + 1)) for i, t in enumerate(completed)])],
-                None,
-            ),
+                title,
+                ylabel,
+                [(label, names[slot], pts) for label, pts, slot in lines],
+                ymax,
+            )
+            for title, ylabel, lines, ymax in _load_panels(requests, slices)
         ],
     )
 
@@ -1291,13 +1475,21 @@ def write_point_charts(artifact_dir: Path, out_dir: Path) -> Dict[str, str]:
     slices_path = artifact_dir / TIMESLICES
     if slices_path.exists():
         try:
-            slices = load_timeslices(slices_path, origin_ns, _SLICE_METRICS)
+            slices = load_timeslices(
+                slices_path, origin_ns, _SLICE_METRICS, _SUM_METRICS
+            )
         except Exception:
             logger.exception("Could not read %s", slices_path)
+    # The client's own view of the cache first, then the engine's, which wins
+    # where it exists: its counters are the cache's own, not what the server
+    # chose to report back per response.
+    slices.update(usage_hit_rate(slices))
+    if HIT_RATE_ROLLING in slices:
+        slices[HIT_RATE_SOURCE] = [(0.0, SOURCE_USAGE)]
     metrics_path = artifact_dir / SERVER_METRICS
     if metrics_path.exists():
         try:
-            slices.update(load_prefix_cache_hit_rate(metrics_path, origin_ns))
+            slices.update(load_engine_metrics(metrics_path, origin_ns))
         except Exception:
             logger.exception("Could not read %s", metrics_path)
 
