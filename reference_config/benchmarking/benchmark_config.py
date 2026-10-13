@@ -128,6 +128,11 @@ SUPER_CLUSTER_MIN_NUM_PROMPTS_BATCH_MULTIPLE = 2
 MODEL_EXTRA_ISL_OSL_PAIRS = {
     # 512K-context autoport: extend the sweep to its full window.
     "K2-Horizon-7B": [
+        # Decode across a page-table capacity bucket (4096 -> 8192 at 32 users,
+        # 32768 -> 65536 single-user): the adapter rebuilds its resident decode
+        # state from device inputs under reload contract v1 (tt-metal #59517).
+        (4000, 256),
+        (32700, 256),
         (196608, 128),  # 192K
         (262144 - 128, 128),  # 256K
         (393216, 128),  # 384K
