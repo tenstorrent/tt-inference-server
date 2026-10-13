@@ -11662,7 +11662,9 @@ _eval_config_list = [
         tasks=[
             EvalTask(
                 task_name="mmlu_pro",
-                num_fewshot=5,
+                # 0-shot: with 5-shot multiturn the worked examples arrive as separate user
+                # turns and Muse answers them too (124/350 unscored in run 38180851967).
+                num_fewshot=0,
                 score=EvalTaskScore(
                     # The model card reports no MMLU / MMLU-Pro score.
                     published_score=None,
