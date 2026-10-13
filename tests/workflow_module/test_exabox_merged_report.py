@@ -20,7 +20,6 @@ from workflow_module.exabox_merged_report import (
     main,
     merge_reports,
     mergeable,
-    relocate_telemetry_charts,
     resolve_model_status,
 )
 
@@ -479,7 +478,12 @@ def test_charts_are_copied_beside_the_merged_markdown_and_relinked(tmp_path):
     chart.parent.mkdir(parents=True)
     chart.write_text("<svg/>")
     chart.with_suffix(".mmd").write_text("```mermaid\nxychart-beta\n```\n")
-    _write(tmp_path / "in", "report_x_1", "report_agentic_traces_0_100.json", _report_with_chart(link))
+    _write(
+        tmp_path / "in",
+        "report_x_1",
+        "report_agentic_traces_0_100.json",
+        _report_with_chart(link),
+    )
 
     out = tmp_path / "out"
     result, _ = merge_reports(tmp_path / "in", out, job_id="55")

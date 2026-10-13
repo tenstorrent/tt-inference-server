@@ -169,7 +169,11 @@ def load_requests(path: Path) -> Tuple[List[Request], int]:
                 phase=str(meta.get("benchmark_phase") or "profiling"),
                 ok=not failed,
                 conversation=str(meta.get("conversation_id") or ""),
-                root=str(meta.get("root_correlation_id") or meta.get("x_correlation_id") or ""),
+                root=str(
+                    meta.get("root_correlation_id")
+                    or meta.get("x_correlation_id")
+                    or ""
+                ),
                 depth=int(meta.get("agent_depth") or 0),
                 turn=int(meta.get("turn_index") or 0),
                 session=int(meta.get("session_num") or 0),
@@ -263,7 +267,9 @@ def load_prefix_cache_hit_rate(
     over it) and the cumulative rate since profiling began. A window with no
     queries has no rate and is skipped rather than drawn as 0%.
     """
-    blocks = _stream_metric_blocks(path, ("vllm:prefix_cache_hits", "vllm:prefix_cache_queries"))
+    blocks = _stream_metric_blocks(
+        path, ("vllm:prefix_cache_hits", "vllm:prefix_cache_queries")
+    )
     if len(blocks) < 2:
         return {}
     hits = _summed_windows(blocks["vllm:prefix_cache_hits"], origin_ns)
@@ -392,7 +398,9 @@ class _Panel:
         if xticks is None:
             xticks = [
                 (v, _fmt(v))
-                for v in _ticks(*xlim, target=max(3, int((self.right - self.left) / 90)))
+                for v in _ticks(
+                    *xlim, target=max(3, int((self.right - self.left) / 90))
+                )
             ]
         yt = yticks if yticks is not None else _ticks(*ylim, target=4)
         for value in yt:
@@ -469,8 +477,10 @@ class _Panel:
             f"{'M' if i == 0 else 'L'}{self.sx(px):.1f},{self.sy(self.clip_y(py)):.1f}"
             for i, (px, py) in enumerate(points)
         )
+        dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
         self.c.add(
-            f'<path d="{path}" fill="none" stroke="{color}" stroke-width="{width}" stroke-opacity="{opacity}"{f' stroke-dasharray="{dash}"' if dash else ''} '
+            f'<path d="{path}" fill="none" stroke="{color}" stroke-width="{width}" '
+            f'stroke-opacity="{opacity}"{dash_attr} '
             'stroke-linejoin="round" stroke-linecap="round"/>'
         )
 
@@ -485,7 +495,12 @@ class _Panel:
                 f'<text x="{px + 4:.1f}" y="{self.top + 10:.1f}">{_esc(label)}</text>'
             )
 
-    def legend(self, entries: Sequence[Tuple], x: Optional[float] = None, y: Optional[float] = None) -> None:
+    def legend(
+        self,
+        entries: Sequence[Tuple],
+        x: Optional[float] = None,
+        y: Optional[float] = None,
+    ) -> None:
         """Entries are ``(label, color[, style])``; style is ``dash``, ``line`` or an opacity."""
         right = self.right if x is None else x
         baseline = self.top - 6 if y is None else y
@@ -547,7 +562,11 @@ def _time_ticks(lo: float, hi: float) -> List[Tuple[float, str]]:
     """Duration-labelled ticks on round minute boundaries."""
     span = max(hi - lo, 1.0)
     step = next(
-        (c for c in (10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400) if span / c <= 7),
+        (
+            c
+            for c in (10, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400)
+            if span / c <= 7
+        ),
         14400,
     )
     first = math.ceil(lo / step) * step
@@ -633,8 +652,7 @@ def _chart_isl_osl(requests: Sequence[Request], _slices) -> Optional[str]:
             counts[min(int((math.log10(v) - lo) / width), bins - 1)] += 1
         ymax = _ticks(0, max(counts), 4)[-1]
         decades = [
-            (float(e), _fmt(10.0**e))
-            for e in range(math.ceil(lo), math.floor(hi) + 1)
+            (float(e), _fmt(10.0**e)) for e in range(math.ceil(lo), math.floor(hi) + 1)
         ]
         # Endpoints are labelled with the actual min/max; drop decade ticks that
         # would sit on top of them.
@@ -733,7 +751,13 @@ def _percentile_stack(
             title_h=44,
         )
         dots = [p for p in _subsample(points) if p[1] <= ymax]
-        panel.scatter(dots, color, [f"t={_duration(x)}  {_fmt(v)}" for x, v in dots], radius=1.6, opacity=0.35)
+        panel.scatter(
+            dots,
+            color,
+            [f"t={_duration(x)}  {_fmt(v)}" for x, v in dots],
+            radius=1.6,
+            opacity=0.35,
+        )
         # Cumulative underneath: where the lines meet, the rolling ones stay visible.
         panel.line(_subsample(cum90, _MAX_LINE_POINTS), "var(--bad)", 2.0)
         panel.line(_subsample(roll75, _MAX_LINE_POINTS), color, 1.6, dash="5 3")
@@ -754,7 +778,13 @@ def _chart_latency(requests, _slices) -> Optional[str]:
         requests,
         [
             ("TTFT over time", "TTFT (s)", lambda r: r.ttft, 1.0, _SERIES[1]),
-            ("End-to-end latency over time", "E2EL (s)", lambda r: r.e2el, 1.0, _SERIES[0]),
+            (
+                "End-to-end latency over time",
+                "E2EL (s)",
+                lambda r: r.e2el,
+                1.0,
+                _SERIES[0],
+            ),
         ],
         "TTFT and end-to-end latency over the run: rolling and cumulative percentiles",
     )
@@ -797,7 +827,10 @@ def _line_stack(
         title, ylabel, points, color = spec[:4]
         extra = spec[4] if len(spec) > 4 else {}
         lines = extra.get("lines", [])
-        top = max(v for _, v in points + [p for _, pts, _, _ in lines for p in pts]) or 1.0
+        top = (
+            max(v for _, v in points + [p for _, pts, _, _ in lines for p in pts])
+            or 1.0
+        )
         ymax = extra.get("ymax") or _ticks(0, top, 4)[-1]
         y0 = 4 + index * panel_h
         panel = _Panel(
@@ -814,12 +847,23 @@ def _line_stack(
             xticks=_time_ticks(0, tmax),
             title_h=38 if lines else _PANEL_TITLE_H,
         )
-        panel.line(_subsample(points, _MAX_LINE_POINTS), color, 1.6, dash=extra.get("main_dash", ""))
+        panel.line(
+            _subsample(points, _MAX_LINE_POINTS),
+            color,
+            1.6,
+            dash=extra.get("main_dash", ""),
+        )
         for _label, pts, line_color, dash in lines:
             panel.line(_subsample(pts, _MAX_LINE_POINTS), line_color, 2.0, dash=dash)
         if lines:
             panel.legend(
-                [(extra.get("main_label", ylabel), color, "dash" if extra.get("main_dash") else "line")]
+                [
+                    (
+                        extra.get("main_label", ylabel),
+                        color,
+                        "dash" if extra.get("main_dash") else "line",
+                    )
+                ]
                 + [(label, c, "dash" if d else "line") for label, _, c, d in lines],
                 y=y0 + 32,
             )
@@ -865,12 +909,19 @@ def _chart_load(requests, slices) -> Optional[str]:
             {
                 "main_label": f"Rolling {_HIT_RATE_WINDOW_S} s",
                 "lines": [
-                    ("Cumulative", slices.get(HIT_RATE_CUMULATIVE, []), "var(--bad)", "")
+                    (
+                        "Cumulative",
+                        slices.get(HIT_RATE_CUMULATIVE, []),
+                        "var(--bad)",
+                        "",
+                    )
                 ],
                 "ymax": 100,
             },
         )
-        description = "Concurrency, prefix cache hit rate and completed requests over the run"
+        description = (
+            "Concurrency, prefix cache hit rate and completed requests over the run"
+        )
     else:
         # No engine metrics for this run: fall back to the client's own view of
         # how many tokens were in flight (the KV footprint).
@@ -880,7 +931,9 @@ def _chart_load(requests, slices) -> Optional[str]:
             slices.get("Tokens In Flight", []),
             _SERIES[1],
         )
-        description = "Concurrency, tokens in flight and completed requests over the run"
+        description = (
+            "Concurrency, tokens in flight and completed requests over the run"
+        )
     return _line_stack(
         [
             (
@@ -1000,7 +1053,8 @@ def _mm_isl_osl(requests, _slices) -> Optional[str]:
             counts[min(int((math.log10(v) - lo) / width), bins - 1)] += 1
         labels = ", ".join(f'"{_fmt(10 ** (lo + i * width))}"' for i in range(bins))
         pcts = ", ".join(
-            f"p{int(q * 100)} {_fmt(_percentile(data, q))}" for q in (0.5, 0.75, 0.9, 0.95)
+            f"p{int(q * 100)} {_fmt(_percentile(data, q))}"
+            for q in (0.5, 0.75, 0.9, 0.95)
         )
         blocks.append(
             _mm_block(
@@ -1042,8 +1096,18 @@ def _mm_percentiles(requests, specs) -> Optional[str]:
                 # Drawn in order, so cumulative goes underneath.
                 [
                     ("cumulative P90", "violet", "line", _mm_grid(cum90, tmax)),
-                    (f"P75 (rolling {window} req)", light, "line", _mm_grid(roll75, tmax)),
-                    (f"P90 (rolling {window} req)", strong, "line", _mm_grid(roll90, tmax)),
+                    (
+                        f"P75 (rolling {window} req)",
+                        light,
+                        "line",
+                        _mm_grid(roll75, tmax),
+                    ),
+                    (
+                        f"P90 (rolling {window} req)",
+                        strong,
+                        "line",
+                        _mm_grid(roll90, tmax),
+                    ),
                 ],
             )
         )
@@ -1054,8 +1118,20 @@ def _mm_latency(requests, _slices) -> Optional[str]:
     return _mm_percentiles(
         requests,
         [
-            ("TTFT over time", "TTFT (s)", lambda r: r.ttft, 1.0, ("orange", "light orange")),
-            ("End-to-end latency over time", "E2EL (s)", lambda r: r.e2el, 1.0, ("blue", "light blue")),
+            (
+                "TTFT over time",
+                "TTFT (s)",
+                lambda r: r.ttft,
+                1.0,
+                ("orange", "light orange"),
+            ),
+            (
+                "End-to-end latency over time",
+                "E2EL (s)",
+                lambda r: r.e2el,
+                1.0,
+                ("blue", "light blue"),
+            ),
         ],
     )
 
@@ -1076,21 +1152,35 @@ def _mm_interactivity(requests, _slices) -> Optional[str]:
 
 
 def _mm_lines(
-    tmax: float, specs: Sequence[Tuple[str, str, Sequence[Tuple[str, str, Sequence[Tuple[float, float]]]], Optional[float]]]
+    tmax: float,
+    specs: Sequence[
+        Tuple[
+            str,
+            str,
+            Sequence[Tuple[str, str, Sequence[Tuple[float, float]]]],
+            Optional[float],
+        ]
+    ],
 ) -> Optional[str]:
     blocks = []
     for title, y_label, series, y_max in specs:
         series = [(label, color, pts) for label, color, pts in series if pts]
         if not series:
             continue
-        top = y_max or _ticks(0, max(v for _, _, pts in series for _, v in pts) or 1.0, 4)[-1]
+        top = (
+            y_max
+            or _ticks(0, max(v for _, _, pts in series for _, v in pts) or 1.0, 4)[-1]
+        )
         blocks.append(
             _mm_block(
                 title,
                 _mm_time_axis(tmax),
                 y_label,
                 top,
-                [(label, color, "line", _mm_grid(pts, tmax)) for label, color, pts in series],
+                [
+                    (label, color, "line", _mm_grid(pts, tmax))
+                    for label, color, pts in series
+                ],
             )
         )
     return "\n\n".join(blocks) or None
@@ -1101,8 +1191,18 @@ def _mm_throughput(requests, slices) -> Optional[str]:
     return _mm_lines(
         _time_limit(requests),
         [
-            ("Prefill throughput", "tokens/s", [("", "blue", slices.get("Effective Prefill Throughput", []))], None),
-            ("Decode throughput", "tokens/s", [("", "orange", slices.get("Effective Decode Throughput", []))], None),
+            (
+                "Prefill throughput",
+                "tokens/s",
+                [("", "blue", slices.get("Effective Prefill Throughput", []))],
+                None,
+            ),
+            (
+                "Decode throughput",
+                "tokens/s",
+                [("", "orange", slices.get("Effective Decode Throughput", []))],
+                None,
+            ),
         ],
     )
 
@@ -1121,11 +1221,21 @@ def _mm_load(requests, slices) -> Optional[str]:
             100.0,
         )
     else:
-        cache = ("Tokens in flight", "tokens", [("", "orange", slices.get("Tokens In Flight", []))], None)
+        cache = (
+            "Tokens in flight",
+            "tokens",
+            [("", "orange", slices.get("Tokens In Flight", []))],
+            None,
+        )
     return _mm_lines(
         _time_limit(requests),
         [
-            ("Effective concurrency", "requests in flight", [("", "blue", slices.get("Effective Concurrency", []))], None),
+            (
+                "Effective concurrency",
+                "requests in flight",
+                [("", "blue", slices.get("Effective Concurrency", []))],
+                None,
+            ),
             cache,
             (
                 "Completed requests (cumulative)",
@@ -1169,7 +1279,9 @@ def write_point_charts(artifact_dir: Path, out_dir: Path) -> Dict[str, str]:
     """
     export = artifact_dir / PROFILE_EXPORT
     if not export.exists():
-        logger.warning("No %s under %s; skipping telemetry charts.", PROFILE_EXPORT, artifact_dir)
+        logger.warning(
+            "No %s under %s; skipping telemetry charts.", PROFILE_EXPORT, artifact_dir
+        )
         return {}
     requests, origin_ns = load_requests(export)
     if not requests:
@@ -1209,5 +1321,7 @@ def write_point_charts(artifact_dir: Path, out_dir: Path) -> Dict[str, str]:
             logger.exception("Mermaid twin of %r failed for %s", name, artifact_dir)
             fragment = None
         if fragment:
-            (out_dir / f"{name}{MERMAID_SUFFIX}").write_text(fragment + "\n", encoding="utf-8")
+            (out_dir / f"{name}{MERMAID_SUFFIX}").write_text(
+                fragment + "\n", encoding="utf-8"
+            )
     return written

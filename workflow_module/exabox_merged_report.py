@@ -395,7 +395,9 @@ def _find_chart(report_root: Path, link: str) -> Optional[Path]:
     direct = report_root / link
     if direct.is_file():
         return direct
-    return next((p for p in report_root.rglob(parts[-1]) if p.as_posix().endswith(link)), None)
+    return next(
+        (p for p in report_root.rglob(parts[-1]) if p.as_posix().endswith(link)), None
+    )
 
 
 # --------------------------------------------------------------------------- #

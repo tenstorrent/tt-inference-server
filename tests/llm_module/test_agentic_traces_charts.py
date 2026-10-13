@@ -153,7 +153,11 @@ def _server_metrics(path, hits, queries):
                 {
                     "endpoint_url": "http://e:1/metrics",
                     "timeslices": [
-                        {"start_ns": T0 + i * 10**9, "end_ns": T0 + (i + 1) * 10**9, "total": v}
+                        {
+                            "start_ns": T0 + i * 10**9,
+                            "end_ns": T0 + (i + 1) * 10**9,
+                            "total": v,
+                        }
                         for i, v in enumerate(per_window)
                     ],
                 }
@@ -189,7 +193,12 @@ def test_prefix_cache_hit_rate_comes_from_the_engine_counters(tmp_path):
     series = load_prefix_cache_hit_rate(path, T0)
 
     # Cumulative: 0/100, 50/200, 150/300, then the empty window adds nothing.
-    assert [round(v, 1) for _, v in series[HIT_RATE_CUMULATIVE]] == [0.0, 25.0, 50.0, 50.0]
+    assert [round(v, 1) for _, v in series[HIT_RATE_CUMULATIVE]] == [
+        0.0,
+        25.0,
+        50.0,
+        50.0,
+    ]
     # The warmup phase's counters (999 hits / 1 query) are not mixed in.
     assert max(v for _, v in series[HIT_RATE_ROLLING]) <= 100.0
 
@@ -198,7 +207,9 @@ def test_load_chart_shows_hit_rate_when_the_engine_metrics_exist(tmp_path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     _write_artifacts(artifacts)
-    _server_metrics(artifacts / "server_metrics_export.json", [10, 20, 30], [40, 40, 40])
+    _server_metrics(
+        artifacts / "server_metrics_export.json", [10, 20, 30], [40, 40, 40]
+    )
 
     written = write_point_charts(artifacts, tmp_path / "charts")
 
@@ -247,7 +258,9 @@ def test_mermaid_steps_average_rather_than_sample():
     from llm_module.agentic_traces.charts import _MERMAID_POINTS, _mm_grid
 
     # A series that is 0 except one spike per step must not read as all zeros.
-    points = [(i / 10, 10.0 if i % 10 == 5 else 0.0) for i in range(_MERMAID_POINTS * 10)]
+    points = [
+        (i / 10, 10.0 if i % 10 == 5 else 0.0) for i in range(_MERMAID_POINTS * 10)
+    ]
     grid = _mm_grid(points, float(_MERMAID_POINTS))
     # Each step holds about ten points with one spike: ~1.0, never 0.
     assert all(0.8 < v < 1.2 for v in grid)

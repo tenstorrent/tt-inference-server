@@ -100,8 +100,8 @@ class AIPerfAgenticTracesDriver:
     ) -> Dict[str, str]:
         """Draw the run's per-point charts; ``{name: link relative to the report}``."""
         assert self.output_dir is not None
-        chart_dir = self.output_dir / "charts" / safe_filename_part(
-            trace_run.filesafe_label()
+        chart_dir = (
+            self.output_dir / "charts" / safe_filename_part(trace_run.filesafe_label())
         )
         try:
             written = write_point_charts(artifact_dir, chart_dir)

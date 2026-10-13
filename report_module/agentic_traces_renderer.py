@@ -475,7 +475,7 @@ def _telemetry_section(rows: Sequence[Mapping[str, Any]]) -> str:
         "the start of the profiling window. Latency and interactivity show the "
         "P90 and P75 over a rolling window (50 requests, or a tenth of a short "
         "run) and the cumulative "
-        "P90, over the individual requests. For interactivity, \"P90\" is the "
+        'P90, over the individual requests. For interactivity, "P90" is the '
         "tokens/s/user that 90% of requests exceeded, i.e. the slow tail. "
         "The prefix cache hit rate comes from the serving engine's own counters "
         "(a run without them shows tokens in flight instead); KV-cache "
