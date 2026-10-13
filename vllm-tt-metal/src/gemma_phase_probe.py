@@ -47,6 +47,8 @@ class GemmaPhaseLogger(StatLoggerBase):
     def __init__(self, vllm_config, engine_index=0):
         self.engine_index = engine_index
         self.records = queue.SimpleQueue()
+        self.step_bucket = None
+        self.step_counts = None
         self.writer = threading.Thread(
             target=self._write_records, name="gemma-phase-record-writer", daemon=True
         )
@@ -54,15 +56,16 @@ class GemmaPhaseLogger(StatLoggerBase):
 
     def _write_records(self):
         while True:
-            record = self.records.get()
+            prefix, record = self.records.get()
             try:
-                sys.stdout.write("GEMMA_PHASE_RECORD " + json.dumps(record, separators=(",", ":")) + "\n")
+                sys.stdout.write(prefix + " " + json.dumps(record, separators=(",", ":")) + "\n")
                 sys.stdout.flush()
             except Exception:
                 # A broken log destination must never change model responses.
                 pass
 
     def record(self, scheduler_stats, iteration_stats, mm_cache_stats=None, engine_idx=0):
+        self._record_step(scheduler_stats)
         if iteration_stats is None or not iteration_stats.finished_requests:
             return
         callback_wall = time.time()
@@ -70,7 +73,7 @@ class GemmaPhaseLogger(StatLoggerBase):
         scheduler = scheduler_stats
         for req in iteration_stats.finished_requests:
             finish_reason = getattr(req.finish_reason, "name", str(req.finish_reason)).lower()
-            self.records.put({
+            self.records.put(("GEMMA_PHASE_RECORD", {
                 "schema": 1,
                 "request_id": req.request_id,
                 "finish_reason": finish_reason,
@@ -103,7 +106,50 @@ class GemmaPhaseLogger(StatLoggerBase):
                     getattr(scheduler, "kv_cache_usage", None) if scheduler else None
                 ),
                 "engine_index": self.engine_index,
-            })
+            }))
+
+    def _record_step(self, scheduler):
+        """One low-rate summary of existing iteration details per wall second.
+
+        vLLM's elapsed_ms times the wait on the model future. It is not a
+        device kernel timer; no per-step device synchronization is added.
+        """
+        detail = getattr(scheduler, "iteration_details", None) if scheduler else None
+        if detail is None:
+            return
+        now = time.time()
+        bucket = int(now)
+        if self.step_bucket != bucket:
+            if self.step_counts is not None:
+                self.records.put(("GEMMA_STEP_SUMMARY", self.step_counts))
+            self.step_bucket = bucket
+            self.step_counts = {
+                "schema": 1, "wall_second": bucket, "first_callback_wall_s": now,
+                "last_callback_wall_s": now, "engine_index": self.engine_index,
+                "steps": 0, "prefill_steps": 0, "decode_steps": 0,
+                "dummy_steps": 0, "prefill_tokens": 0, "decode_tokens": 0,
+                "future_wait_ms_prefill": 0.0, "future_wait_ms_decode": 0.0,
+                "future_wait_ms_dummy": 0.0,
+            }
+        item = self.step_counts
+        item["last_callback_wall_s"] = now
+        item["steps"] += 1
+        ctx_tokens = int(getattr(detail, "num_ctx_tokens", 0) or 0)
+        gen_tokens = int(getattr(detail, "num_generation_tokens", 0) or 0)
+        elapsed = float(getattr(detail, "elapsed_ms", 0.0) or 0.0)
+        if ctx_tokens and gen_tokens:
+            raise ValueError("mixed prefill/decode step in TT scheduler")
+        if ctx_tokens:
+            item["prefill_steps"] += 1
+            item["prefill_tokens"] += ctx_tokens
+            item["future_wait_ms_prefill"] += elapsed
+        elif gen_tokens:
+            item["decode_steps"] += 1
+            item["decode_tokens"] += gen_tokens
+            item["future_wait_ms_decode"] += elapsed
+        else:
+            item["dummy_steps"] += 1
+            item["future_wait_ms_dummy"] += elapsed
 
     def log_engine_initialized(self):
         pass
