@@ -1603,11 +1603,23 @@ templates:
         QWEN36_MAX_TOKENS_ALL_USERS: "525312"
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: "0"  # warm TT weight-cache load hangs otherwise (tt-metal#55957)
         VLLM_IMAGE_FETCH_TIMEOUT: "30"
+        QWEN_SDPA_BF8: "1"  # bfp8 paged KV cache: +12-14% aggregate at 8k-32k context, accuracy within noise (see QWEN38_GALAXY_HANDOFF.md §1a)
       vllm_args:
         data_parallel_size: 4  # TP=8 x DP=4: max_concurrency 128 -> max_num_seqs 32 per rank
         enable_auto_tool_choice: true
         reasoning_parser: qwen3
         tool_call_parser: qwen3_coder
+        exclude_tools_when_tool_choice_none: true
+          # The json_object grammar is compiled with any_whitespace=True by
+          # default, so an unbounded whitespace run is grammar-legal: the model
+          # can lock into emitting whitespace (p -> 1.0 within ~10 tokens), never
+          # emit the closing '}', and be truncated at max_tokens -- leaving
+          # content that does not parse as JSON. Disabling it makes whitespace an
+          # illegal continuation, so the closing brace is forced. Costs nothing at
+          # inference time; it only changes which tokens the grammar mask permits.
+          # backend must be explicit: the validator rejects this under "auto".
+        structured-outputs-config: '{"backend": "xgrammar", "disable_any_whitespace":
+          true}'
         max_num_batched_tokens: "525312"  # per-rank KV capacity, as for P150X8
         limit-mm-per-prompt: '{"image": 1, "video": 1}'
         mm-processor-cache-gb: "0"
