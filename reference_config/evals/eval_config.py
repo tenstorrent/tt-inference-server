@@ -10870,14 +10870,7 @@ _eval_config_list = [
                             "terminal-bench/hf-model-inference",
                             "terminal-bench/financial-document-processor",
                         ],
-                        # ci-long: full accuracy sets, same CI-sized agentic lists.
-                        EvalLimitMode.CI_LONG: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
+                        # ci-long runs the full Terminal-Bench 2.0 set (no CI_LONG list).
                     },
                 ),
                 limit_samples_map={
@@ -11292,14 +11285,7 @@ _eval_config_list = [
                             "terminal-bench/hf-model-inference",
                             "terminal-bench/financial-document-processor",
                         ],
-                        # ci-long: full accuracy sets, same CI-sized agentic lists.
-                        EvalLimitMode.CI_LONG: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
-                            "terminal-bench/financial-document-processor",
-                        ],
+                        # ci-long runs the full Terminal-Bench 2.0 set (no CI_LONG list).
                     },
                 ),
                 limit_samples_map={
