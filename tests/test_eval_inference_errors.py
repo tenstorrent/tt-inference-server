@@ -211,10 +211,72 @@ def test_every_must_eval_passing_is_a_qualification_pass():
     )
     assert accepted is True
     qualification = export["acceptance_criteria_metadata"]["qualification"]
-    assert qualification == {"strict_pass": True, "waived_must_evals": {}}
+    assert qualification == {
+        "strict_pass": True,
+        "waived_must_evals": {},
+        "ungraded_must_evals": {},
+    }
     _, _, categories = acceptance_criteria_check(
         ReportSchema(
             metadata={"report_id": "r"}, sections=[_eval("x", ReportCheckTypes.PASS)]
         )
     )
     assert next(c for c in categories if c.name == CATEGORY_EVALS).waived_must == {}
+
+
+# --- a must-eval that was never graded is not a qualification pass -----------
+#
+# Review on #5371 (acceptance_criteria.py:358): acceptance plus an empty waiver
+# map also describes a report whose must-evals were skipped (too little context)
+# or had no score to grade against (NA). Those are not failures, so the
+# deployment acceptance policy keeps passing them, but nothing was measured
+# against a reference, so the strict verdict must not.
+
+_UNGRADED = {
+    "explicit_skip": dict(
+        check=ReportCheckTypes.NA, status=TestStatus.SKIP.value, reason="ctx too small"
+    ),
+    "explicit_na": dict(check=ReportCheckTypes.NA, status=TestStatus.NA.value),
+    "accuracy_check_na": dict(check=ReportCheckTypes.NA),
+}
+
+
+@pytest.mark.parametrize("model_status", ["EXPERIMENTAL", "FUNCTIONAL", None])
+@pytest.mark.parametrize("case", sorted(_UNGRADED))
+def test_an_ungraded_must_eval_is_never_a_qualification_pass(case, model_status):
+    spec = dict(_UNGRADED[case])
+    check = spec.pop("check")
+    accepted, blockers, export = _check(
+        _eval("ifeval", ReportCheckTypes.PASS),
+        _eval("gpqa", check, **spec),
+        model_status=model_status,
+    )
+    # Deployment acceptance is unchanged: an ungraded eval does not block.
+    assert accepted is True and not blockers
+    qualification = export["acceptance_criteria_metadata"]["qualification"]
+    assert qualification["strict_pass"] is False
+    assert qualification["waived_must_evals"] == {}
+    assert list(qualification["ungraded_must_evals"]) == ["evals:LLM Eval — gpqa"]
+
+
+@pytest.mark.parametrize("case", sorted(_UNGRADED))
+def test_an_only_must_eval_left_ungraded_is_not_a_qualification_pass(case):
+    spec = dict(_UNGRADED[case])
+    check = spec.pop("check")
+    _, _, export = _check(_eval("gpqa", check, **spec), model_status="FUNCTIONAL")
+    assert export["acceptance_criteria_metadata"]["qualification"]["strict_pass"] is False
+
+
+@pytest.mark.parametrize("case", sorted(_UNGRADED))
+def test_an_ungraded_should_eval_does_not_block_qualification(case):
+    spec = dict(_UNGRADED[case])
+    check = spec.pop("check")
+    accepted, _, export = _check(
+        _eval("ifeval", ReportCheckTypes.PASS),
+        _eval("extra", check, priority="should", **spec),
+        model_status="FUNCTIONAL",
+    )
+    assert accepted is True
+    qualification = export["acceptance_criteria_metadata"]["qualification"]
+    assert qualification["strict_pass"] is True
+    assert qualification["ungraded_must_evals"] == {}
