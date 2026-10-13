@@ -10849,9 +10849,10 @@ _eval_config_list = [
                     dataset="terminal-bench/terminal-bench-2",
                     dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    # Default Docker address pools allow ~31 compose networks per host
-                    # (one per trial); more needs a daemon.json change on the runners.
-                    n_concurrent_trials=28,
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
@@ -11264,7 +11265,7 @@ _eval_config_list = [
                     dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
                     # Default Docker address pools allow ~31 compose networks per host.
-                    n_concurrent_trials=28,
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
@@ -11327,7 +11328,7 @@ _eval_config_list = [
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
                     # Default Docker address pools allow ~31 compose networks per host.
-                    n_concurrent_trials=28,
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
