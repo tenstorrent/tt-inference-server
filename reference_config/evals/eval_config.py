@@ -10676,6 +10676,10 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 max_concurrent=5,
                 use_chat_api=True,
+                # The quetzal row serves --default-chat-template-kwargs
+                # {"enable_thinking": false} (upstream stance). The card's 85.5
+                # is thinking mode, so this task turns thinking on per request.
+                thinking=True,
                 model_kwargs={
                     "max_length": 262144,
                     "timeout": 7200,
@@ -10734,8 +10738,13 @@ _eval_config_list = [
                             "max_tokens": 16 * 1024,
                             "timeout": 60 * 60,
                             # Qwen3.5-27B's template reads only enable_thinking (no
-                            # reasoning_effort); thinking stays on, the card default.
-                            "extra_body": {"top_k": 20},
+                            # reasoning_effort). The quetzal row serves it false by
+                            # default, so thinking is turned on per request, as
+                            # Qwen3.8-27B runs.
+                            "extra_body": {
+                                "top_k": 20,
+                                "chat_template_kwargs": {"enable_thinking": True},
+                            },
                         },
                     },
                     task_names_map={
@@ -10790,7 +10799,14 @@ _eval_config_list = [
                                 "model_kwargs": {
                                     "temperature": 1.0,
                                     "top_p": 0.95,
-                                    "extra_body": {"top_k": 20},
+                                    # The row serves enable_thinking=false by
+                                    # default; think per request, as Qwen3.8 runs.
+                                    "extra_body": {
+                                        "top_k": 20,
+                                        "chat_template_kwargs": {
+                                            "enable_thinking": True
+                                        },
+                                    },
                                 }
                             }
                         },
