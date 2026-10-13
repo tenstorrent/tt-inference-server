@@ -969,6 +969,23 @@
           "template": "VLLMParamConformanceTest"
         }
       ]
+    },
+    {
+      "devices": [
+        "p300x2"
+      ],
+      "impls": [
+        "quetzal"
+      ],
+      "models": [
+        "Qwen/Qwen3-4B-Base"
+      ],
+      "test_cases": [
+        {
+          "enabled": true,
+          "template": "VLLMParamConformanceTest"
+        }
+      ]
     }
   ]
 }
