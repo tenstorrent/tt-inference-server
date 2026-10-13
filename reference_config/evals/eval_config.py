@@ -11819,7 +11819,9 @@ _eval_config_list = [
                     n_tasks=97,
                     override_cpus=4,
                     override_memory_mb=8 * 1024,
-                    agent_timeout_sec=3600,
+                    # 24 tasks / 8 slots = 3 waves x 90 min = 4.5 h worst case (6 of 24
+                    # trials hit the 60 min limit in run 38180874835).
+                    agent_timeout_sec=5400,
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
@@ -11839,7 +11841,7 @@ _eval_config_list = [
                         "TAU2_NL_ASSERTIONS_MODEL": "openai/meta-models/Muse-Glimmer-30B",
                     },
                 ),
-                # 24 of 97 tasks (+/-9 pts): three waves of 8 at <= 1 h each.
+                # 24 of 97 tasks (+/-9 pts): three waves of 8 at <= 90 min each.
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 24,
                     EvalLimitMode.SMOKE_TEST: 3,
