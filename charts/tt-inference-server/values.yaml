@@ -1247,7 +1247,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.16.0-669d59e-3334377
             resources:
               requests:
                 memory: 175Gi
@@ -1410,7 +1410,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.16.0-669d59e-3334377
             resources:
               requests:
                 memory: 175Gi
@@ -1573,7 +1573,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.16.0-669d59e-3334377
             resources:
               requests:
                 memory: 175Gi
@@ -2108,7 +2108,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.17.0-8c48a10-f52987a
             resources:
               requests:
                 memory: 20Gi
@@ -2132,7 +2132,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.19.0-b204341-9bd099c
             resources:
               requests:
                 memory: 20Gi
@@ -2616,25 +2616,6 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
-      p150x4:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-555f240
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 32Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: P150x4
       p150x8:
         defaultImpl: tt_transformers
         impls:
@@ -2654,25 +2635,6 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x8
-      p300x2:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-555f240
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 32Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: P300x2
     defaultEngine: media
   Wan2.2-T2V-A14B-Diffusers:
     media:
