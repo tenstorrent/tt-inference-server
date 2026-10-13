@@ -100,7 +100,13 @@ EXPECTED = {
         "mmlu_pro": 63.3,
     },
     "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
-    "Qwen/Qwen3.5-27B": {"r1_gpqa_diamond": 85.5},
+    # Agentic tasks mirror Qwen3.8-27B; the card values give no scaffold, so they
+    # grade NA until their colab GPU references land (issue #5353).
+    "Qwen/Qwen3.5-27B": {
+        "r1_gpqa_diamond": 85.5,
+        "terminal_bench_2_1": None,
+        "swe_bench_verified": None,
+    },
     # wave18 Quetzal candidates (Open LLM Leaderboard v2, model card or paper citations).
     "NousResearch/Hermes-3-Llama-3.2-3B": {
         "leaderboard_ifeval": 31.05,
