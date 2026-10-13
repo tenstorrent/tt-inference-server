@@ -11,6 +11,7 @@ import re
 import runpy
 import shlex
 import shutil
+import subprocess
 import sys
 import sysconfig
 from pathlib import Path
@@ -1397,6 +1398,17 @@ def main():
                 "[vllm.stat_logger_plugins]\n"
                 "gemma_phase_probe = gemma_phase_probe:GemmaPhaseLogger\n"
             )
+            # Proof-only serial host spans, written at most four times/sec.
+            # Patch this ephemeral venv before spawned engine processes import it.
+            core = purelib / "vllm/v1/engine/core.py"
+            if "def _gemma_host_step(" not in core.read_text():
+                original = core.with_suffix(".gemma-host-original.py")
+                shutil.copyfile(core, original)
+                subprocess.run(
+                    [sys.executable, str(Path(__file__).with_name("gemma_instrument_engine_host.py")),
+                     str(original), str(core), "--modes"], check=True,
+                )
+            logger.info("Enabled proof-only cumulative host timers with prefill/decode tags")
             logger.info("Enabled proof-only one-record-per-finished-request timing logger")
         except Exception:
             logger.warning("Could not enable Gemma request timing probe", exc_info=True)
