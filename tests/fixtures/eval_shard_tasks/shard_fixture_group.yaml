@@ -1,0 +1,10 @@
+group: shard_fixture_group
+task:
+  - shard_fixture_leaf_a
+  - shard_fixture_leaf_b
+aggregate_metric_list:
+  - metric: exact_match
+    aggregation: mean
+    weight_by_size: true
+metadata:
+  version: 1.0

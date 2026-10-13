@@ -10,7 +10,9 @@ import atexit
 import json
 import logging
 import os
+import hashlib
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -20,6 +22,13 @@ from workflow_module.engine_types import EvalLimitMode
 from workflow_module.engine_types import WorkflowVenvType
 from llm_module.request_overrides import resolve_request_body
 from workflow_module.venv_provisioner import get_venv_provisioner
+from workflows.eval_shard import (
+    SHARD_RECORD_PREFIX,
+    ShardError,
+    parse_eval_shard,
+    shard_record,
+    shard_samples,
+)
 
 if TYPE_CHECKING:
     from reference_config.evals.eval_config import EvalTask
@@ -227,6 +236,143 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
         len(indices),
     )
     return json.dumps({task.task_name: list(indices)})
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_SHARD_PLAN_SCRIPT = Path(__file__).with_name("eval_shard_plan.py")
+# eval_shard_plan.UNSUPPORTED_HARNESS_RC: the venv's harness has no --samples.
+_SHARD_PLAN_UNSUPPORTED_RC = 3
+
+
+def _ttis_ref() -> Optional[str]:
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return out.stdout.strip() or None
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def _known_issues(model_spec) -> list:
+    issues = getattr(
+        getattr(model_spec, "device_model_spec", None), "known_issues", None
+    )
+    out = []
+    for issue in issues or []:
+        get = (
+            issue.get
+            if isinstance(issue, dict)
+            else lambda k, i=issue: getattr(i, k, None)
+        )
+        workflow = get("workflow_type")
+        out.append(
+            {
+                "workflow_type": str(getattr(workflow, "name", workflow)),
+                "task_name": get("task_name"),
+                "reason": get("reason"),
+            }
+        )
+    return out
+
+
+def _shard_provenance(model_spec, device, cmd: List[str], output_dir_path) -> dict:
+    """What every shard of one merge must share: package, image, ref, command."""
+    device_spec = getattr(model_spec, "device_model_spec", None)
+    env_vars = getattr(device_spec, "env_vars", None) or {}
+    # The command minus its per-run output path: same task, same settings.
+    stable = [str(c) for c in cmd if str(c) != str(output_dir_path)]
+    return {
+        "hf_model_repo": getattr(model_spec, "hf_model_repo", None),
+        "package_manifest_sha256": env_vars.get("QUETZAL_BUNDLE_MANIFEST_SHA256"),
+        "docker_image": getattr(model_spec, "docker_image", None),
+        "ttis_ref": _ttis_ref(),
+        "eval_command_sha": hashlib.sha256(json.dumps(stable).encode()).hexdigest(),
+        "device": getattr(device, "name", str(device)),
+        "model_status": str(
+            getattr(
+                getattr(model_spec, "status", None),
+                "name",
+                getattr(model_spec, "status", None),
+            )
+        ),
+        "known_issues": _known_issues(model_spec),
+    }
+
+
+def _resolve_eval_shard(
+    task: "EvalTask",
+    runtime_config,
+    *,
+    task_venv_path: Path,
+    model_spec,
+    device,
+    cmd: List[str],
+    lm_eval_args: List[str],
+    output_path,
+    output_dir_path,
+) -> Optional[str]:
+    """--eval-shard i/N -> this shard's lm-eval --samples JSON, or None.
+
+    Plans the task in the eval venv (leaf doc counts, few-shot sampler, metric
+    aggregations), refuses a task that cannot shard exactly, and writes the
+    shard record next to the lm-eval output for the merge to verify.
+
+    ``lm_eval_args`` are the eval's own lm_eval arguments (everything after the
+    executable or wrapper): the planner loads the tasks through the harness's
+    parser from exactly these, so ``--metadata`` (merged with ``--model_args``),
+    ``--include_path`` and ``--num_fewshot`` select the same doc set as the run.
+    Whether the venv's harness can select docs at all (``--samples``) is checked
+    by the planner from the harness itself, not from the venv's name.
+    """
+    value = getattr(runtime_config, "eval_shard", None)
+    if not value:
+        return None
+    index, count = parse_eval_shard(value)
+    if getattr(runtime_config, "eval_samples", None):
+        raise ShardError("--eval-shard and --eval-samples are mutually exclusive")
+    plan_path = Path(output_path) / f"{SHARD_RECORD_PREFIX}{task.task_name}.plan.json"
+    plan_cmd = [
+        str(task_venv_path / "bin" / "python"),
+        str(_SHARD_PLAN_SCRIPT),
+        "--out",
+        str(plan_path),
+        "--",
+        *[str(a) for a in lm_eval_args],
+    ]
+    logger.info("Planning %s shard %s: %s", task.task_name, value, plan_cmd)
+    planned = subprocess.run(plan_cmd, stderr=subprocess.PIPE, text=True)
+    if planned.returncode == _SHARD_PLAN_UNSUPPORTED_RC:
+        raise ShardError(
+            f"--eval-shard refused for {task.task_name} on "
+            f"{task.workflow_venv_type.name}: {(planned.stderr or '').strip()}"
+        )
+    if planned.returncode != 0:
+        raise ShardError(
+            f"shard planning failed for {task.task_name} (rc={planned.returncode}): "
+            f"{(planned.stderr or '').strip()[-2000:]}"
+        )
+    plan = json.loads(plan_path.read_text())
+    samples = shard_samples(plan, index, count)  # refuses inexact plans
+    record = shard_record(
+        task.task_name,
+        plan,
+        index,
+        count,
+        _shard_provenance(model_spec, device, cmd, output_dir_path),
+    )
+    record_path = Path(output_path) / f"{SHARD_RECORD_PREFIX}{task.task_name}.json"
+    record_path.write_text(json.dumps(record, indent=2, sort_keys=True))
+    logger.info(
+        "Shard %s of %s: %s",
+        value,
+        task.task_name,
+        {leaf: len(ix) for leaf, ix in samples.items()},
+    )
+    return json.dumps(samples, separators=(",", ":"))
 
 
 def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:
@@ -566,6 +712,19 @@ def build_eval_command(
         cmd.append("--confirm_run_unsafe_code")
 
     samples_arg = _resolve_eval_samples(task, runtime_config)
+    shard_arg = _resolve_eval_shard(
+        task,
+        runtime_config,
+        task_venv_path=task_venv_path,
+        model_spec=model_spec,
+        device=device,
+        cmd=[str(c) for c in cmd],
+        lm_eval_args=[str(c) for c in cmd[len(lm_eval_prefix) :]],
+        output_path=output_path,
+        output_dir_path=output_dir_path,
+    )
+    if shard_arg is not None:
+        samples_arg = shard_arg
     if samples_arg is not None:
         cmd.extend(["--samples", samples_arg])
 

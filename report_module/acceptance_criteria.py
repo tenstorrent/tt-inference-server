@@ -33,6 +33,9 @@ FAIL_CHECK_INT = 3
 STATUS_PASS = "PASS"
 STATUS_FAIL = "FAIL"
 STATUS_NA = "NA"
+STATUS_PARTIAL = "PARTIAL"
+# Blocker-key prefix for subset (shard / explicit sample list) eval blocks.
+PARTIAL_BLOCKER_PREFIX = "partial:"
 
 # Acceptance severity carried on a block by requirements-driven runs. A
 # "should" failure is informational (waived) rather than a blocker; anything
@@ -357,6 +360,15 @@ def strict_qualification(
     }
 
 
+def overall_status(accepted: bool, blockers: Mapping[str, str]) -> str:
+    """PASS, FAIL, or PARTIAL when the only blockers are subset eval runs."""
+    if accepted:
+        return STATUS_PASS
+    if blockers and all(k.startswith(PARTIAL_BLOCKER_PREFIX) for k in blockers):
+        return STATUS_PARTIAL
+    return STATUS_FAIL
+
+
 def build_acceptance_export(
     accepted: bool,
     blockers: Mapping[str, str],
@@ -368,7 +380,7 @@ def build_acceptance_export(
         "acceptance_criteria": accepted,
         "acceptance_blockers": dict(blockers),
         "acceptance_criteria_metadata": {
-            "enforcement_result": STATUS_PASS if accepted else STATUS_FAIL,
+            "enforcement_result": overall_status(accepted, blockers),
             "model_status": model_status or "",
             "categories": [category.to_dict() for category in categories],
             "qualification": strict_qualification(accepted, categories),
@@ -390,7 +402,7 @@ def format_acceptance_summary_markdown(
     lines = [
         "### Acceptance Criteria",
         "",
-        f"- Acceptance status: {_status_badge(STATUS_PASS if accepted else STATUS_FAIL)}",
+        f"- Acceptance status: {_status_badge(overall_status(accepted, blockers))}",
     ]
     if model_status:
         lines.append(f"- Model status: `{model_status}`")
@@ -638,6 +650,7 @@ def _check_evals(
     failed = 0
     na = 0
     skipped = 0
+    partial = 0
     for block in eval_blocks:
         block_key = _block_key(block)
         data = block.data if isinstance(block.data, Mapping) else None
@@ -676,6 +689,14 @@ def _check_evals(
                 else:
                     blockers[block_key] = explicit_message
                     failed += 1
+            elif explicit is TestStatus.PARTIAL:
+                # Never waivable, never informational: a subset is not a verdict.
+                partial += 1
+                blockers[f"{PARTIAL_BLOCKER_PREFIX}{block_key}"] = (
+                    f"{block.title or block.kind} graded a subset of the samples "
+                    f"({(data or {}).get('reason', 'partial run')}); only the merged "
+                    "full-set report can pass"
+                )
             elif explicit is TestStatus.SKIP:
                 skipped += 1
             elif explicit is TestStatus.NA:
@@ -731,6 +752,8 @@ def _check_evals(
     non_pass = failed + na + skipped
     if failed:
         status = STATUS_FAIL
+    elif partial:
+        status = STATUS_PARTIAL
     elif na == len(eval_blocks) or (skipped and non_pass == len(eval_blocks)):
         status = STATUS_NA
     else:
@@ -739,7 +762,7 @@ def _check_evals(
         CATEGORY_EVALS,
         status,
         len(eval_blocks),
-        failed,
+        failed + partial,
         na=na,
         skipped=skipped,
         blockers=blockers,
