@@ -514,6 +514,20 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
+# Per-request client timeout for QwQ-32B r1_* tasks (lm-eval local-completions
+# `timeout`, an aiohttp ClientTimeout total per request; harness default 1800 s).
+# The r1 task YAMLs generate up to max_gen_toks=32768 and the GPU reference
+# (issue #141) let every request finish, so the timeout must cover a full-length
+# generation, never cut it. Derivation from Shield run 38323771398 (P300X2,
+# num_concurrent=32, KV pool 152,000 tokens = 3.71 full-length requests, so
+# requests queue and are preempted under load): per-request decode rate from the
+# KV-usage slope, p10 6.2 tok/s, p50 8.4 tok/s. 32768 / 6.2 = 5285 s, doubled for
+# time spent waiting in the scheduler queue (up to 16 of 32 in-flight requests
+# observed waiting) = 10570 s, rounded up to 3 h. At 3600 s (aime24/math500) the
+# run logged 10 timeouts recovered by retry; at the 1800 s default (gpqa) 22/198
+# requests exhausted retries as __INFERENCE_ERROR__.
+QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -4386,7 +4400,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -4414,7 +4428,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
-                    "timeout": "3600",
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
@@ -4442,6 +4456,7 @@ _eval_config_list = [
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
                 model_kwargs={
                     "max_length": 65536,
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
                 },
                 gen_kwargs={
                     "stream": "false",
