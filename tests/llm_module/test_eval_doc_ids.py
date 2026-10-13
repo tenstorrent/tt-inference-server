@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """EvalTask.doc_ids: a configured lm-eval --samples subset that limit modes
 slice instead of combining with --limit (lm-eval rejects both)."""
 
