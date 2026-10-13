@@ -360,3 +360,18 @@ def test_qwen35_27b_tasks_think_against_a_thinking_off_serving_default():
     assert swe["config"]["model"]["model_kwargs"]["extra_body"][
         "chat_template_kwargs"
     ] == {"enable_thinking": True}
+
+
+def test_gemma4_31b_tasks_request_thinking_themselves():
+    """gemma-4-31B-it's references (GPQA card 84.3 / H100 83.33, and the MMLU-Pro
+    run it matches) are thinking mode. A serving row that keeps upstream's
+    enable_thinking=false default must not change the graded mode, so each task
+    requests thinking per request instead of relying on the server default."""
+    from llm_module.request_overrides import resolve_request_body
+
+    tasks = {t.task_name: t for t in _eval_config_map["google/gemma-4-31B-it"].tasks}
+    for name in ("r1_gpqa_diamond", "mmlu_pro"):
+        assert tasks[name].use_chat_api is True, name
+        assert resolve_request_body(tasks[name]) == {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }, name
