@@ -36,17 +36,12 @@ def _tarball(files):
 
 
 class _Remote:
-    """Fakes the remote: ls-remote returns ``head``; the tarball holds ``files``."""
+    """Fakes GitHub: the tarball holds ``files``; ``None`` makes the download fail."""
 
-    def __init__(self, monkeypatch, head="a" * 40):
-        self.head = head
+    def __init__(self, monkeypatch):
         self.files = dict(_FILES)
         self.urls = []
-        monkeypatch.setattr(wv, "_git_output", self.output)
         monkeypatch.setattr(wv.urllib.request, "urlopen", self.urlopen)
-
-    def output(self, *args):
-        return f"{self.head}\trefs/heads/b" if self.head else None
 
     def urlopen(self, url, timeout=None):
         self.urls.append(url)
@@ -58,13 +53,17 @@ class _Remote:
 _PATHS = ["verify.py", "validator", "output-dir/MiniMax-M3/loop_01"]
 
 
-def test_only_the_listed_paths_are_exported_at_the_head(monkeypatch, tmp_path):
+_A = "a" * 40
+_B = "b" * 40
+
+
+def test_only_the_listed_paths_are_exported_at_the_pin(monkeypatch, tmp_path):
     remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
 
-    assert wv.export_repo_branch(dest, "https://github.com/o/r.git", "b", _PATHS)
+    assert wv.export_repo_commit(dest, "https://github.com/o/r.git", _A, _PATHS)
 
-    assert remote.urls == [f"https://codeload.github.com/o/r/tar.gz/{remote.head}"]
+    assert remote.urls == [f"https://codeload.github.com/o/r/tar.gz/{_A}"]
     exported = sorted(str(p.relative_to(dest)) for p in dest.rglob("*") if p.is_file())
     assert exported == [
         wv.SOURCE_COMMIT_FILE,
@@ -72,7 +71,7 @@ def test_only_the_listed_paths_are_exported_at_the_head(monkeypatch, tmp_path):
         "validator/__init__.py",
         "verify.py",
     ]
-    assert wv.read_source_commit(dest) == remote.head
+    assert wv.read_source_commit(dest) == _A
     assert not (tmp_path / "verifier.staging").exists()
 
 
@@ -81,72 +80,73 @@ def test_a_missing_path_fails_the_export(monkeypatch, tmp_path):
     del remote.files["verify.py"]
     dest = tmp_path / "verifier"
 
-    assert not wv.export_repo_branch(dest, "url", "b", _PATHS)
+    assert not wv.export_repo_commit(dest, "url", _A, _PATHS)
 
     assert not dest.exists()
     assert not (tmp_path / "verifier.staging").exists()
 
 
-def test_an_export_at_the_branch_head_is_kept(monkeypatch, tmp_path):
+def test_an_export_at_the_pin_needs_no_network(monkeypatch, tmp_path):
     remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", _PATHS)
+    wv.export_repo_commit(dest, "url", _A, _PATHS)
     remote.urls.clear()
+    remote.files = None  # GitHub is down
 
-    assert wv.export_repo_branch(dest, "url", "b", _PATHS)
+    assert wv.export_repo_commit(dest, "url", _A, _PATHS)
 
     assert remote.urls == []
 
 
-def test_a_moved_branch_is_exported_again(monkeypatch, tmp_path):
-    remote = _Remote(monkeypatch)
+def test_a_moved_pin_is_exported_again(monkeypatch, tmp_path):
+    _Remote(monkeypatch)
     dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", _PATHS)
+    wv.export_repo_commit(dest, "url", _A, _PATHS)
     (dest / "stale.txt").write_text("")
-    remote.head = "b" * 40
 
-    assert wv.export_repo_branch(dest, "url", "b", _PATHS)
+    assert wv.export_repo_commit(dest, "url", _B, _PATHS)
 
-    assert wv.read_source_commit(dest) == "b" * 40
+    assert wv.read_source_commit(dest) == _B
     assert not (dest / "stale.txt").exists()
 
 
-def test_an_unreachable_remote_keeps_an_existing_export(monkeypatch, tmp_path):
+def test_a_failed_download_does_not_fall_back_to_another_commit(monkeypatch, tmp_path):
+    """The gate is graded against the pin: an export of a different commit
+    must not stand in for it, so the call fails (and leaves it untouched)."""
     remote = _Remote(monkeypatch)
     dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", _PATHS)
-    remote.head = None
+    wv.export_repo_commit(dest, "url", _A, _PATHS)
+    remote.files = None
 
-    assert wv.export_repo_branch(dest, "url", "b", _PATHS)
-    assert not wv.export_repo_branch(tmp_path / "other", "url", "b", _PATHS)
+    assert not wv.export_repo_commit(dest, "url", _B, _PATHS)
 
-
-def test_a_failed_download_keeps_the_previous_export(monkeypatch, tmp_path):
-    remote = _Remote(monkeypatch)
-    dest = tmp_path / "verifier"
-    wv.export_repo_branch(dest, "url", "b", _PATHS)
-    remote.head, remote.files = "b" * 40, None
-
-    assert not wv.export_repo_branch(dest, "url", "b", _PATHS)
-
-    assert wv.read_source_commit(dest) == "a" * 40
+    assert wv.read_source_commit(dest) == _A
     assert not (tmp_path / "verifier.staging").exists()
+    assert not wv.export_repo_commit(tmp_path / "other", "url", _B, _PATHS)
 
 
-def test_the_verifier_branch_is_exported(monkeypatch, tmp_path):
+def test_the_pin_is_a_full_upstream_commit():
+    assert wv.MINIMAX_VERIFIER_REPO == (
+        "https://github.com/MiniMax-AI/MiniMax-Provider-Verifier.git"
+    )
+    assert len(wv.MINIMAX_VERIFIER_COMMIT) == 40
+    assert set(wv.MINIMAX_VERIFIER_COMMIT) <= set("0123456789abcdef")
+
+
+def test_the_verifier_is_exported_at_the_pin(monkeypatch, tmp_path):
     seen = {}
 
-    def export(dest, repo, branch, paths):
-        seen.update(dest=dest, repo=repo, branch=branch, paths=paths)
+    def export(dest, repo, commit, paths):
+        seen.update(dest=dest, repo=repo, commit=commit, paths=paths)
         return True
 
-    monkeypatch.setattr(wv, "export_repo_branch", export)
+    monkeypatch.setattr(wv, "export_repo_commit", export)
 
     assert wv.setup_minimax_verifier(SimpleNamespace(venv_path=tmp_path), None)
 
     assert seen["dest"] == tmp_path / "MiniMax-Provider-Verifier"
     assert seen["repo"] == wv.MINIMAX_VERIFIER_REPO
-    assert seen["branch"] == wv.MINIMAX_VERIFIER_BRANCH
+    assert seen["commit"] == wv.MINIMAX_VERIFIER_COMMIT
     # verify.py imports validator/; the pytest suites and fixtures live in
     # m3_format_check/.
     for path in ("verify.py", "sample.jsonl", "validator", "m3_format_check"):
