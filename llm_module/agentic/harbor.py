@@ -78,6 +78,7 @@ class HarborRunConfig:
     # Per-agent overrides. OpenAI endpoint variables are filled from api_base
     # unless explicitly set here, so stale host endpoints cannot take priority.
     agent_env: dict[str, str] = field(default_factory=dict)
+    dataset_ref: Optional[str] = None
     environment_env: dict[str, str] = field(default_factory=dict)
     verifier_env: dict[str, str] = field(default_factory=dict)
     # Provider-specific environment knobs (namespace, image_mode, node_selector,
@@ -203,6 +204,8 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     config.jobs_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_config: dict[str, Any] = {"name": config.dataset}
+    if config.dataset_ref:
+        dataset_config["ref"] = config.dataset_ref
     if config.n_tasks is not None:
         dataset_config["n_tasks"] = config.n_tasks
     if config.task_names:

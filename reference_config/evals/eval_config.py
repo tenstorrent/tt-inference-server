@@ -265,6 +265,10 @@ class HarborEvalConfig:
     dataset: str
     agent: str
     model: Optional[str] = None
+    # Harbor Hub ref for an ``org/name`` package dataset (tag, rev, or
+    # ``sha256:`` content digest). None resolves ``@latest`` at run time, so
+    # the task set can change under a run; pin released benchmarks.
+    dataset_ref: Optional[str] = None
     n_concurrent_trials: int = 1
     n_attempts: int = 1
     n_tasks: Optional[int] = None
@@ -540,6 +544,13 @@ LIVECODEBENCH_V6_DOC_IDS = [
     *range(1003, 1037),
     *range(1040, 1055),
 ]
+
+# Terminal-Bench 2.0 as published on the Harbor Hub (terminal-bench/terminal-bench-2
+# rev 1, 2026-03-20, 89 tasks). Pinned so the task set and images cannot move
+# under a release run; bump deliberately when a new revision is published.
+TERMINAL_BENCH_2_DATASET_REF = (
+    "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b"
+)
 
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
@@ -10836,6 +10847,7 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
                     # Default Docker address pools allow ~31 compose networks per host
                     # (one per trial); more needs a daemon.json change on the runners.
@@ -11249,6 +11261,7 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
                     # Default Docker address pools allow ~31 compose networks per host.
                     n_concurrent_trials=28,

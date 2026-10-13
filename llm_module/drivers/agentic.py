@@ -201,6 +201,7 @@ def build_harbor_config(
     return HarborRunConfig(
         task_name=task_output_dir.name,
         dataset=cfg.dataset,
+        dataset_ref=getattr(cfg, "dataset_ref", None),
         agent=cfg.agent,
         model_name=_openai_model_name(cfg.model or server.model),
         jobs_dir=task_output_dir.parent,
