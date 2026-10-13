@@ -868,6 +868,12 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL (94GB, bf16 KV) caps servable ctx at ~205K (KV cache = 210,605 tokens)
       default_impl: true
+      vllm_args:
+        # Like-for-like with the TT rows above: the evals set no per-request
+        # thinking, so the server default must be thinking on, and the
+        # reasoning parser separates the thinking from the scored content.
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
   status: COMPLETE
   has_builtin_warmup: true
   env_vars:
