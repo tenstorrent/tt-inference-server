@@ -1035,6 +1035,16 @@
       "weights": [
         "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"
       ]
+    },
+    "google/gemma-4-31B-it": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "google--gemma-4-31B-it",
+      "weights": [
+        "google/gemma-4-31B-it"
+      ]
     }
   },
   "hardware_defaults": {
