@@ -950,7 +950,9 @@ templates:
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
         block_size: 32
-        max_num_seqs: 32
+        # Keep physical inference at batch one while concurrent agent trials
+        # overlap their tool-execution gaps.
+        max_num_seqs: 1
         max_model_len: 262144
         max_num_batched_tokens: 262144
         no-enable-chunked-prefill: true

@@ -57,12 +57,13 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     )
     assert dedicated.device_model_spec.vllm_args["reasoning-parser"] == "gemma4"
     assert dedicated.device_model_spec.vllm_args["seed"] == 9472
+    assert dedicated.device_model_spec.vllm_args["max_num_seqs"] == 1
     assert dedicated.device_model_spec.env_vars["TT_METAL_CACHE"].endswith(
         "/gemma4_metal_kernel_cache"
     )
 
 
-def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
+def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
     tasks = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks
 
     assert [task.task_name for task in tasks] == [
@@ -86,7 +87,8 @@ def test_gemma4_26b_release_uses_the_validated_serial_10_5_5_eval_cohort():
     swe = swe_task.agentic_eval_config
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
     assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert terminal.n_concurrent_trials == swe.n_concurrent_trials == 1
+    assert terminal.n_concurrent_trials == 5
+    assert swe.n_concurrent_trials == 1
     assert terminal.n_attempts == swe.n_attempts == 1
     assert terminal.override_cpus == 16
     assert swe.llm_timeout_sec == 30 * 60

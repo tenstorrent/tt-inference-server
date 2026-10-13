@@ -11255,7 +11255,9 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=1,
+                    # The server remains max_num_seqs=1; concurrent trials
+                    # overlap tool work and keep the device-fed portion serial.
+                    n_concurrent_trials=5,
                     n_attempts=1,
                     n_tasks=None,
                     # QB2 agentic runners expose 16 host CPUs; a larger Docker
