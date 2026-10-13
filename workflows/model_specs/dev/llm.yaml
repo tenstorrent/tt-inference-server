@@ -5329,14 +5329,15 @@ templates:
 
 # Aleph-Alpha/Kolibri-1 (78B MoE, 3.46B active) TP4 autoport
 # (models/autoports/aleph_alpha_kolibri_1_bf16) from the tt-model-bringup multigoal
-# pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on a 4x p300c QB2. Requires
-# tt-metal branch vkovacevic/kolibri-1-perf (= the vkovacevic/kolibri-1-ci lean branch
-# plus the env-gated batch-32 MoE speedups from tt-agentic-bringup-qb2#75) and
-# vllm-tt-plugin branch vkovacevic/kolibri-1-parsers (model + HF config registration,
-# kolibri1 reasoning and tool parsers). The checkpoint is the vendor's BF16 copy; the
-# main repo is block-FP8. Measured on the 32-slot server with the #75 settings below
-# (vs the bring-up's dense path / 512-token chunks): c1 128/128 TPOT 57 ms (was 114),
-# c32 128/128 243 tok/s (was 163), c32 4096/128 TTFT 5.6 s / 99 tok/s (was 57 s / 35).
+# pipeline (tenstorrent/skills 80095f4, GPT-6 Astra) on a 4x p300c QB2. Requires the
+# tt-metal model code (models/autoports/aleph_alpha_kolibri_1_bf16, branch
+# vkovacevic/kolibri-1-qb2-model with its four shared-code fixes) and vllm-tt-plugin's
+# kolibri1 registration and parsers (branch vkovacevic/kolibri-1-qb2-plugin; vLLM 0.30).
+# The checkpoint is the vendor's BF16 copy; the main repo is block-FP8. Measured on the
+# 32-slot server (tt-agentic-bringup-qb2#75 batched-decode MoE path, 2048-token chunks):
+# c1 128/128 TTFT 233 ms / TPOT 57 ms, c32 128/128 250 tok/s, c32 4096/128 TTFT 5.5 s /
+# 100 tok/s. Perf targets: the measured gate in model_performance_reference.json (the
+# 2026-10-08 CI sweep) with a bf16 weight-streaming theoretical block.
 # Tracking: tt-agentic-bringup-qb2#73.
 - weights:
     - Aleph-Alpha/Kolibri-1-BF16
@@ -5359,18 +5360,10 @@ templates:
         # eval sampling (top_k 128) needs the host path, which the adapter only
         # allows when this is set; without it such a request kills the engine.
         KOLIBRI_VLLM_HOST_COMPAT: "1"
-        # tt-agentic-bringup-qb2#75 MoE speedups (tt-metal vkovacevic/kolibri-1-perf,
-        # all OFF by default in the model code): batched decode (B > 1) goes through
-        # prefill's token-grouped dispatch / fused-SwiGLU / combine expert path instead
-        # of the dense 384-expert sparse matmuls, with an expert-parallel weight layout
-        # (96 full-width experts per chip) that lets the fused SwiGLU use an 8x8 core
-        # grid (TP4 caps it at 4x4). Page-table dedupe uploads each distinct table once
-        # per refresh. Equivalence-checked against the dense path (top-1 identical,
-        # PCC >= 0.998) and validated on the full 32-slot server.
-        KOLIBRI_GROUPED_DECODE: "1"
-        KOLIBRI_EP_EXPERTS: "1"
-        KOLIBRI_EP_GRID: "8,8"
-        KOLIBRI_PAGE_TABLE_DEDUPE: "1"
+        # The tt-agentic-bringup-qb2#75 batched-decode MoE path (token-grouped
+        # dispatch / fused SwiGLU / combine, expert-parallel weights, page-table
+        # dedupe) is the model code's default; KOLIBRI_GROUPED_DECODE=0 /
+        # KOLIBRI_EP_EXPERTS=0 / KOLIBRI_PAGE_TABLE_DEDUPE=0 would restore the dense path.
       override_tt_config:
         # The adapter refuses host sampling unless KOLIBRI_VLLM_HOST_COMPAT=1 is set.
         sample_on_device_mode: all

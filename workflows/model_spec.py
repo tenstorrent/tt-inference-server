@@ -450,7 +450,7 @@ qwen38_27b_qb2_impl = ImplSpec(
 )
 # Aleph-Alpha/Kolibri-1 TP4 autoport produced by the tt-model-bringup pipeline. Like
 # other autoports, the code_path lives under models/autoports/ and exists only on a
-# tt-metal branch (vkovacevic/kolibri-1-perf), not on main.
+# tt-metal branch (vkovacevic/kolibri-1-qb2-model), not on main.
 kolibri_1_qb2_impl = ImplSpec(
     impl_id="kolibri_1_qb2",
     impl_name="kolibri-1-qb2",

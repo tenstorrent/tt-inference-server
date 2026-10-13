@@ -7614,5 +7614,143 @@
                 "_comment": "Gating point. Measured on the tt-shield on-dispatch release run 37720096956 (2026-10-08, bh-galaxy, DP=4): prefix cache off per request (cache_salt), server warmed by the prefill ladder. Tolerance 0.2."
             }
         ]
+    },
+    "Aleph-Alpha/Kolibri-1-BF16": {
+        "p300x2": [
+            {
+                "_comment": [
+                    "Theoretical: bf16 weight-streaming roofline, the convention of the other P300X2 entries, applied to the",
+                    "ACTIVE parameters of this MoE (3.46B per token on the model card, minus the 0.33B embedding table = 3.13B =",
+                    "6.26 GB bf16, 1.57 GB per chip on the 4-chip TP mesh at ~560 GB/s = 2.8 ms per step = 358 t/s/u; TTFT floor",
+                    "two step-times = 6 ms). At 32 users the step streams the union of routed experts (~192 of 384 at 6 of 384",
+                    "per token) plus the dense weights: ~24.5 GB bf16 per step = 11 ms = 2,900 tok/s, 91 t/s/u. Longer-prompt",
+                    "TTFT adds the prefill compute at the LoFi peak (6.26 GFLOP/token; 2.65 PFLOP/s) and the global-attention",
+                    "layers' SDPA. The deployed BFP8/BFP4 precision policy streams fewer bytes, so the true ceilings are higher;",
+                    "theoretical only sets the functional (10%) and complete (50%) tiers.",
+                    "Measured gates acceptance: tt-agentic-bringup-qb2 release run 37777268044 (2026-10-08, bh-qb-ge, 32-slot",
+                    "server, 2048-token chunks, batched-decode MoE path) and the local re-measurement of the same stack rebased",
+                    "onto tt-metal main / vLLM 0.30 (2026-10-13, within 1% at every point). Tolerance 0.25: the two bh-qb-ge",
+                    "runner machines differ by ~25% in throughput (run 37864081794 vs 38008006127). The single-user points are",
+                    "held down by the 32-slot server's batch-32 decode trace (a 1-slot server decodes at 16.7 ms/token, 60 t/s/u);",
+                    "re-measure after the occupancy-adaptive decode path (tt-agentic-bringup-qb2#75) lands."
+                ],
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 8,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 6,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 233.0,
+                        "tput_user": 17.6,
+                        "tput": 17.2,
+                        "tolerance": 0.25
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=128 osl=128 c=32 n=256.",
+                "isl": 128,
+                "osl": 128,
+                "max_concurrency": 32,
+                "num_prompts": 256,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "tput_user": 91,
+                        "tput": 2900
+                    },
+                    "measured": {
+                        "ttft_ms": 3196.0,
+                        "tput_user": 9.7,
+                        "tput": 250.3,
+                        "tolerance": 0.25
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=2048 osl=128 c=1 n=4.",
+                "isl": 2048,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 4,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 10,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 473.0,
+                        "tput_user": 17.4,
+                        "tput": 16.5,
+                        "tolerance": 0.25
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=8192 osl=128 c=1 n=2.",
+                "isl": 8192,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 2,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 25,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 1576.0,
+                        "tput_user": 17.3,
+                        "tput": 14.3,
+                        "tolerance": 0.25
+                    }
+                }
+            },
+            {
+                "_comment": "See the 128/128 c1 entry. Measured: run 37777268044 isl=32768 osl=128 c=1 n=1.",
+                "isl": 32768,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 1,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 105,
+                        "tput_user": 358,
+                        "tput": 358
+                    },
+                    "measured": {
+                        "ttft_ms": 6293.0,
+                        "tput_user": 16.7,
+                        "tput": 9.2,
+                        "tolerance": 0.25
+                    }
+                }
+            }
+        ]
     }
 }
