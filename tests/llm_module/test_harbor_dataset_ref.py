@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
+
 """HarborEvalConfig.dataset_ref pins a Hub package dataset; it reaches the
 harbor job config as ``datasets[0].ref`` and is absent when unset (``@latest``)."""
 
