@@ -1,15 +1,15 @@
 {
   "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
-  "target_commit": "3ab000788e235911054e5fc11cc1c2b0b262a04d",
+  "target_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d",
+  "patch_sha256": "99a506e4803d0218c459c12ce7fa2375ecd5a70ab9f2b6a062d29b14c3905f05",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "a87f934a3874fb959377de55e7061b758edfcf057148d25b485c5cfc1fba770f",
-      "target": "bd24f538a4bffeece0e9319e5d371f542710ca9646b6a9b24f329e24c81fa5be"
+      "target": "b8536118d6601ca26d19baf028c0b42f0f5577e9955781bae5bb6a64dcb2d3d7"
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "d52430f0b6e743c721f11697649db057997f37585cc4ccbb2d1cbb746f59353a",
-      "target": "bb01b0040f13aaf65259fa6c4c8bc6c01362a93ffabe1eb76c8e763ff3a690a3"
+      "target": "9f3487bc72493988e7d95de5ce63f2131009f10c41a613027a9709c2f96f2d72"
     }
-  },
-  "patch_sha256": "329fbdd2c97c0de09f40ed81e4a9d3cb82cc545276b9a9ae8e6518dd76be0ec6"
+  }
 }

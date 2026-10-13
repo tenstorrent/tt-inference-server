@@ -1,0 +1,11 @@
+{
+  "base_commit": "c62035d8f16eb591b258a7d5f2b329495829a74c",
+  "target_commit": "5803d6ae964a4d299c09913d4d2792f1c003a041",
+  "patch_sha256": "e7784dcd7e9c10d69b2b1b8ad8d0ceef16f23aec5ff63b8107d25fa294354481",
+  "files": {
+    "src/vllm_tt_plugin/model_runner.py": {
+      "base": "4c369a1180ece55ab0e07912f1e9155eace23a2104b35bbd00f3adfc520a20c8",
+      "target": "7be938c042c7cd36bccfbf42b8230cf099e01d036e2a6b7b6fa1a5a53339fd4d"
+    }
+  }
+}

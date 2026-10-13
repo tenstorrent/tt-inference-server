@@ -1,0 +1,46 @@
+diff --git a/src/vllm_tt_plugin/model_runner.py b/src/vllm_tt_plugin/model_runner.py
+index 667609d..65d261a 100644
+--- a/src/vllm_tt_plugin/model_runner.py
++++ b/src/vllm_tt_plugin/model_runner.py
+@@ -1189,11 +1189,14 @@ class TTModelRunner:
+             self._req_state_slot.pop(req_id, None)
+ 
+     def _alloc_prefill_state_slots(self, row_req_ids: list[str]) -> list[int]:
+-        """Pick each prefilling request's state slot, skipping slots that live
+-        off-batch requests own. Prefers its own row (where it decodes), so the
+-        steady state moves nothing.
++        """Keep live prefill slots stable and allocate only new ownership.
+ 
+-        Exhaustion is unreachable: holders and prefills are disjoint and both count
++        A continuing chunk may appear at a different compact batch row. Moving
++        its slot here would leave model state behind: only decode gathers move
++        state and notify the model. Reserve all existing owners before assigning
++        a fresh request, then prefer its row when that slot is free.
++
++        Exhaustion is unreachable: existing holders and fresh prefills both count
+         against ``max_num_seqs``, which is ``n_slots``. Getting here means the map has
+         stopped describing the device, and nothing on the host can recover it, so fail
+         rather than guess and return plausible, wrong text.
+@@ -1205,13 +1208,19 @@ class TTModelRunner:
+                 "slots; admission is the scheduler's job, not this function's"
+             )
+         prefilling = set(row_req_ids)
+-        held = {
+-            slot
++        existing = {
++            req_id: slot
+             for req_id, slot in self._req_state_slot.items()
+-            if req_id not in prefilling and req_id in self.requests
++            if req_id in prefilling or req_id in self.requests
+         }
++        held = set(existing.values())
++        if len(held) != len(existing) or any(not 0 <= s < n_slots for s in held):
++            raise RuntimeError(f"invalid device state slot ownership: {existing}")
+         slots: list[int] = []
+         for row, req_id in enumerate(row_req_ids):
++            if req_id in existing:
++                slots.append(existing[req_id])
++                continue
+             if row not in held:
+                 slot = row
+             else:
