@@ -360,6 +360,7 @@ start_session() {   # sets STATE (ABSENT for a new VM), SESSION_ACTIVE
 
 upload_secret() {   # LOCAL_FILE REMOTE_NAME: a 0600 copy, through `colab upload`
     local tmp="${LOCAL_TMP}/$2"
+    if [[ "${DRY_RUN}" -eq 1 ]]; then colab_cmd upload -s "${SESSION}" "$1" "${REMOTE_REL}/$2"; return 0; fi
     ( umask 077; cp "$1" "${tmp}" )
     colab_cmd upload -s "${SESSION}" "${tmp}" "${REMOTE_REL}/$2" > /dev/null || { rm -f "${tmp}"; die "upload of $2 failed"; }
     rm -f "${tmp}"
