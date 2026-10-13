@@ -1470,7 +1470,7 @@ def test_no_capacity_exits_75_with_status(tmp_path):
     text = driver.read_text()
     # Isolate the capacity loop: run it with the preflight stubbed out.
     start = text.index("# 2 start VM (or re-attach)")
-    end = text.index('    log "allocated ${gpu}')
+    end = text.index("upload_secret() {")  # start_session(), the capacity loop
     head = text[: text.index("# 1 preflight")]
     script = tmp_path / "capacity.sh"
     script.write_text(
@@ -1479,7 +1479,7 @@ def test_no_capacity_exits_75_with_status(tmp_path):
         + 'TTIS_SHA=deadbeefdeadbeef SESSION=gpuref-test OUT_DIR="${RESULTS_ROOT}/gpuref-test"\n'
         + 'STATUS_FILE="${OUT_DIR}/driver_status.json" GPUS=(A100) SESSIONS_OUT=""\n'
         + text[start:end]
-        + "    exit 0\nfi\n"
+        + "start_session\nexit 0\n"
     )
     out = subprocess.run(
         ["bash", str(script), "--retry-capacity", "1,0", "--gpu", "A100", "org/m"],
@@ -1598,8 +1598,8 @@ def test_vm_steps_retry_a_lost_connection_but_never_double_launch():
     assert "for attempt in 1 2 3; do" in step
     assert 'grep -q "Connection was lost" || break' in step
     assert (
-        '[[ "${name}" == "launch" ]] && remote_state && [[ "${STATE}" == "RUNNING" ]]'
-        in step
+        '[[ "${name}" == "launch" ]] && remote_state'
+        ' && [[ "${STATE}" == "RUNNING" || "${STATE}" == "SERVING" ]]' in step
     )
 
 
@@ -1610,3 +1610,265 @@ def test_provenance_records_the_client_concurrency_actually_used(tmp_path):
     )
     assert gpuref.client_concurrency_used(log) == [32]
     assert gpuref.client_concurrency_used(tmp_path / "missing.log") == []
+
+
+# --- --serve: agentic tasks through Shield's endpoint tests ------------------
+
+
+def test_task_kind_splits_lm_eval_from_agentic(monkeypatch):
+    from reference_config.evals import eval_config
+    from reference_config.evals.eval_config import EvalConfig, EvalTask
+    from workflows.workflow_types import WorkflowVenvType
+
+    model = "org/agentic-kind"
+    tasks = [
+        EvalTask(task_name="mmlu_pro"),
+        EvalTask(task_name="swe_bench_verified", workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC),
+        EvalTask(task_name="terminal_bench_2_1", workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC),
+    ]  # fmt: skip
+    monkeypatch.setitem(
+        eval_config._eval_config_map,
+        model,
+        EvalConfig(hf_model_repo=model, tasks=tasks),
+    )
+    assert gpuref.task_kind(model, ["mmlu_pro"]) == "lm-eval"
+    assert (
+        gpuref.task_kind(model, ["swe_bench_verified", "terminal_bench_2_1"])
+        == "agentic"
+    )
+    for bad in (["mmlu_pro", "swe_bench_verified"], ["nope"], []):
+        with pytest.raises(ValueError):
+            gpuref.task_kind(model, bad)
+    # lm-eval selection still refuses agentic tasks.
+    with pytest.raises(ValueError):
+        gpuref.task_selection(model, ["swe_bench_verified"])
+
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+
+
+def test_shield_inputs_one_agentic_test_on_gpu_with_the_key_by_name():
+    inputs = gpuref.shield_inputs("Qwen/Qwen3.5-27B", "swe_bench_verified",
+                                  "https://abc.ngrok.app", SHA)  # fmt: skip
+    assert inputs["target"] == "None" and inputs["test_url"] == "https://abc.ngrok.app"
+    assert inputs["inference-server-git-ref"] == SHA
+    assert all(inputs[box] == "false" for box in gpuref.SHIELD_CHECKBOXES)
+    assert json.loads(inputs["extra-tests"]) == [
+        "inference-workflow-agentic --dev-mode --device gpu --agentic-benchmark swe_bench_verified"
+    ]
+    env = inputs["env-variables"].split()
+    assert "HARBOR_ENV_TYPE=kubernetes" in env
+    assert "API_KEY=SECRET_TEST_GPUREF_ENDPOINT_API_KEY" in env
+    assert "OPENAI_API_KEY=SECRET_TEST_GPUREF_ENDPOINT_API_KEY" in env
+    for url in ("http://abc.ngrok.app", "https://abc.ngrok.app/v1", "https://a b"):
+        with pytest.raises(ValueError):
+            gpuref.shield_inputs("org/m", "t", url, SHA)
+    with pytest.raises(ValueError):
+        gpuref.shield_inputs("org/m", "t; rm -rf /", "https://abc.ngrok.app", SHA)
+    with pytest.raises(ValueError):
+        gpuref.shield_inputs("org/m", "t", "https://abc.ngrok.app", "main")
+
+
+def test_shield_find_run_matches_model_url_and_time():
+    url = "https://abc.ngrok.app"
+    runs = [
+        {"databaseId": 1, "createdAt": "2026-10-14T00:00:00Z",
+         "displayTitle": f"Run tests | v1-old-stack | Qwen/Qwen3.5-27B | {url}"},
+        {"databaseId": 2, "createdAt": "2026-10-14T01:00:00Z",
+         "displayTitle": f"Run tests | v1-old-stack | Qwen/Qwen3.5-27B | {url}"},
+        {"databaseId": 3, "createdAt": "2026-10-14T02:00:00Z",
+         "displayTitle": "Run tests | v1-old-stack | Qwen/Qwen3.5-27B | https://other.ngrok.app"},
+        {"databaseId": 4, "createdAt": "2026-10-14T03:00:00Z",
+         "displayTitle": f"Run tests | v1-old-stack | google/gemma-4-31B-it | {url}"},
+    ]  # fmt: skip
+    assert (
+        gpuref.shield_find_run(runs, "Qwen/Qwen3.5-27B", url, "2026-10-14T00:30:00Z")
+        == 2
+    )
+    assert (
+        gpuref.shield_find_run(runs, "Qwen/Qwen3.5-27B", url, "2026-10-14T05:00:00Z")
+        is None
+    )
+
+
+def test_redact_url_hides_the_tunnel_host():
+    shown = gpuref.redact_url("https://abcdef123456.ngrok-free.app")
+    assert shown == "https://abcd…ngrok-free.app" and "ef123456" not in shown
+    assert gpuref.redact_url(None) is None
+
+
+def _agentic_report(
+    path, model, task, score, device="GPU", stamp="2026-10-14T00:00:00Z"
+):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "metadata": {"model_repo": model, "device": device, "generated_at": stamp},
+        "sections": [{"kind": "evals", "data": {"task_name": task, "score": score, "n_trials": 89}}],
+    }))  # fmt: skip
+
+
+def test_summary_rows_keeps_each_tasks_newest_report(tmp_path):
+    model = "Qwen/Qwen3.5-27B"
+    _agentic_report(
+        tmp_path / "terminal_bench_2_1" / "report_a.json",
+        model,
+        "terminal_bench_2_1",
+        40.0,
+    )
+    _agentic_report(tmp_path / "swe_bench_verified" / "report_b.json", model, "swe_bench_verified", 70.0,
+                    stamp="2026-10-15T00:00:00Z")  # fmt: skip
+    rows = {r["task"]: r for r in gpuref.summary_rows(tmp_path)}
+    assert (
+        rows["terminal_bench_2_1"]["score"] == 40.0
+        and rows["swe_bench_verified"]["score"] == 70.0
+    )
+    assert rows["terminal_bench_2_1"]["n_trials"] == 89
+
+
+def test_shield_provenance_ok_only_when_every_task_scored(tmp_path):
+    model = "Qwen/Qwen3.5-27B"
+    shield = tmp_path / "shield"
+    _agentic_report(
+        shield / "terminal_bench_2_1" / "x" / "report_1.json",
+        model,
+        "terminal_bench_2_1",
+        40.0,
+    )
+    prov = {"model": model, "status": "ok"}
+    tb = {
+        "task": "terminal_bench_2_1",
+        "run_id": "7",
+        "conclusion": "failure",
+        "state": "completed",
+    }
+    out = gpuref.shield_provenance(prov, [tb], shield)
+    # A completed run that missed its acceptance criteria still measured the task.
+    assert out["status"] == "ok" and out["agentic"][0]["score"] == 40.0
+    assert out["agentic"][0]["report_files"] == ["terminal_bench_2_1/x/report_1.json"]
+    assert out["tasks_selected"] == ["terminal_bench_2_1"]
+    swe = {
+        "task": "swe_bench_verified",
+        "run_id": "8",
+        "conclusion": "success",
+        "state": "completed",
+    }
+    assert (
+        gpuref.shield_provenance(prov, [tb, swe], shield)["status"] == "failed"
+    )  # no report
+    cancelled = dict(tb, conclusion="cancelled")
+    assert gpuref.shield_provenance(prov, [cancelled], shield)["status"] == "failed"
+    assert (
+        gpuref.shield_provenance(dict(prov, status="failed"), [tb], shield)["status"]
+        == "failed"
+    )
+    # A TT (P300X2) report does not count as this GPU run's score.
+    tt = tmp_path / "tt"
+    _agentic_report(
+        tt / "terminal_bench_2_1" / "r.json",
+        model,
+        "terminal_bench_2_1",
+        40.0,
+        device="P300X2",
+    )
+    assert gpuref.shield_provenance(prov, [tb], tt)["status"] == "failed"
+
+
+def test_derived_spec_carries_the_rows_frontend_flags():
+    import yaml
+
+    row = dict(_spec_row("P300X2", ctx=262144, rev="abc"),
+               frontend={"reasoning_parser": "qwen3", "enable_auto_tool_choice": True,
+                         "default-chat-template-kwargs": '{"enable_thinking": true}'})  # fmt: skip
+    d = gpuref.derive_gpu_spec([row], native_ctx=262144)
+    args = gpuref.derived_vllm_args(d)
+    assert (
+        args["reasoning_parser"] == "qwen3" and args["enable_auto_tool_choice"] is True
+    )
+    text = gpuref.write_derived_specs(
+        "templates:\n- weights:\n  - org/x\n", {"org/m": d}
+    )
+    entry = next(
+        e for e in yaml.safe_load(text)["templates"] if e["weights"] == ["org/m"]
+    )
+    vargs = entry["device_model_specs"][0]["vllm_args"]
+    assert vargs["default-chat-template-kwargs"] == '{"enable_thinking": true}'
+    assert (
+        vargs["enable_auto_tool_choice"] is True
+        and vargs["reasoning_parser"] == "qwen3"
+    )
+    flags = gpuref.vllm_flags(vargs)
+    assert "--enable-auto-tool-choice" in flags
+    assert (
+        flags[flags.index("--default-chat-template-kwargs") + 1]
+        == '{"enable_thinking": true}'
+    )
+    assert gpuref.frontend_args({"block_size": 64, "tool_call_parser": "x"}) == {
+        "tool_call_parser": "x"
+    }
+
+
+def test_kv_bytes_counts_only_attention_layers_in_a_hybrid_model():
+    qwen35 = {"num_attention_heads": 24, "num_key_value_heads": 4, "head_dim": 256,
+              "num_hidden_layers": 64,
+              "layer_types": (["linear_attention"] * 3 + ["full_attention"]) * 16}  # fmt: skip
+    assert gpuref.kv_bytes_per_token(qwen35) == 16 * 2 * 4 * 256 * 2  # 64 KiB/token
+    dense = {k: v for k, v in qwen35.items() if k != "layer_types"}
+    assert gpuref.kv_bytes_per_token(dense) == 64 * 2 * 4 * 256 * 2
+
+
+def test_qwen3_5_stack_is_the_first_vllm_with_it():
+    stack = gpuref.serving_stack({"architectures": ["Qwen3_5ForConditionalGeneration"]})
+    assert (stack["vllm"], stack["transformers"]) == ("0.17.0", "4.57.5")
+
+
+def test_parse_status_reports_serving():
+    out = "GPUREF_STATE=RUNNING\nGPUREF_SERVING=1\nGPUREF_DONE=0\nGPUREF_PHASE=model 1/1 org/m: serving\n"
+    assert gpuref.parse_status(out)[0] == "SERVING"
+    assert gpuref.parse_status(out.replace("SERVING=1", "SERVING=0"))[0] == "RUNNING"
+
+
+def test_serve_mode_keeps_secrets_off_command_lines():
+    runner = (SCRIPT_DIR / "remote_runner.sh").read_text()
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    # The key reaches vLLM and ngrok by environment, curl by a header file.
+    assert 'VLLM_API_KEY="$(< "${SECRETS}/endpoint_api_key")"' in runner
+    assert 'NGROK_AUTHTOKEN="$(< "${SECRETS}/ngrok_authtoken")"' in runner
+    assert '-H "@${SECRETS}/auth_header"' in runner
+    assert "--api-key" not in runner
+    # The driver uploads 0600 copies and dispatches with the secret's name only.
+    assert 'upload_secret "${ENDPOINT_KEY_FILE}" endpoint_api_key.upload' in driver
+    assert '--secret "${SHIELD_SECRET}"' in driver
+    assert "must be mode 0600" in driver
+    # A recorded run is resumed, never dispatched twice on the same endpoint.
+    assert '"$(field "${rec}" endpoint_id)" != "${ENDPOINT_ID}"' in driver
+
+
+def test_agentic_fingerprint_ignores_where_the_sandboxes_run(monkeypatch):
+    from dataclasses import replace
+
+    from reference_config.evals import eval_config
+    from reference_config.evals.eval_config import (
+        EvalConfig,
+        EvalTask,
+        HarborEvalConfig,
+    )
+    from workflows.workflow_types import WorkflowVenvType
+
+    model = "org/agentic-fp"
+    base = HarborEvalConfig(
+        dataset="swebench-verified", agent="mini-swe-agent", n_concurrent_trials=5
+    )
+
+    def fp(cfg):
+        task = EvalTask(task_name="swe_bench_verified",
+                        workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC, agentic_eval_config=cfg)  # fmt: skip
+        monkeypatch.setitem(eval_config._eval_config_map, model,
+                            EvalConfig(hf_model_repo=model, tasks=[task]))  # fmt: skip
+        return gpuref.eval_fingerprint(model, "be23028b", gpuref.serving_stack(None),
+                                       venvs=gpuref.AGENTIC_VENVS)  # fmt: skip
+
+    f0 = fp(base)
+    assert f0 and fp(replace(base, environment_type="kubernetes")) == f0
+    assert fp(replace(base, agent_kwargs={"temperature": 1.0})) != f0
+    # The lm-eval fingerprint does not see agentic tasks at all.
+    assert gpuref.eval_fingerprint(model, "be23028b", gpuref.serving_stack(None)) != f0
