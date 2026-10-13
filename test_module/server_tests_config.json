@@ -105,7 +105,8 @@
       "NousResearch/Hermes-3-Llama-3.1-8B",
       "allenai/Llama-3.1-Tulu-3-8B",
       "Qwen/Qwen3-8B-Base",
-      "Qwen/Qwen3-4B-Base"
+      "Qwen/Qwen3-4B-Base",
+      "mistralai/Mistral-Nemo-Instruct-2407"
     ]
   },
   "available_markers": {
@@ -1122,6 +1123,16 @@
       "id_name": "Qwen--Qwen3-4B-Base",
       "weights": [
         "Qwen/Qwen3-4B-Base"
+      ]
+    },
+    "mistralai/Mistral-Nemo-Instruct-2407": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "mistralai--Mistral-Nemo-Instruct-2407",
+      "weights": [
+        "mistralai/Mistral-Nemo-Instruct-2407"
       ]
     }
   },
