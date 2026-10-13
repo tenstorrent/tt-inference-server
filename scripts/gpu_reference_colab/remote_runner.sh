@@ -22,6 +22,13 @@
 # The HF token is expected at ~/.cache/huggingface/token (mode 0600, uploaded
 # by the driver); huggingface_hub, vLLM and lm-eval all read it from there.
 # This script never reads, prints or exports it.
+#
+# --serve (agentic tasks, one model): no evals here. Serve the model with
+# vLLM's API key (VLLM_API_KEY, from ${WORK_DIR}/secrets/endpoint_api_key),
+# publish it through an ngrok tunnel (NGROK_AUTHTOKEN from secrets/), write the
+# public URL to ${WORK_DIR}/endpoint and the SERVING marker, and keep both up
+# until the driver writes STOP (Shield's endpoint tests run the evals). Neither
+# secret is ever on a command line or in a log.
 
 set -uo pipefail
 
@@ -39,11 +46,13 @@ TTIS_SHA=""
 SERVER_TIMEOUT=2700   # seconds to wait for /v1/models (download + load + graphs)
 PORT=8000
 MODELS=()
+SERVE=0 TUNNEL_DOMAIN=""   # --serve [--tunnel-domain D]: see above
+NGROK_URL="https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz"
 declare -A TASKS=()   # model -> comma-separated tasks (--task); unset = all its tasks
 
 usage() {
     cat <<EOF
-Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] [--task MODEL=T[,T]]... MODEL...
+Usage: $0 --ttis-sha SHA [--work-dir DIR] [--vllm-version V] [--transformers-version V] [--server-timeout S] [--task MODEL=T[,T]]... [--serve [--tunnel-domain D]] MODEL...
 EOF
 }
 
@@ -55,6 +64,8 @@ while [[ $# -gt 0 ]]; do
         --transformers-version) TRANSFORMERS_OVERRIDE="$2"; shift 2 ;;
         --server-timeout) SERVER_TIMEOUT="$2"; shift 2 ;;
         --task) TASKS["${2%%=*}"]="${2#*=}"; shift 2 ;;
+        --serve) SERVE=1; shift ;;
+        --tunnel-domain) TUNNEL_DOMAIN="$2"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
         -*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
         *) MODELS+=("$1"); shift ;;
@@ -62,6 +73,8 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "${TTIS_SHA}" && ${#MODELS[@]} -gt 0 ]] || { usage >&2; exit 2; }
 [[ "${TTIS_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "--ttis-sha must be a full 40-hex sha" >&2; exit 2; }
+[[ "${SERVE}" -eq 0 || ${#MODELS[@]} -eq 1 ]] || { echo "--serve serves exactly one model" >&2; exit 2; }
+[[ -z "${TUNNEL_DOMAIN}" || "${TUNNEL_DOMAIN}" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "bad --tunnel-domain" >&2; exit 2; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GPUREF="${SCRIPT_DIR}/gpuref.py"
@@ -70,6 +83,8 @@ VENV=""            # this model's stack venv (ensure_stack)
 SERVER_ENV=()      # this model's stack env, KEY=VALUE
 RESULTS="${WORK_DIR}/results"
 SERVER_PID=""
+SECRETS="${WORK_DIR}/secrets"   # --serve: endpoint_api_key, auth_header, ngrok_authtoken (0600)
+TUNNEL_PID=""
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 phase() { printf '%s\n' "$*" > "${WORK_DIR}/phase"; log "PHASE: $*"; }
@@ -77,6 +92,7 @@ now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 finish() {
     local marker="$1" reason="$2"
+    stop_tunnel
     stop_server
     if [[ -d "${TTIS_DIR}/workflow_logs" ]]; then
         rm -rf "${RESULTS}/workflow_logs"
@@ -117,15 +133,90 @@ start_server() {
     local logfile="$1"; shift
     log "${VENV}/bin/vllm $*"
     # The stack's server env, and its venv's bin (tools vLLM may shell out to) on PATH.
-    PATH="${VENV}/bin:${PATH}" setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
-        "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    # --serve: vLLM reads the API key from VLLM_API_KEY, so it is in no argv.
+    if [[ "${SERVE}" -eq 1 ]]; then
+        VLLM_API_KEY="$(< "${SECRETS}/endpoint_api_key")" PATH="${VENV}/bin:${PATH}" \
+            setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
+            "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    else
+        PATH="${VENV}/bin:${PATH}" setsid env ${SERVER_ENV[@]+"${SERVER_ENV[@]}"} \
+            "${VENV}/bin/vllm" "$@" > "${logfile}" 2>&1 < /dev/null &
+    fi
     SERVER_PID=$!
+}
+
+# Authorization header for --serve requests, read by curl from a 0600 file.
+auth() { [[ "${SERVE}" -eq 1 ]] && printf '%s\n' -H "@${SECRETS}/auth_header"; }
+
+stop_tunnel() {
+    [[ -n "${TUNNEL_PID}" ]] || return 0
+    kill -TERM -- "-${TUNNEL_PID}" 2>/dev/null || true
+    wait "${TUNNEL_PID}" 2>/dev/null || true
+    TUNNEL_PID=""
+}
+
+# start_tunnel: ngrok in its own process group -> ${WORK_DIR}/endpoint (0600).
+start_tunnel() {
+    local url="" i
+    if [[ ! -x "${WORK_DIR}/bin/ngrok" ]]; then
+        mkdir -p "${WORK_DIR}/bin"
+        curl -sfL "${NGROK_URL}" | tar -xz -C "${WORK_DIR}/bin" ngrok || return 1
+    fi
+    NGROK_AUTHTOKEN="$(< "${SECRETS}/ngrok_authtoken")" setsid "${WORK_DIR}/bin/ngrok" http "${PORT}" \
+        --log stdout --log-format json ${TUNNEL_DOMAIN:+--url "https://${TUNNEL_DOMAIN}"} \
+        >> "${RESULTS}/tunnel.log" 2>&1 < /dev/null &
+    TUNNEL_PID=$!
+    for i in $(seq 1 30); do
+        url="$(curl -sf http://127.0.0.1:4040/api/tunnels 2>/dev/null \
+            | python3 -c 'import json,sys; print(next((t["public_url"] for t in json.load(sys.stdin)["tunnels"] if t["public_url"].startswith("https://")), ""))' 2>/dev/null)"
+        [[ -n "${url}" ]] && break
+        kill -0 "${TUNNEL_PID}" 2>/dev/null || return 1
+        sleep 2
+    done
+    [[ -n "${url}" ]] || return 1
+    ( umask 077; printf '%s\n' "${url}" > "${WORK_DIR}/endpoint" )
+    "${WORK_DIR}/bin/ngrok" version >> "${RESULTS}/tunnel.log" 2>&1 || true
+}
+
+# The tunnel answers like the local server: /v1/models through it, with the key.
+tunnel_ready() {
+    local model="$1" url body; local -a hdr=()
+    url="$(cat "${WORK_DIR}/endpoint" 2>/dev/null)" || return 1
+    mapfile -t hdr < <(auth)
+    body="$(curl -sf --max-time 30 "${hdr[@]}" "${url%/}/v1/models" 2>/dev/null)" || return 1
+    printf '%s' "${body}" | python3 "${GPUREF}" served "${model}"
+}
+
+# serve_until_stop MODEL: keep vLLM and the tunnel up until the driver writes
+# STOP. A dead tunnel is restarted (a reserved --tunnel-domain keeps its URL);
+# a dead vLLM ends the run (the driver rolls over to a new session).
+serve_until_stop() {
+    local model="$1" restarts=0
+    local up=0 i
+    if start_tunnel; then
+        for i in $(seq 1 10); do tunnel_ready "${model}" && { up=1; break; }; sleep 6; done
+    fi
+    [[ "${up}" -eq 1 ]] || { log "tunnel did not come up after ${i:-0} checks (tunnel.log)"; return 1; }
+    touch "${WORK_DIR}/SERVING"
+    log "serving ${model} through the tunnel"
+    while [[ ! -e "${WORK_DIR}/STOP" ]]; do
+        sleep 30
+        kill -0 "${SERVER_PID}" 2>/dev/null || { log "vLLM exited while serving"; rm -f "${WORK_DIR}/SERVING"; return 1; }
+        if ! kill -0 "${TUNNEL_PID}" 2>/dev/null; then
+            restarts=$((restarts + 1)); log "tunnel exited; restart ${restarts}"
+            stop_tunnel; start_tunnel || { rm -f "${WORK_DIR}/SERVING"; return 1; }
+            printf '%s\n' "${restarts}" > "${WORK_DIR}/tunnel_restarts"
+        fi
+    done
+    rm -f "${WORK_DIR}/SERVING"
+    log "STOP requested; ${restarts} tunnel restart(s)"
 }
 
 # Succeeds once /v1/models lists the served HF repo id.
 server_ready() {
-    local model="$1" body
-    body="$(curl -sf "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || return 1
+    local model="$1" body; local -a hdr=()
+    mapfile -t hdr < <(auth)
+    body="$(curl -sf ${hdr[@]+"${hdr[@]}"} "http://127.0.0.1:${PORT}/v1/models" 2>/dev/null)" || return 1
     printf '%s' "${body}" | python3 "${GPUREF}" served "${model}"
 }
 
@@ -248,6 +339,11 @@ run_model() {
         fi
         if [[ "${ready}" -eq 0 ]]; then
             status="failed"; note="vLLM did not become ready (vllm_server.log)"
+        elif [[ "${SERVE}" -eq 1 ]]; then
+            phase "model ${idx}/${total} ${model}: serving"
+            if serve_until_stop "${model}"; then status="ok"; note="served for Shield's endpoint tests"
+            else status="failed"; note="serving ended before STOP (runner.log, tunnel.log, vllm_server.log)"; fi
+            if [[ -n "${cap}" ]]; then note="${note}; max_model_len capped to ${cap} on this GPU"; fi
         else
             phase "model ${idx}/${total} ${model}: evals"
             # The eval client sends as many concurrent requests as vLLM was
@@ -285,7 +381,7 @@ run_model() {
     # any rejected/truncated-request log lines. A capped run that came close is
     # not usable as a reference.
     local evidence="${mdir}/request_evidence.json"
-    if [[ -n "${evals_rc}" ]]; then
+    if [[ -n "${evals_rc}" && "${SERVE}" -eq 0 ]]; then
         local -a logs=(--log "${mdir}/run_py.log" --log "${mdir}/vllm_server.log")
         local f; for f in "${TTIS_DIR}"/workflow_logs/run_logs/*"${model##*/}"*; do [[ -e "$f" ]] && logs+=(--log "$f"); done
         "${VENV}/bin/python" "${GPUREF}" request-evidence --model "${model}" \
@@ -298,6 +394,13 @@ run_model() {
     fi
     finished="$(now)"
     log "${model}: ${status}${note:+ -- ${note}}"
+    # --serve: the agentic tasks Shield runs against this server, and its URL
+    # (redacted: the full URL stays in the 0600 endpoint file).
+    local -a served=()
+    if [[ "${SERVE}" -eq 1 ]]; then
+        [[ -n "${TASKS[${model}]:-}" ]] && served+=(--agentic-tasks "${TASKS[${model}]}")
+        [[ -s "${WORK_DIR}/endpoint" ]] && served+=(--endpoint "$(python3 "${GPUREF}" redact-url --url-file "${WORK_DIR}/endpoint")")
+    fi
 
     python3 "${GPUREF}" provenance --out "${mdir}/provenance.json" --model "${model}" \
         --ttis-dir "${TTIS_DIR}" --plan "${mdir}/serve_plan.json" \
@@ -306,6 +409,7 @@ run_model() {
         --started-at "${started}" --finished-at "${finished}" ${note:+--note "${note}"} \
         ${cap:+--max-model-len-cap "${cap}"} --evidence "${evidence}" \
         ${eval_samples:+--eval-samples "${eval_samples}"} \
+        ${served[@]+"${served[@]}"} \
         || log "WARNING: provenance.json not written for ${model}"
 
     python3 "${GPUREF}" record-status "${RESULTS}/status.json" "${model}" "${status}" "${note}"
