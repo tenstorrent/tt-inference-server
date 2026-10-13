@@ -205,6 +205,30 @@ class TestArgumentParsing:
         assert args.limit_samples_mode == "ci-long"
         assert args.skip_system_sw_validation is True
 
+    def test_eval_shard_parses_and_composes_with_eval_tasks(self, base_args):
+        argv = (
+            ["run.py"] + base_args + ["--eval-tasks", "aime25", "--eval-shard", "1/3"]
+        )
+        with patch("sys.argv", argv):
+            args = parse_arguments()
+        assert args.eval_shard == "1/3"
+        assert args.eval_tasks == "aime25"
+
+    @pytest.mark.parametrize(
+        "extra",
+        [
+            ["--eval-shard", "3/3"],
+            ["--eval-shard", "0/1"],
+            ["--eval-shard", "x"],
+            ["--eval-shard", "0/2", "--eval-samples", '{"aime25": [0]}'],
+            ["--eval-shard", "0/2", "--limit-samples-mode", "ci-nightly"],
+        ],
+    )
+    def test_eval_shard_rejects_bad_values_and_subset_flags(self, base_args, extra):
+        with patch("sys.argv", ["run.py"] + base_args + extra):
+            with pytest.raises(SystemExit):
+                parse_arguments()
+
     @pytest.mark.parametrize(
         "missing_arg,remaining_args",
         [
