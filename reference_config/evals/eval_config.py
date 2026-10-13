@@ -11202,6 +11202,41 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # LiveCodeBench on the chat endpoint with server-side thinking,
+                # scored on the model card's "v6" window (LIVECODEBENCH_V6_DOC_IDS).
+                task_name="livecodebench",
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 # Informational for the release entries: no H100 reference for either task and the
                 # ci-nightly subset is five tasks, which cannot grade an 18% published score;
@@ -11222,7 +11257,8 @@ _eval_config_list = [
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host.
+                    n_concurrent_trials=28,
                     n_attempts=1,
                     n_tasks=None,
                     # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
@@ -11291,7 +11327,8 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host.
+                    n_concurrent_trials=28,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,
