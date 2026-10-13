@@ -1652,7 +1652,10 @@ templates:
         override_generation_config: '{"top_k": 32}'
         reasoning-parser: muse_glimmer
         enable-auto-tool-choice: true
-        tool-call-parser: muse_glimmer
+        # Schema-aware subclass of vLLM's muse_glimmer parser, shipped with the model:
+        # string-typed tool parameters stay strings instead of being JSON-decoded.
+        tool-parser-plugin: "../../tt-metal/models/autoports/meta_models_muse_glimmer_30b/muse_glimmer_schema_tool_parser.py"
+        tool-call-parser: muse_glimmer_schema
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 0
