@@ -81,6 +81,9 @@
         "gemma4_31b",
         "gemma4_12b"
       ],
+      "exclude_impls": [
+        "quetzal"
+      ],
       "devices": [
         "p300x2",
         "p150x8",
