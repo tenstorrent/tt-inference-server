@@ -10657,6 +10657,9 @@ _eval_config_list = [
             # temperature 1.0, top_p 0.95, top_k 20, max_tokens 81920. The same
             # table reports MMLU-Pro 86.1 and IFEval 95.0; those are not enrolled
             # here because the card does not state the shot count or harness.
+            # The two agentic tasks mirror Qwen3.8-27B's exactly (same harness, scaffold
+            # and sampling); the card's Terminal Bench 2 / SWE-bench Verified values do not
+            # state a scaffold, so both grade against colab GPU references.
             EvalTask(
                 task_name="r1_gpqa_diamond",
                 score=EvalTaskScore(
@@ -10690,6 +10693,119 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 10,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The pinned card (fc05daec, Coding table, Qwen3.5-27B column) reports
+                # Terminal Bench 2 = 41.6, but it names neither the agent scaffold nor the
+                # dataset revision; this task runs terminus-2 on terminal-bench-2-1, so the
+                # card value is not like-for-like. Graded against a GPU reference measured
+                # with exactly this config (issue #5353); NA until it lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=10,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=6 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 160 * 1024,
+                            "max_output_tokens": 16 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 16 * 1024,
+                            "timeout": 60 * 60,
+                            # Qwen3.5-27B's template reads only enable_thinking (no
+                            # reasoning_effort); thinking stays on, the card default.
+                            "extra_body": {"top_k": 20},
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                # The pinned card (fc05daec, Coding table, Qwen3.5-27B column) reports
+                # SWE-bench Verified = 72.4 with no scaffold stated; this task runs
+                # mini-swe-agent, so the card value is not like-for-like. Graded against a
+                # GPU reference measured with exactly this config (issue #5353); NA until
+                # it lands.
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=6 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                    "extra_body": {"top_k": 20},
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
         ],
     ),
