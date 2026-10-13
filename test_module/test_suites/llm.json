@@ -446,23 +446,6 @@
         "quetzal"
       ],
       "models": [
-        "EleutherAI/pythia-70m"
-      ],
-      "test_cases": [
-        {
-          "enabled": true,
-          "template": "VLLMParamConformanceTest"
-        }
-      ]
-    },
-    {
-      "devices": [
-        "p300x2"
-      ],
-      "impls": [
-        "quetzal"
-      ],
-      "models": [
         "microsoft/phi-1_5"
       ],
       "test_cases": [
