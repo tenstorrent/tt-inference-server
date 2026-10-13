@@ -309,7 +309,9 @@ def _ifeval_plan():
     }
 
 
-def _write_shard(root: Path, index: int, count: int, plan, prov=PROV, correct=CORRECT):
+def _write_shard(
+    root: Path, index: int, count: int, plan, prov=PROV, correct=CORRECT, configs=None
+):
     attempt = root / f"run-{index}" / "evals" / f"eval-attempt-{index}"
     out = attempt / "eval_x" / "org__model"
     out.mkdir(parents=True)
@@ -328,7 +330,11 @@ def _write_shard(root: Path, index: int, count: int, plan, prov=PROV, correct=CO
         json.dumps(
             {
                 "results": {TASK: {"alias": TASK, f"{METRIC},none": shard_score}},
-                "configs": {TASK: {"task": TASK, "dataset_path": "google/IFEval"}},
+                "configs": (
+                    {TASK: {"task": TASK, "dataset_path": "google/IFEval"}}
+                    if configs is None
+                    else configs
+                ),
                 # lm-eval reports the full count as effective under --samples
                 "n-samples": {TASK: {"original": N_DOCS, "effective": N_DOCS}},
             }
@@ -930,3 +936,41 @@ def test_partial_follows_the_resolved_sample_set_not_the_option(eval_samples, pa
     blocks, accepted, export = _graded(_subset_ctx(eval_samples=eval_samples))
     assert (blocks[0].data.get("status") == TestStatus.PARTIAL.value) is partial
     assert accepted is (not partial)
+
+
+# Review on #5371 (merge_eval_shards.py:205): a merged results document the
+# loader cannot use (here: empty ``configs``) made blocks_for_task return [] and
+# the merge exited 0 with evals=[] and strict_pass=true. It must fail closed.
+
+
+def test_merge_cli_scores_a_failing_set_as_a_failure(tmp_path):
+    # The reviewer's control: valid results with every answer wrong exit 1.
+    prov = {**PROV, "model_status": "FUNCTIONAL"}
+    dirs = [
+        _write_shard(tmp_path, i, 2, _ifeval_plan(), prov=prov, correct=0)
+        for i in range(2)
+    ]
+    out = tmp_path / "merged"
+    assert (
+        merge_cli.main(
+            ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+        )
+        == 1
+    )
+
+
+def test_merge_cli_fails_closed_when_the_merged_results_cannot_be_scored(
+    tmp_path, capsys
+):
+    prov = {**PROV, "model_status": "FUNCTIONAL"}
+    dirs = [
+        _write_shard(tmp_path, i, 2, _ifeval_plan(), prov=prov, correct=0, configs={})
+        for i in range(2)
+    ]
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", MODEL, "--task", TASK, "--out", str(out), *map(str, dirs)]
+    )
+    assert rc != 0
+    assert "INCOMPLETE" in capsys.readouterr().err
+    assert not (out / merge_cli.MERGED_REPORT_NAME).exists()

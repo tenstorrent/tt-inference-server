@@ -203,6 +203,16 @@ def grade(
     )
     results, counts = load_eval_results([str(results_path)])
     blocks = blocks_for_task(ctx, tasks[task_name], results, counts)
+    if not blocks:
+        # load_eval_results logs and skips a results document it cannot read
+        # (schema mismatch, empty configs, mixed dataset paths), and
+        # blocks_for_task then returns no block. Grading an empty block list
+        # would read PASS with nothing measured, so fail closed instead.
+        raise ShardError(
+            f"INCOMPLETE: the merged results for {task_name} could not be loaded "
+            "or scored (no eval block was produced); refusing to grade an empty "
+            "report"
+        )
     merge_info = doc["eval_shard_merge"]
     if merge_info.get("inference_error_samples"):
         mark_incomplete(
