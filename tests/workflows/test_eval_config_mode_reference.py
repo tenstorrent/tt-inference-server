@@ -200,8 +200,8 @@ def test_gemma4_12b_gpqa_subset_gate_is_the_measured_deterministic_score():
 
 
 def test_gemma4_release_models_define_the_ci_long_preset():
-    """ci-long = full gpqa (no CI_LONG limit), the nightly mmlu_pro subset and the
-    nightly agentic task lists, so the preset proves accuracy without running the
+    """ci-long = full gpqa (no CI_LONG limit), the nightly mmlu_pro subset, the full
+    Terminal-Bench 2.0 set and the nightly swe-bench list, so the preset proves accuracy without running the
     12k-question mmlu_pro or 500-task swe-bench sets."""
     for model in ("google/gemma-4-31B-it", "google/gemma-4-12B-it"):
         gpqa = _gemma4_task(model, "r1_gpqa_diamond")
@@ -215,8 +215,12 @@ def test_gemma4_release_models_define_the_ci_long_preset():
         agentic = [t for t in _eval_config_map[model].tasks if t.agentic_eval_config]
         for task in agentic:
             names = task.agentic_eval_config.task_names_map
-            assert names[EvalLimitMode.CI_LONG] == names[EvalLimitMode.CI_NIGHTLY]
-            assert len(names[EvalLimitMode.CI_LONG]) == 5
+            assert len(names[EvalLimitMode.CI_NIGHTLY]) == 5
+            if task.task_name == "terminal_bench_2":
+                # ci-long runs the full Terminal-Bench 2.0 set (89 tasks).
+                assert EvalLimitMode.CI_LONG not in names
+            else:
+                assert names[EvalLimitMode.CI_LONG] == names[EvalLimitMode.CI_NIGHTLY]
     # The 12B entry carries the two informational agentic tasks.
     assert {
         t.task_name
