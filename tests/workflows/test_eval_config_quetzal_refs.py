@@ -100,7 +100,13 @@ EXPECTED = {
         "mmlu_pro": 63.3,
     },
     "ALLaM-AI/ALLaM-7B-Instruct-preview": {"ifeval": 38.08, "mmlu_pro": 30.4},
-    "Qwen/Qwen3.5-27B": {"r1_gpqa_diamond": 85.5},
+    # Agentic tasks mirror Qwen3.8-27B; the card values give no scaffold, so they
+    # grade NA until their colab GPU references land (issue #5353).
+    "Qwen/Qwen3.5-27B": {
+        "r1_gpqa_diamond": 85.5,
+        "terminal_bench_2_1": None,
+        "swe_bench_verified": None,
+    },
     # wave18 Quetzal candidates (Open LLM Leaderboard v2, model card or paper citations).
     "NousResearch/Hermes-3-Llama-3.2-3B": {
         "leaderboard_ifeval": 31.05,
@@ -228,7 +234,12 @@ OLL_CHAT_TEMPLATE = {
 OLL_TASKS = ("leaderboard_ifeval", "leaderboard_math_hard")
 
 # No authoritative source exists for any task, so every task stays NA.
-ALL_NA = ["deepseek-ai/deepseek-math-7b-instruct"]
+ALL_NA = [
+    "deepseek-ai/deepseek-math-7b-instruct",
+    # QB2 business set: card scores are not like-for-like, so no published score is
+    # cited (Muse-Glimmer-30B is graded on its measured GPU references, #5353).
+    "meta-models/Muse-Glimmer-30B",
+]
 
 
 @pytest.mark.parametrize("repo", ALL_NA)
@@ -316,3 +327,51 @@ def test_generative_mmlu_pro_never_cites_loglikelihood_mmlu_pro():
             assert "leaderboard_mmlu_pro" not in ref, repo
             assert "Open LLM Leaderboard" not in ref, repo
             assert not ref.startswith(OLL_RESULTS), repo
+
+
+def test_gpt_oss_deep_reasoning_request_timeout_does_not_preempt_task_deadline():
+    """A request timeout must not turn a partial stream into a scored sample."""
+    tasks = {
+        task.task_name: task for task in _eval_config_map["openai/gpt-oss-120b"].tasks
+    }
+    for name in ("aime25", "gpqa_diamond_cot_zeroshot"):
+        task = tasks[name]
+        assert int(task.model_kwargs["timeout"]) >= task.wall_clock_timeout_seconds
+
+
+def test_qwen35_27b_tasks_think_against_a_thinking_off_serving_default():
+    """The quetzal Qwen3.5-27B row serves enable_thinking=false by default, while
+    the card's GPQA 85.5 and Qwen3.8-27B's agentic runs are thinking mode.
+
+    Every task must therefore turn thinking on per request, or it would be graded
+    in a different mode than its reference."""
+    from llm_module.request_overrides import resolve_request_body
+
+    tasks = {t.task_name: t for t in _eval_config_map["Qwen/Qwen3.5-27B"].tasks}
+    assert resolve_request_body(tasks["r1_gpqa_diamond"]) == {
+        "chat_template_kwargs": {"enable_thinking": True}
+    }
+    assert tasks["r1_gpqa_diamond"].use_chat_api is True
+    tb = tasks["terminal_bench_2_1"].agentic_eval_config.agent_kwargs
+    assert tb["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
+        "enable_thinking": True
+    }
+    swe = tasks["swe_bench_verified"].agentic_eval_config.agent_kwargs
+    assert swe["config"]["model"]["model_kwargs"]["extra_body"][
+        "chat_template_kwargs"
+    ] == {"enable_thinking": True}
+
+
+def test_gemma4_31b_tasks_request_thinking_themselves():
+    """gemma-4-31B-it's references (GPQA card 84.3 / H100 83.33, and the MMLU-Pro
+    run it matches) are thinking mode. A serving row that keeps upstream's
+    enable_thinking=false default must not change the graded mode, so each task
+    requests thinking per request instead of relying on the server default."""
+    from llm_module.request_overrides import resolve_request_body
+
+    tasks = {t.task_name: t for t in _eval_config_map["google/gemma-4-31B-it"].tasks}
+    for name in ("r1_gpqa_diamond", "mmlu_pro"):
+        assert tasks[name].use_chat_api is True, name
+        assert resolve_request_body(tasks[name]) == {
+            "chat_template_kwargs": {"enable_thinking": True}
+        }, name
