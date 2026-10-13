@@ -337,3 +337,26 @@ def test_gpt_oss_deep_reasoning_request_timeout_does_not_preempt_task_deadline()
     for name in ("aime25", "gpqa_diamond_cot_zeroshot"):
         task = tasks[name]
         assert int(task.model_kwargs["timeout"]) >= task.wall_clock_timeout_seconds
+
+
+def test_qwen35_27b_tasks_think_against_a_thinking_off_serving_default():
+    """The quetzal Qwen3.5-27B row serves enable_thinking=false by default, while
+    the card's GPQA 85.5 and Qwen3.8-27B's agentic runs are thinking mode.
+
+    Every task must therefore turn thinking on per request, or it would be graded
+    in a different mode than its reference."""
+    from llm_module.request_overrides import resolve_request_body
+
+    tasks = {t.task_name: t for t in _eval_config_map["Qwen/Qwen3.5-27B"].tasks}
+    assert resolve_request_body(tasks["r1_gpqa_diamond"]) == {
+        "chat_template_kwargs": {"enable_thinking": True}
+    }
+    assert tasks["r1_gpqa_diamond"].use_chat_api is True
+    tb = tasks["terminal_bench_2_1"].agentic_eval_config.agent_kwargs
+    assert tb["llm_kwargs"]["extra_body"]["chat_template_kwargs"] == {
+        "enable_thinking": True
+    }
+    swe = tasks["swe_bench_verified"].agentic_eval_config.agent_kwargs
+    assert swe["config"]["model"]["model_kwargs"]["extra_body"][
+        "chat_template_kwargs"
+    ] == {"enable_thinking": True}
