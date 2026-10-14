@@ -266,6 +266,7 @@ class HarborEvalConfig:
     agent: str
     model: Optional[str] = None
     n_concurrent_trials: int = 1
+    n_concurrent_agents: Optional[int] = None
     n_attempts: int = 1
     n_tasks: Optional[int] = None
     task_names: List[str] = field(default_factory=list)
@@ -8949,6 +8950,7 @@ _eval_config_list = [
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
                     n_concurrent_trials=8,
+                    n_concurrent_agents=4,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=6 * 60 * 60,

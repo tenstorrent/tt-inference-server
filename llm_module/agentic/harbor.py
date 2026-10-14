@@ -64,6 +64,8 @@ class HarborRunConfig:
     override_memory_mb: Optional[int]
     timeout_multiplier: Optional[float]
     agent_timeout_sec: Optional[float]
+    # Agent permits exclude setup/verifier; trial permits cover the full case.
+    n_concurrent_agents: Optional[int] = None
     agent_setup_timeout_multiplier: Optional[float] = None
     task_names: list[str] = field(default_factory=list)
     exclude_task_names: list[str] = field(default_factory=list)
@@ -239,6 +241,10 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
         "override_timeout_sec": config.agent_timeout_sec,
         "kwargs": _get_agent_kwargs(config),
     }
+    if config.n_concurrent_agents is not None:
+        if config.n_concurrent_agents < 1:
+            raise ValueError("n_concurrent_agents must be positive")
+        agent_config["n_concurrent"] = config.n_concurrent_agents
     if config.agent_import_path:
         agent_config["import_path"] = config.agent_import_path
     else:
@@ -286,6 +292,7 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
 def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _mini_swe_needs_host_gateway(config)
+        or config.n_concurrent_agents is not None
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
@@ -398,7 +405,10 @@ def run(config: HarborRunConfig) -> int:
         probe=make_terminal_bench_probe(job_dir),
         label=config.task_name,
         per_task_budget_s=per_task_budget,
-        concurrency=config.n_concurrent_trials,
+        concurrency=min(
+            config.n_concurrent_trials,
+            config.n_concurrent_agents or config.n_concurrent_trials,
+        ),
         startup_grace_s=config.startup_grace_sec,
         stall_grace_s=config.stall_grace_sec,
         log_interval_s=config.progress_log_interval_sec,

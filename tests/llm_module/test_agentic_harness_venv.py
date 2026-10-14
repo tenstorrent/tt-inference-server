@@ -76,3 +76,42 @@ def test_harbor_falls_back_to_sys_executable(tmp_path):
         harbor.run(config)
 
     assert captured["cmd"][0] == str(Path("/cur/bin/python").parent / "harbor")
+
+
+def test_separate_agent_limit_serializes_and_preserves_watchdog_budget(tmp_path):
+    import json
+    from dataclasses import replace
+
+    config = replace(_harbor_config(tmp_path, _VENV_PY),
+                     n_concurrent_trials=8, n_concurrent_agents=4)
+    captured = {}
+
+    def fake_run(cmd, **kwargs):
+        captured.update(kwargs)
+        captured["config"] = json.loads(Path(cmd[cmd.index("--config") + 1]).read_text())
+        return 0
+
+    with patch.object(harbor, "run_with_progress", fake_run), patch.object(
+        harbor, "_annotate_result_file", lambda *_a, **_k: None
+    ):
+        assert harbor.run(config) == 0
+    assert captured["config"]["n_concurrent_trials"] == 8
+    assert captured["config"]["agents"][0]["n_concurrent"] == 4
+    assert captured["concurrency"] == 4
+    assert "n_concurrent" not in captured["config"]["agents"][0]["kwargs"]
+
+
+def test_unset_agent_limit_preserves_harbor_default(tmp_path):
+    import json
+    config = _harbor_config(tmp_path, _VENV_PY)
+    data = json.loads(harbor._write_harbor_config(config).read_text())
+    assert "n_concurrent" not in data["agents"][0]
+
+
+def test_nonpositive_agent_limit_rejected(tmp_path):
+    from dataclasses import replace
+    import pytest
+    for limit in (0, -1):
+        with pytest.raises(ValueError, match="must be positive"):
+            harbor._write_harbor_config(replace(
+                _harbor_config(tmp_path, _VENV_PY), n_concurrent_agents=limit))
