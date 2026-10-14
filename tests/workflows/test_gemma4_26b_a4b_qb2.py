@@ -8,6 +8,7 @@ from reference_config.evals.eval_config import (
     resolve_eval_reference,
 )
 from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
+from workflows.tt_metal_file_overlay import tt_metal_file_overlay_args
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import EvalLimitMode, ModelStatusTypes, WorkflowVenvType
 
@@ -61,6 +62,17 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.device_model_spec.env_vars["TT_METAL_CACHE"].endswith(
         "/gemma4_metal_kernel_cache"
     )
+    assert dedicated.metadata["agentic_benchmark_default"] == "swebench"
+    assert dedicated.metadata["tt_metal_file_overlays"][0]["sha256"] == (
+        "46389c08f1c99f068669f66e902cc34daf00e54e7c7d8014dc1539b3dd1af954"
+    )
+    overlay_args = tt_metal_file_overlay_args(
+        dedicated, type("Runtime", (), {"dev_mode": True})(), get_repo_root_path()
+    )
+    assert overlay_args[-1].endswith(
+        "dst=/home/container_app_user/tt-metal/models/demos/"
+        "gemma4_26b_a4b_qb2/config/precision.json,readonly"
+    )
 
 
 def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
@@ -86,9 +98,12 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
     terminal = terminal_task.agentic_eval_config
     swe = swe_task.agentic_eval_config
     assert len(terminal.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
-    assert len(swe.task_names_map[EvalLimitMode.CI_NIGHTLY]) == 5
+    assert swe.task_names_map[EvalLimitMode.CI_NIGHTLY] == [
+        "django__django-11299"
+    ]
     assert terminal.n_concurrent_trials == 5
     assert swe.n_concurrent_trials == 1
+    assert swe.agent_timeout_sec == 20 * 60
     assert terminal.n_attempts == swe.n_attempts == 1
     assert terminal.override_cpus == 16
     assert swe.llm_timeout_sec == 30 * 60

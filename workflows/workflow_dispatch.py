@@ -652,7 +652,10 @@ def _build_agentic_cmd(repo_root, model_spec, runtime_config, json_fpath, output
     _extend_if_set(
         cmd,
         "--agentic-benchmark",
-        getattr(runtime_config, "agentic_benchmark", None),
+        getattr(runtime_config, "agentic_benchmark", None)
+        or (getattr(model_spec, "metadata", None) or {}).get(
+            "agentic_benchmark_default"
+        ),
     )
     _forward_jwt(cmd, runtime_config)
     return cmd
