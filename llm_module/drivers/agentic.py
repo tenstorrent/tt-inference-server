@@ -206,7 +206,7 @@ def build_harbor_config(
         jobs_dir=task_output_dir.parent,
         api_base=f"{server.url_with_port}/v1",
         n_concurrent_trials=cfg.n_concurrent_trials,
-        n_concurrent_agents=cfg.n_concurrent_agents,
+        n_concurrent_agents=getattr(cfg, "n_concurrent_agents", None),
         n_attempts=cfg.n_attempts,
         environment_type=cfg.environment_type,
         agent_kwargs=agent_kwargs_with_request_body(

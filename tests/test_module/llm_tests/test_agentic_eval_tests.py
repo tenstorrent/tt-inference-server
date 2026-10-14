@@ -402,6 +402,13 @@ class TestStandardEvalModeReference:
 
 
 class TestAgenticDriverConfigMapping:
+    def test_optional_agent_concurrency_maps_to_runtime(self):
+        task = _harbor_task()
+        task.agentic_eval_config.n_concurrent_agents = 4
+        cfg = build_harbor_config(task, _server(), _driver_context())
+        assert cfg.n_concurrent_agents == 4
+
+
     def test_harbor_config_uses_limit_mode_task_names_and_n_tasks(self):
         task = _harbor_task()
         task.agentic_eval_config.task_names_map = {
