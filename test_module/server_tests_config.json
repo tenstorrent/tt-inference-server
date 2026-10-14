@@ -98,7 +98,8 @@
       "Qwen/Qwen3-4B-Base",
       "mistralai/Mistral-Nemo-Instruct-2407",
       "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-      "Qwen/Qwen3-14B-Base"
+      "Qwen/Qwen3-14B-Base",
+      "Qwen/QwQ-32B"
     ]
   },
   "available_markers": {
@@ -1045,6 +1046,16 @@
       "id_name": "Qwen--Qwen3-14B-Base",
       "weights": [
         "Qwen/Qwen3-14B-Base"
+      ]
+    },
+    "Qwen/QwQ-32B": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "Qwen--QwQ-32B",
+      "weights": [
+        "Qwen/QwQ-32B"
       ]
     }
   },
