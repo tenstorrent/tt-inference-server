@@ -60,9 +60,7 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         # in Harbor's environment kwargs rather than its container env.
         "HARBOR_K8S_IMAGE_BUILDER": "image_builder",
         "HARBOR_K8S_BUILDKIT_ADDRESS": "buildkit_address",
-        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY": (
-            "prebuilt_image_mirror_failure_policy"
-        ),
+        "HARBOR_K8S_PREBUILT_IMAGE_MIRROR_FAILURE_POLICY": ("prebuilt_image_mirror_failure_policy"),
         # Opt-in compose execution strategy. "pods" runs each compose
         # service as a container of one ordinary pod (no privileged DinD),
         # but requires HARBOR_K8S_IMAGE_REGISTRY the cluster can pull from.
@@ -91,12 +89,9 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
     if prebuilt_image_mirrors:
         parsed_mirrors = json.loads(prebuilt_image_mirrors)
         if not isinstance(parsed_mirrors, dict) or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in parsed_mirrors.items()
+            isinstance(key, str) and isinstance(value, str) for key, value in parsed_mirrors.items()
         ):
-            raise ValueError(
-                "HARBOR_K8S_PREBUILT_IMAGE_MIRRORS must be a JSON string map"
-            )
+            raise ValueError("HARBOR_K8S_PREBUILT_IMAGE_MIRRORS must be a JSON string map")
         kwargs["prebuilt_image_mirrors"] = parsed_mirrors
     node_selector = os.getenv("HARBOR_K8S_NODE_SELECTOR")
     if node_selector:
@@ -107,8 +102,7 @@ def _harbor_env_kwargs() -> Dict[str, Any]:
         # JSON object, e.g. '{"ci-run-id": "123456789"}'
         parsed_labels = json.loads(pod_labels)
         if not isinstance(parsed_labels, dict) or not all(
-            isinstance(key, str) and isinstance(value, str)
-            for key, value in parsed_labels.items()
+            isinstance(key, str) and isinstance(value, str) for key, value in parsed_labels.items()
         ):
             raise ValueError("HARBOR_K8S_POD_LABELS must be a JSON string map")
         kwargs["pod_labels"] = parsed_labels
@@ -131,10 +125,7 @@ def _harbor_enforce_agent_deadline() -> bool:
         return True
     if normalized in {"0", "false", "no", "off"}:
         return False
-    raise ValueError(
-        "HARBOR_ENFORCE_AGENT_DEADLINE must be a boolean "
-        "(true/false, 1/0, yes/no, on/off)"
-    )
+    raise ValueError("HARBOR_ENFORCE_AGENT_DEADLINE must be a boolean " "(true/false, 1/0, yes/no, on/off)")
 
 
 @dataclass(frozen=True)
@@ -172,9 +163,7 @@ class EvalTaskScore:
     # the release report's accuracy check when the run sets --limit-samples-mode
     # (or --ci-mode). The full-set gpu_reference_score remains the baseline for
     # unrestricted --workflow evals runs.
-    mode_reference_scores: Dict["EvalLimitMode", "ModeReferenceScore"] = field(
-        default_factory=dict
-    )
+    mode_reference_scores: Dict["EvalLimitMode", "ModeReferenceScore"] = field(default_factory=dict)
 
 
 def resolve_eval_reference(score_obj, limit_mode):
@@ -194,9 +183,7 @@ def resolve_eval_reference(score_obj, limit_mode):
     """
     mode_ref = None
     if limit_mode is not None:
-        mode_ref = (getattr(score_obj, "mode_reference_scores", None) or {}).get(
-            limit_mode
-        )
+        mode_ref = (getattr(score_obj, "mode_reference_scores", None) or {}).get(limit_mode)
 
     full_ref_label = getattr(score_obj, "gpu_reference_score_ref", None)
 
@@ -206,9 +193,7 @@ def resolve_eval_reference(score_obj, limit_mode):
         return {
             "reference_score": mode_ref.score,
             "reference_ref": f"{label} {suffix}".strip(),
-            "tolerance": mode_ref.tolerance
-            if mode_ref.tolerance is not None
-            else score_obj.tolerance,
+            "tolerance": mode_ref.tolerance if mode_ref.tolerance is not None else score_obj.tolerance,
             "is_subset_reference": True,
         }
 
@@ -411,10 +396,7 @@ class EvalTask:
             value = getattr(self, name)
             if value is not None and (type(value) is not int or value <= 0):
                 raise ValueError(f"{name} must be a positive integer")
-        if (
-            self.max_attempts is not None
-            and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON
-        ):
+        if self.max_attempts is not None and self.workflow_venv_type != WorkflowVenvType.EVALS_COMMON:
             raise ValueError("max_attempts currently requires EVALS_COMMON")
         self.validate_data()
         self._infer_data()
@@ -4028,10 +4010,7 @@ _eval_config_list = [
                     mode_reference_scores={
                         EvalLimitMode.CI_NIGHTLY: ModeReferenceScore(
                             score=73.33,
-                            ref=(
-                                "ci-nightly r1_aime24 (15 of 30 docs), "
-                                "TT Galaxy Qwen3-32B, 2026-08-17"
-                            ),
+                            ref=("ci-nightly r1_aime24 (15 of 30 docs), " "TT Galaxy Qwen3-32B, 2026-08-17"),
                             tolerance=0.05,
                         ),
                     },
@@ -4349,6 +4328,123 @@ _eval_config_list = [
                 limit_samples_map={
                     EvalLimitMode.CI_NIGHTLY: 0.5,
                     EvalLimitMode.SMOKE_TEST: 0.05,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="allenai/Olmo-3.1-32B-Think",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=80.6,
+                    published_score_ref="https://huggingface.co/allenai/Olmo-3.1-32B-Think (model card, Evaluation table)",
+                    gpu_reference_score=80.6,  # Estimate - needs to be validated on TT
+                    gpu_reference_score_ref=None,
+                    tolerance=0.1,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # gen_kwargs per the model card (temperature 0.6, top_p 0.95, max_tokens 32768); top_k 32 is the
+                # on-device sampler limit (the server also defaults to it)
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 32,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=96.2,
+                    published_score_ref="https://huggingface.co/allenai/Olmo-3.1-32B-Think (model card, Evaluation table)",
+                    gpu_reference_score=96.2,  # Estimate - needs to be validated on TT
+                    gpu_reference_score_ref=None,
+                    tolerance=0.05,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # gen_kwargs per the model card (temperature 0.6, top_p 0.95, max_tokens 32768); top_k 32 is the
+                # on-device sampler limit (the server also defaults to it)
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 32,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=57.5,
+                    published_score_ref="https://huggingface.co/allenai/Olmo-3.1-32B-Think (model card, Evaluation table)",
+                    gpu_reference_score=57.5,  # Estimate - needs to be validated on TT
+                    gpu_reference_score_ref=None,
+                    tolerance=0.15,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                max_concurrent=16,
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    "timeout": "3600",
+                },
+                # gen_kwargs per the model card (temperature 0.6, top_p 0.95, max_tokens 32768); top_k 32 is the
+                # on-device sampler limit (the server also defaults to it)
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 0.6,
+                    "top_k": 32,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
         ],
@@ -11636,9 +11732,7 @@ _eval_config_list = [
 ]
 
 
-_eval_config_map = map_configs_by_attr(
-    config_list=_eval_config_list, attr="hf_model_repo"
-)
+_eval_config_map = map_configs_by_attr(config_list=_eval_config_list, attr="hf_model_repo")
 # Keyed by the full HF repo id (e.g. "meta-llama/Llama-3.1-8B-Instruct") so
 # lookups are unambiguous even when two repos share a basename.
 EVAL_CONFIGS = {
