@@ -384,3 +384,44 @@ templates:
     Qwen/Qwen3.5-27B:
       reasoning_parser_name: qwen3
       tool_call_parser_name: qwen3_coder
+
+- weights:
+    - allenai/Molmo2-8B
+  impl: molmo2
+  inference_engine: VLLM
+  model_type: VLM
+  device_model_specs:
+    - device: T3K
+      max_concurrency: 1
+      max_context: 36864  # model max_position_embeddings (384-frame video ~34k tokens + generation)
+      default_impl: true
+      override_tt_config:
+        fabric_config: FABRIC_1D
+      vllm_args:
+        trust-remote-code: true
+        mm-processor-cache-gb: 0
+        allowed-local-media-path: /
+    - device: GALAXY_T3K
+      max_concurrency: 1
+      max_context: 36864
+      default_impl: true
+      env_vars:
+        TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
+      override_tt_config:
+        fabric_config: FABRIC_1D
+      vllm_args:
+        trust-remote-code: true
+        mm-processor-cache-gb: 0
+        allowed-local-media-path: /
+  status: EXPERIMENTAL
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    # The adapter is not a built-in plugin model: select it for the checkpoint's architecture.
+    TT_MODEL_CLASS_OVERRIDES: "TTMolmo2ForConditionalGeneration=models.demos.molmo2.tt.generator_vllm:Molmo2ForConditionalGeneration"
+  supported_modalities:
+    - text
+    - image
+    - video
+  metadata:
+    allenai/Molmo2-8B:
+      vllm_model_from_weights_dir: true

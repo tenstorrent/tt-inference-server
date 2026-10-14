@@ -1367,6 +1367,11 @@ def main():
     set_metal_timeout_env_vars()
     runtime_settings(model_spec, no_auth=args.no_auth)
     default_vllm_args = model_spec["device_model_spec"]["vllm_args"]
+    if model_spec.get("metadata", {}).get("vllm_model_from_weights_dir"):
+        # Models with remote code (e.g. Molmo2) must load from a directory of real files: with a repo id vLLM resolves
+        # to the HF-cache snapshot, whose symlinks into blobs/ break transformers>=5's remote-code relative imports.
+        default_vllm_args["model"] = os.environ["MODEL_WEIGHTS_DIR"]
+        default_vllm_args.setdefault("served_model_name", model_spec["hf_model_repo"])
     absorb_plugin_config_into_additional_config(default_vllm_args)
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)

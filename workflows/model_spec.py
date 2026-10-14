@@ -373,6 +373,14 @@ qwen36_blackhole_vlm_impl = ImplSpec(
     repo_url="https://github.com/tenstorrent/tt-metal",
     code_path="models/demos/blackhole/qwen36",
 )
+# Molmo2 (ViT + pooling + Qwen-style decoder) lives in tt-metal under models/demos/molmo2. Served through the
+# vllm-tt-plugin via TT_MODEL_CLASS_OVERRIDES (set in the spec's env_vars). Batch 1 per 1x8 slice.
+molmo2_impl = ImplSpec(
+    impl_id="molmo2",
+    impl_name="molmo2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/demos/molmo2",
+)
 diffusion_gemma_impl = ImplSpec(
     impl_id="diffusion_gemma",
     impl_name="diffusion-gemma",
@@ -476,6 +484,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "sdxl_forge": sdxl_forge_impl,
     "qwen36_blackhole": qwen36_blackhole_impl,
     "qwen36_blackhole_vlm": qwen36_blackhole_vlm_impl,
+    "molmo2": molmo2_impl,
     "diffusion_gemma": diffusion_gemma_impl,
     "training_lora": training_lora_impl,
     "trainer_training_lora": trainer_training_lora_impl,
