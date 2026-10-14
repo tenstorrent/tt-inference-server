@@ -410,6 +410,41 @@ if [[ "${SERVE}" -eq 1 ]]; then
     ENDPOINT_FILE="${OUT_DIR}/endpoint.url" SHIELD_DIR="${OUT_DIR}/shield" ROLLOVERS=0
     mkdir -p "${SHIELD_DIR}"
     field() { "${PYRUN[@]}" -c 'import json,sys; print((json.load(open(sys.argv[1])) or {}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }
+    # >>> serve-record helpers (tests/test_gpu_reference_colab.py runs this block
+    # under set -euo pipefail with field/gh/gpuref stubbed)
+    record_run_id() {   # REC: the task's recorded Shield run id; empty, status 0, before any record
+        local id=""
+        if [[ -s "$1" ]]; then id="$(field "$1" run_id)"; fi
+        printf '%s' "${id}"
+    }
+    report_on_disk() {   # DIR: a downloaded report*.json is under DIR
+        [[ -d "$1" ]] && [[ -n "$(find "$1" -type f -name 'report*.json' -print -quit 2>/dev/null)" ]]
+    }
+    retrieve_report() {   # TASK REC RUN_ID CONCLUSION: download the run's report, record the outcome
+        # A completed run is recorded "completed" only once its report is on disk;
+        # otherwise "report_pending", which a re-run retries instead of skipping.
+        local task="$1" rec="$2" run_id="$3" conclusion="$4" state=completed shown endpoint_id dispatched test
+        shown="$(field "${rec}" endpoint)" endpoint_id="$(field "${rec}" endpoint_id)"
+        dispatched="$(field "${rec}" dispatched_at)" test="$(field "${rec}" test)"
+        rm -rf "${SHIELD_DIR:?}/${task}"; mkdir -p "${SHIELD_DIR}/${task}"
+        gh run download "${run_id}" -R "${SHIELD_REPO}" -D "${SHIELD_DIR}/${task}" -p '*report*' > /dev/null 2>&1 || true
+        report_on_disk "${SHIELD_DIR}/${task}" || state=report_pending
+        gpuref driver-status "${rec}" "task=${task}" "run_id=${run_id}" "state=${state}" \
+            "conclusion=${conclusion}" "url=https://github.com/${SHIELD_REPO}/actions/runs/${run_id}" \
+            "endpoint=${shown}" "endpoint_id=${endpoint_id}" "ttis=${TTIS_SHA}" \
+            "dispatched_at=${dispatched}" "test=${test}"
+        [[ "${state}" == "completed" ]]
+    }
+    retry_report() {   # TASK REC RUN_ID CONCLUSION: retrieve_report, REPORT_TRIES times a minute apart
+        local try
+        for try in $(seq 1 "${REPORT_TRIES:-10}"); do
+            retrieve_report "$@" && return 0
+            log "$1: report for Shield run $3 not downloaded (try ${try}/${REPORT_TRIES:-10})"
+            [[ "${try}" -lt "${REPORT_TRIES:-10}" ]] && sleep "${REPORT_RETRY_SECONDS:-60}"
+        done
+        return 1
+    }
+    # <<< serve-record helpers
     serve_endpoint() {   # the VM's tunnel URL -> ENDPOINT_FILE (0600); sets ENDPOINT_ID, ENDPOINT_SHOWN
         local out url
         out="$(remote_exec endpoint 60 2>&1)" || return 1
@@ -456,7 +491,21 @@ if [[ "${SERVE}" -eq 1 ]]; then
     failures=0
     for task in "${SERVE_TASKS[@]}"; do
         rec="${SHIELD_DIR}/${task}.json"
-        [[ -s "${rec}" && "$(field "${rec}" state)" == "completed" ]] && { log "${task}: Shield run already completed"; continue; }
+        rec_state=""
+        if [[ -s "${rec}" ]]; then rec_state="$(field "${rec}" state)"; fi
+        if [[ "${rec_state}" == "completed" ]] && report_on_disk "${SHIELD_DIR}/${task}"; then
+            log "${task}: Shield run already completed"; continue
+        fi
+        if [[ "${rec_state}" == "completed" || "${rec_state}" == "report_pending" ]]; then
+            # The run finished on an earlier pass but its report is not on disk:
+            # retrieve it, never dispatch the task again.
+            if retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)"; then
+                log "${task}: report for Shield run $(field "${rec}" run_id) retrieved"
+            else
+                log "WARNING: ${task}: report still not retrievable; the record stays report_pending for the next run"
+            fi
+            continue
+        fi
         while :; do
             if ! remote_state; then
                 failures=$((failures + 1)); log "status poll failed (${failures}/6)"
@@ -475,7 +524,7 @@ if [[ "${SERVE}" -eq 1 ]]; then
                 *) rollover "runner ${STATE} before STOP (${PHASE:-})"; continue ;;
             esac
             serve_endpoint || { log "no tunnel URL yet"; sleep 60; continue; }
-            run_id="$( [[ -s "${rec}" ]] && field "${rec}" run_id )"
+            run_id="$(record_run_id "${rec}")"
             if [[ -n "${run_id}" && "$(field "${rec}" endpoint_id)" != "${ENDPOINT_ID}" ]]; then
                 log "${task}: endpoint changed (rollover without --tunnel-domain); cancelling run ${run_id} and dispatching again"
                 gh run cancel "${run_id}" -R "${SHIELD_REPO}" > /dev/null 2>&1 || true
@@ -487,14 +536,11 @@ if [[ "${SERVE}" -eq 1 ]]; then
             status SERVING "task=${task}" "shield_run=${run_id}" "shield_status=${run_status}" \
                 "endpoint=${ENDPOINT_SHOWN}" "rollovers=${ROLLOVERS}"
             if [[ "${run_status}" == "completed" ]]; then
-                rm -rf "${SHIELD_DIR:?}/${task}"; mkdir -p "${SHIELD_DIR}/${task}"
-                gh run download "${run_id}" -R "${SHIELD_REPO}" -D "${SHIELD_DIR}/${task}" -p '*report*' > /dev/null 2>&1 \
-                    || log "WARNING: no report artifact downloaded for run ${run_id}"
-                gpuref driver-status "${rec}" "task=${task}" "run_id=${run_id}" "state=completed" \
-                    "conclusion=${run_conclusion}" "url=https://github.com/${SHIELD_REPO}/actions/runs/${run_id}" \
-                    "endpoint=${ENDPOINT_SHOWN}" "endpoint_id=${ENDPOINT_ID}" "ttis=${TTIS_SHA}" \
-                    "dispatched_at=$(field "${rec}" dispatched_at)" "test=$(field "${rec}" test)"
-                log "${task}: Shield run ${run_id} completed (${run_conclusion})"
+                if retry_report "${task}" "${rec}" "${run_id}" "${run_conclusion}"; then
+                    log "${task}: Shield run ${run_id} completed (${run_conclusion})"
+                else
+                    log "WARNING: ${task}: Shield run ${run_id} completed but its report was not downloaded; recorded report_pending, a re-run retries it"
+                fi
                 break
             fi
             if [[ "${MIN_BALANCE}" != "0" ]] && balance="$(colab usage < /dev/null 2>/dev/null | gpuref balance-below "${MIN_BALANCE}")"; then
