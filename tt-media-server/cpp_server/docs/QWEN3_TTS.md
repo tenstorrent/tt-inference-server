@@ -258,7 +258,10 @@ The adapter sends no seed, so reproducible scores need the server started with
 
 The WER eval (`tts_generation`) is not registered for Qwen3-TTS: it speaks only
 the Python media server's `response_format: json` contract. The `benchmarks`
-workflow uses that contract too, so only `evals` works against this server.
+workflow takes the adapter settings from these eval tasks; on Base it clones the
+audio benchmark's 5.3 s LibriSpeech clip. Its TTFT is the time to the first
+audio byte after the WAV header, which this server sends only once the whole
+utterance is synthesized.
 
 The specs are in the dev catalog, so set `MODEL_SPECS_ENV=dev`. Against a server
 already listening on port 8000:

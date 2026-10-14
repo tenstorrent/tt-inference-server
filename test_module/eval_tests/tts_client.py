@@ -11,6 +11,7 @@ import io
 import logging
 import os
 import struct
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Tuple
@@ -62,6 +63,16 @@ class SynthesizedAudio:
         return len(self.samples) / float(self.sample_rate)
 
 
+@dataclass
+class TimedSynthesis:
+    """One benchmark request: success, wall time, TTFT and audio length."""
+
+    ok: bool
+    elapsed_s: float = 0.0
+    ttft_ms: Optional[float] = None
+    audio_seconds: Optional[float] = None
+
+
 class TTSClient(ABC):
     """Synthesize one utterance against a live TTS deployment."""
 
@@ -81,6 +92,17 @@ class TTSClient(ABC):
         timeout_s: float = 300,
     ) -> Optional[SynthesizedAudio]:
         """Return the audio, or None when the request failed."""
+
+    @abstractmethod
+    async def timed_synthesize(
+        self,
+        url: str,
+        text: str,
+        *,
+        voice: Optional[VoiceClip] = None,
+        timeout_s: float = 120,
+    ) -> TimedSynthesis:
+        """Unseeded benchmark request; the audio itself is not decoded."""
 
     @abstractmethod
     def describe(self) -> str:
@@ -119,6 +141,61 @@ class MediaServerTTSClient(TTSClient):
                     return None
                 result = await response.json()
         return decode_wav_file(base64.b64decode(result["audio"]))
+
+    async def timed_synthesize(self, url, text, *, voice=None, timeout_s=120):
+        if voice is not None:
+            raise ValueError("the media_server benchmark sends no reference audio")
+        headers = {
+            "accept": "application/json",
+            **auth_headers(),
+            "Content-Type": "application/json",
+        }
+        payload = {"text": text, "response_format": "json"}
+        start_time = time.monotonic()
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=timeout_s),
+            ) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(
+                        f"TTS request failed with status {response.status}: {error_text}"
+                    )
+                    return TimedSynthesis(False)
+
+                content_type = response.headers.get("Content-Type", "").lower()
+                logger.debug(f"Response Content-Type: {content_type}")
+                if "audio" in content_type or "wav" in content_type:
+                    logger.error(
+                        f"Received audio/wav response instead of JSON. "
+                        f"Make sure response_format='json' is set in request. "
+                        f"Content-Type: {content_type}. Request payload was: {payload}"
+                    )
+                    return TimedSynthesis(False)
+
+                response_start = time.monotonic()
+                response_data = await response.json()
+                ttft_ms = (response_start - start_time) * 1000
+
+                audio_duration = response_data.get("duration")
+                if audio_duration is None:
+                    logger.warning("Duration not found in response data")
+                else:
+                    logger.info(f"Audio duration: {audio_duration}s")
+
+                audio_base64 = response_data.get("audio")
+                if not audio_base64:
+                    logger.error("Audio data not found in response")
+                    return TimedSynthesis(False)
+
+                logger.info(f"Received audio data (base64 length: {len(audio_base64)})")
+
+        return TimedSynthesis(
+            True, time.monotonic() - start_time, ttft_ms, audio_duration
+        )
 
     def describe(self):
         return "media_server (seeded JSON, base64 reference_audio)"
@@ -219,6 +296,41 @@ class Qwen3CppTTSClient(TTSClient):
             return None
         return audio
 
+    async def timed_synthesize(self, url, text, *, voice=None, timeout_s=120):
+        # TTFT is the first byte after the WAV header: the header comes at once, audio only when the utterance is done.
+        request = self.build_request(text, voice)
+        timeout = aiohttp.ClientTimeout(total=timeout_s)
+        start = time.monotonic()
+        body = bytearray()
+        arrivals = []
+        async with aiohttp.ClientSession(
+            headers=auth_headers(), timeout=timeout
+        ) as session:
+            async with session.post(url, **request) as response:
+                if response.status != 200:
+                    error_text = (await response.text())[:300]
+                    logger.error(
+                        f"TTS request failed with status {response.status}: {error_text}"
+                    )
+                    return TimedSynthesis(False)
+                async for chunk in response.content.iter_any():
+                    body += chunk
+                    arrivals.append((len(body), time.monotonic()))
+        elapsed = time.monotonic() - start
+        try:
+            sample_rate, channels, offset = parse_pcm16_wav_header(bytes(body))
+        except ValueError as e:
+            logger.error(f"Unreadable WAV from the server: {e}")
+            return TimedSynthesis(False)
+        seconds = (len(body) - offset) // (2 * channels) / float(sample_rate)
+        if seconds < MIN_AUDIO_SECONDS:
+            logger.error(
+                f"Server returned {seconds:.2f}s of audio (< {MIN_AUDIO_SECONDS}s)"
+            )
+            return TimedSynthesis(False)
+        first_audio = next(t for size, t in arrivals if size > offset)
+        return TimedSynthesis(True, elapsed, (first_audio - start) * 1000, seconds)
+
     def describe(self):
         voice = {
             "base": f"{self.clone_mode} clone",
@@ -314,6 +426,7 @@ __all__ = [
     "TTSClient",
     "TTS_API_MEDIA_SERVER",
     "TTS_API_QWEN3_CPP",
+    "TimedSynthesis",
     "VoiceClip",
     "auth_headers",
     "decode_streamed_wav",
