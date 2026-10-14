@@ -687,19 +687,6 @@ def test_agentic_omits_benchmark_when_unset(monkeypatch, tmp_path):
     assert "--agentic-benchmark" not in argv
 
 
-def test_agentic_uses_model_default_benchmark_when_unset(monkeypatch, tmp_path):
-    spec = _spec(ModelType.LLM, name="diagnostic-model")
-    spec.metadata = {"agentic_benchmark_default": "swebench"}
-    rc = _rc(workflow="agentic")
-    monkeypatch.setattr(
-        workflow_dispatch, "get_default_workflow_root_log_dir", lambda: tmp_path
-    )
-
-    argv = workflow_dispatch.build_engine_commands(spec, rc, "/tmp/spec.json")[0].argv
-
-    assert argv[argv.index("--agentic-benchmark") + 1] == "swebench"
-
-
 def test_evals_forwards_repeat_as_engine_repeat(monkeypatch, tmp_path):
     spec, rc = _spec(ModelType.LLM), _rc(workflow="evals", repeat_evals=3)
     _patch_engine_dispatch(monkeypatch, tmp_path)

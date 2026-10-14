@@ -11330,9 +11330,7 @@ _eval_config_list = [
                     n_concurrent_trials=1,
                     n_attempts=1,
                     n_tasks=None,
-                    # Focused current-path BFP8 diagnostic: historical BFP8
-                    # Django submitted in 846 seconds, so cap this at 20 min.
-                    agent_timeout_sec=20 * 60,
+                    agent_timeout_sec=2 * 60 * 60,
                     llm_timeout_sec=30 * 60,
                     normalize_submission_marker=True,
                     agent_kwargs={
@@ -11361,7 +11359,11 @@ _eval_config_list = [
                     },
                     task_names_map={
                         EvalLimitMode.CI_NIGHTLY: [
+                            "astropy__astropy-14096",
                             "django__django-11299",
+                            "matplotlib__matplotlib-25332",
+                            "scikit-learn__scikit-learn-14629",
+                            "sympy__sympy-13551",
                         ],
                         # ci-long: full accuracy sets, same CI-sized agentic lists.
                         EvalLimitMode.CI_LONG: [
