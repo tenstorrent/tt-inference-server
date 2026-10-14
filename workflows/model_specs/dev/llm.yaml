@@ -1171,6 +1171,14 @@ templates:
       max_concurrency: 32
       max_context: 204800  # 200 * 1024; native ctx is 256K but a single H100 NVL caps ~205K
       default_impl: true
+      vllm_args:
+        # Like-for-like with the TT rows above (as for gemma-4-31B-it): thinking
+        # on by default (the evals set none per request) and the gemma4
+        # reasoning parser, at the checkpoint revision the Quetzal package uses.
+        revision: 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7
+        tokenizer_revision: 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7
+        default-chat-template-kwargs: '{"enable_thinking": true}'
+        reasoning-parser: gemma4
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
