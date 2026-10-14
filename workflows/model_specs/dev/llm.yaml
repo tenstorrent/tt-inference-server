@@ -1755,10 +1755,6 @@ templates:
       max_concurrency: 32  # 8 * 4: decode runs at batch 32
       max_context: 65536  # 64 * 1024
       default_impl: true
-      env_vars:
-        # Warm up only the plain device-sampling configs (no penalty / logprob permutations): each permutation
-        # is a separate resident decode trace.
-        TT_LEAN_DECODE_WARMUP: 1
       vllm_args:
         reasoning_parser: olmo3
         # The model card samples with temperature 0.6 / top_p 0.95 and no top_k. The device sampler only draws from
