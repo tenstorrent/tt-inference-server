@@ -1321,7 +1321,8 @@ class TestMediaServerDockerEnvVars:
             "Qwen3-TTS-12Hz-0.6B-CustomVoice",
         ],
     )
-    def test_qwen3_tts_uses_cpp_server(self, model):
+    @pytest.mark.parametrize("device", ["N150", "P150"])
+    def test_qwen3_tts_uses_cpp_server(self, model, device):
         # Qwen3-TTS is in the dev catalog only.
         from workflows.model_spec import _MODEL_SPECS_DIR, load_templates_from_yaml
 
@@ -1331,7 +1332,7 @@ class TestMediaServerDockerEnvVars:
                 _MODEL_SPECS_DIR / "dev" / "audio_tts.yaml", env="dev"
             )
             for spec in template.expand_to_specs()
-            if spec.model_name == model and spec.device_type.name == "N150"
+            if spec.model_name == model and spec.device_type.name == device
         ]
 
         env_vars = get_media_server_docker_env_vars(model_spec)

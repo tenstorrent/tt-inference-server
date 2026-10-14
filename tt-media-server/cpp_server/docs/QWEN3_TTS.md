@@ -175,7 +175,7 @@ reports `runner_in_use: tt_qwen3_tts`.
 
 `workflows/run_docker_server.py` runs the dev-catalog specs
 `Qwen/Qwen3-TTS-12Hz-1.7B-{Base,CustomVoice,VoiceDesign}` and
-`Qwen/Qwen3-TTS-12Hz-0.6B-{Base,CustomVoice}` on N150 with this server. It sets
+`Qwen/Qwen3-TTS-12Hz-0.6B-{Base,CustomVoice}` on N150 and P150 with this server. It sets
 `SERVER_MODE=cpp`, `MODEL_SERVICE=tts`,
 `MODEL_RUNNER_TYPE=tt_qwen3_tts`, `HF_MODEL`, `DEVICE_IDS=(0)`,
 `TTS_QWEN3_SEED=0` and the 16 / 64 / 64 queues. The specs pin no image, so pass
@@ -251,8 +251,8 @@ LibriTTS-R `test.clean` speakers with 3 to 12 s clips and request
 | `tts_naturalness` | predicted MOS (UTMOS22-strong) over 8 sentences: voice-only clones on Base, speaker `ryan` on CustomVoice, the fixed description "A calm adult male voice, speaking clearly at a moderate pace." on VoiceDesign. No 0.6B request carries a description |
 
 Each release passes when its means reach these thresholds. Calibration is on
-N150 with `TTS_QWEN3_SEED=0`; upstream is Qwen3-TTS on CPU (fp32) for the same
-requests:
+N150 with `TTS_QWEN3_SEED=0`; the same thresholds apply on P150, where they have
+not been measured yet. Upstream is Qwen3-TTS on CPU (fp32) for the same requests:
 
 | checkpoint | evals | thresholds | N150 | upstream CPU |
 |---|---|---|---|---|

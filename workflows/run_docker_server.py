@@ -119,6 +119,7 @@ _CPP_TTS_RUNNER_BY_MODEL_NAME = {
 # device.name.lower() -> DEVICE_IDS (one worker per chip).
 _CPP_TTS_DEVICE_IDS = {
     "n150": "(0)",
+    "p150": "(0)",
 }
 
 # Reseeded before every request; the TTS evals rely on reproducible audio.
