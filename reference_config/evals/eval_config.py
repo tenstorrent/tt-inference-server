@@ -265,6 +265,10 @@ class HarborEvalConfig:
     dataset: str
     agent: str
     model: Optional[str] = None
+    # Harbor Hub ref for an ``org/name`` package dataset (tag, rev, or
+    # ``sha256:`` content digest). None resolves ``@latest`` at run time, so
+    # the task set can change under a run; pin released benchmarks.
+    dataset_ref: Optional[str] = None
     n_concurrent_trials: int = 1
     n_attempts: int = 1
     n_tasks: Optional[int] = None
@@ -395,6 +399,10 @@ class EvalTask:
     #   3. measured baselines (device-variant): score.
     # Only tier-2/3 fields may appear in an override block.
     device_overrides: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Fixed doc_id subset for lm-eval ``--samples`` (tier-2). Used when
+    # --eval-samples does not name the task; limit modes then take the first N
+    # of this list instead of passing ``--limit`` (lm-eval rejects both).
+    doc_ids: Optional[List[int]] = None
 
     def __post_init__(self):
         for name in ("wall_clock_timeout_seconds", "max_attempts"):
@@ -444,6 +452,23 @@ class EvalTask:
             "include_path",
             "device_overrides",
         }
+        if self.doc_ids is not None and (
+            not isinstance(self.doc_ids, (list, tuple))
+            or not self.doc_ids
+            or not all(
+                isinstance(i, int) and not isinstance(i, bool) and i >= 0
+                for i in self.doc_ids
+            )
+        ):
+            raise ValueError(
+                f"EvalTask {self.task_name!r}: doc_ids must be a non-empty list of "
+                "non-negative integers"
+            )
+        if self.doc_ids is not None and len(set(self.doc_ids)) != len(self.doc_ids):
+            raise ValueError(
+                f"EvalTask {self.task_name!r}: doc_ids contains duplicate ids; "
+                "lm-eval runs each document once, so the list must be unique"
+            )
         for device_key, overrides in self.device_overrides.items():
             if not isinstance(overrides, dict):
                 raise ValueError(
@@ -503,6 +528,24 @@ class EvalConfig:
 # Note: meta_math_hard for Llama 3.1 models has a bug: see https://github.com/tenstorrent/tt-inference-server/issues/155
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
+
+# LiveCodeBench "v6" window (contest_date >= 2025-02-01) as doc_ids of the
+# lm-eval livecodebench task (six code_generation_lite release files
+# concatenated, 1055 problems; indices are stable because releases append).
+# 131 problems; the Gemma 4 model card's LiveCodeBench v6 column uses this window.
+LIVECODEBENCH_V6_DOC_IDS = [
+    *range(904, 965),
+    *range(971, 992),
+    *range(1003, 1037),
+    *range(1040, 1055),
+]
+
+# Terminal-Bench 2.0 as published on the Harbor Hub (terminal-bench/terminal-bench-2
+# rev 1, 2026-03-20, 89 tasks). Pinned so the task set and images cannot move
+# under a release run; bump deliberately when a new revision is published.
+TERMINAL_BENCH_2_DATASET_REF = (
+    "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b"
+)
 
 _eval_config_list = [
     EvalConfig(
@@ -6411,6 +6454,130 @@ _eval_config_list = [
                     EvalLimitMode.SMOKE_TEST: 1,
                 },
             ),
+            EvalTask(
+                # LiveCodeBench on the chat endpoint with server-side thinking
+                # (same sampling as r1_gpqa_diamond). Scored on the model card's
+                # "v6" window via doc_ids (see LIVECODEBENCH_V6_DOC_IDS); the
+                # 31B measured 78.6 on BLACKHOLE_GALAXY (2026-10-13, 24 min).
+                task_name="livecodebench",
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=80.0,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
+                task_name="terminal_bench_2",
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=39.33,
+                    published_score_ref="https://www.vals.ai/models/google_gemma-4-31b-it",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
+                    agent="terminus-2",
+                    # Default Docker address pools allow ~31 compose networks per host (one per
+                    # trial); 24 leaves headroom for the runner's own networks. More needs
+                    # a daemon.json change on the runners (tt-shield #1248).
+                    n_concurrent_trials=24,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # QB2 runners have 16 CPUs; Docker refuses a container asking for more.
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                            "extra_body": {
+                                "top_k": 20,
+                            },
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/caffe-cifar-10",
+                            "terminal-bench/password-recovery",
+                            "terminal-bench/portfolio-optimization",
+                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/financial-document-processor",
+                        ],
+                        # ci-long: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                        # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
+                        EvalLimitMode.CI_LONG: [
+                            "terminal-bench/build-cython-ext",
+                            "terminal-bench/build-pmars",
+                            "terminal-bench/code-from-image",
+                            "terminal-bench/configure-git-webserver",
+                            "terminal-bench/constraints-scheduling",
+                            "terminal-bench/custom-memory-heap-crash",
+                            "terminal-bench/feal-linear-cryptanalysis",
+                            "terminal-bench/financial-document-processor",
+                            "terminal-bench/fix-code-vulnerability",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/gcode-to-text",
+                            "terminal-bench/headless-terminal",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/openssl-selfsigned-cert",
+                            "terminal-bench/path-tracing",
+                            "terminal-bench/pypi-server",
+                            "terminal-bench/query-optimize",
+                            "terminal-bench/sam-cell-seg",
+                            "terminal-bench/sparql-university",
+                            "terminal-bench/sqlite-db-truncate",
+                            "terminal-bench/torch-pipeline-parallelism",
+                            "terminal-bench/train-fasttext",
+                            "terminal-bench/video-processing",
+                            "terminal-bench/vulnerable-secret",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
         ],
     ),
     EvalConfig(
@@ -6729,6 +6896,41 @@ _eval_config_list = [
                 },
             ),
             EvalTask(
+                # LiveCodeBench on the chat endpoint with server-side thinking,
+                # scored on the model card's "v6" window (LIVECODEBENCH_V6_DOC_IDS).
+                task_name="livecodebench",
+                priority="should",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                score=EvalTaskScore(
+                    published_score=72.0,
+                    published_score_ref="https://ai.google.dev/gemma/docs/core/model_card_4",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["acc,none"],
+                        "unit": "percent",
+                    },
+                ),
+                use_chat_api=True,
+                max_concurrent=64,
+                allow_code_execution=True,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 64 * 1024,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_k": 20,
+                    "top_p": 0.95,
+                },
+                doc_ids=LIVECODEBENCH_V6_DOC_IDS,
+            ),
+            EvalTask(
                 task_name="terminal_bench_2",
                 # Informational for the release entries: no H100 reference for either task and the
                 # ci-nightly subset is five tasks, which cannot grade an 18% published score;
@@ -6748,8 +6950,10 @@ _eval_config_list = [
                 ),
                 agentic_eval_config=TerminalBenchEvalConfig(
                     dataset="terminal-bench/terminal-bench-2",
+                    dataset_ref=TERMINAL_BENCH_2_DATASET_REF,
                     agent="terminus-2",
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host.
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     # The BH-Quietbox-2 runners have 16 CPUs and Docker refuses a container
@@ -6783,13 +6987,33 @@ _eval_config_list = [
                             "terminal-bench/hf-model-inference",
                             "terminal-bench/financial-document-processor",
                         ],
-                        # ci-long: full accuracy sets, same CI-sized agentic lists.
+                        # ci-long: one wave of 24 fixed tasks (seed-42 sample of the 89;
+                        # 24 concurrent trials x 3h20 budget keeps the job under 6 h).
                         EvalLimitMode.CI_LONG: [
-                            "terminal-bench/caffe-cifar-10",
-                            "terminal-bench/password-recovery",
-                            "terminal-bench/portfolio-optimization",
-                            "terminal-bench/hf-model-inference",
+                            "terminal-bench/build-cython-ext",
+                            "terminal-bench/build-pmars",
+                            "terminal-bench/code-from-image",
+                            "terminal-bench/configure-git-webserver",
+                            "terminal-bench/constraints-scheduling",
+                            "terminal-bench/custom-memory-heap-crash",
+                            "terminal-bench/feal-linear-cryptanalysis",
                             "terminal-bench/financial-document-processor",
+                            "terminal-bench/fix-code-vulnerability",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/gcode-to-text",
+                            "terminal-bench/headless-terminal",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/openssl-selfsigned-cert",
+                            "terminal-bench/path-tracing",
+                            "terminal-bench/pypi-server",
+                            "terminal-bench/query-optimize",
+                            "terminal-bench/sam-cell-seg",
+                            "terminal-bench/sparql-university",
+                            "terminal-bench/sqlite-db-truncate",
+                            "terminal-bench/torch-pipeline-parallelism",
+                            "terminal-bench/train-fasttext",
+                            "terminal-bench/video-processing",
+                            "terminal-bench/vulnerable-secret",
                         ],
                     },
                 ),
@@ -6818,7 +7042,8 @@ _eval_config_list = [
                 agentic_eval_config=HarborEvalConfig(
                     dataset="swebench-verified",
                     agent="mini-swe-agent",
-                    n_concurrent_trials=5,
+                    # Default Docker address pools allow ~31 compose networks per host.
+                    n_concurrent_trials=24,
                     n_attempts=1,
                     n_tasks=None,
                     agent_timeout_sec=2 * 60 * 60,

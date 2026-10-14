@@ -19,7 +19,7 @@ from typing import List, Optional, Tuple, Union
 
 from llm_module import HttpServerController, RemoteOpenAIController
 from llm_module.request_overrides import resolve_request_body
-from llm_module.eval_command import build_eval_command
+from llm_module.eval_command import _resolve_eval_samples, build_eval_command
 from llm_module.eval_configs import get_llm_eval_tasks
 from report_module.schema import Block
 from utils.model_naming import slugify_model_id
@@ -795,6 +795,28 @@ def run_llm_eval(ctx: MediaContext, *, auth_token: str = "") -> List[Block]:
     return blocks
 
 
+def _apply_samples_subset_count(task, runtime_config, sample_counts: dict) -> dict:
+    """Use the ``--samples`` doc-id count as the task's sample count.
+
+    lm-eval reports ``n-samples`` as the whole dataset even when ``--samples``
+    restricted the run to a doc-id subset (EvalTask.doc_ids or --eval-samples),
+    which would grade the noise band and the per-task timing against the
+    wrong n (livecodebench: 1055 instead of 131).
+    """
+    samples_arg = _resolve_eval_samples(task, runtime_config)
+    if not samples_arg:
+        return sample_counts
+    try:
+        indices = json.loads(samples_arg).get(task.task_name)
+    except (ValueError, AttributeError):
+        return sample_counts
+    if not isinstance(indices, list) or not indices:
+        return sample_counts
+    counts = dict(sample_counts or {})
+    counts[task.task_name] = len(indices)
+    return counts
+
+
 def _score_task(
     ctx: MediaContext,
     task,
@@ -806,6 +828,7 @@ def _score_task(
     """Score one finished task using only its current attempt's result files."""
     result_files = discover_eval_results(output_path, ctx.model_spec)
     results, sample_counts = load_eval_results(result_files)
+    sample_counts = _apply_samples_subset_count(task, ctx.runtime_config, sample_counts)
     task_blocks = blocks_for_task(
         ctx,
         task,

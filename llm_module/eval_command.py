@@ -181,6 +181,20 @@ def _resolve_eval_limit(task: "EvalTask", runtime_config) -> Optional[object]:
     return task.limit_samples_map.get(limit_mode)
 
 
+def _slice_doc_ids_for_limit(task: "EvalTask", runtime_config) -> list:
+    """Apply the active limit mode to ``task.doc_ids`` (lm-eval rejects
+    ``--limit`` together with ``--samples``): an int keeps the first N ids, a
+    fraction keeps that share (at least one), smoke-test keeps the first
+    SMOKE_TEST_EVAL_LIMIT."""
+    ids = list(task.doc_ids)
+    limit = _resolve_eval_limit(task, runtime_config)
+    if limit is None:
+        return ids
+    if isinstance(limit, float) and limit < 1:
+        return ids[: max(1, int(len(ids) * limit))]
+    return ids[: int(limit)]
+
+
 def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
     """Resolve --eval-samples to a per-task JSON string for lm-eval's --samples.
 
@@ -189,7 +203,7 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
     (lmms-eval) backend that does not support the --samples flag.
     """
     eval_samples = getattr(runtime_config, "eval_samples", None)
-    if not eval_samples:
+    if not eval_samples and getattr(task, "doc_ids", None) is None:
         return None
     if task.workflow_venv_type in (
         WorkflowVenvType.EVALS_VISION,
@@ -201,16 +215,23 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
             task.task_name,
         )
         return None
-    mapping = _parse_eval_samples_mapping(eval_samples)
-    if mapping is None:
-        return None
-    indices = mapping.get(task.task_name)
+    mapping = _parse_eval_samples_mapping(eval_samples) if eval_samples else None
+    indices = mapping.get(task.task_name) if mapping else None
     if indices is None:
+        if task.doc_ids is None:
+            if mapping:
+                logger.info(
+                    "--eval-samples has no entry for task %s; skipping --samples for this task",
+                    task.task_name,
+                )
+            return None
+        indices = _slice_doc_ids_for_limit(task, runtime_config)
         logger.info(
-            "--eval-samples has no entry for task %s; skipping --samples for this task",
+            "Task %s uses its configured doc_ids subset (%d of %d) via --samples",
             task.task_name,
+            len(indices),
+            len(task.doc_ids),
         )
-        return None
     if not isinstance(indices, (list, tuple)) or not all(
         isinstance(i, int) and not isinstance(i, bool) and i >= 0 for i in indices
     ):
@@ -218,12 +239,22 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
             f"--eval-samples entry for task '{task.task_name}' must be a list of "
             f"non-negative integers; got {indices!r}"
         )
+    unique = list(dict.fromkeys(indices))
+    if len(unique) != len(indices):
+        # lm-eval selects documents by membership, so a repeated id runs once;
+        # count it once too, or the noise band and timing would be graded on
+        # an inflated n.
+        logger.warning(
+            "Task %s: %d duplicate doc_id(s) in the --samples list were dropped",
+            task.task_name,
+            len(indices) - len(unique),
+        )
     logger.info(
         "Filtering task %s to %d doc_id(s) via --samples",
         task.task_name,
-        len(indices),
+        len(unique),
     )
-    return json.dumps({task.task_name: list(indices)})
+    return json.dumps({task.task_name: unique})
 
 
 def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:
@@ -548,10 +579,12 @@ def build_eval_command(
     samples_arg = _resolve_eval_samples(task, runtime_config)
     if samples_arg is not None:
         cmd.extend(["--samples", samples_arg])
-
-    limit_arg = _resolve_eval_limit(task, runtime_config)
-    if limit_arg is not None:
-        cmd.extend(["--limit", str(limit_arg)])
+    else:
+        # lm-eval rejects --limit together with --samples; a doc_ids task
+        # already folded its limit into the sample list.
+        limit_arg = _resolve_eval_limit(task, runtime_config)
+        if limit_arg is not None:
+            cmd.extend(["--limit", str(limit_arg)])
 
     # force all cmd parts to be strs
     cmd = [str(c) for c in cmd]
