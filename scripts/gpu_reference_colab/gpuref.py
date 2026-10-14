@@ -637,6 +637,11 @@ ARCH_STACKS = {
     # config.head_dim, so the server never starts (gemma-4 run, 2026-10-12).
     "Gemma4ForConditionalGeneration": {"vllm": "0.20.0", "transformers": "5.5.3"},
     "Gemma4ForCausalLM": {"vllm": "0.20.0", "transformers": "5.5.3"},
+    # gemma4_unified (gemma-4-12B-it): first in vLLM v0.23.0, whose model code
+    # imports transformers' gemma4_unified config, first released in 5.10.0
+    # (vLLM's test pin 5.5.3 predates it; 5.14+ adds the per-layer configs
+    # that break Gemma 4 serving, see above).
+    "Gemma4UnifiedForConditionalGeneration": {"vllm": "0.23.0", "transformers": "5.10.0"},
 }  # fmt: skip
 
 
