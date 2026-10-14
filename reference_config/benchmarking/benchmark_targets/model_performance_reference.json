@@ -7909,12 +7909,13 @@
         "super_cluster": [
             {
                 "_comment": [
-                    "SUPER_CLUSTER (remote blaze endpoint, 62 slots, 1M context). Long-context",
-                    "serving points for the AgentX-style workload: ISL at the Claude Code trace",
-                    "context percentiles (60K p25, 140K p50, 310K p75, 550K p90) plus 8K and 100K,",
-                    "all with OSL 1024, at concurrency 1 and the full 62. No targets yet: the rows",
-                    "are informational until a measured block is added, like the default sweep.",
-                    "num_prompts: 2 waves of 62 up to 140K, 1 wave at 310K/550K (prefill volume),",
+                    "SUPER_CLUSTER (remote blaze endpoint, P/D, 1M context). Long-context serving",
+                    "points at the measured AgentX ISL distribution (InferenceX semianalysis",
+                    "cc_traces_weka_062126, c128 run on SC24 2026-10-14, 6,649 requests): p50 62,030,",
+                    "mean 89,033, p75 113,935, p90 184,492, p95 266,360, plus 8K as a short-context",
+                    "anchor; all OSL 1024, at concurrency 1 and 62. No targets yet: the rows are",
+                    "informational until a measured block is added, like the default sweep.",
+                    "num_prompts: 2 waves of 62 up to p75, 1 wave at p90/p95 (prefill volume),",
                     "4 / 2 at concurrency 1. Run with ONLY_BENCHMARK_TARGETS=1 to skip the default",
                     "ISL/OSL sweep and run only these."
                 ],
@@ -7942,7 +7943,7 @@
                 "targets": {}
             },
             {
-                "isl": 61440,
+                "isl": 62030,
                 "osl": 1024,
                 "max_concurrency": 1,
                 "num_prompts": 2,
@@ -7954,7 +7955,7 @@
                 "targets": {}
             },
             {
-                "isl": 61440,
+                "isl": 62030,
                 "osl": 1024,
                 "max_concurrency": 62,
                 "num_prompts": 124,
@@ -7966,7 +7967,7 @@
                 "targets": {}
             },
             {
-                "isl": 102400,
+                "isl": 89033,
                 "osl": 1024,
                 "max_concurrency": 1,
                 "num_prompts": 2,
@@ -7978,7 +7979,7 @@
                 "targets": {}
             },
             {
-                "isl": 102400,
+                "isl": 89033,
                 "osl": 1024,
                 "max_concurrency": 62,
                 "num_prompts": 124,
@@ -7990,7 +7991,7 @@
                 "targets": {}
             },
             {
-                "isl": 143360,
+                "isl": 113935,
                 "osl": 1024,
                 "max_concurrency": 1,
                 "num_prompts": 2,
@@ -8002,7 +8003,7 @@
                 "targets": {}
             },
             {
-                "isl": 143360,
+                "isl": 113935,
                 "osl": 1024,
                 "max_concurrency": 62,
                 "num_prompts": 124,
@@ -8014,7 +8015,7 @@
                 "targets": {}
             },
             {
-                "isl": 317440,
+                "isl": 184492,
                 "osl": 1024,
                 "max_concurrency": 1,
                 "num_prompts": 2,
@@ -8026,7 +8027,7 @@
                 "targets": {}
             },
             {
-                "isl": 317440,
+                "isl": 184492,
                 "osl": 1024,
                 "max_concurrency": 62,
                 "num_prompts": 62,
@@ -8038,7 +8039,7 @@
                 "targets": {}
             },
             {
-                "isl": 563200,
+                "isl": 266360,
                 "osl": 1024,
                 "max_concurrency": 1,
                 "num_prompts": 2,
@@ -8050,7 +8051,7 @@
                 "targets": {}
             },
             {
-                "isl": 563200,
+                "isl": 266360,
                 "osl": 1024,
                 "max_concurrency": 62,
                 "num_prompts": 62,
