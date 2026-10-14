@@ -239,6 +239,9 @@ ALL_NA = [
     # QB2 business set: card scores are not like-for-like, so no published score is
     # cited (Muse-Glimmer-30B is graded on its measured GPU references, #5353).
     "meta-models/Muse-Glimmer-30B",
+    # Card scores are NeMo-Evaluator numbers (AIME25, not AIME24; no MATH-500), so
+    # every task grades on colab GPU references measured with these configs (#5353).
+    "ibm-granite/granite-4.2-30b",
 ]
 
 
@@ -375,3 +378,23 @@ def test_gemma4_31b_tasks_request_thinking_themselves():
         assert resolve_request_body(tasks[name]) == {
             "chat_template_kwargs": {"enable_thinking": True}
         }, name
+
+
+def test_granite_42_30b_follows_the_dense_reasoning_convention():
+    """Same must-evals and budgets as the comparable dense ~30B reasoning rows
+    (Qwen3-32B / QwQ-32B), with the card's required sampling and a request
+    timeout that lets a full-length generation finish."""
+    from reference_config.evals.eval_config import QWQ_R1_REQUEST_TIMEOUT_S
+
+    tasks = {
+        t.task_name: t for t in _eval_config_map["ibm-granite/granite-4.2-30b"].tasks
+    }
+    assert sorted(tasks) == ["r1_aime24", "r1_gpqa_diamond", "r1_math500"]
+    for name, task in tasks.items():
+        assert task.priority == "must", name
+        assert task.score.gpu_reference_score is None, name  # set from colab only
+        assert task.model_kwargs["max_length"] == 65536
+        assert int(task.model_kwargs["timeout"]) == QWQ_R1_REQUEST_TIMEOUT_S
+        assert task.gen_kwargs["max_gen_toks"] == 32768
+        assert task.gen_kwargs["temperature"] == 1.0
+        assert task.gen_kwargs["top_p"] == 0.95

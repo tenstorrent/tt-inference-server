@@ -4518,6 +4518,138 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Quetzal (impl=quetzal) war-room row on P300X2: ibm-granite/granite-4.2-30b,
+    # a dense ~30B reasoning model (built-in <think>, enable_thinking defaults to
+    # true in its chat template at 9e668ce1). Must-evals follow the convention for
+    # the comparable dense ~30B reasoning rows (Qwen/Qwen3-32B, Qwen/QwQ-32B):
+    # r1_aime24, r1_math500, r1_gpqa_diamond, full sets, completions API with the
+    # chat template applied client-side (thinking on by the template default),
+    # max_gen_toks 32768. Sampling is the model card's required setting for all
+    # modes: temperature 1.0, top_p 0.95, do_sample.
+    #
+    # No published score is like-for-like: the card (9e668ce1 README, "Evaluation
+    # Results", 30B Dense column) reports AIME25 89.17, GPQA 66.41,
+    # LiveCodeBench v6 75.77 and MMLU-Pro 77.60, measured with a NeMo Evaluator
+    # harness -- AIME25 is not AIME24, there is no MATH-500 entry, and the GPQA
+    # prompt/extraction is not lm-eval's r1_gpqa_diamond. Every task therefore
+    # grades against a colab GPU reference measured with exactly these configs
+    # (issue #5353) and is NA (not a strict pass) until it lands.
+    EvalConfig(
+        hf_model_repo="ibm-granite/granite-4.2-30b",
+        tasks=[
+            EvalTask(
+                task_name="r1_aime24",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # A full-length (32768-token) reasoning generation must
+                    # finish, never be cut: same derivation and value as
+                    # QWQ_R1_REQUEST_TIMEOUT_S (dense ~32B on P300X2 at B32);
+                    # re-derive from the local spec / first Shield run.
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_math500",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # A full-length (32768-token) reasoning generation must
+                    # finish, never be cut: same derivation and value as
+                    # QWQ_R1_REQUEST_TIMEOUT_S (dense ~32B on P300X2 at B32);
+                    # re-derive from the local spec / first Shield run.
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                score=EvalTaskScore(
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD: colab GPU reference with this task config (issue #5353)",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                model_kwargs={
+                    "max_length": 65536,
+                    # A full-length (32768-token) reasoning generation must
+                    # finish, never be cut: same derivation and value as
+                    # QWQ_R1_REQUEST_TIMEOUT_S (dense ~32B on P300X2 at B32);
+                    # re-derive from the local spec / first Shield run.
+                    "timeout": str(QWQ_R1_REQUEST_TIMEOUT_S),
+                },
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 32768,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.5,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="deepseek-ai/DeepSeek-R1-Distill-Llama-70B",
         tasks=[
