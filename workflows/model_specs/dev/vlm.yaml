@@ -431,6 +431,10 @@ templates:
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1
+    # di/dt mitigation for Wormhole (ttnn compute_throttle_utils): without it, long all-core prefills (34k-token video,
+    # 20 images) stall one random core on a random chip (device timeout). On the chip that stalled in 7/9 runs, 12-iteration
+    # 25k-token stress: level 1 hung on the first prefill, levels 3 and 5 passed 12/12; level 5 costs ~45% suite wall time.
+    TT_MM_THROTTLE_PERF: 3
     # The adapter is not a built-in plugin model: select it for the checkpoint's architecture.
     TT_MODEL_CLASS_OVERRIDES: "TTMolmo2ForConditionalGeneration=models.demos.molmo2.tt.generator_vllm:Molmo2ForConditionalGeneration"
   supported_modalities:
