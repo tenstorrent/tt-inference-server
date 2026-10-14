@@ -135,7 +135,9 @@ templates:
         TT_MESH_GRAPH_DESC_PATH: "../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_mesh_graph_descriptor.textproto"
   status: EXPERIMENTAL
 
-# Qwen3-TTS on the cpp_server backend: one deployment per release.
+# Qwen3-TTS on the cpp_server backend (MODEL_RUNNER_TYPE=tt_qwen3_tts), one
+# deployment per release; run_docker_server.py's _CPP_TTS_* tables route these
+# names there. Guide: tt-media-server/cpp_server/docs/QWEN3_TTS.md
 - weights:
     - Qwen/Qwen3-TTS-12Hz-1.7B-Base
   impl: qwen3_tts

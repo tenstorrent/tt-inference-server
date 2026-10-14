@@ -14,8 +14,8 @@ real engine, so every metric below is exercised through the same
 engine's call pattern.
 
 The expected values below are for TTS-2 (`tt_tts` / `mock_tts`). The Qwen3-TTS
-runner (`tt_qwen3_tts`) reports the same series; how its numbers differ is in
-[`QWEN3_TTS.md`](QWEN3_TTS.md#metrics).
+runner (`tt_qwen3_tts`) needs no TTS tokenizer and reports the same series; how
+its numbers differ is in [`QWEN3_TTS.md`](QWEN3_TTS.md#metrics).
 
 ## Prerequisite: a TTS tokenizer
 
