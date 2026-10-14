@@ -165,3 +165,17 @@ templates:
       max_context: 65536  # 64 * 1024
       default_impl: true
   status: EXPERIMENTAL
+
+- weights:
+    - Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign
+  impl: qwen3_tts
+  min_disk_gb: 15
+  min_ram_gb: 8
+  model_type: TEXT_TO_SPEECH
+  inference_engine: MEDIA
+  device_model_specs:
+    - device: N150
+      max_concurrency: 1
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+  status: EXPERIMENTAL

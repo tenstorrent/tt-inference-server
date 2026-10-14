@@ -10074,7 +10074,7 @@ _eval_config_list = [
             ),
         ],
     ),
-    # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145.
+    # Calibrated on N150, 1.7B, seed 0: SECS 0.962, margin +0.128, UTMOS 4.505 / 4.145 / 4.420 (Base / CustomVoice / VoiceDesign).
     EvalConfig(
         hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-Base",
         tasks=[
@@ -10147,6 +10147,33 @@ _eval_config_list = [
                     "min_reference_seconds": 3,
                     "max_reference_seconds": 12,
                     "utmos_threshold": 3.85,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        tasks=[
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=85.5,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "voice_design",
+                    "description": "A calm adult male voice, speaking clearly at a moderate pace.",
+                    "language": "English",
+                    # Same texts as the Base battery.
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 4.1,
                 },
             ),
         ],

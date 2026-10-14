@@ -128,13 +128,16 @@ class TestClientTargets:
         assert bench._tts_client_targets(SimpleNamespace(all_params=[])) == {}
 
     @pytest.mark.parametrize(
-        "repo, release, speaker",
+        "repo, release, speaker, described",
         [
-            ("Qwen/Qwen3-TTS-12Hz-1.7B-Base", "base", None),
-            ("Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice", "custom_voice", "ryan"),
+            ("Qwen/Qwen3-TTS-12Hz-1.7B-Base", "base", None, False),
+            ("Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice", "custom_voice", "ryan", False),
+            ("Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign", "voice_design", None, True),
         ],
     )
-    def test_qwen3_settings_come_from_the_eval_config(self, repo, release, speaker):
+    def test_qwen3_settings_come_from_the_eval_config(
+        self, repo, release, speaker, described
+    ):
         from reference_config.evals.eval_config import ALL_EVAL_CONFIGS
 
         targets = bench._tts_client_targets(
@@ -147,6 +150,7 @@ class TestClientTargets:
             speaker,
             "English",
         )
+        assert bool(client.description) == described
 
 
 class TestMediaServerBenchmark:
@@ -223,6 +227,22 @@ class TestRunBenchmark:
         assert fields["text"] == bench.DEFAULT_TTS_TEXT
         assert fields["language"] == "English"
         assert parse_pcm16_wav_header(fields["voice"])[:2] == (16000, 1)
+
+    def test_voice_design_sends_its_description_and_no_clip(self, server):
+        log = server(_Response(chunks=[_streamed_wav_header() + b"\0" * 24000]))
+        targets = {
+            "tts_api": "qwen3_cpp",
+            "qwen3_release": "voice_design",
+            "description": "A calm voice.",
+            "language": "English",
+        }
+        statuses = bench._run_tts_benchmark(_ctx(targets), 1)
+        assert statuses[0].status
+        assert log[1]["json"] == {
+            "text": bench.DEFAULT_TTS_TEXT,
+            "language": "English",
+            "description": "A calm voice.",
+        }
 
     def test_failures_are_reported_not_raised(self, server):
         server(_Response(status=401))

@@ -1312,7 +1312,12 @@ class TestMediaServerDockerEnvVars:
         assert env_vars["DEVICE_IDS"].replace(" ", "").count("(") > 1
 
     @pytest.mark.parametrize(
-        "model", ["Qwen3-TTS-12Hz-1.7B-Base", "Qwen3-TTS-12Hz-1.7B-CustomVoice"]
+        "model",
+        [
+            "Qwen3-TTS-12Hz-1.7B-Base",
+            "Qwen3-TTS-12Hz-1.7B-CustomVoice",
+            "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+        ],
     )
     def test_qwen3_tts_uses_cpp_server(self, model):
         # Qwen3-TTS is in the dev catalog only.

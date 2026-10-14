@@ -336,3 +336,24 @@ class TestQwen3EvalConfig:
         client = make_tts_client(targets)
         assert client.has_default_voice and client.speaker
         assert 1.0 < targets["utmos_threshold"] < 5.0
+
+    def test_voice_design_registers_naturalness_with_a_fixed_description(self):
+        tasks = self._tasks("Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign")
+        assert set(tasks) == {"tts_naturalness"}
+        targets = tts_eval_tests._task_targets(tasks["tts_naturalness"])
+        client = make_tts_client(targets)
+        assert client.has_default_voice and not client.can_clone
+        assert 1.0 < targets["utmos_threshold"] < 5.0
+        request = client.build_request("text a", None)
+        assert request == {
+            "json": {
+                "text": "text a",
+                "language": "English",
+                "description": targets["description"],
+            }
+        }
+        clips = [("s1", b"A", "text a"), ("s2", b"B", "text b")]
+        battery = tts_naturalness_test.naturalness_battery(
+            clips, cloned=not client.has_default_voice
+        )
+        assert battery == [("text a", None), ("text b", None)]
