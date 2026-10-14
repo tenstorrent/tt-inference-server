@@ -557,6 +557,11 @@ def _check_request_media(request: VideoGenerateRequest) -> None:
             check_reference_clip_durations(
                 video_durations=[probe.duration_s for probe in videos],
                 audio_durations=[probe.duration_s for probe in audios],
+                soundtrack_durations=[
+                    probe.audio_duration_s
+                    for probe in videos
+                    if probe.audio_channels is not None
+                ],
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

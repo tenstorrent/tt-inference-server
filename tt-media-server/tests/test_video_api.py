@@ -1337,8 +1337,8 @@ class TestMiniMaxH3Admission:
             ),
         )
         probes = [
-            ReferenceMediaProbe(5.0, (1280, 720), 30.0, 2),
-            ReferenceMediaProbe(4.0, None, None, 1),
+            ReferenceMediaProbe(5.0, (1280, 720), 30.0, 2, 5.0),
+            ReferenceMediaProbe(4.0, None, None, 1, 4.0),
         ]
         with _decoded_size((1024, 1024)), patch(
             "tt_model_runners.minimax_h3_policy.probe_reference_media",
@@ -1356,6 +1356,47 @@ class TestMiniMaxH3Admission:
             },
             {"name": "references.audios[0]", "kind": "audio", "audio_channels": 1},
         ]
+
+    @pytest.mark.parametrize("soundtrack_channels, refused", [(2, True), (None, False)])
+    @patch("domain.video_generate_request.get_settings")
+    def test_video_soundtrack_counts_toward_combined_audio(
+        self, mock_settings, h3_admission, soundtrack_channels, refused
+    ):
+        from domain.video_ref2va_generate_request import (
+            MediaSource,
+            MultimodalReferences,
+            VideoRef2VAGenerateRequest,
+        )
+        from open_ai_api.video import _check_request_media
+        from tt_model_runners.minimax_h3_policy import ReferenceMediaProbe
+
+        mock_settings.return_value.model_runner = "tt-minimax-h3-ref2va"
+        request = VideoRef2VAGenerateRequest(
+            prompt="a fox",
+            references=MultimodalReferences(
+                videos=[MediaSource(b64="AAAA")],
+                audios=[MediaSource(b64="AAAA")],
+            ),
+        )
+        soundtrack_s = 10.08 if soundtrack_channels else None
+        probes = [
+            ReferenceMediaProbe(
+                10.125, (1344, 768), 24.0, soundtrack_channels, soundtrack_s
+            ),
+            ReferenceMediaProbe(7.0, None, None, 2, 7.0),
+        ]
+        with patch(
+            "tt_model_runners.minimax_h3_policy.probe_reference_media",
+            side_effect=probes,
+        ):
+            if refused:
+                with pytest.raises(HTTPException) as exc_info:
+                    _check_request_media(request)
+                assert exc_info.value.status_code == 422
+                assert "combined audio duration is 17.08 s" in exc_info.value.detail
+            else:
+                _check_request_media(request)
+                h3_admission.assert_called_once()
 
     @patch("domain.video_generate_request.get_settings")
     def test_unreadable_reference_clip_is_a_422(self, mock_settings, h3_admission):

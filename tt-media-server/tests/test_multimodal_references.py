@@ -2,6 +2,7 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
+import numpy as np
 import pytest
 from domain.video_i2v_generate_request import MAX_BASE64_IMAGE_LEN
 from domain.video_ref2va_generate_request import (
@@ -12,7 +13,10 @@ from domain.video_ref2va_generate_request import (
     VideoRef2VAGenerateRequest,
 )
 from pydantic import ValidationError
-from tt_model_runners.minimax_h3_policy import check_reference_clip_durations
+from tt_model_runners.minimax_h3_policy import (
+    check_reference_clip_durations,
+    probe_reference_media,
+)
 
 _TINY_PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
@@ -117,3 +121,47 @@ class TestReferenceClipDurations:
             check_reference_clip_durations(
                 video_durations=[8.0, 8.0], audio_durations=[]
             )
+
+    def test_soundtracks_count_toward_combined_audio(self):
+        with pytest.raises(ValueError, match="combined audio duration is 17.08 s"):
+            check_reference_clip_durations(
+                video_durations=[10.125],
+                audio_durations=[7.0],
+                soundtrack_durations=[10.08],
+            )
+
+    def test_soundtracks_and_audio_at_the_limit(self):
+        check_reference_clip_durations(
+            video_durations=[8.0], audio_durations=[7.0], soundtrack_durations=[8.0]
+        )
+
+
+def _encode_video_with_soundtrack(path, video_s, audio_s):
+    import av
+
+    fps, sample_rate = 16, 32000
+    with av.open(str(path), "w") as container:
+        video = container.add_stream("libx264", rate=fps)
+        video.width, video.height, video.pix_fmt = 64, 32, "yuv420p"
+        audio = container.add_stream("aac", rate=sample_rate, layout="stereo")
+        for _ in range(int(video_s * fps)):
+            frame = av.VideoFrame.from_ndarray(
+                np.zeros((32, 64, 3), dtype=np.uint8), format="rgb24"
+            )
+            container.mux(video.encode(frame))
+        container.mux(video.encode())
+        samples = np.zeros((2, 1024), dtype=np.float32)
+        for index in range(int(audio_s * sample_rate) // 1024):
+            frame = av.AudioFrame.from_ndarray(samples, format="fltp", layout="stereo")
+            frame.sample_rate, frame.pts = sample_rate, index * 1024
+            container.mux(audio.encode(frame))
+        container.mux(audio.encode())
+
+
+def test_probe_times_a_soundtrack_on_its_own_stream(tmp_path):
+    path = tmp_path / "clip.mp4"
+    _encode_video_with_soundtrack(path, video_s=4, audio_s=2)
+    probe = probe_reference_media(path.read_bytes())
+    assert probe.audio_channels == 2
+    assert probe.duration_s == pytest.approx(4, abs=0.1)
+    assert probe.audio_duration_s == pytest.approx(2, abs=0.1)

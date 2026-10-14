@@ -15,6 +15,7 @@ pipeline truncates instead of refusing.
 """
 
 import io
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -107,13 +108,14 @@ class ReferenceMediaProbe:
     """Container metadata of one reference clip.
 
     ``size`` (width, height) and ``fps`` are those of the first video stream, ``audio_channels``
-    that of the first audio stream; each is None when the stream is absent.
+    and ``audio_duration_s`` those of the first audio stream; each is None when the stream is absent.
     """
 
     duration_s: float
     size: tuple[int, int] | None
     fps: float | None
     audio_channels: int | None
+    audio_duration_s: float | None
 
 
 def probe_reference_media(raw: bytes) -> ReferenceMediaProbe:
@@ -129,19 +131,28 @@ def probe_reference_media(raw: bytes) -> ReferenceMediaProbe:
         with av.open(io.BytesIO(raw)) as container:
             if container.duration is None or container.duration <= 0:
                 raise ValueError("media container reports no duration")
-            size = fps = audio_channels = None
+            size = fps = audio_channels = audio_duration_s = None
             if container.streams.video:
                 stream = container.streams.video[0]
                 size = (stream.codec_context.width, stream.codec_context.height)
                 rate = stream.average_rate or stream.guessed_rate
                 fps = float(rate) if rate else None
+            duration_s = container.duration / 1_000_000
             if container.streams.audio:
-                audio_channels = len(container.streams.audio[0].layout.channels)
+                stream = container.streams.audio[0]
+                audio_channels = len(stream.layout.channels)
+                # A soundtrack can end before its video, so it is timed on its own stream.
+                audio_duration_s = (
+                    float(stream.duration * stream.time_base)
+                    if stream.duration
+                    else duration_s
+                )
             return ReferenceMediaProbe(
-                duration_s=container.duration / 1_000_000,
+                duration_s=duration_s,
                 size=size,
                 fps=fps,
                 audio_channels=audio_channels,
+                audio_duration_s=audio_duration_s,
             )
     except av.FFmpegError as exc:  # av.AVError was removed in PyAV 14
         raise ValueError("media could not be probed") from exc
@@ -151,8 +162,13 @@ def check_reference_clip_durations(
     *,
     video_durations: list[float],
     audio_durations: list[float],
+    soundtrack_durations: Sequence[float] = (),
 ) -> None:
-    """Refuse reference clips outside the 2–15 s / combined ≤ 15 s window."""
+    """Refuse reference clips outside the 2–15 s / combined ≤ 15 s window.
+
+    ``soundtrack_durations`` are the audio tracks of the reference videos: the pipeline conditions
+    on them as audio references, so they count toward the combined audio duration.
+    """
 
     def _check(kind: str, durations: list[float]) -> None:
         for index, seconds in enumerate(durations):
@@ -170,3 +186,11 @@ def check_reference_clip_durations(
 
     _check("videos", video_durations)
     _check("audios", audio_durations)
+    audio_total = sum(audio_durations)
+    soundtrack_total = sum(soundtrack_durations)
+    if audio_total + soundtrack_total > MINIMAX_H3_REF_COMBINED_MAX_S:
+        raise ValueError(
+            f"combined audio duration is {audio_total + soundtrack_total:g} s (audio references "
+            f"{audio_total:g} s + video soundtracks {soundtrack_total:g} s); must be "
+            f"≤ {MINIMAX_H3_REF_COMBINED_MAX_S:g} s"
+        )
