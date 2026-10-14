@@ -30,6 +30,7 @@ from workflows.quetzal_package import (
     quetzal_package_env,
     resolve_quetzal_package_mount,
 )
+from workflows.tt_metal_file_overlay import tt_metal_file_overlay_args
 from workflows.utils import (
     default_dotenv_path,
     ensure_readwriteable_dir,
@@ -527,6 +528,7 @@ def generate_docker_run_command(
         "--ipc", "host",
         *device_map_strs,
         "--mount", "type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G",
+        *tt_metal_file_overlay_args(model_spec, runtime_config, repo_root_path),
     ]
 
     if model_spec.inference_engine in (

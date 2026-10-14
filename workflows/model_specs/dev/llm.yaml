@@ -968,6 +968,10 @@ templates:
       reasoning_parser_name: gemma4
       tool_call_parser_name: gemma4
       benchmark_max_concurrency: 1
+      tt_metal_file_overlays:
+        - source: reference_config/precision/gemma4_26b_current_demo_bfp8.json
+          target: models/demos/gemma4_26b_a4b_qb2/config/precision.json
+          sha256: 46389c08f1c99f068669f66e902cc34daf00e54e7c7d8014dc1539b3dd1af954
 
 - weights:
     - google/gemma-4-12B-it
