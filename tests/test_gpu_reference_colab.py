@@ -1872,3 +1872,103 @@ def test_agentic_fingerprint_ignores_where_the_sandboxes_run(monkeypatch):
     assert fp(replace(base, agent_kwargs={"temperature": 1.0})) != f0
     # The lm-eval fingerprint does not see agentic tasks at all.
     assert gpuref.eval_fingerprint(model, "be23028b", gpuref.serving_stack(None)) != f0
+
+
+# --- serve mode: Shield-run records (review on #5395) -------------------------
+
+
+def _serve_helpers(tmp_path, gh_downloads_report):
+    """Run the driver's serve-record helpers under `set -euo pipefail`, with
+    `field` reading the JSON record, `gpuref driver-status` writing it, and `gh
+    run download` either producing a report or failing."""
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    block = driver.split("# >>> serve-record helpers", 1)[1].split(
+        "# <<< serve-record helpers", 1
+    )[0]
+    block = block.split("\n", 1)[1]  # drop the rest of the marker's comment line
+    gh_body = (
+        'mkdir -p "$7" && echo \'{}\' > "$7/report_x.json"'
+        if gh_downloads_report
+        else "return 1"
+    )
+    stubs = f"""
+set -euo pipefail
+SHIELD_DIR={tmp_path}/shield SHIELD_REPO=org/shield TTIS_SHA=abc REPORT_RETRY_SECONDS=0
+mkdir -p "$SHIELD_DIR"
+log() {{ echo "LOG $*" >&2; }}
+field() {{ python3 -c 'import json,sys; print((json.load(open(sys.argv[1])) or {{}}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }}
+gpuref() {{  # driver-status REC k=v ...: write the record
+    shift; local rec="$1"; shift
+    python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@"
+}}
+gh() {{  # run download RUN -R REPO -D DIR -p PAT
+    {gh_body}
+}}
+"""
+    return stubs + "#\n" + block
+
+
+def _bash(script):
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+
+
+def test_first_serve_pass_reads_no_run_id_without_exiting(tmp_path):
+    # No record exists on the first pass. Under set -e the old
+    # `run_id="$([[ -s rec ]] && field ...)"` exited the driver right here.
+    script = _serve_helpers(tmp_path, True) + (
+        f'run_id="$(record_run_id {tmp_path}/shield/t.json)"\n'
+        'echo "RUN_ID=[${run_id}]"\n'
+    )
+    out = _bash(script)
+    assert out.returncode == 0, out.stderr
+    assert "RUN_ID=[]" in out.stdout
+    rec = tmp_path / "shield" / "t.json"
+    rec.write_text(json.dumps({"run_id": "123"}))
+    out = _bash(script)
+    assert out.returncode == 0 and "RUN_ID=[123]" in out.stdout
+
+
+def test_failed_report_download_is_recorded_pending_not_completed(tmp_path):
+    rec = tmp_path / "shield" / "t.json"
+    script = _serve_helpers(tmp_path, False) + (
+        f"REPORT_TRIES=2\nretry_report t {rec} 99 success && echo GOT || echo PENDING\n"
+    )
+    out = _bash(script)
+    assert out.returncode == 0, out.stderr
+    assert "PENDING" in out.stdout
+    assert json.loads(rec.read_text())["state"] == "report_pending"
+    assert out.stderr.count("not downloaded") == 2
+
+
+def test_report_retrieval_is_retried_until_the_report_is_on_disk(tmp_path):
+    rec = tmp_path / "shield" / "t.json"
+    pending = (
+        _serve_helpers(tmp_path, False)
+        + f"retrieve_report t {rec} 99 success || true\n"
+    )
+    assert _bash(pending).returncode == 0
+    assert json.loads(rec.read_text())["state"] == "report_pending"
+    # A later pass (or re-run) retrieves it and only then records completed.
+    ok = (
+        _serve_helpers(tmp_path, True)
+        + f"REPORT_TRIES=3\nretry_report t {rec} 99 success && echo GOT\n"
+    )
+    out = _bash(ok)
+    assert out.returncode == 0 and "GOT" in out.stdout, out.stderr
+    record = json.loads(rec.read_text())
+    assert record["state"] == "completed" and record["run_id"] == "99"
+    assert (tmp_path / "shield" / "t" / "report_x.json").exists()
+
+
+def test_rerun_retrieves_a_pending_report_and_never_redispatches():
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    loop = driver.split('for task in "${SERVE_TASKS[@]}"; do\n        rec=', 1)[1]
+    head = loop.split("while :; do", 1)[0]
+    # Completed only counts as done when the report is on disk ...
+    assert 'report_on_disk "${SHIELD_DIR}/${task}"' in head
+    # ... and a completed/report_pending record retries retrieval and moves on,
+    # before any dispatch code is reached.
+    assert '"${rec_state}" == "report_pending"' in head
+    assert "retry_report" in head and "shield_dispatch" not in head
+    assert 'run_id="$(record_run_id "${rec}")"' in driver
+    assert 'run_id="$( [[ -s "${rec}" ]]' not in driver
