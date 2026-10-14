@@ -12,6 +12,7 @@ import importlib.util
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -1972,3 +1973,139 @@ def test_rerun_retrieves_a_pending_report_and_never_redispatches():
     assert "retry_report" in head and "shield_dispatch" not in head
     assert 'run_id="$(record_run_id "${rec}")"' in driver
     assert 'run_id="$( [[ -s "${rec}" ]]' not in driver
+
+
+# --- report-only resume keeps the original serving provenance (#5395) --------
+
+
+def _resume_helpers(tmp_path, tasks, gh_downloads_report, prov=None):
+    """The serve-record helpers plus status/summary/shield-provenance stubs.
+    gpuref shield-provenance echoes the GPU it reads from --prov, so a test
+    can see which provenance graded the run."""
+    out_dir = tmp_path / "out"
+    model_dir = out_dir / "results" / "org__m"
+    model_dir.mkdir(parents=True)
+    if prov is not None:
+        (model_dir / "provenance.json").write_text(json.dumps(prov))
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    block = driver.split("# >>> serve-record helpers", 1)[1].split(
+        "# <<< serve-record helpers", 1
+    )[0]
+    block = block.split("\n", 1)[1]
+    gh_body = (
+        'mkdir -p "$7" && echo \'{}\' > "$7/report_x.json"'
+        if gh_downloads_report
+        else "return 1"
+    )
+    return (
+        f"""
+set -euo pipefail
+OUT_DIR={out_dir} SHIELD_DIR={out_dir}/shield SHIELD_REPO=org/shield TTIS_SHA=abc
+REPORT_RETRY_SECONDS=0 REPORT_TRIES=2 ROLLOVERS=0 AGENTIC_TASKS={",".join(tasks)}
+SERVE_PROV={model_dir}/provenance.json
+SERVE_TASKS=({" ".join(tasks)})
+mkdir -p "$SHIELD_DIR"
+log() {{ echo "LOG $*" >&2; }}
+status() {{ echo "STATUS $*" >&2; }}
+start_session() {{ echo "VM_STARTED" >&2; return 1; }}
+field() {{ python3 -c 'import json,sys; print((json.load(open(sys.argv[1])) or {{}}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }}
+gpuref() {{
+    case "$1" in
+      driver-status) shift; local rec="$1"; shift
+        python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@" ;;
+      shield-provenance) python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); print("GRADED_ON " + p["gpu"]["name"], file=sys.stderr); print("ok")' "$3" ;;
+      summary) echo "SUMMARY" ;;
+    esac
+}}
+gh() {{ {gh_body}; }}
+#
+"""
+        + block
+    )
+
+
+def _record(tmp_path, task, **fields):
+    shield = tmp_path / "out" / "shield"
+    shield.mkdir(parents=True, exist_ok=True)
+    (shield / f"{task}.json").write_text(json.dumps({"task": task, **fields}))
+
+
+def test_report_pending_resume_retrieves_reports_without_starting_a_vm(tmp_path):
+    h100 = {"gpu": {"name": "NVIDIA H100 80GB HBM3"}, "status": "ok"}
+    script = _resume_helpers(tmp_path, ["tb2"], True, prov=h100)
+    _record(tmp_path, "tb2", state="report_pending", run_id="77", conclusion="success")
+    out = _bash(script + 'serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"\n')
+    assert out.returncode == 0, out.stderr
+    assert "HANDLED rc=0" in out.stdout
+    assert "VM_STARTED" not in out.stderr
+    assert "GRADED_ON NVIDIA H100 80GB HBM3" in out.stderr
+    record = json.loads((tmp_path / "out" / "shield" / "tb2.json").read_text())
+    assert record["state"] == "completed"
+    # The original serving provenance is untouched.
+    prov = tmp_path / "out" / "results" / "org__m" / "provenance.json"
+    assert json.loads(prov.read_text()) == h100
+
+
+def test_resume_needing_a_dispatch_still_uses_a_vm(tmp_path):
+    script = _resume_helpers(
+        tmp_path, ["tb2", "swe"], True, prov={"gpu": {"name": "x"}}
+    )
+    _record(tmp_path, "tb2", state="completed", run_id="1", conclusion="success")
+    out = _bash(script + "serve_report_only_resume || echo NEEDS_VM\n")
+    assert out.returncode == 0 and "NEEDS_VM" in out.stdout, out.stderr
+
+
+def test_report_only_resume_without_provenance_fails_instead_of_inventing_one(tmp_path):
+    script = _resume_helpers(tmp_path, ["tb2"], True, prov=None)
+    _record(tmp_path, "tb2", state="report_pending", run_id="77", conclusion="success")
+    out = _bash(script + 'serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"\n')
+    assert out.returncode == 0 and "HANDLED rc=1" in out.stdout, out.stderr
+    assert "VM_STARTED" not in out.stderr and "no serving provenance" in out.stderr
+
+
+def test_a_later_fetch_never_replaces_the_serving_provenance(tmp_path):
+    h100 = {"gpu": {"name": "NVIDIA H100 80GB HBM3"}}
+    script = _resume_helpers(tmp_path, ["tb2"], True, prov=h100)
+    prov = tmp_path / "out" / "results" / "org__m" / "provenance.json"
+    saved = tmp_path / "kept.json"
+    saved.write_text(prov.read_text())
+    # A fetch from a new VM (A100) overwrote the file.
+    prov.write_text(json.dumps({"gpu": {"name": "NVIDIA A100-SXM4-40GB"}}))
+    out = _bash(script + f"keep_serving_provenance {saved}\n")
+    assert out.returncode == 0, out.stderr
+    assert json.loads(prov.read_text()) == h100
+    refetched = list(prov.parent.glob("provenance.refetch-*.json"))
+    assert len(refetched) == 1 and "A100" in refetched[0].read_text()
+
+
+def test_report_only_resume_runs_before_any_vm_is_started():
+    driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
+    resume = driver.index("serve_report_only_resume; then exit")
+    first_start = driver.index("\nstart_session\n")
+    assert resume < first_start
+    tail = driver.split("# Every task ran: stop serving", 1)[1]
+    assert "keep_serving_provenance" in tail.split("finish_serve", 1)[0]
+
+
+def test_serve_secrets_dir_is_never_chmodded_and_files_stay_0600(tmp_path):
+    src = (SCRIPT_DIR / "snippets" / "install_serve_secrets.py").read_text()
+    assert "os.chmod(S," not in src  # the Cycode-flagged permissive chmod
+    work = tmp_path / "content" / "gpuref"
+    work.mkdir(parents=True)
+    for name in ("endpoint_api_key", "ngrok_authtoken"):
+        (work / f"{name}.upload").write_text("secret-" + name)
+    code = src.replace('"/content/gpuref"', repr(str(work)))
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert "secret" not in out.stdout + out.stderr
+    secrets = work / "secrets"
+    assert stat.S_IMODE(secrets.stat().st_mode) == 0o700
+    for f in secrets.iterdir():
+        assert stat.S_IMODE(f.stat().st_mode) == 0o600, f
+    # A pre-existing group/other-accessible secrets dir is refused, not reused.
+    loose = tmp_path / "loose" / "gpuref"
+    (loose / "secrets").mkdir(parents=True)
+    os.chmod(loose / "secrets", 0o755)
+    code = src.replace('"/content/gpuref"', repr(str(loose)))
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert out.returncode != 0 and "REFUSED" in out.stderr

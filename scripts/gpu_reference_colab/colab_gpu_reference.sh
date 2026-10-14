@@ -395,19 +395,14 @@ launch_runner() {   # steps 3-4 on a fresh (or dead-runner) VM
     STATE="RUNNING"
 }
 
-start_session
-if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then launch_runner; fi
-
-# 5s --serve: serve until Shield's endpoint tests have run every task -----------
-# One Shield run per agentic task, dispatched once the VM serves through the
-# tunnel and recorded in <out>/shield/<task>.json, so a re-run of this command
-# resumes (never re-dispatches a recorded run on the same URL). Polls keep the
-# VM alive; a lost VM or a runner that stopped serving rolls over to a new
-# session. A new URL (no --tunnel-domain) cancels the task's run and dispatches
-# it again; a reserved domain keeps it.
+# --serve record state lives on this machine (<out>/shield/<task>.json), so it is
+# read before any VM is started: a resume whose every Shield run has already
+# finished only needs reports, never a new VM (see serve_report_only_resume).
 if [[ "${SERVE}" -eq 1 ]]; then
     read -r SHIELD_REPO SHIELD_WORKFLOW < <(gpuref shield-workflow)
     ENDPOINT_FILE="${OUT_DIR}/endpoint.url" SHIELD_DIR="${OUT_DIR}/shield" ROLLOVERS=0
+    SERVE_PROV="${OUT_DIR}/results/${MODELS[0]//\//__}/provenance.json"
+    IFS=',' read -r -a SERVE_TASKS <<< "${AGENTIC_TASKS}"
     mkdir -p "${SHIELD_DIR}"
     field() { "${PYRUN[@]}" -c 'import json,sys; print((json.load(open(sys.argv[1])) or {}).get(sys.argv[2]) or "")' "$1" "$2" 2>/dev/null || true; }
     # >>> serve-record helpers (tests/test_gpu_reference_colab.py runs this block
@@ -444,7 +439,68 @@ if [[ "${SERVE}" -eq 1 ]]; then
         done
         return 1
     }
+    all_runs_finished() {   # every task has a record whose Shield run finished (completed / report_pending)
+        local task rec state
+        for task in "${SERVE_TASKS[@]}"; do
+            rec="${SHIELD_DIR}/${task}.json"
+            [[ -s "${rec}" ]] || return 1
+            state="$(field "${rec}" state)"
+            [[ "${state}" == "completed" || "${state}" == "report_pending" ]] || return 1
+        done
+    }
+    finish_serve() {   # the verdict from the recorded runs against SERVE_PROV, which is never rewritten here
+        local verdict
+        [[ -s "${SERVE_PROV}" ]] || { status FAILED "out=${OUT_DIR}" "reason=no serving provenance"; log "no ${SERVE_PROV}: the serving VM's provenance was never fetched; cannot finish without it"; return 1; }
+        verdict="$(gpuref shield-provenance --prov "${SERVE_PROV}" --shield-dir "${SHIELD_DIR}" \
+            --records "${SHIELD_DIR}"/*.json --rollovers "${ROLLOVERS}")" || verdict="failed"
+        gpuref summary "${SHIELD_DIR}" | tee "${OUT_DIR}/summary.txt" || true
+        [[ "${verdict}" == "ok" ]] || { status FAILED "out=${OUT_DIR}" "rollovers=${ROLLOVERS}"; log "a task has no Shield score; see ${SHIELD_DIR}"; return 1; }
+        status DONE "tasks=${AGENTIC_TASKS}" "rollovers=${ROLLOVERS}" "out=${OUT_DIR}"
+        log "done: ${OUT_DIR}"
+    }
+    serve_report_only_resume() {   # 0 = handled (exit with FINISH_RC), 1 = a task still needs a serving VM
+        # Every Shield run already finished on an earlier pass: the scores belong
+        # to that pass's VM, whose GPU and serving settings are in SERVE_PROV.
+        # Fetch any missing report and finish against that provenance, with no
+        # new VM (a new one could be a different GPU and would overwrite it).
+        local task rec
+        all_runs_finished || return 1
+        log "every Shield run already finished; retrieving reports only (no VM is started)"
+        for task in "${SERVE_TASKS[@]}"; do
+            rec="${SHIELD_DIR}/${task}.json"
+            report_on_disk "${SHIELD_DIR}/${task}" && [[ "$(field "${rec}" state)" == "completed" ]] && continue
+            retry_report "${task}" "${rec}" "$(field "${rec}" run_id)" "$(field "${rec}" conclusion)" \
+                || log "WARNING: ${task}: report still not retrievable; the record stays report_pending"
+        done
+        FINISH_RC=0; finish_serve || FINISH_RC=1
+        return 0
+    }
+    keep_serving_provenance() {   # after fetch_results: never let a later VM replace SERVE_PROV
+        # $1 = SERVE_PROV saved before the fetch (empty if there was none).
+        local saved="$1" fetched
+        [[ -n "${saved}" && -s "${saved}" ]] || return 0
+        if [[ -s "${SERVE_PROV}" ]] && ! cmp -s "${saved}" "${SERVE_PROV}"; then
+            fetched="${SERVE_PROV%.json}.refetch-$(date -u +%Y%m%dT%H%M%SZ).json"
+            mv "${SERVE_PROV}" "${fetched}"
+            log "WARNING: the fetched provenance differs from the one the scores were measured with; kept the original, saved the new one as ${fetched}"
+        fi
+        cp -p "${saved}" "${SERVE_PROV}"
+    }
     # <<< serve-record helpers
+    if [[ "${DRY_RUN}" -eq 0 ]] && serve_report_only_resume; then exit "${FINISH_RC}"; fi
+fi
+
+start_session
+if [[ "${STATE}" == "ABSENT" || "${STATE}" == "DIED" ]]; then launch_runner; fi
+
+# 5s --serve: serve until Shield's endpoint tests have run every task -----------
+# One Shield run per agentic task, dispatched once the VM serves through the
+# tunnel and recorded in <out>/shield/<task>.json, so a re-run of this command
+# resumes (never re-dispatches a recorded run on the same URL). Polls keep the
+# VM alive; a lost VM or a runner that stopped serving rolls over to a new
+# session. A new URL (no --tunnel-domain) cancels the task's run and dispatches
+# it again; a reserved domain keeps it.
+if [[ "${SERVE}" -eq 1 ]]; then
     serve_endpoint() {   # the VM's tunnel URL -> ENDPOINT_FILE (0600); sets ENDPOINT_ID, ENDPOINT_SHOWN
         local out url
         out="$(remote_exec endpoint 60 2>&1)" || return 1
@@ -478,7 +534,6 @@ if [[ "${SERVE}" -eq 1 ]]; then
             "endpoint_id=${ENDPOINT_ID}" "dispatched_at=${since}" "ttis=${TTIS_SHA}" "test=$(printf 'inference-workflow-agentic --device gpu --agentic-benchmark %s' "${task}")"
         log "${task}: Shield run https://github.com/${SHIELD_REPO}/actions/runs/${id} against ${ENDPOINT_SHOWN}"
     }
-    IFS=',' read -r -a SERVE_TASKS <<< "${AGENTIC_TASKS}"
     if [[ "${DRY_RUN}" -eq 1 ]]; then
         for task in "${SERVE_TASKS[@]}"; do
             log "would dispatch ${SHIELD_WORKFLOW} on ${SHIELD_REPO} for ${task} once the VM serves:"
@@ -554,14 +609,11 @@ if [[ "${SERVE}" -eq 1 ]]; then
     # Every task ran: stop serving, bring home the VM's logs, finish provenance.
     remote_step stop 60 GPUREF_STOP_REQUESTED
     for _ in $(seq 1 40); do remote_state && [[ "${STATE}" == "DONE" || "${STATE}" == "FAILED" ]] && break; sleep 15; done
+    saved_prov=""
+    if [[ -s "${SERVE_PROV}" ]]; then saved_prov="${LOCAL_TMP}/provenance.kept.json"; cp -p "${SERVE_PROV}" "${saved_prov}"; fi
     fetch_results
-    prov="${OUT_DIR}/results/${MODELS[0]//\//__}/provenance.json"
-    verdict="$(gpuref shield-provenance --prov "${prov}" --shield-dir "${SHIELD_DIR}" \
-        --records "${SHIELD_DIR}"/*.json --rollovers "${ROLLOVERS}")" || verdict="failed"
-    gpuref summary "${SHIELD_DIR}" | tee "${OUT_DIR}/summary.txt" || true
-    [[ "${verdict}" == "ok" ]] || { status FAILED "out=${OUT_DIR}" "rollovers=${ROLLOVERS}"; log "a task has no Shield score; see ${SHIELD_DIR}"; exit 1; }
-    status DONE "tasks=${AGENTIC_TASKS}" "rollovers=${ROLLOVERS}" "out=${OUT_DIR}"
-    log "done: ${OUT_DIR}"
+    keep_serving_provenance "${saved_prov}"
+    finish_serve || exit 1
     exit 0
 fi
 
