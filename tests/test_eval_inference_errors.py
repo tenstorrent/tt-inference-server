@@ -264,7 +264,9 @@ def test_an_only_must_eval_left_ungraded_is_not_a_qualification_pass(case):
     spec = dict(_UNGRADED[case])
     check = spec.pop("check")
     _, _, export = _check(_eval("gpqa", check, **spec), model_status="FUNCTIONAL")
-    assert export["acceptance_criteria_metadata"]["qualification"]["strict_pass"] is False
+    assert (
+        export["acceptance_criteria_metadata"]["qualification"]["strict_pass"] is False
+    )
 
 
 @pytest.mark.parametrize("case", sorted(_UNGRADED))
