@@ -64,7 +64,5 @@ def tt_metal_file_overlay_args(model_spec, runtime_config, repo_root):
             digest,
             destination,
         )
-        args.extend(
-            ["--mount", f"type=bind,src={source},dst={destination},readonly"]
-        )
+        args.extend(["--mount", f"type=bind,src={source},dst={destination},readonly"])
     return args

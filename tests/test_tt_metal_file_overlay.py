@@ -45,11 +45,31 @@ def test_precision_overlay_is_read_only_and_hash_bound(tmp_path):
 @pytest.mark.parametrize(
     "source,target,digest,dev_mode",
     [
-        ("reference_config/precision.json", "models/demos/example/config/precision.json", "0" * 64, True),
-        ("reference_config/precision.json", "models/demos/example/config/precision.json", "unused", False),
+        (
+            "reference_config/precision.json",
+            "models/demos/example/config/precision.json",
+            "0" * 64,
+            True,
+        ),
+        (
+            "reference_config/precision.json",
+            "models/demos/example/config/precision.json",
+            "unused",
+            False,
+        ),
         ("/etc/passwd", "models/demos/example/config/precision.json", "unused", True),
-        ("reference_config/precision.json", "models/demos/../bad/config/precision.json", "unused", True),
-        ("reference_config/precision.json", "models/demos/example/tt/model.py", "unused", True),
+        (
+            "reference_config/precision.json",
+            "models/demos/../bad/config/precision.json",
+            "unused",
+            True,
+        ),
+        (
+            "reference_config/precision.json",
+            "models/demos/example/tt/model.py",
+            "unused",
+            True,
+        ),
     ],
 )
 def test_rejects_unsafe_or_unattested_overlay(
