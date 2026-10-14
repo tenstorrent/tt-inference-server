@@ -10178,6 +10178,83 @@ _eval_config_list = [
             ),
         ],
     ),
+    # Calibrated on N150, 0.6B, seed 0: SECS 0.954, margin +0.138, UTMOS 4.511 / 4.197 (Base / CustomVoice).
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        tasks=[
+            EvalTask(
+                task_name="tts_speaker_similarity",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=95.4,  # 100 * mean SECS
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "secs_baseline": "cross_speaker",
+                    "secs_floor": 0.88,
+                    "margin_threshold": 0.07,
+                },
+            ),
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=87.8,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "base",
+                    "clone_mode": "voice_only",
+                    "language": "English",
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 4.2,
+                },
+            ),
+        ],
+    ),
+    EvalConfig(
+        hf_model_repo="Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice",
+        tasks=[
+            EvalTask(
+                task_name="tts_naturalness",
+                workflow_venv_type=WorkflowVenvType.EVALS_META,
+                include_path="work_dir",
+                max_concurrent=None,
+                apply_chat_template=False,
+                score=EvalTaskScore(
+                    published_score=79.9,  # (mean UTMOS - 1) / 4 * 100
+                    published_score_ref="",
+                    score_func=lambda results: 0.0,
+                ),
+                model_kwargs={
+                    "tts_api": "qwen3_cpp",
+                    "qwen3_release": "custom_voice",
+                    "speaker": "ryan",
+                    "language": "English",
+                    # Same texts as the Base battery.
+                    "min_reference_seconds": 3,
+                    "max_reference_seconds": 12,
+                    "utmos_threshold": 3.9,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="openai/gpt-oss-20b",
         tasks=[

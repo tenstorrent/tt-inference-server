@@ -1317,6 +1317,8 @@ class TestMediaServerDockerEnvVars:
             "Qwen3-TTS-12Hz-1.7B-Base",
             "Qwen3-TTS-12Hz-1.7B-CustomVoice",
             "Qwen3-TTS-12Hz-1.7B-VoiceDesign",
+            "Qwen3-TTS-12Hz-0.6B-Base",
+            "Qwen3-TTS-12Hz-0.6B-CustomVoice",
         ],
     )
     def test_qwen3_tts_uses_cpp_server(self, model):

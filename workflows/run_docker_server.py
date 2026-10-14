@@ -112,6 +112,8 @@ _CPP_TTS_RUNNER_BY_MODEL_NAME = {
     "Qwen3-TTS-12Hz-1.7B-Base": "tt_qwen3_tts",
     "Qwen3-TTS-12Hz-1.7B-CustomVoice": "tt_qwen3_tts",
     "Qwen3-TTS-12Hz-1.7B-VoiceDesign": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-0.6B-Base": "tt_qwen3_tts",
+    "Qwen3-TTS-12Hz-0.6B-CustomVoice": "tt_qwen3_tts",
 }
 
 # device.name.lower() -> DEVICE_IDS (one worker per chip).

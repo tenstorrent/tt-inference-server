@@ -133,6 +133,8 @@ class TestClientTargets:
             ("Qwen/Qwen3-TTS-12Hz-1.7B-Base", "base", None, False),
             ("Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice", "custom_voice", "ryan", False),
             ("Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign", "voice_design", None, True),
+            ("Qwen/Qwen3-TTS-12Hz-0.6B-Base", "base", None, False),
+            ("Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice", "custom_voice", "ryan", False),
         ],
     )
     def test_qwen3_settings_come_from_the_eval_config(

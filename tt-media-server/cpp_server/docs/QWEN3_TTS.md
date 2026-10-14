@@ -174,8 +174,9 @@ reports `runner_in_use: tt_qwen3_tts`.
 ### Docker workflow
 
 `workflows/run_docker_server.py` runs the dev-catalog specs
-`Qwen/Qwen3-TTS-12Hz-1.7B-Base`, `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` and
-`Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` on N150 with this server. It sets `SERVER_MODE=cpp`, `MODEL_SERVICE=tts`,
+`Qwen/Qwen3-TTS-12Hz-1.7B-{Base,CustomVoice,VoiceDesign}` and
+`Qwen/Qwen3-TTS-12Hz-0.6B-{Base,CustomVoice}` on N150 with this server. It sets
+`SERVER_MODE=cpp`, `MODEL_SERVICE=tts`,
 `MODEL_RUNNER_TYPE=tt_qwen3_tts`, `HF_MODEL`, `DEVICE_IDS=(0)`,
 `TTS_QWEN3_SEED=0` and the 16 / 64 / 64 queues. The specs pin no image, so pass
 one that contains this server and a tt-metal with the Qwen3-TTS demo:
@@ -244,15 +245,25 @@ Two evals score a live Qwen3-TTS server through the `qwen3_cpp` adapter
 LibriTTS-R `test.clean` speakers with 3 to 12 s clips and request
 `language: English`.
 
-| eval (`task_name`) | measures | passes when |
-|---|---|---|
-| `tts_speaker_similarity` (Base) | SECS: cosine similarity of `microsoft/unispeech-sat-base-plus-sv` embeddings between each reference clip and a voice-only clone of it reading another speaker's sentence. Baseline (`cross_speaker`): the same sentence cloned from a different speaker's clip; margin = SECS minus baseline | mean SECS >= 0.90 and mean margin >= 0.06 |
-| `tts_naturalness` (Base, CustomVoice, VoiceDesign) | predicted MOS (UTMOS22-strong) over 8 sentences: voice-only clones on Base, speaker `ryan` on CustomVoice, the fixed description "A calm adult male voice, speaking clearly at a moderate pace." on VoiceDesign | mean UTMOS >= 4.2 (Base), >= 3.85 (CustomVoice), >= 4.1 (VoiceDesign) |
+| eval (`task_name`) | measures |
+|---|---|
+| `tts_speaker_similarity` | SECS: cosine similarity of `microsoft/unispeech-sat-base-plus-sv` embeddings between each reference clip and a voice-only clone of it reading another speaker's sentence. Baseline (`cross_speaker`): the same sentence cloned from a different speaker's clip; margin = SECS minus baseline |
+| `tts_naturalness` | predicted MOS (UTMOS22-strong) over 8 sentences: voice-only clones on Base, speaker `ryan` on CustomVoice, the fixed description "A calm adult male voice, speaking clearly at a moderate pace." on VoiceDesign. No 0.6B request carries a description |
+
+Each release passes when its means reach these thresholds. Calibration is on
+N150 with `TTS_QWEN3_SEED=0`; upstream is Qwen3-TTS on CPU (fp32) for the same
+requests:
+
+| checkpoint | evals | thresholds | N150 | upstream CPU |
+|---|---|---|---|---|
+| `1.7B-Base` | SECS, naturalness | SECS >= 0.90, margin >= 0.06, UTMOS >= 4.2 | 0.962, +0.128, 4.505 | 0.952, +0.125, 4.510 |
+| `1.7B-CustomVoice` | naturalness | UTMOS >= 3.85 | 4.145 | 4.239 |
+| `1.7B-VoiceDesign` | naturalness | UTMOS >= 4.1 | 4.420 | 4.445 |
+| `0.6B-Base` | SECS, naturalness | SECS >= 0.88, margin >= 0.07, UTMOS >= 4.2 | 0.954, +0.138, 4.511 | 0.954, +0.145, 4.497 |
+| `0.6B-CustomVoice` | naturalness | UTMOS >= 3.9 | 4.197 | 4.218 |
 
 The tasks and thresholds are registered in
-`reference_config/evals/eval_config.py`. Calibration on N150, 1.7B,
-`TTS_QWEN3_SEED=0`: SECS 0.962, margin +0.128, UTMOS 4.505 (Base), 4.145
-(CustomVoice) and 4.420 (VoiceDesign). Upstream Qwen3-TTS on CPU gives 0.952, +0.125, 4.510 and 4.239.
+`reference_config/evals/eval_config.py`.
 The adapter sends no seed, so reproducible scores need the server started with
 `TTS_QWEN3_SEED` (the docker workflow sets 0).
 

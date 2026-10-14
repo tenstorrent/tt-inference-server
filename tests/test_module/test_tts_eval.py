@@ -16,7 +16,11 @@ from test_module._test_common import ReportCheckTypes
 from test_module._test_common import TestConfig as _TestConfig
 from test_module.eval_tests import tts_eval_tests, tts_naturalness_test
 from test_module.eval_tests import tts_speaker_similarity_test as secs_mod
-from test_module.eval_tests.tts_client import SynthesizedAudio, make_tts_client
+from test_module.eval_tests.tts_client import (
+    SynthesizedAudio,
+    VoiceClip,
+    make_tts_client,
+)
 from test_module.eval_tests.tts_eval_tests import (
     DEFAULT_WER_THRESHOLD,
     _intelligibility_score,
@@ -317,8 +321,9 @@ class TestQwen3EvalConfig:
 
         return {t.task_name: t for t in _eval_config_map[repo].tasks}
 
-    def test_base_registers_secs_and_naturalness_on_clones(self):
-        tasks = self._tasks("Qwen/Qwen3-TTS-12Hz-1.7B-Base")
+    @pytest.mark.parametrize("size", ["1.7B", "0.6B"])
+    def test_base_registers_secs_and_naturalness_on_clones(self, size):
+        tasks = self._tasks(f"Qwen/Qwen3-TTS-12Hz-{size}-Base")
         assert set(tasks) == {"tts_speaker_similarity", "tts_naturalness"}
         for task in tasks.values():
             targets = tts_eval_tests._task_targets(task)
@@ -329,8 +334,9 @@ class TestQwen3EvalConfig:
         assert secs["secs_baseline"] == "cross_speaker"
         assert 0 < secs["margin_threshold"] < secs["secs_floor"] < 1
 
-    def test_custom_voice_registers_naturalness_with_a_fixed_speaker(self):
-        tasks = self._tasks("Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
+    @pytest.mark.parametrize("size", ["1.7B", "0.6B"])
+    def test_custom_voice_registers_naturalness_with_a_fixed_speaker(self, size):
+        tasks = self._tasks(f"Qwen/Qwen3-TTS-12Hz-{size}-CustomVoice")
         assert set(tasks) == {"tts_naturalness"}
         targets = tts_eval_tests._task_targets(tasks["tts_naturalness"])
         client = make_tts_client(targets)
@@ -357,3 +363,22 @@ class TestQwen3EvalConfig:
             clips, cloned=not client.has_default_voice
         )
         assert battery == [("text a", None), ("text b", None)]
+
+    @pytest.mark.parametrize("release", ["Base", "CustomVoice"])
+    def test_0b6_has_its_own_thresholds_and_never_sends_a_description(self, release):
+        small = self._tasks(f"Qwen/Qwen3-TTS-12Hz-0.6B-{release}")
+        large = self._tasks(f"Qwen/Qwen3-TTS-12Hz-1.7B-{release}")
+        assert set(small) == set(large)
+        for name, task in small.items():
+            targets = tts_eval_tests._task_targets(task)
+            assert "description" not in targets
+            assert task.score.published_score != large[name].score.published_score
+            client = make_tts_client(targets)
+            voice = VoiceClip(b"RIFF") if client.can_clone else None
+            request = client.build_request("hi", voice)
+            fields = (
+                request["json"]
+                if "json" in request
+                else {field[0]["name"] for field in request["data"]._fields}
+            )
+            assert "description" not in fields
