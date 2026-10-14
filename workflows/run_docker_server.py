@@ -454,19 +454,10 @@ def _vllm_override_cli_args(vllm_override_args) -> List[str]:
             continue
         if value is True:
             cli_args.append(flag)
-        elif isinstance(value, list):
-            # nargs='+' flags (--served-model-name, --api-key) read one token
-            # per value; a JSON string would be read as a single value.
-            if not value:
-                logger.warning(
-                    f"--vllm-override-args: {key!r}=[] emits no flag "
-                    "(an empty list has no values to pass); vLLM's default applies."
-                )
-                continue
-            cli_args.append(flag)
-            cli_args += [str(item) for item in value]
-        elif isinstance(value, dict):
-            # The flags taking these (--hf-overrides) are nargs=None: one JSON string.
+        elif isinstance(value, (dict, list)):
+            # One JSON token. Whether a list must be split into one token per
+            # item depends on the flag's nargs, which only vLLM knows; the
+            # container entrypoint does that split (run_vllm_api_server.py).
             cli_args += [flag, json.dumps(value)]
         else:
             cli_args += [flag, str(value)]

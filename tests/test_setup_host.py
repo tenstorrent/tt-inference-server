@@ -787,17 +787,22 @@ class TestVllmOverrideCliArgs:
     def test_false_and_null_omitted(self):
         assert _vllm_override_cli_args('{"a": false, "b": null}') == []
 
-    def test_list_renders_one_token_per_item(self):
+    def test_list_stays_a_single_json_token(self):
+        # The host cannot see vLLM's nargs, so it never splits; the container
+        # entrypoint does. --allowed-origins (nargs=None, type=json.loads) only
+        # parses in this form.
+        assert _vllm_override_cli_args(
+            '{"allowed-origins": ["https://a.example", "https://b.example"]}'
+        ) == [
+            "--allowed-origins",
+            '["https://a.example", "https://b.example"]',
+        ]
         assert _vllm_override_cli_args(
             '{"served-model-name": ["Llama-3.1-8B-Instruct", "local-llm"]}'
         ) == [
             "--served-model-name",
-            "Llama-3.1-8B-Instruct",
-            "local-llm",
+            '["Llama-3.1-8B-Instruct", "local-llm"]',
         ]
-
-    def test_empty_list_emits_no_flag(self):
-        assert _vllm_override_cli_args('{"served-model-name": []}') == []
 
     def test_dict_stays_a_single_json_token(self):
         assert _vllm_override_cli_args('{"hf-overrides": {"max_seq_len": 4096}}') == [
