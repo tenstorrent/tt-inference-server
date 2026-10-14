@@ -197,9 +197,7 @@ def test_mistral_7b_mmlu_pro_runs_single_turn():
     assert others == []
 
 
-@pytest.mark.parametrize(
-    "task_name", ["r1_aime24", "r1_math500", "r1_gpqa_diamond"]
-)
+@pytest.mark.parametrize("task_name", ["r1_aime24", "r1_math500", "r1_gpqa_diamond"])
 def test_qwq_r1_requests_get_a_full_length_generation_timeout(task_name):
     """Every QwQ-32B r1 task sends the same per-request timeout, and it covers
     a max_gen_toks=32768 generation at the measured P300X2 rate.
