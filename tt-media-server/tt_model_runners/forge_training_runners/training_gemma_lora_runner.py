@@ -75,10 +75,6 @@ class TrainingGemmaLoraRunner(BaseDeviceRunner):
         if request._training_logs is not None:
             log_handler = self.logger.add_list_handler(request._training_logs)
 
-        if request._start_event:
-            request._start_event.set()
-            self.logger.debug(f"Device {self.device_id}: Start event set")
-
         self.train_dataset = get_dataset_loader(
             dataset_loader=request.dataset_loader,
             model_name=self.model_name,
