@@ -785,6 +785,14 @@ def register_tt_models(impl_id=None):
     else:
         os.environ["TT_QWEN3_TEXT_VER"] = "tt_transformers"
 
+    # OLMo-3.1-32B-Think (Galaxy): the model class lives in tt-metal and is registered through a vllm-tt-plugin
+    # EXTRA_MODELS_DIR bundle. A bundle registers only the TT-prefixed architecture; TT_MODEL_CLASS_OVERRIDES
+    # would also replace the bare Olmo3ForCausalLM class, which fails vLLM's text-generation interface check.
+    if impl_id == "olmo3_32b_galaxy" and not os.environ.get("EXTRA_MODELS_DIR"):
+        os.environ["EXTRA_MODELS_DIR"] = str(
+            Path(os.environ["TT_METAL_HOME"]) / "models" / "demos" / "olmo_galaxy" / "vllm_models"
+        )
+
     # Arcee AFM-4.5B - Text
     ModelRegistry.register_model(
         "TTArceeForCausalLM",

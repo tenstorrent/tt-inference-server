@@ -1747,6 +1747,44 @@ templates:
       tool_call_parser_name: qwen3_coder
 
 - weights:
+    - allenai/Olmo-3.1-32B-Think
+  impl: olmo3_32b_galaxy
+  inference_engine: VLLM
+  device_model_specs:
+    - device: GALAXY
+      max_concurrency: 32  # 8 * 4: decode runs at batch 32
+      max_context: 65536  # 64 * 1024
+      default_impl: true
+      env_vars:
+        # Warm up only the plain device-sampling configs (no penalty / logprob permutations): each permutation
+        # is a separate resident decode trace.
+        TT_LEAN_DECODE_WARMUP: 1
+      vllm_args:
+        reasoning_parser: olmo3
+        # The model card samples with temperature 0.6 / top_p 0.95 and no top_k. The device sampler only draws from
+        # the 32 most probable tokens, so a request with no (or a larger) top_k is sampled on host, which is ~3x
+        # slower per token. Default top_k to the device limit to keep those requests on device; a request that sets
+        # its own top_k keeps it (top_k=0 asks for the full distribution, on host).
+        override-generation-config: '{"top_k": 32}'
+      override_tt_config:
+        dispatch_core_axis: col
+        sample_on_device_mode: all
+        worker_l1_size: 1345000
+        trace_region_size: 184915840
+  system_requirements:
+    firmware:
+      specifier: ">=18.6.0"
+      mode: STRICT
+    kmd:
+      specifier: ">=2.1.0"
+      mode: STRICT
+  status: EXPERIMENTAL
+  has_builtin_warmup: true
+  metadata:
+    allenai/Olmo-3.1-32B-Think:
+      reasoning_parser_name: olmo3
+
+- weights:
     - Qwen/Qwen3-32B
   impl: qwen3_32b_galaxy
   inference_engine: VLLM
