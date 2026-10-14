@@ -413,6 +413,21 @@ templates:
         trust-remote-code: true
         mm-processor-cache-gb: 0
         allowed-local-media-path: /
+    - device: GALAXY
+      # One server for the whole 32-chip Galaxy with in-process DP=4: the adapter (models/demos/molmo2/tt/
+      # generator_vllm.py) splits the (8,4) mesh into four 1x8 replicas, one request slot each. vLLM's own
+      # data_parallel_size is deliberately NOT set (that spawns 4 engine processes, which exhausts the Galaxy's PCIe TLBs).
+      max_concurrency: 4  # 4 replicas x batch 1
+      max_context: 36864
+      default_impl: true
+      env_vars:
+        TT_DATA_PARALLEL: 4
+      override_tt_config:
+        fabric_config: FABRIC_1D
+      vllm_args:
+        trust-remote-code: true
+        mm-processor-cache-gb: 0
+        allowed-local-media-path: /
   status: EXPERIMENTAL
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: 1

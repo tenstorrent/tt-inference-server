@@ -41,7 +41,7 @@ for sl in $SLICES; do
         export TT_VISIBLE_DEVICES="$devices"
         export TT_MESH_GRAPH_DESC_PATH="$TT_METAL_HOME/tt_metal/fabric/mesh_graph_descriptors/t3k_mesh_graph_descriptor.textproto"
         export TT_METAL_INSPECTOR_RPC_SERVER_ADDRESS="127.0.0.1:$((50050 + sl))"   # per-instance port for tt-triage
-        nohup python run.py --model allenai/Molmo2-8B --workflow server --local-server \
+        nohup "${PYTHON:-python3}" run.py --model allenai/Molmo2-8B --workflow server --local-server \
             --tt-device galaxy_t3k --impl molmo2 --device-id "$devices" --service-port "$port" \
             --tt-metal-home "$TT_METAL_HOME" ${TT_METAL_PYTHON_VENV_DIR:+--tt-metal-python-venv-dir "$TT_METAL_PYTHON_VENV_DIR"} \
             --skip-system-sw-validation --no-auth \
