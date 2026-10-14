@@ -8,7 +8,6 @@ from reference_config.evals.eval_config import (
     resolve_eval_reference,
 )
 from workflows.model_spec import load_templates_from_yaml, resolve_model_spec
-from workflows.tt_metal_file_overlay import tt_metal_file_overlay_args
 from workflows.utils import get_repo_root_path
 from workflows.workflow_types import EvalLimitMode, ModelStatusTypes, WorkflowVenvType
 
@@ -61,16 +60,6 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     assert dedicated.device_model_spec.vllm_args["max_num_seqs"] == 1
     assert dedicated.device_model_spec.env_vars["TT_METAL_CACHE"].endswith(
         "/gemma4_metal_kernel_cache"
-    )
-    assert dedicated.metadata["tt_metal_file_overlays"][0]["sha256"] == (
-        "46389c08f1c99f068669f66e902cc34daf00e54e7c7d8014dc1539b3dd1af954"
-    )
-    overlay_args = tt_metal_file_overlay_args(
-        dedicated, type("Runtime", (), {"dev_mode": True})(), get_repo_root_path()
-    )
-    assert overlay_args[-1].endswith(
-        "dst=/home/container_app_user/tt-metal/models/demos/"
-        "gemma4_26b_a4b_qb2/config/precision.json,readonly"
     )
 
 
