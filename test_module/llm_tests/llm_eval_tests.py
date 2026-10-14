@@ -92,8 +92,20 @@ def subset_run_reason(ctx, task=None) -> Optional[str]:
         return "explicit --eval-samples subset"
     from llm_module.eval_command import _resolve_eval_samples
 
-    if _resolve_eval_samples(task, rc) is None:
+    resolved = _resolve_eval_samples(task, rc)
+    if resolved is None:
         return None
+    # A task whose EvalConfig defines its doc set (EvalTask.doc_ids, #5393)
+    # runs that set via --samples on every run; resolving to exactly it is the
+    # full task, not a subset. Only a narrower selection is partial.
+    doc_ids = getattr(task, "doc_ids", None)
+    if doc_ids:
+        try:
+            indices = json.loads(resolved).get(task.task_name)
+        except (ValueError, AttributeError):
+            indices = None
+        if isinstance(indices, list) and set(indices) == set(doc_ids):
+            return None
     return "explicit --eval-samples subset"
 
 

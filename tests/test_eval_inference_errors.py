@@ -85,7 +85,7 @@ def test_an_errored_eval_is_graded_incomplete_not_scored(
     tmp_path, monkeypatch, answers
 ):
     root, model_spec = _attempt(tmp_path, answers)
-    ctx = SimpleNamespace(model_spec=model_spec)
+    ctx = SimpleNamespace(model_spec=model_spec, runtime_config=None)
     monkeypatch.setattr(mod, "load_eval_results", lambda files: ({}, {}))
     monkeypatch.setattr(mod, "blocks_for_task", lambda *a, **k: [_graded_block()])
     (block,) = mod._score_task(
@@ -100,7 +100,7 @@ def test_an_errored_eval_is_graded_incomplete_not_scored(
 
 def test_a_clean_eval_is_left_to_the_grader(tmp_path, monkeypatch):
     root, model_spec = _attempt(tmp_path, ["def f(): pass"])
-    ctx = SimpleNamespace(model_spec=model_spec)
+    ctx = SimpleNamespace(model_spec=model_spec, runtime_config=None)
     monkeypatch.setattr(mod, "load_eval_results", lambda files: ({}, {}))
     graded = _graded_block(score=88.0)
     graded.data["accuracy_check"] = ReportCheckTypes.PASS
