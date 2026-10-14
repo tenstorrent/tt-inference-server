@@ -657,6 +657,7 @@ The video API supports both **async** (job-based) and **sync** modes, controlled
 ## Input and Output Requirements
 
 - [MiniMax H3](docs/minimax-h3-specs.md)
+- [MiniMax H3 FL2VA endpoint benchmark](docs/minimax-h3-fl2va-benchmark.md) (`scripts/minimax_h3_fl2va_bench.py`)
 
 ## Submit text-to-video generation job
 
