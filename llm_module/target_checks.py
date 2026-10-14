@@ -13,6 +13,7 @@ parsed Block here, in the runner.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from report_module.schema import Block
@@ -32,6 +33,7 @@ _METRIC_SPECS: Tuple[Tuple[str, str, bool], ...] = (
     ("tpot", "tpot_ms", True),
     ("e2el", "e2el_ms", True),
     ("tput_total", "tput_total", False),
+    ("tput_input", "tput_input", False),
     ("goodput", "goodput", False),
 )
 
@@ -62,6 +64,7 @@ def _measured(record: Mapping[str, Any]) -> Dict[str, Optional[float]]:
         "tpot": tpot,
         "e2el": _as_float(record.get("mean_e2el_ms")),
         "tput_total": _as_float(record.get("tps_total_throughput")),
+        "tput_input": _as_float(record.get("tps_input_throughput")),
         "goodput": _as_float(record.get("goodput_pct")),
     }
 
@@ -80,14 +83,18 @@ def _check(ratio: float, tolerance: float, lower_is_better: bool) -> ReportCheck
 
 
 def build_target_checks(
-    targets: Mapping[str, Any], record: Mapping[str, Any]
+    targets: Mapping[str, Any],
+    record: Mapping[str, Any],
+    *,
+    require_complete_metrics: bool = False,
 ) -> Tuple[Dict[str, Dict[str, Any]], ReportCheckTypes]:
     """Build the tiered ``target_checks`` dict and its one-line verdict.
 
     ``targets`` maps a tier name to a ``workflows.utils_report.PerformanceTarget``.
     Each tier gets ``<field>`` (the target), ``<field>_ratio`` and
-    ``<field>_check`` per metric; a metric the tier does not define, or one
-    the tool did not measure, is ``NA`` rather than a failure.
+    ``<field>_check`` per metric. An undefined target or missing measurement
+    is ``NA`` by default. With ``require_complete_metrics``, each declared
+    target needs a positive finite measurement; partial reports then fail.
 
     The verdict is the strictest tier that fully passes, reported as PASS
     only when the ``target`` tier passes at least one real check and none
@@ -108,6 +115,12 @@ def build_target_checks(
                 tier[f"{field}_check"] = ReportCheckTypes.NA
                 continue
             tier[field] = target_value
+            if require_complete_metrics and (
+                actual is None or not math.isfinite(actual) or actual <= 0
+            ):
+                tier[f"{field}_ratio"] = 0.0
+                tier[f"{field}_check"] = ReportCheckTypes.FAIL
+                continue
             if actual is None:
                 tier[f"{field}_ratio"] = 0.0
                 tier[f"{field}_check"] = ReportCheckTypes.NA
@@ -180,7 +193,11 @@ def apply_target_checks(block: Block, config: Any) -> Block:
         data["target_check"] = ReportCheckTypes.NA
         return _replace_data(block, data)
 
-    target_checks, verdict = build_target_checks(targets, block.data)
+    target_checks, verdict = build_target_checks(
+        targets,
+        block.data,
+        require_complete_metrics=getattr(config, "require_complete_metrics", False),
+    )
     if verdict == ReportCheckTypes.NA:
         data["status"] = "na"
     data["target_check"] = verdict

@@ -557,14 +557,14 @@ VIDEO_INFERENCE_STEPS_BUCKETS = (
     float("inf"),
 )
 # Frame counts that the shipped pipelines actually emit (Wan2.2 = 81,
-# LTX-2.3 = 145), plus room either side.
+# LTX-2.3 = 153), plus room either side.
 VIDEO_FRAME_COUNT_BUCKETS = (
     16.0,
     33.0,
     49.0,
     81.0,
     121.0,
-    145.0,
+    153.0,
     241.0,
     481.0,
     float("inf"),

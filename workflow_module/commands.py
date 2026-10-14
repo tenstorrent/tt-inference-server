@@ -165,13 +165,16 @@ def _scan_log_for_hang(payload: Any) -> Optional[str]:
 def _server_is_alive(spec: ServerLaunchSpec, payload: Any) -> Optional[bool]:
     """Liveness of the launched server: True, False, or None when unobservable.
 
-    Deliberately does not shell out. Bring-up is a subprocess-free path (run.py must
-    not perform docker status checks), and shelling out to `docker ps` here would
-    both violate that and add a failure mode of its own. For docker the container is
-    therefore unobservable from here and liveness is None; a dead container is caught
-    instead by the hang markers in the server log, which is where this failure mode
-    announces itself anyway.
+    Deliberately does not shell out. Both launchers retain their foreground process
+    handle when one is available, so polling that handle observes an exited Docker
+    container as well as an exited local server without adding a separate ``docker
+    inspect`` failure mode. Older local launch payloads retain the PID fallback.
     """
+    process = _payload_get(payload, "process")
+    if process is not None:
+        poll = getattr(process, "poll", None)
+        if callable(poll):
+            return poll() is None
     if spec.mode is ServerMode.LOCAL:
         pid = _payload_get(payload, "pid")
         if pid is None:

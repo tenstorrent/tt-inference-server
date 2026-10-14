@@ -26,8 +26,11 @@ from report_module import (
     ReportSchema,
     acceptance_criteria_check,
     build_acceptance_export,
+    spec_tasks_explained_by_waivers,
+    stage_results,
     task_failure_blockers,
 )
+from report_module.acceptance_criteria import STAGE_TARGET_KEY
 from test_module.task_types import MediaTaskType
 
 if TYPE_CHECKING:
@@ -250,7 +253,13 @@ class WorkflowExecution(ABC):
         )
         try:
             self.prepare()
-            task_outcomes = self.run_tasks()
+            # Checkpoint on every accept: a cancel never reaches the report
+            # phase below, so what the tasks produced must already be on disk.
+            previous_hook = self.accumulator.set_on_accept(self.checkpoint)
+            try:
+                task_outcomes = self.run_tasks()
+            finally:
+                self.accumulator.set_on_accept(previous_hook)
         except Exception as e:
             self.logger.exception(
                 "Workflow %s aborted during task phase: %s", self.name, e
@@ -287,7 +296,17 @@ class WorkflowExecution(ABC):
                 error=str(e),
             )
 
-        failed_tasks = [outcome for outcome in task_outcomes if not outcome.succeeded]
+        # A task whose non-zero exit only reflects known_issues-waived failures
+        # (see spec_tasks_explained_by_waivers) is not a failed task.
+        waived_tasks = getattr(self, "_waived_task_types", set())
+        failed_tasks = [
+            outcome
+            for outcome in task_outcomes
+            if not outcome.succeeded
+            and not (
+                outcome.block_kind is not None and outcome.task_type in waived_tasks
+            )
+        ]
         return_code = 0 if accepted and not failed_tasks else 1
         if failed_tasks:
             self.logger.error(
@@ -349,7 +368,21 @@ class WorkflowExecution(ABC):
     def format_results(self) -> Optional[ReportSchema]:
         if not self.accumulator.blocks:
             return None
-        return self.accumulator.build_schema()
+        schema = self.accumulator.build_schema()
+        self._tag_stages(schema)
+        return schema
+
+    def _tag_stages(self, schema: ReportSchema) -> None:
+        """Tag each block with the delivery stage it is graded under, if any."""
+        from .target_pack import get_target_pack
+
+        pack = get_target_pack()
+        for block in schema.sections:
+            if STAGE_TARGET_KEY in block.targets:
+                continue
+            stage = pack.stage_of(block)
+            if stage:
+                block.targets[STAGE_TARGET_KEY] = dict(stage)
 
     def apply_acceptance_criteria(
         self, schema: ReportSchema, task_outcomes: Sequence[TaskOutcome]
@@ -358,14 +391,31 @@ class WorkflowExecution(ABC):
         accepted, blockers, categories = acceptance_criteria_check(
             schema, known_issues=self._known_issues(), model_status=model_status
         )
+        waived_tasks = spec_tasks_explained_by_waivers(
+            categories, schema, known_issues=self._known_issues()
+        )
+        # run() reads this so the workflow exit agrees with the verdict.
+        self._waived_task_types = waived_tasks
         crash_blockers = task_failure_blockers(
-            (o.task_type, o.exit_code, o.block_kind is not None) for o in task_outcomes
+            (
+                (o.task_type, o.exit_code, o.block_kind is not None)
+                for o in task_outcomes
+            ),
+            waived_tasks=waived_tasks,
         )
         if crash_blockers:
             blockers = {**blockers, **crash_blockers}
             accepted = False
+        stages = stage_results(
+            schema,
+            blockers,
+            known_issues=self._known_issues(),
+            model_status=model_status,
+        )
         schema.metadata.update(
-            build_acceptance_export(accepted, blockers, categories, model_status)
+            build_acceptance_export(
+                accepted, blockers, categories, model_status, stages
+            )
         )
         self.logger.info(
             "Acceptance: %s (%d blocker(s))",
@@ -402,8 +452,12 @@ class WorkflowExecution(ABC):
         return spec.get("status") if spec else None
 
     def inject_metadata(self, schema: ReportSchema) -> None:
+        # A checkpoint reaches here without format_results; tagging is idempotent.
+        self._tag_stages(schema)
         meta = schema.metadata
         meta["workflow"] = self.name
+        meta["report_partial"] = False
+        meta["report_blocks"] = len(schema.sections)
         m = self.orchestrator_metadata
         if m.server_mode is not None:
             meta["server_mode"] = m.server_mode
@@ -444,6 +498,20 @@ class WorkflowExecution(ABC):
         self.logger.info("Wrote markdown: %s", result.markdown_path)
         self.logger.info("Wrote json:     %s", result.json_path)
         return result
+
+    def checkpoint(self) -> bool:
+        """Write a partial report for the Blocks accepted so far.
+
+        Same paths and metadata as :meth:`generate_report`, marked
+        ``report_partial``; the end-of-run report overwrites it.
+        """
+        from .checkpoint import checkpoint_report
+
+        return checkpoint_report(
+            Path(self.ctx.output_path).parent,
+            accumulator=self.accumulator,
+            prepare=self.inject_metadata,
+        )
 
 
 __all__ = [

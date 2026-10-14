@@ -58,6 +58,16 @@ def pytest_addoption(parser):
         help="Maximum context length for the model",
     )
     parser.addoption(
+        "--chat-template-kwargs",
+        action="store",
+        default=None,
+        help=(
+            "JSON object merged into every chat request's chat_template_kwargs "
+            "(e.g. '{\"enable_thinking\": false}' for a server whose default "
+            "template keeps a thought channel the conformance checks never read)"
+        ),
+    )
+    parser.addoption(
         "--task-name",
         action="store",
         default="unknown-task",
@@ -131,6 +141,10 @@ def api_client(endpoint_url, request):
         headers["Authorization"] = f"Bearer {authorization}"
 
     model_name = request.config.getoption("--model-name", default=None)
+    chat_template_kwargs = None
+    raw_ctk = request.config.getoption("--chat-template-kwargs", default=None)
+    if raw_ctk:
+        chat_template_kwargs = json.loads(raw_ctk)
 
     def _make_request(
         json_payload=None, timeout=30, url_suffix=None, method=None, stream=False
@@ -144,6 +158,16 @@ def api_client(endpoint_url, request):
                 # the Tenstorrent console) can route the request correctly.
                 if model_name and "model" not in json_payload:
                     json_payload = {**json_payload, "model": model_name}
+                # Chat requests take the suite-wide template kwargs unless the
+                # test set its own.
+                if chat_template_kwargs and "messages" in json_payload:
+                    json_payload = {
+                        **json_payload,
+                        "chat_template_kwargs": {
+                            **chat_template_kwargs,
+                            **json_payload.get("chat_template_kwargs", {}),
+                        },
+                    }
                 kwargs["json"] = json_payload
             response = request_method(url, **kwargs)
             response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)

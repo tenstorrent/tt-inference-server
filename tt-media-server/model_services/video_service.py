@@ -25,6 +25,7 @@ from telemetry.telemetry_client import (
     get_telemetry_client,
     video_generations_in_progress,
 )
+from telemetry.video_request_metrics import observe_video_request
 from utils.decorators import log_execution_time
 from utils.video_manager import VideoProbe, probe_video
 
@@ -110,6 +111,10 @@ class VideoService(BaseJobService):
         that legitimately runs for tens of minutes.
         """
         request_type = self._classify_request(input_request)
+        # Requested output shape, recorded here for the same reason the rest of
+        # the video family is: this method is where the sync /generations path
+        # and the async JobManager path converge, so one call covers both.
+        observe_video_request(input_request, settings.model_runner, request_type)
         in_flight = video_generations_in_progress.labels(
             model_type=settings.model_runner, request_type=request_type
         )

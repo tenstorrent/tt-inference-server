@@ -128,9 +128,11 @@ DYN_ENABLE_ANTHROPIC_API) are read from the environment.
 Sentry distributed tracing is on by default in the cpp_server workers (the
 team-project DSN is compiled in; SENTRY_ENVIRONMENT, SENTRY_RELEASE and
 SENTRY_DEBUG tune it). Export SENTRY_DSN= (empty) to disable it, or set a
-different DSN to redirect. The frontend runs with DYN_LOGGING_JSONL=1 (JSONL
-logs), which Dynamo requires to propagate traceparent to the workers; set
-DYN_LOGGING_JSONL=0 to get pretty logs back at the cost of trace propagation.
+different DSN to redirect. Traces are tagged server_name=<container name>;
+set SENTRY_SERVER_NAME to override. The frontend runs with
+DYN_LOGGING_JSONL=1 (JSONL logs), which Dynamo requires to propagate
+traceparent to the workers; set DYN_LOGGING_JSONL=0 to get pretty logs back
+at the cost of trace propagation.
 
 Monitoring is enabled by default and uses tt-media-server/monitoring/docker-compose.yml.
 Override SERVER_TARGET/SERVER_SERVICE/GATEWAY_TARGET/GF_HOME_DASHBOARD in the
@@ -266,6 +268,9 @@ esac
 # Sentry distributed tracing for cpp_server workers. On by default (the DSN
 # is compiled into the server); forward SENTRY_DSN even when set-but-empty so
 # `SENTRY_DSN= ./deploy.sh` disables tracing in the containers.
+# SENTRY_SERVER_NAME is passed per container below (default: the container
+# name) so traces are tagged with a readable name instead of the Docker
+# container ID that gethostname() returns.
 SENTRY_ENV=()
 [[ -n "${SENTRY_DSN+x}" ]]         && SENTRY_ENV+=(-e SENTRY_DSN="$SENTRY_DSN")
 [[ -n "${SENTRY_ENVIRONMENT:-}" ]] && SENTRY_ENV+=(-e SENTRY_ENVIRONMENT="$SENTRY_ENVIRONMENT")
@@ -303,6 +308,7 @@ start_prefill_worker() {
         "${WORKER_MODEL_ENV[@]}" \
         "${SENTRY_ENV[@]}" \
         -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+        -e SENTRY_SERVER_NAME="${SENTRY_SERVER_NAME:-$name}" \
         "$@" \
         "$WORKER_IMAGE" \
         "${command[@]}" \
@@ -400,6 +406,7 @@ docker run -d --name "$WORKER_NAME" --network "$NETWORK_NAME" --shm-size=2g \
     "${WORKER_MODEL_ENV[@]}" \
     "${SENTRY_ENV[@]}" \
     -e MAX_SESSIONS_COUNT=128 -e TT_LOG_LEVEL=debug -e USE_FAST_MODE=1 \
+    -e SENTRY_SERVER_NAME="${SENTRY_SERVER_NAME:-$WORKER_NAME}" \
     -e MIN_TOKENS_TO_COPY="${MIN_TOKENS_TO_COPY:-1024}" \
     -e MOCK_PREFILL_SLEEP_MS="${MOCK_PREFILL_SLEEP_MS:-0}" \
     -e DYN_TX_TRACE="${DYN_TX_TRACE:-}" \

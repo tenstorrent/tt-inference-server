@@ -10,9 +10,29 @@ from typing import Iterable, List, Optional, Set, Tuple
 
 import pytest
 
-from workflows.model_spec import MODEL_SPECS
+from workflows.model_spec import (
+    MODEL_SPEC_CATALOG_FILES,
+    _MODEL_SPECS_DIR,
+    get_model_spec_map,
+    load_templates_from_yaml,
+)
 from workflows.utils_report import BenchmarkTaskParams, BenchmarkTaskParamsCNN
 from workflows.workflow_types import DeviceTypes
+
+# Benchmark configs are generated for models *under test*, and tt-inference's
+# run.py always runs with --dev-mode in CI (MODEL_SPECS_ENV=dev), so nightly /
+# weekly benchmarks resolve their specs from the dev catalog -- not prod, which
+# only holds released models. Resolve the fixtures here from dev for the same
+# reason (e.g. gemma-3-4b-it is a dev-only VLM, never released to prod).
+MODEL_SPECS = get_model_spec_map(
+    [
+        template
+        for fname in MODEL_SPEC_CATALOG_FILES
+        for template in load_templates_from_yaml(
+            _MODEL_SPECS_DIR / "dev" / fname, env="dev"
+        )
+    ]
+)
 
 
 def _find_model_id(

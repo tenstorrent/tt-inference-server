@@ -27,7 +27,7 @@ _ORCHESTRATOR = "test_module.llm_tests.agentic_traces_tests.run_agentic_traces"
 def _make_ctx():
     ctx = MagicMock()
     ctx.model_spec.model_name = "Kimi-K2.7-Code"
-    ctx.model_spec.model_id = "id_tt-transformers_Kimi-K2.7-Code_super_cluster"
+    ctx.model_spec.model_id = "id_blaze_Kimi-K2.7-Code_super_cluster"
     ctx.device.name = "super_cluster"
     ctx.service_port = 8000
     ctx.output_path = "/tmp/test_output"

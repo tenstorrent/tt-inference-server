@@ -23,6 +23,7 @@ Browse models by type:
 - [TTS Models](docs/model_support/tts/README.md) - Text-to-speech models
 - [Embedding Models](docs/model_support/embedding/README.md) - Text embedding models
 - [CNN Models](docs/model_support/cnn/README.md) - Convolutional Neural Networks
+- [Training Models](docs/model_support/training/README.md) - Training models
 
 ### Models by Hardware Configuration
 
@@ -35,7 +36,6 @@ Browse models by hardware:
 - [BH 4xP150](docs/model_support/models_by_hardware.md#bh-4xp150)
 - [BH P300](docs/model_support/models_by_hardware.md#bh-p300)
 - [BH QuietBox 2](docs/model_support/models_by_hardware.md#bh-quietbox-2)
-- [p100](docs/model_support/models_by_hardware.md#p100)
 - [p150](docs/model_support/models_by_hardware.md#p150)
 - [WH LoudBox/QuietBox](docs/model_support/models_by_hardware.md#wh-loudboxquietbox)
 - [n150](docs/model_support/models_by_hardware.md#n150)

@@ -72,6 +72,7 @@ class AgenticTracesRun:
     use_server_token_count: bool
     gpu_telemetry: bool
     mode: AgenticTracesMode
+    trace_idle_gap_cap_seconds: Optional[float] = None
     # AIPerf ``--goodput`` SLO string; empty means this run measures none.
     goodput: str = ""
     # The requirements document's expected ``agenticSweep`` (all points, so a
@@ -194,6 +195,7 @@ def build_runs(
                 use_server_token_count=spec.use_server_token_count,
                 gpu_telemetry=spec.gpu_telemetry,
                 mode=mode,
+                trace_idle_gap_cap_seconds=spec.trace_idle_gap_cap_seconds,
                 goodput=spec.goodput,
                 expected_sweep=[dict(point) for point in spec.expected_sweep],
                 task=spec.task,

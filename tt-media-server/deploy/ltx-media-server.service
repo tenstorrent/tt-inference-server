@@ -2,6 +2,10 @@
 Description=LTX-2.3-Fast media server (tt-media-server, Galaxy)
 After=network-online.target
 Wants=network-online.target
+# Device DMA pins into the 1G hugepages this unit allocates, which can land minutes
+# into boot. Wants, not Requires: a host without the unit should still start.
+After=tenstorrent-hugepages.service
+Wants=tenstorrent-hugepages.service
 # Circuit breaker: if it keeps failing fast (e.g. device needs a manual tt-smi -r),
 # stop auto-restarting after 5 starts in 30 min so a human can intervene.
 StartLimitIntervalSec=1800
@@ -13,6 +17,8 @@ User=rsalman
 Group=rsalman
 Environment=HOME=/home/rsalman
 WorkingDirectory=/home/rsalman/tt-metal/tt-inference-server/tt-media-server
+# tenstorrent-hugepages is Type=simple, so After= alone does not wait for the pages.
+ExecStartPre=/home/rsalman/tt-metal/tt-inference-server/tt-media-server/deploy/wait-for-hugepages.sh
 ExecStart=/home/rsalman/tt-metal/tt-inference-server/tt-media-server/start_ltx_fast.sh
 Restart=on-failure
 RestartSec=10

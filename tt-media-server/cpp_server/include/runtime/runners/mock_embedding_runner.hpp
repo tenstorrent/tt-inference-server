@@ -12,6 +12,16 @@
 
 namespace tt::runners {
 
+/// Env var: fail warmup in the mock. Value "all" or a comma-separated list of
+/// worker ids (e.g. "0,2"). Read in the forked worker, so integration tests
+/// set it in the parent before EmbeddingService::start().
+inline constexpr char EMBEDDING_MOCK_FAIL_WARMUP_ENV[] =
+    "EMBEDDING_MOCK_FAIL_WARMUP";
+
+/// Poison prompt: a request with exactly this input makes the mock kill its
+/// process mid-batch, letting tests pick which request in which batch dies.
+inline constexpr char EMBEDDING_MOCK_CRASH_PROMPT[] = "__MOCK_CRASH__";
+
 /**
  * Embedding runner with no Python interpreter and no device.
  *

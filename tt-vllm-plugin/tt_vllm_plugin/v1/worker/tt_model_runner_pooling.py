@@ -167,7 +167,6 @@ class TTModelRunnerPooling:
                 req_ids=[],
                 req_id_to_index={},
                 sampled_token_ids=[],
-                spec_token_ids=None,
                 logprobs=None,
                 prompt_logprobs_dict={},
                 pooler_output=[],
@@ -215,7 +214,6 @@ class TTModelRunnerPooling:
             req_ids=req_ids,
             req_id_to_index=req_id_to_index,
             sampled_token_ids=sampled_token_ids,  # List of empty lists for pooling models
-            spec_token_ids=None,
             logprobs=None,
             prompt_logprobs_dict={},
             pooler_output=pooler_output,

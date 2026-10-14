@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "domain/embedding_request.hpp"
@@ -12,13 +13,10 @@
 namespace tt::services {
 
 /**
- * Service for handling embedding requests.
- *
- * Uses a multiprocess scheduler with EmbeddingRunner workers.
- * Synchronous: submit_request blocks until the embedding is computed.
+ * Embedding request pipeline over forked worker processes. Async-only:
+ * submitRequestAsync queues the request and a dispatch thread completes it.
  */
-class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
-                                                domain::EmbeddingResponse> {
+class EmbeddingService : public RequestPipeline<domain::EmbeddingRequest> {
  public:
   EmbeddingService();
   ~EmbeddingService() override;
@@ -30,16 +28,18 @@ class EmbeddingService : public BaseSyncService<domain::EmbeddingRequest,
   void stop() override;
   bool isModelReady() const override;
 
+  /** Enqueue and return; onComplete fires exactly once from a dispatch
+   * thread. The queue-capacity check runs synchronously, so
+   * QueueFullException (HTTP 429) propagates to the caller. */
+  void submitRequestAsync(
+      domain::EmbeddingRequest request,
+      std::function<void(domain::EmbeddingResponse&&)> onComplete);
+
  protected:
   size_t currentQueueSize() const override;
 
-  /** Real per-worker liveness/readiness for /health and /tt-liveness; without
-   * this the health endpoints report an empty worker list and external
-   * harnesses see "0/0 workers ready". */
+  /** Per-worker liveness/readiness for the health endpoints. */
   std::vector<tt::worker::WorkerInfo> getWorkerInfo() const override;
-
-  domain::EmbeddingResponse produceResponse(
-      domain::EmbeddingRequest request) override;
 
  private:
   struct Impl;

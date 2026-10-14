@@ -63,6 +63,7 @@ python3 run.py --model meta-llama/Llama-3.2-1B-Instruct --tt-device n150 --workf
 - [Reports](#reports)
 - [Server Spec Tests](#server-spec-tests)
 - [API Parameter Tests](#api-parameter-tests)
+- [Tool-Call Schema Tests](#tool-call-schema-tests)
 - [Stress Tests](#stress-tests)
 - [Logs](#logs)
 - [Additional Documentation](#additional-documentation)
@@ -384,6 +385,33 @@ python3 run.py --model meta-llama/Llama-3.1-8B-Instruct --tt-device n150 --workf
 ```
 
 The run routes to the workflow engine, which emits the report in-process to `workflow_logs/reports_output/spec_tests/`.
+
+## Tool-Call Schema Tests
+
+> **Internal.** Runs as part of `spec_tests` for the models enrolled in `test_module/test_suites/llm.json` (MiniMax-M3 and Kimi-K2.7-Code on `super_cluster`).
+
+`ToolCallSchemaConformanceTest` checks that tool-call arguments validate against the tool's JSON Schema. It offers each of 204 walle cases (from the [Kimi Vendor Verifier](https://github.com/MoonshotAI/Kimi-Vendor-Verifier)) as a `strict` tool, in non-streaming and streaming mode, and validates the returned arguments with `jsonschema`. It passes when the pass rate reaches `pass_rate_threshold` (100% by default; per model through `targets`).
+
+The enrolled models run it twice: `tool_choice` `auto`, then `required`. The `required` run sets `non_blocking`, so acceptance waives its FAIL (an ERROR still blocks).
+
+```bash
+python3 run.py --model MiniMaxAI/MiniMax-M3 --device super_cluster --workflow spec_tests --dev-mode \
+  --server-url <endpoint> --skip-system-sw-validation --test-name ToolCallSchemaConformanceTest
+```
+
+Settings go in the test case's `test_config`; `TOOL_CALL_SCHEMA_<KEY>` overrides one for a single run (it applies to both tool-choice runs):
+
+| Key | Default | |
+|---|---|---|
+| `tool_choice` | `auto` | `auto` or `required` |
+| `case_retries` | `0` | extra attempts for a failing case |
+| `workers` / `max_tokens` / `request_timeout` | `16` / `2048` / `600` | concurrency, per-request limits |
+| `exclude_ref_schemas` | `false` | skip cases that use `$ref`, listed under `excluded_cases` (MiniMax-M3: its tool-call parser loses `$ref` types) |
+| `default_sampling` / `sampling_params` | off | send sampling params with every request |
+| `cache_bypass` | `false` | unique prompt prefix per request |
+| `non_blocking` / `non_blocking_reason` | off | `test_config` only, no env override |
+
+The run logs a `[tool-call-schema progress] N/M done` line every ~5% of cases. To run the suite directly with pytest, see [Running vLLM parameter tests](run_vllm_param_tests.md#tool-call-schema-suite).
 
 ## Stress Tests
 

@@ -41,9 +41,10 @@ size_t numWorkers();
 
 /**
  * Size of the process-wide ThreadPool that fronts inference dispatch (used by
- * `tt::utils::controllerCallbackPool()`). HTTP requests block one of these
- * threads for the full inference latency, so this caps the in-flight
- * dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
+ * `tt::utils::controllerCallbackPool()` on the image/media sync path; the
+ * embedding path is callback-based and does not use it). HTTP requests block
+ * one of these threads for the full inference latency, so this caps the
+ * in-flight dispatch concurrency. From `CALLBACK_POOL_THREADS`; if unset or 0,
  * auto-scales to `max(numWorkers(), CALLBACK_POOL_THREADS_MIN)` and is clamped
  * to `CALLBACK_POOL_THREADS_MAX`. Auto-scaling ensures the pool never silently
  * caps below the per-deploy `DEVICE_IDS` worker count (e.g. 32 on Galaxy).
@@ -53,10 +54,6 @@ size_t callbackPoolThreads();
 /** Max wait (ms) to fill a batch. From MAX_BATCH_DELAY_TIME_MS. Default:
  * defaults::MAX_BATCH_DELAY_TIME_MS. */
 unsigned batchTimeoutMs();
-
-/** Path prepended to Python sys.path for embedding runner. From TT_PYTHON_PATH.
- * Default: defaults::TT_PYTHON_PATH. */
-std::string pythonPath();
 
 /** Tokenizer path: tokenizers/<model>/tokenizer.json relative to executable.
  * Empty if not found. No-arg overload uses the current model_type(). */
@@ -490,6 +487,11 @@ std::string sentryRelease();
 /** Verbose Sentry SDK logging. From SENTRY_DEBUG. Default:
  * defaults::SENTRY_DEBUG. */
 bool sentryDebug();
+
+/** server_name tag on every transaction; overrides the OS hostname (a random
+ * container ID under Docker). From SENTRY_SERVER_NAME; empty falls back to
+ * POD_NAME, then gethostname(). Default: defaults::SENTRY_SERVER_NAME. */
+std::string sentryServerName();
 
 // ---------------------------------------------------------------------------
 // Mooncake KV Migration configuration.

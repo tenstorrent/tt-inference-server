@@ -38,6 +38,7 @@ from model_services.base_job_service import BaseJobService
 from pydantic import ValidationError
 from resolver.service_resolver import service_resolver
 from security.api_key_checker import get_api_key
+from starlette.background import BackgroundTask
 from telemetry.telemetry_client import TelemetryEvent
 from utils.decorators import log_execution_time
 from utils.image_manager import ImageManager
@@ -65,6 +66,14 @@ _OPENAPI_IMAGE_PLACEHOLDER = (
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 _UPLOAD_READ_CHUNK = 64 * 1024
 _ALLOWED_IMAGE_CONTENT_TYPES = frozenset({"image/png", "image/jpeg", "image/webp"})
+
+
+def _unlink_quietly(path: str) -> None:
+    """Best-effort delete of a served temp file; never fail a response over cleanup."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _validate_image_content_type(upload: UploadFile) -> None:
@@ -102,14 +111,34 @@ async def _read_capped_upload(upload: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
+# "basic" omits steps and shape fields so it is valid on every model
+# (LTX rejects a step count).
 _T2V_EXAMPLES = {
     "basic": {
-        "summary": "Text-to-video",
+        "summary": "Text-to-video (server defaults)",
         "value": {
             "prompt": "A serene mountain landscape with flowing water",
             "negative_prompt": "blurry, low quality",
-            "num_inference_steps": 20,
             "seed": 42,
+        },
+    },
+    "explicit_shape": {
+        "summary": "Text-to-video pinning the served shape explicitly",
+        "description": (
+            "Shape fields are validated against the shape this deployment "
+            "serves, not honoured as free variables -- the pipeline's traces "
+            "are captured for one shape at startup. A mismatch is a 422 that "
+            "names the served shape. `duration` is in seconds and is snapped to "
+            "the nearest legal frame count ((num_frames - 1) %% 8 == 0) before "
+            "the check, so 6 and 6.12 both resolve to 153 frames at 25 fps."
+        ),
+        "value": {
+            "prompt": "A serene mountain landscape with flowing water",
+            "seed": 42,
+            "duration": 6,
+            "fps": 25,
+            "height": 1088,
+            "width": 1920,
         },
     },
 }
@@ -252,7 +281,12 @@ async def _submit_video_request(
     try:
         service.scheduler.check_is_model_ready()
     except Exception:
-        raise HTTPException(status_code=405, detail="Model is not ready")
+        # 503, not 405: not-ready is temporary, and a 405 is never retried.
+        raise HTTPException(
+            status_code=503,
+            detail="Model is not ready",
+            headers={"Retry-After": "30"},
+        )
 
     await _resolve_image_prompt_urls(request)
 
@@ -435,8 +469,10 @@ def get_jobs_metadata(
     return JSONResponse(content=job_data)
 
 
-@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
+# log_execution_time must sit below router.get(), or the router serves the
+# unwrapped function.
 @router.get("/generations/{job_id}/download")
+@log_execution_time("Downloading video content", TelemetryEvent.DOWNLOAD_RESULT, None)
 def download_video_content(
     job_id: str,
     request: Request,
@@ -460,14 +496,18 @@ def download_video_content(
     ):
         raise HTTPException(status_code=404, detail="Video content not available")
 
-    # Create a faststart temp file before serving
+    # Per-request faststart copy; deleted once the response is sent.
     with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
         faststart_path = tmp.name
     try:
         VideoManager.ensure_faststart(file_path, faststart_path)
         serve_path = faststart_path
+        cleanup = BackgroundTask(_unlink_quietly, faststart_path)
     except Exception:
+        # Remux failed: serve the original and drop the empty stub.
+        _unlink_quietly(faststart_path)
         serve_path = file_path
+        cleanup = None
 
     return FileResponse(
         serve_path,
@@ -476,6 +516,7 @@ def download_video_content(
         headers={
             "Content-Disposition": f"attachment; filename={os.path.basename(file_path)}"
         },
+        background=cleanup,
     )
 
 

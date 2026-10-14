@@ -278,3 +278,4 @@ class WorkflowVenvType(IntEnum):
     SERVER = auto()
     TT_SMI = auto()
     TT_TOPOLOGY = auto()
+    LLM_VLLM_TOKEN_TIMING = auto()

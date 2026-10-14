@@ -15,8 +15,7 @@ namespace tt::config::defaults {
 
 constexpr const char* DEVICE_IDS = "(0)";
 constexpr const char* MODEL_SERVICE = "llm";
-constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 5;
-constexpr const char* TT_PYTHON_PATH = "..";
+constexpr unsigned MAX_BATCH_DELAY_TIME_MS = 2;
 constexpr const char* LLM_MODE = "regular";  // "regular", "prefill", "decode"
 constexpr const char* SOCKET_HOST = "localhost";
 constexpr uint16_t SOCKET_PORT = 9000;
@@ -185,6 +184,9 @@ constexpr const char* SENTRY_ENVIRONMENT = "development";
 // Empty = label events with the server version passed to telemetry::init().
 constexpr const char* SENTRY_RELEASE = "";
 constexpr bool SENTRY_DEBUG = false;
+// server_name tag override (e.g. a deployment or pod name). Empty falls back
+// to POD_NAME, then the OS hostname (a random container ID under Docker).
+constexpr const char* SENTRY_SERVER_NAME = "";
 
 // Text-to-speech scheduler defaults.
 constexpr size_t TTS_MAX_BATCH_SIZE = 1;

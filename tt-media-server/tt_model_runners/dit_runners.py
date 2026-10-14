@@ -13,6 +13,10 @@ from pathlib import Path
 import numpy as np
 import ttnn
 from config.constants import (
+    LTX_FPS,
+    LTX_HEIGHT,
+    LTX_NUM_FRAMES,
+    LTX_WIDTH,
     WAN22_ANISORA_NUM_STEPS,
     WAN22_DISTILL_NUM_STEPS,
     WAN22_LIGHTNING_NUM_STEPS,
@@ -30,14 +34,33 @@ from domain.video_i2v_generate_request import ImagePromptEntry, VideoI2VGenerate
 from huggingface_hub import hf_hub_download
 from models.common.utility_functions import is_blackhole
 from models.tt_dit.pipelines.flux1.pipeline_flux1 import Flux1Pipeline
-from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
-    Flux1KontextPipeline,
-)
+
+try:
+    from models.tt_dit.pipelines.flux1.pipeline_flux1_kontext import (
+        Flux1KontextPipeline,
+    )
+except ImportError:
+    # tt-metal does not ship models/tt_dit/pipelines/flux1/pipeline_flux1_kontext
+    # yet (absent on main as of 2026-09-16). This module-scope import previously
+    # took down every runner defined here -- Wan, Flux, SD3.5, Mochi, Motif,
+    # QwenImage, MiniMax -- because one optional pipeline was missing. Degrade to
+    # None so the other runners load; TTFluxKontextRunner.create_pipeline raises a
+    # precise error if the Kontext runner is actually requested.
+    Flux1KontextPipeline = None
 from models.tt_dit.pipelines.minimax_h3.pipeline_minimax_h3 import (
     MiniMaxH3Pipeline,
     resolve_mesh_preset,
 )
-from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+
+try:
+    from models.tt_dit.pipelines.mochi.pipeline_mochi import MochiPipeline
+except ImportError:
+    # tt_dit's Mochi pipeline is the only one here that imports
+    # diffusers.pipelines.* (for linear_quadratic_schedule), so it is the only
+    # one that breaks when diffusers and huggingface_hub are mismatched in the
+    # image. Same containment as Flux1-Kontext above: keep the other runners
+    # loadable and let TTMochi1Runner.create_pipeline report the real cause.
+    MochiPipeline = None
 from models.tt_dit.pipelines.motif.pipeline_motif import MotifPipeline
 from models.tt_dit.pipelines.qwenimage.pipeline_qwenimage import (
     QwenImagePipeline,
@@ -357,6 +380,13 @@ class TTFluxKontextRunner(TTDiTRunner):
         return None, 1.0
 
     def create_pipeline(self):
+        if Flux1KontextPipeline is None:
+            raise ImportError(
+                "Flux1-Kontext requires models.tt_dit.pipelines.flux1."
+                "pipeline_flux1_kontext, which this tt-metal build does not "
+                "provide. Use a tt-metal revision that ships the Kontext "
+                "pipeline to run this model."
+            )
         try:
             lora_path, lora_scale = self._active_lora()
             if lora_path:
@@ -488,6 +518,13 @@ class TTMochi1Runner(TTDiTRunner):
         super().__init__(device_id)
 
     def create_pipeline(self):
+        if MochiPipeline is None:
+            raise ImportError(
+                "Mochi-1 requires models.tt_dit.pipelines.mochi.pipeline_mochi, "
+                "which failed to import in this image -- typically a diffusers / "
+                "huggingface_hub version mismatch, since it is the only tt_dit "
+                "pipeline that imports diffusers.pipelines."
+            )
         try:
             return MochiPipeline.create_pipeline(
                 mesh_device=self.ttnn_device,
@@ -1298,12 +1335,9 @@ class TTWan22I2VLoRARunner(TTDiTRunner):
 # LTX-2.3 distilled text->audio-video
 # ---------------------------------------------------------------------------
 
-# Proven-good 1080p ~6s AV generation shape for the (4, 8) Galaxy ring config
-# (validated on-device). H/W must be %64 and (num_frames-1)%8 == 0.
-LTX_NUM_FRAMES = 145
-LTX_HEIGHT = 1088
-LTX_WIDTH = 1920
-LTX_FPS = 24
+# The served shape (LTX_NUM_FRAMES etc.) lives in config.constants so the request
+# layer can validate against it without importing tt-metal.
+
 # (4, 8) BH Galaxy ring defaults (mirrors LTXPipeline.create_pipeline's own 4x8
 # device_configs entry): dynamic_load off, Ring topology, 2 links.
 LTX_DYNAMIC_LOAD = False
@@ -1383,6 +1417,7 @@ class TTLTX23DistilledRunner(TTDiTRunner):
                 num_frames=LTX_NUM_FRAMES,
                 height=LTX_HEIGHT,
                 width=LTX_WIDTH,
+                fps=LTX_FPS,
                 image_conditioning=False,
             )
         except Exception as e:
@@ -1408,14 +1443,16 @@ class TTLTX23DistilledRunner(TTDiTRunner):
         LTX_VIDEO_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         output_path = str(LTX_VIDEO_OUTPUT_DIR / f"{uuid.uuid4()}.mp4")
         # generate() writes the AV MP4 to output_path and returns that path.
+        # _validate_shape has pinned these; the fallback covers warmup's
+        # model_construct() request, which skips validation.
         result_path = self.pipeline.generate(
             request.prompt,
             output_path=output_path,
-            num_frames=LTX_NUM_FRAMES,
-            height=LTX_HEIGHT,
-            width=LTX_WIDTH,
+            num_frames=getattr(request, "num_frames", None) or LTX_NUM_FRAMES,
+            height=getattr(request, "height", None) or LTX_HEIGHT,
+            width=getattr(request, "width", None) or LTX_WIDTH,
             seed=int(request.seed or 0),
-            fps=LTX_FPS,
+            fps=getattr(request, "fps", None) or LTX_FPS,
         )
         self.logger.debug(f"Device {self.device_id}: LTX inference completed")
         if self._warming_up:
