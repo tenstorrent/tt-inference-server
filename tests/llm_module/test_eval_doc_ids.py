@@ -96,3 +96,16 @@ def test_livecodebench_v6_window_is_131_unique_ids_in_the_sixth_release():
     ids = LIVECODEBENCH_V6_DOC_IDS
     assert len(ids) == 131 and len(set(ids)) == 131
     assert min(ids) >= 880 and max(ids) == 1054 and ids == sorted(ids)
+
+
+def test_scoring_uses_the_doc_ids_count_not_lm_evals_dataset_size():
+    from test_module.llm_tests.llm_eval_tests import _apply_samples_subset_count
+
+    task = EvalTask(task_name="livecodebench", doc_ids=list(range(131)))
+    counts = _apply_samples_subset_count(task, _rc(), {"livecodebench": 1055})
+    assert counts == {"livecodebench": 131}
+    # no subset -> counts untouched
+    plain = EvalTask(task_name="mmlu_pro")
+    assert _apply_samples_subset_count(plain, _rc(), {"mmlu_pro": 849}) == {
+        "mmlu_pro": 849
+    }
