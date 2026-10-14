@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import os
 import struct
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -18,7 +19,8 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-AUTH_HEADERS = {"Authorization": "Bearer your-secret-key"}
+# Both TTS servers accept this bearer when no key is configured.
+DEFAULT_API_KEY = "your-secret-key"
 
 TTS_API_MEDIA_SERVER = "media_server"
 TTS_API_QWEN3_CPP = "qwen3_cpp"
@@ -31,6 +33,12 @@ QWEN3_CLONE_MODES = ("voice_only", "in_context")
 MIN_AUDIO_SECONDS = 0.3
 
 _STREAMING_SIZE = 0xFFFFFFFF
+
+
+def auth_headers() -> dict:
+    """Bearer header from OPENAI_API_KEY, then API_KEY, else the default key."""
+    token = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY") or DEFAULT_API_KEY
+    return {"Authorization": f"Bearer {token}"}
 
 
 @dataclass(frozen=True)
@@ -96,7 +104,7 @@ class MediaServerTTSClient(TTSClient):
                 "utf-8"
             )
         headers = {
-            **AUTH_HEADERS,
+            **auth_headers(),
             "accept": "application/json",
             "Content-Type": "application/json",
         }
@@ -186,7 +194,7 @@ class Qwen3CppTTSClient(TTSClient):
         request = self.build_request(text, voice)
         timeout = aiohttp.ClientTimeout(total=timeout_s)
         async with aiohttp.ClientSession(
-            headers=AUTH_HEADERS, timeout=timeout
+            headers=auth_headers(), timeout=timeout
         ) as session:
             async with session.post(url, **request) as response:
                 if response.status != 200:
@@ -298,6 +306,7 @@ def decode_streamed_wav(data: bytes) -> SynthesizedAudio:
 
 
 __all__ = [
+    "DEFAULT_API_KEY",
     "MIN_AUDIO_SECONDS",
     "MediaServerTTSClient",
     "Qwen3CppTTSClient",
@@ -306,6 +315,7 @@ __all__ = [
     "TTS_API_MEDIA_SERVER",
     "TTS_API_QWEN3_CPP",
     "VoiceClip",
+    "auth_headers",
     "decode_streamed_wav",
     "decode_wav_file",
     "make_tts_client",

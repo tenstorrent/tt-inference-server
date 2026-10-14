@@ -268,3 +268,61 @@ class TestMediaServerSynthesize:
             "seed": 5,
             "reference_audio": base64.b64encode(b"abc").decode(),
         }
+
+
+class TestAuth:
+    @pytest.fixture
+    def sessions(self, monkeypatch):
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("API_KEY", raising=False)
+        n = int(24000 * (MIN_AUDIO_SECONDS + 0.1))
+        wav = _wav_header() + _pcm(np.zeros(n))
+        opened = []
+
+        def session(**kwargs):
+            opened.append(kwargs)
+            return _FakeSession(_FakeResponse(200, wav), [])
+
+        monkeypatch.setattr(aiohttp, "ClientSession", session)
+        return opened
+
+    def _bearer(self, sessions):
+        client = Qwen3CppTTSClient("custom_voice", speaker="ryan")
+        asyncio.run(client.synthesize("http://x", "hi", seed=0))
+        return sessions[-1]["headers"]["Authorization"]
+
+    def test_default_key_when_nothing_is_set(self, sessions):
+        assert tts_client.auth_headers() == {"Authorization": "Bearer your-secret-key"}
+        assert self._bearer(sessions) == "Bearer your-secret-key"
+
+    def test_api_key_is_used_when_openai_key_is_unset(self, sessions, monkeypatch):
+        monkeypatch.setenv("API_KEY", "from-api-key")
+        assert self._bearer(sessions) == "Bearer from-api-key"
+
+    def test_openai_key_wins_and_is_read_per_request(self, sessions, monkeypatch):
+        monkeypatch.setenv("API_KEY", "from-api-key")
+        monkeypatch.setenv("OPENAI_API_KEY", "first")
+        assert self._bearer(sessions) == "Bearer first"
+        monkeypatch.setenv("OPENAI_API_KEY", "second")
+        assert self._bearer(sessions) == "Bearer second"
+
+    def test_media_server_sends_the_key_with_its_json_headers(self, monkeypatch):
+        monkeypatch.setenv("OPENAI_API_KEY", "k")
+        opened = []
+
+        def session(**kwargs):
+            opened.append(kwargs)
+            return _FakeSession(_JsonResponse({"audio": ""}), [])
+
+        monkeypatch.setattr(aiohttp, "ClientSession", session)
+        monkeypatch.setattr(
+            tts_client,
+            "decode_wav_file",
+            lambda b: SynthesizedAudio(np.zeros(1, dtype=np.float32), 16000),
+        )
+        asyncio.run(MediaServerTTSClient().synthesize("http://x", "hi", seed=0))
+        assert opened[0]["headers"] == {
+            "Authorization": "Bearer k",
+            "accept": "application/json",
+            "Content-Type": "application/json",
+        }

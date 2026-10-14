@@ -271,9 +271,8 @@ MODEL_SPECS_ENV=dev python3 run.py --model Qwen/Qwen3-TTS-12Hz-1.7B-Base \
 Use `--model Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` for a CustomVoice server, or
 replace `--server-url ... --service-port ...` with
 `--docker-server --override-docker-image <image>` to start the server as well.
-The eval client always sends the default token `your-secret-key`, so the server
-must run without `OPENAI_API_KEY` (with `--docker-server`, leave both
-`OPENAI_API_KEY` and `API_KEY` unset). The adapter and the gates have
+The eval client sends `OPENAI_API_KEY`, else `API_KEY`, else `your-secret-key`,
+the same key `--docker-server` gives the server. The adapter and the gates have
 device-free tests:
 `pytest tests/test_module/test_tts_client.py tests/test_module/test_tts_eval.py`.
 
