@@ -539,7 +539,6 @@ class EvalConfig:
 # Note: reasoning models (QwQ-32B, DeepSeek-R1-Distill-Llama-70B) need evals allowing more tokens generated
 
 
-<<<<<<< HEAD
 # LiveCodeBench "v6" window (contest_date >= 2025-02-01) as doc_ids of the
 # lm-eval livecodebench task (six code_generation_lite release files
 # concatenated, 1055 problems; indices are stable because releases append).
@@ -556,13 +555,13 @@ LIVECODEBENCH_V6_DOC_IDS = [
 # under a release run; bump deliberately when a new revision is published.
 TERMINAL_BENCH_2_DATASET_REF = (
     "sha256:c6fc2e2382c1dbae99b2d5ecd2f4f4a60c3c01e0d84642d69b4afd92e99d078b"
-=======
+)
+
 # Custom lm-eval task definitions for IFM/K2-Horizon-7B model-card evals that the
 # pinned lm-eval fork does not ship. Absolute, so it resolves independently of the
 # venv that include_path is normally joined with.
 _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "k2_horizon"
->>>>>>> origin/main
 )
 
 _eval_config_list = [
