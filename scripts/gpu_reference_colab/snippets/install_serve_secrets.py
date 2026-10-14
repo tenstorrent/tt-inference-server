@@ -5,11 +5,18 @@
 # /content/gpuref/secrets (0700 dir, 0600 files) and write the curl header file
 # the runner's health checks read. This code never prints a value.
 import os
+import stat
 
 W = "/content/gpuref"
 S = os.path.join(W, "secrets")
+# Owner-only by construction: with umask 077 the directory is created 0700 and
+# every file 0600. The directory needs its execute bit to be entered, so it is
+# never chmod-ed; an existing one with any group/other bit is refused instead
+# of being re-permissioned.
+os.umask(0o077)
 os.makedirs(S, mode=0o700, exist_ok=True)
-os.chmod(S, 0o700)
+if stat.S_IMODE(os.stat(S).st_mode) & 0o077:
+    raise SystemExit("GPUREF_SERVE_SECRETS_REFUSED: %s is group/other accessible" % S)
 for name in ("endpoint_api_key", "ngrok_authtoken"):
     src, dst = os.path.join(W, name + ".upload"), os.path.join(S, name)
     os.chmod(src, 0o600)
