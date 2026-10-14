@@ -109,3 +109,20 @@ def test_scoring_uses_the_doc_ids_count_not_lm_evals_dataset_size():
     assert _apply_samples_subset_count(plain, _rc(), {"mmlu_pro": 849}) == {
         "mmlu_pro": 849
     }
+
+
+def test_duplicate_cli_doc_ids_are_dropped_and_counted_once():
+    rc = _rc(eval_samples=json.dumps({"livecodebench": [5, 5, 6]}))
+    out = _resolve_eval_samples(EvalTask(task_name="livecodebench"), rc)
+    assert json.loads(out) == {"livecodebench": [5, 6]}
+    from test_module.llm_tests.llm_eval_tests import _apply_samples_subset_count
+
+    counts = _apply_samples_subset_count(
+        EvalTask(task_name="livecodebench"), rc, {"livecodebench": 1055}
+    )
+    assert counts == {"livecodebench": 2}
+
+
+def test_duplicate_configured_doc_ids_are_rejected():
+    with pytest.raises(ValueError):
+        EvalTask(task_name="x", doc_ids=[1, 2, 2]).validate_data()

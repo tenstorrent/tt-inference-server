@@ -65,3 +65,13 @@ def test_gemma4_terminal_bench_2_is_pinned_to_the_hub_digest():
             if t.task_name == "terminal_bench_2"
         )
         assert task.agentic_eval_config.dataset_ref == TERMINAL_BENCH_2_DATASET_REF
+
+
+def test_dataset_ref_forces_config_file_mode(tmp_path):
+    # Without the ref nothing else in this config needs the file; with it the
+    # pin has to travel in the datasets block, so run() must use the file.
+    assert harbor._needs_config_file(_run_config(tmp_path)) is False
+    assert (
+        harbor._needs_config_file(_run_config(tmp_path, dataset_ref="sha256:abc"))
+        is True
+    )

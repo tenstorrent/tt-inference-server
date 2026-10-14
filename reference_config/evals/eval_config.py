@@ -474,6 +474,11 @@ class EvalTask:
                 f"EvalTask {self.task_name!r}: doc_ids must be a non-empty list of "
                 "non-negative integers"
             )
+        if self.doc_ids is not None and len(set(self.doc_ids)) != len(self.doc_ids):
+            raise ValueError(
+                f"EvalTask {self.task_name!r}: doc_ids contains duplicate ids; "
+                "lm-eval runs each document once, so the list must be unique"
+            )
         for device_key, overrides in self.device_overrides.items():
             if not isinstance(overrides, dict):
                 raise ValueError(

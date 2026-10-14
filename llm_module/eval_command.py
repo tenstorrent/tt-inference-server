@@ -242,12 +242,22 @@ def _resolve_eval_samples(task: "EvalTask", runtime_config) -> Optional[str]:
             f"--eval-samples entry for task '{task.task_name}' must be a list of "
             f"non-negative integers; got {indices!r}"
         )
+    unique = list(dict.fromkeys(indices))
+    if len(unique) != len(indices):
+        # lm-eval selects documents by membership, so a repeated id runs once;
+        # count it once too, or the noise band and timing would be graded on
+        # an inflated n.
+        logger.warning(
+            "Task %s: %d duplicate doc_id(s) in the --samples list were dropped",
+            task.task_name,
+            len(indices) - len(unique),
+        )
     logger.info(
         "Filtering task %s to %d doc_id(s) via --samples",
         task.task_name,
-        len(indices),
+        len(unique),
     )
-    return json.dumps({task.task_name: list(indices)})
+    return json.dumps({task.task_name: unique})
 
 
 def _check_request_overrides_supported(task, request_body: dict, model_spec) -> None:

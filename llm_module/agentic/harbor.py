@@ -296,6 +296,8 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
         or bool(config.environment_env)
         or bool(config.verifier_env)
         or bool(config.environment_kwargs)
+        # The Hub ref is only expressible in the config file's datasets block.
+        or bool(config.dataset_ref)
     )
 
 
