@@ -1817,6 +1817,17 @@ def test_kv_bytes_counts_only_attention_layers_in_a_hybrid_model():
     assert gpuref.kv_bytes_per_token(dense) == 64 * 2 * 4 * 256 * 2
 
 
+def test_gemma4_unified_stack_has_the_model_and_its_config():
+    # gemma-4-12B-it is Gemma4Unified, not Gemma4: without its own entry it fell
+    # back to vLLM 0.13, which has neither the model nor the template kwargs flag.
+    stack = gpuref.serving_stack(
+        {"architectures": ["Gemma4UnifiedForConditionalGeneration"]}
+    )
+    assert (stack["vllm"], stack["transformers"]) == ("0.23.0", "5.10.0")
+    gemma = gpuref.serving_stack({"architectures": ["Gemma4ForConditionalGeneration"]})
+    assert gemma["vllm"] == "0.20.0"
+
+
 def test_qwen3_5_stack_is_the_first_vllm_with_it():
     stack = gpuref.serving_stack({"architectures": ["Qwen3_5ForConditionalGeneration"]})
     assert (stack["vllm"], stack["transformers"]) == ("0.17.0", "4.57.5")
