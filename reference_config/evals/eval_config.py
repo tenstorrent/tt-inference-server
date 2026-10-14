@@ -1486,6 +1486,15 @@ _eval_config_list = [
                     agent_kwargs={
                         "tau2_trial_index": 0,
                         "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature, so
+                        # without this the agent samples at the server default
+                        # top_p=1.0. GLM-5.3's generation_config is temperature 1.0 /
+                        # top_p 0.95, matching the GLM-5.3 GPQA, LongBench and
+                        # terminal-bench entries. The untruncated tail emits
+                        # near-miss tool names (e.g. a Greek "ΚB_search") that the
+                        # glm47 parser drops, ending the trial as agent_error.
+                        # Must stay a JSON *string* (see the Kimi tau3 entry).
+                        "llm_args_json": '{"top_p": 0.95}',
                         "max_steps": 200,
                         # Default is 120s; a single reasoning user-sim turn under
                         # load can exceed that and trip an MCP request timeout.
