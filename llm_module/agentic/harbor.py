@@ -112,6 +112,10 @@ class HarborRunConfig:
     # Harbor runs these task directories instead of resolving ``dataset`` in
     # the registry.
     dataset_path: Optional[Path] = None
+    # Add the inference endpoint's host to Harbor's run-specific agent
+    # allowlist, for tasks that block agent egress
+    # (``[agent] network_mode = "no-network"``, e.g. DeepSWE).
+    allow_agent_endpoint: bool = False
 
 
 def _apply_mini_swe_agent_defaults(
@@ -183,8 +187,8 @@ def _mini_swe_needs_host_gateway(config: HarborRunConfig) -> bool:
     )
 
 
-def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
-    env = dict(config.agent_env)
+def _get_task_side_endpoint(config: HarborRunConfig) -> str:
+    """The endpoint as the agent inside the task container reaches it."""
     endpoint = _get_agent_endpoint(config)
     if _mini_swe_needs_host_gateway(config):
         parsed = urlsplit(endpoint)
@@ -192,6 +196,12 @@ def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
         endpoint = urlunsplit(
             parsed._replace(netloc=parsed.netloc.replace(host, _DOCKER_HOST_NAME, 1))
         )
+    return endpoint
+
+
+def _get_agent_env(config: HarborRunConfig) -> dict[str, str]:
+    env = dict(config.agent_env)
+    endpoint = _get_task_side_endpoint(config)
     env.update({key: endpoint for key in _OPENAI_ENDPOINT_ENV})
     return env
 
@@ -265,6 +275,11 @@ def _write_harbor_config(config: HarborRunConfig) -> Path:
     agent_env = _get_agent_env(config)
     if agent_env:
         agent_config["env"] = agent_env
+    if config.allow_agent_endpoint:
+        host = urlsplit(_get_task_side_endpoint(config)).hostname
+        if not host:
+            raise ValueError("allow_agent_endpoint needs an endpoint with a host")
+        agent_config["extra_allowed_hosts"] = [host]
 
     if config.environment_env:
         environment_config["env"] = config.environment_env
@@ -306,6 +321,7 @@ def _needs_config_file(config: HarborRunConfig) -> bool:
     return (
         _mini_swe_needs_host_gateway(config)
         or config.dataset_path is not None
+        or config.allow_agent_endpoint
         or config.agent_timeout_sec is not None
         or config.agent_setup_timeout_multiplier is not None
         or config.agent_import_path is not None
