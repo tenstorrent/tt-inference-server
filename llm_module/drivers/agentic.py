@@ -278,6 +278,7 @@ def build_harbor_config(
         stall_grace_sec=cfg.stall_grace_sec,
         progress_log_interval_sec=cfg.progress_log_interval_sec,
         enforce_agent_deadline=cfg.enforce_agent_deadline,
+        allow_agent_endpoint=getattr(cfg, "allow_agent_endpoint", False),
         venv_python=venv_python,
     )
 

@@ -987,6 +987,41 @@ class TestMiniSweAgentParity:
             }
         }
 
+    def test_allow_agent_endpoint_allowlists_the_task_side_host(self, tmp_path):
+        """A no-network task (DeepSWE) must still let the agent reach the
+        server, at the host the container actually dials."""
+        task = _swebench_task()
+        object.__setattr__(task.agentic_eval_config, "allow_agent_endpoint", True)
+        cfg = build_harbor_config(
+            task,
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+        assert cfg.allow_agent_endpoint
+
+        with patch.object(harbor, "run_with_progress", return_value=17):
+            harbor.run(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        agent = json.loads(config_path.read_text())["agents"][0]
+        assert agent["extra_allowed_hosts"] == ["host.docker.internal"]
+
+    def test_agent_endpoint_is_not_allowlisted_by_default(self, tmp_path):
+        cfg = build_harbor_config(
+            _swebench_task(),
+            _server(),
+            DriverContext(output_dir=tmp_path, device="N150"),
+            n_tasks=1,
+        )
+
+        with patch.object(harbor, "run_with_progress", return_value=17):
+            harbor.run(cfg)
+
+        config_path = cfg.jobs_dir / f"{cfg.task_name}_harbor_config.json"
+        agent = json.loads(config_path.read_text())["agents"][0]
+        assert "extra_allowed_hosts" not in agent
+
     def test_host_executed_agent_keeps_loopback_endpoint(self, tmp_path):
         cfg = build_harbor_config(
             _harbor_task(),
