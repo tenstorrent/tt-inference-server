@@ -317,12 +317,6 @@ class HarborEvalConfig:
 TerminalBenchEvalConfig = HarborEvalConfig
 
 MINI_SWE_AGENT_VERSION = "2.2.8"
-# DeepSWE's published leaderboard job (datacurve/deep-swe-leaderboard,
-# 20260606-deep-swe-leaderboard-all-4x) ran Pier with an unpinned
-# mini-swe-agent, which on 2026-06-06 installed 2.3.0 (2.3.1 followed on
-# 2026-06-09). Kept separate from MINI_SWE_AGENT_VERSION, whose SWE-bench
-# Verified GPU references were measured on 2.2.8.
-DEEPSWE_MINI_SWE_AGENT_VERSION = "2.3.0"
 
 
 @dataclass(frozen=True)
@@ -2839,7 +2833,9 @@ _eval_config_list = [
                     # None keeps each task's own 3h agent timeout.
                     agent_timeout_sec=None,
                     agent_kwargs={
-                        "version": DEEPSWE_MINI_SWE_AGENT_VERSION,
+                        # The leaderboard's published job (2026-06-06) ran an
+                        # unpinned mini-swe-agent, i.e. 2.3.0 at that date.
+                        "version": "2.3.0",
                         "max_tokens": 64 * 1024,
                         "config": {
                             "model": {
