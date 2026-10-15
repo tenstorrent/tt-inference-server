@@ -904,6 +904,7 @@ templates:
         block_size: '128'
         enable-prompt-tokens-details: true
         revision: '842da3794eaa0b77d5f08bae87a17459d91ff475'
+        tokenizer-revision: '842da3794eaa0b77d5f08bae87a17459d91ff475'
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
         async-scheduling: true
