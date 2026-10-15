@@ -13,7 +13,7 @@ import argparse
 import asyncio
 import multiprocessing as mp
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
@@ -278,10 +278,15 @@ class TensorResponse(BaseModel):
 
 class VaeDecodeRequest(BaseModel):
     latent: Dict[str, Any]  # base64 .npy payload, [B, C, H, W]
+    # "device" (default) runs the tt-metal VAE, "cpu" the host torch VAE. The
+    # SDXL_HOST_VAE_DECODE=1 env var still forces cpu server-wide.
+    backend: Optional[Literal["device", "cpu"]] = None
 
 
 class VaeEncodeRequest(BaseModel):
     image: Dict[str, Any]  # base64 .npy payload, [B, H, W, C]
+    # "device" (default) or "cpu"; SDXL_HOST_VAE_ENCODE=1 forces cpu server-wide.
+    backend: Optional[Literal["device", "cpu"]] = None
 
 
 # Video-staged models (wan22): mirror the SDXL staged contract but carry the wan
@@ -844,7 +849,7 @@ async def vae_decode(request: VaeDecodeRequest):
     """Staged VAE decode: latents [B, C, H, W] -> image [B, H, W, C] in [0, 1]."""
     _require_staged_support()
     latents = b64npy_to_ndarray(request.latent)
-    result = _submit_and_wait({"op": "vae_decode", "latent": latents})
+    result = _submit_and_wait({"op": "vae_decode", "latent": latents, "vae_backend": request.backend})
     return TensorResponse(
         image=ndarray_to_b64npy(result["tensor"]),
         inference_time=result.get("inference_time", 0.0),
@@ -857,7 +862,7 @@ async def vae_encode(request: VaeEncodeRequest):
     """Staged VAE encode: image [B, H, W, C] in [0, 1] -> latents [B, C, H, W]."""
     _require_staged_support()
     images = b64npy_to_ndarray(request.image)
-    result = _submit_and_wait({"op": "vae_encode", "image": images})
+    result = _submit_and_wait({"op": "vae_encode", "image": images, "vae_backend": request.backend})
     return TensorResponse(
         latent=ndarray_to_b64npy(result["tensor"]),
         inference_time=result.get("inference_time", 0.0),

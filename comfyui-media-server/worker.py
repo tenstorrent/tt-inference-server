@@ -291,9 +291,11 @@ def device_worker_process(
                                 denoise_kwargs["on_event"] = _on_event
                         tensor = runner.denoise(request, **denoise_kwargs)
                     elif op == "vae_decode":
-                        tensor = runner.vae_decode(request["latent"])
+                        vae_kwargs = {"backend": request["vae_backend"]} if request.get("vae_backend") else {}
+                        tensor = runner.vae_decode(request["latent"], **vae_kwargs)
                     else:  # vae_encode
-                        tensor = runner.vae_encode(request["image"])
+                        vae_kwargs = {"backend": request["vae_backend"]} if request.get("vae_backend") else {}
+                        tensor = runner.vae_encode(request["image"], **vae_kwargs)
                     inference_time = time.time() - start_time
                     result_queue.put(
                         {

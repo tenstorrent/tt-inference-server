@@ -13,7 +13,7 @@ from models.demos.stable_diffusion_xl_base.tests.test_common import SDXL_L1_SMAL
 from sdxl_config import SDXLConfig
 from utils.logger import setup_logger
 from utils.image_utils import tensor_to_pil
-from typing import List
+from typing import List, Optional
 
 
 class SDXLRunner:
@@ -447,15 +447,18 @@ class SDXLRunner:
             mesh_mapper=ttnn.ShardTensor2dMesh(self.ttnn_device, list(self.ttnn_device.shape), dims=(None, 0)),
         )
 
-    def vae_decode(self, latents_np: np.ndarray) -> np.ndarray:
+    def vae_decode(self, latents_np: np.ndarray, backend: Optional[str] = None) -> np.ndarray:
         """Staged: decode raw scheduler latents [B, C, H, W] -> image [B, H, W, C] in [0, 1].
 
         Runs on the device VAE when the pipeline was built with vae_on_device and the
         latents match the configured resolution; otherwise falls back to the host
-        torch VAE. Set SDXL_HOST_VAE_DECODE=1 to force the host path.
+        torch VAE. ``backend="cpu"`` (per request) or SDXL_HOST_VAE_DECODE=1
+        (server-wide) forces the host path.
         """
         latents = torch.from_numpy(np.ascontiguousarray(latents_np)).float()
-        if self._can_decode_on_device(latents):
+        on_device = backend != "cpu" and self._can_decode_on_device(latents)
+        self.logger.info(f"vae_decode: {'device' if on_device else 'cpu'} (requested {backend or 'default'})")
+        if on_device:
             image = self._vae_decode_device(latents)
         else:
             vae = self.pipeline.vae
@@ -514,13 +517,14 @@ class SDXLRunner:
             outputs.append(image[:chunk].reshape(chunk, oc, oh, ow)[:valid])
         return torch.cat(outputs, dim=0)
 
-    def vae_encode(self, image_np: np.ndarray) -> np.ndarray:
+    def vae_encode(self, image_np: np.ndarray, backend: Optional[str] = None) -> np.ndarray:
         """Staged: encode image [B, H, W, C] in [0, 1] -> raw scheduler latents [B, C, H, W].
 
         Output matches the denoise() latent contract (scaled by the VAE scaling factor).
         Runs on the device VAE when the pipeline was built with vae_on_device and the
         image matches the configured resolution; otherwise falls back to the host
-        torch VAE. Set SDXL_HOST_VAE_ENCODE=1 to force the host path.
+        torch VAE. ``backend="cpu"`` (per request) or SDXL_HOST_VAE_ENCODE=1
+        (server-wide) forces the host path.
         """
         image = torch.from_numpy(np.ascontiguousarray(image_np)).float()
         if image.ndim != 4:
@@ -528,7 +532,9 @@ class SDXLRunner:
         image = image.permute(0, 3, 1, 2).contiguous()
         image = 2.0 * image - 1.0
         vae = self.pipeline.vae
-        if self._can_encode_on_device(image):
+        on_device = backend != "cpu" and self._can_encode_on_device(image)
+        self.logger.info(f"vae_encode: {'device' if on_device else 'cpu'} (requested {backend or 'default'})")
+        if on_device:
             latents = self._vae_encode_device(image)
         else:
             with torch.no_grad():
