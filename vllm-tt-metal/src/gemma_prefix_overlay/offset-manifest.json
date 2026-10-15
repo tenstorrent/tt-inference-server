@@ -1,0 +1,11 @@
+{
+  "base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
+  "patch_sha256": "c9fdd140871950851b047542fcbd6e8b722cb9db61e57ab401e1066208b8c610",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
+      "target": "f23ee29bf60c13e460f6d17cfbf8d53ef12e1cde0e6cf6b7efe25f7c3ff1ca61"
+    }
+  },
+  "status": "Prepared only; reverse local validation pending, not dispatched"
+}

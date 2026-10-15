@@ -1,0 +1,36 @@
+--- a/models/demos/gemma4_31b_qb2/tt/decoder.py
++++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
+@@ -68,6 +68,13 @@
+         self = cls()
+         self.device = mesh_device
+         self.kind = c.layer_types[layer_idx]
++        if self.kind == "full_attention":
++            self.prefill_chunk_start = ttnn.from_torch(
++                torch.tensor([0], dtype=torch.int32), device=mesh_device,
++                dtype=ttnn.int32, layout=ttnn.ROW_MAJOR_LAYOUT,
++                memory_config=ttnn.DRAM_MEMORY_CONFIG,
++                mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
++            )
+         self.activation_dtype = ttnn.bfloat16
+         self.residual_dtype = ttnn.bfloat16
+         self.norms_dtype = ttnn.bfloat16
+@@ -862,12 +869,18 @@
+                         compute_kernel_config=self.pref_compute,
+                     )
+                 else:
++                    import torch
++                    offset_host = ttnn.from_torch(
++                        torch.tensor([absolute_start], dtype=torch.int32),
++                        dtype=ttnn.int32, layout=ttnn.ROW_MAJOR_LAYOUT,
++                    )
++                    ttnn.copy_host_to_device_tensor(offset_host, self.prefill_chunk_start)
+                     attn = ttnn.transformer.chunked_scaled_dot_product_attention(
+                         q,
+                         kv_cache[0],
+                         kv_cache[1],
+                         pt,
+-                        chunk_start_idx=absolute_start,
++                        chunk_start_idx_tensor=self.prefill_chunk_start,
+                         scale=1.0,
+                         program_config=sdpa_config,
+                         compute_kernel_config=self.pref_compute,
