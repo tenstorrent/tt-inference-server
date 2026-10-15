@@ -386,11 +386,6 @@ templates:
       # Per-system max concurrent requests (the sweep's loaded corner). The
       # graded targets in model_performance_reference.json are authored at this
       # concurrency: decode tput is 29.0 x 32 = 928.0.
-      # The first batched generator decodes every request slot in one step.
-      # Caches are pooled per mesh row (four slots per row), supporting 32
-      # slots at 16K context. Larger contexts require implementation changes.
-      max_concurrency: 32
-      # Inherited reference notes; runtime settings follow below.
       # Full native context. max_position_embeddings in the HF config.json
       # text_config is 1048576.
       # Device KV-token pool for the concurrency sweep: 32 concurrent requests at
@@ -407,13 +402,19 @@ templates:
       # [TBD — Performance: replace with the measured 32-chip pool once
       # available. If the real pool is smaller, the top graded input lengths must
       # come down with it — see docs/rfp/m0-target-convention.md.]
-      # 3 * 5120: a multiple of the prefill chunk, within the decode step's
-      # 16,384-row candidate budget, above the c1 points' isl 8192 + osl 128.
-      max_context: 15360
+      # The generator decodes every request slot in one batched step, with caches pooled per mesh
+      # row. An earlier native-context configuration fit eight slots: each slot's pool used 3.8 GB
+      # per chip, and two 1M prefill states used 5.7 GB beside the 12.8 GB model. Its short-context
+      # c32 measurements up to isl 8192 used 32 slots at 15,360 of context.
+      max_concurrency: 8
+      # The native context: 1024 * 1024, rounded up to the 5,120 chunk by
+      # the generator (1,049,600 rows); the 1,048,448 + 128 of point 11 fit
+      # below its last 32 rows.
+      max_context: 1048576
       # Every slot holds a full context (the pool is per slot, not a shared
-      # token budget); without this the benchmark caps the c32 points to the
-      # concurrency that fits one context.
-      max_tokens_all_users_override: 491520  # 32 * 15360
+      # token budget); without this the benchmark caps the concurrency to
+      # what fits one context.
+      max_tokens_all_users_override: 8388608  # 8 * 1048576
       default_impl: true
       # Health-wait budget: the model build reads the two 123 GB Engram tables
       # into host RAM, 10 to 15 minutes from the NVMe when the page cache is

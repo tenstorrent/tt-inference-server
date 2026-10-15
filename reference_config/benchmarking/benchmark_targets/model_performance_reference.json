@@ -845,7 +845,7 @@
     "DeepSeek-V4.1-Flash": {
         "blackhole_galaxy": [
             {
-                "isl": 1024,
+                "isl": 16384,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 32,
@@ -855,7 +855,7 @@
                 "images_per_prompt": null,
                 "targets": {
                     "theoretical": {
-                        "ttft_ms": 282.2887,
+                        "ttft_ms": 1516.6185,
                         "tput_user": 29.0,
                         "tput": 29.0
                     }
@@ -863,64 +863,10 @@
                 "tolerance": 0.1
             },
             {
-                "isl": 2048,
+                "isl": 32768,
                 "osl": 128,
                 "max_concurrency": 1,
                 "num_prompts": 32,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 364.5773,
-                        "tput_user": 29.0,
-                        "tput": 29.0
-                    }
-                },
-                "tolerance": 0.1
-            },
-            {
-                "isl": 4096,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 32,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 529.1546,
-                        "tput_user": 29.0,
-                        "tput": 29.0
-                    }
-                },
-                "tolerance": 0.1
-            },
-            {
-                "isl": 8192,
-                "osl": 128,
-                "max_concurrency": 1,
-                "num_prompts": 32,
-                "task_type": "text",
-                "image_height": null,
-                "image_width": null,
-                "images_per_prompt": null,
-                "targets": {
-                    "theoretical": {
-                        "ttft_ms": 858.3092,
-                        "tput_user": 29.0,
-                        "tput": 29.0
-                    }
-                },
-                "tolerance": 0.1
-            },
-            {
-                "isl": 1024,
-                "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -929,16 +875,16 @@
                     "theoretical": {
                         "ttft_ms": 2833.2369,
                         "tput_user": 29.0,
-                        "tput": 928.0
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
             },
             {
-                "isl": 2048,
+                "isl": 65536,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -947,16 +893,16 @@
                     "theoretical": {
                         "ttft_ms": 5466.4738,
                         "tput_user": 29.0,
-                        "tput": 928.0
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
             },
             {
-                "isl": 4096,
+                "isl": 131072,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -965,16 +911,16 @@
                     "theoretical": {
                         "ttft_ms": 10732.9476,
                         "tput_user": 29.0,
-                        "tput": 928.0
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1
             },
             {
-                "isl": 8192,
+                "isl": 262144,
                 "osl": 128,
-                "max_concurrency": 32,
-                "num_prompts": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
                 "task_type": "text",
                 "image_height": null,
                 "image_width": null,
@@ -983,7 +929,43 @@
                     "theoretical": {
                         "ttft_ms": 21265.8952,
                         "tput_user": 29.0,
-                        "tput": 928.0
+                        "tput": 29.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 524288,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 42331.7904,
+                        "tput_user": 29.0,
+                        "tput": 29.0
+                    }
+                },
+                "tolerance": 0.1
+            },
+            {
+                "isl": 1048448,
+                "osl": 128,
+                "max_concurrency": 1,
+                "num_prompts": 32,
+                "task_type": "text",
+                "image_height": null,
+                "image_width": null,
+                "images_per_prompt": null,
+                "targets": {
+                    "theoretical": {
+                        "ttft_ms": 84453.2948,
+                        "tput_user": 29.0,
+                        "tput": 29.0
                     }
                 },
                 "tolerance": 0.1

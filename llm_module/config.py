@@ -13,6 +13,7 @@ point.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple
@@ -99,7 +100,9 @@ class DriverContext:
     output_dir: Path
     device: str = ""
     extra_env: dict = field(default_factory=dict)
-    per_run_timeout_s: Optional[float] = 7200.0
+    # LLM_BENCH_PER_RUN_TIMEOUT_S overrides the two hours: a c1 point at the
+    # native context is 32 sequential 1M prefills.
+    per_run_timeout_s: Optional[float] = float(os.environ.get("LLM_BENCH_PER_RUN_TIMEOUT_S", 7200.0))
     # AIPerf --goodput SLO string (space-separated KEY:VALUE pairs) applied to
     # the sweep. Only the AIPerf driver consumes it; other drivers ignore it.
     goodput: Optional[str] = None
