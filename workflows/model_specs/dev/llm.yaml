@@ -892,6 +892,7 @@ templates:
       env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
+        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '524288'
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
         TT_METAL_TRACE_ALLOC_TRACKING: '1'
         TT_METAL_TRACE_ALLOC_TRACEBACKS: '0'
@@ -908,7 +909,7 @@ templates:
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
         async-scheduling: true
-        no-enable-prefix-caching: true
+        enable-prefix-caching: true
         # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
         # prefill and rejects budgets above 8192 batched tokens. Requests that
         # omit top_k need a default inside the device sampler's 1..32 range.
