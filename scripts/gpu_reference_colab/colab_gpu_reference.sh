@@ -448,7 +448,10 @@ if [[ "${SERVE}" -eq 1 ]]; then
             [[ "${state}" == "completed" || "${state}" == "report_pending" ]] || return 1
         done
     }
-    finish_serve() {   # the verdict from the recorded runs against SERVE_PROV, which is never rewritten here
+    finish_serve() {   # the verdict from the recorded runs against SERVE_PROV's serving provenance
+        # shield-provenance keeps the VM's serving_status as written and
+        # recomputes status from it plus the reports on disk, so a finish after a
+        # report_pending pass grades the recovered reports, not that pass's result.
         local verdict
         [[ -s "${SERVE_PROV}" ]] || { status FAILED "out=${OUT_DIR}" "reason=no serving provenance"; log "no ${SERVE_PROV}: the serving VM's provenance was never fetched; cannot finish without it"; return 1; }
         verdict="$(gpuref shield-provenance --prov "${SERVE_PROV}" --shield-dir "${SHIELD_DIR}" \
