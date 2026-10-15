@@ -270,26 +270,9 @@
         "Qwen/Qwen2.5-VL-7B-Instruct": {
             "inference_engine": "vLLM",
             "ci": {
-                "nightly": {
-                    "devices": [
-                        "T3K",
-                        "GALAXY"
-                    ]
-                },
                 "weekly": {
                     "devices": [
                         "N300"
-                    ]
-                }
-            }
-        },
-        "allenai/olmOCR-2-7B-1025": {
-            "inference_engine": "vLLM",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "T3K",
-                        "GALAXY"
                     ]
                 }
             }
@@ -372,6 +355,11 @@
             "inference_engine": "vLLM",
             "ci": {
                 "nightly": {
+                    "devices": [
+                        "P300X2"
+                    ]
+                },
+                "release": {
                     "devices": [
                         "P300X2"
                     ]
@@ -590,21 +578,6 @@
                     "devices": [
                         "P300X2",
                         "BH_GALAXY"
-                    ]
-                }
-            }
-        },
-        "IFM/K2-Horizon-7B": {
-            "inference_engine": "vLLM",
-            "ci": {
-                "nightly": {
-                    "devices": [
-                        "P300X2"
-                    ]
-                },
-                "release": {
-                    "devices": [
-                        "P300X2"
                     ]
                 }
             }
