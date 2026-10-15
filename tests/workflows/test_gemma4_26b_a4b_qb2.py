@@ -63,7 +63,7 @@ def test_dedicated_gemma4_profile_is_opt_in_and_uses_the_demo_bundle():
     )
 
 
-def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
+def test_gemma4_26b_thinking_124k_single_question_diagnostic():
     tasks = _eval_config_map["google/gemma-4-26B-A4B-it"].tasks
 
     assert [task.task_name for task in tasks] == [
@@ -78,10 +78,11 @@ def test_gemma4_26b_release_uses_the_validated_10_5_5_eval_cohort():
     ]
 
     gpqa, terminal_task, swe_task = tasks
-    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 10
+    assert gpqa.limit_samples_map[EvalLimitMode.CI_NIGHTLY] == 1
     assert gpqa.max_concurrent == 1
     assert gpqa.seed == 42
     assert gpqa.request_body == {"chat_template_kwargs": {"enable_thinking": True}}
+    assert gpqa.gen_kwargs["max_gen_toks"] == 124 * 1024
 
     terminal = terminal_task.agentic_eval_config
     swe = swe_task.agentic_eval_config

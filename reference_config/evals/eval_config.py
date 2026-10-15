@@ -11202,13 +11202,13 @@ _eval_config_list = [
                     "max_length": 131072,
                     "timeout": 7200,
                 },
-                # Validated release sampling: temperature=1.0, top_p=0.95,
-                # top_k=20, seed=42.
+                # Diagnostic thinking-mode sampling: temperature=1.0,
+                # top_p=0.95, top_k=20, seed=42.
                 # stream=false is REQUIRED: lm-eval's local-chat-completions
                 # streaming parser raises KeyError 'message' on every response.
                 gen_kwargs={
                     "stream": "false",
-                    "max_gen_toks": 32 * 1024,
+                    "max_gen_toks": 124 * 1024,
                     "until": [],
                     "do_sample": "true",
                     "temperature": 1.0,
@@ -11216,9 +11216,9 @@ _eval_config_list = [
                     "top_p": 0.95,
                 },
                 limit_samples_map={
-                    # Keep release CI bounded to the validated 10-question
-                    # subset rather than a fraction of the evolving dataset.
-                    EvalLimitMode.CI_NIGHTLY: 10,
+                    # One fixed question isolates whether a 124K generation
+                    # budget resolves the 32K thinking-mode truncation.
+                    EvalLimitMode.CI_NIGHTLY: 1,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
             ),
