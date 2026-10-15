@@ -133,6 +133,13 @@ def artifact_prefix(kind: str = RELEASE_KIND) -> str:
     return f"workflow_logs_{kind}_"
 
 
+# TEMP (v0.25.0 only, stable only -- revert once the release is published): the
+# gemma-4-31B-it P300X2 job in tt-shield run 38572819455 passed, but its "Upload
+# workflow logs" step timed out, so that one logs bundle does not exist. Let the
+# release build without it; the bundle from run 38604432130 (same commits) is
+# added to the release asset afterwards. Any other missing bundle still fails.
+TEMP_ALLOW_MISSING_BUNDLES = {("google/gemma-4-31B-it", "p300x2")}
+
 # The release prefix. Still used for the inner-zip filenames inside the produced
 # bundle, which are a downstream contract: see bundle_name().
 ARTIFACT_PREFIX = artifact_prefix()
@@ -552,6 +559,12 @@ def resolve_model(
 
     chosen: dict[str, dict] = {}
     for d in devices:
+        if d not in by_device and (model, d) in TEMP_ALLOW_MISSING_BUNDLES:
+            print(
+                f"  WARNING (TEMP): no logs bundle for '{model}' device '{d}' - "
+                f"skipped; add it to the release asset manually."
+            )
+            continue
         if d not in by_device:
             found = ", ".join(sorted(by_device)) or "none"
             runners = ", ".join(
@@ -767,6 +780,7 @@ def main() -> None:
     cache: dict[int, Path] = {}
     staged: dict[str, Path] = {}  # inner-zip filename -> staged path
     validated_identities = set()
+    skipped_identities = set()  # TEMP_ALLOW_MISSING_BUNDLES
 
     try:
         for (model, impl), devices in targets.items():
@@ -784,6 +798,11 @@ def main() -> None:
             )
             config_impl = None if impl is ANY_IMPL else impl
             for device in devices:
+                if device not in chosen:  # TEMP_ALLOW_MISSING_BUNDLES
+                    skipped_identities.add(
+                        expected_identities.get((model, device, config_impl))
+                    )
+                    continue
                 artifact = chosen[device]
                 src = download_artifact(args.repo, artifact, tmp_dir, cache)
 
@@ -825,7 +844,7 @@ def main() -> None:
                     f"({artifact.get('size_in_bytes', '?')} bytes)"
                 )
 
-        expected_identity_set = set(expected_identities.values())
+        expected_identity_set = set(expected_identities.values()) - skipped_identities
         if expected_identity_set:
             try:
                 validate_staged_identity_set(
