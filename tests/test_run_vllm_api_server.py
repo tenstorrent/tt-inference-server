@@ -1328,3 +1328,64 @@ def test_llama_qb2_failed_download_does_not_use_shared_partial_weights(
     module.snapshot_download.side_effect = RuntimeError("offline")
     with pytest.raises(RuntimeError, match="offline"):
         module.ensure_weights_available(spec)
+
+
+def test_inject_dp_affinity_middleware_registers_for_multi_engine_dp(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("TT_DP_AFFINITY", raising=False)
+    monkeypatch.delenv("TT_DP_AFFINITY_DP_SIZE", raising=False)
+    remaining = ["--max-num-seqs", "32"]
+
+    assert (
+        module.inject_dp_affinity_middleware({"data_parallel_size": "4"}, remaining)
+        == 4
+    )
+    assert os.environ["TT_DP_AFFINITY_DP_SIZE"] == "4"
+    assert remaining[-2:] == ["--middleware", module.DP_AFFINITY_MIDDLEWARE]
+
+    # idempotent: a second call does not register the middleware twice
+    module.inject_dp_affinity_middleware({"data_parallel_size": "4"}, remaining)
+    assert remaining.count(module.DP_AFFINITY_MIDDLEWARE) == 1
+
+
+def test_inject_dp_affinity_middleware_prefers_cli_override(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("TT_DP_AFFINITY", raising=False)
+    remaining = ["--data-parallel-size", "2"]
+    assert (
+        module.inject_dp_affinity_middleware({"data_parallel_size": "4"}, remaining)
+        == 2
+    )
+    assert os.environ["TT_DP_AFFINITY_DP_SIZE"] == "2"
+
+
+def test_inject_dp_affinity_middleware_skips_single_engine_and_off(
+    monkeypatch, run_vllm_api_server_module
+):
+    module = run_vllm_api_server_module
+    monkeypatch.delenv("TT_DP_AFFINITY", raising=False)
+    monkeypatch.delenv("TT_DP_AFFINITY_DP_SIZE", raising=False)
+
+    remaining = []
+    assert module.inject_dp_affinity_middleware({}, remaining) is None
+    assert (
+        module.inject_dp_affinity_middleware({"data_parallel_size": "1"}, remaining)
+        is None
+    )
+    assert (
+        module.inject_dp_affinity_middleware({"data_parallel_size": "x"}, remaining)
+        is None
+    )
+    assert remaining == []
+    assert "TT_DP_AFFINITY_DP_SIZE" not in os.environ
+
+    monkeypatch.setenv("TT_DP_AFFINITY", "off")
+    assert (
+        module.inject_dp_affinity_middleware({"data_parallel_size": "4"}, remaining)
+        is None
+    )
+    assert remaining == []

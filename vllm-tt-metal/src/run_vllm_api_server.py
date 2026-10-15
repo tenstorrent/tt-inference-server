@@ -1330,6 +1330,53 @@ def inject_tt_colocated_fabric_config(default_vllm_args):
     )
 
 
+DP_AFFINITY_MIDDLEWARE = "dp_affinity_middleware.DPAffinityMiddleware"
+
+
+def inject_dp_affinity_middleware(default_vllm_args, remaining_sys_argv):
+    """Register session-affine routing across vLLM data-parallel engines.
+
+    With ``data_parallel_size`` > 1 (catalog ``vllm_args`` or a
+    ``--data-parallel-size`` override) every engine keeps its own prefix cache
+    and vLLM's load balancer spreads a conversation over all of them. The
+    ``dp_affinity_middleware`` pins a request to one engine through vLLM's own
+    ``X-data-parallel-rank`` header when the request carries a session signal
+    (see that module for the modes). The engine count reaches the middleware
+    through ``TT_DP_AFFINITY_DP_SIZE``; the mode comes from ``TT_DP_AFFINITY``
+    (default ``auto``, ``off`` skips registration). In-process submesh DP
+    (``TT_DATA_PARALLEL``) is routed inside the plugin and is unaffected.
+
+    Returns the engine count the middleware was registered for, else ``None``.
+    """
+    mode = os.environ.get("TT_DP_AFFINITY", "auto").strip().lower() or "auto"
+    if mode == "off":
+        logger.info("DP affinity middleware disabled (TT_DP_AFFINITY=off)")
+        return None
+    raw_dp_size = _extract_cli_arg_value(remaining_sys_argv, "--data-parallel-size")
+    if raw_dp_size is None:
+        raw_dp_size = default_vllm_args.get("data_parallel_size")
+    if raw_dp_size is None:
+        raw_dp_size = default_vllm_args.get("data-parallel-size")
+    try:
+        dp_size = int(raw_dp_size) if raw_dp_size is not None else 1
+    except (TypeError, ValueError):
+        logger.warning(
+            f"data_parallel_size={raw_dp_size!r} is not an integer; "
+            "DP affinity middleware not registered"
+        )
+        return None
+    if dp_size <= 1:
+        return None
+    os.environ["TT_DP_AFFINITY_DP_SIZE"] = str(dp_size)
+    if DP_AFFINITY_MIDDLEWARE not in remaining_sys_argv:
+        remaining_sys_argv.extend(["--middleware", DP_AFFINITY_MIDDLEWARE])
+    logger.info(
+        f"Registered {DP_AFFINITY_MIDDLEWARE} for {dp_size} data-parallel "
+        f"engines (TT_DP_AFFINITY={mode})"
+    )
+    return dp_size
+
+
 def main():
     # Step 1: Parse --model argument (if provided)
     args, remaining_sys_argv = parse_args()
@@ -1377,6 +1424,7 @@ def main():
     inject_tt_data_parallel(default_vllm_args)
     inject_tt_weight_bridge_dir(default_vllm_args)
     inject_tt_colocated_fabric_config(default_vllm_args)
+    inject_dp_affinity_middleware(default_vllm_args, remaining_sys_argv)
     set_vllm_sys_argv(args, remaining_sys_argv, default_vllm_args)
     configure_quetzal_provider(model_spec)
 
