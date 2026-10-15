@@ -891,6 +891,7 @@ templates:
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
+        GEMMA_EXPERIMENT_KV_POOL_TOKENS: '393216'
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
         TT_METAL_TRACE_ALLOC_TRACKING: '1'
