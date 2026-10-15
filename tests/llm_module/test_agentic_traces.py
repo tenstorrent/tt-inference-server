@@ -1017,20 +1017,6 @@ class TestParser:
         )
         assert block.data["agentx_git_ref"] == KIMI_PINNED_REF
         assert block.targets["device"] == "super_cluster"
-
-    def test_a_pre_agentx_harness_payload_keeps_its_inferencex_ref(self, tmp_path):
-        metrics = parse_aiperf_output(_write_summary(tmp_path))
-        block = AIPerfAgenticTracesParser().parse(
-            {
-                "model_id": "moonshotai/Kimi-K2.7-Code",
-                "date": "20260727-120000",
-                "metadata": {"inferencex_git_ref": "8f12037"},
-                **metrics,
-            },
-            device="super_cluster",
-        )
-        assert block.data["inferencex_git_ref"] == "8f12037"
-        assert "agentx_git_ref" not in block.data
         assert block.targets["timestamp"] == "2026-07-27 12:00:00"
 
     def test_invalid_submission_is_flagged_in_the_report(self):

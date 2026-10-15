@@ -72,8 +72,7 @@ class AIPerfAgenticTracesParser(LLMResultParser):
         if isinstance(metadata, Mapping):
             # Surface the pinned client revision as a first-class field: an
             # agentic-trace number is only reproducible alongside it.
-            # inferencex_git_ref: payloads from before the agentx-harness pin.
-            for key in ("agentx_git_ref", "inferencex_git_ref", "model_id", "mode"):
+            for key in ("agentx_git_ref", "model_id", "mode"):
                 if key in metadata and key not in record:
                     record[key] = metadata[key]
 
