@@ -325,8 +325,9 @@ def parse_arguments():
         type=str,
         default=None,
         help="Run shard i of N (0-based, 'i/N') of each selected eval task: every "
-        "leaf task's doc d with d %% N == i, with no sample caps. The N shards are "
-        "disjoint and cover the full set; only `python -m "
+        "N-th doc, from position i, of each leaf task's doc set (its configured "
+        "doc_ids, else the whole dataset), with no sample caps. The N shards are "
+        "disjoint and cover exactly that set; only `python -m "
         "report_module.merge_eval_shards` over all N can grade a task PASS. "
         "Mutually exclusive with --eval-samples and --limit-samples-mode.",
     )
