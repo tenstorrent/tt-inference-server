@@ -26,6 +26,7 @@ from workflows.eval_shard import (
     SHARD_RECORD_PREFIX,
     ShardError,
     parse_eval_shard,
+    restrict_plan_to_doc_ids,
     shard_record,
     shard_samples,
 )
@@ -349,8 +350,9 @@ def _resolve_eval_shard(
     """--eval-shard i/N -> this shard's lm-eval --samples JSON, or None.
 
     Plans the task in the eval venv (leaf doc counts, few-shot sampler, metric
-    aggregations), refuses a task that cannot shard exactly, and writes the
-    shard record next to the lm-eval output for the merge to verify.
+    aggregations), restricts it to the task's configured ``doc_ids`` when it
+    has them, refuses a task that cannot shard exactly, and writes the shard
+    record next to the lm-eval output for the merge to verify.
 
     ``lm_eval_args`` are the eval's own lm_eval arguments (everything after the
     executable or wrapper): the planner loads the tasks through the harness's
@@ -387,6 +389,11 @@ def _resolve_eval_shard(
             f"{(planned.stderr or '').strip()[-2000:]}"
         )
     plan = json.loads(plan_path.read_text())
+    if task.doc_ids is not None:
+        # The unsharded run evaluates only the configured doc set (sent as
+        # --samples by _resolve_eval_samples), so the shards partition that
+        # set, and the plan -- hence every shard record -- carries it.
+        plan = restrict_plan_to_doc_ids(plan, task.task_name, task.doc_ids)
     samples = shard_samples(plan, index, count)  # refuses inexact plans
     record = shard_record(
         task.task_name,

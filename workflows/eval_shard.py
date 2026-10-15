@@ -5,9 +5,13 @@
 """Sample-sharded full evals: the partition, the shard record and the merge.
 
 A task too long for one CI job runs as N shards (``run.py --eval-shard i/N``).
-Shard i evaluates, for every leaf lm-eval task, the docs whose index d has
-``d % N == i``: deterministic, disjoint, and together exactly the full set.
-No sample is ever capped.
+Each leaf lm-eval task has a doc set: every doc of the dataset, or, for a task
+whose EvalConfig fixes it (``EvalTask.doc_ids``, e.g. the 131-doc LiveCodeBench
+v6 window of a 1,055-doc dataset), exactly those ids. Shard i evaluates the
+docs at positions ``p % N == i`` of that sorted set: deterministic, disjoint,
+and together exactly the set an unsharded run evaluates. No sample is ever
+capped. The set is part of the plan, so every shard record carries it and the
+merge requires the shards' union to equal it.
 
 A shard alone is never a verdict. ``merge_shard_samples`` joins N shards' per-
 sample logs back into the full-set results after verifying the shards are
@@ -35,7 +39,10 @@ import re
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 SHARD_RECORD_PREFIX = "eval_shard_"
-SHARD_RECORD_VERSION = 1
+# 2: the plan carries a leaf's configured doc set (``doc_ids``) and each record
+# its expected doc set; a version-1 shard of a doc_ids task partitioned the
+# whole dataset instead, so it can never be merged.
+SHARD_RECORD_VERSION = 2
 ORDER_INDEPENDENT_SAMPLERS = frozenset({"first_n"})
 
 _SHARD_RE = re.compile(r"^(\d+)/(\d+)$")
@@ -63,6 +70,83 @@ def shard_indices(n_docs: int, index: int, count: int) -> List[int]:
     if n_docs < 0:
         raise ShardError(f"doc count must be >= 0; got {n_docs}")
     return list(range(index, n_docs, count))
+
+
+def leaf_doc_ids(info: Mapping[str, Any]) -> List[int]:
+    """The sorted doc set an unsharded run of this plan leaf evaluates."""
+    if "doc_ids" in info:
+        return list(info["doc_ids"])
+    return list(range(int(info["n_docs"])))
+
+
+def shard_doc_ids(doc_ids: Sequence[int], index: int, count: int) -> List[int]:
+    """Shard ``index`` of ``count`` of a sorted doc set: every count-th position."""
+    return list(doc_ids)[index::count]
+
+
+def restrict_plan_to_doc_ids(
+    plan: Mapping[str, Any], task_name: str, doc_ids: Sequence[int]
+) -> Dict[str, Any]:
+    """The plan of a task whose EvalConfig fixes its doc set (EvalTask.doc_ids).
+
+    An unsharded run sends ``--samples {task_name: doc_ids}``, so the set
+    applies to the leaf named ``task_name``; it is recorded on that leaf, sorted
+    and unique, so it is part of the plan (and its sha) every shard carries.
+    Refused when the ids cannot be that leaf's set: the task is not a single
+    leaf of that name, or an id is outside the leaf's dataset.
+    """
+    leaves = plan.get("leaves") or {}
+    if set(leaves) != {task_name}:
+        raise ShardError(
+            f"{task_name}: its configured doc_ids select docs of the leaf task "
+            f"{task_name!r}, but the plan's leaves are {sorted(leaves)}; cannot "
+            "shard that doc set exactly"
+        )
+    ids = sorted(set(int(i) for i in doc_ids))
+    if not ids:
+        raise ShardError(f"{task_name}: configured doc_ids are empty")
+    n_docs = int(leaves[task_name]["n_docs"])
+    outside = [i for i in ids if not 0 <= i < n_docs]
+    if outside:
+        raise ShardError(
+            f"{task_name}: configured doc_ids {outside[:5]} are outside the "
+            f"dataset's {n_docs} docs"
+        )
+    restricted = json.loads(json.dumps(plan))
+    restricted["leaves"][task_name]["doc_ids"] = ids
+    return restricted
+
+
+def check_configured_doc_ids(
+    plan: Mapping[str, Any], task_name: str, doc_ids: Optional[Sequence[int]]
+) -> None:
+    """Refuse shards whose doc set is not the task's configured one.
+
+    ``doc_ids`` is the task's EvalConfig doc set (None: the full dataset). A
+    shard set planned over another set -- the whole dataset of a doc_ids task,
+    a different window, or a window on a task that has none -- is a complete
+    run of a different benchmark and must not be graded as this one.
+    """
+    planned = {
+        leaf: list(info["doc_ids"])
+        for leaf, info in (plan.get("leaves") or {}).items()
+        if "doc_ids" in info
+    }
+    expected = {} if doc_ids is None else {task_name: sorted(set(doc_ids))}
+    if planned != expected:
+
+        def describe(sets):
+            if not sets:
+                return "every doc of each leaf"
+            return ", ".join(
+                f"{leaf}: {len(ids)} configured doc_ids (sha {indices_sha(ids)[:12]})"
+                for leaf, ids in sorted(sets.items())
+            )
+
+        raise ShardError(
+            f"{task_name}: the shards evaluate {describe(planned)}, but the task's "
+            f"configured doc set is {describe(expected)}"
+        )
 
 
 def indices_sha(indices: Sequence[int]) -> str:
@@ -113,7 +197,7 @@ def shard_samples(
     """lm-eval ``--samples`` mapping {leaf: sorted doc indices} for one shard."""
     check_plan(plan)
     return {
-        leaf: shard_indices(int(info["n_docs"]), index, count)
+        leaf: shard_doc_ids(leaf_doc_ids(info), index, count)
         for leaf, info in sorted(plan["leaves"].items())
     }
 
@@ -127,6 +211,7 @@ def shard_record(
 ) -> Dict[str, Any]:
     """The per-shard record written next to the shard's lm-eval output."""
     samples = shard_samples(plan, index, count)
+    expected = {leaf: leaf_doc_ids(info) for leaf, info in plan["leaves"].items()}
     return {
         "version": SHARD_RECORD_VERSION,
         "task_name": task_name,
@@ -137,6 +222,14 @@ def shard_record(
         "plan_sha": plan_sha(plan),
         "leaf_indices_sha": {leaf: indices_sha(ix) for leaf, ix in samples.items()},
         "leaf_sample_counts": {leaf: len(ix) for leaf, ix in samples.items()},
+        # The doc set the N shards must cover together, exactly (the ids
+        # themselves are in the plan when configured, else 0..n_docs-1).
+        "expected_doc_ids_sha": {
+            leaf: indices_sha(ids) for leaf, ids in sorted(expected.items())
+        },
+        "expected_doc_counts": {
+            leaf: len(ids) for leaf, ids in sorted(expected.items())
+        },
         "provenance": dict(provenance),
     }
 
@@ -167,7 +260,7 @@ def check_shard_set(records: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
             problems.append(
                 f"shard {record.get('shard')}: record version {record.get('version')!r}"
             )
-        for key in ("task_name", "shard_count", "plan_sha"):
+        for key in ("task_name", "shard_count", "plan_sha", "expected_doc_ids_sha"):
             if record.get(key) != first.get(key):
                 problems.append(
                     f"shard {record.get('shard')}: {key} {record.get(key)!r} != {first.get(key)!r}"
@@ -182,6 +275,16 @@ def check_shard_set(records: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
         if plan_sha(record.get("plan") or {}) != record.get("plan_sha"):
             problems.append(
                 f"shard {record.get('shard')}: plan does not match its plan_sha"
+            )
+        planned_sets = {
+            leaf: indices_sha(leaf_doc_ids(info))
+            for leaf, info in sorted(
+                ((record.get("plan") or {}).get("leaves") or {}).items()
+            )
+        }
+        if planned_sets != record.get("expected_doc_ids_sha"):
+            problems.append(
+                f"shard {record.get('shard')}: expected doc set does not match its plan"
             )
     indices = sorted(record.get("shard_index") for record in records)
     if isinstance(count, int) and indices != list(range(count)):
@@ -230,7 +333,8 @@ def merge_shard_samples(
     ``shard_rows[i][leaf]`` is shard i's logged samples for that leaf (lm-eval
     ``samples_<leaf>_*.jsonl`` rows: ``doc_id``, ``filter`` and one key per
     metric). Each shard must hold exactly its own doc indices and the union
-    exactly the leaf's full set; otherwise nothing is merged.
+    exactly the leaf's doc set (``leaf_doc_ids``: its configured doc_ids, else
+    the full dataset); otherwise nothing is merged.
 
     Returns ``{"results": {name: {"<metric>,<filter>": value, ...}},
     "n_samples": {leaf: n}, "doc_hashes": {leaf: sha}}``.
@@ -244,11 +348,11 @@ def merge_shard_samples(
     n_samples: Dict[str, int] = {}
     doc_hashes: Dict[str, str] = {}
     for leaf, info in sorted(leaves.items()):
-        n_docs = int(info["n_docs"])
+        doc_ids = leaf_doc_ids(info)
         metrics = sorted(info.get("aggregations", {}))
         by_filter: Dict[str, Dict[int, Mapping[str, Any]]] = {}
         for index in range(count):
-            expected = set(shard_indices(n_docs, index, count))
+            expected = set(shard_doc_ids(doc_ids, index, count))
             rows = list(shard_rows[index].get(leaf, ()))
             for row in rows:
                 doc_id, filt = row.get("doc_id"), row.get("filter", "none")
@@ -266,14 +370,14 @@ def merge_shard_samples(
         if not by_filter:
             raise ShardError(f"{leaf}: no per-sample rows in any shard")
         for filt, rows_by_doc in sorted(by_filter.items()):
-            missing = sorted(set(range(n_docs)) - set(rows_by_doc))
+            missing = sorted(set(doc_ids) - set(rows_by_doc))
             if missing:
                 raise ShardError(
-                    f"{leaf}: filter {filt} is missing {len(missing)} of {n_docs} "
-                    f"docs (first {missing[:5]})"
+                    f"{leaf}: filter {filt} is missing {len(missing)} of "
+                    f"{len(doc_ids)} docs (first {missing[:5]})"
                 )
             entry = results.setdefault(leaf, {})
-            ordered = [rows_by_doc[d] for d in range(n_docs)]
+            ordered = [rows_by_doc[d] for d in doc_ids]
             for metric in metrics:
                 mean, stderr = _mean_and_stderr(
                     [_metric_value(r, metric) for r in ordered]
@@ -285,7 +389,7 @@ def merge_shard_samples(
             doc_hashes[leaf] = hashlib.sha256(
                 "".join(str(r.get("doc_hash", "")) for r in ordered).encode()
             ).hexdigest()
-        n_samples[leaf] = n_docs
+        n_samples[leaf] = len(doc_ids)
     groups = plan.get("groups", {})
 
     def leaves_of(group: str, stack: Tuple[str, ...] = ()) -> List[str]:
@@ -340,12 +444,16 @@ def merge_shard_samples(
 __all__ = [
     "ShardError",
     "SHARD_RECORD_PREFIX",
+    "check_configured_doc_ids",
     "check_plan",
     "check_shard_set",
     "indices_sha",
+    "leaf_doc_ids",
     "merge_shard_samples",
     "parse_eval_shard",
     "plan_sha",
+    "restrict_plan_to_doc_ids",
+    "shard_doc_ids",
     "shard_indices",
     "shard_record",
     "shard_samples",

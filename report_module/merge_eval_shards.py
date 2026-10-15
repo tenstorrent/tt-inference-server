@@ -6,7 +6,9 @@
 
 This is the only way a sharded task can PASS. Each shard's own report is
 PARTIAL by construction; this tool checks that the N shards are one complete,
-disjoint run of one plan on one package/ref/image/command, recomputes every
+disjoint run of one plan on one package/ref/image/command, over exactly the
+task's configured doc set (its EvalConfig ``doc_ids``, else the full dataset),
+recomputes every
 metric from the shards' per-sample logs, writes the merged full-set results,
 and grades them with the standard rule (published or GPU reference, noise-
 aware) into the usual evals blocks and acceptance export.
@@ -30,12 +32,14 @@ import re
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from workflows.eval_shard import (
     SHARD_RECORD_PREFIX,
     ShardError,
+    check_configured_doc_ids,
     check_shard_set,
+    leaf_doc_ids,
     merge_shard_samples,
 )
 
@@ -83,12 +87,31 @@ def _samples_rows(attempt: Path, leaf: str) -> List[dict]:
         return [json.loads(line) for line in handle if line.strip()]
 
 
-def merge(dirs: Sequence[Path], task: str) -> Dict[str, Any]:
-    """Verify and merge; returns the merged lm-eval results document."""
+def eval_task(model: str, task_name: str):
+    """The EvalConfig task the shards are merged and graded as."""
+    from reference_config.evals.eval_config import _eval_config_map
+
+    config = _eval_config_map.get(model)
+    tasks = {t.task_name: t for t in (config.tasks if config else [])}
+    if task_name not in tasks:
+        raise ShardError(f"{model} has no EvalConfig task {task_name}")
+    return tasks[task_name]
+
+
+def merge(
+    dirs: Sequence[Path], task: str, doc_ids: Optional[Sequence[int]] = None
+) -> Dict[str, Any]:
+    """Verify and merge; returns the merged lm-eval results document.
+
+    ``doc_ids`` is the task's configured doc set (``EvalTask.doc_ids``; None
+    for the full dataset). The shards' plan must be over exactly that set, so a
+    complete run of another set is refused rather than graded as this task.
+    """
     runs = find_shard_runs(dirs, task)
     if not runs:
         raise ShardError(f"no completed shard of {task} under {list(map(str, dirs))}")
     plan = check_shard_set([record for _, record in runs])
+    check_configured_doc_ids(plan, task, doc_ids)
     count = runs[0][1]["shard_count"]
     shard_rows: Dict[int, Dict[str, List[dict]]] = {}
     sources = []
@@ -152,14 +175,20 @@ def merge(dirs: Sequence[Path], task: str) -> Dict[str, Any]:
                     "refusing to keep one shard's values"
                 )
             doc[section][name] = {**metrics, "alias": entry.get("alias", name)}
+    # lm-eval's convention: original is the dataset, effective what was graded
+    # (a doc_ids task: its configured set, not the whole dataset).
     doc["n-samples"] = {
-        leaf: {"original": n, "effective": n} for leaf, n in merged["n_samples"].items()
+        leaf: {"original": int(plan["leaves"][leaf]["n_docs"]), "effective": n}
+        for leaf, n in merged["n_samples"].items()
     }
     first = runs[0][1]
     doc["eval_shard_merge"] = {
         "task_name": task,
         "shard_count": count,
         "plan_sha": first["plan_sha"],
+        "expected_doc_counts": {
+            leaf: len(leaf_doc_ids(info)) for leaf, info in plan["leaves"].items()
+        },
         "provenance": first["provenance"],
         "doc_hashes": merged["doc_hashes"],
         "sources": sources,
@@ -173,7 +202,6 @@ def grade(
     model: str, task_name: str, doc: Mapping[str, Any], results_path: Path
 ) -> dict:
     """Grade the merged results exactly as a full run would be graded."""
-    from reference_config.evals.eval_config import _eval_config_map
     from report_module.acceptance_criteria import (
         acceptance_criteria_check,
         build_acceptance_export,
@@ -185,10 +213,7 @@ def grade(
         mark_incomplete,
     )
 
-    config = _eval_config_map.get(model)
-    tasks = {t.task_name: t for t in (config.tasks if config else [])}
-    if task_name not in tasks:
-        raise ShardError(f"{model} has no EvalConfig task {task_name}")
+    task = eval_task(model, task_name)
     provenance = doc["eval_shard_merge"]["provenance"]
     if provenance.get("hf_model_repo") not in (None, model):
         raise ShardError(
@@ -202,7 +227,7 @@ def grade(
         device=SimpleNamespace(name=provenance.get("device") or "unknown"),
     )
     results, counts = load_eval_results([str(results_path)])
-    blocks = blocks_for_task(ctx, tasks[task_name], results, counts)
+    blocks = blocks_for_task(ctx, task, results, counts)
     if not blocks:
         # load_eval_results logs and skips a results document it cannot read
         # (schema mismatch, empty configs, mixed dataset paths), and
@@ -255,7 +280,8 @@ def main(argv=None) -> int:
     parser.add_argument("shard_dirs", nargs="+", type=Path)
     args = parser.parse_args(argv)
     try:
-        doc = merge(args.shard_dirs, args.task)
+        task = eval_task(args.model, args.task)
+        doc = merge(args.shard_dirs, args.task, task.doc_ids)
     except ShardError as exc:
         print(f"merge refused: {exc}", file=sys.stderr)
         return 2

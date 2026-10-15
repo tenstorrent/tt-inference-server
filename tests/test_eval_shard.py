@@ -974,3 +974,200 @@ def test_merge_cli_fails_closed_when_the_merged_results_cannot_be_scored(
     assert rc != 0
     assert "INCOMPLETE" in capsys.readouterr().err
     assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
+
+
+# --- review on #5371 (eval_command.py:758): a doc_ids task shards its set ------
+# Gemma's livecodebench runs the 131-doc v6 window (EvalTask.doc_ids) of the
+# 1,055-doc dataset. --eval-shard used to partition the whole dataset, and the
+# merge accepted those 1,055 docs as the complete task, grading a different
+# benchmark against the v6 reference. The shards must partition exactly the
+# configured ids, and the merge must accept only that set.
+
+LCB_MODEL, LCB_TASK, LCB_DATASET_DOCS = "google/gemma-4-31B-it", "livecodebench", 1055
+
+
+def _lcb_task(**overrides):
+    from dataclasses import replace
+
+    from reference_config.evals.eval_config import _eval_config_map
+
+    (task,) = [t for t in _eval_config_map[LCB_MODEL].tasks if t.task_name == LCB_TASK]
+    return replace(task, **overrides) if overrides else task
+
+
+def _lcb_model_spec():
+    return SimpleNamespace(
+        model_id="m",
+        model_name="gemma-4-31B-it",
+        hf_model_repo=LCB_MODEL,
+        docker_image="img",
+        status=SimpleNamespace(name="EXPERIMENTAL"),
+        device_model_spec=SimpleNamespace(
+            max_context=131072,
+            max_concurrency=32,
+            eval_max_retries=0,
+            env_vars={"QUETZAL_BUNDLE_MANIFEST_SHA256": "man"},
+            known_issues=[],
+        ),
+    )
+
+
+def _run_lcb_shard(root: Path, index: int, count: int, task, monkeypatch, solved):
+    """One ``run.py --eval-shard index/count`` of livecodebench, as the runner
+    does it: build the command (the planner sees the 1,055-doc dataset), then
+    lm-eval logs one row per doc in the command's --samples. Returns the shard
+    dir and the doc ids it ran."""
+    from llm_module import eval_command
+
+    plan = {
+        "leaves": {LCB_TASK: _leaf(LCB_DATASET_DOCS, aggregations={"acc": "mean"})},
+        "groups": {},
+    }
+
+    def fake_plan(cmd, **kwargs):
+        Path(cmd[cmd.index("--out") + 1]).write_text(json.dumps(plan))
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(eval_command.subprocess, "run", fake_plan)
+    monkeypatch.setattr(eval_command, "_ttis_ref", lambda: "deadbeef")
+    shard_dir = root / f"run-{index}"
+    attempt = shard_dir / "evals" / f"eval-attempt-{index}"
+    attempt.mkdir(parents=True)
+    rc = SimpleNamespace(
+        eval_shard=f"{index}/{count}", eval_samples=None, limit_samples_mode=None
+    )
+    cmd = eval_command.build_eval_command(
+        task, _lcb_model_spec(), "P300X2", str(attempt), 8000, runtime_config=rc
+    )
+    docs = json.loads(cmd[cmd.index("--samples") + 1])[LCB_TASK]
+    out = attempt / "eval_x" / "google__gemma-4-31B-it"
+    out.mkdir(parents=True)
+    rows = [
+        {"doc_id": d, "filter": "none", "acc": d in solved, "doc_hash": str(d)}
+        for d in docs
+    ]
+    (out / f"samples_{LCB_TASK}_2026-10-15T00-00-00.000000.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows) + "\n"
+    )
+    (out / "results_2026-10-15T00-00-00.000000.json").write_text(
+        json.dumps(
+            {
+                "results": {
+                    LCB_TASK: {
+                        "alias": LCB_TASK,
+                        "acc,none": sum(r["acc"] for r in rows) / max(1, len(rows)),
+                    }
+                },
+                "configs": {
+                    LCB_TASK: {
+                        "task": LCB_TASK,
+                        "dataset_path": "livecodebench/code_generation_lite",
+                    }
+                },
+                # lm-eval reports the dataset as both counts under --samples
+                "n-samples": {
+                    LCB_TASK: {
+                        "original": LCB_DATASET_DOCS,
+                        "effective": LCB_DATASET_DOCS,
+                    }
+                },
+            }
+        )
+    )
+    return shard_dir, docs
+
+
+def _merge_lcb(tmp_path, dirs):
+    out = tmp_path / "merged"
+    rc = merge_cli.main(
+        ["--model", LCB_MODEL, "--task", LCB_TASK, "--out", str(out)]
+        + [str(d) for d in dirs]
+    )
+    return rc, out
+
+
+@pytest.mark.parametrize("count", [2, 4, 7])
+def test_doc_ids_task_shards_partition_exactly_its_configured_set(
+    tmp_path, monkeypatch, count
+):
+    from reference_config.evals.eval_config import LIVECODEBENCH_V6_DOC_IDS
+
+    task = _lcb_task()
+    assert len(task.doc_ids) == 131
+    ran = [
+        _run_lcb_shard(tmp_path, i, count, task, monkeypatch, set())[1]
+        for i in range(count)
+    ]
+    union = [d for docs in ran for d in docs]
+    assert len(union) == len(set(union)), "shards overlap"
+    assert sorted(union) == sorted(LIVECODEBENCH_V6_DOC_IDS)
+    assert max(map(len, ran)) - min(map(len, ran)) <= 1
+    record = json.loads(
+        (
+            tmp_path
+            / "run-0"
+            / "evals"
+            / "eval-attempt-0"
+            / f"eval_shard_{LCB_TASK}.json"
+        ).read_text()
+    )
+    assert record["plan"]["leaves"][LCB_TASK]["doc_ids"] == sorted(task.doc_ids)
+    assert record["expected_doc_counts"] == {LCB_TASK: 131}
+
+
+def test_merge_accepts_shards_covering_exactly_the_configured_set(
+    tmp_path, monkeypatch
+):
+    task = _lcb_task()
+    solved = set(sorted(task.doc_ids)[:106])  # 106/131 = 80.9% vs published 80.0
+    count = 4
+    dirs = [
+        _run_lcb_shard(tmp_path, i, count, task, monkeypatch, solved)[0]
+        for i in range(count)
+    ]
+    rc, out = _merge_lcb(tmp_path, dirs)
+    assert rc == 0
+    doc = json.loads((out / merge_cli.MERGED_RESULTS_NAME).read_text())
+    assert doc["results"][LCB_TASK]["acc,none"] == pytest.approx(106 / 131)
+    assert doc["n-samples"][LCB_TASK] == {
+        "original": LCB_DATASET_DOCS,
+        "effective": 131,
+    }
+    report = json.loads((out / merge_cli.MERGED_REPORT_NAME).read_text())
+    assert report["evals"][0]["data"]["score"] == pytest.approx(100 * 106 / 131)
+    assert report["acceptance_criteria"] is True
+
+
+@pytest.mark.parametrize(
+    "shard_doc_ids",
+    [
+        None,  # the whole 1,055-doc dataset (what --eval-shard used to run)
+        list(range(131)),  # a 131-doc window, but not the v6 one
+    ],
+    ids=["whole-dataset", "other-window"],
+)
+def test_merge_refuses_a_complete_shard_set_over_another_doc_set(
+    tmp_path, monkeypatch, shard_doc_ids
+):
+    # Every shard is present and the set is complete and disjoint -- over the
+    # wrong documents. That is a different benchmark, never the v6 task.
+    other = _lcb_task(doc_ids=shard_doc_ids)
+    dirs = [
+        _run_lcb_shard(tmp_path, i, 3, other, monkeypatch, set(range(1055)))[0]
+        for i in range(3)
+    ]
+    rc, out = _merge_lcb(tmp_path, dirs)
+    assert rc == 2
+    assert not (out / merge_cli.MERGED_REPORT_NAME).exists()
+
+
+def test_doc_ids_outside_the_dataset_refuse_to_shard(tmp_path, monkeypatch):
+    with pytest.raises(ShardError, match="outside the dataset"):
+        _run_lcb_shard(tmp_path, 0, 2, _lcb_task(doc_ids=[3, 1055]), monkeypatch, set())
+
+
+def test_a_shard_whose_expected_set_disagrees_with_its_plan_is_refused():
+    records = _records(2)
+    records[1]["expected_doc_ids_sha"] = {"sub_a": "x", "sub_b": "y", "sub_c": "z"}
+    with pytest.raises(ShardError, match="expected_doc_ids_sha|expected doc set"):
+        check_shard_set(records)
