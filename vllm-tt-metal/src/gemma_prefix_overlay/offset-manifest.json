@@ -7,5 +7,5 @@
       "target": "f23ee29bf60c13e460f6d17cfbf8d53ef12e1cde0e6cf6b7efe25f7c3ff1ca61"
     }
   },
-  "status": "Prepared only; reverse local validation pending, not dispatched"
+  "status": "Bounded scored validation candidate: two disjoint local cohorts exact, 45.20% and 47.46% lower fixed-work wall; no scored acceptance"
 }
