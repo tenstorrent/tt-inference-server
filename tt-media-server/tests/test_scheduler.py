@@ -56,6 +56,7 @@ def create_mock_queue():
     queue.full = Mock(return_value=False)
     queue.close = Mock()
     queue.join_thread = Mock()
+    queue.name = "queue"
     return queue
 
 
@@ -417,6 +418,53 @@ class TestScheduler:
 
         assert outcomes == [WorkerReplacementOutcome.ASSIGNMENT_RELEASED]
         assert not retirement_event.is_set()
+
+    def test_clear_worker_retirement_requires_expected_process(self, scheduler):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = threading.Event()
+        retirement_event.set()
+        worker_assignment = SimpleNamespace(identity=("0", 123))
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": threading.Lock(),
+        }
+
+        assert scheduler.clear_worker_retirement("0", 456, worker_assignment) is False
+        assert retirement_event.is_set()
+
+        worker_assignment.identity = None
+        assert scheduler.clear_worker_retirement("0", 123, worker_assignment) is False
+        assert retirement_event.is_set()
+
+        worker_assignment.identity = ("0", 123)
+        assert scheduler.clear_worker_retirement("0", 123, worker_assignment) is True
+        assert not retirement_event.is_set()
+
+    def test_clear_worker_retirement_keeps_worker_retired_on_barrier_timeout(
+        self, scheduler
+    ):
+        process = Mock(spec=Process)
+        process.pid = 123
+        retirement_event = threading.Event()
+        retirement_event.set()
+        claim_lock = Mock()
+        claim_lock.acquire.return_value = False
+        scheduler.worker_info["0"] = {
+            "process": process,
+            "retirement_event": retirement_event,
+            "claim_lock": claim_lock,
+        }
+
+        assert (
+            scheduler.clear_worker_retirement(
+                "0", 123, SimpleNamespace(identity=("0", 123))
+            )
+            is False
+        )
+        assert retirement_event.is_set()
+        claim_lock.release.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_worker_health_monitor_bumps_restart_count_when_restart_worker_raises(

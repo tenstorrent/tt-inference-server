@@ -314,6 +314,37 @@ class Scheduler:
             retirement_event.set()
             return True
 
+    def clear_worker_retirement(
+        self, worker_id: str, expected_pid: int, worker_assignment: Any
+    ) -> bool:
+        """Allow the expected worker to dequeue work after replacement fails."""
+        expected_identity = (worker_id, expected_pid)
+        with self._worker_retirement_lock:
+            worker_info = self.worker_info.get(worker_id)
+            if worker_info is None or worker_info["process"].pid != expected_pid:
+                return False
+
+            retirement_event = worker_info.get("retirement_event")
+            claim_lock = worker_info.get("claim_lock")
+            if retirement_event is None or claim_lock is None:
+                return False
+
+        acquired = claim_lock.acquire(timeout=WORKER_CLAIM_BARRIER_TIMEOUT_SECONDS)
+        if not acquired:
+            return False
+
+        try:
+            with self._worker_retirement_lock:
+                if (
+                    self.worker_info.get(worker_id) is not worker_info
+                    or worker_assignment.identity != expected_identity
+                ):
+                    return False
+                retirement_event.clear()
+                return True
+        finally:
+            claim_lock.release()
+
     def _validate_worker_retirement(
         self,
         worker_id: str,

@@ -32,6 +32,7 @@ TASK_QUEUE_FULL_DETAIL = "Task queue is full. Please try again later."
 MAX_JOBS_REACHED_DETAIL = "Maximum job limit reached"
 WORKER_REPLACEMENT_RETRY_DELAY_SECONDS = 0.1
 WORKER_REPLACEMENT_MAX_RETRIES = 3
+CANCELLED_TASK_WAIT_TIMEOUT_SECONDS = 5.0
 AUTO_CLEANUP_EXEMPT_JOB_TYPES = frozenset(
     {
         JobTypes.TRAINING.value,
@@ -67,6 +68,7 @@ class Job:
     _progress_tracker: Any = None
     _worker_assignment: Any = None
     _mark_worker_retiring: Optional[Callable[[str, int], bool]] = None
+    _clear_worker_retirement: Optional[Callable[[str, int, Any], bool]] = None
     _replace_worker: Optional[Callable[[str, int, Any], WorkerReplacementOutcome]] = (
         None
     )
@@ -164,7 +166,12 @@ class JobManager:
         self._settings = get_settings()
         # In-memory storage for submitted jobs
         self._jobs: Dict[str, Job] = {}
+        # Deleting and recovering fence concurrent operations while their
+        # asynchronous work is active. Pending replacement survives a failed
+        # attempt so cleanup retries it independently of progress heartbeats.
         self._deleting_job_ids: set[str] = set()
+        self._recovering_job_ids: set[str] = set()
+        self._pending_worker_replacement_ids: set[str] = set()
         self._jobs_lock = Lock()
 
         self.db = None
@@ -196,6 +203,7 @@ class JobManager:
         progress_tracker: Any = None,
         worker_assignment: Any = None,
         mark_worker_retiring: Optional[Callable[[str, int], bool]] = None,
+        clear_worker_retirement: Optional[Callable[[str, int, Any], bool]] = None,
         replace_worker: Optional[
             Callable[[str, int, Any], WorkerReplacementOutcome]
         ] = None,
@@ -205,6 +213,17 @@ class JobManager:
         with self._jobs_lock:
             self._enforceAdmissionLimits()
             request_parameters = request.model_dump(mode="json")
+            if job_type == JobTypes.TRAINING and worker_assignment is not None:
+                replacement_callbacks = (
+                    mark_worker_retiring,
+                    clear_worker_retirement,
+                    replace_worker,
+                )
+                if any(callback is None for callback in replacement_callbacks):
+                    raise ValueError(
+                        "Assigned training jobs require worker retirement and "
+                        "replacement callbacks"
+                    )
 
             job = Job(
                 id=job_id,
@@ -215,6 +234,7 @@ class JobManager:
                 _progress_tracker=progress_tracker,
                 _worker_assignment=worker_assignment,
                 _mark_worker_retiring=mark_worker_retiring,
+                _clear_worker_retirement=clear_worker_retirement,
                 _replace_worker=replace_worker,
             )
 
@@ -228,6 +248,13 @@ class JobManager:
                     raise ValueError(f"Training job '{source_job_id}' not found")
                 if parent_job.id in self._deleting_job_ids:
                     raise ValueError(f"Training job '{source_job_id}' is being deleted")
+                if (
+                    parent_job.id in self._recovering_job_ids
+                    or parent_job.id in self._pending_worker_replacement_ids
+                ):
+                    raise ValueError(
+                        f"Training job '{source_job_id}' is being recovered"
+                    )
 
             if result_path:
                 job.result_path = result_path
@@ -366,6 +393,12 @@ class JobManager:
             if job_id in self._deleting_job_ids:
                 self._logger.warning(f"Cancel failed: Job {job_id} is being deleted.")
                 return None
+            if (
+                job_id in self._recovering_job_ids
+                or job_id in self._pending_worker_replacement_ids
+            ):
+                self._logger.warning(f"Cancel failed: Job {job_id} is being recovered.")
+                return None
 
             if job.is_terminal():
                 self._logger.warning(
@@ -410,6 +443,8 @@ class JobManager:
             job = self._get_job_if_authorized(job_id, org_id)
             if job is None:
                 return False
+            if job_id in self._recovering_job_ids:
+                raise ValueError(f"Job '{job_id}' is being recovered")
 
             force_delete = not job.is_terminal()
             if force_delete and job.job_type != JobTypes.TRAINING.value:
@@ -445,11 +480,16 @@ class JobManager:
         try:
             if force_delete:
                 if worker_identity is not None:
-                    await self._replace_worker_for_force_delete(job, worker_identity)
+                    await self._replace_assigned_worker(job, worker_identity)
 
-                running_task = self._cleanup_job(job, force=True)
-                if running_task is not None:
-                    await asyncio.gather(running_task, return_exceptions=True)
+            running_task = self._cleanup_job(job, force=True)
+            if force_delete:
+                with self._jobs_lock:
+                    if not job.is_terminal():
+                        job.mark_cancelled()
+                        self._sync_status_to_db(job)
+            if running_task is not None:
+                await self._wait_for_cancelled_task(job, running_task)
 
             # Delete children first so a partial failure never leaves a merge job
             # whose parent training record has already been removed.
@@ -458,6 +498,7 @@ class JobManager:
                 self._delete_job_and_result(job_to_delete)
                 with self._jobs_lock:
                     self._jobs.pop(job_to_delete.id, None)
+                    self._pending_worker_replacement_ids.discard(job_to_delete.id)
                     if job_to_delete.job_type == JobTypes.ADAPTER_MERGE.value:
                         source_job_id = job_to_delete.request_parameters.get(
                             "source_job_id"
@@ -537,12 +578,21 @@ class JobManager:
                     task = self._cleanup_job(job, force=True)
                     if task:
                         running_tasks.append(task)
+                elif job._task and not job._task.done():
+                    # A terminal task may still be flushing persisted data.
+                    running_tasks.append(job._task)
 
                 # Always remove from memory tracking during shutdown
                 self._jobs.pop(job_id)
 
         if running_tasks:
-            await asyncio.gather(*running_tasks, return_exceptions=True)
+            _, pending_tasks = await asyncio.wait(
+                running_tasks, timeout=CANCELLED_TASK_WAIT_TIMEOUT_SECONDS
+            )
+            if pending_tasks:
+                self._logger.warning(
+                    f"Shutdown timed out waiting for {len(pending_tasks)} job task(s)"
+                )
         self._logger.info("Job manager shutdown complete")
 
     async def _mark_job_in_progress(self, job: Job):
@@ -584,6 +634,12 @@ class JobManager:
                     f"The initially set result_path differs from the path returned by the task function ({job.result_path} != {result_path})."
                 )
 
+            if job.is_terminal():
+                self._logger.info(
+                    f"Ignoring late completion from terminal job {job.id}"
+                )
+                return
+
             if job.status == JobStatus.CANCELLING:
                 self._logger.info(f"Job {job.id} was cooperatively cancelled by runner")
                 job.mark_cancelled()
@@ -595,17 +651,19 @@ class JobManager:
 
         except asyncio.CancelledError:
             self._logger.info(f"Job {job.id} was cancelled")
+            if job.cancel_event:
+                job.cancel_event.set()
             if not job.is_terminal():
                 job.mark_cancelled()
                 self._sync_status_to_db(job)
-            self._cleanup_job(job)
             raise
         except Exception as e:
             self._logger.error(f"Job {job.id} failed: {e}")
-            job.mark_failed(error_code="processing_error", error_message=str(e))
-            self._sync_status_to_db(job)
-            if job.cancel_event:
-                self._cleanup_job(job)
+            if not job.is_terminal():
+                job.mark_failed(error_code="processing_error", error_message=str(e))
+                self._sync_status_to_db(job)
+                if job.cancel_event:
+                    self._cleanup_job(job)
         finally:
             if not progress_monitor.done():
                 progress_monitor.cancel()
@@ -620,7 +678,7 @@ class JobManager:
             while True:
                 try:
                     await asyncio.sleep(self._settings.job_cleanup_interval_seconds)
-                    self._cleanup_old_jobs()
+                    await self._cleanup_old_jobs()
                 except asyncio.CancelledError:
                     self._logger.info("Job cleanup task cancelled")
                     break
@@ -630,7 +688,7 @@ class JobManager:
         self._cleanup_task = asyncio.create_task(cleanup_loop())
         self._logger.info("Job cleanup task started")
 
-    def _cleanup_old_jobs(self):
+    async def _cleanup_old_jobs(self):
         """Remove old completed/failed/cancelled, stuck in-progress, and stale cancelling jobs."""
         retention_cutoff = time.time() - self._settings.job_retention_seconds
         progress_cutoff = time.monotonic() - self._settings.job_max_stuck_time_seconds
@@ -640,6 +698,8 @@ class JobManager:
 
         with self._jobs_lock:
             for job in self._jobs.values():
+                if job.is_terminal():
+                    self._pending_worker_replacement_ids.discard(job.id)
                 is_old_terminal = (
                     job.is_terminal()
                     and job.job_type not in AUTO_CLEANUP_EXEMPT_JOB_TYPES
@@ -648,38 +708,17 @@ class JobManager:
                 )
                 if is_old_terminal:
                     jobs_to_remove.append(job)
-                elif self._is_job_stuck(job, progress_cutoff):
+                elif (
+                    job.id in self._pending_worker_replacement_ids
+                    or self._is_job_stuck(job, progress_cutoff)
+                ):
                     stuck_jobs.append(job)
 
         if not jobs_to_remove and not stuck_jobs:
             return
 
         for job in stuck_jobs:
-            # Progress and completion happen outside _jobs_lock. Claim the job as
-            # failed only after re-reading both immediately before cancellation.
-            with self._jobs_lock:
-                current_job = self._jobs.get(job.id)
-                if current_job is not job:
-                    continue
-                latest_progress_cutoff = (
-                    time.monotonic() - self._settings.job_max_stuck_time_seconds
-                )
-                if not self._is_job_stuck(job, latest_progress_cutoff):
-                    continue
-                was_in_progress = job.is_in_progress()
-                job.mark_failed(
-                    error_code="stale_job",
-                    error_message=(
-                        "Job made no progress and was force-cancelled by cleanup"
-                    ),
-                )
-
-            if was_in_progress:
-                self._logger.warning(f"Force-cancelling stuck in-progress job {job.id}")
-            else:
-                self._logger.warning(f"Force-cancelling stale cancelling job {job.id}")
-            self._cleanup_job(job, force=True)
-            self._sync_status_to_db(job)
+            await self._recover_stale_job(job)
 
         removed_jobs = []
         with self._jobs_lock:
@@ -708,6 +747,84 @@ class JobManager:
                 f"Deleted {len(deleted_jobs)} old job(s): "
                 f"{', '.join(job.id for job in deleted_jobs)}"
             )
+
+    async def _recover_stale_job(self, job: Job) -> None:
+        """Fence an assigned training worker before failing and cancelling its job."""
+        worker_identity = None
+        recovering_worker = False
+        with self._jobs_lock:
+            current_job = self._jobs.get(job.id)
+            if (
+                current_job is not job
+                or job.id in self._deleting_job_ids
+                or job.id in self._recovering_job_ids
+            ):
+                return
+
+            latest_progress_cutoff = (
+                time.monotonic() - self._settings.job_max_stuck_time_seconds
+            )
+            if (
+                job.id not in self._pending_worker_replacement_ids
+                and not self._is_job_stuck(job, latest_progress_cutoff)
+            ):
+                return
+
+            was_in_progress = job.is_in_progress()
+            if (
+                job.job_type == JobTypes.TRAINING.value
+                and job.assigned_worker_identity() is not None
+            ):
+                if (
+                    job._mark_worker_retiring is None
+                    or job._clear_worker_retirement is None
+                    or job._replace_worker is None
+                ):
+                    # Assigned production training jobs are validated at creation;
+                    # retain this guard for restored or manually constructed jobs.
+                    self._logger.error(
+                        f"Cannot recover stale training job {job.id}: "
+                        "worker replacement is unavailable"
+                    )
+                    return
+
+                self._recovering_job_ids.add(job.id)
+                recovering_worker = True
+                job.mark_cancelling()
+                self._sync_status_to_db(job)
+                worker_identity = self._prepare_force_delete(job)
+
+        try:
+            if worker_identity is not None:
+                try:
+                    await self._replace_assigned_worker(job, worker_identity)
+                except ValueError as e:
+                    self._logger.error(
+                        f"Could not recover stale training job {job.id}: {e}"
+                    )
+                    return
+
+            with self._jobs_lock:
+                current_job = self._jobs.get(job.id)
+                if current_job is not job or job.is_terminal():
+                    return
+                job.mark_failed(
+                    error_code="stale_job",
+                    error_message=(
+                        "Job made no progress and was force-cancelled by cleanup"
+                    ),
+                )
+
+            state = "in-progress" if was_in_progress else "cancelling"
+            self._logger.warning(f"Force-cancelling stale {state} job {job.id}")
+            running_task = self._cleanup_job(job, force=True)
+            self._sync_status_to_db(job)
+            if running_task is not None:
+                await self._wait_for_cancelled_task(job, running_task)
+        finally:
+            if recovering_worker:
+                with self._jobs_lock:
+                    self._recovering_job_ids.discard(job.id)
 
     def _is_job_stuck(self, job: Job, progress_cutoff: float) -> bool:
         if not (job.is_in_progress() or job.is_cancelling()):
@@ -761,6 +878,20 @@ class JobManager:
 
         return running_task
 
+    async def _wait_for_cancelled_task(
+        self, job: Job, running_task: asyncio.Task
+    ) -> None:
+        """Wait briefly for task cleanup without blocking recovery indefinitely."""
+        done, _ = await asyncio.wait(
+            {running_task}, timeout=CANCELLED_TASK_WAIT_TIMEOUT_SECONDS
+        )
+        if done:
+            return
+
+        self._logger.warning(
+            f"Timed out waiting for cancelled job {job.id} task to finish"
+        )
+
     def _prepare_force_delete(self, job: Job) -> Optional[tuple[str, int]]:
         """Publish cancellation and capture a worker that already claimed the job."""
         if job._mark_worker_retiring is None or job._replace_worker is None:
@@ -801,7 +932,28 @@ class JobManager:
             )
             return False
 
-    async def _replace_worker_for_force_delete(
+    async def _clear_worker_retirement(
+        self, job: Job, worker_identity: tuple[str, int]
+    ) -> bool:
+        if job._clear_worker_retirement is None:
+            return False
+
+        worker_id, worker_pid = worker_identity
+        try:
+            return await asyncio.to_thread(
+                job._clear_worker_retirement,
+                worker_id,
+                worker_pid,
+                job._worker_assignment,
+            )
+        except Exception as e:
+            self._logger.error(
+                f"Failed to clear retirement for worker {worker_id} after "
+                f"replacement of job {job.id} failed: {e}"
+            )
+            return False
+
+    async def _replace_assigned_worker(
         self, job: Job, worker_identity: tuple[str, int]
     ) -> None:
         """Fence and replace the assigned worker before deleting job data."""
@@ -811,7 +963,7 @@ class JobManager:
             while True:
                 current_identity = job.assigned_worker_identity()
                 if current_identity is None:
-                    return
+                    break
                 if current_identity != expected_identity:
                     expected_identity = current_identity
                     self._mark_worker_retiring(job, expected_identity)
@@ -824,11 +976,11 @@ class JobManager:
                     job._worker_assignment,
                 )
                 if outcome == WorkerReplacementOutcome.REPLACED:
-                    return
+                    break
 
                 current_identity = job.assigned_worker_identity()
                 if current_identity is None:
-                    return
+                    break
 
                 if outcome != WorkerReplacementOutcome.RETRY_REQUIRED:
                     if current_identity != expected_identity:
@@ -845,10 +997,29 @@ class JobManager:
                         f"Timed out fencing worker {worker_id} for job {job.id}"
                     )
                 await asyncio.sleep(WORKER_REPLACEMENT_RETRY_DELAY_SECONDS)
+            with self._jobs_lock:
+                self._pending_worker_replacement_ids.discard(job.id)
         except Exception as e:
+            current_identity = job.assigned_worker_identity()
+            if current_identity is not None:
+                retirement_cleared = await self._clear_worker_retirement(
+                    job, current_identity
+                )
+                if not retirement_cleared:
+                    self._logger.warning(
+                        f"Worker {current_identity[0]} remains retired after "
+                        f"replacement of job {job.id} failed"
+                    )
+            with self._jobs_lock:
+                if self._jobs.get(job.id) is job and not job.is_terminal():
+                    self._pending_worker_replacement_ids.add(job.id)
+                    self._logger.warning(
+                        f"Worker replacement for job {job.id} remains pending; "
+                        "stale-job cleanup will retry"
+                    )
             raise ValueError(
-                f"Could not force-delete job {job.id}: failed to replace "
-                f"worker {worker_id}"
+                f"Could not replace worker for job {job.id}: "
+                f"worker {expected_identity[0]}"
             ) from e
 
     def _sync_status_to_db(self, job: Job, **overrides):
