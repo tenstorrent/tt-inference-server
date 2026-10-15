@@ -668,6 +668,12 @@ def test_vllm_dockerfile_checks_out_supplied_standalone_plugin_ref():
     assert "git clone https://github.com/tenstorrent/vllm.git" not in dockerfile
 
 
+def test_vllm_dockerfile_exposes_tt_metal_device_build_in_both_stages():
+    dockerfile = VLLM_DOCKERFILE_PATH.read_text()
+
+    assert dockerfile.count("TT_METAL_DEVICE_BUILD=${TT_METAL_HOME}/build") == 2
+
+
 @pytest.mark.parametrize(
     ("argv", "expected_port"),
     [

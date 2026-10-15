@@ -130,6 +130,7 @@ defaults:
 # DRA boardName per device — the tt-dra-driver `boardName` attribute a ResourceClaim selects (CEL) for each device shape.
 # Generated from workflows/device_utils.py:BOARD_TYPE_COUNT_TO_DEVICE; consumed by tt-inference-server.draBoardName.
 deviceBoardNames:
+  blackhole_galaxy: galaxy-blackhole
   galaxy: galaxy-wormhole
   n150: n150
   n300: n300
@@ -140,6 +141,7 @@ deviceBoardNames:
   p300x2: p300
   t3k: n300
 deviceChipCounts:
+  blackhole_galaxy: 32
   galaxy: 32
   n150: 1
   n300: 2
@@ -150,6 +152,7 @@ deviceChipCounts:
   p300x2: 4
   t3k: 8
 deviceBoardCounts:
+  blackhole_galaxy: 32
   galaxy: 32
   n150: 1
   n300: 1
@@ -238,6 +241,34 @@ models:
                 value: '1'
               - name: TT_MESH_GRAPH_DESC_PATH
                 value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      blackhole_galaxy:
+        defaultImpl: gpt_oss
+        impls:
+          gpt_oss:
+            progressDeadlineSeconds: 7200
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.25.0-978f93b-a723030
+            resources:
+              requests:
+                memory: 300Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: (4, 8)
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MM_THROTTLE_PERF
+                value: '2'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
               - name: VLLM_CONFIGURE_LOGGING
@@ -592,6 +623,32 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P300x2
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      blackhole_galaxy:
+        defaultImpl: qwen3_32b_galaxy
+        impls:
+          qwen3_32b_galaxy:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.25.0-978f93b-a723030
+            resources:
+              requests:
+                memory: 80Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: BH-Galaxy
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
@@ -1247,7 +1304,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.16.0-669d59e-3334377
             resources:
               requests:
                 memory: 175Gi
@@ -1410,7 +1467,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.16.0-669d59e-3334377
             resources:
               requests:
                 memory: 175Gi
@@ -1573,7 +1630,7 @@ models:
             progressDeadlineSeconds: 7200
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.16.0-669d59e-3334377
             resources:
               requests:
                 memory: 175Gi
@@ -2108,7 +2165,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.17.0-8c48a10-f52987a
             resources:
               requests:
                 memory: 20Gi
@@ -2132,7 +2189,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.10.1-e867533-22be241
+              tag: 0.19.0-b204341-9bd099c
             resources:
               requests:
                 memory: 20Gi
@@ -2496,7 +2553,7 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-media-inference-server-forge
-              tag: 0.23.0-2fd9445
+              tag: 0.25.0-978f93b
             probes:
               liveness:
                 path: /tt-liveness
@@ -2616,25 +2673,6 @@ models:
                 value: wormhole_b0
               - name: MESH_DEVICE
                 value: TG
-      p150x4:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-555f240
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 32Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: P150x4
       p150x8:
         defaultImpl: tt_transformers
         impls:
@@ -2654,25 +2692,6 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P150x8
-      p300x2:
-        defaultImpl: tt_transformers
-        impls:
-          tt_transformers:
-            progressDeadlineSeconds: 5400
-            image:
-              repository: ghcr.io/tenstorrent/tt-media-inference-server
-              tag: 0.10.0-555f240
-            probes:
-              liveness:
-                path: /tt-liveness
-            resources:
-              requests:
-                memory: 32Gi
-            env:
-              - name: ARCH_NAME
-                value: blackhole
-              - name: MESH_DEVICE
-                value: P300x2
     defaultEngine: media
   Wan2.2-T2V-A14B-Diffusers:
     media:
@@ -2773,6 +2792,27 @@ models:
                 value: blackhole
               - name: MESH_DEVICE
                 value: P300x2
+              - name: TT_DIT_CACHE_DIR
+                value: /home/container_app_user/cache_root/tt_dit_cache
+      blackhole_galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-media-inference-server
+              tag: 0.25.0-978f93b
+            probes:
+              liveness:
+                path: /tt-liveness
+            resources:
+              requests:
+                memory: 32Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: MESH_DEVICE
+                value: BH-Galaxy
               - name: TT_DIT_CACHE_DIR
                 value: /home/container_app_user/cache_root/tt_dit_cache
     defaultEngine: media
@@ -4118,23 +4158,39 @@ models:
   gemma-4-31B-it:
     vllm:
       p300x2:
-        defaultImpl: gemma4_31b_qb2
+        defaultImpl: tt_transformers
         impls:
           tt_transformers:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.18.0-c49bb76-6b4a3a7
+              tag: 0.25.0-978f93b-a723030
             resources:
               requests:
                 memory: 77Gi
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: GEMMA4_BOUNDED_SLIDING_KV_CACHE
+                value: '0'
+              - name: GEMMA4_CCL_TOPOLOGY
+                value: linear
+              - name: GEMMA4_CHUNKED_PREFILL_TRACE
+                value: '0'
+              - name: GEMMA4_HYBRID_KV_CACHE_GROUPS
+                value: '1'
+              - name: GEMMA4_KV_BFP8
+                value: '1'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
-                value: '49152'
+                value: '393216'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
+              - name: GEMMA4_PREFIX_CACHING
+                value: '1'
+              - name: GEMMA4_VLLM_SINGLE_CHUNK
+                value: '0'
+              - name: GEMMA4_WARMUP_PREFILL_ISLS
+                value: 4096,8192,16384,32768,65536,131072
               - name: MESH_DEVICE
                 value: P150x4
               - name: TORCHDYNAMO_DISABLE
@@ -4166,6 +4222,58 @@ models:
                 value: '1'
               - name: TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES
                 value: '0'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      blackhole_galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.25.0-978f93b-a723030
+            resources:
+              requests:
+                memory: 77Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GEMMA4_BOUNDED_SLIDING_KV_CACHE
+                value: '0'
+              - name: GEMMA4_CCL_TOPOLOGY
+                value: linear
+              - name: GEMMA4_CHUNKED_PREFILL_TRACE
+                value: '0'
+              - name: GEMMA4_DECODE_WARMUP_BATCHES
+                value: 1,4,8,32
+              - name: GEMMA4_HYBRID_KV_CACHE_GROUPS
+                value: '1'
+              - name: GEMMA4_KV_BFP8
+                value: '1'
+              - name: GEMMA4_MAX_TOKENS_ALL_USERS
+                value: '1523712'
+              - name: GEMMA4_PAGE_BLOCK_SIZE
+                value: '64'
+              - name: GEMMA4_PREFIX_CACHING
+                value: '1'
+              - name: GEMMA4_ROPE_PERUSER_B1
+                value: '1'
+              - name: GEMMA4_SDPA_MAX_CORES_PER_HEAD
+                value: '3'
+              - name: GEMMA4_VLLM_SINGLE_CHUNK
+                value: '0'
+              - name: GEMMA4_WARMUP_PREFILL_ISLS
+                value: 4096,8192,16384,32768,65536,131072
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
               - name: VLLM_CONFIGURE_LOGGING
@@ -4364,29 +4472,148 @@ models:
             progressDeadlineSeconds: 5400
             image:
               repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
-              tag: 0.24.0-29f93c9-3506696
+              tag: 0.25.0-978f93b-a723030
             resources:
               requests:
                 memory: 30Gi
             env:
               - name: ARCH_NAME
                 value: blackhole
+              - name: GEMMA4_BOUNDED_SLIDING_KV_CACHE
+                value: '0'
               - name: GEMMA4_CCL_TOPOLOGY
                 value: linear
               - name: GEMMA4_CHUNKED_PREFILL_TRACE
+                value: '0'
+              - name: GEMMA4_HYBRID_KV_CACHE_GROUPS
+                value: '1'
+              - name: GEMMA4_KV_BFP8
                 value: '1'
               - name: GEMMA4_MAX_TOKENS_ALL_USERS
-                value: '262144'
+                value: '786432'
               - name: GEMMA4_PAGE_BLOCK_SIZE
                 value: '64'
+              - name: GEMMA4_PREFIX_CACHING
+                value: '1'
               - name: GEMMA4_VLLM_SINGLE_CHUNK
                 value: '0'
+              - name: GEMMA4_WARMUP_PREFILL_ISLS
+                value: 4096,8192,16384,32768,65536,131072
               - name: MESH_DEVICE
                 value: P150x4
               - name: TORCHDYNAMO_DISABLE
                 value: '1'
               - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
                 value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+      blackhole_galaxy:
+        defaultImpl: tt_transformers
+        impls:
+          tt_transformers:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.25.0-978f93b-a723030
+            resources:
+              requests:
+                memory: 30Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: GEMMA4_BOUNDED_SLIDING_KV_CACHE
+                value: '0'
+              - name: GEMMA4_CCL_TOPOLOGY
+                value: linear
+              - name: GEMMA4_CHUNKED_PREFILL_TRACE
+                value: '0'
+              - name: GEMMA4_DECODE_WARMUP_BATCHES
+                value: 1,4,8,32
+              - name: GEMMA4_HYBRID_KV_CACHE_GROUPS
+                value: '1'
+              - name: GEMMA4_KV_BFP8
+                value: '1'
+              - name: GEMMA4_MAX_TOKENS_ALL_USERS
+                value: '2883584'
+              - name: GEMMA4_PAGE_BLOCK_SIZE
+                value: '64'
+              - name: GEMMA4_PREFIX_CACHING
+                value: '1'
+              - name: GEMMA4_ROPE_PERUSER_B1
+                value: '1'
+              - name: GEMMA4_SDPA_MAX_CORES_PER_HEAD
+                value: '3'
+              - name: GEMMA4_VLLM_SINGLE_CHUNK
+                value: '0'
+              - name: GEMMA4_WARMUP_PREFILL_ISLS
+                value: 4096,8192,16384,32768,65536,131072
+              - name: MESH_DEVICE
+                value: BH-Galaxy
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                value: '1'
+              - name: VLLM_CONFIGURE_LOGGING
+                value: '1'
+              - name: VLLM_RPC_TIMEOUT
+                value: '900000'
+              - name: VLLM_TARGET_DEVICE
+                value: tt
+    defaultEngine: vllm
+  Qwen3.8-27B:
+    vllm:
+      p300x2:
+        defaultImpl: qwen38_27b_qb2
+        impls:
+          qwen38_27b_qb2:
+            progressDeadlineSeconds: 5400
+            image:
+              repository: ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64
+              tag: 0.25.0-978f93b-a723030
+            resources:
+              requests:
+                memory: 67Gi
+            env:
+              - name: ARCH_NAME
+                value: blackhole
+              - name: EXTRA_MODELS_DIR
+                value: ../../tt-metal/models/demos
+              - name: HF_MODEL
+                value: Qwen/Qwen3.8-27B
+              - name: MESH_DEVICE
+                value: (1, 4)
+              - name: QWEN_BATCHED_DECODE_ROPE
+                value: '1'
+              - name: QWEN_BATCHED_PREFILL
+                value: '1'
+              - name: QWEN_COMPACT_DECODE_ATTENTION
+                value: '1'
+              - name: QWEN_COMPACT_DECODE_MLP
+                value: '1'
+              - name: QWEN_COMPACT_DECODE_RESIDUAL
+                value: '1'
+              - name: QWEN_DECODE_BUCKETS
+                value: '1'
+              - name: QWEN_PREFILL_BATCHED_HEAD
+                value: '1'
+              - name: QWEN_PREFILL_RESIDUAL_LAYOUT
+                value: sharded_replicated_norm
+              - name: QWEN_PREFILL_SKIP_INTERMEDIATE_HEAD
+                value: '1'
+              - name: QWEN_PREFILL_STARTUP_WARMUP
+                value: '1'
+              - name: QWEN_VLLM_HOST_COMPATIBILITY
+                value: '1'
+              - name: QWEN_VLLM_KV_POOL_TOKENS
+                value: '1050592'
+              - name: TORCHDYNAMO_DISABLE
+                value: '1'
+              - name: TT_MESH_GRAPH_DESC_PATH
+                value: ../../tt-metal/tt_metal/fabric/mesh_graph_descriptors/p300_x2_mesh_graph_descriptor.textproto
               - name: VLLM_CONFIGURE_LOGGING
                 value: '1'
               - name: VLLM_RPC_TIMEOUT

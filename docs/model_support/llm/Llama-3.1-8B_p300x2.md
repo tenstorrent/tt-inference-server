@@ -5,7 +5,7 @@ Supported weights variants for this model implementation are:
 - `Llama-3.1-8B`: [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) **(default)** 
 - `Llama-3.1-8B-Instruct`: [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
 
-Weight variants use more than one released configuration; see the configuration table below.
+To use non-default weights, replace `meta-llama/Llama-3.1-8B` in commands below.
 
 #### Useful links
 
@@ -39,7 +39,7 @@ docker run \
   --device /dev/tenstorrent \
   --mount type=bind,src=/dev/hugepages-1G,dst=/dev/hugepages-1G \
   --volume volume_id_Llama-3.1-8B:/home/container_app_user/cache_root \
-  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-e867533-22be241 \
+  ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a \
   --model meta-llama/Llama-3.1-8B \
   --tt-device p300x2
 ```
@@ -55,17 +55,11 @@ For details on the run.py command, see the [run.py CLI Options](../../workflows_
 
 | Parameter | Value |
 |-----------|-------|
-| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B) |
+| Weights | [meta-llama/Llama-3.1-8B](https://huggingface.co/meta-llama/Llama-3.1-8B), [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) |
 | Model Status | 🟡 Functional |
 | Max Batch Size | 32 |
 | Max Context Length | 131072 |
-| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/e867533/models/tt_transformers) |
-| tt-metal Commit | `e867533` |
-| vLLM Commit | `22be241` |
-| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.10.1-e867533-22be241` |
-
-#### Additional released configurations
-
-| Weights | Implementation | Max Batch Size | Max Context Length | tt-metal Commit | vLLM Commit | Docker Image |
-|---|---|---|---|---|---|---|
-| [meta-llama/Llama-3.1-8B-Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct) | `tt-transformers` | 32 | 131072 | `8c48a10` | `f52987a` | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a` |
+| Implementation Code | [tt-transformers](https://github.com/tenstorrent/tt-metal/tree/8c48a10/models/tt_transformers) |
+| tt-metal Commit | `8c48a10` |
+| vLLM Commit | `f52987a` |
+| Docker Image | `ghcr.io/tenstorrent/tt-inference-server/vllm-tt-metal-src-release-ubuntu-22.04-amd64:0.17.0-8c48a10-f52987a` |
