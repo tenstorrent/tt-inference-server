@@ -2806,6 +2806,224 @@ _eval_config_list = [
             ),
         ],
     ),
+    # MiMo-V2.6-Flash-MOPD: the RL checkpoint plus a short MOPD stage that
+    # curbs repeated tool calls in agent loops. Xiaomi publishes benchmark
+    # scores only for the RL checkpoint, so published scores cite that card.
+    # Card recommends temperature 1.0 / top_p 0.95; thinking is on by default
+    # (the chat template only disables it on enable_thinking=false).
+    # No ModelSpec yet, so this config is not dispatched (see EVAL_CONFIGS);
+    # concurrencies are provisional until the spec sets max_concurrency.
+    EvalConfig(
+        hf_model_repo="XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+        tasks=[
+            EvalTask(
+                task_name="r1_gpqa_diamond",
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                max_concurrent=32,
+                use_chat_api=True,
+                # Thinking is on, so the answer can arrive in reasoning_content.
+                capture_reasoning=True,
+                score=EvalTaskScore(
+                    # Neither model card nor the technical report reports GPQA
+                    # Diamond; the GPU reference is the only anchor.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": [
+                            "exact_match,none",
+                        ],
+                        "unit": "percent",
+                    },
+                ),
+                model_kwargs={
+                    "max_length": 256 * 1024,
+                    "timeout": 7200,
+                },
+                gen_kwargs={
+                    "max_gen_toks": 128 * 1024,
+                    # https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-MOPD/blob/main/chat_template.jinja
+                    "until": ["<|im_end|>"],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "stream": "true",
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 0.2,
+                    EvalLimitMode.SMOKE_TEST: 0.01,
+                },
+            ),
+            EvalTask(
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=87.6,
+                    published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    n_concurrent_trials=32,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=8,
+                    override_memory_mb=32 * 1024,
+                    agent_timeout_sec=2 * 60 * 60,
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 500 * 1024,
+                            "max_output_tokens": 64 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 64 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/qemu-startup",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 5,
+                },
+            ),
+            EvalTask(
+                task_name="tau3_bench_banking",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Not on either model card; the GPU reference is the only
+                    # anchor until a published score is confirmed.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                    tolerance=0.10,
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="sierra-research/tau3-bench",
+                    agent="tau3_llm_agent",
+                    agent_import_path="adapters.tau3-bench.tau3_llm_agent:Tau3LLMAgent",
+                    task_names=["sierra-research/tau3-bench__tau3-banking_knowledge-*"],
+                    # A single served instance is shared by the agent,
+                    # the simulated user, and the Natural Language verifier.
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=97,
+                    override_cpus=4,
+                    override_memory_mb=8 * 1024,
+                    agent_timeout_sec=3600,
+                    agent_kwargs={
+                        "tau2_trial_index": 0,
+                        "temperature": 1.0,
+                        # The adapter's build_llm_args() sets only temperature.
+                        # Must stay a JSON *string*: the adapter shlex.quotes it
+                        # onto the container command line.
+                        "llm_args_json": '{"top_p": 0.95}',
+                        "max_steps": 200,
+                        # Default is 120s; a single reasoning user-sim turn under
+                        # load can exceed that and trip an MCP request timeout.
+                        "tool_timeout_sec": 900,
+                        "read_timeout_sec": 120,
+                    },
+                    environment_env={
+                        "TAU2_USER_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    },
+                    verifier_env={
+                        "TAU2_NL_ASSERTIONS_MODEL": "openai/XiaomiMiMo/MiMo-V2.6-Flash-MOPD",
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-031",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-032",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-052",
+                            "sierra-research/tau3-bench__tau3-banking_knowledge-task-002",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 3,
+                },
+            ),
+            EvalTask(
+                task_name="deepswe",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    published_score=67.9,
+                    published_score_ref="https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Flash-RL",
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref="TBD",
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    # Checked out from datacurve-ai/deep-swe at v1.1 (see
+                    # llm_module/agentic/deepswe.py); not a registry dataset.
+                    dataset="datacurve/deep-swe",
+                    # The DeepSWE leaderboard runs every model with mini-swe-agent.
+                    agent="mini-swe-agent",
+                    # Tasks block agent egress; let the agent reach the server.
+                    allow_agent_endpoint=True,
+                    n_concurrent_trials=16,
+                    n_attempts=1,
+                    n_tasks=None,
+                    # None keeps each task's own 3h agent timeout.
+                    agent_timeout_sec=None,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 64 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        # One task per language family: Go, Python,
+                        # TypeScript, Rust.
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "abs-module-cache-flags",
+                            "httpx-streaming-json-iteration",
+                            "ts-pattern-match-each",
+                            "wasmi-trap-coredumps",
+                        ],
+                    },
+                ),
+                limit_samples_map={
+                    EvalLimitMode.SMOKE_TEST: 1,
+                },
+            ),
+        ],
+    ),
     EvalConfig(
         hf_model_repo="Qwen/Qwen3.6-27B",
         tasks=[
