@@ -372,6 +372,9 @@ class SDXLRunner:
         tt_latents, tt_prompts, tt_texts = self.tt_sdxl.generate_input_tensors(
             prompt_embeds, text_embeds, start_latent_seed=seed
         )
+        strength = request.get("denoise_strength")
+        if request.get("latent_image") is not None and strength is not None and float(strength) < 1.0:
+            tt_latents = self._img2img_start_latents(request["latent_image"], float(strength), seed)
         self.tt_sdxl.prepare_input_tensors([tt_latents, tt_prompts[0], tt_texts[0]])
 
         on_step = None
@@ -383,6 +386,55 @@ class SDXLRunner:
 
         latents = self.tt_sdxl.generate_images(return_latents=True, on_step=on_step)
         return self._latents_to_numpy(latents)
+
+    def _img2img_start_latents(self, latents_np: np.ndarray, strength: float, seed):
+        """img2img: noise the input latents to the sigma where ``strength`` starts the
+        schedule and start the scheduler there.
+
+        Mirrors TtSDXLImg2ImgPipeline (get_timesteps + prepare_image_latents) on the
+        base pipeline, so the traced UNet loop is reused as is. ``latents_np`` is
+        [B, C, H, W] scaled by the VAE scaling factor (the /vae/encode contract).
+        Must run after generate_input_tensors, which resets the scheduler.
+        """
+        num_steps = self.tt_sdxl.num_inference_steps
+        init_timestep = min(int(num_steps * strength), num_steps)
+        if init_timestep < 1:
+            raise ValueError(
+                f"denoise_strength {strength} with {num_steps} steps runs no denoise steps; "
+                "raise the strength or the step count"
+            )
+        t_start = num_steps - init_timestep
+
+        image_latents = torch.from_numpy(np.ascontiguousarray(latents_np)).float()
+        _, c, h, w = self.tt_sdxl.tt_latents_shape
+        if image_latents.ndim != 4 or tuple(image_latents.shape[1:]) != (c, h, w):
+            raise ValueError(
+                f"latent_image shape {tuple(image_latents.shape)} does not match the pipeline "
+                f"latent shape (B, {c}, {h}, {w}); resize the input image to "
+                f"{self.tt_sdxl.width}x{self.tt_sdxl.height} before encoding"
+            )
+        batch = self.tt_sdxl.batch_size
+        if image_latents.shape[0] not in (1, batch):
+            raise ValueError(f"latent_image batch {image_latents.shape[0]} must be 1 or {batch}")
+        image_latents = image_latents.repeat(batch // image_latents.shape[0], 1, 1, 1)
+
+        generator = torch.Generator().manual_seed(seed) if seed is not None else None
+        noise = torch.randn(image_latents.shape, generator=generator)
+        sigma = self.tt_sdxl.tt_scheduler.sigmas[t_start]
+        start = (image_latents + noise * sigma).permute(0, 2, 3, 1).reshape(batch, 1, h * w, c)
+
+        self.tt_sdxl.tt_scheduler.set_begin_index(t_start)
+        self.tt_sdxl.num_inference_steps = init_timestep
+        self.logger.info(
+            f"img2img: strength={strength}, running steps {t_start + 1}-{num_steps} of {num_steps} "
+            f"(sigma {float(sigma):.3f})"
+        )
+        return ttnn.from_torch(
+            start,
+            dtype=ttnn.bfloat16,
+            layout=ttnn.TILE_LAYOUT,
+            mesh_mapper=ttnn.ShardTensor2dMesh(self.ttnn_device, list(self.ttnn_device.shape), dims=(None, 0)),
+        )
 
     def vae_decode(self, latents_np: np.ndarray) -> np.ndarray:
         """Staged: decode raw scheduler latents [B, C, H, W] -> image [B, H, W, C] in [0, 1].

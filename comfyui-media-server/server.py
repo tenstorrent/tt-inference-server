@@ -256,6 +256,11 @@ class DenoiseRequest(BaseModel):
     # lora_scale_clip=0.0 skips text-encoder fusion entirely.
     lora_scale_unet: Optional[float] = Field(default=None, ge=0.0, le=2.0)
     lora_scale_clip: Optional[float] = Field(default=None, ge=0.0, le=2.0)
+    # img2img: start from these latents (base64 .npy [B, C, H, W], the /vae/encode
+    # output) and run the last denoise_strength fraction of the schedule
+    # (diffusers strength semantics). Ignored unless denoise_strength < 1.
+    latent_image: Optional[Dict[str, Any]] = None
+    denoise_strength: Optional[float] = Field(default=None, gt=0.0, le=1.0)
 
 
 class TensorResponse(BaseModel):
@@ -790,6 +795,14 @@ def _stream_denoise_response(req: dict, *, timeout_seconds: float = None, op: st
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
+def _denoise_request_dict(request: "DenoiseRequest") -> dict:
+    """DenoiseRequest -> worker dict, decoding the img2img latent payload."""
+    req = request.dict()
+    if req.get("latent_image") is not None:
+        req["latent_image"] = b64npy_to_ndarray(req["latent_image"])
+    return req
+
+
 def _require_staged_support():
     """Staged ops are currently implemented for the SDXL runner only."""
     if args.model != "sdxl":
@@ -804,7 +817,7 @@ def _require_staged_support():
 async def latent_denoise(request: DenoiseRequest):
     """Staged denoise (KSampler): run encode + UNet loop, return latents."""
     _require_staged_support()
-    req = request.dict()
+    req = _denoise_request_dict(request)
     req["op"] = "denoise"
     result = _submit_and_wait(req)
     return TensorResponse(
@@ -823,7 +836,7 @@ async def latent_denoise_stream(request: DenoiseRequest):
     preserved for older clients.
     """
     _require_staged_support()
-    return _stream_denoise_response(request.dict())
+    return _stream_denoise_response(_denoise_request_dict(request))
 
 
 @app.post("/vae/decode", response_model=TensorResponse)
