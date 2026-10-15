@@ -481,6 +481,15 @@ k2_horizon_7b_qb2_impl = ImplSpec(
     code_path="models/demos/k2_horizon_7b_qb2",
 )
 
+# meta-models/Muse-Glimmer-30B TP4 on QB2: autoport under
+# models/autoports/meta_models_muse_glimmer_30b, produced by the tt-model-bringup pipeline.
+muse_glimmer_30b_qb2_impl = ImplSpec(
+    impl_id="muse_glimmer_30b_qb2",
+    impl_name="muse-glimmer-30b-qb2",
+    repo_url="https://github.com/tenstorrent/tt-metal",
+    code_path="models/autoports/meta_models_muse_glimmer_30b",
+)
+
 _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "quetzal": quetzal_impl,
     "tt_transformers": tt_transformers_impl,
@@ -491,6 +500,7 @@ _IMPL_REGISTRY: Dict[str, ImplSpec] = {
     "qwen38_27b_qb2": qwen38_27b_qb2_impl,
     "kolibri_1_qb2": kolibri_1_qb2_impl,
     "k2_horizon_7b_qb2": k2_horizon_7b_qb2_impl,
+    "muse_glimmer_30b_qb2": muse_glimmer_30b_qb2_impl,
     "llama3_70b_galaxy": llama3_70b_galaxy_impl,
     "llama31_8b_qb2": llama31_8b_qb2_impl,
     "qwen3_32b_galaxy": qwen3_32b_galaxy_impl,
