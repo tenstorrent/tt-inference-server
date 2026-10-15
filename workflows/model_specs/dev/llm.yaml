@@ -909,7 +909,7 @@ templates:
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
         async-scheduling: true
-        enable-prefix-caching: true
+        no-enable-prefix-caching: true
         # The merged model (tt-metal ce5a667) uses scheduler-driven chunked
         # prefill and rejects budgets above 8192 batched tokens. Requests that
         # omit top_k need a default inside the device sampler's 1..32 range.
