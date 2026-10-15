@@ -9,6 +9,7 @@
 `gpt-oss-120b` is also supported on hardware:
 
 - [WH Galaxy](gpt-oss-120b_galaxy.md)
+- [BH Galaxy](gpt-oss-120b_blackhole_galaxy.md)
 - [BH QuietBox 2](gpt-oss-120b_p300x2.md)
 
 ## Quickstart - Deploy gpt-oss-120b Inference Server on WH LoudBox/QuietBox

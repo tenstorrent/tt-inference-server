@@ -351,6 +351,14 @@ class HostSetupManager:
                 "params_format": "config.json",
             },
             {
+                # Some checkpoints keep the legacy shard prefix for safetensors
+                # (K2-Horizon-7B: pytorch_model-00001-of-00036.safetensors).
+                "format_name": "hf",
+                "weights_format": "pytorch_model*.safetensors",
+                "tokenizer_format": "tokenizer.json",
+                "params_format": "config.json",
+            },
+            {
                 "format_name": "hf_bin",
                 "weights_format": "pytorch_model*.bin",
                 "tokenizer_format": "tokenizer_config.json",
