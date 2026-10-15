@@ -99,7 +99,8 @@
       "mistralai/Mistral-Nemo-Instruct-2407",
       "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
       "Qwen/Qwen3-14B-Base",
-      "Qwen/QwQ-32B"
+      "Qwen/QwQ-32B",
+      "ibm-granite/granite-4.2-30b"
     ]
   },
   "available_markers": {
@@ -1056,6 +1057,16 @@
       "id_name": "Qwen--QwQ-32B",
       "weights": [
         "Qwen/QwQ-32B"
+      ]
+    },
+    "ibm-granite/granite-4.2-30b": {
+      "category": "LLM",
+      "compatible_devices": [
+        "p300x2"
+      ],
+      "id_name": "ibm-granite--granite-4.2-30b",
+      "weights": [
+        "ibm-granite/granite-4.2-30b"
       ]
     }
   },
