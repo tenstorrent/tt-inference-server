@@ -11190,12 +11190,11 @@ _eval_config_list = [
                     },
                 ),
                 workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
-                # The fixed 10-item release cohort was validated with the
-                # checkpoint's non-thinking chat template and seed 42.
+                # Keep GPQA in the checkpoint's published thinking mode.
                 use_chat_api=True,
                 seed=42,
                 request_body={
-                    "chat_template_kwargs": {"enable_thinking": False},
+                    "chat_template_kwargs": {"enable_thinking": True},
                 },
                 # Serialize requests to match the validated release run.
                 max_concurrent=1,
