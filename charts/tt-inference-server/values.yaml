@@ -4080,7 +4080,7 @@ models:
   gemma-4-31B-it:
     vllm:
       p300x2:
-        defaultImpl: gemma4_31b_qb2
+        defaultImpl: tt_transformers
         impls:
           tt_transformers:
             progressDeadlineSeconds: 5400
