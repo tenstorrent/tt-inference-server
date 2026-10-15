@@ -167,6 +167,17 @@ class SDXLRunner:
 
         self.tt_sdxl.prepare_input_tensors([tt_latents, tt_prompts[0], tt_texts[0]])
 
+        # The device VAE encoder prepares its weights on device on first use. Run it
+        # once before compile_image_processing captures the denoise trace: a first call
+        # after capture allocates them in the trace's scratch memory, and every traced
+        # denoise then overwrites them (encode returns ~1e20 garbage). tt-metal's
+        # img2img demo warms the encoder before capture for the same reason.
+        if self.tt_sdxl.tt_vae is not None:
+            self.logger.info("Warming up device VAE encoder...")
+            warmup_image = torch.zeros(self.tt_sdxl.batch_size, 3, self.tt_sdxl.height, self.tt_sdxl.width)
+            self.tt_sdxl.tt_vae.encode(warmup_image)
+            ttnn.synchronize_device(self.ttnn_device)
+
         self.logger.info("Compiling image processing...")
         self.tt_sdxl.compile_image_processing()
 
