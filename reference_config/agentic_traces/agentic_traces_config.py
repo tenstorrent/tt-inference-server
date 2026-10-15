@@ -9,7 +9,7 @@ one deliberate difference: entries are keyed by ``ModelSpec.model_id`` rather
 than ``hf_model_repo``. Agentic trace replay is sensitive to the served context
 window and to the impl/device the weights run on, so two specs for the same
 weights can legitimately need different datasets, concurrency, or a different
-pinned InferenceX revision.
+pinned agentx-harness revision.
 
 Unlike ``EVAL_CONFIGS`` this registry is NOT intersected with ``MODEL_SPECS``:
 the catalog that gets loaded depends on ``MODEL_SPECS_ENV`` (``--dev-mode``),
@@ -32,8 +32,8 @@ from workflows.workflow_types import AgenticTracesMode
 logger = logging.getLogger(__name__)
 
 # The InferenceX ``inferencex-agentx-mvp`` scenario rejects a profiling window
-# shorter than this (see its scenario definition in the InferenceX repo:
-# utils/aiperf/src/aiperf/common/scenario/inferencex_agentx_mvp.py). It is the
+# shorter than this (see its scenario definition in the agentx-harness repo:
+# src/aiperf/common/scenario/inferencex_agentx_mvp.py). It is the
 # floor for CI mode too -- there is no shorter "smoke" shape available.
 AGENTIC_TRACES_MIN_PROFILE_SECONDS = 900
 
@@ -290,14 +290,14 @@ DEFAULT_MODE_SETTINGS: Dict[AgenticTracesMode, AgenticTracesModeSettings] = {
 class AgenticTracesConfig:
     """Agentic-trace benchmark configuration for a single ``ModelSpec``.
 
-    ``inferencex_git_ref`` pins the InferenceX revision cloned into the
+    ``agentx_git_ref`` pins the agentx-harness revision cloned into the
     AGENTIC_TRACES venv. It is per-spec on purpose: the client, the scenario
     definition, and the dataset loaders all live in that repo, so reproducing a
     number means reproducing the client that produced it.
     """
 
     model_id: str
-    inferencex_git_ref: str
+    agentx_git_ref: str
     runs: Tuple[AgenticTracesRunSpec, ...] = (AgenticTracesRunSpec(),)
     mode_settings: Dict[AgenticTracesMode, AgenticTracesModeSettings] = field(
         default_factory=lambda: dict(DEFAULT_MODE_SETTINGS)
@@ -306,15 +306,15 @@ class AgenticTracesConfig:
     def __post_init__(self) -> None:
         if not self.model_id.strip():
             raise ValueError("AgenticTracesConfig.model_id must not be empty")
-        # The InferenceX pin is only meaningful when an InferenceX run is
-        # configured; a swarmone-only config leaves it empty and never clones
-        # the repo (see setup_agentic_traces).
-        needs_inferencex_ref = any(
+        # The agentx-harness pin is only meaningful when an InferenceX AgentX
+        # run is configured; a swarmone-only config leaves it empty and never
+        # clones the repo (see setup_agentic_traces).
+        needs_agentx_ref = any(
             run.trace_source is TraceSource.INFERENCEX_AGENTX for run in self.runs
         )
-        if needs_inferencex_ref and not self.inferencex_git_ref.strip():
+        if needs_agentx_ref and not self.agentx_git_ref.strip():
             raise ValueError(
-                f"AgenticTracesConfig.inferencex_git_ref must not be empty "
+                f"AgenticTracesConfig.agentx_git_ref must not be empty "
                 f"for model_id={self.model_id!r} (it has inferencex_agentx runs)"
             )
         if not self.runs:
@@ -363,9 +363,10 @@ def for_model_ids(model_ids: List[str], **kwargs) -> List[AgenticTracesConfig]:
     return [AgenticTracesConfig(model_id=mid, **kwargs) for mid in model_ids]
 
 
-# InferenceX revision every agentx config below pins. See the Kimi entry for why
-# this commit.
-INFERENCEX_AGENTX_GIT_REF = "8f12037728d6fc118422318d5472f147dcc2a291"
+# agentx-harness revision every agentx config below pins. See the Kimi entry for
+# why this commit, and AGENTX_HARNESS_REPO_URL in workflows/workflow_venvs.py
+# for why it is cloned rather than installed from PyPI.
+AGENTX_HARNESS_GIT_REF = "fbcfc8923e46d489621d177c50fe05fe792213eb"
 
 
 def _agentx_concurrency(default: int) -> int:
@@ -377,21 +378,22 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # Kimi K2.7-Code on SUPER_CLUSTER (dev catalog). 256k dataset variant to
     # match the spec's 262144 max_context
     #
-    # Pin commits reachable from InferenceX ``main``. The repo force-pushes and
-    # deletes its agent/* and PR branches, so a sha taken from one stops
-    # resolving ("reference is not a tree") once that branch is gone, and the
-    # server then refuses it outright as "not our ref".
+    # Pin release-tag commits reachable from agentx-harness ``master``, not
+    # PR-branch shas: a sha from a branch that is later deleted stops resolving
+    # ("reference is not a tree") and the server refuses it as "not our ref".
     #
-    # Pinned to the InferenceX main commit that landed SemiAnalysis's B300 GLM
-    # agentic sweep (#2829), so replays run the same client as InferenceX's GPU
-    # reference runs: vendored aiperf 754356e9 (agentx-v1.0.5). Earlier pins
-    # (ddeb02eb, aiperf be758d62) prefixed warmup requests at token 0 even
-    # under cache-bust, so warmup primed cache entries profiling never read
-    # and the first ~5 min of profiling ran cold (aiperf b60d3a9a fixes it).
+    # Pinned to agentx-v1.0.9 (fbcfc892), the release InferenceX's own GPU
+    # reference runs install (agentx-harness==1.0.9 in
+    # inferencex-e2e/infx/bench/agentic/requirements.txt), so replays run the
+    # same client. Over the previous pin (InferenceX 8f120377, which vendored
+    # agentx-v1.0.5 as utils/aiperf) it fixes delayed SPAWN children left
+    # pending at the duration cutoff (agentx-harness#50), which held the
+    # profiling phase open until the grace period expired and understated
+    # throughput; the inferencex-agentx-mvp scenario itself is unchanged.
     # Keep every model on the same pin so numbers stay comparable.
     AgenticTracesConfig(
         model_id="id_blaze_Kimi-K2.7-Code_super_cluster",
-        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        agentx_git_ref=AGENTX_HARNESS_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -423,11 +425,11 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
         ),
     ),
     # GLM-5.2 on SUPER_CLUSTER (dev catalog). InferenceX agentx replay only;
-    # no SwarmOne scenario is recorded for this model. Same InferenceX pin as
-    # Kimi above so numbers stay comparable across the two models.
+    # no SwarmOne scenario is recorded for this model. Same agentx-harness pin
+    # as Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
         model_id="id_blaze_GLM-5.2_super_cluster",
-        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        agentx_git_ref=AGENTX_HARNESS_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -438,7 +440,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     ),
     AgenticTracesConfig(
         model_id="id_blaze_GLM-5.3_super_cluster",
-        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        agentx_git_ref=AGENTX_HARNESS_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -448,11 +450,11 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
         ),
     ),
     # Gemma-4 31B on SUPER_CLUSTER (dev catalog). InferenceX agentx replay
-    # only; no SwarmOne scenario is recorded for this model. Same InferenceX
-    # pin as Kimi above so numbers stay comparable across the two models.
+    # only; no SwarmOne scenario is recorded for this model. Same
+    # agentx-harness pin as Kimi above so numbers stay comparable across the two models.
     AgenticTracesConfig(
         model_id="id_blaze_gemma-4-31B-it_super_cluster",
-        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        agentx_git_ref=AGENTX_HARNESS_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -466,7 +468,7 @@ _agentic_traces_config_list: List[AgenticTracesConfig] = [
     # concurrency at the spec's max_concurrency of 62.
     AgenticTracesConfig(
         model_id="id_blaze_MiniMax-M3_super_cluster",
-        inferencex_git_ref=INFERENCEX_AGENTX_GIT_REF,
+        agentx_git_ref=AGENTX_HARNESS_GIT_REF,
         runs=(
             AgenticTracesRunSpec(
                 trace_source=TraceSource.INFERENCEX_AGENTX,
@@ -504,7 +506,7 @@ _REQUIREMENTS_SYNTHESIZED_IMPL_ID = "requirements_synthesized"
 # Template borrowed for requirements-driven runs: the Kimi K2.7-Code config,
 # currently the only onboarded one. Its default sweep is the
 # InferenceX Weka replay (SwarmOne is opt-in, so no swo-bench license is
-# needed); the InferenceX pin and mode settings carry over unchanged.
+# needed); the agentx-harness pin and mode settings carry over unchanged.
 _REQUIREMENTS_TEMPLATE_MODEL_ID = "id_blaze_Kimi-K2.7-Code_super_cluster"
 
 
@@ -639,7 +641,7 @@ def resolve_run_specs(
     """
     effective = config
     if git_ref_override:
-        effective = replace(config, inferencex_git_ref=git_ref_override)
+        effective = replace(config, agentx_git_ref=git_ref_override)
     if not trace_sources:
         return effective, default_run_specs(effective)
 
@@ -663,7 +665,7 @@ __all__ = [
     "CI_MODE_SETTINGS",
     "DEFAULT_MODE_SETTINGS",
     "FULL_MODE_SETTINGS",
-    "INFERENCEX_AGENTX_GIT_REF",
+    "AGENTX_HARNESS_GIT_REF",
     "OPT_IN_TRACE_SOURCES",
     "TraceSource",
     "default_run_specs",

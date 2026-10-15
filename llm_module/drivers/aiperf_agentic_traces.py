@@ -4,7 +4,7 @@
 
 """``aiperf profile`` driver for agentic trace replay.
 
-Drives the AIPerf fork vendored in the pinned InferenceX checkout (see
+Drives SemiAnalysis's AIPerf fork from the pinned agentx-harness checkout (see
 ``setup_agentic_traces`` in ``workflows/workflow_venvs.py``). That fork owns the
 ``inferencex-agentx-mvp`` scenario and the Weka trace dataset loaders, so this
 driver only translates one :class:`AgenticTracesRun` into its CLI and reads the

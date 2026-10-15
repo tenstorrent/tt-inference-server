@@ -97,7 +97,7 @@ def run_agentic_traces(
         runs execute. ``None`` runs every configured run.
     duration_override / git_ref_override:
         Ad-hoc overrides for the mode's ``benchmark_duration`` and the config's
-        pinned InferenceX revision.
+        pinned agentx-harness revision.
     metrics_urls:
         Extra Prometheus ``/metrics`` endpoints holding the prefix-cache
         counters, for a deployment whose load target does not expose them.
@@ -105,7 +105,7 @@ def run_agentic_traces(
     auth_token:
         Bearer token sent to the inference server. Empty disables auth.
     venv_python:
-        Interpreter whose environment holds the InferenceX AIPerf fork. Falls
+        Interpreter whose environment holds the agentx-harness AIPerf fork. Falls
         back to ``sys.executable`` (correct for the launcher path, which already
         re-exec'd into the AGENTIC_TRACES venv).
     server_controller:
@@ -161,12 +161,12 @@ def run_agentic_traces(
         return result
 
     logger.info(summarize_runs(runs))
-    # The pinned InferenceX ref only matters when an InferenceX run is planned;
-    # a swarmone-only sweep never clones it.
+    # The pinned agentx-harness ref only matters when an InferenceX AgentX run
+    # is planned; a swarmone-only sweep never clones it.
     if any(run.trace_source is TraceSource.INFERENCEX_AGENTX for run in runs):
         logger.info(
-            "[agentic-traces] InferenceX client pinned at %s",
-            effective_config.inferencex_git_ref,
+            "[agentic-traces] agentx-harness client pinned at %s",
+            effective_config.agentx_git_ref,
         )
 
     output_root = Path(ctx.output_path) / output_subdir

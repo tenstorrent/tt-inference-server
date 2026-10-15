@@ -514,12 +514,22 @@ OpenAI-compatible server and report serving latency/throughput under that shape.
 The workflow is `agentic_traces`. It is a benchmark, not an eval: it bypasses the
 media-task dispatcher and emits `Block(kind="agentic_traces")`, one per run.
 
-The client is the AIPerf fork vendored in
-[InferenceX](https://github.com/SemiAnalysisAI/InferenceX), which owns the
-`inferencex-agentx-mvp` scenario and the SemiAnalysis Weka trace dataset loaders.
-The `AGENTIC_TRACES` venv clones that repo at the revision pinned for the
-ModelSpec and installs `utils/aiperf` editable, so a reported number is tied to
-the client that produced it. Use the thin launcher `run_agentic_traces.py`:
+The client is SemiAnalysis's AIPerf fork
+[agentx-harness](https://github.com/SemiAnalysisAI/agentx-harness) (the harness
+[InferenceX](https://github.com/SemiAnalysisAI/InferenceX) runs its AgentX
+benchmark with), which owns the `inferencex-agentx-mvp` scenario and the
+SemiAnalysis Weka trace dataset loaders. The `AGENTIC_TRACES` venv clones that
+repo at the revision pinned for the ModelSpec and installs it editable, so a
+reported number is tied to the client that produced it.
+
+agentx-harness is also published on PyPI, but we clone it for now because we
+carry fixes not yet in a release
+([`workflows/patches/agentx_harness/`](../workflows/patches/agentx_harness/) and
+`_patch_agentic_warmup`, tracked in #5253 and #5254), and those apply to a git
+checkout. Once they land upstream, the clone can become an
+`agentx-harness==<version>` pin in `requirements/agentic-traces.txt`.
+
+Use the thin launcher `run_agentic_traces.py`:
 
 ```bash
 MODEL_SPECS_ENV=dev python launchers/run_agentic_traces.py \
@@ -558,7 +568,7 @@ unless the run is either the standalone workflow or an opted-in release.
 
 Mechanically this mirrors `--prefix-cache`: the flag rides through
 `RuntimeConfig` into the engine argv, `_engine_dependency_venv_types` provisions
-`AGENTIC_TRACES` up front (the release child cannot clone InferenceX itself), and
+`AGENTIC_TRACES` up front (the release child cannot clone agentx-harness itself), and
 `CommandFactory` pins that venv's interpreter on the options, since a release
 child runs in `WORKFLOW_RUN_SCRIPT` where `aiperf` is not the fork.
 
@@ -573,7 +583,7 @@ pinned revision. A model with no entry is rejected up front by
 [`workflows/validate_setup.py`](../workflows/validate_setup.py), before the
 multi-minute clone.
 
-Each entry holds an `inferencex_git_ref`, one or more `AgenticTracesRunSpec`s (the
+Each entry holds an `agentx_git_ref`, one or more `AgenticTracesRunSpec`s (the
 scenario, dataset, load shape), and per-mode `AgenticTracesModeSettings`.
 `max_context_length` and `tokenizer_trust_remote_code` default to `None`, meaning
 "derive from the ModelSpec" (`device_model_spec.max_context` and
@@ -622,7 +632,7 @@ runs **except** those listed in `OPT_IN_TRACE_SOURCES`, which must be named
 explicitly (see `default_run_specs`); the orchestrator dispatches each run to the
 driver for its `trace_source`.
 
-- **`inferencex_agentx`** — the AIPerf fork vendored in InferenceX, driven by
+- **`inferencex_agentx`** — the agentx-harness AIPerf fork, driven by
   [`AIPerfAgenticTracesDriver`](../llm_module/drivers/aiperf_agentic_traces.py).
 - **`swarmone`** — SwarmOne's [`swo-bench`](https://swarmone.ai/docs/swo-bench)
   replay engine, driven by
@@ -630,7 +640,7 @@ driver for its `trace_source`.
   `swo-bench` is a normal PyPI package pinned in
   [`requirements/agentic-traces.txt`](../requirements/agentic-traces.txt), so no
   git checkout is needed; a config whose runs are all `swarmone` skips the
-  InferenceX clone entirely. It replays recorded Claude-Code / Codex coding
+  agentx-harness clone entirely. It replays recorded Claude-Code / Codex coding
   scenarios (`swo-bench list-scenarios`) turn-by-turn with growing history, and
   the replay plan is built server-side by the SwarmOne backend. A **SwarmOne
   license** is required (`SWO_LICENSE_KEY`, or the key written to
@@ -872,7 +882,7 @@ Policy: new benchmarks and runners should be authored as engine modules
 ├── launchers/
 │   ├── run_prefix_cache.py         # thin launcher: ensures PREFIX_CACHE venv, execs run_workflows.py
 │   ├── run_agentic.py              # thin launcher: ensures EVALS_AGENTIC venv, execs run_workflows.py
-│   └── run_agentic_traces.py       # thin launcher: ensures AGENTIC_TRACES venv (InferenceX clone at pinned ref)
+│   └── run_agentic_traces.py       # thin launcher: ensures AGENTIC_TRACES venv (agentx-harness clone at pinned ref)
 ├── workflow_module/                # Workflow scaffolding + block accumulator
 │   ├── workflows.py                # Concrete workflows + WORKFLOW_REGISTRY
 │   ├── execution.py                # WorkflowExecution template + WorkflowResult

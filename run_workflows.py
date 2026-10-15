@@ -468,8 +468,8 @@ def parse_args() -> argparse.Namespace:
     # ModelSpec.model_id. These flags only select the duration profile and allow
     # ad-hoc overrides, and are wired through CommandFactory ->
     # OrchestratorMetadata.agentic_traces. Standalone runs launch through
-    # run_agentic_traces.py so the AGENTIC_TRACES venv (with InferenceX checked
-    # out at the pinned ref) exists before the client is needed; release pins
+    # run_agentic_traces.py so the AGENTIC_TRACES venv (with agentx-harness
+    # checked out at the pinned ref) exists before the client is needed; release pins
     # that venv explicitly for its in-process agentic-traces child.
     parser.add_argument(
         "--agentic-traces",
@@ -521,7 +521,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="REF",
         help=(
-            "Override the InferenceX revision cloned into the AGENTIC_TRACES "
+            "Override the agentx-harness revision cloned into the AGENTIC_TRACES "
             "venv. Defaults to the ref pinned for the ModelSpec; results are "
             "only comparable across runs on the same ref."
         ),

@@ -853,7 +853,7 @@ def _engine_dependency_venv_types(
         if getattr(runtime_config, "spec_decode", False):
             venv_types.append(WorkflowVenvType.SPEC_DECODE)
         # Same for the agentic-traces release child: its client is the AIPerf
-        # fork inside the InferenceX checkout, and that clone + install is what
+        # fork in the agentx-harness checkout, and that clone + install is what
         # the AGENTIC_TRACES venv setup performs.
         if getattr(runtime_config, "agentic_traces", False):
             venv_types.append(WorkflowVenvType.AGENTIC_TRACES)

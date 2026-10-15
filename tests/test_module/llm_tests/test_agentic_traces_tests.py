@@ -60,7 +60,7 @@ def _ok_payload(label: str = "run") -> dict:
         "date": "20260727-120000",
         "completed": 100,
         "error_request_count": 0,
-        "metadata": {"inferencex_git_ref": "abc123"},
+        "metadata": {"agentx_git_ref": "abc123"},
     }
 
 
@@ -205,7 +205,7 @@ class TestSweepLoop:
             )
 
         run = driver.run.call_args[0][0]
-        assert run.metadata["inferencex_git_ref"] == "cafebabe"
+        assert run.metadata["agentx_git_ref"] == "cafebabe"
 
     def test_auth_token_reaches_the_server_connection(self, tmp_path):
         outcome = AgenticTracesDriverResult(

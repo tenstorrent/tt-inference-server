@@ -6,7 +6,7 @@
 """Thin launcher for the agentic trace-replay benchmark.
 
 Selects/creates the dedicated ``AGENTIC_TRACES`` virtual environment -- which
-includes cloning InferenceX at the ModelSpec's pinned revision -- and re-execs
+includes cloning agentx-harness at the ModelSpec's pinned revision -- and re-execs
 ``run_workflows.py`` inside it, forwarding every CLI argument verbatim.
 
 Usage (all flags are passed straight through to run_workflows.py):
@@ -49,7 +49,7 @@ def _resolve_model_spec(args: argparse.Namespace):
     Prefers the runtime spec JSON that ``run.py`` already resolved: re-resolving
     from the catalog by (model, device) alone falls back to whichever
     device_model_spec has ``default_impl=True``, which would silently pick a
-    different ``model_id`` -- and therefore a different pinned InferenceX ref --
+    different ``model_id`` -- and therefore a different pinned agentx-harness ref --
     for a model with more than one impl on the same device.
     """
     from workflows.model_spec import ModelSpec, get_runtime_model_spec

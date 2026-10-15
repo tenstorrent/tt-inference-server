@@ -29,7 +29,7 @@ if TYPE_CHECKING:
         AgenticTracesRunSpec,
     )
 
-# Trace sources with a working client. Both the InferenceX AIPerf fork and the
+# Trace sources with a working client. Both the agentx-harness AIPerf fork and the
 # SwarmOne ``swo-bench`` replay engine are wired; any source added to the config
 # schema without a driver would still fail loudly at plan time (see build_runs).
 SUPPORTED_TRACE_SOURCES: Tuple[TraceSource, ...] = (
@@ -207,7 +207,7 @@ def build_runs(
                 env=dict(spec.env),
                 metadata={
                     "model_id": getattr(model_spec, "model_id", ""),
-                    "inferencex_git_ref": config.inferencex_git_ref,
+                    "agentx_git_ref": config.agentx_git_ref,
                     "mode": mode.to_string(),
                 },
             )

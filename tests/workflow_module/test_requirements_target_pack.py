@@ -847,7 +847,7 @@ def test_agentic_traces_borrows_kimi_template_for_synthesized_spec():
     assert config is not None
     assert config.model_id == spec.model_id  # retargeted, not Kimi's id
     assert config.runs == template.runs
-    assert config.inferencex_git_ref == template.inferencex_git_ref
+    assert config.agentx_git_ref == template.agentx_git_ref
 
 
 def test_agentic_traces_template_fallback_leaves_catalog_models_strict():

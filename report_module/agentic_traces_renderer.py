@@ -155,7 +155,9 @@ CONFIG_FIELDS: List[Tuple[str, str]] = [
     ("trajectory_start_min_ratio", "Trajectory Start Min"),
     ("trajectory_start_max_ratio", "Trajectory Start Max"),
     ("random_seed", "Random Seed"),
-    ("inferencex_git_ref", "Client Ref"),
+    ("agentx_git_ref", "Client Ref"),
+    # Payloads from before the agentx-harness pin, which pinned InferenceX.
+    ("inferencex_git_ref", "InferenceX Ref"),
     ("aiperf_version", "AIPerf Version"),
     ("swo_bench_version", "swo-bench Version"),
     ("swo_session_id", "swo-bench Session"),
@@ -458,14 +460,6 @@ def _as_int(value: Any) -> int:
     return int(value) if isinstance(value, (int, float)) else 0
 
 
-def _resolve_client_ref(rows: Sequence[Mapping[str, Any]]) -> Optional[str]:
-    for row in rows:
-        ref = row.get("inferencex_git_ref")
-        if isinstance(ref, str) and ref:
-            return ref
-    return None
-
-
 def _resolve_field(rows: Sequence[Mapping[str, Any]], key: str) -> Optional[str]:
     for row in rows:
         value = row.get(key)
@@ -485,12 +479,26 @@ def _tool_paragraphs(rows: Sequence[Mapping[str, Any]]) -> List[str]:
     paragraphs: List[str] = []
 
     if INFERENCEX_SOURCE in sources:
-        client_ref = _resolve_client_ref(rows)
-        ref_note = f" pinned at `{client_ref}`" if client_ref else ""
+        agentx_ref = _resolve_field(rows, "agentx_git_ref")
+        if agentx_ref:
+            client = (
+                "SemiAnalysis's AIPerf fork "
+                "[agentx-harness](https://github.com/SemiAnalysisAI/agentx-harness)"
+                f" pinned at `{agentx_ref}`"
+            )
+        else:
+            # Payloads from before the agentx-harness pin carry only the
+            # InferenceX revision that vendored the fork.
+            legacy_ref = _resolve_field(rows, "inferencex_git_ref")
+            ref_note = f" pinned at `{legacy_ref}`" if legacy_ref else ""
+            client = (
+                "the AIPerf fork vendored in "
+                "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
+                f"{ref_note}"
+            )
         paragraphs.append(
-            "**`inferencex_agentx` rows:** the AIPerf fork vendored in "
-            "[InferenceX](https://github.com/SemiAnalysisAI/InferenceX)"
-            f"{ref_note}, driving the `inferencex-agentx-mvp` scenario. Each run "
+            f"**`inferencex_agentx` rows:** {client}, driving the "
+            "`inferencex-agentx-mvp` scenario. Each run "
             "replays recorded multi-turn agentic coding traces with their original "
             "timing, including subagent fan-out, so the load shape is the trace's "
             "rather than a synthetic ISL/OSL grid."

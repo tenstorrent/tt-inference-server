@@ -263,42 +263,52 @@ def check_docker_available(
     return True
 
 
-INFERENCEX_REPO_URL = "https://github.com/SemiAnalysisAI/InferenceX.git"
+AGENTX_HARNESS_REPO_URL = "https://github.com/SemiAnalysisAI/agentx-harness.git"
+# Why a git clone and not ``agentx-harness==<version>`` from PyPI: AgentX is
+# published on PyPI since agentx-v1.0.7, and InferenceX itself installs it that
+# way. But we still carry two local fixes (see _AGENTX_HARNESS_PATCH_DIR and
+# _patch_agentic_warmup) that are not in any release yet, and they are applied
+# with ``git apply`` against a checkout. Patching a wheel's site-packages would
+# be fragile and invisible. Once both are upstream, replace this hook with an
+# ``agentx-harness==<version>`` line in requirements/agentic-traces.txt.
+#
 # Records the revision the checkout is currently on, so a repeat run with the
 # same pin skips the fetch + reinstall and a run with a different pin does not.
-_INFERENCEX_REF_STAMP = ".inferencex_ref"
-# Patches carried here until they land upstream. Each subdirectory names the
-# path inside the InferenceX checkout the patches apply to (``aiperf`` ->
-# ``utils/aiperf``); files apply in sorted order.
-# TODO(#5254): remove patches/inferencex/aiperf/0001-wait-for-all-service-replicas.patch
-# once upstream AgentX / InferenceX rebases its vendored aiperf onto a revision
-# that includes https://github.com/ai-dynamo/aiperf/pull/1348 and the
-# InferenceX pin moves to it. If no patches are left after that, also remove
-# _INFERENCEX_PATCH_DIR, _INFERENCEX_PATCH_TARGETS, _inferencex_patches,
-# _inferencex_stamp, _patch_check, _apply_inferencex_patches, their call sites
-# in setup_agentic_traces and tests/test_workflow_venvs_patches.py.
+_AGENTX_HARNESS_REF_STAMP = ".agentx_harness_ref"
+# Where pins before agentx-v1.0.9 cloned InferenceX (which vendored the harness
+# as utils/aiperf). Removed on the next setup so a stale tree is not mistaken
+# for the client in use.
+_LEGACY_INFERENCEX_DIR = "InferenceX"
+_LEGACY_INFERENCEX_REF_STAMP = ".inferencex_ref"
+# Patches carried here until they land upstream, applied at the root of the
+# agentx-harness checkout in sorted order.
+# TODO(#5254): remove patches/agentx_harness/0001-wait-for-all-service-replicas.patch
+# once agentx-harness rebases onto an aiperf revision that includes
+# https://github.com/ai-dynamo/aiperf/pull/1348 and the pin moves to it. If no
+# patches are left after that, also remove _AGENTX_HARNESS_PATCH_DIR,
+# _agentx_harness_patches, _agentx_harness_stamp, _patch_check,
+# _apply_agentx_harness_patches, their call sites in setup_agentic_traces and
+# tests/test_workflow_venvs_patches.py.
 # https://github.com/tenstorrent/tt-inference-server/issues/5254
-_INFERENCEX_PATCH_DIR = Path(__file__).resolve().parent / "patches" / "inferencex"
-_INFERENCEX_PATCH_TARGETS = {"aiperf": Path("utils") / "aiperf"}
+_AGENTX_HARNESS_PATCH_DIR = (
+    Path(__file__).resolve().parent / "patches" / "agentx_harness"
+)
 
 
-def _inferencex_patches() -> list[tuple[Path, Path]]:
-    """(patch file, target path relative to the checkout) for every carried patch."""
-    patches: list[tuple[Path, Path]] = []
-    for subdir, target in sorted(_INFERENCEX_PATCH_TARGETS.items()):
-        patch_dir = _INFERENCEX_PATCH_DIR / subdir
-        if patch_dir.is_dir():
-            patches.extend((p, target) for p in sorted(patch_dir.glob("*.patch")))
-    return patches
+def _agentx_harness_patches() -> list[Path]:
+    """Every carried patch, in the order it is applied."""
+    if not _AGENTX_HARNESS_PATCH_DIR.is_dir():
+        return []
+    return sorted(_AGENTX_HARNESS_PATCH_DIR.glob("*.patch"))
 
 
-def _inferencex_stamp(git_ref: str) -> str:
+def _agentx_harness_stamp(git_ref: str) -> str:
     """Ref plus a digest of the carried patches, so a patch change re-runs setup."""
-    patches = _inferencex_patches()
+    patches = _agentx_harness_patches()
     if not patches:
         return git_ref
     digest = hashlib.sha256()
-    for patch, _ in patches:
+    for patch in patches:
         digest.update(patch.name.encode())
         digest.update(patch.read_bytes())
     return f"{git_ref}+patches:{digest.hexdigest()[:16]}"
@@ -314,42 +324,38 @@ def _patch_check(target_dir: Path, patch: Path, *flags: str) -> bool:
     return result.returncode == 0
 
 
-def _apply_inferencex_patches(repo_dir: Path, logger: logging.Logger) -> bool:
+def _apply_agentx_harness_patches(repo_dir: Path, logger: logging.Logger) -> bool:
     """Apply the carried patches to a fresh checkout; already-applied ones are skipped."""
-    for patch, target in _inferencex_patches():
-        target_dir = repo_dir / target
-        # An unpopulated submodule is an empty directory inside the superproject;
-        # `git apply` run there ignores every path in the patch and reports
-        # success, so require the submodule's own .git entry.
-        if not (target_dir / ".git").exists():
-            logger.error("Patch target %s is not a checkout under %s", target, repo_dir)
+    for patch in _agentx_harness_patches():
+        # `git apply` outside a work tree ignores every path in the patch and
+        # reports success, so require the checkout's own .git entry.
+        if not (repo_dir / ".git").exists():
+            logger.error("Patch target %s is not a git checkout", repo_dir)
             return False
-        if _patch_check(target_dir, patch, "--reverse"):
-            logger.info("Patch %s already applied to %s", patch.name, target)
+        if _patch_check(repo_dir, patch, "--reverse"):
+            logger.info("Patch %s already applied", patch.name)
             continue
-        if not _patch_check(target_dir, patch):
+        if not _patch_check(repo_dir, patch):
             logger.error(
-                "Patch %s does not apply to %s at this InferenceX ref; drop or "
+                "Patch %s does not apply to agentx-harness at this ref; drop or "
                 "refresh it against the pinned revision.",
                 patch.name,
-                target,
             )
             return False
         if (
             run_command(
-                ["git", "-C", str(target_dir), "apply", str(patch)], logger=logger
+                ["git", "-C", str(repo_dir), "apply", str(patch)], logger=logger
             )
             != 0
         ):
             return False
-        logger.info("Applied %s to %s", patch.name, target)
+        logger.info("Applied %s", patch.name)
     return True
 
 
-# InferenceX pins whose vendored aiperf builds the agentic auto-warmup phase
-# without ``phase_kind``. 8f12037728d6 vendors aiperf 754356e9 (agentx-v1.0.5),
-# which still does.
-_AGENTIC_WARMUP_PATCH_REFS = frozenset({"8f12037728d6fc118422318d5472f147dcc2a291"})
+# agentx-harness pins whose agentic auto-warmup phase is built without
+# ``phase_kind``. fbcfc892 is agentx-v1.0.9, which still is.
+_AGENTIC_WARMUP_PATCH_REFS = frozenset({"fbcfc8923e46d489621d177c50fe05fe792213eb"})
 
 
 def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
@@ -362,11 +368,11 @@ def _patch_agentic_warmup(repo_dir: Path, git_ref: str) -> bool:
     # TODO(#5253): remove this function, _AGENTIC_WARMUP_PATCH_REFS, their call
     # sites in setup_agentic_traces and tests/workflows/test_agentic_warmup_patch.py
     # once https://github.com/SemiAnalysisAI/agentx-harness/pull/44 lands and the
-    # InferenceX pin moves to a revision that vendors it.
+    # agentx-harness pin moves to a revision that includes it.
     # https://github.com/tenstorrent/tt-inference-server/issues/5253
     if git_ref not in _AGENTIC_WARMUP_PATCH_REFS:
         return True
-    config_path = repo_dir / "utils/aiperf/src/aiperf/timing/config.py"
+    config_path = repo_dir / "src/aiperf/timing/config.py"
     source = config_path.read_text(encoding="utf-8")
     old = (
         "        phase=CreditPhase.WARMUP,\n"
@@ -385,13 +391,15 @@ def setup_agentic_traces(
     venv_config: VenvConfig,
     model_spec: "ModelSpec",  # noqa: F821
 ) -> bool:
-    """Hook for AGENTIC_TRACES: clone InferenceX at the ModelSpec's pinned ref.
+    """Hook for AGENTIC_TRACES: clone agentx-harness at the ModelSpec's pinned ref.
 
-    The agentic-trace client is the AIPerf fork vendored in InferenceX (it owns
-    the ``inferencex-agentx-mvp`` scenario and the Weka dataset loaders), so the
-    pinned revision *is* part of the benchmark definition. The ref comes from
-    the per-ModelSpec config rather than a module constant, which is why this
-    runs as a setup hook -- ``VenvConfig.setup`` passes the resolved spec in.
+    The agentic-trace client is SemiAnalysis's AgentX harness, an AIPerf fork
+    that owns the ``inferencex-agentx-mvp`` scenario and the Weka dataset
+    loaders, so the pinned revision *is* part of the benchmark definition. The
+    ref comes from the per-ModelSpec config rather than a module constant, which
+    is why this runs as a setup hook -- ``VenvConfig.setup`` passes the resolved
+    spec in. See AGENTX_HARNESS_REPO_URL for why this clones instead of
+    installing the PyPI release.
 
     Re-entrant: an existing checkout already on the configured ref is left
     alone, and a different ref re-checkouts and re-installs so a run can never
@@ -403,7 +411,7 @@ def setup_agentic_traces(
     )
 
     # The _or_template variant borrows the Kimi K2.7-Code config for
-    # requirements-driven runs, so the InferenceX pin is available for them
+    # requirements-driven runs, so the agentx-harness pin is available for them
     # too.
     config = get_agentic_traces_config_or_template(model_spec)
     if config is None:
@@ -415,46 +423,57 @@ def setup_agentic_traces(
         )
         return False
 
-    # The InferenceX AIPerf fork is only needed for inferencex_agentx runs. A
-    # config whose runs are all SwarmOne relies solely on the swo-bench package
+    # The AgentX harness is only needed for inferencex_agentx runs. A config
+    # whose runs are all SwarmOne relies solely on the swo-bench package
     # installed from agentic-traces.txt, so skip the multi-minute clone/install.
     if not any(
         run.trace_source is TraceSource.INFERENCEX_AGENTX for run in config.runs
     ):
         logger.info(
-            "No InferenceX runs configured for model_id=%s; skipping InferenceX "
-            "checkout (SwarmOne swo-bench is installed from agentic-traces.txt).",
+            "No InferenceX AgentX runs configured for model_id=%s; skipping the "
+            "agentx-harness checkout (SwarmOne swo-bench is installed from "
+            "agentic-traces.txt).",
             getattr(model_spec, "model_id", "<unknown>"),
         )
         return True
 
-    git_ref = config.inferencex_git_ref
-    repo_dir = venv_config.venv_path / "InferenceX"
-    stamp_file = venv_config.venv_path / _INFERENCEX_REF_STAMP
-    stamp = _inferencex_stamp(git_ref)
+    git_ref = config.agentx_git_ref
+    repo_dir = get_agentx_harness_repo_path(venv_config)
+    stamp_file = venv_config.venv_path / _AGENTX_HARNESS_REF_STAMP
+    stamp = _agentx_harness_stamp(git_ref)
 
     if repo_dir.is_dir() and stamp_file.is_file():
         if stamp_file.read_text().strip() == stamp:
             # The stamp only says the patches were applied at setup time. Check
             # the tree on every run and re-apply if something reset it, so a
             # run never silently proceeds without them.
-            if not _apply_inferencex_patches(repo_dir, logger):
+            if not _apply_agentx_harness_patches(repo_dir, logger):
                 return False
             logger.info(
-                "InferenceX already checked out at %s in %s; skipping setup.",
+                "agentx-harness already checked out at %s in %s; skipping setup.",
                 git_ref,
                 repo_dir,
             )
             return _patch_agentic_warmup(repo_dir, git_ref)
         logger.info(
-            "InferenceX checkout is on a different ref than the configured %s; "
-            "re-checking out and reinstalling.",
+            "agentx-harness checkout is on a different ref than the configured "
+            "%s; re-checking out and reinstalling.",
             git_ref,
         )
 
+    legacy_dir = venv_config.venv_path / _LEGACY_INFERENCEX_DIR
+    if legacy_dir.is_dir():
+        logger.info(
+            "Removing the pre-agentx-harness InferenceX checkout %s", legacy_dir
+        )
+        shutil.rmtree(legacy_dir)
+    (venv_config.venv_path / _LEGACY_INFERENCEX_REF_STAMP).unlink(missing_ok=True)
+
     if not repo_dir.is_dir():
         if (
-            run_command(f"git clone {INFERENCEX_REPO_URL} {repo_dir}", logger=logger)
+            run_command(
+                f"git clone {AGENTX_HARNESS_REPO_URL} {repo_dir}", logger=logger
+            )
             != 0
         ):
             return False
@@ -465,44 +484,30 @@ def setup_agentic_traces(
         return False
     if run_command(f"git -C {repo_dir} checkout --force {git_ref}", logger=logger) != 0:
         logger.error(
-            "Could not check out InferenceX ref %s. Verify the ref exists in %s.",
+            "Could not check out agentx-harness ref %s. Verify the ref exists in %s.",
             git_ref,
-            INFERENCEX_REPO_URL,
+            AGENTX_HARNESS_REPO_URL,
         )
         return False
-    # The vendored aiperf lives in a submodule-bearing tree; without this the
-    # editable install below imports a half-populated package.
-    if (
-        run_command(
-            f"git -C {repo_dir} submodule update --init --recursive", logger=logger
-        )
-        != 0
-    ):
-        return False
-    if not _apply_inferencex_patches(repo_dir, logger):
+    if not _apply_agentx_harness_patches(repo_dir, logger):
         return False
 
-    logger.warning(
-        "Installing the InferenceX AIPerf fork; this pulls transformers from "
-        "git and may take 5 to 15+ minutes on first run ..."
+    logger.info(
+        "Installing agentx-harness from a git checkout to carry local patches "
+        "not yet in a PyPI release (see AGENTX_HARNESS_REPO_URL in %s).",
+        Path(__file__).name,
     )
-    agentic_requirements = repo_dir / "utils" / "agentic-benchmark" / "requirements.txt"
-    vendored_aiperf = repo_dir / "utils" / "aiperf"
-    if not vendored_aiperf.is_dir():
-        logger.error(
-            "Expected the vendored AIPerf fork at %s; the InferenceX layout at "
-            "ref %s is not what this workflow expects.",
-            vendored_aiperf,
-            git_ref,
-        )
-        return False
-    # One resolve pass for both so uv reconciles the fork's pins with the
-    # agentic-benchmark helper deps instead of one clobbering the other.
+    logger.warning(
+        "Installing the agentx-harness AIPerf fork; this may take 5 to 15+ "
+        "minutes on first run ..."
+    )
+    # A separate, unconstrained pass: the fork resolves its own pins (notably
+    # pillow ~=12.2), which conflict with the shared constraints.txt.
     install_cmd = (
         f"{UV_EXEC} pip install --managed-python "
         f"--python {venv_config.venv_python} "
         f"--index-strategy unsafe-best-match "
-        f"-r {agentic_requirements} -e {vendored_aiperf}"
+        f"-e {repo_dir}"
     )
     if run_command(install_cmd, logger=logger) != 0:
         return False
@@ -511,13 +516,13 @@ def setup_agentic_traces(
         return False
 
     stamp_file.write_text(f"{stamp}\n")
-    logger.info("InferenceX ready at %s (ref %s)", repo_dir, git_ref)
+    logger.info("agentx-harness ready at %s (ref %s)", repo_dir, git_ref)
     return True
 
 
-def get_inferencex_repo_path(venv_config: VenvConfig) -> Path:
-    """Location of the InferenceX checkout inside the AGENTIC_TRACES venv."""
-    return venv_config.venv_path / "InferenceX"
+def get_agentx_harness_repo_path(venv_config: VenvConfig) -> Path:
+    """Location of the agentx-harness checkout inside the AGENTIC_TRACES venv."""
+    return venv_config.venv_path / "agentx-harness"
 
 
 def setup_evals_meta(
@@ -878,7 +883,7 @@ _venv_config_list = [
         extra_dirs=("artifacts",),
         python_version="3.11",
     ),
-    # 3.12: the InferenceX AIPerf fork requires >=3.10,<3.14 and its agentic
+    # 3.12: the agentx-harness AIPerf fork requires >=3.11,<3.14 and its agentic
     # scenario is only exercised on 3.12 upstream.
     VenvConfig(
         venv_type=WorkflowVenvType.AGENTIC_TRACES,

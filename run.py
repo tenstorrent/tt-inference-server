@@ -590,7 +590,7 @@ def parse_arguments():
         type=str,
         default=None,
         metavar="REF",
-        help="Override the InferenceX revision cloned into the AGENTIC_TRACES venv. "
+        help="Override the agentx-harness revision cloned into the AGENTIC_TRACES venv. "
         "Defaults to the ref pinned for the ModelSpec; results are only comparable "
         "across runs on the same ref.",
     )

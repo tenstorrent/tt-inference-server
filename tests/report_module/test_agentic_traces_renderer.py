@@ -93,7 +93,7 @@ def _record(**overrides):
         "branch_joins_suppressed": 0,
         "dataset_num_entries": 32,
         "dataset_hf_name": "semianalysisai/cc-traces-weka-062126-256k",
-        "inferencex_git_ref": "e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
+        "agentx_git_ref": "e2dcfa91c86936cc011e3be0668eb3b1ca17288f",
         "aiperf_version": "0.8.0",
         "benchmark_id": "a70d73f2-53f3-431a-ab89-1f118bcd505f",
         "run_started_at": "2026-07-29T10:25:09.055955",
@@ -277,6 +277,22 @@ class TestFormatting:
             "| Client Ref           | e2dcfa91c86936cc011e3be0668eb3b1ca17288f" in out
         )
         assert "pinned at `e2dcfa91c86936cc011e3be0668eb3b1ca17288f`" in out
+
+    def test_the_blurb_credits_agentx_harness(self):
+        out = _render(_record())
+        assert "github.com/SemiAnalysisAI/agentx-harness" in out
+        assert "vendored in [InferenceX]" not in out
+
+    def test_a_pre_agentx_harness_payload_keeps_its_inferencex_attribution(self):
+        """Re-rendering an old report must not credit a client it never ran."""
+        record = _record(inferencex_git_ref="8f12037728d6fc118422318d5472f147dcc2a291")
+        del record["agentx_git_ref"]
+        out = _render(record)
+        assert "vendored in [InferenceX]" in out
+        assert "pinned at `8f12037728d6fc118422318d5472f147dcc2a291`" in out
+        assert "| InferenceX Ref" in out
+        assert "| Client Ref" not in out
+        assert "agentx-harness" not in out
 
     def test_counts_render_as_integers(self):
         out = _render(_record())

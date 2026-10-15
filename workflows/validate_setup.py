@@ -157,7 +157,7 @@ def validate_runtime_args(model_spec, runtime_config):
     if workflow_type == WorkflowType.AGENTIC_TRACES or (
         workflow_type == WorkflowType.RELEASE and getattr(args, "agentic_traces", False)
     ):
-        # Fail here rather than after the multi-minute InferenceX clone + install
+        # Fail here rather than after the multi-minute agentx-harness clone + install
         # that the AGENTIC_TRACES venv setup performs -- and, for a release run,
         # rather than after the evals and benchmarks that precede the child.
         from reference_config.agentic_traces.agentic_traces_config import (
@@ -174,7 +174,7 @@ def validate_runtime_args(model_spec, runtime_config):
             f"Model:={model_spec.model_name} (model_id={model_spec.model_id}) has "
             "no AGENTIC_TRACES_CONFIGS entry. Add one to "
             "reference_config/agentic_traces/agentic_traces_config.py, including "
-            "the InferenceX git ref to pin."
+            "the agentx-harness git ref to pin."
         )
 
         # A SwarmOne run needs a swo-bench license; require it up front (like

@@ -614,7 +614,7 @@ class TestLocalServerValidation:
 class TestAgenticTracesRegistration:
     """A model with no AGENTIC_TRACES_CONFIGS entry must be refused up front.
 
-    The agentic-traces venv setup clones and installs InferenceX, which takes
+    The agentic-traces venv setup clones and installs agentx-harness, which takes
     minutes, and a release child runs after the evals and benchmarks. Both would
     be wasted before the missing config surfaced, so validation has to fail here
     instead.
