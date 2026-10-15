@@ -308,6 +308,10 @@ class HarborEvalConfig:
     # When False, heuristic wave/stall deadlines are log-only. An explicit
     # HARBOR_TIMEOUT_SEC remains an enforced wall-clock backstop.
     enforce_agent_deadline: bool = field(default_factory=_harbor_enforce_agent_deadline)
+    # Allow the agent to reach the inference endpoint when the task blocks
+    # agent egress (``[agent] network_mode = "no-network"``, e.g. DeepSWE):
+    # the endpoint's host joins Harbor's run-specific agent allowlist.
+    allow_agent_endpoint: bool = False
 
 
 TerminalBenchEvalConfig = HarborEvalConfig
