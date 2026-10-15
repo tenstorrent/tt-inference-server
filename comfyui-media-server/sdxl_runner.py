@@ -507,6 +507,9 @@ class SDXLRunner:
         """Staged: encode image [B, H, W, C] in [0, 1] -> raw scheduler latents [B, C, H, W].
 
         Output matches the denoise() latent contract (scaled by the VAE scaling factor).
+        Runs on the device VAE when the pipeline was built with vae_on_device and the
+        image matches the configured resolution; otherwise falls back to the host
+        torch VAE. Set SDXL_HOST_VAE_ENCODE=1 to force the host path.
         """
         image = torch.from_numpy(np.ascontiguousarray(image_np)).float()
         if image.ndim != 4:
@@ -514,10 +517,42 @@ class SDXLRunner:
         image = image.permute(0, 3, 1, 2).contiguous()
         image = 2.0 * image - 1.0
         vae = self.pipeline.vae
-        with torch.no_grad():
-            latents = vae.encode(image.to(vae.dtype)).latent_dist.sample()
+        if self._can_encode_on_device(image):
+            latents = self._vae_encode_device(image)
+        else:
+            with torch.no_grad():
+                latents = vae.encode(image.to(vae.dtype)).latent_dist.sample()
         latents = latents * vae.config.scaling_factor
         return latents.float().cpu().numpy()
+
+    def _can_encode_on_device(self, image: torch.Tensor) -> bool:
+        if os.environ.get("SDXL_HOST_VAE_ENCODE") == "1":
+            return False
+        if getattr(self.tt_sdxl, "tt_vae", None) is None:
+            return False
+        expected = (3, self.tt_sdxl.height, self.tt_sdxl.width)
+        if tuple(image.shape[1:]) != expected:
+            self.logger.warning(
+                f"Image shape {tuple(image.shape)} does not match device VAE {expected}; using host VAE"
+            )
+            return False
+        return True
+
+    def _vae_encode_device(self, image: torch.Tensor) -> torch.Tensor:
+        """Device VAE encode in chunks of the pipeline batch size, as prepare_image_latents
+        does for img2img. Returns unscaled latent samples [B, C, H, W] like the host VAE."""
+        n = image.shape[0]
+        chunk = self.tt_sdxl.batch_size
+        samples = []
+        for start in range(0, n, chunk):
+            part = image[start : start + chunk]
+            valid = part.shape[0]
+            if valid < chunk:
+                part = torch.cat([part, part.new_zeros((chunk - valid, *part.shape[1:]))], dim=0)
+            posterior = self.tt_sdxl.tt_vae.encode(part).latent_dist
+            samples.extend(dist.sample() for dist in posterior[:valid])
+        ttnn.synchronize_device(self.ttnn_device)
+        return torch.cat(samples, dim=0)
 
     def close_device(self):
         """Close device and cleanup"""
