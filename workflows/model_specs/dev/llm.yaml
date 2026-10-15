@@ -625,6 +625,7 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         # Sampling defaults come from the HF generation_config; the gemma4 tool
@@ -660,39 +661,46 @@ templates:
     # → 2048. Scheduler tokens stay 2048 to match metal at long ISL. B=32 needs
     # ≥512MB trace region.
     - device: P150X8
+      # One Galaxy engine as a standalone instance (8 chips, TP=8): the worker unit
+      # for routed serving (docs/router_deployment.md), where a request router keeps
+      # a conversation on the instance that holds its prefix cache. Settings mirror
+      # the BLACKHOLE_GALAXY spec below per engine (prefix caching on, hybrid
+      # kv-cache groups, decode-bucket warmup, bfloat8_b KV, 1,523,712-token pool =
+      # four resident 256K users) minus data_parallel_size. Serves a BH LoudBox
+      # (8x P150, 2x4 mesh) with the same settings.
       max_concurrency: 32
       max_context: 262144  # 256 * 1024
       default_impl: true
       env_vars:
         MESH_DEVICE: "P150x8"
+        GEMMA4_CCL_TOPOLOGY: "linear"
         GEMMA4_PAGE_BLOCK_SIZE: "64"
-        GEMMA4_MAX_TOKENS_ALL_USERS: "262144"
+        GEMMA4_MAX_TOKENS_ALL_USERS: "1523712"
+        GEMMA4_KV_BFP8: "1"
+        GEMMA4_DECODE_WARMUP_BATCHES: "1,4,8,32"
+        GEMMA4_ROPE_PERUSER_B1: "1"
+        GEMMA4_SDPA_MAX_CORES_PER_HEAD: "3"
         GEMMA4_VLLM_SINGLE_CHUNK: "0"
-        # Explicitly clear demo single-chunk so a polluted parent shell cannot
-        # force full-ISL warmup (hangs at 128k/256k on LB).
-        GEMMA4_CHUNKED_PREFILL_TRACE: "1"
+        GEMMA4_HYBRID_KV_CACHE_GROUPS: "1"
+        GEMMA4_BOUNDED_SLIDING_KV_CACHE: "0"
+        GEMMA4_PREFIX_CACHING: "1"
+        GEMMA4_WARMUP_PREFILL_ISLS: "4096,8192,16384,32768,65536,131072"  # one eager prefill per benchmark ISL at boot
+        GEMMA4_CHUNKED_PREFILL_TRACE: "0"
       override_tt_config:
         fabric_config: FABRIC_1D
-        trace_region_size: 512000000
-        l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
-        # On-device decode sampling required on TP so token ids >= 65536 are
-        # reachable (host sampling only sees device 0's vocab shard).
-        sample_on_device_mode: decode_only
+        trace_region_size: 960000000  # four resident decode-bucket traces
+        l1_small_size: 24576
+        sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
       vllm_args:
-        # Overlap host schedule with device decode (metal supports_async_decode; #51186).
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
+        max_num_seqs: 32
         async_scheduling: true
         enable-auto-tool-choice: true
         tool-call-parser: gemma4
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
-        # Token-chunked prefill (tenstorrent/vllm#448). Parity with the 12B spec
-        # (config-shadows lesson): the earlier 2048/2048 here was the shadow that
-        # produced the invalidated "19/32 coherent @ 0.8 tok/s/u" b32 number --
-        # chunked 4k prompts hit pre-gate batched prefill and 32x more scheduler
-        # rounds starved decode under async scheduling. 65536/4096 measured
-        # coherent and faster on QB2/LB (2026-08-31 battery; galaxy re-run 09-01).
         enable_chunked_prefill: true
-        max_num_batched_tokens: 65536
+        max_num_batched_tokens: 16384
         long_prefill_token_threshold: 4096
     # BH Galaxy DP=4: four (1,8) column engines via standard-DP discovery
     # (TT_VISIBLE_DEVICES per rank, no descriptor override).
@@ -735,6 +743,7 @@ templates:
         l1_small_size: 24576
         sample_on_device_mode: decode_only  # host sampling (logprobs etc.) is correct but slower
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -810,6 +819,7 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
@@ -854,6 +864,7 @@ templates:
         trace_region_size: 200000000  # WH budget (see T3K note); not BH's 512 MB
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # No async_scheduling on Wormhole — see the T3K entry above.
@@ -959,6 +970,7 @@ templates:
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -1039,6 +1051,7 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
@@ -1086,6 +1099,7 @@ templates:
         trace_region_size: 200000000  # WH budget (see T3K note); not BH's 512 MB
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # No async_scheduling on Wormhole — see the T3K entry above.
@@ -1150,6 +1164,7 @@ templates:
         # decode_only killed the engine on the "self.sampling is not None"
         # assert. Host sampling all-gathers the full vocab and is correct here.
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
@@ -1213,6 +1228,7 @@ templates:
         l1_small_size: 24576  # all_gather semaphores into L1_SMALL; without it QB2 31B wedges at conc=32 (metal demo parity)
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         # Sampling defaults come from the HF generation_config; the gemma4 tool
@@ -1268,6 +1284,7 @@ templates:
         # reachable (host sampling only sees device 0's vocab shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         data_parallel_size: 4
         max_num_seqs: 32  # per-engine; max_concurrency above is whole-box
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
@@ -2847,6 +2864,7 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -2871,6 +2889,7 @@ templates:
         trace_region_size: 1200000000
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # Overlap host schedule with device decode (metal supports_async_decode; #51186).
         async_scheduling: true
         enable-auto-tool-choice: true
@@ -2931,6 +2950,7 @@ templates:
         # >= 65536 are reachable (host sampling only sees device 0's shard).
         sample_on_device_mode: decode_only
       vllm_args:
+        enable_prompt_tokens_details: true  # usage.prompt_tokens_details.cached_tokens, prefix-cache visibility (docs/router_deployment.md)
         # No async_scheduling on Wormhole. Measured on T3K 12B at max_num_seqs 32:
         # async ON gives 32/32 correct on only 4 of 6 reps (30/32 on the other two,
         # degenerate repetition) at 377-389 tok/s aggregate, while async OFF gives
