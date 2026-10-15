@@ -1,0 +1,86 @@
+{
+  "compiled_base_commit": "2c1e1ebdd638886821f35113a5fd0d6335d71608",
+  "image_id": "sha256:61571a768a194b556d47a5a2179837235570aef53e5400ec81895daffd1f1e12",
+  "native_extension_sha256": "8af057c20fbbcf9c8a1c03490a9fc438c21e3478f33c7e063f8a64832893d93a",
+  "source_files": [
+    {
+      "path": "ttnn/ttnn/tools/trace_allocation_tracker.py",
+      "image_sha256": "7c8347a740d931732235f1d561bc0705b4bd39c6c8b34ef5495775bb581bfd81",
+      "base_sha256": "7c8347a740d931732235f1d561bc0705b4bd39c6c8b34ef5495775bb581bfd81",
+      "exact": true
+    },
+    {
+      "path": "ttnn/ttnn/decorators.py",
+      "image_sha256": "085a88395e06c16087ffb5f0e3117cd7d70c31aff290d7206821d482bafcca30",
+      "base_sha256": "085a88395e06c16087ffb5f0e3117cd7d70c31aff290d7206821d482bafcca30",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/trace.cpp",
+      "image_sha256": "9d077c6fe048781f71ee5d2689a1911484a17877d193adc64df0d5e8a7a346d0",
+      "base_sha256": "9d077c6fe048781f71ee5d2689a1911484a17877d193adc64df0d5e8a7a346d0",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/data_movement/reshape_view/reshape.cpp",
+      "image_sha256": "a52ed00eef8d0e7972dd046041b744c90f27c36d7e25492bd30acfb464a41675",
+      "base_sha256": "a52ed00eef8d0e7972dd046041b744c90f27c36d7e25492bd30acfb464a41675",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/data_movement/copy/copy.cpp",
+      "image_sha256": "ed9437817cbe26c781ba65283542c2ca20a9320275241d0bf3100cc104f6f955",
+      "base_sha256": "ed9437817cbe26c781ba65283542c2ca20a9320275241d0bf3100cc104f6f955",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/data_movement/slice/slice.cpp",
+      "image_sha256": "f32209ebc424a4fcaf7250bbc240359d0bab8a5b257a1dd37ce739fdfe935bdf",
+      "base_sha256": "f32209ebc424a4fcaf7250bbc240359d0bab8a5b257a1dd37ce739fdfe935bdf",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/data_movement/slice/device/slice_device_operation.cpp",
+      "image_sha256": "c875e2973c856f024c5db74b5dee9f31e91843393f936fba5982af497032a90e",
+      "base_sha256": "c875e2973c856f024c5db74b5dee9f31e91843393f936fba5982af497032a90e",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/data_movement/slice/device/slice_program_factory_tile_tensor_args.cpp",
+      "image_sha256": "a2bd7d7f32d7f22c14dc1ac13991821930f456010bded6fbd64ec80374f03d2a",
+      "base_sha256": "a2bd7d7f32d7f22c14dc1ac13991821930f456010bded6fbd64ec80374f03d2a",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/data_movement/slice/device/kernels/dataflow/reader_unary_unpad_dims_interleaved_start_id_tensor_args.cpp",
+      "image_sha256": "fd9565f47de990217002cd469b271f70327aa0906f5dc9ef2cc95997d043f0ef",
+      "base_sha256": "fd9565f47de990217002cd469b271f70327aa0906f5dc9ef2cc95997d043f0ef",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/transformer/sdpa/sdpa_nanobind.cpp",
+      "image_sha256": "7eebe9afe20df29c92bbc0add58f0e335d996af4f8fbe5474c27a62fc7f05851",
+      "base_sha256": "7eebe9afe20df29c92bbc0add58f0e335d996af4f8fbe5474c27a62fc7f05851",
+      "exact": true
+    },
+    {
+      "path": "ttnn/cpp/ttnn/operations/transformer/sdpa/device/sdpa_program_factory.cpp",
+      "image_sha256": "c6e201ec8d6078b604bb93d00d7f8eee6893586b7082fa9b9bb9b260faad76ae",
+      "base_sha256": "c6e201ec8d6078b604bb93d00d7f8eee6893586b7082fa9b9bb9b260faad76ae",
+      "exact": true
+    }
+  ],
+  "all_sources_match": true,
+  "required_apis": [
+    "ttnn.reshape with explicit logical+padded Shape sharing owner",
+    "ttnn.copy into compact view",
+    "ttnn.slice tensor controls with slice_dim=0 and num_devices=physical_pages",
+    "get_unsafe_tracked_ids with native program-cache tracking",
+    "public ttnn.execute_trace automatic strict verification",
+    "chunked_scaled_dot_product_attention(chunk_start_idx_tensor=...)"
+  ],
+  "note": "No native code rebuild or extension replacement. Runtime op and model probes exercise these APIs in this exact image; source matches establish pinned2c1 API provenance.",
+  "local_scored_image_native_extension_sha256": "8af057c20fbbcf9c8a1c03490a9fc438c21e3478f33c7e063f8a64832893d93a",
+  "local_scored_image": "gemma4-ci90ca-plugin5803:local",
+  "local_scored_extension_identical": true
+}

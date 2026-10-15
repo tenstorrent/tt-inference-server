@@ -1,0 +1,334 @@
+--- a/models/demos/gemma4_31b_qb2/tt/generator.py
++++ b/models/demos/gemma4_31b_qb2/tt/generator.py
+@@ -7,6 +7,8 @@
+ """
+ 
+ import math
++import json
++import os
+ import time
+ from dataclasses import dataclass, field
+ from types import SimpleNamespace
+@@ -14,7 +16,8 @@
+ import torch
+ from loguru import logger
+ from transformers import AutoTokenizer, GenerationConfig
+-from ttnn.tools.trace_allocation_tracker import corruptible_allocation_scope
++from ttnn.tools.trace_allocation_tracker import corruptible_allocation_scope, TRACE_ALLOC_TRACKING, TraceAllocationTracker
++from ttnn._ttnn.operations.trace import get_unsafe_tracked_ids
+ 
+ import ttnn
+ from models.common.sampling.tt_sampling import TTSampling
+@@ -36,10 +39,16 @@
+     # Standalone mode retains the stricter private cyclic-cache contract.
+     vllm_owned: bool = False
+     prefill_history: dict = field(default_factory=dict)
++    history_workspace: list = field(default_factory=list)
++    restore_controls: dict = field(default_factory=dict)
++    history_leases: dict = field(default_factory=dict)
++    history_free: list = field(default_factory=list)
+ 
+ 
+ class Gemma4Generator:
+     def __init__(self, model, *, max_seq_len=2048):
++        if not TRACE_ALLOC_TRACKING:
++            raise RuntimeError("Persistent prefill history requires native allocation tracking")
+         self.model, self.mesh = model, model.mesh
+         self.tokenizer = AutoTokenizer.from_pretrained(model.checkpoint, local_files_only=True)
+         generation_config = GenerationConfig.from_pretrained(model.checkpoint, local_files_only=True)
+@@ -78,6 +87,93 @@
+             },
+         )
+         self.sampler = TTSampling(mesh_device=self.mesh, tt_ccl=model.ccl, args=args)
++
++    def allocate_history_workspace(self, state):
++        if state.history_workspace or self.traces:
++            raise RuntimeError("History workspace must be initialized once, before capture")
++        before = ttnn.get_memory_view(self.mesh, ttnn.BufferType.DRAM)
++        logger.info("HISTORY_WORKSPACE_MEMORY " + json.dumps({"phase":"before","banks":before.num_banks,"allocated_per_bank":before.total_bytes_allocated_per_bank,"free_per_bank":before.total_bytes_free_per_bank}))
++        for _ in range(state.batch):
++            bank = []
++            for layer in self.model.layers:
++                if not layer.sliding:
++                    bank.append(None)
++                    continue
++                shape = [1, layer.kv_heads, layer.window + layer.PAGE_SIZE, layer.head_dim]
++                bank.append(tuple(ttnn.empty(shape, dtype=ttnn.bfloat16, layout=ttnn.TILE_LAYOUT,
++                    device=self.mesh, memory_config=ttnn.DRAM_MEMORY_CONFIG) for _ in range(2)))
++            state.history_workspace.append(bank)
++        state.history_free = list(reversed(range(state.batch)))
++        # Immutable device controls exist before any trace capture. Each entry
++        # can be selected across K/V and layers with the same page geometry.
++        import time
++        control_start = time.perf_counter()
++        geometries = {}
++        for layer, pair in zip(self.model.layers, state.kv):
++            if layer.sliding:
++                for cache in pair:
++                    geometry = tuple(list(cache.shape)[1:])
++                    geometries[geometry] = max(geometries.get(geometry, 0), cache.shape[0])
++        for geometry, pages in geometries.items():
++            bank = {}
++            for page_index in range(1, pages):
++                pair = []
++                for values in ([page_index, 0, 0, 0], [page_index + 1, *geometry]):
++                    host = torch.zeros(1024, dtype=torch.int32)
++                    host[:4] = torch.tensor(values, dtype=torch.int32)
++                    pair.append(ttnn.from_torch(host, dtype=ttnn.uint32,
++                        layout=ttnn.ROW_MAJOR_LAYOUT, device=self.mesh,
++                        memory_config=ttnn.DRAM_MEMORY_CONFIG,
++                        mesh_mapper=ttnn.ReplicateTensorToMesh(self.mesh)))
++                bank[page_index] = tuple(pair)
++            state.restore_controls[geometry] = bank
++        ttnn.synchronize_device(self.mesh)
++        logger.info("RESTORE_CONTROL_BANK " + json.dumps({
++            "setup_wall_s": time.perf_counter() - control_start,
++            "pages_per_geometry": {str(k): len(v) for k, v in state.restore_controls.items()},
++            "payload_bytes_per_device": sum(len(v) for v in state.restore_controls.values()) * 8192}))
++
++        after = ttnn.get_memory_view(self.mesh, ttnn.BufferType.DRAM)
++        logger.info("HISTORY_WORKSPACE_MEMORY " + json.dumps({"phase":"after","banks":after.num_banks,"allocated_per_bank":after.total_bytes_allocated_per_bank,"free_per_bank":after.total_bytes_free_per_bank}))
++
++    def _store_history_workspace(self, state, key, histories):
++        import time
++        started = time.perf_counter()
++        if not state.history_workspace:
++            return histories
++        if key not in state.history_leases:
++            if not state.history_free:
++                raise RuntimeError("Live history keys exceed fixed serving slot capacity")
++            state.history_leases[key] = state.history_free.pop()
++        bank = state.history_workspace[state.history_leases[key]]
++        if len(histories) != len(bank):
++            raise ValueError("History layer count must match workspace")
++        saved = []
++        for layer_index, tails in enumerate(histories):
++            if tails is None:
++                saved.append(None)
++                continue
++            pair = []
++            for component, tail in enumerate(tails):
++                owner = bank[layer_index][component]
++                expected = [1, owner.shape[1], tail.shape[2], owner.shape[3]]
++                padded = [1, owner.shape[1], (tail.shape[2] + 31) // 32 * 32, owner.shape[3]]
++                if not 1 <= tail.shape[2] <= owner.shape[2] or list(tail.shape) != expected:
++                    raise ValueError("History has unexpected geometry")
++                if list(tail.padded_shape) != padded or tail.dtype != ttnn.bfloat16 or tail.layout != ttnn.TILE_LAYOUT:
++                    raise ValueError("History must be compact tiled BF16")
++                if tail.buffer_unique_id() == owner.buffer_unique_id():
++                    raise RuntimeError("Workspace overwrite source must be an independent completed tail")
++                view = ttnn.reshape(owner, ttnn.Shape(list(tail.shape)), ttnn.Shape(list(tail.padded_shape)))
++                if view.buffer_unique_id() != owner.buffer_unique_id():
++                    raise RuntimeError("History view must retain its pre-capture allocation")
++                # Rewrite the complete compact volume; old contents have different
++                # per-head strides when the history length changes.
++                ttnn.copy(tail, view)
++                pair.append(view)
++            saved.append(tuple(pair))
++        logger.info("HISTORY_COPY_TIMING " + json.dumps({"wall_s":time.perf_counter()-started}))
++        return saved
+ 
+     def allocate_cache(self, *, batch=1, capacity=None):
+         capacity = self.initial_capacity if capacity is None else capacity
+@@ -334,6 +430,8 @@
+         request's current table are read; null pages are never valid history.
+         Decode and cached continuation consume the same stored BF8 values.
+         """
++        import time
++        started = time.perf_counter()
+         histories = []
+         for i, layer in enumerate(self.model.layers):
+             if not layer.sliding:
+@@ -345,10 +443,13 @@
+                 raise ValueError(f"Missing sliding prefix pages for layer {i} at position {start}: {pages}")
+             pair = []
+             for cache in state.kv[i]:
+-                parts = [cache[p : p + 1, :, :, :] for p in pages]
++                bank = state.restore_controls[tuple(list(cache.shape)[1:])]
++                parts = [ttnn.slice(cache, *bank[p], slice_dim=0,
++                    num_devices=cache.shape[0]) for p in pages]
+                 tail = parts[0] if len(parts) == 1 else ttnn.concat(parts, dim=2)
+                 pair.append(ttnn.typecast(tail, ttnn.bfloat16))
+             histories.append(tuple(pair))
++        logger.info("HISTORY_RESTORE_TIMING " + json.dumps({"wall_s":time.perf_counter()-started}))
+         return histories
+ 
+     def prefill_forward(
+@@ -385,10 +486,13 @@
+         if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
+             raise ValueError("Prefill must advance each request from its current position")
+         shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
+-        if history_keys is not None or shape_key not in self.prefill_shapes:
+-            # Request histories allocate persistent K/V tails even for a seen
+-            # signature. Unseen signatures can also allocate native cached state.
+-            # Both must be created before the next trace capture.
++        logger.info("PREFILL_SIGNATURE " + json.dumps({"shape":shape_key,"slots":slots,"history_keys":history_keys}))
++        probe = True  # This candidate always uses authoritative native retention checks.
++        if probe and not TRACE_ALLOC_TRACKING:
++            raise RuntimeError("Trace retention probe requires allocation tracking")
++        if shape_key not in self.prefill_shapes and not probe:
++            # A new prefill signature may create cached protocol semaphores or
++            # norm buffers. Retire old traces before those persistent allocations.
+             self._retire_traces()
+         self._tables(state, page_table)
+         outputs = []
+@@ -456,6 +560,7 @@
+                 histories=histories,
+             )
+             if history_keys is not None:
++                histories = self._store_history_workspace(state, history_keys[row], histories)
+                 state.prefill_history[history_keys[row]] = {"end": length, "layers": histories}
+             outputs.append(
+                 out if return_device else self._host_logits(out).reshape(1, -1, self.model.config.vocab_size)
+@@ -463,6 +568,26 @@
+             # Device-return outputs retain their own owners in outputs. Host
+             # mode has consumed out; do not carry it into the next prefill.
+             del out, tt_ids, tables, uploaded_rows
++            previous = tail = None  # Drop transient APC-restoration aliases before retention checks.
++        if probe and self.traces:
++            import time
++            retention_started = time.perf_counter()
++            # Only output buffers can be temporarily excluded: sampling copies
++            # and clears them before replay. All other surviving allocations
++            # force trace retirement. No tracker acknowledgement is performed.
++            output_ids = {t.buffer_unique_id() for t in outputs if isinstance(t, ttnn.Tensor)}
++            checks = []
++            unsafe = False
++            for entry in self.traces.values():
++                for name in ("model_trace", "sampling_trace"):
++                    allocations = get_unsafe_tracked_ids(self.mesh, entry[name])
++                    retained = {k:v for k,v in allocations.items() if k not in output_ids}
++                    unsafe = unsafe or bool(retained)
++                    checks.append({"trace":name,"all":allocations,"non_output":retained})
++            logger.info("TRACE_RETENTION_PROBE " + json.dumps({"shape":shape_key,"seen":shape_key in self.prefill_shapes,"retire":unsafe,"checks":checks}))
++            logger.info("RETENTION_CHECK_TIMING " + json.dumps({"wall_s":time.perf_counter()-retention_started}))
++            if unsafe:
++                self._retire_traces()
+         self.prefill_shapes.add(shape_key)
+         if return_device:
+             return outputs
+@@ -471,6 +596,11 @@
+         for i, out in enumerate(outputs):
+             result[i, : out.shape[1]] = out[0]
+         return result
++
++    def _verified_execute_trace(self, mesh, trace_id, **kwargs):
++        # With TRACE_ALLOC_TRACKING=1, the public ttnn.execute_trace wrapper
++        # already performs the strict check. Match the control's one check.
++        return ttnn.execute_trace(mesh, trace_id, **kwargs)
+ 
+     def _model_step(self, entry, state):
+         out = self.model.decode_device(
+@@ -499,7 +629,7 @@
+         # so a hot trace never replays with unrelated live postcapture buffers.
+         outputs.clear()
+         del merged
+-        ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
++        self._verified_execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
+         self.counters["sampling_replays"] += 1
+         return self._read_tokens(entry["tokens"], batch).reshape(-1, 1)
+ 
+@@ -519,6 +649,7 @@
+                     "Captured cache/table tensors were replaced; retire traces before replacing backing storage"
+                 )
+             return self.traces[key]
++        trace_entry_start = time.perf_counter()
+         self._retire_traces()
+         entry = {
+             "tokens": self._upload(
+@@ -574,6 +705,7 @@
+             self._sample_step(entry)
+             ttnn.end_trace_capture(self.mesh, entry["sampling_trace"], cq_id=0)
+         self.traces[key] = entry
++        logger.info("TRACE_ENTRY_COST " + json.dumps({"seconds":time.perf_counter()-trace_entry_start}))
+         return entry
+ 
+     def replay(self, entry, *, sample=True):
+@@ -582,11 +714,11 @@
+             raise ValueError("Decode handle was retired; prepare the request again")
+         if entry["remaining_steps"] <= 0:
+             raise ValueError("No decode steps remain within the prepared cache/context")
+-        ttnn.execute_trace(self.mesh, entry["model_trace"], cq_id=0, blocking=False)
++        self._verified_execute_trace(self.mesh, entry["model_trace"], cq_id=0, blocking=False)
+         entry["remaining_steps"] -= 1
+         self.counters["model_replays"] += 1
+         if sample:
+-            ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
++            self._verified_execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
+             self.counters["sampling_replays"] += 1
+ 
+     def prepare_decode(
+@@ -717,7 +849,7 @@
+         if host_sampling:
+             predictions = [int(self._host_logits(entry["logits"])[0, 0, 0].argmax())]
+         else:
+-            ttnn.execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
++            self._verified_execute_trace(self.mesh, entry["sampling_trace"], cq_id=0, blocking=False)
+             self.counters["sampling_replays"] += 1
+             predictions = [int(self._read_tokens(entry["tokens"], 1)[0])]
+         self.last_ttft_s = time.perf_counter() - start
+--- a/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
++++ b/models/demos/gemma4_31b_qb2/tt/generator_vllm.py
+@@ -120,6 +120,7 @@
+         self.cache = CacheState(
+             kv, tables, self.max_batch_size, self.max_seq_len, scratch_pages=scratch, vllm_owned=True
+         )
++        self.generator.allocate_history_workspace(self.cache)
+         return self.cache
+ 
+     def _tables(self, cache, page_tables_per_layer, *, slots=None):
+@@ -296,10 +297,18 @@
+         key = self.prefill_slot_keys.pop(slot, None)
+         if key is not None and self.cache is not None:
+             self.cache.prefill_history.pop(key, None)
++            lease = self.cache.history_leases.pop(key, None)
++            if lease is not None:
++                self.cache.history_free.append(lease)
+ 
+     def release_persistent_capture(self):
+         if self.cache is not None:
+             self.cache.prefill_history.clear()
+         self.prefill_slot_keys.clear()
+         self.generator.close()
++        if self.cache is not None:
++            self.cache.history_leases.clear()
++            self.cache.history_free.clear()
++            self.cache.history_workspace.clear()
++            self.cache.restore_controls.clear()
+         self.entry = None
+--- a/models/demos/gemma4_31b_qb2/tt/decoder.py
++++ b/models/demos/gemma4_31b_qb2/tt/decoder.py
+@@ -68,6 +68,13 @@
+         self = cls()
+         self.device = mesh_device
+         self.kind = c.layer_types[layer_idx]
++        if self.kind == "full_attention":
++            self.prefill_chunk_start = ttnn.from_torch(
++                torch.tensor([0], dtype=torch.int32), device=mesh_device,
++                dtype=ttnn.int32, layout=ttnn.ROW_MAJOR_LAYOUT,
++                memory_config=ttnn.DRAM_MEMORY_CONFIG,
++                mesh_mapper=ttnn.ReplicateTensorToMesh(mesh_device),
++            )
+         self.activation_dtype = ttnn.bfloat16
+         self.residual_dtype = ttnn.bfloat16
+         self.norms_dtype = ttnn.bfloat16
+@@ -862,12 +869,18 @@
+                         compute_kernel_config=self.pref_compute,
+                     )
+                 else:
++                    import torch
++                    offset_host = ttnn.from_torch(
++                        torch.tensor([absolute_start], dtype=torch.int32),
++                        dtype=ttnn.int32, layout=ttnn.ROW_MAJOR_LAYOUT,
++                    )
++                    ttnn.copy_host_to_device_tensor(offset_host, self.prefill_chunk_start)
+                     attn = ttnn.transformer.chunked_scaled_dot_product_attention(
+                         q,
+                         kv_cache[0],
+                         kv_cache[1],
+                         pt,
+-                        chunk_start_idx=absolute_start,
++                        chunk_start_idx_tensor=self.prefill_chunk_start,
+                         scale=1.0,
+                         program_config=sdpa_config,
+                         compute_kernel_config=self.pref_compute,

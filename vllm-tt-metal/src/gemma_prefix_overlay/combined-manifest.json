@@ -1,0 +1,29 @@
+{
+  "status": "46/46 exact matched input/output cases and 3 chat checks passed; bounded scored-candidate readiness, not full long-context or scored acceptance",
+  "required_environment": {
+    "TT_METAL_TRACE_ALLOC_TRACKING": "1",
+    "TT_METAL_TRACE_ALLOC_TRACEBACKS": "0",
+    "TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE": "0"
+  },
+  "base": "score-safe-model (common conservative repair)",
+  "files": {
+    "models/demos/gemma4_31b_qb2/tt/generator.py": {
+      "base": "7c6dfef672861aab97c7bcb111c949a2946e1b1515fdd1fd00cf71f1ee64d77b",
+      "target": "870fadd13725ab3a3548717b621acd8e620bb1b8af07cc763c7cf9471e2d2a55"
+    },
+    "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
+      "base": "9f3487bc72493988e7d95de5ce63f2131009f10c41a613027a9709c2f96f2d72",
+      "target": "e1c0f9b31159e422dd9573b1ffe151dc68691c632c174bc50b6d5b79def40751"
+    },
+    "models/demos/gemma4_31b_qb2/tt/decoder.py": {
+      "base": "a49b0c99633683c876a0e894bc16dfbacd1a78166d822382cf1638acd5e964bf",
+      "target": "f23ee29bf60c13e460f6d17cfbf8d53ef12e1cde0e6cf6b7efe25f7c3ff1ca61"
+    }
+  },
+  "safety": "Fail closed at generator construction when native trace allocation tracking is disabled; native retention path is always active, independent of experimental environment flag.",
+  "patch_sha256": "7785c678312e768c4ca5328a81ba649a94a4590cd20fe8c2d997875b7f885c24",
+  "native_dependencies": "history-combined-native-dependencies.json",
+  "memory_added_bytes_per_chip": 2088173568,
+  "configured_kv_blocks": 3056,
+  "effective_kv_tokens": 293125
+}
