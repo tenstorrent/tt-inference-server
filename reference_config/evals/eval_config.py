@@ -594,6 +594,12 @@ _K2_HORIZON_LM_EVAL_TASKS = os.path.join(
 # requests exhausted retries as __INFERENCE_ERROR__.
 QWQ_R1_REQUEST_TIMEOUT_S = 3 * 60 * 60
 
+# Custom lm-eval task definitions for the meta-models/Muse-Glimmer-30B model-card evals
+# that the pinned lm-eval fork does not ship (AIME 2026). Absolute, as above.
+_MUSE_GLIMMER_LM_EVAL_TASKS = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "lm_eval_tasks", "muse_glimmer_30b"
+)
+
 _eval_config_list = [
     # Quetzal (impl=quetzal) row on P300X2; published scores from Open LLM Leaderboard v2 results JSON; GPU reference TBD.
     EvalConfig(
@@ -8525,6 +8531,169 @@ _eval_config_list = [
                     EvalLimitMode.CI_NIGHTLY: 0.2,
                     EvalLimitMode.SMOKE_TEST: 0.01,
                 },
+            ),
+            # Added with the muse_glimmer_30b_qb2 (TP4 autoport) row. Ungated like the tasks above (no GPU
+            # reference yet); they report the card's AIME 2026 at a 64K budget and the CI agentic subsets.
+            # The chat API lets the server render the native template and the muse_glimmer reasoning
+            # parser separate thinking from the answer. lm-eval timeout == wall bound: never retry a request.
+            EvalTask(
+                # MathArena AIME 2026, one pass over all 30 problems (+/-4 pts).
+                task_name="muse_aime_2026",
+                include_path=_MUSE_GLIMMER_LM_EVAL_TASKS,
+                score=EvalTaskScore(
+                    # Card 94.7 (Artificial Analysis, not like-for-like): reported, not gated.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["exact_match,none"],
+                        "unit": "percent",
+                    },
+                ),
+                workflow_venv_type=WorkflowVenvType.EVALS_COMMON,
+                use_chat_api=True,
+                max_concurrent=16,
+                # 5 h bound: 30 problems at 16 slots is two waves, and a 64K
+                # solution at ~8 tok/s per user takes ~2.2 h.
+                wall_clock_timeout_seconds=18000,
+                model_kwargs={
+                    "max_length": 131072,
+                    "timeout": 18000,  # == wall bound: never retry a request
+                },
+                # 64K budget: AIME solutions at high reasoning regularly exceed 32K.
+                gen_kwargs={
+                    "stream": "false",
+                    "max_gen_toks": 65536,
+                    "until": [],
+                    "do_sample": "true",
+                    "temperature": 1.0,
+                    "top_p": 0.95,
+                    "top_k": 64,
+                },
+                limit_samples_map={
+                    EvalLimitMode.CI_NIGHTLY: 30,
+                    EvalLimitMode.CI_LONG: 30,
+                    EvalLimitMode.SMOKE_TEST: 0.05,  # 30 * 0.05 ~= 1
+                },
+            ),
+            EvalTask(
+                # Terminal-Bench 2.1 with terminus-2: the model card reports 51.7.
+                # CI runs the 10-task list validated for the K2-Horizon-7B QB2 runs
+                # (oracle-checked; qemu-startup excluded, its verifier cannot run).
+                task_name="terminal_bench_2_1",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card 51.7 on the full set; this 10-task CI subset is not comparable: reported, not gated.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=TerminalBenchEvalConfig(
+                    dataset="terminal-bench/terminal-bench-2-1",
+                    agent="terminus-2",
+                    # 10 tasks at 5 concurrent = two waves of <= 3 h: <= ~7.5 h with
+                    # setup and per-task overhead, inside the 1080-minute job.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=89,
+                    override_cpus=16,
+                    override_memory_mb=48 * 1024,
+                    agent_timeout_sec=3 * 60 * 60,
+                    # Model-card sampling (temperature 1.0, top_p 0.95); top_k is
+                    # left to the server default (device sampler). 96K input plus
+                    # 32K output fits the 131072 context.
+                    agent_kwargs={
+                        "parser_name": "json",
+                        "temperature": 1.0,
+                        "model_info": {
+                            "max_input_tokens": 96 * 1024,
+                            "max_output_tokens": 32 * 1024,
+                        },
+                        "llm_kwargs": {
+                            "top_p": 0.95,
+                            "max_tokens": 32 * 1024,
+                            "timeout": 60 * 60,
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "terminal-bench/break-filter-js-from-html",
+                            "terminal-bench/cobol-modernization",
+                            "terminal-bench/compile-compcert",
+                            "terminal-bench/feal-differential-cryptanalysis",
+                            "terminal-bench/nginx-request-logging",
+                            "terminal-bench/fix-git",
+                            "terminal-bench/overfull-hbox",
+                            "terminal-bench/crack-7z-hash",
+                            "terminal-bench/db-wal-recovery",
+                            "terminal-bench/largest-eigenval",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
+            ),
+            EvalTask(
+                # SWE-bench Verified with mini-swe-agent: the model card reports 76.0.
+                # CI runs the 10-instance list validated for the K2-Horizon-7B QB2 runs.
+                task_name="swe_bench_verified",
+                workflow_venv_type=WorkflowVenvType.EVALS_AGENTIC,
+                score=EvalTaskScore(
+                    # Card 76.0 on the full set; this 10-task CI subset is not comparable: reported, not gated.
+                    published_score=None,
+                    published_score_ref=None,
+                    gpu_reference_score=None,
+                    gpu_reference_score_ref=None,
+                    score_func=score_task_single_key,
+                    score_func_kwargs={
+                        "result_keys": ["accuracy"],
+                        "unit": "percent",
+                    },
+                ),
+                agentic_eval_config=HarborEvalConfig(
+                    dataset="swebench-verified",
+                    agent="mini-swe-agent",
+                    # 10 instances at 5 concurrent = two waves of <= 3 h.
+                    n_concurrent_trials=5,
+                    n_attempts=1,
+                    n_tasks=None,
+                    agent_timeout_sec=3 * 60 * 60,
+                    llm_timeout_sec=60 * 60,
+                    agent_kwargs={
+                        "version": MINI_SWE_AGENT_VERSION,
+                        "max_tokens": 32 * 1024,
+                        "config": {
+                            "model": {
+                                "model_kwargs": {
+                                    "temperature": 1.0,
+                                    "top_p": 0.95,
+                                }
+                            }
+                        },
+                    },
+                    task_names_map={
+                        EvalLimitMode.CI_NIGHTLY: [
+                            "django__django-11299",
+                            "astropy__astropy-14096",
+                            "matplotlib__matplotlib-25332",
+                            "sympy__sympy-13551",
+                            "scikit-learn__scikit-learn-14629",
+                            "astropy__astropy-14598",
+                            "matplotlib__matplotlib-25122",
+                            "pydata__xarray-4075",
+                            "pytest-dev__pytest-7571",
+                            "sphinx-doc__sphinx-8265",
+                        ],
+                    },
+                ),
+                limit_samples_map={EvalLimitMode.SMOKE_TEST: 5},
             ),
         ],
     ),
