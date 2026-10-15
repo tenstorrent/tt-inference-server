@@ -42,13 +42,22 @@ worker's own `vllm:prefix_cache_hits_total / queries_total`.
 ## Deployment layout
 
 1. **Workers.** One tt-inference-server instance per engine, each on its own
-   port. With the Helm chart this is `replicaCount: 4` of the `P150X8` entry
-   on a Galaxy: each Pod claims 8 boards through the tt-operator DRA driver
-   (`deviceBoardCounts.p150x8`), and the chart's Service selects all
-   replicas. The DRA placement has to hand each Pod a topologically valid
-   8-chip block (a 2x4 mesh); that is a tt-operator concern, not a catalog
-   one. Without Kubernetes, start the instances by hand with disjoint
-   `TT_VISIBLE_DEVICES` sets, as the proof of concept did.
+   port. On a Blackhole Galaxy a worker is one of the four (1,8) columns the
+   `BLACKHOLE_GALAXY` entry's DP engines already run on: the same catalog
+   spec with `--data-parallel-size 1`, `MESH_DEVICE=BH`, and
+   `TT_VISIBLE_DEVICES` set to one column (the plugin resolves 8 visible
+   chips under `BH` to a (1,8) mesh). The columns on a 32-chip Galaxy are
+   `0,1,2,3,27,26,25,24`, `4,5,6,7,31,30,29,28`, `8,9,10,11,19,18,17,16`
+   and `12,13,14,15,23,22,21,20`. Do not use 2x4 `P150X8` blocks for this:
+   they boot and serve, but their TP collectives run over the 2D block and
+   the engine measured as a `P150X8` block was prefill-bound under
+   closed-loop load. The `P150X8` spec itself is the same engine
+   configuration for a BH LoudBox (a real 2x4 mesh).
+   With the Helm chart this is `replicaCount: 4`, each Pod claiming 8
+   boards through the tt-operator DRA driver with the per-Pod column
+   assignment and `data_parallel_size: 1` coming from the deployment; the
+   chart's Service selects all replicas. Without Kubernetes, start the four
+   by hand with the column `TT_VISIBLE_DEVICES` sets.
 2. **Router.** `vllm-router` (pip wheel or Docker image) in front of the
    workers, in the cluster above the instances (Console's k8s), for example:
    ```bash
