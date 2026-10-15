@@ -1328,3 +1328,63 @@ def test_llama_qb2_failed_download_does_not_use_shared_partial_weights(
     module.snapshot_download.side_effect = RuntimeError("offline")
     with pytest.raises(RuntimeError, match="offline"):
         module.ensure_weights_available(spec)
+
+
+def _install_fake_transformers(monkeypatch, calls):
+    transformers = types.ModuleType("transformers")
+
+    class _Auto:
+        def __init__(self, name):
+            self.name = name
+
+        def from_pretrained(self, path, **kwargs):
+            calls.append((self.name, kwargs))
+            return object()
+
+    transformers.AutoConfig = _Auto("AutoConfig")
+    transformers.AutoTokenizer = _Auto("AutoTokenizer")
+    monkeypatch.setitem(sys.modules, "transformers", transformers)
+
+
+def _install_fake_hf_compat(monkeypatch, calls):
+    package = types.ModuleType("tt_quetzalcoatlus")
+    package.__path__ = []
+    hf_compat = types.ModuleType("tt_quetzalcoatlus.hf_compat")
+    hf_compat.register_vendored_architectures = lambda: calls.append(("register", {}))
+    monkeypatch.setitem(sys.modules, "tt_quetzalcoatlus", package)
+    monkeypatch.setitem(sys.modules, "tt_quetzalcoatlus.hf_compat", hf_compat)
+
+
+def test_quetzal_metadata_registers_vendored_architectures_before_config(
+    run_vllm_api_server_module, monkeypatch, tmp_path
+):
+    """Vendored remote-code checkpoints (K2-Horizon, Kolibri) resolve locally:
+    quetzal's vendored classes are registered before AutoConfig loads, and
+    remote code is still never trusted."""
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    calls = []
+    _install_fake_transformers(monkeypatch, calls)
+    _install_fake_hf_compat(monkeypatch, calls)
+
+    run_vllm_api_server_module._ensure_quetzal_metadata(_quetzal_model_spec())
+
+    assert [name for name, _ in calls] == ["register", "AutoConfig", "AutoTokenizer"]
+    for name, kwargs in calls[1:]:
+        assert kwargs["trust_remote_code"] is False, name
+        assert kwargs["local_files_only"] is True, name
+
+
+def test_quetzal_metadata_without_vendored_registry_is_unchanged(
+    run_vllm_api_server_module, monkeypatch, tmp_path
+):
+    """A quetzal predating hf_compat keeps today's behaviour: no registration,
+    the same trust_remote_code=False loads."""
+    monkeypatch.setenv("CACHE_ROOT", str(tmp_path))
+    calls = []
+    _install_fake_transformers(monkeypatch, calls)
+    monkeypatch.setitem(sys.modules, "tt_quetzalcoatlus.hf_compat", None)
+
+    run_vllm_api_server_module._ensure_quetzal_metadata(_quetzal_model_spec())
+
+    assert [name for name, _ in calls] == ["AutoConfig", "AutoTokenizer"]
+    assert all(kwargs["trust_remote_code"] is False for _, kwargs in calls)

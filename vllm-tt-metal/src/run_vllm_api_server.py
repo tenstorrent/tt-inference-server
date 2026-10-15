@@ -644,6 +644,19 @@ def _ensure_quetzal_metadata(model_spec: dict) -> Path:
     try:
         from transformers import AutoConfig, AutoTokenizer
 
+        # A checkpoint whose config.json names remote code (auto_map) resolves
+        # here only if its architecture is registered locally: quetzal vendors
+        # those classes byte-pinned (tt_quetzalcoatlus.hf_compat, #320/#323) and
+        # registers them with AutoConfig/AutoModel, so remote code is never
+        # trusted. A quetzal that predates the vendoring keeps today's
+        # behaviour (fails closed on such a config).
+        try:
+            from tt_quetzalcoatlus.hf_compat import register_vendored_architectures
+        except ImportError:
+            register_vendored_architectures = None
+        if register_vendored_architectures is not None:
+            register_vendored_architectures()
+
         AutoConfig.from_pretrained(path, local_files_only=True, trust_remote_code=False)
         AutoTokenizer.from_pretrained(
             path, local_files_only=True, trust_remote_code=False
