@@ -294,3 +294,23 @@ def test_pass_rate_excludes_skips_and_waived_failures(tmp_path):
     ]
     assert waived["pass_rate"] == pytest.approx(1 / 2)
     assert waived["success"] is True
+
+
+def test_grade_verify_advisory_metric_fails_without_failing_the_run():
+    metrics = {
+        key: {"value": 1.0 if op == ">=" else 0.0, "detail": ""}
+        for key, (_, op, _) in grading.VERIFY_METRICS.items()
+    }
+    metrics["scenario_check_pass_rate"] = {"value": 0.8, "detail": "mean of 10 runs"}
+
+    gated = grading.grade_verify(metrics, {})
+    advisory = grading.grade_verify(metrics, {}, advisory=["scenario_check_pass_rate"])
+
+    assert gated["success"] is False
+    assert gated["failed_metrics"] == ["Scenario-Check-Pass-Rate"]
+    assert advisory["success"] is True
+    assert advisory["failed_metrics"] == []
+    assert advisory["advisory_failed_metrics"] == ["Scenario-Check-Pass-Rate"]
+    row = next(r for r in advisory["metrics"] if r["key"] == "scenario_check_pass_rate")
+    assert row["status"] == grading.FAIL
+    assert row["threshold"].endswith("(advisory)")

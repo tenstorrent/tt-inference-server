@@ -28,7 +28,7 @@ import re
 import xml.etree.ElementTree as ET
 from collections import Counter
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, List, Mapping, Optional, Sequence, Tuple
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -224,26 +224,46 @@ def _metric_status(op: str, value: Optional[float], threshold: float) -> str:
 
 
 def grade_verify(
-    metrics: Mapping[str, Mapping[str, Any]], thresholds: Mapping[str, float]
+    metrics: Mapping[str, Mapping[str, Any]],
+    thresholds: Mapping[str, float],
+    advisory: Collection[str] = (),
 ) -> Dict[str, Any]:
-    """Per-metric verdicts; ``success`` when no metric FAILs (NA is not a FAIL)."""
+    """Per-metric verdicts; ``success`` when no gated metric FAILs (NA is not a FAIL).
+
+    An ``advisory`` metric is graded against its threshold and shown with that
+    verdict, but a FAIL there is reported in ``advisory_failed_metrics`` and
+    does not fail the run.
+    """
     rows = []
+    failed: List[str] = []
+    advisory_failed: List[str] = []
     for key, (label, op, default) in VERIFY_METRICS.items():
         threshold = float(thresholds.get(key, default))
         value = metrics[key]["value"]
+        is_advisory = key in advisory
+        status = _metric_status(op, value, threshold)
+        if status == FAIL:
+            (advisory_failed if is_advisory else failed).append(label)
         rows.append(
             {
                 "metric": label,
                 "key": key,
                 "value": value,
                 "value_percent": _percent(value),
-                "threshold": f"{op} {_percent(threshold)}",
-                "status": _metric_status(op, value, threshold),
+                # The threshold text carries the marker, so the report table
+                # needs no column of mostly-false flags.
+                "threshold": f"{op} {_percent(threshold)}"
+                + (" (advisory)" if is_advisory else ""),
+                "status": status,
                 "detail": metrics[key]["detail"],
             }
         )
-    failed = [r["metric"] for r in rows if r["status"] == FAIL]
-    return {"metrics": rows, "failed_metrics": failed, "success": not failed}
+    return {
+        "metrics": rows,
+        "failed_metrics": failed,
+        "advisory_failed_metrics": advisory_failed,
+        "success": not failed,
+    }
 
 
 def verify_case_failures(

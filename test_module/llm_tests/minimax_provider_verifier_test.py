@@ -27,11 +27,16 @@ Status: PASS / FAIL from the grading; ERROR when the suite produced no verdict
 informational: acceptance waives its FAIL. The suites use it for the format
 checks.
 
+``advisory_metrics`` (``verify`` only: a list of metric keys) does the same for
+single metrics: each is graded against its real threshold and shown with that
+verdict, but failing it does not fail the run.
+
 Settings come from ``test_config``; an environment variable
 ``MINIMAX_VERIFIER_<KEY>`` overrides the key of the same name (e.g.
 ``MINIMAX_VERIFIER_VERIFY_LIMIT=10``), so a CI dispatch can change a run
-without editing the suite files. ``suite`` and ``non_blocking`` are
-``test_config`` only: an override would reach every case.
+without editing the suite files. ``suite``, ``non_blocking`` and
+``advisory_metrics`` are ``test_config`` only: an override would reach every
+case.
 
 ``MINIMAX_VERIFIER_SUITES`` selects which suites run (comma-separated, e.g.
 ``text,stream``, or ``all``); the other cases report SKIP. Unset, only
@@ -96,6 +101,7 @@ LOG_TAIL_LINES = 200
 # Must match report_module.acceptance_criteria.NON_BLOCKING_KEY / _REASON_KEY.
 NON_BLOCKING_KEY = "non_blocking"
 NON_BLOCKING_REASON_KEY = "non_blocking_reason"
+ADVISORY_METRICS_KEY = "advisory_metrics"
 
 ENV_PREFIX = "MINIMAX_VERIFIER_"
 SUITES_ENV = "MINIMAX_VERIFIER_SUITES"
@@ -235,7 +241,9 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
             for key in grading.VERIFY_METRICS
             if self.targets.get(key) is not None
         }
-        graded = grading.grade_verify(grading.mean_metrics(per_run), thresholds)
+        graded = grading.grade_verify(
+            grading.mean_metrics(per_run), thresholds, self._advisory_metrics()
+        )
         # Surface each gate next to its measurement on the Block's targets
         # (copied: the dict passed in belongs to the suite definition).
         self.targets = {
@@ -252,6 +260,11 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
             if graded["failed_metrics"]
             else "",
         )
+        if graded["advisory_failed_metrics"]:
+            logger.info(
+                "MiniMax verifier verify: advisory metric(s) below threshold: %s",
+                ", ".join(graded["advisory_failed_metrics"]),
+            )
         return {
             "verify_cases": n_cases,
             "verify_runs": len(per_run),
@@ -260,11 +273,25 @@ class MiniMaxProviderVerifierTest(VLLMParamConformanceTest):
             ),
             "verify_metrics": graded["metrics"],
             "failed_metrics": graded["failed_metrics"],
+            "advisory_failed_metrics": graded["advisory_failed_metrics"],
             "case_failures": [
                 {**f, "detail": _truncate_message(f["detail"])} for f in failures
             ],
             "success": graded["success"],
         }
+
+    def _advisory_metrics(self) -> List[str]:
+        """Metrics graded but not gated. From test_config only, like
+        ``non_blocking``: an environment override would reach every case."""
+        configured = self.config.get(ADVISORY_METRICS_KEY) or []
+        if not isinstance(configured, list) or any(
+            key not in grading.VERIFY_METRICS for key in configured
+        ):
+            raise ValueError(
+                f"{ADVISORY_METRICS_KEY} must be a list of "
+                f"{sorted(grading.VERIFY_METRICS)}, got {configured!r}"
+            )
+        return list(configured)
 
     def _verify_sample(self, verifier_dir: Path, out_dir: Path) -> Path:
         """sample.jsonl, or its first ``verify_limit`` cases."""

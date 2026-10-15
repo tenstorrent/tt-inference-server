@@ -174,6 +174,53 @@ def test_targets_override_a_metric_threshold(fake, tmp_path):
     assert block.targets["tool_calls_schema_accuracy"] == 0.7
 
 
+def test_an_advisory_metric_is_graded_but_does_not_fail_the_run(fake, tmp_path):
+    # 5 of 5 pass, but the one scenario-checked case is invalid.
+    fake.rows = [_row(i) for i in range(4)] + [
+        _row(4, scenario_check_checked=True, scenario_check_valid=False)
+    ]
+
+    gated = _run(tmp_path, _VERIFY)
+    advisory = _run(
+        tmp_path, {**_VERIFY, "advisory_metrics": ["scenario_check_pass_rate"]}
+    )
+
+    assert gated.data["status"] == "fail"
+    assert gated.data["failed_metrics"] == ["Scenario-Check-Pass-Rate"]
+    assert advisory.data["status"] == "pass"
+    assert advisory.data["failed_metrics"] == []
+    assert advisory.data["advisory_failed_metrics"] == ["Scenario-Check-Pass-Rate"]
+    scenario = {m["key"]: m for m in advisory.data["verify_metrics"]}[
+        "scenario_check_pass_rate"
+    ]
+    # Still graded against the README's 100%, and shown as failing.
+    assert scenario["status"] == "FAIL"
+    assert "advisory" not in scenario  # the threshold text carries it
+    assert scenario["threshold"] == ">= 100.00% (advisory)"
+    assert advisory.targets["scenario_check_pass_rate"] == 1.0
+
+
+def test_an_unknown_advisory_metric_is_rejected(fake, tmp_path):
+    for bad in (["nope"], "scenario_check_pass_rate", {"scenario_check_pass_rate": 1}):
+        block = _run(tmp_path, {**_VERIFY, "advisory_metrics": bad})
+
+        assert block.data["status"] == "error", bad
+
+
+def test_advisory_metrics_cannot_be_overridden_from_the_environment(
+    fake, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("MINIMAX_VERIFIER_ADVISORY_METRICS", "query_success_rate")
+    fake.rows = [_row(i) for i in range(4)] + [
+        _row(4, scenario_check_checked=True, scenario_check_valid=False)
+    ]
+
+    block = _run(tmp_path, _VERIFY)
+
+    assert block.data["advisory_failed_metrics"] == []
+    assert block.data["failed_metrics"] == ["Scenario-Check-Pass-Rate"]
+
+
 def test_verify_limit_and_loops(fake, tmp_path):
     block = _run(tmp_path, {**_VERIFY, "verify_limit": 2, "verify_loops": 2})
 
