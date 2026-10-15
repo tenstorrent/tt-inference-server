@@ -1,7 +1,7 @@
 {
   "base_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d",
-  "target_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d+conservative-lifetime-local",
-  "patch_sha256": "3528039a0ca708eaea19eaf36e725a90d58b133631bcc861a528af6c252f3e5c",
+  "target_commit": "90ca9a363f5935b172dc16ba70bc83021f74964d+conservative-lifetime-and-measured-pool",
+  "patch_sha256": "bbd43982b89837dc0c8235933115c0ea613b1fcc32d0e8f9dcd3d8c51717fa54",
   "files": {
     "models/demos/gemma4_31b_qb2/tt/generator.py": {
       "base": "b8536118d6601ca26d19baf028c0b42f0f5577e9955781bae5bb6a64dcb2d3d7",
@@ -9,7 +9,7 @@
     },
     "models/demos/gemma4_31b_qb2/tt/generator_vllm.py": {
       "base": "9f3487bc72493988e7d95de5ce63f2131009f10c41a613027a9709c2f96f2d72",
-      "target": "9f3487bc72493988e7d95de5ce63f2131009f10c41a613027a9709c2f96f2d72"
+      "target": "5d241a91952e3c1b50691c75a26a104ae147d38e170bca1e0fa9c27fff25c9d2"
     }
   }
 }
