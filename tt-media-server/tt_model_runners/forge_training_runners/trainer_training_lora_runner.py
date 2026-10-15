@@ -2,22 +2,31 @@
 #
 # SPDX-FileCopyrightText: © 2026 Tenstorrent USA, Inc.
 
-"""LoRA fine-tuning runner backed by tt-blacksmith's ``LoraLLMTrainer``."""
+"""LoRA fine-tuning runner backed by tt-blacksmith's ``CrankLLMTrainer``."""
 
 import math
 from typing import Optional
 
-import torch_xla.runtime as xr
-from blacksmith.tools.configs import (
+import torch
+from blacksmith.configs import (
     CheckpointConfig,
     CustomDatasetConfig,
+    LLMTrainerConfig,
     LoggingConfig,
+    LoraConfig,
     MetricsConfig,
 )
-from blacksmith.tools.trainer.configs.base import TORCH_DTYPES
-from blacksmith.tools.trainer.configs.lora_llm import LoraLLMConfig
-from blacksmith.tools.trainer.strategies.lora_llm_trainer import LoraLLMTrainer
-from config.constants import DatasetLoaders, ModelNames, SupportedModels
+from blacksmith.models.hf_models import TORCH_DTYPES
+from blacksmith.tools.trainer.strategies.crank_llm_trainer import (
+    IGNORED_INDEX,
+    CrankLLMTrainer,
+)
+from config.constants import (
+    DatasetLoaders,
+    ModelNames,
+    SupportedModels,
+    TrainingOptimizers,
+)
 from domain.training_request import TrainingRequest
 from tt_model_runners.base_device_runner import BaseDeviceRunner
 from tt_model_runners.forge_training_runners.blacksmith_callbacks import (
@@ -68,7 +77,7 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
         self._control_callback = JobControlCallback(self.logger)
         # Order matters: the control callback stops the loop by raising, so the
         # metrics and checkpoint callbacks have to see the final step first.
-        self._trainer = LoraLLMTrainer(
+        self._trainer = CrankLLMTrainer(
             callbacks=[
                 self._metrics_callback,
                 self._checkpoint_callback,
@@ -126,7 +135,9 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 self.logger.error(
                     f"Device {self.device_id}: trainer cleanup failed: {cleanup_error}"
                 )
-            xr.clear_computation_cache()
+            # Each job compiles the loss afresh; drop the previous job's graphs so
+            # they neither hold memory nor count toward dynamo's recompile limit.
+            torch._dynamo.reset()
             self.logger.info(
                 f"Device {self.device_id}: Training completed - memory cleaned up"
             )
@@ -150,6 +161,17 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             raise ValueError(
                 f"Unsupported dataset_loader '{request.dataset_loader}'; "
                 f"expected one of {sorted(DATASET_IDS)}"
+            )
+        # CrankLLMTrainer always builds AdamW and masks labels with a fixed index.
+        if request.optimizer != TrainingOptimizers.ADAMW.value:
+            raise ValueError(
+                f"Unsupported optimizer '{request.optimizer}'; "
+                f"expected '{TrainingOptimizers.ADAMW.value}'"
+            )
+        if request.ignored_index != IGNORED_INDEX:
+            raise ValueError(
+                f"Unsupported ignored_index {request.ignored_index}; "
+                f"expected {IGNORED_INDEX}"
             )
 
     def _logging_config(self) -> LoggingConfig:
@@ -177,8 +199,8 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             column_mapping=request.column_mapping,
         )
 
-    def _job_config(self, request: TrainingRequest) -> LoraLLMConfig:
-        return LoraLLMConfig(
+    def _job_config(self, request: TrainingRequest) -> LLMTrainerConfig:
+        return LLMTrainerConfig(
             dataset_id=DATASET_IDS[request.dataset_loader],
             custom_dataset=self._custom_dataset_config(request),
             model_name=self.model_name,
@@ -186,18 +208,17 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             learning_rate=request.learning_rate,
             batch_size=request.batch_size,
             num_epochs=request.num_epochs,
-            optim=request.optimizer,
             weight_decay=request.weight_decay,
             gradient_accumulation_steps=request.gradient_accumulation_steps,
-            training_model_type="lora",
             val_steps_freq=request.val_steps_freq,
             logging=self._logging_config(),
             metrics=MetricsConfig(
                 steps_freq=request.steps_freq,
-                epoch_freq=1,
                 train_metrics=["loss"],
                 val_metrics=["loss"],
             ),
+            # Only AdapterCheckpointCallback saves, so the rotation and resume
+            # settings below are never acted on.
             checkpoint=CheckpointConfig(
                 steps_freq=max(request.save_interval, 1),
                 epoch_freq=1,
@@ -205,19 +226,21 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
                 project_dir=request._output_model_path or "",
                 final_checkpoint_name="adapter",
                 save_optim=False,
-                keep_last_n=0,
+                keep_last_n=1,
                 keep_best_n=0,
-                checkpoint_metric="val_loss",
+                keep_all_checkpoints=True,
+                checkpoint_metric="val/loss",
                 checkpoint_metric_mode="min",
-                storage_backend="local",
-                sync_to_storage=False,
-                load_from_storage=False,
-                remote_path="",
                 resume_from_checkpoint=False,
                 resume_option="last",
                 checkpoint_path="",
             ),
-            framework="pytorch",
+            lora=LoraConfig(
+                r=request.lora_r,
+                alpha=request.lora_alpha,
+                target_modules=request.lora_target_modules,
+                task_type=request.lora_task_type,
+            ),
             seed=request.seed,
             deterministic=False,
             use_tt=True,
@@ -226,9 +249,4 @@ class TrainerTrainingLoraRunner(BaseDeviceRunner):
             input_sharding_dim=None,
             model_sharding_patterns=None,
             max_length=request.dataset_max_sequence_length,
-            ignored_index=request.ignored_index,
-            lora_r=request.lora_r,
-            lora_alpha=request.lora_alpha,
-            lora_target_modules=request.lora_target_modules,
-            lora_task_type=request.lora_task_type,
         )

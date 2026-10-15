@@ -2,8 +2,12 @@
 #
 # SPDX-FileCopyrightText: © 2024 Tenstorrent USA, Inc.
 
+# Worker venv: "forge" (tt-forge) or "crank" (tt-crank, for the trainer runners).
+# "crank" also needs --build-arg TT_CRANK_WHEEL=<URL or path of the tt-crank wheel>.
+ARG WORKER_ENV=forge
+
 #FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-20.04-amd64:$TT_METAL_DOCKERFILE_VERSION-dev
-FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest
+FROM ghcr.io/tenstorrent/tt-metal/tt-metalium/ubuntu-22.04-dev-amd64:latest AS base
 
 # Build stage
 LABEL maintainer="Igor Djuric <idjuric@tenstorrent.com>"
@@ -109,10 +113,20 @@ COPY --chown=${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} "tt-media-serve
 # Remove private submodule source — cpp_server is not used in the forge image
 RUN rm -rf ${APP_DIR}/server/cpp_server
 USER root
+ARG WORKER_ENV
+ARG TT_CRANK_WHEEL=""
 RUN /bin/bash -c "cd ${APP_DIR}/server && source tt_model_runners/forge_runners/setup_env.sh" \
     && chown -R ${CONTAINER_APP_USERNAME}:${CONTAINER_APP_USERNAME} ${HOME_DIR}
 USER ${CONTAINER_APP_USERNAME}
+
+# Each worker venv bundles its own tt-metal runtime tree.
+FROM base AS worker-env-forge
 ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/pjrt_plugin_tt/tt-metal"
+
+FROM base AS worker-env-crank
+ENV TT_METAL_HOME="${APP_DIR}/server/venv-worker/lib/python3.12/site-packages/tt_crank/tt-metal"
+
+FROM worker-env-${WORKER_ENV}
 ENV PYTHON_ENV_DIR="${APP_DIR}/server/venv-worker"
 
 # Dedicated CPU venv for merging LoRA adapters under the *inference* transformers version

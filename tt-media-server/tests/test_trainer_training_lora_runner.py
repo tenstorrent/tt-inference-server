@@ -53,14 +53,6 @@ def runner():
     return _build_runner(_settings())
 
 
-class _Loss:
-    def __init__(self, value):
-        self._value = value
-
-    def item(self):
-        return self._value
-
-
 def _fake_trainer(
     grad_accum=1, steps_freq=1, num_epochs=1, val_batches=None, train_batches=None
 ):
@@ -71,6 +63,8 @@ def _fake_trainer(
     trainer.global_step = 0
     trainer.epoch = 0
     trainer.optimizer.param_groups = [{"lr": 0.001}]
+    # Losses stand in for device tensors; only `loss_to_float` reads them.
+    trainer.loss_to_float.side_effect = float
     if train_batches is None:
         trainer.train_dataloader.__len__.side_effect = TypeError()
     else:
@@ -80,6 +74,12 @@ def _fake_trainer(
     else:
         trainer.val_dataloader.__len__.return_value = val_batches
     return trainer
+
+
+def _end_step(callback, trainer, global_step):
+    """What `Trainer.train` does once an optimizer step completes."""
+    trainer.global_step = global_step
+    callback.on_step_end(trainer, global_step)
 
 
 class TestWarmup:
@@ -129,9 +129,10 @@ class TestJobConfig:
         assert config.num_epochs == 3
         assert config.gradient_accumulation_steps == 4
         assert config.max_length == 256
-        assert config.lora_r == 16
-        assert config.lora_alpha == 32
-        assert config.training_model_type == "lora"
+        assert config.lora.r == 16
+        assert config.lora.alpha == 32
+        assert config.lora.target_modules == ["q_proj", "v_proj"]
+        assert config.lora.task_type == "CAUSAL_LM"
         assert config.metrics.steps_freq == 5
         assert config.checkpoint.project_dir == "/tmp/job"
         assert config.checkpoint.save_strategy == "step"
@@ -143,6 +144,9 @@ class TestJobConfig:
     def test_save_interval_zero_disables_step_saves(self, runner):
         config = runner._job_config(_request(save_interval=0))
         assert config.checkpoint.save_strategy == "none"
+
+    def test_checkpoints_are_never_rotated(self, runner):
+        assert runner._job_config(_request()).checkpoint.keep_all_checkpoints is True
 
     def test_checkpoint_dir_is_the_job_output_path(self, runner):
         request = _request()
@@ -222,6 +226,14 @@ class TestValidate:
     def test_rejects_unknown_dataset(self, runner):
         with pytest.raises(ValueError, match="Unsupported dataset_loader"):
             runner._validate(_request(dataset_loader="nonexistent"))
+
+    def test_rejects_other_optimizer(self, runner):
+        with pytest.raises(ValueError, match="Unsupported optimizer"):
+            runner._validate(_request(optimizer="sgd"))
+
+    def test_rejects_other_ignored_index(self, runner):
+        with pytest.raises(ValueError, match="Unsupported ignored_index"):
+            runner._validate(_request(ignored_index=0))
 
 
 class TestTrainingRequest:
@@ -322,6 +334,17 @@ class TestRun:
                 runner.run([_request()])
 
         assert runner._trainer.config is None
+
+    @pytest.mark.asyncio
+    async def test_drops_compiled_graphs_after_each_job(self, runner):
+        await runner.warmup()
+
+        with patch(
+            "tt_model_runners.forge_training_runners.trainer_training_lora_runner.torch"
+        ) as torch:
+            runner.run([_request()])
+
+        torch._dynamo.reset.assert_called_once_with()
 
 
 class TestCleanup:
@@ -488,13 +511,9 @@ class TestJobMetricsCallback:
         callback = self._callback(request)
         trainer = _fake_trainer(grad_accum=2, steps_freq=1)
 
-        # Micro-batches that do not complete a step must not report a loss.
-        callback.on_train_batch_end(trainer)
+        callback.on_optimizer_step_end(trainer, 3.0)
         assert request._training_metrics == []
-
-        callback.on_optimizer_step_end(trainer, _Loss(3.0))
-        trainer.global_step = 1
-        callback.on_train_batch_end(trainer)
+        _end_step(callback, trainer, 1)
 
         assert callback.last_train_loss == 3.0
         assert [m["value"] for m in request._training_metrics] == [3.0]
@@ -505,11 +524,12 @@ class TestJobMetricsCallback:
         trainer = _fake_trainer(grad_accum=1, steps_freq=2)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
-            callback.on_optimizer_step_end(trainer, _Loss(loss))
-            trainer.global_step = step
-            callback.on_train_batch_end(trainer)
+            callback.on_optimizer_step_end(trainer, loss)
+            _end_step(callback, trainer, step)
 
         assert [m["value"] for m in request._training_metrics] == [2.0]
+        # One host readback per logging window, not one per step.
+        trainer.loss_to_float.assert_called_once_with(4.0)
 
     def test_logs_epoch_and_step_every_step_without_loss(self):
         request = _request()
@@ -517,9 +537,8 @@ class TestJobMetricsCallback:
         trainer = _fake_trainer(grad_accum=1, steps_freq=2, num_epochs=3)
 
         for step, loss in enumerate((1.0, 3.0), start=1):
-            callback.on_optimizer_step_end(trainer, _Loss(loss))
-            trainer.global_step = step
-            callback.on_train_batch_end(trainer)
+            callback.on_optimizer_step_end(trainer, loss)
+            _end_step(callback, trainer, step)
 
         progress_messages = [
             call.args[0]
@@ -559,8 +578,8 @@ class TestJobMetricsCallback:
         trainer.epoch = 0
 
         callback.on_validation_start(trainer)
-        callback.on_validation_batch_end(trainer, batch=None, loss=_Loss(1.0))
-        callback.on_validation_batch_end(trainer, batch=None, loss=_Loss(2.0))
+        callback.on_validation_batch_end(trainer, batch=None, loss=1.0)
+        callback.on_validation_batch_end(trainer, batch=None, loss=2.0)
         callback.on_validation_end(trainer, 1.5)
 
         messages = [call.args[0] for call in callback._logger.info.call_args_list]
@@ -618,14 +637,11 @@ class TestAdapterCheckpointCallback:
         request = _request()
         callback, _ = self._callback(request)
         trainer = self._trainer(steps_freq=2)
-        callback.on_train_start(trainer)
 
-        trainer.global_step = 1
-        callback.on_train_batch_end(trainer)
+        _end_step(callback, trainer, 1)
         trainer.model.save_pretrained.assert_not_called()
 
-        trainer.global_step = 2
-        callback.on_train_batch_end(trainer)
+        _end_step(callback, trainer, 2)
         trainer.model.save_pretrained.assert_called_once()
         path, kwargs = trainer.model.save_pretrained.call_args
         assert path[0] == "/tmp/job/ckpt-step-2"
@@ -638,9 +654,7 @@ class TestAdapterCheckpointCallback:
         request = _request()
         callback, _ = self._callback(request)
         trainer = self._trainer(steps_freq=1, project_dir="/adapters/job-b")
-        callback.on_train_start(trainer)
-        trainer.global_step = 1
-        callback.on_train_batch_end(trainer)
+        _end_step(callback, trainer, 1)
         assert trainer.model.save_pretrained.call_args.args[0] == (
             "/adapters/job-b/ckpt-step-1"
         )
@@ -649,9 +663,7 @@ class TestAdapterCheckpointCallback:
         request = _request()
         callback, _ = self._callback(request)
         trainer = self._trainer(save_strategy="none")
-        callback.on_train_start(trainer)
-        trainer.global_step = 2
-        callback.on_train_batch_end(trainer)
+        _end_step(callback, trainer, 2)
         trainer.model.save_pretrained.assert_not_called()
 
     def test_does_not_save_a_final_or_epoch_adapter(self):
@@ -668,9 +680,7 @@ class TestAdapterCheckpointCallback:
         trainer = self._trainer(steps_freq=1)
         metrics.last_train_loss = 0.5
         metrics.last_val_loss = 1.25
-        callback.on_train_start(trainer)
-        trainer.global_step = 1
-        callback.on_train_batch_end(trainer)
+        _end_step(callback, trainer, 1)
 
         assert request._training_checkpoints[0]["metrics"] == {
             "train_loss": 0.5,

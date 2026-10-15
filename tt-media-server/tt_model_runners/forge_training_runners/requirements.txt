@@ -1,0 +1,23 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+# Worker venv for the tt-crank training image (setup_env.sh with WORKER_ENV=crank).
+# tt-crank pins torch 2.10 while tt-forge pins torch 2.11, so this replaces
+# forge_runners/requirements.txt rather than extending it. tt-crank is not on a
+# package index: setup_env.sh installs the wheel from $TT_CRANK_WHEEL in the same
+# resolve as this file so its pins (torch, numpy<2, pydantic, click) hold.
+
+# Training recipes reused by trainer runners.
+blacksmith @ git+https://github.com/tenstorrent/tt-blacksmith.git@06fe1f6d2ad68143eff178cb11a439f92385737d
+
+# Mirrors tt-blacksmith's env/crank_requirements.txt and env/requirements.txt,
+# which blacksmith's setup.py does not declare.
+transformers==5.12.1
+# Held back by tt-crank's click==8.1.7.
+huggingface-hub==1.16.1
+# pyarrow newer than this needs NumPy 2 at runtime (undeclared), but tt-crank
+# pins numpy<2; these are the versions tt-blacksmith's crank env runs.
+datasets==3.6.0
+pyarrow==15.0.2
+pandas
+peft
+pyyaml
+tqdm

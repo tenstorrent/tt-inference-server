@@ -8,7 +8,6 @@ import os
 import time
 import traceback
 
-import torch_xla
 from blacksmith.tools.trainer.callback import Callback
 
 
@@ -50,22 +49,21 @@ class JobMetricsCallback(JobCallback):
     """
 
     def _reset(self) -> None:
-        self._running_loss = 0.0
-        self._prev_global_step = 0
+        self._running_loss = None
         self._val_batch = 0
         self.last_train_loss = None
         self.last_val_loss = None
 
     def on_optimizer_step_end(self, trainer, window_loss, *args, **kwargs):
-        # optimizer_step has already synced; window_loss is the sum of scaled
-        # micro-batch losses for this accumulation window (the per-step mean).
-        # Do not read loss in on_backward_end: on TT it is still lazy.
-        self._running_loss += window_loss.item()
+        # window_loss is the device-side sum of scaled micro-batch losses for this
+        # accumulation window (the per-step mean). Summing on the device keeps the
+        # host readback to once per logging window.
+        if self._running_loss is None:
+            self._running_loss = window_loss
+        else:
+            self._running_loss = self._running_loss + window_loss
 
     def on_train_start(self, trainer, *args, **kwargs):
-        # `Trainer.train` fires this even when config is unset; skip in that case.
-        if trainer.config is None:
-            return
         n_batches = None
         try:
             n_batches = len(trainer.train_dataloader)
@@ -101,29 +99,23 @@ class JobMetricsCallback(JobCallback):
             extra={"log_type": "info", "step": trainer.global_step},
         )
 
-    def on_train_batch_end(self, trainer, *args, **kwargs):
-        # Under gradient accumulation most micro-batches do not advance
-        # `global_step`; only finalize the ones that completed a step.
-        if trainer.global_step == self._prev_global_step:
-            return
-        self._prev_global_step = trainer.global_step
-
+    def on_step_end(self, trainer, global_step, *args, **kwargs):
         self._logger.info(
             self._epoch_step_label(trainer),
-            extra={"log_type": "info", "step": trainer.global_step},
+            extra={"log_type": "info", "step": global_step},
         )
 
         steps_freq = trainer.config.metrics.steps_freq
-        if trainer.global_step % steps_freq:
+        if global_step % steps_freq:
             return
 
-        self.last_train_loss = self._running_loss / steps_freq
-        self._running_loss = 0.0
+        self.last_train_loss = trainer.loss_to_float(self._running_loss) / steps_freq
+        self._running_loss = None
         self._record(trainer, "train_loss", self.last_train_loss, log_type="info")
 
     def on_validation_end(self, trainer, val_loss, *args, **kwargs):
-        self.last_val_loss = val_loss
-        self._record(trainer, "val_loss", val_loss, log_type="eval")
+        self.last_val_loss = trainer.loss_to_float(val_loss)
+        self._record(trainer, "val_loss", self.last_val_loss, log_type="eval")
 
     @staticmethod
     def _epoch_step_label(trainer) -> str:
@@ -158,23 +150,11 @@ class AdapterCheckpointCallback(JobCallback):
         super().__init__(logger)
         self._metrics = metrics
 
-    def _reset(self) -> None:
-        self._prev_global_step = 0
-
-    def on_train_start(self, trainer, *args, **kwargs):
-        if trainer.config is None:
-            return
-        self._prev_global_step = trainer.global_step
-
-    def on_train_batch_end(self, trainer, *args, **kwargs):
-        if trainer.global_step == self._prev_global_step:
-            return
-        self._prev_global_step = trainer.global_step
-
+    def on_step_end(self, trainer, global_step, *args, **kwargs):
         config = trainer.config.checkpoint
         if config.save_strategy != "step":
             return
-        if trainer.global_step % config.steps_freq:
+        if global_step % config.steps_freq:
             return
         self._save(trainer)
 
@@ -200,7 +180,6 @@ class AdapterCheckpointCallback(JobCallback):
             f"Model checkpoint saved to {checkpoint_path}.",
             extra={"log_type": "checkpoint", "step": trainer.global_step},
         )
-        torch_xla.sync(wait=True)
         if self._request is None or self._request._training_checkpoints is None:
             return
 

@@ -327,7 +327,7 @@ def _install_blacksmith_stubs():
     """Import shims for tt-blacksmith, which only ships in the forge worker image.
 
     Job callbacks subclass Callback at import time, so it cannot be a MagicMock.
-    LoraLLMTrainer is a real class so tests can exercise setup/cleanup. Config
+    CrankLLMTrainer is a real class so tests can exercise setup/cleanup. Config
     stubs just record kwargs.
     """
 
@@ -336,10 +336,6 @@ def _install_blacksmith_stubs():
     class StubConfig:
         def __init__(self, **kwargs):
             self.__dict__.update(kwargs)
-
-    class StubTrainerConfig(StubConfig):
-        def torch_dtype(self):
-            return torch_dtypes[self.dtype]
 
     class StubCallback:
         pass
@@ -354,28 +350,7 @@ def _install_blacksmith_stubs():
                 if hasattr(callback, method_name):
                     getattr(callback, method_name)(self.trainer, *args, **kwargs)
 
-    class StubDeviceManager:
-        def __init__(self, config):
-            self.config = config
-            self.device = "xla:0"
-
-    class StubTrainingLogger:
-        def __init__(self, config):
-            self.config = config
-
-        def info(self, message):
-            pass
-
-        def warning(self, message):
-            pass
-
-        def error(self, message, traceback_str=None):
-            pass
-
-        def finish(self):
-            pass
-
-    class StubLoraLLMTrainer:
+    class StubCrankLLMTrainer:
         def __init__(self, callbacks=None):
             self.callback_handler = StubCallbackHandler(self, callbacks or [])
             self.config = None
@@ -403,7 +378,13 @@ def _install_blacksmith_stubs():
             return MagicMock()
 
         def train(self):
-            pass
+            if self.config is None:
+                raise RuntimeError(
+                    "Trainer.setup(config) must be called before train()."
+                )
+
+        def loss_to_float(self, loss):
+            return float(loss)
 
         def cleanup(self):
             preserved = {"callback_handler"}
@@ -425,28 +406,30 @@ def _install_blacksmith_stubs():
         sys.modules[name] = stub
 
     module("blacksmith")
-    module("blacksmith.tools")
     module(
-        "blacksmith.tools.configs",
-        CheckpointConfig=type("CheckpointConfig", (StubConfig,), {}),
-        CustomDatasetConfig=type("CustomDatasetConfig", (StubConfig,), {}),
-        LoggingConfig=type("LoggingConfig", (StubConfig,), {}),
-        MetricsConfig=type("MetricsConfig", (StubConfig,), {}),
+        "blacksmith.configs",
+        **{
+            name: type(name, (StubConfig,), {})
+            for name in (
+                "CheckpointConfig",
+                "CustomDatasetConfig",
+                "LLMTrainerConfig",
+                "LoggingConfig",
+                "LoraConfig",
+                "MetricsConfig",
+            )
+        },
     )
-    module("blacksmith.tools.device_manager", DeviceManager=StubDeviceManager)
-    module("blacksmith.tools.logging_manager", TrainingLogger=StubTrainingLogger)
+    module("blacksmith.models")
+    module("blacksmith.models.hf_models", TORCH_DTYPES=torch_dtypes)
+    module("blacksmith.tools")
     module("blacksmith.tools.trainer")
     module("blacksmith.tools.trainer.callback", Callback=StubCallback)
-    module("blacksmith.tools.trainer.configs")
-    module("blacksmith.tools.trainer.configs.base", TORCH_DTYPES=torch_dtypes)
-    module(
-        "blacksmith.tools.trainer.configs.lora_llm",
-        LoraLLMConfig=type("LoraLLMConfig", (StubTrainerConfig,), {}),
-    )
     module("blacksmith.tools.trainer.strategies")
     module(
-        "blacksmith.tools.trainer.strategies.lora_llm_trainer",
-        LoraLLMTrainer=StubLoraLLMTrainer,
+        "blacksmith.tools.trainer.strategies.crank_llm_trainer",
+        CrankLLMTrainer=StubCrankLLMTrainer,
+        IGNORED_INDEX=-100,
     )
 
 
