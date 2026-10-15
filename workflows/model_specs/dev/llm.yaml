@@ -2123,6 +2123,7 @@ templates:
 #   - 1M-token context (4 users, plain decode; tt-metal branch ssinghal/dsv4p1, runtime spec assets/runtime_spec_b4_1m_c512.json next to GETTING_STARTED.md): override
 #     --vllm-override-args '{"max_num_seqs": "4", "max_model_len": "1048576"}' plus override_tt_config trace_region_size 800000000 (and DSV41_TRACE_REGION=800000000),
 #     DSV41_VLLM_CHUNK=512 (prefill chunk), no speculative_config. Measured: ready in 13 min, a 100,020-token prompt prefills in 164 s.
+#     The same budget (users x context = 1M tokens per mesh row, i.e. max_num_seqs x max_model_len = 4M) also fits 8 users x 524288 and 16 users x 262144 (measured, same overrides).
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash
   impl: deepseek_v41_flash
