@@ -878,7 +878,7 @@ templates:
       tool_call_parser_name: gemma4
 
 # PR tt-metal#56765: the dedicated Gemma4 31B QB2 implementation under
-# models/demos/gemma4_31b_qb2. C4 exploratory batch candidate; four physical
+# models/demos/gemma4_31b_qb2. C8 conservative lifetime control; eight physical
 # decode rows are warmed before serving, with the full-context shared KV pool.
 - weights:
     - google/gemma-4-31B-it
@@ -886,19 +886,24 @@ templates:
   inference_engine: VLLM
   device_model_specs:
     - device: P300X2
-      max_concurrency: 4
+      max_concurrency: 8
       max_context: 262144
       default_impl: false  # selectable with --impl gemma4_31b_qb2; needs tt-metal vvukoman/gemma4-31b-qb2-stable
       env_vars:
         MESH_DEVICE: P300x2
         EXTRA_MODELS_DIR: ../../tt-metal/models/demos
         TT_METAL_PINNED_MEMORY_CACHE_LIMIT_BYTES: '0'
+        TT_METAL_TRACE_ALLOC_TRACKING: '1'
+        TT_METAL_TRACE_ALLOC_TRACEBACKS: '0'
+        TT_METAL_TRACE_ALLOC_SKIP_PROGRAM_CACHE: '0'
       override_tt_config:
         sample_on_device_mode: all
         trace_region_size: 536870912
         l1_small_size: 16384
       vllm_args:
         block_size: '128'
+        enable-prompt-tokens-details: true
+        revision: '842da3794eaa0b77d5f08bae87a17459d91ff475'
         hf-overrides: '{"architectures":["TTGemma4QB2ForCausalLM"]}'
         max-logprobs: '-1'
         async-scheduling: true

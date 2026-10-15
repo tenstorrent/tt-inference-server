@@ -33,4 +33,5 @@ def _install(repo, manifest_name, patch_name, marker):
 
 def install_prefix_overlay(metal):
     _install(metal, "manifest.json", "model.patch", "GEMMA_PREFIX_MODEL")
+    _install(metal, "safety-manifest.json", "safety.patch", "GEMMA_HISTORY_LIFETIME_REPAIR")
     _install(metal.parent / "vllm-tt-plugin", "plugin-manifest.json", "plugin.patch", "GEMMA_PREFIX_PLUGIN")

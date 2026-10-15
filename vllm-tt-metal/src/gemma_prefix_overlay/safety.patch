@@ -1,0 +1,16 @@
+--- a/models/demos/gemma4_31b_qb2/tt/generator.py
++++ b/models/demos/gemma4_31b_qb2/tt/generator.py
+@@ -385,9 +385,10 @@
+         if len(starts) != len(prompt_lens) or any(s < 0 or s >= n for s, n in zip(starts, prompt_lens)):
+             raise ValueError("Prefill must advance each request from its current position")
+         shape_key = (state.batch, state.capacity, tuple(prompt_lens), tuple(starts), bool(return_all_logits))
+-        if shape_key not in self.prefill_shapes:
+-            # A new prefill signature may create cached protocol semaphores or
+-            # norm buffers. Retire old traces before those persistent allocations.
++        if history_keys is not None or shape_key not in self.prefill_shapes:
++            # Request histories allocate persistent K/V tails even for a seen
++            # signature. Unseen signatures can also allocate native cached state.
++            # Both must be created before the next trace capture.
+             self._retire_traces()
+         self._tables(state, page_table)
+         outputs = []
