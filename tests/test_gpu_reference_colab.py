@@ -11,6 +11,7 @@ syntax check of the two shell scripts. Nothing here talks to Colab.
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -1995,7 +1996,7 @@ def _resume_helpers(tmp_path, tasks, gh_downloads_report, prov=None):
     can see which provenance graded the run."""
     out_dir = tmp_path / "out"
     model_dir = out_dir / "results" / "org__m"
-    model_dir.mkdir(parents=True)
+    model_dir.mkdir(parents=True, exist_ok=True)  # a test may run several passes
     if prov is not None:
         (model_dir / "provenance.json").write_text(json.dumps(prov))
     driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
@@ -2089,6 +2090,90 @@ def test_a_later_fetch_never_replaces_the_serving_provenance(tmp_path):
     assert len(refetched) == 1 and "A100" in refetched[0].read_text()
 
 
+def test_a_recovered_report_passes_on_the_unchanged_serving_provenance(tmp_path):
+    # Review on #5395 (colab_gpu_reference.sh:475): the first pass finished
+    # while the report was missing and wrote status "failed" into
+    # provenance.json; the retry that recovered the report then read that
+    # result back as "did the VM serve" and stayed failed forever. The real
+    # shield-provenance grades both passes here.
+    served = {
+        "model": "org/m",
+        "status": "ok",  # the runner's own status: the VM served
+        "gpu": {
+            "name": "NVIDIA H100 80GB HBM3",
+            "driver": "570",
+            "memory_total": "80 GiB",
+        },
+        "vllm_serve_command": ["vllm", "serve", "org/m", "--max-model-len", "131072"],
+        "packages": {"vllm": "0.23.0"},
+        "started_at": "2026-10-14T10:00:00Z",
+        "finished_at": "2026-10-14T18:00:00Z",
+    }
+    report = json.dumps({
+        "metadata": {"model_repo": "org/m", "device": "GPU", "generated_at": "2026-10-14T18:00:00Z"},
+        "sections": [{"kind": "evals", "data": {"task_name": "tb2", "score": 40.0, "n_trials": 89}}],
+    })  # fmt: skip
+    prov = tmp_path / "out" / "results" / "org__m" / "provenance.json"
+
+    def resume_pass(gh_downloads_report):
+        script = _resume_helpers(tmp_path, ["tb2"], gh_downloads_report)
+        gh_body = (
+            f'mkdir -p "$7" && printf \'%s\' {shlex.quote(report)} > "$7/report_tb2.json"'
+            if gh_downloads_report
+            else "return 1"
+        )
+        # The real shield-provenance and summary; driver-status stays stubbed.
+        script += f"""
+gh() {{ {gh_body}; }}
+gpuref() {{
+    case "$1" in
+      driver-status) shift; local rec="$1"; shift
+        python3 -c 'import json,sys; json.dump(dict(a.split("=",1) for a in sys.argv[2:]), open(sys.argv[1],"w"))' "$rec" "$@" ;;
+      *) {shlex.quote(sys.executable)} {shlex.quote(str(GPUREF_PATH))} "$@" ;;
+    esac
+}}
+serve_report_only_resume && echo "HANDLED rc=$FINISH_RC"
+"""
+        return _bash(script)
+
+    prov.parent.mkdir(parents=True)
+    prov.write_text(json.dumps(served))
+    _record(tmp_path, "tb2", state="report_pending", run_id="77", conclusion="success")
+    first = resume_pass(gh_downloads_report=False)
+    assert first.returncode == 0 and "HANDLED rc=1" in first.stdout, first.stderr
+    assert json.loads(prov.read_text())["status"] == "failed"  # report missing
+
+    second = resume_pass(gh_downloads_report=True)
+    assert second.returncode == 0 and "HANDLED rc=0" in second.stdout, second.stderr
+    assert "VM_STARTED" not in first.stderr + second.stderr
+    graded = json.loads(prov.read_text())
+    assert graded["status"] == "ok"
+    assert graded["serving_status"] == "ok"
+    assert graded["agentic"][0]["score"] == 40.0
+    # The serving provenance is the one the scores were measured with.
+    for key, value in served.items():
+        if key != "status":
+            assert graded[key] == value, key
+
+
+def test_shield_provenance_never_rewrites_the_serving_status(tmp_path):
+    model = "Qwen/Qwen3.5-27B"
+    shield = tmp_path / "shield"
+    tb = {"task": "tb2", "run_id": "7", "conclusion": "success", "state": "completed"}
+    vm = {"model": model, "status": "ok"}
+    pending = gpuref.shield_provenance(vm, [tb], shield)  # no report yet
+    assert pending["status"] == "failed"
+    _agentic_report(shield / "tb2" / "report_1.json", model, "tb2", 40.0)
+    recovered = gpuref.shield_provenance(pending, [tb], shield)
+    assert recovered["status"] == "ok"
+    assert pending["serving_status"] == recovered["serving_status"] == "ok"
+    # A VM that did not serve stays failed whatever reports turn up.
+    down = gpuref.shield_provenance({"model": model, "status": "failed"}, [tb], shield)
+    again = gpuref.shield_provenance(down, [tb], shield)
+    assert down["status"] == again["status"] == "failed"
+    assert down["serving_status"] == again["serving_status"] == "failed"
+
+
 def test_report_only_resume_runs_before_any_vm_is_started():
     driver = (SCRIPT_DIR / "colab_gpu_reference.sh").read_text()
     resume = driver.index("serve_report_only_resume; then exit")
@@ -2113,10 +2198,26 @@ def test_serve_secrets_dir_is_never_chmodded_and_files_stay_0600(tmp_path):
     assert stat.S_IMODE(secrets.stat().st_mode) == 0o700
     for f in secrets.iterdir():
         assert stat.S_IMODE(f.stat().st_mode) == 0o600, f
-    # A pre-existing group/other-accessible secrets dir is refused, not reused.
-    loose = tmp_path / "loose" / "gpuref"
+
+
+# Each permission bit the snippet refuses on an existing secrets directory.
+GROUP_OTHER_BITS = [
+    stat.S_IRGRP, stat.S_IWGRP, stat.S_IXGRP, stat.S_IROTH, stat.S_IWOTH, stat.S_IXOTH,
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("loose_bit", GROUP_OTHER_BITS, ids=oct)
+def test_serve_secrets_dir_with_any_group_or_other_bit_is_refused(tmp_path, loose_bit):
+    # A pre-existing secrets dir that grants group/other any access is refused,
+    # not reused or re-permissioned. The fixture dir is the owner's plus one
+    # refused bit, so each bit is shown to be refused on its own.
+    src = (SCRIPT_DIR / "snippets" / "install_serve_secrets.py").read_text()
+    loose = tmp_path / "gpuref"
     (loose / "secrets").mkdir(parents=True)
-    os.chmod(loose / "secrets", 0o755)
+    os.chmod(loose / "secrets", stat.S_IRWXU | loose_bit)
+    for name in ("endpoint_api_key", "ngrok_authtoken"):
+        (loose / f"{name}.upload").write_text("secret-" + name)
     code = src.replace('"/content/gpuref"', repr(str(loose)))
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert out.returncode != 0 and "REFUSED" in out.stderr
+    assert not (loose / "secrets" / "endpoint_api_key").exists()

@@ -1055,8 +1055,15 @@ def shield_provenance(
     prov: Dict[str, Any], records: List[Dict[str, Any]], shield_root: Path
 ) -> Dict[str, Any]:
     """The served model's provenance with each task's Shield run: run id/url,
-    conclusion, the dispatch inputs and the run.py report it wrote. status is ok
-    only when every task's report (device GPU) has a score."""
+    conclusion, the dispatch inputs and the run.py report it wrote.
+
+    Two statuses, never conflated: ``serving_status`` is whether the VM served
+    (the runner's own ``status``, copied on the first grading and never
+    rewritten), and ``status`` is the overall result, recomputed on every call
+    from ``serving_status`` and the reports present now. So a pass that grades
+    before a report arrives (``failed``) does not stop a later pass that
+    retrieves it from grading ``ok``. status is ok only when the VM served and
+    every task's report (device GPU) has a score."""
     rows = {
         r["task"]: r
         for r in summary_rows(shield_root)
@@ -1074,7 +1081,9 @@ def shield_provenance(
     ]  # fmt: skip
     prov["run_py_command"] = [shield_test(rec.get("task", "")) for rec in records]
     prov["tasks_selected"] = sorted(rec.get("task") for rec in records)
-    served = prov.get("status") == "ok"
+    if "serving_status" not in prov:
+        prov["serving_status"] = prov.get("status")
+    served = prov["serving_status"] == "ok"
     # A completed run counts whether or not the model met its acceptance
     # criteria (Shield fails the job on a miss); a cancelled or crashed one not.
     prov["status"] = "ok" if served and records and all(
