@@ -387,17 +387,69 @@ class SDXLRunner:
     def vae_decode(self, latents_np: np.ndarray) -> np.ndarray:
         """Staged: decode raw scheduler latents [B, C, H, W] -> image [B, H, W, C] in [0, 1].
 
-        POC uses the host torch VAE for a stable, additive contract; on-device VAE
-        decode of arbitrary latents is a follow-up optimization.
+        Runs on the device VAE when the pipeline was built with vae_on_device and the
+        latents match the configured resolution; otherwise falls back to the host
+        torch VAE. Set SDXL_HOST_VAE_DECODE=1 to force the host path.
         """
         latents = torch.from_numpy(np.ascontiguousarray(latents_np)).float()
-        vae = self.pipeline.vae
-        latents = latents / vae.config.scaling_factor
-        with torch.no_grad():
-            image = vae.decode(latents.to(vae.dtype)).sample
+        if self._can_decode_on_device(latents):
+            image = self._vae_decode_device(latents)
+        else:
+            vae = self.pipeline.vae
+            latents = latents / vae.config.scaling_factor
+            with torch.no_grad():
+                image = vae.decode(latents.to(vae.dtype)).sample
         image = (image / 2 + 0.5).clamp(0.0, 1.0)
         image = image.permute(0, 2, 3, 1).contiguous().float()
         return image.cpu().numpy()
+
+    def _can_decode_on_device(self, latents: torch.Tensor) -> bool:
+        if os.environ.get("SDXL_HOST_VAE_DECODE") == "1":
+            return False
+        if getattr(self.tt_sdxl, "tt_vae", None) is None:
+            return False
+        _, c, h, w = self.tt_sdxl.tt_latents_shape
+        if latents.ndim != 4 or tuple(latents.shape[1:]) != (c, h, w):
+            self.logger.warning(
+                f"Latent shape {tuple(latents.shape)} does not match device VAE ({c}, {h}, {w}); using host VAE"
+            )
+            return False
+        return True
+
+    def _vae_decode_device(self, latents: torch.Tensor) -> torch.Tensor:
+        """Untraced device VAE decode, mirroring the vae_on_device branch of run_tt_image_gen.
+
+        Latents go up in the same TT layout/mapping as generate_input_tensors
+        ([N, 1, H*W, C], batch sharded over mesh axis 1) in chunks of the pipeline
+        batch size. Returns [B, C, H, W] in [-1, 1], like the host VAE.
+        """
+        n, c, h, w = latents.shape
+        chunk = self.tt_sdxl.batch_size
+        input_shape = self.tt_sdxl.tt_latents_shape
+        mapper = ttnn.ShardTensor2dMesh(self.ttnn_device, list(self.ttnn_device.shape), dims=(None, 0))
+        outputs = []
+        for start in range(0, n, chunk):
+            part = latents[start : start + chunk]
+            valid = part.shape[0]
+            if valid < chunk:
+                part = torch.cat([part, part.new_zeros((chunk - valid, c, h, w))], dim=0)
+            part = part.permute(0, 2, 3, 1).reshape(chunk, 1, h * w, c)
+            tt_latents = ttnn.from_torch(
+                part,
+                dtype=ttnn.bfloat16,
+                layout=ttnn.TILE_LAYOUT,
+                device=self.ttnn_device,
+                memory_config=ttnn.DRAM_MEMORY_CONFIG,
+                mesh_mapper=mapper,
+            )
+            scaled = ttnn.div(tt_latents, self.tt_sdxl.scaling_factor)
+            ttnn.deallocate(tt_latents)
+            output, [oc, oh, ow] = self.tt_sdxl.tt_vae.decode(scaled, input_shape)
+            image = ttnn.to_torch(output, mesh_composer=ttnn.ConcatMeshToTensor(self.ttnn_device, dim=0)).float()
+            ttnn.deallocate(output)
+            ttnn.synchronize_device(self.ttnn_device)
+            outputs.append(image[:chunk].reshape(chunk, oc, oh, ow)[:valid])
+        return torch.cat(outputs, dim=0)
 
     def vae_encode(self, image_np: np.ndarray) -> np.ndarray:
         """Staged: encode image [B, H, W, C] in [0, 1] -> raw scheduler latents [B, C, H, W].
