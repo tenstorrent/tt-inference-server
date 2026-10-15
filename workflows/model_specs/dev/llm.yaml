@@ -1179,6 +1179,9 @@ templates:
         tokenizer_revision: 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7
         default-chat-template-kwargs: '{"enable_thinking": true}'
         reasoning-parser: gemma4
+        # Text only, as the TT rows serve the text decoder: vLLM 0.23's
+        # Gemma4Unified dummy video/image profiling fails in the HF processor.
+        limit_mm_per_prompt: {"image": 0, "video": 0}
   status: EXPERIMENTAL
   has_builtin_warmup: true
   env_vars:
