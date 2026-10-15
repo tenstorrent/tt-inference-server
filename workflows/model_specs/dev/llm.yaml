@@ -2393,6 +2393,9 @@ templates:
 #   - DSV41_CKPT: site-specific local HF checkpoint dir. DSV41_WEIGHT_CACHE / DSV41_UNIFIED_CACHE / TT_METAL_CACHE: host-local NVMe under /home/ttuser/ssinghal/tt-metal-cache (the engine process only receives the variables of this env_vars block, so they must be set here, not in the shell).
 #   - Temperature / top-k / top-p sampling is exact (device candidates + partition function).
 #   - A cold build can take longer than the default readiness timeout: set TT_SERVER_READY_TIMEOUT_SECONDS=14400.
+#   - 1M-token context (4 users, plain decode; tt-metal branch ssinghal/dsv4p1, runtime spec assets/runtime_spec_b4_1m_c512.json next to GETTING_STARTED.md): override
+#     --vllm-override-args '{"max_num_seqs": "4", "max_model_len": "1048576"}' plus override_tt_config trace_region_size 800000000 (and DSV41_TRACE_REGION=800000000),
+#     DSV41_VLLM_CHUNK=512 (prefill chunk), no speculative_config. Measured: ready in 13 min, a 100,020-token prompt prefills in 164 s.
 - weights:
     - deepseek-ai/DeepSeek-V4.1-Flash
   impl: deepseek_v41_flash
