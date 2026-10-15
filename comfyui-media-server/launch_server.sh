@@ -176,8 +176,6 @@ print(','.join(ids[:4]))
         export TT_VISIBLE_DEVICES="0,1,2,3"
         export TT_METAL_VISIBLE_DEVICES="0,1,2,3"
     fi
-    export TT_METAL_CORE_GRID_OVERRIDE_TODEPRECATE="7,7"
-    export TT_MM_THROTTLE_PERF=5
 
 elif [ "$MODEL" = "sd35" ]; then
     # SD3.5 requires 8 devices (2x4 mesh). Fail fast with a clear error if unavailable.
